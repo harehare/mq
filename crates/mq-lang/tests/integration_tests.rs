@@ -2829,6 +2829,11 @@ fn engine() -> DefaultEngine {
 #[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_call_h(r##"to_markdown("# h1\n\n## h2\n\ntest") | .h(2).depth | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+#[case::selector_call_link_url_match(r##"to_markdown("[a](https://a.com) [b](https://b.com)") | .link("https://a.com").value | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
+#[case::selector_call_link_url_no_match(r##"to_markdown("[a](https://a.com)") | .link("https://nope.com") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
+#[case::selector_call_link_url_multi(r##"to_markdown("[a](https://a.com) [b](https://b.com) [c](https://c.com)") | .link("https://a.com", "https://c.com") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::selector_call_image_url_match(r##"to_markdown("![alt1](a.png) ![alt2](b.png)") | .image("a.png").alt | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("alt1".to_string())].into()))]
+#[case::selector_call_image_url_no_match(r##"to_markdown("![alt](a.png)") | .image("nope.png") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::selector_call_link_ref_match(r##"to_markdown("[link][id]\n\n[id]: url") | .link_ref("id") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_call_link_ref_no_match(r##"to_markdown("[link][id]\n\n[id]: url") | .link_ref("other") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::selector_call_image_ref_match(r##"to_markdown("![alt][id]\n\n[id]: url") | .image_ref("id") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
@@ -3629,6 +3634,27 @@ fn engine() -> DefaultEngine {
     r#"to_markdown("[[target]]") | first() | .embed"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::NONE].into()))]
+// descendant selector chain: `.a .b` matches `.b` nodes nested anywhere under `.a`
+#[case::descendant_chain_matches_nested_only(
+    r#"to_markdown("> ```rust\n> fn a() {}\n> ```\n\n```python\nprint(1)\n```") | .blockquote .code | .lang | compact | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+#[case::descendant_chain_no_match_is_empty(
+    r#"to_markdown("> plain quote") | .blockquote .code | compact | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::NONE].into()))]
+#[case::descendant_chain_three_levels(
+    r#"to_markdown("> - item\n>\n>   ```rust\n>   fn a() {}\n>   ```\n\n- top\n\n  ```rust\n  fn b() {}\n  ```") | .blockquote .list .code | .value | compact | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("fn a() {}".to_string())].into()))]
+#[case::descendant_chain_step_with_selector_call(
+    r#"to_markdown("> ```rust\n> fn a() {}\n> ```") | .blockquote .code("python") | compact | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::NONE].into()))]
+#[case::descendant_chain_trailing_attribute(
+    r#"to_markdown("> ```rust\n> fn a() {}\n> ```") | .blockquote .code.lang | compact | first()"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

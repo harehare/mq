@@ -42,6 +42,38 @@ fn test_help_markdown_renders_fenced_mq_example() -> Result<(), Box<dyn std::err
 }
 
 #[test]
+fn test_help_bare_name_shows_module_and_colliding_selector() -> Result<(), Box<dyn std::error::Error>> {
+    // `.table` (selector) and `table` (module) share a bare name; the module must not
+    // shadow the selector entirely.
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("table").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    assert!(output.starts_with("table (module)"));
+    assert!(output.contains(".table (selector)"));
+
+    Ok(())
+}
+
+#[test]
+fn test_help_bare_name_json_stays_module_only() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("help").arg("table").arg("--json").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+    let json: serde_json::Value = serde_json::from_str(&output)?;
+
+    assert_eq!(json["name"], "table");
+    assert!(
+        json.get("kind").is_none(),
+        "module JSON should not gain a selector's `kind` field"
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_help_json_and_markdown_conflict() {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
 

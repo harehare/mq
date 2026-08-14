@@ -16,15 +16,15 @@ Selectors use the `.` prefix to select markdown nodes. For example:
 
 Many selectors have shorter or alternative names that you can use interchangeably:
 
-| Canonical Selector | Aliases                      | Description              |
-| ------------------ | ---------------------------- | ------------------------ |
-| `.text`            | `.p`, `.paragraph`           | Paragraph / text nodes   |
-| `.list`            | `.li`                        | List items               |
-| `.code`            | `.code_block`                | Fenced code blocks       |
-| `.code_inline`     | `.inline_code`               | Inline code spans        |
-| `.math_inline`     | `.inline_math`               | Inline math spans        |
-| `.horizontal_rule` | `.hr`, `.---`, `.***`, `.___` | Horizontal rules         |
-| `.break`           | `.br`                        | Line breaks              |
+| Canonical Selector | Aliases                       | Description            |
+| ------------------ | ----------------------------- | ---------------------- |
+| `.text`            | `.p`, `.paragraph`            | Paragraph / text nodes |
+| `.list`            | `.li`                         | List items             |
+| `.code`            | `.code_block`                 | Fenced code blocks     |
+| `.code_inline`     | `.inline_code`                | Inline code spans      |
+| `.math_inline`     | `.inline_math`                | Inline math spans      |
+| `.horizontal_rule` | `.hr`, `.---`, `.***`, `.___` | Horizontal rules       |
+| `.break`           | `.br`                         | Line breaks            |
 
 Example:
 
@@ -73,6 +73,21 @@ Pass a string argument to match code blocks with a specific language:
 .code("python") | to_array | concat(.code("javascript"))
 ```
 
+### Link and Image URL Filtering
+
+Pass one or more string arguments to match links or images by their exact URL:
+
+```mq
+# Select only links pointing to a specific URL
+.link("https://example.com")
+
+# Select links pointing to either of two URLs
+.link("https://a.com", "https://b.com")
+
+# Select only images with a specific URL
+.image("photo.png")
+```
+
 ### Reference Identifier Filtering
 
 Pass one or more string arguments to match reference-style nodes by their identifier:
@@ -108,6 +123,28 @@ Selector calls can be combined with pipes and functions just like plain selector
 # Replace language of all TypeScript blocks
 .code("typescript").lang |= "ts"
 ```
+
+## Descendant Selectors
+
+Chaining two or more selectors with a space selects nodes of the second type that are nested anywhere underneath a node of the first type — similar to a descendant combinator in CSS:
+
+```mq
+# Code blocks nested inside a blockquote (not top-level code blocks)
+.blockquote .code
+
+# Chains can go arbitrarily deep
+.blockquote .list .code
+
+# Each step can use a selector call to filter further
+.blockquote .code("rust")
+
+# A trailing attribute access still works after the chain
+.blockquote .code.lang
+```
+
+This is sugar for recursing into each match and then filtering by the next selector, i.e. `.blockquote .code` is equivalent to `.blockquote | .. | .code`.
+
+Note this only matches _descendants_ (nodes nested at any depth), not direct children specifically. To get only the immediate children of a match, use the `.children` attribute: `.blockquote.children | .code`.
 
 ## Attribute Access
 
@@ -154,14 +191,14 @@ Code block nodes support the following attributes:
 
 Example:
 
-```mq
+````mq
 # Input: ```rust
 # fn main() {}
 # ```
 
 .code.lang      # Returns: "rust"
 .code.value     # Returns: "fn main() {}"
-```
+````
 
 ### Link Attributes
 
