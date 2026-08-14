@@ -156,12 +156,14 @@ impl DefaultModuleResolver {
     pub fn with_http(mut self, allowed_domains: Vec<String>, timeout: Option<std::time::Duration>) -> Self {
         let lockfile_path = self.http_resolver.lockfile_path();
         let lockfile_enabled = self.http_resolver.lockfile_enabled();
+        let lockfile_frozen = self.http_resolver.lockfile_frozen();
         let mut http_resolver = http_resolver::HttpModuleResolver::new(
             allowed_domains,
             http_resolver::UreqFetcher::new(timeout.unwrap_or(std::time::Duration::from_secs(10))),
         );
         http_resolver.set_lockfile_path(lockfile_path);
         http_resolver.set_lockfile_enabled(lockfile_enabled);
+        http_resolver.set_lockfile_frozen(lockfile_frozen);
         self.http_resolver = http_resolver;
         self
     }
@@ -197,6 +199,13 @@ impl DefaultModuleResolver {
     #[cfg(feature = "http-import-ureq")]
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
         self.http_resolver.set_lockfile_enabled(enabled);
+    }
+
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry. See [`http_resolver::UreqFetcher::set_lockfile_frozen`].
+    #[cfg(feature = "http-import-ureq")]
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.http_resolver.set_lockfile_frozen(frozen);
     }
 
     /// Sets the path used for `mq.lock`.
@@ -300,7 +309,10 @@ mod tests {
         resolver.set_http_import_enabled(false);
 
         let err = resolver.resolve("github.com/harehare/lisp").unwrap_err();
-        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
+        assert!(
+            err.to_string().contains("HTTP module imports are disabled"),
+            "error was: {err}"
+        );
     }
 
     #[cfg(feature = "http-import-ureq")]

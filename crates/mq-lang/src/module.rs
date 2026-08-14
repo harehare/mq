@@ -413,6 +413,12 @@ impl ModuleLoader<DefaultModuleResolver> {
         self.resolver.set_lockfile_enabled(enabled);
     }
 
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry.
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.resolver.set_lockfile_frozen(frozen);
+    }
+
     /// Sets the path used for `mq.lock`.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
         self.resolver.set_lockfile_path(path);

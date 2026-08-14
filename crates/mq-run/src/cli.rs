@@ -364,8 +364,14 @@ struct InputArgs {
     /// By default a fetched URL's content is checked against mq.lock, and a mismatch is
     /// rejected unless --refresh-modules is also passed.
     #[cfg(feature = "http-import")]
-    #[arg(long = "no-lockfile", default_value_t = false, conflicts_with = "lockfile_path")]
+    #[arg(long = "no-lockfile", default_value_t = false, conflicts_with_all = ["lockfile_path", "frozen"])]
     no_lockfile: bool,
+
+    /// Fail instead of recording a new mq.lock entry.
+    /// `--frozen`; use in CI so a new module's content is only ever trusted during a reviewable local run whose mq.lock diff gets committed, not silently during CI.
+    #[cfg(feature = "http-import")]
+    #[arg(long = "frozen", default_value_t = false)]
+    frozen: bool,
 
     /// Path to the mq.lock file used for HTTP import integrity checks.
     /// Defaults to ./mq.lock (relative to the current directory).
@@ -1313,12 +1319,6 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
-        // --module-directories/--module-names/include/import resolve local modules from
-        // directories the invoker explicitly configured, so local module resolution keeps
-        // full native access (unchanged from before this Io existed). --allow-read/write/
-        // net/run instead gate what a running query's read_file/write_file/http/system
-        // builtins can do at runtime, via the ambient Io set below. HTTP module imports are
-        // gated separately, by --allow-http-import below, not by this Io.
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
         let sandboxed_io = if self.input.allow_all {
             sandboxed_io.allow_all()
@@ -1441,6 +1441,9 @@ impl Cli {
             }
             if self.input.no_lockfile {
                 engine.set_lockfile_enabled(false);
+            }
+            if self.input.frozen {
+                engine.set_lockfile_frozen(true);
             }
             if let Some(path) = &self.input.lockfile_path {
                 engine.set_lockfile_path(path.clone());
@@ -2690,7 +2693,10 @@ mod tests {
         };
 
         let err = cli.run().unwrap_err();
-        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
+        assert!(
+            err.to_string().contains("HTTP module imports are disabled"),
+            "error was: {err}"
+        );
     }
 
     #[cfg(feature = "http-import")]
@@ -2710,7 +2716,19 @@ mod tests {
         };
 
         let err = cli.run().unwrap_err();
-        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
+        assert!(
+            err.to_string().contains("HTTP module imports are disabled"),
+            "error was: {err}"
+        );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_no_lockfile_conflicts_with_frozen() {
+        assert!(
+            Cli::try_parse_from(["mq", "--no-lockfile", "--frozen", "self"]).is_err(),
+            "--no-lockfile should conflict with --frozen"
+        );
     }
 
     #[rstest]

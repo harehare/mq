@@ -117,9 +117,7 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
     fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
         let is_import_attempt = is_github_url(module_name) || is_remote_url(module_name);
         if is_import_attempt && !self.enabled {
-            return Err(ModuleError::IOError(
-                "HTTP module imports are disabled; pass --allow-http-import to enable them".into(),
-            ));
+            return Err(ModuleError::IOError("HTTP module imports are disabled".into()));
         }
 
         if is_github_url(module_name) {
@@ -168,6 +166,7 @@ pub struct UreqFetcher {
     cache_dir: std::path::PathBuf,
     lockfile_path: std::path::PathBuf,
     lockfile_enabled: bool,
+    lockfile_frozen: bool,
     lockfile_cache: std::sync::Arc<std::sync::Mutex<Option<super::lockfile::ModuleLock>>>,
 }
 
@@ -179,6 +178,7 @@ impl Default for UreqFetcher {
             cache_dir: dirs::cache_dir().unwrap_or_default().join("mq"),
             lockfile_path: std::path::PathBuf::from(lockfile::LOCKFILE_NAME),
             lockfile_enabled: true,
+            lockfile_frozen: false,
             lockfile_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
@@ -199,6 +199,14 @@ impl UreqFetcher {
         self.lockfile_enabled = enabled;
     }
 
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry. Has no effect if the lockfile check itself is disabled.
+    /// Mirrors `npm ci` / `cargo build --locked`: use for CI/reproducible runs so trusting a
+    /// new module's content only ever happens in a reviewable local run, not silently in CI.
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.lockfile_frozen = frozen;
+    }
+
     /// Sets the path used for `mq.lock`. Clears any in-memory cache of the previous path.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
         self.lockfile_path = path;
@@ -211,6 +219,10 @@ impl UreqFetcher {
 
     pub(crate) fn lockfile_enabled(&self) -> bool {
         self.lockfile_enabled
+    }
+
+    pub(crate) fn lockfile_frozen(&self) -> bool {
+        self.lockfile_frozen
     }
 
     /// Removes mutable-ref cached modules and their `mq.lock` entries, regardless of
@@ -290,7 +302,7 @@ impl UreqFetcher {
         super::lockfile::ModuleLock::parse(&content).map_err(|e| {
             ModuleError::IOError(
                 format!(
-                    "failed to parse {}: {e}. Delete the file to reset it, or pass --no-lockfile to skip the check.",
+                    "failed to parse {}: {e}. Delete the file to reset it, or disable the lock file check.",
                     path.display()
                 )
                 .into(),
@@ -357,19 +369,27 @@ impl UreqFetcher {
             let lock = cache.as_mut().unwrap();
             match lock.check(url, hash) {
                 lockfile::LockCheck::Match => Ok(()),
+                lockfile::LockCheck::NewEntry if self.lockfile_frozen => Err(ModuleError::IOError(
+                    format!(
+                        "{url} has no entry in {} and the lock file is frozen. \
+                         Run once without freezing it to record the entry, then commit the updated lock file.",
+                        super::lockfile::LOCKFILE_NAME
+                    )
+                    .into(),
+                )),
                 lockfile::LockCheck::NewEntry => {
                     lock.insert(url, hash);
                     Self::save_lock(&self.lockfile_path, lock)?;
                     Ok(())
                 }
                 lockfile::LockCheck::Mismatch { locked } => {
-                    // --refresh-modules only clears mutable-ref cache and lock entries, so
-                    // a drifted versioned (tagged) module needs the full reset instead.
+                    // A mutable-ref refresh only clears mutable-ref cache and lock entries, so
+                    // a drifted versioned (tagged) module needs a full cache reset instead.
 
                     let hint = if http_import::is_versioned_url(url) {
-                        "re-run with --clear-cache to reset the module cache and the lock file"
+                        "reset the module cache and the lock file to accept it"
                     } else {
-                        "re-run with --refresh-modules to update the lock file"
+                        "re-fetch the module to accept the new content and update the lock file"
                     };
                     Err(ModuleError::IOError(
                         format!(
@@ -490,6 +510,12 @@ impl HttpModuleResolver<UreqFetcher> {
         self.fetcher.set_lockfile_enabled(enabled);
     }
 
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry. See [`UreqFetcher::set_lockfile_frozen`].
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.fetcher.set_lockfile_frozen(frozen);
+    }
+
     /// Sets the path used for `mq.lock`.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
         self.fetcher.set_lockfile_path(path);
@@ -501,6 +527,10 @@ impl HttpModuleResolver<UreqFetcher> {
 
     pub(crate) fn lockfile_enabled(&self) -> bool {
         self.fetcher.lockfile_enabled()
+    }
+
+    pub(crate) fn lockfile_frozen(&self) -> bool {
+        self.fetcher.lockfile_frozen()
     }
 }
 
@@ -762,12 +792,12 @@ mod tests {
         let resolver = HttpModuleResolver::new(vec![], fetcher);
 
         let err = resolver.resolve(url).unwrap_err();
-        assert!(err.to_string().contains("--refresh-modules"), "message was: {err}");
+        assert!(err.to_string().contains("re-fetch the module"), "message was: {err}");
     }
 
     #[test]
     #[cfg(feature = "http-import-ureq")]
-    fn test_resolve_cache_hit_versioned_lock_mismatch_mentions_clear_cache() {
+    fn test_resolve_cache_hit_versioned_lock_mismatch_mentions_cache_reset() {
         let dir = TempDir::new().unwrap();
         let url = "https://raw.githubusercontent.com/harehare/mymod/v0.1.0/mymod.mq";
         seed_cache(dir.path(), "versioned", url, "def pinned(): 1;");
@@ -785,7 +815,7 @@ mod tests {
         let resolver = HttpModuleResolver::new(vec![], fetcher);
 
         let err = resolver.resolve(url).unwrap_err();
-        assert!(err.to_string().contains("--clear-cache"), "message was: {err}");
+        assert!(err.to_string().contains("reset the module cache"), "message was: {err}");
     }
 
     #[test]
@@ -812,6 +842,53 @@ mod tests {
             lock.check(url, &lockfile::compute_hash(content)),
             lockfile::LockCheck::Match
         );
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_resolve_cache_hit_frozen_lockfile_blocks_new_entry() {
+        let dir = TempDir::new().unwrap();
+        let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
+        let content = "def cached(): 42;";
+        seed_cache(dir.path(), "mutable", url, content);
+
+        let lock_path = dir.path().join("mq.lock");
+        let mut fetcher = UreqFetcher {
+            cache_dir: dir.path().to_path_buf(),
+            lockfile_path: lock_path.clone(),
+            ..UreqFetcher::default()
+        };
+        fetcher.set_lockfile_frozen(true);
+        let resolver = HttpModuleResolver::new(vec![], fetcher);
+
+        let err = resolver.resolve(url).unwrap_err();
+        assert!(err.to_string().contains("lock file is frozen"), "error was: {err}");
+        // No entry should have been recorded, and no lock file created at all.
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_resolve_cache_hit_frozen_lockfile_allows_matching_entry() {
+        let dir = TempDir::new().unwrap();
+        let url = "https://raw.githubusercontent.com/harehare/mymod/HEAD/mymod.mq";
+        let content = "def cached(): 42;";
+        seed_cache(dir.path(), "mutable", url, content);
+
+        let lock_path = dir.path().join("mq.lock");
+        let mut lock = lockfile::ModuleLock::default();
+        lock.insert(url, lockfile::compute_hash(content));
+        std::fs::write(&lock_path, lock.to_json()).unwrap();
+
+        let mut fetcher = UreqFetcher {
+            cache_dir: dir.path().to_path_buf(),
+            lockfile_path: lock_path,
+            ..UreqFetcher::default()
+        };
+        fetcher.set_lockfile_frozen(true);
+        let resolver = HttpModuleResolver::new(vec![], fetcher);
+
+        assert_eq!(resolver.resolve(url).unwrap(), content);
     }
 
     #[test]
@@ -857,7 +934,7 @@ mod tests {
 
         let err = resolver.resolve("github.com/harehare/lisp").unwrap_err();
         assert!(
-            matches!(err, ModuleError::IOError(_)) && err.to_string().contains("--allow-http-import"),
+            matches!(err, ModuleError::IOError(_)) && err.to_string().contains("HTTP module imports are disabled"),
             "error was: {err}"
         );
     }
@@ -1198,7 +1275,7 @@ mod tests {
 
     #[test]
     #[cfg(feature = "http-import-ureq")]
-    fn test_load_lock_parse_error_mentions_no_lockfile_recovery() {
+    fn test_load_lock_parse_error_mentions_recovery_options() {
         let dir = TempDir::new().unwrap();
         let lock_path = dir.path().join("mq.lock");
         std::fs::write(&lock_path, "not json").unwrap();
@@ -1213,7 +1290,10 @@ mod tests {
             .check_lock("https://example.invalid/a.mq", "hash-a")
             .unwrap_err();
         let message = err.to_string();
-        assert!(message.contains("--no-lockfile"), "message was: {message}");
+        assert!(
+            message.contains("disable the lock file check"),
+            "message was: {message}"
+        );
     }
 
     #[test]

@@ -494,6 +494,14 @@ impl Engine<DefaultModuleResolver> {
         self.evaluator.module_loader.set_lockfile_enabled(enabled);
     }
 
+    /// When `true`, a URL with no existing `mq.lock` entry is a hard error instead of being
+    /// recorded as a new entry (off by default). Mirrors `npm ci` / `cargo build --locked`:
+    /// pass `--frozen` on the CLI so trusting a module's content for the first time
+    /// only ever happens in a reviewable local run, not silently in CI.
+    pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        self.evaluator.module_loader.set_lockfile_frozen(frozen);
+    }
+
     /// Sets the path used for `mq.lock`.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
         self.evaluator.module_loader.set_lockfile_path(path);
