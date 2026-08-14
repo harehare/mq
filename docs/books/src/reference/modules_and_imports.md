@@ -191,8 +191,11 @@ import "md"
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
 in addition to local file names.
 
-> **Security note:** By default, only URLs under `github.com/harehare` (resolved to `raw.githubusercontent.com/harehare`) are allowed.
-> Importing from any other domain requires explicitly enabling it with the `--allowed-domain` flag.
+> **Security note:** HTTP imports are disabled by default and must be enabled with
+> `--allow-http-import`. Once enabled, only URLs under `github.com/harehare` (resolved to
+> `raw.githubusercontent.com/harehare`) are allowed; importing from any other domain also
+> requires `--allowed-domain`. This is a separate permission from `--allow-net`, which only
+> gates the `http()`/`http_request()` builtins, not module resolution.
 
 ### Plain URL
 
@@ -218,9 +221,8 @@ github.com/{owner}/{path}[@{version}]
 
 **Example:**
 
-```mq
-import "github.com/harehare/kdl.mq"
-| kdl::kdl_parse("title \"Hello, World!\"")
+```sh
+mq --allow-http-import 'import "github.com/harehare/kdl.mq" | kdl::kdl_parse("title \"Hello, World!\"")'
 ```
 
 ### Caching
@@ -262,25 +264,29 @@ content you locked, the same way `package-lock.json`/`deno.lock` work.
 
 | Flag                        | Description                                                                                                                             |
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `--allow-http-import`       | Enable HTTP module imports. Disabled by default; `import`/`include` of a `github.com/...` or `https://...` URL fails without this.      |
 | `--refresh-modules`         | Discard cached mutable-ref modules and re-fetch them, updating their `mq.lock` entries.                                                 |
-| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. |
+| `--allowed-domain <domain>` | Allow HTTP imports from an additional domain beyond the default (`raw.githubusercontent.com/harehare`). Repeat to add multiple domains. Has no effect unless `--allow-http-import` (or `--allow-all`) is also passed. |
 | `--no-lockfile`             | Disable the `mq.lock` integrity check/update.                                                                                           |
 | `--lockfile <path>`         | Use `<path>` instead of `./mq.lock`.                                                                                                     |
 
 **Examples:**
 
 ```sh
-# Force re-fetch of any HEAD/branch modules, accepting new content into mq.lock
-mq --refresh-modules 'self' file.md
+# Enable HTTP imports, restricted to the built-in default domain
+mq --allow-http-import 'self' file.md
 
-# Only allow imports from example.com
-mq --allowed-domain example.com 'self' file.md
+# Force re-fetch of any HEAD/branch modules, accepting new content into mq.lock
+mq --allow-http-import --refresh-modules 'self' file.md
+
+# Only allow imports from example.com (in addition to the built-in default)
+mq --allow-http-import --allowed-domain example.com 'self' file.md
 
 # Allow multiple domains
-mq --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
+mq --allow-http-import --allowed-domain example.com --allowed-domain raw.githubusercontent.com 'self' file.md
 
 # Use a different lock file location
-mq --lockfile config/mq.lock 'self' file.md
+mq --allow-http-import --lockfile config/mq.lock 'self' file.md
 
 # Skip the mq.lock check entirely
 mq --no-lockfile 'self' file.md

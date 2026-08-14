@@ -466,6 +466,14 @@ impl Engine<DefaultModuleResolver> {
         self.evaluator.module_loader.set_http_allowed_domains(domains);
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    ///
+    /// The `mq` CLI calls this with `false` unless `--allow-http-import` is passed, so
+    /// imports are opt-in there; disabled regardless of `--allowed-domain`.
+    pub fn set_http_import_enabled(&mut self, enabled: bool) {
+        self.evaluator.module_loader.set_http_import_enabled(enabled);
+    }
+
     /// Clears all locally-cached HTTP module files.
     ///
     /// Call this once before processing to force a re-fetch of all cached modules

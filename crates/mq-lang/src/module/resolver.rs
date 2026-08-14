@@ -175,6 +175,12 @@ impl DefaultModuleResolver {
         self.http_resolver.set_allowed_domains(domains);
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    #[cfg(feature = "http-import-ureq")]
+    pub fn set_http_import_enabled(&mut self, enabled: bool) {
+        self.http_resolver.set_enabled(enabled);
+    }
+
     /// Clears all locally-cached HTTP module files (mutable/HEAD only).
     #[cfg(feature = "http-import-ureq")]
     pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
@@ -285,6 +291,16 @@ mod tests {
     fn test_http_url_not_in_local(#[case] url: &str) {
         let resolver = DefaultModuleResolver::new(vec![]);
         assert!(resolver.resolve(url).is_err());
+    }
+
+    #[cfg(feature = "http-import-ureq")]
+    #[test]
+    fn test_set_http_import_enabled_blocks_resolution() {
+        let mut resolver = DefaultModuleResolver::new(vec![]);
+        resolver.set_http_import_enabled(false);
+
+        let err = resolver.resolve("github.com/harehare/lisp").unwrap_err();
+        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
     }
 
     #[cfg(feature = "http-import-ureq")]

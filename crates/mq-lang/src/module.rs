@@ -391,6 +391,11 @@ impl ModuleLoader<DefaultModuleResolver> {
         self.resolver.set_allowed_domains(domains);
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    pub fn set_http_import_enabled(&mut self, enabled: bool) {
+        self.resolver.set_http_import_enabled(enabled);
+    }
+
     /// Clears all locally-cached HTTP module files.
     ///
     /// Call this once before processing to force a re-fetch of all cached modules.

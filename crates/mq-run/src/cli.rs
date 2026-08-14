@@ -334,8 +334,13 @@ struct InputArgs {
     )]
     eval_all: bool,
 
-    /// Allow HTTP imports from additional domain(s) beyond the default.
-    /// By default only `raw.githubusercontent.com/harehare` is permitted.
+    /// Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
+    #[cfg(feature = "http-import")]
+    #[arg(long = "allow-http-import", default_value_t = false)]
+    allow_http_import: bool,
+
+    /// Allow HTTP imports from additional domain(s) beyond the default. Has no effect
+    /// unless `--allow-http-import` (or `--allow-all`) is also passed.
     /// Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically),
     /// or a plain domain like `example.com` to allow any path under that host.
     /// Repeat to allow multiple extra domains.
@@ -413,13 +418,14 @@ struct InputArgs {
     #[arg(short = 'E', long = "allow-env", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "NAME")]
     allow_env: Option<Vec<String>>,
 
-    /// Grant every sandboxed permission at once (read/write/net/run/env). Disabled by
-    /// default. Cannot be combined with the individual --allow-* flags above.
+    /// Grant every sandboxed permission at once (read/write/net/run/env), and also enable
+    /// HTTP module imports as if --allow-http-import were passed. Disabled by default.
+    /// Cannot be combined with the individual --allow-* flags above.
     #[arg(
         short = 'a',
         long = "allow-all",
         default_value_t = false,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env"]
+        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import"]
     )]
     allow_all: bool,
 }
@@ -1051,6 +1057,19 @@ impl Cli {
             "  mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md"
         );
 
+        #[cfg(feature = "http-import")]
+        {
+            let _ = writeln!(out, "\n{}", "HTTP module imports (--allow-http-import):".bold().cyan());
+            let _ = writeln!(
+                out,
+                "  Separate from --allow-net above; disabled by default regardless of it."
+            );
+            let _ = writeln!(
+                out,
+                "  mq --allow-http-import 'import \"github.com/harehare/kdl.mq\"' file.md"
+            );
+        }
+
         let _ = writeln!(out, "\n{}", "Working with multiple files:".bold().cyan());
         let _ = writeln!(
             out,
@@ -1169,6 +1188,19 @@ impl Cli {
             mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md\n```"
         );
 
+        #[cfg(feature = "http-import")]
+        {
+            let _ = writeln!(out, "\n## HTTP module imports (--allow-http-import)\n");
+            let _ = writeln!(
+                out,
+                "Separate from --allow-net above; disabled by default regardless of it.\n"
+            );
+            let _ = writeln!(
+                out,
+                "```sh\nmq --allow-http-import 'import \"github.com/harehare/kdl.mq\"' file.md\n```"
+            );
+        }
+
         let _ = writeln!(out, "\n## Working with multiple files\n");
         let _ = writeln!(
             out,
@@ -1281,11 +1313,12 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
-        // --module-directories/--module-names/include/import resolve modules from
-        // directories the invoker explicitly configured, so module resolution keeps
-        // full native access (unchanged from before this Io existed) — --allow-read/
-        // write/net/run instead gate what a running query's read_file/write_file/http/
-        // system builtins can do at runtime, via the ambient Io set below.
+        // --module-directories/--module-names/include/import resolve local modules from
+        // directories the invoker explicitly configured, so local module resolution keeps
+        // full native access (unchanged from before this Io existed). --allow-read/write/
+        // net/run instead gate what a running query's read_file/write_file/http/system
+        // builtins can do at runtime, via the ambient Io set below. HTTP module imports are
+        // gated separately, by --allow-http-import below, not by this Io.
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
         let sandboxed_io = if self.input.allow_all {
             sandboxed_io.allow_all()
@@ -1402,6 +1435,7 @@ impl Cli {
 
         #[cfg(feature = "http-import")]
         {
+            engine.set_http_import_enabled(self.input.allow_http_import || self.input.allow_all);
             if let Some(domains) = &self.input.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
             }
@@ -2630,11 +2664,53 @@ mod tests {
     #[case(&["mq", "--allow-all", "--allow-net=example.com", "self"])]
     #[case(&["mq", "--allow-all", "--allow-run", "self"])]
     #[case(&["mq", "--allow-all", "--allow-env", "self"])]
+    #[case(&["mq", "--allow-all", "--allow-http-import", "self"])]
     fn test_allow_all_conflicts_with_individual_allow_flags(#[case] args: &[&str]) {
         assert!(
             Cli::try_parse_from(args).is_err(),
             "--allow-all should conflict with individual --allow-* flags"
         );
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_http_import_disabled_by_default() {
+        // No network call is made: resolution fails on the enabled-check before any
+        // request, so this stays fast and deterministic regardless of connectivity.
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(r#"import "github.com/harehare/lisp""#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        let err = cli.run().unwrap_err();
+        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_allowed_domain_alone_does_not_enable_http_import() {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                allowed_domains: Some(vec!["example.com".to_string()]),
+                ..Default::default()
+            },
+            output: OutputArgs::default(),
+            commands: None,
+            query: Some(r#"import "https://example.com/mod.mq""#.to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        let err = cli.run().unwrap_err();
+        assert!(err.to_string().contains("--allow-http-import"), "error was: {err}");
     }
 
     #[rstest]

@@ -40,6 +40,7 @@ pub trait HttpFetcher: Clone + Default {
 pub struct HttpModuleResolver<F: HttpFetcher> {
     pub(crate) allowed_remote_domains: Vec<String>,
     fetcher: F,
+    enabled: bool,
 }
 
 impl<F: HttpFetcher> Default for HttpModuleResolver<F> {
@@ -47,6 +48,7 @@ impl<F: HttpFetcher> Default for HttpModuleResolver<F> {
         Self {
             allowed_remote_domains: Vec::new(),
             fetcher: F::default(),
+            enabled: true,
         }
     }
 }
@@ -88,6 +90,7 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
                 .map(|d| normalize_allowed_domain(&d))
                 .collect(),
             fetcher,
+            enabled: true,
         }
     }
 
@@ -103,7 +106,22 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
         self.allowed_remote_domains = domains.into_iter().map(|d| normalize_allowed_domain(&d)).collect();
     }
 
+    /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
+    ///
+    /// On by default for direct library use; the `mq` CLI turns this off unless
+    /// `--allow-http-import` is passed, so imports are opt-in there.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+    }
+
     fn to_fetch_url(&self, module_name: &str) -> Result<String, ModuleError> {
+        let is_import_attempt = is_github_url(module_name) || is_remote_url(module_name);
+        if is_import_attempt && !self.enabled {
+            return Err(ModuleError::IOError(
+                "HTTP module imports are disabled; pass --allow-http-import to enable them".into(),
+            ));
+        }
+
         if is_github_url(module_name) {
             let url = github_to_raw_url(module_name)
                 .ok_or_else(|| ModuleError::IOError(format!("Invalid GitHub URL: {}", module_name).into()))?;
@@ -829,6 +847,36 @@ mod tests {
     fn test_resolve_non_url_returns_not_found(#[case] module_name: &str) {
         let resolver = HttpModuleResolver::<UreqFetcher>::default();
         assert!(matches!(resolver.resolve(module_name), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_resolve_blocked_when_disabled() {
+        let mut resolver = resolver_with_domains(vec![]);
+        resolver.set_enabled(false);
+
+        let err = resolver.resolve("github.com/harehare/lisp").unwrap_err();
+        assert!(
+            matches!(err, ModuleError::IOError(_)) && err.to_string().contains("--allow-http-import"),
+            "error was: {err}"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_resolve_non_url_ignores_disabled_flag() {
+        // Disabling HTTP import must not break resolution of non-URL module names, which
+        // should keep falling through to NotFound so other resolver stages get a turn.
+        let mut resolver = HttpModuleResolver::<UreqFetcher>::default();
+        resolver.set_enabled(false);
+        assert!(matches!(resolver.resolve("csv"), Err(ModuleError::NotFound(_))));
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_enabled_by_default() {
+        let resolver = HttpModuleResolver::<UreqFetcher>::default();
+        assert!(resolver.enabled);
     }
 
     #[rstest]
