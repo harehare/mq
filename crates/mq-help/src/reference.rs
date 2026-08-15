@@ -80,10 +80,7 @@ pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Ve
 
     let mut functions = Vec::new();
     for (i, node) in nodes.iter().enumerate() {
-        // `macro` definitions share `def`'s child layout (name, params, colon, body) and are
-        // just as much a part of the public surface (e.g. `tap`, `unless`, `pluck` in
-        // builtin.mq), so they're documented the same way.
-        if !node.is_def() && !matches!(node.kind, CstNodeKind::Macro) {
+        if !node.is_def() {
             continue;
         }
         let skip = if i == 0 { header_lines } else { 0 };
@@ -103,9 +100,9 @@ fn module_header_paragraph(source: &str, nodes: &[Shared<CstNode>]) -> Option<Ve
         return None;
     }
 
-    let first_is_documented_def = nodes.first().is_some_and(|n| {
-        (n.is_def() || matches!(n.kind, CstNodeKind::Macro)) && def_name(n).is_some_and(|name| !name.starts_with('_'))
-    });
+    let first_is_documented_def = nodes
+        .first()
+        .is_some_and(|n| n.is_def() && def_name(n).is_some_and(|name| !name.starts_with('_')));
 
     if first_is_documented_def {
         (paragraphs.len() >= 2).then(|| paragraphs.remove(0))

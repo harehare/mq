@@ -350,6 +350,21 @@ impl Optimizer {
                     expr: Shared::new(ast::Expr::If(subst_branches)),
                 })
             }
+            ast::Expr::Unless(branches) => {
+                let subst_branches: Branches = branches
+                    .iter()
+                    .map(|(cond, body)| {
+                        (
+                            cond.as_ref().map(|c| self.substitute_literals(Shared::clone(c), env)),
+                            self.substitute_literals(Shared::clone(body), env),
+                        )
+                    })
+                    .collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Unless(subst_branches)),
+                })
+            }
             ast::Expr::And(operands) => {
                 let subst: Vec<_> = operands
                     .iter()
@@ -411,6 +426,7 @@ impl Optimizer {
             | ast::Expr::Def(_, _, _)
             | ast::Expr::Fn(_, _)
             | ast::Expr::While(_, _)
+            | ast::Expr::Until(_, _)
             | ast::Expr::Loop(_)
             | ast::Expr::Foreach(_, _, _)
             | ast::Expr::Try(_, Some(_), _)
@@ -429,9 +445,6 @@ impl Optimizer {
             | ast::Expr::Include(_)
             | ast::Expr::Import(_, _)
             | ast::Expr::Module(_, _)
-            | ast::Expr::Macro(_, _, _)
-            | ast::Expr::Quote(_)
-            | ast::Expr::Unquote(_)
             | ast::Expr::QualifiedAccess(_, _) => node,
         }
     }
@@ -572,6 +585,32 @@ impl Optimizer {
                 Shared::new(ast::Node {
                     token_id,
                     expr: Shared::new(ast::Expr::Loop(opt)),
+                })
+            }
+            ast::Expr::Until(cond, program) => {
+                let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
+                let opt_body = self.optimize_nested(program.clone(), user_defs);
+                if ptr_eq(&opt_cond, cond) && program.iter().zip(opt_body.iter()).all(|(a, b)| ptr_eq(a, b)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Until(opt_cond, opt_body)),
+                })
+            }
+            ast::Expr::Unless(branches) => {
+                let opt_branches: Branches = branches
+                    .iter()
+                    .map(|(cond, body)| {
+                        (
+                            cond.as_ref().map(|c| self.optimize_node(Shared::clone(c), user_defs)),
+                            self.optimize_node(Shared::clone(body), user_defs),
+                        )
+                    })
+                    .collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: Shared::new(ast::Expr::Unless(opt_branches)),
                 })
             }
             ast::Expr::Foreach(ident, values, program) => {
@@ -736,10 +775,6 @@ impl Optimizer {
                     self.optimize_nested(program.clone(), user_defs),
                 )),
             }),
-            ast::Expr::Unquote(inner) => Shared::new(ast::Node {
-                token_id,
-                expr: Shared::new(ast::Expr::Unquote(self.optimize_node(Shared::clone(inner), user_defs))),
-            }),
             ast::Expr::Literal(_)
             | ast::Expr::Ident(_)
             | ast::Expr::Selector(_)
@@ -750,8 +785,6 @@ impl Optimizer {
             | ast::Expr::Continue
             | ast::Expr::Include(_)
             | ast::Expr::Import(_, _)
-            | ast::Expr::Macro(_, _, _)
-            | ast::Expr::Quote(_)
             | ast::Expr::QualifiedAccess(_, _) => node,
         }
     }
@@ -1400,9 +1433,7 @@ fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
         }),
         ast::Expr::Try(t, _, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
         ast::Expr::SelectorCall(_, args) => args.iter().any(|a| contains_self_call(a, fn_name)),
-        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) | ast::Expr::Unquote(inner) => {
-            contains_self_call(inner, fn_name)
-        }
+        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) => contains_self_call(inner, fn_name),
         ast::Expr::Block(prog) => prog.iter().any(|n| contains_self_call(n, fn_name)),
         _ => false,
     }
@@ -1568,7 +1599,7 @@ fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>)
                 collect_called_fns_node(&arm.body, set);
             }
         }
-        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) | ast::Expr::Unquote(inner) => {
+        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) => {
             collect_called_fns_node(inner, set);
         }
         ast::Expr::InterpolatedString(segs) => {

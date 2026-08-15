@@ -35,7 +35,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
         }
     }
 
-    let keywords_pattern = r"\b(def|let|if|elif|else|end|while|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var|macro|quote|unquote)\b";
+    let keywords_pattern = r"\b(def|let|if|unless|elif|else|end|while|until|foreach|self|nodes|fn|break|continue|include|true|false|None|match|import|module|do|var)\b";
     if let Ok(re) = regex::Regex::new(keywords_pattern) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 2, m.as_str().bright_blue().to_string()));

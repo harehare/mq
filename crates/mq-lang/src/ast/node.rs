@@ -92,6 +92,7 @@ impl Node {
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
             | Expr::While(_, program)
+            | Expr::Until(_, program)
             | Expr::Loop(program)
             | Expr::Module(_, program)
             | Expr::Foreach(_, _, program) => {
@@ -124,22 +125,10 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::Macro(_, params, block) => {
-                let start = params
-                    .first()
-                    .and_then(|param| param.ident.token.as_ref().map(|t| t.range))
-                    .unwrap_or(block.range(Shared::clone(&arena)))
-                    .start;
-                let end = block.range(arena).end;
-                Range { start, end }
+            Expr::As(_, node) | Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => {
+                node.range(Shared::clone(&arena))
             }
-            Expr::As(_, node)
-            | Expr::Let(_, node)
-            | Expr::Var(_, node)
-            | Expr::Assign(_, node)
-            | Expr::Quote(node)
-            | Expr::Unquote(node) => node.range(Shared::clone(&arena)),
-            Expr::If(nodes) => {
+            Expr::If(nodes) | Expr::Unless(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
                     let end = last.1.range(Shared::clone(&arena));
@@ -339,7 +328,6 @@ pub enum Expr {
     Call(IdentWithToken, Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
-    Macro(IdentWithToken, Params, Shared<Node>),
     Fn(Params, Program),
     Let(Pattern, Shared<Node>),
     Loop(Program),
@@ -361,8 +349,10 @@ pub enum Expr {
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
     SelectorCall(Selector, Args),
     While(Shared<Node>, Program),
+    Until(Shared<Node>, Program),
     Foreach(IdentWithToken, Shared<Node>, Program),
     If(Branches),
+    Unless(Branches),
     Match(Shared<Node>, MatchArms),
     Include(Literal),
     /// `import "path"` or `import "path" as alias`; the alias rebinds the module name.
@@ -372,8 +362,6 @@ pub enum Expr {
     Self_,
     Nodes,
     Paren(Shared<Node>),
-    Quote(Shared<Node>),
-    Unquote(Shared<Node>),
     /// `try <expr> catch: <expr>` or `try <expr> catch(<binder>): <expr>`.
     /// When present, `binder` is bound to a dict describing the failure (currently `{"message": ...}`)
     /// while evaluating the catch expression.
@@ -608,6 +596,30 @@ mod tests {
         Range { start: Position::new(82, 1), end: Position::new(82, 5) }
     )]
     #[case(
+        Expr::Until(
+            Shared::new(Node {
+                token_id: ArenaId::new(0),
+                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
+            }),
+            vec![
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
+                }),
+                Shared::new(Node {
+                    token_id: ArenaId::new(2),
+                    expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
+                }),
+            ]
+        ),
+        vec![
+            (0, Range { start: Position::new(83, 1), end: Position::new(83, 5) }),
+            (1, Range { start: Position::new(84, 1), end: Position::new(84, 5) }),
+            (2, Range { start: Position::new(84, 1), end: Position::new(84, 5) }),
+        ],
+        Range { start: Position::new(84, 1), end: Position::new(84, 5) }
+    )]
+    #[case(
         Expr::Foreach(
             IdentWithToken::new("item"),
             Shared::new(Node {
@@ -662,6 +674,25 @@ mod tests {
             (3, Range { start: Position::new(116, 1), end: Position::new(117, 5) }),
         ],
         Range { start: Position::new(113, 1), end: Position::new(117, 5) }
+    )]
+    #[case(
+        Expr::Unless(smallvec![
+            (
+                Some(Shared::new(Node {
+                    token_id: ArenaId::new(0),
+                    expr: Shared::new(Expr::Literal(Literal::String("cond1".to_string()))),
+                })),
+                Shared::new(Node {
+                    token_id: ArenaId::new(1),
+                    expr: Shared::new(Expr::Literal(Literal::String("unless1".to_string()))),
+                })
+            ),
+        ]),
+        vec![
+            (0, Range { start: Position::new(121, 1), end: Position::new(121, 5) }),
+            (1, Range { start: Position::new(123, 1), end: Position::new(123, 5) }),
+        ],
+        Range { start: Position::new(123, 1), end: Position::new(123, 5) }
     )]
     #[case(
         Expr::Call(
@@ -821,36 +852,6 @@ mod tests {
     }
 
     #[test]
-    fn test_range_quote_delegates_to_inner() {
-        let r0 = Range {
-            start: Position::new(23, 1),
-            end: Position::new(23, 8),
-        };
-        let arena = single_token_arena(r0);
-        let expr = Expr::Quote(make_node(0));
-        let node = Node {
-            token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
-        };
-        assert_eq!(node.range(arena), r0);
-    }
-
-    #[test]
-    fn test_range_unquote_delegates_to_inner() {
-        let r0 = Range {
-            start: Position::new(24, 1),
-            end: Position::new(24, 8),
-        };
-        let arena = single_token_arena(r0);
-        let expr = Expr::Unquote(make_node(0));
-        let node = Node {
-            token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
-        };
-        assert_eq!(node.range(arena), r0);
-    }
-
-    #[test]
     fn test_range_and_empty_falls_back_to_token() {
         let r0 = Range {
             start: Position::new(30, 1),
@@ -971,47 +972,6 @@ mod tests {
             };
             assert_eq!(node.range(arena), r0, "terminal expr should use token range");
         }
-    }
-
-    #[test]
-    fn test_range_macro_with_params() {
-        let r0 = Range {
-            start: Position::new(80, 1),
-            end: Position::new(80, 5),
-        };
-        let r1 = Range {
-            start: Position::new(81, 1),
-            end: Position::new(81, 5),
-        };
-        let mut arena = Arena::new(10);
-        arena.alloc(create_token(r0));
-        arena.alloc(create_token(r1));
-        let param = Param::new(IdentWithToken::new_with_token("p", Some(create_token(r0))));
-        let body = make_node(1);
-        let expr = Expr::Macro(IdentWithToken::new("m"), smallvec![param], body);
-        let node = Node {
-            token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
-        };
-        let got = node.range(Shared::new(arena));
-        assert_eq!(got.start, r0.start);
-        assert_eq!(got.end, r1.end);
-    }
-
-    #[test]
-    fn test_range_macro_no_params_uses_body() {
-        let r0 = Range {
-            start: Position::new(90, 1),
-            end: Position::new(90, 5),
-        };
-        let arena = single_token_arena(r0);
-        let body = make_node(0);
-        let expr = Expr::Macro(IdentWithToken::new("m"), smallvec![], body);
-        let node = Node {
-            token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
-        };
-        assert_eq!(node.range(arena), r0);
     }
 
     #[test]

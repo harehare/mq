@@ -106,9 +106,6 @@ fn is_atomic(kind: &CstNodeKind) -> bool {
             | CstNodeKind::Selector
             | CstNodeKind::SelectorCall
             | CstNodeKind::QualifiedAccess
-            | CstNodeKind::Quote
-            | CstNodeKind::Unquote
-            | CstNodeKind::MacroCall
             | CstNodeKind::Group
     )
 }

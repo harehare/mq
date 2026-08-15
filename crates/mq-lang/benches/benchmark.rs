@@ -167,29 +167,7 @@ let a1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
 }
 
 #[divan::bench()]
-fn eval_macro_expansion_simple() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"macro repeat(x): x + x + x + x + x | repeat(5)"#,
-            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_macro_expansion_nested() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"macro double(x): x + x | macro quad(x): double(x) + double(x) | quad(5)"#,
-            vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_no_macro_large_program() -> mq_lang::RuntimeValues {
+fn eval_large_program() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
     engine
         .eval(

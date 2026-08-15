@@ -1026,9 +1026,11 @@ fn is_inside_control_flow(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> 
         if matches!(
             symbol.kind,
             SymbolKind::If
+                | SymbolKind::Unless
                 | SymbolKind::Elif
                 | SymbolKind::Else
                 | SymbolKind::While
+                | SymbolKind::Until
                 | SymbolKind::Loop
                 | SymbolKind::Match
                 | SymbolKind::MatchArm { .. }

@@ -118,7 +118,6 @@ pub(crate) fn response(
         ) {
             match &symbol.kind {
                 mq_hir::SymbolKind::Function(_)
-                | mq_hir::SymbolKind::Macro(_)
                 | mq_hir::SymbolKind::Variable
                 | mq_hir::SymbolKind::DestructuringBinding
                 | mq_hir::SymbolKind::PatternVariable { .. } => {
@@ -141,12 +140,8 @@ pub(crate) fn response(
                     };
 
                     let (kind_label, signature, params) = match &symbol.kind {
-                        mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
-                            let kind_label = if matches!(symbol.kind, mq_hir::SymbolKind::Function(_)) {
-                                "function"
-                            } else {
-                                "macro"
-                            };
+                        mq_hir::SymbolKind::Function(args) => {
+                            let kind_label = "function";
                             let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
                             let sig = format!(
                                 "{}({}){}",

@@ -135,12 +135,6 @@ impl Hir {
             mq_lang::CstNodeKind::Def => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Macro => {
-                self.add_macro_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::MacroCall => {
-                self.add_macro_call_expr(node, source_id, scope_id, parent);
-            }
             mq_lang::CstNodeKind::Foreach => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
@@ -183,8 +177,14 @@ impl Hir {
             mq_lang::CstNodeKind::While => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Until => {
+                self.add_until_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Loop => {
                 self.add_loop_expr(node, source_id, scope_id, parent);
+            }
+            mq_lang::CstNodeKind::Unless => {
+                self.add_unless_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Try => {
                 self.add_try_expr(node, source_id, scope_id, parent);
@@ -209,12 +209,6 @@ impl Hir {
             }
             mq_lang::CstNodeKind::Pattern => {
                 self.add_pattern_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Quote => {
-                self.add_quote_expr(node, source_id, scope_id, parent);
-            }
-            mq_lang::CstNodeKind::Unquote => {
-                self.add_unquote_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::Break => {
                 self.add_break_expr(node, source_id, scope_id, parent);
@@ -661,6 +655,39 @@ impl Hir {
         }
     }
 
+    fn add_until_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Until,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Until,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+            let loop_scope_id = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Loop(symbol_id),
+                Some(scope_id),
+            ));
+
+            node.children_without_token().iter().for_each(|child| {
+                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
+            });
+        }
+    }
+
     fn add_var_decl(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -852,6 +879,40 @@ impl Hir {
                     self.add_elif_expr(child, source_id, scope_id, Some(symbol_id));
                     self.add_else_expr(child, source_id, scope_id, Some(symbol_id));
                 }
+            }
+        }
+    }
+
+    fn add_unless_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        if let mq_lang::CstNode {
+            kind: mq_lang::CstNodeKind::Unless,
+            ..
+        } = &**node
+        {
+            let symbol_id = self.add_symbol(Symbol {
+                value: node.name(),
+                kind: SymbolKind::Unless,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+            let unless_scope = self.add_scope(Scope::new(
+                SourceInfo::new(Some(source_id), Some(node.node_range())),
+                ScopeKind::Block(symbol_id),
+                Some(scope_id),
+            ));
+
+            if let [cond, then_expr] = node.children_without_token().as_slice() {
+                self.add_expr(cond, source_id, unless_scope, Some(symbol_id));
+                self.add_expr(then_expr, source_id, unless_scope, Some(symbol_id));
             }
         }
     }
@@ -1129,119 +1190,6 @@ impl Hir {
             });
         } else {
             unreachable!("add_def_expr should only be called on Def nodes");
-        }
-    }
-
-    fn add_macro_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Macro,
-            ..
-        } = &**node
-        {
-            self.insert_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-
-            let (params, program) = node.split_cond_and_program();
-            let ident = params.first().unwrap();
-
-            let symbol_id = self.add_symbol(Symbol {
-                value: ident.name(),
-                kind: SymbolKind::Macro(Vec::new()),
-                source: SourceInfo::new(Some(source_id), Some(ident.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-
-            let scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Function(symbol_id),
-                Some(scope_id),
-            ));
-
-            let mut param_info = Vec::with_capacity(params.len().saturating_sub(1));
-
-            // For macro expressions, the first param is the macro name, so skip it
-            params.iter().skip(1).for_each(|child| {
-                // Macros should not have defaults, but we still need to store param info
-                let has_default = child.children.len() > 1;
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
-                let param_name = child.name().unwrap_or("arg".into());
-
-                param_info.push(ParamInfo {
-                    name: param_name.clone(),
-                    has_default,
-                    is_variadic,
-                });
-
-                self.add_symbol(Symbol {
-                    value: Some(param_name),
-                    kind: SymbolKind::Parameter,
-                    source: SourceInfo::new(Some(source_id), Some(child.range())),
-                    scope: scope_id,
-                    doc: Vec::new(),
-                    parent: Some(symbol_id),
-                    insertion_order: 0,
-                });
-            });
-
-            self.symbols[symbol_id].kind = SymbolKind::Macro(param_info);
-
-            program.iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, Some(symbol_id));
-            });
-        } else {
-            unreachable!("add_macro_expr should only be called on Macro nodes");
-        }
-    }
-
-    fn add_macro_call_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::MacroCall,
-            ..
-        } = &**node
-        {
-            // Add the macro call as a regular call symbol
-            self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Call,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-
-            // Process all children (macro arguments and program body)
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, scope_id, parent);
-            });
-        } else {
-            unreachable!("add_macro_call_expr should only be called on MacroCall nodes");
         }
     }
 
@@ -1626,64 +1574,6 @@ impl Hir {
                     self.add_expr(child, source_id, scope_id, Some(symbol_id));
                 }
                 idx += 1;
-            }
-        }
-    }
-
-    fn add_quote_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Quote,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-
-            // Process children (quoted expressions)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
-            }
-        }
-    }
-
-    fn add_unquote_expr(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        source_id: SourceId,
-        scope_id: ScopeId,
-        parent: Option<SymbolId>,
-    ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Unquote,
-            ..
-        } = &**node
-        {
-            let symbol_id = self.add_symbol(Symbol {
-                value: None,
-                kind: SymbolKind::Keyword,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-
-            // Process children (unquoted expressions)
-            for child in node.children_without_token() {
-                self.add_expr(&child, source_id, scope_id, Some(symbol_id));
             }
         }
     }

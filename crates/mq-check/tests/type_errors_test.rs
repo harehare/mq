@@ -217,12 +217,12 @@ fn test_while_condition_type_mismatch() {
 }
 
 #[test]
-fn test_success_macro_definition() {
-    let result = check_types("macro inc(x): x + 1;");
+fn test_success_until_loop() {
+    let result = check_types("var x = 0 | until (x > 0): x = x + 1;");
     for e in &result {
         eprintln!("Error: {}", e);
     }
-    assert!(result.is_empty(), "Macro definition should succeed");
+    assert!(result.is_empty(), "Until loop should succeed");
 }
 
 #[test]

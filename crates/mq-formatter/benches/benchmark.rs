@@ -45,8 +45,7 @@ fn format_with_sort() {
 def y(): test;
 | let a = 2
 | import "a.mq"
-def b(): test;
-macro m(): test;"#;
+def b(): test;"#;
     let config = FormatterConfig {
         indent_width: 2,
         sort_imports: true,

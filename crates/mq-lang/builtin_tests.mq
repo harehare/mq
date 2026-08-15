@@ -309,10 +309,10 @@ def test_tap():
 end
 
 def test_unless():
-  let result1 = unless(false) do 1;
+  let result1 = do unless (false): 1 end
   | assert_eq(result1, 1)
 
-  | let result2 = unless(true) do 1;
+  | let result2 = do unless (true): 1 end
   | assert_eq(result2, None)
 end
 
@@ -328,7 +328,7 @@ def test_pluck():
 end
 
 def test_until():
-  let result1 = do var i = 0 | until(i == 5) do i = i + 1 | i + 1;;
+  let result1 = do var i = 0 | until (i == 5): i = i + 1 | i + 1 end end
   | assert_eq(result1, 6)
 end
 

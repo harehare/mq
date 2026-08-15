@@ -408,7 +408,7 @@ fn highlight_syntax(line: &str) -> Cow<'_, str> {
     // Keywords
     collect_spans(
         &mut spans,
-        r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|import|include|let|loop|macro|match|module|nodes|quote|self|try|unquote|var|while)\b",
+        r"\b(as|break|catch|continue|def|do|elif|else|end|fn|foreach|if|unless|import|include|let|loop|match|module|nodes|self|try|until|var|while)\b",
         line,
         |s| s.truecolor(103, 184, 227).bold().to_string(),
     );

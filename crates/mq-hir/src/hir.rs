@@ -334,6 +334,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::def("def foo(): 1", "foo", SymbolKind::Function(Vec::new()))]
     #[case::if_("if (true): 1 else: 2;", "if", SymbolKind::If)]
     #[case::while_("while (true): 1;", "while", SymbolKind::While)]
+    #[case::until_("until (true): 1;", "until", SymbolKind::Until)]
+    #[case::unless_("unless (true): 1;", "unless", SymbolKind::Unless)]
     #[case::foreach("foreach(x, y): 1;", "foreach", SymbolKind::Foreach)]
     #[case::call("foo()", "foo", SymbolKind::Call)]
     #[case::elif_("if (true): 1 elif (false): 2 else: 3;", "elif", SymbolKind::Elif)]
@@ -384,6 +386,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::not_variable("self", "self", SymbolKind::Keyword)]
     #[case::break_("while (true): break;", "break", SymbolKind::Keyword)]
     #[case::continue_("while (true): continue;", "continue", SymbolKind::Keyword)]
+    #[case::break_in_until("until (true): break;", "break", SymbolKind::Keyword)]
+    #[case::continue_in_until("until (true): continue;", "continue", SymbolKind::Keyword)]
     #[case::block("do \"hello\" end", "hello", SymbolKind::String)]
     #[case::try_("try: 1 catch: 2", "try", SymbolKind::Try)]
     #[case::catch_("try: 1 catch: 2", "catch", SymbolKind::Catch)]
@@ -438,6 +442,8 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     )]
     #[case::if_("if (true): 1 else: 2;", mq_lang::Position::new(1, 1), "if", SymbolKind::If)]
     #[case::while_("while (true): 1;", mq_lang::Position::new(1, 1), "while", SymbolKind::While)]
+    #[case::until_("until (true): 1;", mq_lang::Position::new(1, 1), "until", SymbolKind::Until)]
+    #[case::unless_("unless (true): 1;", mq_lang::Position::new(1, 1), "unless", SymbolKind::Unless)]
     #[case::foreach_("foreach(x, y): 1", mq_lang::Position::new(1, 1), "foreach", SymbolKind::Foreach)]
     #[case::call(
         "def foo():1; | foo()",
@@ -888,47 +894,6 @@ end"#;
         assert!(names.contains(&"b"));
 
         // Should have no unresolved errors
-        assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
-    }
-
-    #[test]
-    fn test_macro_definition_and_call() {
-        let mut hir = Hir::default();
-        hir.builtin.disabled = true;
-
-        let code = r#"macro inc(x): x + 1 | inc(2)"#;
-        hir.add_code(None, code);
-
-        // Macro symbol
-        let macro_symbols: Vec<_> = hir.symbols().filter(|(_, symbol)| symbol.is_macro()).collect();
-
-        let macro_symbol = macro_symbols[0].1;
-        assert_eq!(macro_symbol.value.as_deref(), Some("inc"));
-
-        // Macro parameter
-        if let SymbolKind::Macro(params) = &macro_symbol.kind {
-            assert_eq!(params.len(), 1);
-            assert_eq!(params[0].name.as_str(), "x");
-            assert!(!params[0].has_default);
-        } else {
-            panic!("Expected macro symbol kind");
-        }
-
-        // Macro call symbol
-        let call_symbols: Vec<_> = hir
-            .symbols()
-            .filter(|(_, symbol)| symbol.kind == SymbolKind::Call && symbol.value.as_deref() == Some("inc"))
-            .collect();
-        assert_eq!(call_symbols.len(), 1, "Should have 1 macro call symbol");
-
-        // Parameter symbol
-        let param_symbols: Vec<_> = hir
-            .symbols()
-            .filter(|(_, symbol)| symbol.kind == SymbolKind::Parameter && symbol.value.as_deref() == Some("x"))
-            .collect();
-        assert_eq!(param_symbols.len(), 1, "Should have 1 parameter symbol for macro");
-
-        // No unresolved errors
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 

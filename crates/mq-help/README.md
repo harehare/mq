@@ -31,7 +31,7 @@ for entry in &matches {
 ### Extracting docs from arbitrary mq source
 
 The lower-level [`reference`] module parses the CST doc-comment convention (`#` comments above
-`def`/`macro`, with `Example:`/`` ``` ``/`#=>`/`Returns:` sections) out of any mq source, independent
+`def`, with `Example:`/`` ``` ``/`#=>`/`Returns:` sections) out of any mq source, independent
 of the unified catalog:
 
 ```rust

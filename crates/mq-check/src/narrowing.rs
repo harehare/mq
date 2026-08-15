@@ -56,7 +56,7 @@ impl ConditionNarrowings {
     }
 }
 
-/// Finds the symbol ID of the first parameter of the innermost enclosing function or macro.
+/// Finds the symbol ID of the first parameter of the innermost enclosing function.
 ///
 /// When a structural selector (e.g., `.h`) is used directly as an if condition, it
 /// operates on the function's implicit piped input — the first argument. This helper
@@ -67,7 +67,7 @@ fn find_enclosing_function_first_param(
     children_index: &ChildrenIndex,
 ) -> Option<SymbolId> {
     for (func_id, func_sym) in walk_ancestors(hir, start_id) {
-        if !matches!(func_sym.kind, SymbolKind::Function(_) | SymbolKind::Macro(_)) {
+        if !matches!(func_sym.kind, SymbolKind::Function(_)) {
             continue;
         }
         // Found the innermost enclosing function — return its first parameter.

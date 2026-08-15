@@ -11,7 +11,7 @@ use super::helpers::is_module_symbol;
 pub(super) struct SymbolCategories {
     /// Source IDs from include/import/module symbols (for skipping module symbols)
     pub(super) module_source_ids: FxHashSet<mq_hir::SourceId>,
-    /// Pass 1: literals, variables, parameters, function/macro definitions
+    /// Pass 1: literals, variables, parameters, function definitions
     pub(super) pass1_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 2: root-level symbols (parent=None, non-builtin, non-module)
     pub(super) root_symbols: Vec<SymbolId>,
@@ -20,7 +20,7 @@ pub(super) struct SymbolCategories {
     pub(super) assign_symbols: Vec<(SymbolId, SymbolKind)>,
     /// Pass 3: operators, calls, and other symbols (will be reversed for processing)
     pub(super) pass3_symbols: Vec<(SymbolId, SymbolKind)>,
-    /// Pass 4: Function/Macro symbols (for body pipe chains)
+    /// Pass 4: Function symbols (for body pipe chains)
     pub(super) pass4_functions: Vec<SymbolId>,
 }
 
@@ -57,7 +57,7 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
         }
 
         match &symbol.kind {
-            // Pass 1: literals, variables, parameters, function/macro definitions
+            // Pass 1: literals, variables, parameters, function definitions
             SymbolKind::Number
             | SymbolKind::String
             | SymbolKind::InterpolatedString
@@ -68,8 +68,7 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             | SymbolKind::DestructuringBinding
             | SymbolKind::Parameter
             | SymbolKind::PatternVariable { .. }
-            | SymbolKind::Function(_)
-            | SymbolKind::Macro(_) => {
+            | SymbolKind::Function(_) => {
                 cats.pass1_symbols.push((symbol_id, symbol.kind.clone()));
             }
             // Pass 2.5: Assign symbols (before other Pass 3 symbols)
@@ -82,8 +81,8 @@ pub(super) fn categorize_symbols(hir: &Hir) -> SymbolCategories {
             }
         }
 
-        // Pass 4: Function/Macro body pipe chains (also processed in pass 1)
-        if matches!(symbol.kind, SymbolKind::Function(_) | SymbolKind::Macro(_)) {
+        // Pass 4: Function body pipe chains (also processed in pass 1)
+        if matches!(symbol.kind, SymbolKind::Function(_)) {
             cats.pass4_functions.push(symbol_id);
         }
     }

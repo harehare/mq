@@ -39,22 +39,23 @@ fn visit(node: &Shared<CstNode>, ranges: &mut Vec<FoldingRange>) {
     }
 }
 
-/// Block-like constructs worth collapsing: function/macro/module bodies, control-flow
+/// Block-like constructs worth collapsing: function/module bodies, control-flow
 /// blocks, and multi-line array/dict literals. Deliberately excludes leaf/expression kinds
 /// (`Call`, `BinaryOp`, ...) so folding stays limited to structural blocks.
 fn is_foldable(kind: &CstNodeKind) -> bool {
     matches!(
         kind,
         CstNodeKind::Def
-            | CstNodeKind::Macro
             | CstNodeKind::Module
             | CstNodeKind::If
+            | CstNodeKind::Unless
             | CstNodeKind::Elif
             | CstNodeKind::Else
             | CstNodeKind::Match
             | CstNodeKind::MatchArm
             | CstNodeKind::Foreach
             | CstNodeKind::While
+            | CstNodeKind::Until
             | CstNodeKind::Loop
             | CstNodeKind::Try
             | CstNodeKind::Catch

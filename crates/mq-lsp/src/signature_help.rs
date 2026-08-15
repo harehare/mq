@@ -24,7 +24,7 @@ pub(crate) fn response(
 
     let (_, target) = hir_guard.find_symbol_in_position(source_id, call.range().start)?;
     let params = match &target.kind {
-        mq_hir::SymbolKind::Function(params) | mq_hir::SymbolKind::Macro(params) => params.clone(),
+        mq_hir::SymbolKind::Function(params) => params.clone(),
         _ => return None,
     };
 

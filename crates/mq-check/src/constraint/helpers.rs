@@ -176,7 +176,7 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
 }
 
 /// Checks if a symbol might receive piped input later (i.e., is inside a Block
-/// or a Function/Macro body with multiple expressions).
+/// or a Function body with multiple expressions).
 ///
 /// Also handles the case where a Call/Ref is inside a UnaryOp that is itself
 /// inside a Block, e.g., `x | !f()` where `f()` eventually receives piped input.
@@ -191,7 +191,7 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
     };
     if matches!(
         parent.kind,
-        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_) | SymbolKind::Call
+        SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Call
     ) {
         return true;
     }
@@ -200,10 +200,7 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
         && let Some(grandparent_id) = parent.parent
         && let Some(grandparent) = hir.symbol(grandparent_id)
     {
-        return matches!(
-            grandparent.kind,
-            SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
-        );
+        return matches!(grandparent.kind, SymbolKind::Block | SymbolKind::Function(_));
     }
     // Check grandparent: if parent is Variable (let binding) inside a pipe-capable construct,
     // e.g. `items | let x = first()` — the Call inside the Variable will receive piped
@@ -212,36 +209,9 @@ pub(super) fn might_receive_piped_input(hir: &Hir, symbol_id: SymbolId) -> bool 
         && let Some(grandparent_id) = parent.parent
         && let Some(grandparent) = hir.symbol(grandparent_id)
     {
-        return matches!(
-            grandparent.kind,
-            SymbolKind::Block | SymbolKind::Function(_) | SymbolKind::Macro(_)
-        );
+        return matches!(grandparent.kind, SymbolKind::Block | SymbolKind::Function(_));
     }
     false
-}
-
-/// Checks if a symbol is nested inside a `quote do...end` or `unquote(...)` block.
-///
-/// Code inside `quote do...end` is template/meta-code that generates AST at runtime
-/// rather than being directly executed. Type errors inside such blocks should be
-/// suppressed because `unquote(expr)` splices in expressions from macro parameters
-/// whose types are only known at the macro call site.
-pub(super) fn is_inside_quote_block(hir: &Hir, symbol_id: SymbolId) -> bool {
-    let mut current_id = symbol_id;
-    loop {
-        let parent_id = match hir.symbol(current_id).and_then(|s| s.parent) {
-            Some(id) => id,
-            None => return false,
-        };
-        if let Some(parent) = hir.symbol(parent_id) {
-            // Quote and unquote keywords have value = None; other keywords (break, self)
-            // have named values and are not quote blocks.
-            if matches!(parent.kind, SymbolKind::Keyword) && parent.value.is_none() {
-                return true;
-            }
-        }
-        current_id = parent_id;
-    }
 }
 
 /// Builds the argument type list for a piped builtin function call.

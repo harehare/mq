@@ -39,7 +39,6 @@ impl<T: ModuleResolver> Default for ModuleLoader<T> {
 fn get_module_name(name: &str) -> Cow<'static, str> {
     // For common module names, use static strings to avoid allocation
     match name {
-        "ast" => Cow::Borrowed("ast.mq"),
         "cbor" => Cow::Borrowed("cbor.mq"),
         "csv" => Cow::Borrowed("csv.mq"),
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
@@ -76,7 +75,6 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
-    pub macros: Program,
 }
 
 impl Module {
@@ -97,7 +95,6 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
         };
     }
 
-    std_module!(ast);
     std_module!(cbor);
     std_module!(csv);
     std_module!(fuzzy);
@@ -202,13 +199,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .cloned()
             .collect::<Vec<_>>();
 
-        let macros = program
-            .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Macro(..)))
-            .cloned()
-            .collect::<Vec<_>>();
-
-        let expected_len = functions.len() + modules.len() + vars.len() + macros.len();
+        let expected_len = functions.len() + modules.len() + vars.len();
 
         if program.len() != expected_len {
             return Err(ModuleError::InvalidModule);
@@ -221,7 +212,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             functions,
             modules,
             vars,
-            macros,
         })
     }
 
@@ -477,7 +467,6 @@ mod tests {
                 })))),
                 Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
             ))})],
-        macros: Vec::new(),
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -495,7 +484,6 @@ mod tests {
             ]
             ))})],
         vars: Vec::new(),
-        macros: Vec::new(),
     }))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
@@ -523,7 +511,6 @@ mod tests {
                 ))})]
             ))})],
         vars: Vec::new(),
-        macros: Vec::new(),
     }))]
     fn test_load(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -542,7 +529,6 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(), // Assuming the csv.mq only contains definitions or is empty for this test
         vars: Vec::new(),
-        macros: Vec::new(),
     }))]
     fn test_load_standard_module(
         token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -640,7 +626,7 @@ mod tests {
         assert!(size1 > 1, "builtin tokens must be added to the arena");
     }
 
-    /// The module returned from cache must have the same function/var/macro counts as a fresh parse.
+    /// The module returned from cache must have the same function/var counts as a fresh parse.
     #[rstest]
     fn test_load_builtin_cache_module_counts_consistent(
         pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
@@ -663,7 +649,6 @@ mod tests {
         assert_eq!(module1.name, module2.name);
         assert_eq!(module1.functions.len(), module2.functions.len());
         assert_eq!(module1.vars.len(), module2.vars.len());
-        assert_eq!(module1.macros.len(), module2.macros.len());
         assert_eq!(module1.modules.len(), module2.modules.len());
     }
 

@@ -12,9 +12,9 @@ pub(crate) use helpers::{
 use categories::categorize_symbols;
 use helpers::{
     build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
-    find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref,
-    is_inside_quote_block, merge_loop_types, might_receive_piped_input, resolve_builtin_call, resolve_pattern_type,
-    resolve_whole_type_pattern, spread_element_type,
+    find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, merge_loop_types,
+    might_receive_piped_input, resolve_builtin_call, resolve_pattern_type, resolve_whole_type_pattern,
+    spread_element_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -101,7 +101,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // type rather than an orphan type variable.  The required order is:
     //   1. Literals (no dependencies)
     //   2. Parameters / PatternVariables (no dependencies)
-    //   3. Functions / Macros (depend on parameters via get_or_create)
+    //   3. Functions (depend on parameters via get_or_create)
     //   4. Variables (depend on their initializer expression)
     //
     // Without this ordering, a `let f = fn(x): x - 1;` pattern breaks: the Variable
@@ -114,7 +114,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     sorted_pass1.sort_by_key(|(_, kind)| match kind {
         SymbolKind::Number | SymbolKind::String | SymbolKind::Boolean | SymbolKind::Symbol | SymbolKind::None => 0u8,
         SymbolKind::Parameter | SymbolKind::PatternVariable { .. } => 1,
-        SymbolKind::Function(_) | SymbolKind::Macro(_) => 2,
+        SymbolKind::Function(_) => 2,
         SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
         _ => 4,
     });
@@ -1123,8 +1123,7 @@ pub(super) fn generate_symbol_constraints(
                                             // type variable stays unified with its definition site.
                                             let mut slice_arg_tys = vec![original_func_ty.clone()];
                                             slice_arg_tys.extend(explicit_arg_tys.iter().cloned());
-                                            let defer = might_receive_piped_input(hir, symbol_id)
-                                                || is_inside_quote_block(hir, symbol_id);
+                                            let defer = might_receive_piped_input(hir, symbol_id);
                                             resolve_builtin_call(ctx, symbol_id, "slice", &slice_arg_tys, range, defer);
                                         } else {
                                             // Element access: defer as a tuple access so that
@@ -1173,17 +1172,15 @@ pub(super) fn generate_symbol_constraints(
                             // Resolved to a builtin - handle via overload resolution
                             // If there's piped input, prepend it as the implicit first argument
                             let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                            // Defer error if call might receive piped input later (inside a Block)
-                            // or if it is inside a quote block (template code not directly executed).
-                            let defer =
-                                might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
+                            // Defer error if call might receive piped input later (inside a Block).
+                            let defer = might_receive_piped_input(hir, symbol_id);
                             resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
                         // If there's piped input, prepend it as the implicit first argument
                         let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                        let defer = might_receive_piped_input(hir, symbol_id) || is_inside_quote_block(hir, symbol_id);
+                        let defer = might_receive_piped_input(hir, symbol_id);
                         resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
                     }
                 } else {
@@ -1493,6 +1490,35 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
+        SymbolKind::Unless => {
+            // Unless: single-branch conditional, body runs only when condition is false.
+            let children = get_children(children_index, symbol_id);
+            if children.len() > 1 {
+                let _cond_ty = ctx.get_or_create_symbol_type(children[0]);
+
+                // Narrowing polarity is inverted relative to `if`: the body runs
+                // when the condition is false.
+                let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                if !cond_narrowings.is_empty() {
+                    ctx.add_type_narrowing(TypeNarrowing {
+                        then_narrowings: cond_narrowings.else_narrowings,
+                        else_narrowings: cond_narrowings.then_narrowings,
+                        then_branch_id: children[1],
+                        else_branch_ids: Vec::new(),
+                    });
+                }
+
+                // The body may not execute (condition true), so the result
+                // type includes None alongside the body's type.
+                let body_ty = ctx.get_or_create_symbol_type(children[1]);
+                let union_ty = Type::union(vec![body_ty, Type::None]);
+                ctx.set_symbol_type(symbol_id, union_ty);
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
+
         SymbolKind::While => {
             // While loop: condition must be Bool, result type from body.
             // `break: value` exits with the value's type; multiple break paths may
@@ -1545,6 +1571,66 @@ pub(super) fn generate_symbol_constraints(
                     let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
                     let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
                     // Condition-initially-false path → None.
+                    break_tys.push(Type::None);
+                    let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
+                    ctx.set_symbol_type(symbol_id, loop_ty);
+                } else {
+                    let ty_var = ctx.fresh_var();
+                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                }
+            } else {
+                let ty_var = ctx.fresh_var();
+                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            }
+        }
+
+        SymbolKind::Until => {
+            // Until loop: condition must be Bool, body runs while condition is false.
+            let children = get_children(children_index, symbol_id);
+            let range = get_symbol_range(hir, symbol_id);
+
+            if !children.is_empty() {
+                // First child is the condition
+                let cond_ty = ctx.get_or_create_symbol_type(children[0]);
+                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
+
+                // Analyze condition for type narrowing: polarity is inverted relative
+                // to `while` since the body runs while the condition is false.
+                if children.len() > 1 {
+                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+                    if !cond_narrowings.is_empty() {
+                        let body_children: Vec<SymbolId> = children[1..].to_vec();
+                        for &body_id in &body_children {
+                            ctx.add_type_narrowing(TypeNarrowing {
+                                then_narrowings: cond_narrowings.else_narrowings.clone(),
+                                else_narrowings: Vec::new(),
+                                then_branch_id: body_id,
+                                else_branch_ids: Vec::new(),
+                            });
+                        }
+
+                        // Post-loop narrowing: once the condition becomes true,
+                        // then-narrowings hold for code following the loop.
+                        if !cond_narrowings.then_narrowings.is_empty() {
+                            let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
+                            if !post_loop_siblings.is_empty() {
+                                ctx.add_type_narrowing(TypeNarrowing {
+                                    then_narrowings: Vec::new(),
+                                    else_narrowings: cond_narrowings.then_narrowings,
+                                    then_branch_id: symbol_id, // unused (then_narrowings empty)
+                                    else_branch_ids: post_loop_siblings,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Result type comes from the body (last child after condition).
+                // `until` always includes `None` in its return type because the
+                // condition may already be true on the very first check.
+                if children.len() > 1 {
+                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+                    let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
                     break_tys.push(Type::None);
                     let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                     ctx.set_symbol_type(symbol_id, loop_ty);
@@ -1906,52 +1992,6 @@ pub(super) fn generate_symbol_constraints(
             }
         }
 
-        // Macro definitions (same type logic as Function)
-        SymbolKind::Macro(params) => {
-            let param_tys: Vec<Type> = params.iter().map(|_| Type::Var(ctx.fresh_var())).collect();
-            let ret_ty = Type::Var(ctx.fresh_var());
-            let func_ty = Type::function(param_tys.clone(), ret_ty.clone());
-            ctx.set_symbol_type(symbol_id, func_ty);
-
-            // Bind parameter types to their parameter symbols
-            let children = get_children(children_index, symbol_id);
-            let param_children: Vec<SymbolId> = children
-                .iter()
-                .filter(|&&child_id| {
-                    hir.symbol(child_id)
-                        .map(|s| matches!(s.kind, SymbolKind::Parameter))
-                        .unwrap_or(false)
-                })
-                .copied()
-                .collect();
-            for (param_sym, param_ty) in param_children.iter().zip(param_tys.iter()) {
-                let sym_ty = ctx.get_or_create_symbol_type(*param_sym);
-                let range = get_symbol_range(hir, *param_sym);
-                ctx.add_constraint(Constraint::Equal(
-                    sym_ty,
-                    param_ty.clone(),
-                    range,
-                    ConstraintOrigin::General,
-                ));
-            }
-
-            // Connect macro body's type to the return type
-            let body_children: Vec<SymbolId> = children
-                .iter()
-                .filter(|&&child_id| {
-                    hir.symbol(child_id)
-                        .map(|s| !matches!(s.kind, SymbolKind::Parameter))
-                        .unwrap_or(false)
-                })
-                .copied()
-                .collect();
-            if let Some(&last_body) = body_children.last() {
-                let body_ty = ctx.get_or_create_symbol_type(last_body);
-                let range = get_symbol_range(hir, symbol_id);
-                ctx.add_constraint(Constraint::Equal(ret_ty, body_ty, range, ConstraintOrigin::General));
-            }
-        }
-
         // Dynamic function calls
         SymbolKind::CallDynamic => {
             let children = get_children(children_index, symbol_id);
@@ -2155,7 +2195,6 @@ pub(super) fn generate_symbol_constraints(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walk_ancestors;
     use rstest::rstest;
 
     #[test]
@@ -2222,30 +2261,5 @@ mod tests {
             .map(|(id, _)| id)
             .unwrap();
         assert!(might_receive_piped_input(&hir, f_call));
-    }
-
-    #[test]
-    fn test_is_inside_quote_block() {
-        let mut hir = Hir::default();
-        // In HIR, is_inside_quote_block checks if a Keyword symbol with None value is an ancestor.
-        // Bare quote/unquote keywords in HIR (added by add_quote_expr/add_unquote_expr)
-        // have value=None and kind=Keyword.
-        // Quote block in mq uses `quote do ... end` which is parsed into Quote node.
-        let _ = hir.add_code(None, "quote: x + 1;");
-
-        // Try to find the 'x' reference
-        let x_ref = hir
-            .symbols()
-            .find(|(_, s)| s.value.as_deref() == Some("x"))
-            .map(|(id, _)| id)
-            .expect("Reference to 'x' should be found");
-
-        // Verify that the setup created a quote keyword parent
-        let has_quote_parent =
-            walk_ancestors(&hir, x_ref).any(|(_, s)| matches!(s.kind, SymbolKind::Keyword) && s.value.is_none());
-
-        if has_quote_parent {
-            assert!(is_inside_quote_block(&hir, x_ref));
-        }
     }
 }

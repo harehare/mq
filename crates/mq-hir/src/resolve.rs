@@ -13,7 +13,6 @@ impl Hir {
                 | SymbolKind::Call
                 | SymbolKind::CallDynamic
                 | SymbolKind::Argument
-                | SymbolKind::Macro(_)
                 | SymbolKind::QualifiedAccess => Some((ref_symbol_id, ref_symbol.scope, ref_symbol.value.clone())),
                 _ => None,
             })
@@ -59,7 +58,6 @@ impl Hir {
     fn get_symbol_priority_for_cross_source(&self, symbol_kind: &SymbolKind) -> u8 {
         match symbol_kind {
             SymbolKind::Function(_) => 0,
-            SymbolKind::Macro(_) => 0,
             SymbolKind::Variable | SymbolKind::DestructuringBinding => 1,
             SymbolKind::Parameter => 2,
             SymbolKind::PatternVariable { .. } => 2,
@@ -88,7 +86,6 @@ impl Hir {
                     || symbol.is_variable()
                     || symbol.is_argument()
                     || symbol.is_pattern_variable()
-                    || symbol.is_macro()
                     || symbol.is_ident())
             {
                 let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
@@ -112,7 +109,6 @@ impl Hir {
             SymbolKind::Ident => 2,
             SymbolKind::Variable | SymbolKind::DestructuringBinding => 3,
             SymbolKind::Function(_) => 4,
-            SymbolKind::Macro(_) => 4,
             _ => 5,
         }
     }
@@ -150,14 +146,13 @@ impl Hir {
                 || symbol.is_variable()
                 || symbol.is_argument()
                 || symbol.is_pattern_variable()
-                || symbol.is_macro()
                 || symbol.is_ident())
             {
                 continue;
             }
 
             // Variable (`let`) bindings must be declared before the use site.
-            // Functions and macros allow forward references.
+            // Functions allow forward references.
             if symbol.is_variable()
                 && let (Some(ref_line), Some(def_range)) = (ref_start_line, symbol.source.text_range)
                 && def_range.start.line > ref_line

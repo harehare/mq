@@ -109,7 +109,6 @@ A variadic parameter:
 
 - Must be the **last** parameter in the parameter list
 - Can only be declared **once** per function
-- Is **not allowed** in `macro` definitions
 
 ## Anonymous Functions
 
@@ -193,7 +192,7 @@ sum_all(1, 2, 3)
 - Parameters with default values must come after parameters without default values
 - Default values are evaluated when the function is called, not when it is defined
 - Default values can be any valid expression
-- A variadic parameter (`*name`) must be the last parameter, can appear at most once, and is not allowed in `macro` definitions
+- A variadic parameter (`*name`) must be the last parameter and can appear at most once
 
 ## Pipeline Expressions As Arguments
 

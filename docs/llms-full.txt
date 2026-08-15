@@ -339,6 +339,15 @@ else:
   "other"
 ```
 
+## Unless Expression
+
+```mq
+unless (eq(x, 1)):
+  "not one"
+```
+
+`unless` runs its body only when the condition is false; the body is not evaluated when the condition is true.
+
 ## While Expression
 
 ```mq
@@ -361,6 +370,18 @@ while (x > 0):
     x
 end
 ```
+
+## Until Expression
+
+```mq
+var x = 0 |
+until (x >= 5):
+  x = x + 1 | x
+end
+# => 5
+```
+
+`until` loops while the condition is false, the inverse of `while`.
 
 ## Foreach Expression
 
@@ -590,28 +611,6 @@ get("missing")?
 
 # Chaining
 try: from_json() catch: self
-```
-
----
-
-# Macros
-
-Compile-time code generation and transformation:
-
-```mq
-macro double(x): x + x
-| double(5)  # => 10
-
-macro max(a, b) do
-  if(a > b): a else: b
-end
-| max(10, 5)  # => 10
-
-# quote/unquote for metaprogramming
-macro make_expr(x) do
-  quote: unquote(x) + 1
-end
-| make_expr(5)  # => 6
 ```
 
 ---

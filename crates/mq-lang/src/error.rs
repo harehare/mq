@@ -244,18 +244,12 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => Some(Cow::Borrowed(
                 "Move this parameter before any parameters that have default values, or give it a default value.",
             )),
-            InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => {
-                Some(Cow::Borrowed("Macro parameters cannot have default values."))
-            }
             InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => Some(Cow::Borrowed(
                 "Variadic parameter (*) must be the last parameter in the parameter list.",
             )),
             InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => Some(Cow::Borrowed(
                 "Only one variadic parameter (*) is allowed per function.",
             )),
-            InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => {
-                Some(Cow::Borrowed("Macro parameters cannot be variadic."))
-            }
             InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => Some(Cow::Borrowed(
                 "An expression was expected here. Check for incomplete expressions after operators or keywords.",
             )),
@@ -332,12 +326,6 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),
-            InnerError::Runtime(RuntimeError::QuoteNotAllowedInRuntimeContext(_)) => Some(Cow::Borrowed(
-                "quote() is not allowed in runtime context. It should only appear inside macros.",
-            )),
-            InnerError::Runtime(RuntimeError::UnquoteNotAllowedOutsideQuote(_)) => {
-                Some(Cow::Borrowed("unquote() can only be used inside quote()."))
-            }
             InnerError::Runtime(RuntimeError::InvalidConvert(_, msg)) => Some(Cow::Owned(format!(
                 "Invalid conversion: {msg}. Check that the conversion is supported and value types match."
             ))),
@@ -391,18 +379,12 @@ impl Diagnostic for Error {
                     "Move this parameter before any parameters that have default values, or give it a default value.",
                 ))
             }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => {
-                Some(Cow::Borrowed("Macro parameters cannot have default values."))
-            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::VariadicParameterMustBeLast(_))) => Some(
                 Cow::Borrowed("Variadic parameter (*) must be the last parameter in the parameter list."),
             ),
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MultipleVariadicParameters(_))) => Some(
                 Cow::Borrowed("Only one variadic parameter (*) is allowed per function."),
             ),
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
-                Some(Cow::Borrowed("Macro parameters cannot be variadic."))
-            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFAfterToken(_))) => {
                 Some(Cow::Borrowed(
                     "An expression was expected here. Check for incomplete expressions after operators or keywords.",
@@ -412,21 +394,6 @@ impl Diagnostic for Error {
                 "This `end` keyword does not match any open block. \
                 Note: single-line `if` expressions do not require `end`. \
                 Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.",
-            )),
-            InnerError::Runtime(RuntimeError::UndefinedMacro(_)) => {
-                Some(Cow::Borrowed("Macro expansion error: undefined macro used."))
-            }
-            InnerError::Runtime(RuntimeError::ArityMismatch { .. }) => {
-                Some(Cow::Borrowed("Macro expansion error: macro arity mismatch."))
-            }
-            InnerError::Runtime(RuntimeError::RecursionLimit) => {
-                Some(Cow::Borrowed("Macro expansion error: recursion limit exceeded."))
-            }
-            InnerError::Runtime(RuntimeError::InvalidMacroResultAst(_)) => {
-                Some(Cow::Borrowed("Invalid macro result AST during macro expansion."))
-            }
-            InnerError::Runtime(RuntimeError::InvalidMacroResult(_)) => Some(Cow::Borrowed(
-                "Invalid macro result: expected AST value during macro body evaluation.",
             )),
             InnerError::Runtime(RuntimeError::DestructuringFailed(_)) => Some(Cow::Borrowed(
                 "Destructuring pattern did not match the value. Check that the pattern structure matches the value.",
@@ -457,10 +424,8 @@ impl Diagnostic for Error {
             InnerError::Syntax(SyntaxError::EnvNotFound(_, _)) => "environment variable not found",
             InnerError::Syntax(SyntaxError::EnvNotAllowed(_, _)) => "environment variable not allowed",
             InnerError::Syntax(SyntaxError::ParameterWithoutDefaultAfterDefault(_)) => "parameter without default",
-            InnerError::Syntax(SyntaxError::MacroParametersCannotHaveDefaults(_)) => "parameter with default value",
             InnerError::Syntax(SyntaxError::VariadicParameterMustBeLast(_)) => "misplaced variadic parameter",
             InnerError::Syntax(SyntaxError::MultipleVariadicParameters(_)) => "duplicate variadic parameter",
-            InnerError::Syntax(SyntaxError::MacroParametersCannotBeVariadic(_)) => "variadic macro parameter",
             InnerError::Syntax(SyntaxError::UnexpectedEOFDetected(_)) => "unexpected end of input",
             InnerError::Syntax(SyntaxError::UnexpectedEOFAfterToken(_)) => "expected expression here",
             InnerError::Syntax(SyntaxError::UnmatchedEnd(_)) => "unmatched `end` keyword",
@@ -488,17 +453,11 @@ impl Diagnostic for Error {
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::ParameterWithoutDefaultAfterDefault(_))) => {
                 "parameter without default"
             }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotHaveDefaults(_))) => {
-                "parameter with default value"
-            }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::VariadicParameterMustBeLast(_))) => {
                 "misplaced variadic parameter"
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::MultipleVariadicParameters(_))) => {
                 "duplicate variadic parameter"
-            }
-            InnerError::Module(ModuleError::SyntaxError(SyntaxError::MacroParametersCannotBeVariadic(_))) => {
-                "variadic macro parameter"
             }
             InnerError::Module(ModuleError::SyntaxError(SyntaxError::UnexpectedEOFDetected(_))) => {
                 "unexpected end of input"
