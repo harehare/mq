@@ -159,6 +159,19 @@ mod tests {
     }
 
     #[test]
+    fn test_find_symbol_in_position_resolves_descendant_chain_step() {
+        // Regression: a synthetic `..` bridge node used to shadow `.code`'s range.
+        let mut hir = Hir::default();
+        let (source_id, _) = hir.add_code(None, ".blockquote .code");
+        let pos = mq_lang::Position::new(1, 14);
+
+        let (_, symbol) = hir
+            .find_symbol_in_position(source_id, pos)
+            .expect("symbol at .code position");
+        assert_eq!(symbol.value.as_deref(), Some(".code"));
+    }
+
+    #[test]
     fn test_find_scope_in_position() {
         let mut hir = Hir::default();
         let (source_id, _) = hir.add_code(None, "def example(): 5;");

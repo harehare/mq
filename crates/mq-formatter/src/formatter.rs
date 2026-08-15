@@ -683,6 +683,21 @@ impl Formatter {
         });
     }
 
+    fn needs_descendant_space(
+        prev: &mq_lang::Shared<mq_lang::CstNode>,
+        current: &mq_lang::Shared<mq_lang::CstNode>,
+    ) -> bool {
+        let selector_of = |n: &mq_lang::Shared<mq_lang::CstNode>| {
+            n.token.as_ref().and_then(|t| mq_lang::Selector::try_from(&**t).ok())
+        };
+
+        match selector_of(current) {
+            Some(selector) if selector.is_attribute_selector() => false,
+            Some(mq_lang::Selector::Property(_)) => !matches!(selector_of(prev), Some(mq_lang::Selector::Property(_))),
+            _ => true,
+        }
+    }
+
     fn format_block(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -699,11 +714,18 @@ impl Formatter {
                         child.token.as_ref().map(|t| &t.kind),
                         Some(mq_lang::TokenKind::Selector(s)) if s == "."
                     );
+
                 if is_list_iterator {
                     child.children.iter().for_each(|bracket_child| {
                         self.format_node(mq_lang::Shared::clone(bracket_child), 0);
                     });
                 } else {
+                    if i > 0
+                        && Self::needs_descendant_space(&node.children[i - 1], child)
+                        && !self.output.ends_with(' ')
+                    {
+                        self.append_space();
+                    }
                     self.format_node(mq_lang::Shared::clone(child), if i == 0 { indent_level } else { 0 });
                 }
             });
@@ -2935,6 +2957,12 @@ end
     #[case::selector_call_heading_multi_arg(".h(1,2)", ".h(1, 2)")]
     #[case::selector_call_code_lang(".code(\"rust\")", ".code(\"rust\")")]
     #[case::selector_call_pipe(".h(1)|.text()", ".h(1) | .text()")]
+    #[case::descendant_chain(".blockquote .code", ".blockquote .code")]
+    #[case::descendant_chain_no_space(".blockquote.code", ".blockquote .code")]
+    #[case::descendant_chain_extra_space(".blockquote  .code", ".blockquote .code")]
+    #[case::descendant_chain_three_levels(".blockquote .list .code", ".blockquote .list .code")]
+    #[case::descendant_chain_with_selector_call(".blockquote .code(\"rust\")", ".blockquote .code(\"rust\")")]
+    #[case::descendant_chain_trailing_attr(".blockquote .code.lang", ".blockquote .code.lang")]
     #[case::arrow_simple("->(): program;", "->(): program;")]
     #[case::arrow_multiline(
         "->(arg1,arg2):

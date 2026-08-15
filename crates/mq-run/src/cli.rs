@@ -850,10 +850,34 @@ impl Cli {
         if !name.contains("::")
             && let Some(module) = help::lookup_module(name)
         {
+            // A selector can also share a module's bare name (e.g. `.table`/`table`,
+            // `.toml`/`toml`, `.yaml`/`yaml`); append it after the module overview instead
+            // of leaving it unreachable without the leading dot. JSON keeps the module
+            // alone for output stability — pass the leading dot (`.table`) for the
+            // selector's own JSON.
+            let selector_entries: Vec<_> = help::lookup(name)
+                .into_iter()
+                .filter(|e| e.kind == "selector")
+                .collect();
+
             let out = match format {
                 HelpFormat::Json => serde_json::to_string_pretty(&module).into_diagnostic()?,
-                HelpFormat::Markdown => help::render_module_markdown(&module),
-                HelpFormat::Human => help::render_module_human(&module),
+                HelpFormat::Markdown => {
+                    let mut s = help::render_module_markdown(&module);
+                    for entry in &selector_entries {
+                        s.push('\n');
+                        s.push_str(&help::render_markdown(entry));
+                    }
+                    s
+                }
+                HelpFormat::Human => {
+                    let mut s = help::render_module_human(&module);
+                    for entry in &selector_entries {
+                        s.push('\n');
+                        s.push_str(&help::render_human(entry));
+                    }
+                    s
+                }
             };
             Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
             Self::write_ignore_pipe(&mut handle, b"\n")?;

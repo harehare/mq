@@ -5103,8 +5103,8 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         SmolStr::new(".h"),
         BuiltinSelectorDoc {
             description: "Selects a heading node with the specified depth.",
-            params: &[],
-            param_types: &[],
+            params: &["depth", "..."],
+            param_types: &["number"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_h("Title", 3) | .h"#,
@@ -5124,6 +5124,21 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
             examples: &[BuiltinExample {
                 code: r#"to_md_text("Hello") | .text"#,
                 expected: r#"Hello"#,
+            }],
+            capability: None,
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".."),
+        BuiltinSelectorDoc {
+            description: "Recursively selects every descendant node (depth-first), not the node itself. Combine with a following selector for a descendant chain, e.g. `.blockquote .code` (sugar for `.blockquote | .. | .code`).",
+            params: &[],
+            param_types: &[],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("> ## Nested")[0] | .."#,
+                expected: "[Nested, ## Nested]",
             }],
             capability: None,
         },
@@ -5223,8 +5238,8 @@ pub static BUILTIN_SELECTOR_DOC: LazyLock<FxHashMap<SmolStr, BuiltinSelectorDoc>
         SmolStr::new(".code"),
         BuiltinSelectorDoc {
             description: "Selects a code block node with the specified language.",
-            params: &[],
-            param_types: &[],
+            params: &["lang", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_code("x = 1", "python") | .code"#,
@@ -5314,9 +5329,9 @@ x = 1
     map.insert(
         SmolStr::new(".link"),
         BuiltinSelectorDoc {
-            description: "Selects a link node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects a link node, optionally filtered by URL (e.g. `.link(\"https://example.com\")`).",
+            params: &["url", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_link("https://example.com", "Example", "") | .link"#,
@@ -5329,9 +5344,9 @@ x = 1
     map.insert(
         SmolStr::new(".link_ref"),
         BuiltinSelectorDoc {
-            description: "Selects a link reference node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects a link reference node, optionally filtered by identifier.",
+            params: &["ident", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("[text][ref]\n\n[ref]: https://example.com")[0] | .link_ref"#,
@@ -5344,9 +5359,9 @@ x = 1
     map.insert(
         SmolStr::new(".image"),
         BuiltinSelectorDoc {
-            description: "Selects an image node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects an image node, optionally filtered by URL (e.g. `.image(\"a.png\")`).",
+            params: &["url", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_image("https://example.com/a.png", "Alt", "") | .image"#,
@@ -5360,8 +5375,8 @@ x = 1
         SmolStr::new(".heading"),
         BuiltinSelectorDoc {
             description: "Selects a heading node with the specified depth.",
-            params: &[],
-            param_types: &[],
+            params: &["depth", "..."],
+            param_types: &["number"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_h("Title", 2) | .heading"#,
@@ -5476,9 +5491,9 @@ x = 1
     map.insert(
         SmolStr::new(".footnote"),
         BuiltinSelectorDoc {
-            description: "Selects a footnote node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects a footnote node, optionally filtered by identifier.",
+            params: &["ident", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[2] | .footnote"#,
@@ -5491,9 +5506,9 @@ x = 1
     map.insert(
         SmolStr::new(".mdx_jsx_flow_element"),
         BuiltinSelectorDoc {
-            description: "Selects an MDX JSX flow element node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects an MDX JSX flow element node, optionally filtered by tag name.",
+            params: &["name", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_mdx("<Foo />")[0] | .mdx_jsx_flow_element"#,
@@ -5506,9 +5521,9 @@ x = 1
     map.insert(
         SmolStr::new(".list"),
         BuiltinSelectorDoc {
-            description: "Selects a list node with the specified index and checked state.",
-            params: &["indent", "checked"],
-            param_types: &["number", "bool"],
+            description: "Selects a list item node, optionally filtered by item index (e.g. `.list(0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
+            params: &["index", "..."],
+            param_types: &["number"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_md_list("Item", 0) | .list"#,
@@ -5521,9 +5536,9 @@ x = 1
     map.insert(
         SmolStr::new(".[]"),
         BuiltinSelectorDoc {
-            description: "Selects a list node with the specified index and checked state.",
-            params: &["indent", "checked"],
-            param_types: &["number", "bool"],
+            description: "Selects a list item node, optionally filtered by item index (e.g. `.[](0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
+            params: &["index", "..."],
+            param_types: &["number"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_md_list("Item", 0) | .[]"#,
@@ -5612,9 +5627,9 @@ key: 1
     map.insert(
         SmolStr::new(".footnote_ref"),
         BuiltinSelectorDoc {
-            description: "Selects a footnote reference node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects a footnote reference node, optionally filtered by identifier.",
+            params: &["ident", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[1] | .footnote_ref"#,
@@ -5627,9 +5642,9 @@ key: 1
     map.insert(
         SmolStr::new(".image_ref"),
         BuiltinSelectorDoc {
-            description: "Selects an image reference node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects an image reference node, optionally filtered by identifier.",
+            params: &["ident", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("![alt][ref]\n\n[ref]: https://example.com/a.png")[0] | .image_ref"#,
@@ -5642,9 +5657,9 @@ key: 1
     map.insert(
         SmolStr::new(".mdx_jsx_text_element"),
         BuiltinSelectorDoc {
-            description: "Selects an MDX JSX text element node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects an MDX JSX text element node, optionally filtered by tag name.",
+            params: &["name", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_mdx("Hello <b>world</b>.")[1] | .mdx_jsx_text_element"#,
@@ -5704,13 +5719,59 @@ $$"#,
     map.insert(
         SmolStr::new(".definition"),
         BuiltinSelectorDoc {
-            description: "Selects a definition node.",
-            params: &[],
-            param_types: &[],
+            description: "Selects a definition node, optionally filtered by identifier.",
+            params: &["ident", "..."],
+            param_types: &["string"],
             returns: "markdown",
             examples: &[BuiltinExample {
                 code: r#"to_markdown("[ref]: https://example.com")[0] | .definition"#,
                 expected: r#"[ref]: https://example.com"#,
+            }],
+            capability: None,
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".callout"),
+        BuiltinSelectorDoc {
+            description: "Selects an Obsidian-style callout node, optionally filtered by kind (e.g. `.callout(\"note\")`).",
+            params: &["kind", "..."],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("> [!NOTE]\n> body")[0] | .callout"#,
+                expected: r#"> [!NOTE]
+> body"#,
+            }],
+            capability: None,
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".wikilink"),
+        BuiltinSelectorDoc {
+            description: "Selects an Obsidian-style wikilink node, optionally filtered by target.",
+            params: &["target", "..."],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("[[target]]")[0] | .wikilink"#,
+                expected: r#"[[target]]"#,
+            }],
+            capability: None,
+        },
+    );
+
+    map.insert(
+        SmolStr::new(".embed"),
+        BuiltinSelectorDoc {
+            description: "Selects an Obsidian-style embed node, optionally filtered by target.",
+            params: &["target", "..."],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_markdown("![[image.png]]")[0] | .embed"#,
+                expected: r#"![[image.png]]"#,
             }],
             capability: None,
         },
@@ -8683,6 +8744,32 @@ pub fn eval_selector_with_args(node: &mq_markdown::Node, selector: &Selector, ar
             if let mq_markdown::Node::Code(mq_markdown::Code { lang, .. }) = node {
                 let node_lang = lang.as_deref().unwrap_or("");
                 langs.iter().any(|l| l == node_lang)
+            } else {
+                false
+            }
+        }
+        Selector::Link => {
+            let urls = collect_string_values(args);
+
+            if urls.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Link(mq_markdown::Link { url, .. }) = node {
+                urls.iter().any(|u| u == url.as_str())
+            } else {
+                false
+            }
+        }
+        Selector::Image => {
+            let urls = collect_string_values(args);
+
+            if urls.is_empty() {
+                return eval_selector(node, selector);
+            }
+
+            if let mq_markdown::Node::Image(mq_markdown::Image { url, .. }) = node {
+                urls.iter().any(|u| u == url)
             } else {
                 false
             }

@@ -2553,14 +2553,65 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    /// Parse a selector with an attribute suffix and convert it to an attr() function call
-    fn parse_selector_with_attribute(
+    /// Consumes any selector token(s) following an already-parsed `base_node`.
+    fn parse_selector_tail(
         &mut self,
         token: &Shared<Token>,
-        attr_token: Shared<Token>,
+        base_node: Shared<Node>,
     ) -> Result<Shared<Node>, SyntaxError> {
-        let base_node = self.parse_selector_direct(token)?;
-        self.build_attr_call_for_node(base_node, attr_token, token)
+        if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+            return Ok(base_node);
+        }
+        let next_token = Shared::clone(self.tokens.next().unwrap());
+        let selector = Selector::try_from(&*next_token).map_err(SyntaxError::UnknownSelector)?;
+
+        if selector.is_attribute_selector() {
+            return self.build_attr_call_for_node(base_node, next_token, token);
+        }
+
+        // Descendant chain: `.blockquote .code` → Block([base, .., .code, ...])
+        let mut nodes: Program = vec![base_node];
+        let mut step_token = next_token;
+        let mut step_selector = selector;
+
+        loop {
+            nodes.push(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(token)),
+                expr: Shared::new(Expr::Selector(Selector::Recursive)),
+            }));
+
+            let step_expr = if self.is_next_token(|kind| matches!(kind, TokenKind::LParen)) {
+                Expr::SelectorCall(step_selector, self.parse_args()?)
+            } else {
+                Expr::Selector(step_selector)
+            };
+            nodes.push(Shared::new(Node {
+                token_id: self.token_arena.alloc(Shared::clone(&step_token)),
+                expr: Shared::new(step_expr),
+            }));
+
+            if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+                break;
+            }
+            let peeked_token = Shared::clone(self.tokens.next().unwrap());
+            let peeked_selector = Selector::try_from(&*peeked_token).map_err(SyntaxError::UnknownSelector)?;
+
+            if peeked_selector.is_attribute_selector() {
+                let chained = Shared::new(Node {
+                    token_id: self.token_arena.alloc(Shared::clone(token)),
+                    expr: Shared::new(Expr::Block(nodes)),
+                });
+                return self.build_attr_call_for_node(chained, peeked_token, token);
+            }
+
+            step_token = peeked_token;
+            step_selector = peeked_selector;
+        }
+
+        Ok(Shared::new(Node {
+            token_id: self.token_arena.alloc(Shared::clone(token)),
+            expr: Shared::new(Expr::Block(nodes)),
+        }))
     }
 
     /// Parse a selector without checking for attributes (to avoid infinite recursion)
@@ -2682,10 +2733,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
         }
 
-        if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
-            && let Some(attr_token) = self.tokens.next()
-        {
-            return self.parse_selector_with_attribute(token, Shared::clone(attr_token));
+        if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
+            let base_node = self.parse_selector_direct(token)?;
+            return self.parse_selector_tail(token, base_node);
         }
 
         // Check for selector call: `.h(...)`, `.code(...)`
@@ -2700,13 +2750,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     token_id: self.token_arena.alloc(Shared::clone(token)),
                     expr: Shared::new(Expr::SelectorCall(selector, args)),
                 });
-                // Check for attribute access on SelectorCall: `.h(1).level`
-                if self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_)))
-                    && let Some(attr_token) = self.tokens.next()
-                {
-                    return self.build_attr_call_for_node(base_node, Shared::clone(attr_token), token);
-                }
-                return Ok(base_node);
+                // Check for attribute access or a descendant chain continuation: `.h(1).level`, `.h(1) .code`
+                return self.parse_selector_tail(token, base_node);
             }
         }
 
@@ -9068,6 +9113,106 @@ mod tests {
                     } else {
                         panic!("Expected String literal in second argument, got {:?}", args[1].expr);
                     }
+                } else {
+                    panic!("Expected Call expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[rstest]
+    // Two selectors: base, then a single descendant hop.
+    #[case::two_levels(vec![".blockquote", ".code"], vec![Selector::Blockquote, Selector::Code])]
+    // Three selectors: two descendant hops.
+    #[case::three_levels(
+        vec![".blockquote", ".list", ".code"],
+        vec![Selector::Blockquote, Selector::List(None, None), Selector::Code]
+    )]
+    fn test_parse_selector_descendant_chain(#[case] selectors: Vec<&str>, #[case] expected_selectors: Vec<Selector>) {
+        let mut arena = Arena::new(10);
+        let mut tokens = selectors
+            .iter()
+            .map(|selector| {
+                Shared::new(Token {
+                    range: Range::default(),
+                    kind: TokenKind::Selector(SmolStr::new(selector)),
+                    module_id: 1.into(),
+                })
+            })
+            .collect::<Vec<_>>();
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Block(nodes) = &*program[0].expr {
+                    // Desugars to `base | .. | step1 | .. | step2 | ...`, i.e. a plain
+                    // selector interleaved with a `Recursive` selector between each hop.
+                    let expected: Vec<Selector> = expected_selectors
+                        .into_iter()
+                        .enumerate()
+                        .flat_map(|(i, sel)| {
+                            if i == 0 {
+                                vec![sel]
+                            } else {
+                                vec![Selector::Recursive, sel]
+                            }
+                        })
+                        .collect();
+                    assert_eq!(nodes.len(), expected.len());
+                    for (node, expected_sel) in nodes.iter().zip(expected.iter()) {
+                        if let Expr::Selector(sel) = &*node.expr {
+                            assert_eq!(sel, expected_sel);
+                        } else {
+                            panic!("Expected Selector expression, got {:?}", node.expr);
+                        }
+                    }
+                } else {
+                    panic!("Expected Block expression, got {:?}", program[0].expr);
+                }
+            }
+            Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_parse_selector_descendant_chain_trailing_attribute() {
+        // `.blockquote .code.lang` → attr(Block([.blockquote, .., .code]), "lang")
+        let mut arena = Arena::new(10);
+        let selectors = [".blockquote", ".code", ".lang"];
+        let mut tokens = selectors
+            .iter()
+            .map(|selector| {
+                Shared::new(Token {
+                    range: Range::default(),
+                    kind: TokenKind::Selector(SmolStr::new(*selector)),
+                    module_id: 1.into(),
+                })
+            })
+            .collect::<Vec<_>>();
+        tokens.push(Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: 1.into(),
+        }));
+
+        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+
+        match result {
+            Ok(program) => {
+                assert_eq!(program.len(), 1);
+                if let Expr::Call(ident, args) = &*program[0].expr {
+                    assert_eq!(ident.name, "attr".into());
+                    assert_eq!(args.len(), 2);
+                    assert!(matches!(&*args[0].expr, Expr::Block(nodes) if nodes.len() == 3));
+                    assert!(matches!(&*args[1].expr, Expr::Literal(Literal::String(s)) if s == "lang"));
                 } else {
                     panic!("Expected Call expression, got {:?}", program[0].expr);
                 }

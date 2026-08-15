@@ -1135,6 +1135,57 @@ impl<'a> Parser<'a> {
                 {
                     node.children =
                         vec![self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?];
+                    return Ok(Shared::new(node));
+                }
+
+                if let Some(next_token) = self.peek()
+                    && next_token.is_selector()
+                    && matches!(Selector::try_from(&**next_token), Ok(sel) if !sel.is_attribute_selector())
+                {
+                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let block_leading = node.leading_trivia.clone();
+                    let mut nodes = vec![Shared::new(node)];
+
+                    while let Some(step_token) = self.peek() {
+                        if !step_token.is_selector() {
+                            break;
+                        }
+
+                        match Selector::try_from(&**step_token) {
+                            Ok(sel) if sel.is_attribute_selector() => {
+                                nodes.push(
+                                    self.next_node(|kind| matches!(kind, TokenKind::Selector(_)), NodeKind::Selector)?,
+                                );
+                                break;
+                            }
+                            Ok(_) => {
+                                let leading_trivia = self.parse_leading_trivia();
+                                let step_src_token = self.next_token(|kind| matches!(kind, TokenKind::Selector(_)))?;
+                                let trailing_trivia = self.parse_trailing_trivia();
+                                let mut step_node = Node {
+                                    kind: NodeKind::Selector,
+                                    token: Some(Shared::clone(&step_src_token)),
+                                    leading_trivia,
+                                    trailing_trivia,
+                                    children: Vec::new(),
+                                };
+                                if self.try_next_token(|kind| matches!(kind, TokenKind::LParen)) {
+                                    step_node.kind = NodeKind::SelectorCall;
+                                    step_node.children = self.parse_args()?;
+                                }
+                                nodes.push(Shared::new(step_node));
+                            }
+                            Err(_) => break,
+                        }
+                    }
+
+                    return Ok(Shared::new(Node {
+                        kind: NodeKind::Block,
+                        token: Some(first_token),
+                        leading_trivia: block_leading,
+                        trailing_trivia: Vec::new(),
+                        children: nodes,
+                    }));
                 }
 
                 Ok(Shared::new(node))
@@ -11360,6 +11411,33 @@ mod tests {
         let (nodes, errors) = Parser::new(&input).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
+    }
+
+    #[test]
+    fn test_descendant_chain_has_no_synthetic_bridge_node() {
+        // No synthetic DoubleDot node: it would duplicate the next selector's source range.
+        let (nodes, errors) = crate::parse_recovery(".blockquote .code");
+        assert!(!errors.has_errors());
+
+        let block = nodes
+            .iter()
+            .find(|node| node.kind == NodeKind::Block)
+            .expect("descendant chain should parse as a Block");
+
+        assert_eq!(
+            block.children.len(),
+            2,
+            "expected exactly the two real selectors, got {:#?}",
+            block.children
+        );
+        assert!(
+            block
+                .children
+                .iter()
+                .all(|child| !matches!(child.token.as_ref().map(|t| &t.kind), Some(TokenKind::DoubleDot))),
+            "no child should carry a synthetic DoubleDot token: {:#?}",
+            block.children
+        );
     }
 
     #[test]
