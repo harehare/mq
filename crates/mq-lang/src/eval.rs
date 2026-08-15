@@ -1629,6 +1629,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         Ok(RuntimeValue::Array(Shared::new(values)))
     }
 
+    #[inline(always)]
     fn eval_while(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1636,45 +1637,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         body: &Program,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
-        let mut runtime_value = runtime_value.clone();
-        let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
-        let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
-
-        if !cond_value.is_truthy() {
-            return Ok(RuntimeValue::NONE);
-        }
-        let mut first = true;
-
-        while cond_value.is_truthy() {
-            self.check_timeout()?;
-            match self.eval_program(body, runtime_value.clone(), &env) {
-                Ok(mut new_runtime_value) => {
-                    std::mem::swap(&mut runtime_value, &mut new_runtime_value);
-                    cond_value = self.eval_expr(&runtime_value, cond, &env)?;
-                }
-                Err(EvalError::Flow(ControlFlow::Break(_, Some(v)))) => {
-                    runtime_value = *v;
-                    break;
-                }
-                Err(EvalError::Flow(ControlFlow::Break(_, None))) if first => {
-                    runtime_value = RuntimeValue::NONE;
-                    break;
-                }
-                Err(EvalError::Flow(ControlFlow::Break(_, None))) => break,
-                Err(EvalError::Flow(ControlFlow::Continue(_))) if first => {
-                    runtime_value = RuntimeValue::NONE;
-                    continue;
-                }
-                Err(EvalError::Flow(ControlFlow::Continue(_))) => continue,
-                Err(e) => return Err(e),
-            }
-
-            first = false;
-        }
-
-        Ok(runtime_value)
+        self.eval_conditional_loop(runtime_value, cond, body, env, false)
     }
 
+    #[inline(always)]
     fn eval_until(
         &mut self,
         runtime_value: &RuntimeValue,
@@ -1682,16 +1648,28 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         body: &Program,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
+        self.eval_conditional_loop(runtime_value, cond, body, env, true)
+    }
+
+    fn eval_conditional_loop(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        cond: &Shared<ast::Node>,
+        body: &Program,
+        env: &Shared<SharedCell<Env>>,
+        invert: bool,
+    ) -> EvalResult {
         let mut runtime_value = runtime_value.clone();
         let env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(env))));
         let mut cond_value = self.eval_expr(&runtime_value, cond, &env)?;
+        let should_run = |v: &RuntimeValue| v.is_truthy() != invert;
 
-        if cond_value.is_truthy() {
+        if !should_run(&cond_value) {
             return Ok(RuntimeValue::NONE);
         }
         let mut first = true;
 
-        while !cond_value.is_truthy() {
+        while should_run(&cond_value) {
             self.check_timeout()?;
             match self.eval_program(body, runtime_value.clone(), &env) {
                 Ok(mut new_runtime_value) => {
@@ -1778,15 +1756,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         for (cond_node, body) in conditions {
-            match cond_node {
-                Some(cond_node) => {
-                    let cond = self.eval_expr(runtime_value, cond_node, env)?;
-
-                    if cond.is_truthy() {
-                        return self.eval_expr(runtime_value, body, env);
-                    }
-                }
-                None => return self.eval_expr(runtime_value, body, env),
+            if let Some(result) = self.eval_branch(runtime_value, cond_node, body, env, false)? {
+                return Ok(result);
             }
         }
 
@@ -1800,20 +1771,36 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         conditions: &Branches,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
-        if let Some((cond_node, body)) = conditions.first() {
-            match cond_node {
-                Some(cond_node) => {
-                    let cond = self.eval_expr(runtime_value, cond_node, env)?;
-
-                    if !cond.is_truthy() {
-                        return self.eval_expr(runtime_value, body, env);
-                    }
-                }
-                None => return self.eval_expr(runtime_value, body, env),
-            }
+        if let Some((cond_node, body)) = conditions.first()
+            && let Some(result) = self.eval_branch(runtime_value, cond_node, body, env, true)?
+        {
+            return Ok(result);
         }
 
         Ok(RuntimeValue::NONE)
+    }
+
+    #[inline(always)]
+    fn eval_branch(
+        &mut self,
+        runtime_value: &RuntimeValue,
+        cond_node: &Option<Shared<ast::Node>>,
+        body: &Shared<ast::Node>,
+        env: &Shared<SharedCell<Env>>,
+        invert: bool,
+    ) -> Result<Option<RuntimeValue>, EvalError> {
+        match cond_node {
+            Some(cond_node) => {
+                let cond = self.eval_expr(runtime_value, cond_node, env)?;
+
+                if cond.is_truthy() != invert {
+                    return Ok(Some(self.eval_expr(runtime_value, body, env)?));
+                }
+
+                Ok(None)
+            }
+            None => Ok(Some(self.eval_expr(runtime_value, body, env)?)),
+        }
     }
 
     fn eval_match(
