@@ -1159,18 +1159,6 @@ impl<'a> Parser<'a> {
                                 break;
                             }
                             Ok(_) => {
-                                nodes.push(Shared::new(Node {
-                                    kind: NodeKind::Selector,
-                                    token: Some(Shared::new(Token {
-                                        kind: TokenKind::DoubleDot,
-                                        range: step_token.range,
-                                        module_id: step_token.module_id,
-                                    })),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
-                                    children: Vec::new(),
-                                }));
-
                                 let leading_trivia = self.parse_leading_trivia();
                                 let step_src_token = self.next_token(|kind| matches!(kind, TokenKind::Selector(_)))?;
                                 let trailing_trivia = self.parse_trailing_trivia();
@@ -11423,6 +11411,33 @@ mod tests {
         let (nodes, errors) = Parser::new(&input).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
+    }
+
+    #[test]
+    fn test_descendant_chain_has_no_synthetic_bridge_node() {
+        // No synthetic DoubleDot node: it would duplicate the next selector's source range.
+        let (nodes, errors) = crate::parse_recovery(".blockquote .code");
+        assert!(!errors.has_errors());
+
+        let block = nodes
+            .iter()
+            .find(|node| node.kind == NodeKind::Block)
+            .expect("descendant chain should parse as a Block");
+
+        assert_eq!(
+            block.children.len(),
+            2,
+            "expected exactly the two real selectors, got {:#?}",
+            block.children
+        );
+        assert!(
+            block
+                .children
+                .iter()
+                .all(|child| !matches!(child.token.as_ref().map(|t| &t.kind), Some(TokenKind::DoubleDot))),
+            "no child should carry a synthetic DoubleDot token: {:#?}",
+            block.children
+        );
     }
 
     #[test]

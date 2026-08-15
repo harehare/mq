@@ -683,6 +683,21 @@ impl Formatter {
         });
     }
 
+    fn needs_descendant_space(
+        prev: &mq_lang::Shared<mq_lang::CstNode>,
+        current: &mq_lang::Shared<mq_lang::CstNode>,
+    ) -> bool {
+        let selector_of = |n: &mq_lang::Shared<mq_lang::CstNode>| {
+            n.token.as_ref().and_then(|t| mq_lang::Selector::try_from(&**t).ok())
+        };
+
+        match selector_of(current) {
+            Some(selector) if selector.is_attribute_selector() => false,
+            Some(mq_lang::Selector::Property(_)) => !matches!(selector_of(prev), Some(mq_lang::Selector::Property(_))),
+            _ => true,
+        }
+    }
+
     fn format_block(
         &mut self,
         node: &mq_lang::Shared<mq_lang::CstNode>,
@@ -700,19 +715,17 @@ impl Formatter {
                         Some(mq_lang::TokenKind::Selector(s)) if s == "."
                     );
 
-                let is_descendant_bridge = matches!(
-                    child.token.as_ref().map(|t| &t.kind),
-                    Some(mq_lang::TokenKind::DoubleDot)
-                );
-                if is_descendant_bridge {
-                    if !self.output.ends_with(' ') {
-                        self.append_space();
-                    }
-                } else if is_list_iterator {
+                if is_list_iterator {
                     child.children.iter().for_each(|bracket_child| {
                         self.format_node(mq_lang::Shared::clone(bracket_child), 0);
                     });
                 } else {
+                    if i > 0
+                        && Self::needs_descendant_space(&node.children[i - 1], child)
+                        && !self.output.ends_with(' ')
+                    {
+                        self.append_space();
+                    }
                     self.format_node(mq_lang::Shared::clone(child), if i == 0 { indent_level } else { 0 });
                 }
             });
