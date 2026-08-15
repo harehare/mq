@@ -257,10 +257,6 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://mqlang.org/book/reference/macros</loc>
-    <priority>1.0</priority>
-  </url>
-  <url>
     <loc>https://mqlang.org/book/reference/env</loc>
     <priority>1.0</priority>
   </url>
