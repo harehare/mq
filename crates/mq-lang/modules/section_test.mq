@@ -103,6 +103,39 @@ def test_section_section_depth_false_unchanged():
   | assert_eq(len(secs_default), len(secs_depth))
 end
 
+def test_section_sections_depth_nested_body():
+  let flat_secs = do test_sections | section::sections();
+  | let nested_secs = do test_sections | section::sections(., true);
+  | let flat_intro = first(flat_secs)
+  | let nested_intro = first(nested_secs)
+  | assert(len(section::body(nested_intro)) > len(section::body(flat_intro)))
+end
+
+def test_section_sections_depth_includes_subheading_text():
+  let secs = do test_sections | section::sections(., true);
+  | let intro = first(secs)
+  | let body_text = to_markdown_string(section::body(intro))
+  | assert(contains(body_text, "Advanced Topics"))
+  | assert(contains(body_text, "This section covers advanced topics."))
+end
+
+# @parametrize([[section_md, 3], ["# test", 1]])
+def test_section_sections_depth_len(markdown, expected_len):
+  let sections = do markdown | to_markdown() | section::sections(., true);
+  | assert_eq(len(sections), expected_len)
+end
+
+def test_section_sections_false_unchanged():
+  let secs = do test_sections | section::sections();
+  | assert_eq(len(secs), 3)
+  | let titles = section::titles(secs)
+  | assert_eq(titles, ["Introduction", "Advanced Topics", "Conclusion"])
+  | let levels = map(secs, section::level)
+  | assert_eq(levels, [1, 2, 1])
+  | let intro_body_text = to_markdown_string(section::body(first(secs)))
+  | assert_eq(intro_body_text, "This is the introduction section.\n")
+end
+
 def test_section_bodies_pipe():
   let body_list = do test_sections | section::section("Introduction") | section::bodies();
   | assert_eq(len(body_list), 1)
