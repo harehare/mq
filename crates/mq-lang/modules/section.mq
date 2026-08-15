@@ -81,9 +81,10 @@ def sections(md_nodes, depth = false):
         do
           let n = len(agg_nodes)
           | let start_indices = do foreach (i, range(n - 1)): if (is_h(agg_nodes[i])): i; | compact();
+          | let start_index_len = len(start_indices)
           | var result = []
           | var i = 0
-          | while (i < len(start_indices)):
+          | while (i < start_index_len):
               let start = start_indices[i]
               | let lvl = _h_level_num(agg_nodes[start])
               | let boundaries = do foreach (j, range(n - 1)): if (is_h(agg_nodes[j]) && _h_level_num(agg_nodes[j]) <= lvl): j; | compact();
