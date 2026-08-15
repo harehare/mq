@@ -40,7 +40,8 @@ def _h_level_num(md):
 end
 
 # Returns sections whose title contains the specified pattern.
-# If depth is true, each section spans until the next header at the same or higher level.
+# If depth is true, each section spans until the next header at the same or higher level
+# (delegates to section::sections(md_nodes, depth), see its doc for details).
 #
 # Example:
 # ```
@@ -50,18 +51,41 @@ end
 #
 # Returns: array
 def section(md_nodes, pattern, depth = false):
+  sections(md_nodes, depth) | title_contains(pattern)
+end
+
+# Splits markdown nodes into sections based on headers.
+# If depth is true, each section's body extends to the next heading at the same or higher
+# level as that section's own heading, so nested subheadings' content is included in their
+# parent's body. If depth is false (default), every heading of any level is a boundary, so
+# a heading's body only extends to the very next heading regardless of level.
+#
+# Example:
+# ```
+# import "section" | len(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
+# #=> 3
+# ```
+# Example:
+# ```
+# import "section" | len(section::body(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), true))))
+# #=> 3
+# ```
+#
+# Returns: array
+def sections(md_nodes, depth = false):
   let agg_nodes = _ensure_aggregated(md_nodes)
-  | if (depth):
-      if (is_empty(agg_nodes)):
-        []
-      else:
+  | if (is_empty(agg_nodes)):
+      []
+    else:
+      if (depth):
         do
           let n = len(agg_nodes)
-          | let match_indices = do foreach (i, range(n - 1)): if (is_h(agg_nodes[i]) && contains(to_text(agg_nodes[i]), pattern)): i; | compact();
+          | let start_indices = do foreach (i, range(n - 1)): if (is_h(agg_nodes[i])): i; | compact();
+          | let start_index_len = len(start_indices)
           | var result = []
           | var i = 0
-          | while (i < len(match_indices)):
-              let start = match_indices[i]
+          | while (i < start_index_len):
+              let start = start_indices[i]
               | let lvl = _h_level_num(agg_nodes[start])
               | let boundaries = do foreach (j, range(n - 1)): if (is_h(agg_nodes[j]) && _h_level_num(agg_nodes[j]) <= lvl): j; | compact();
               | let boundaries_with_end = boundaries + n
@@ -71,41 +95,22 @@ def section(md_nodes, pattern, depth = false):
               | result
             end
         end
-    else:
-      do
-        sections(agg_nodes) | title_contains(pattern)
-      end
-end
-
-# Splits markdown nodes into sections based on headers.
-#
-# Example:
-# ```
-# import "section" | len(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
-# #=> 3
-# ```
-#
-# Returns: array
-def sections(md_nodes):
-  let agg_nodes = _ensure_aggregated(md_nodes)
-  | if (is_empty(agg_nodes)):
-      []
-    else:
-      do
-        let indices = do foreach (i, range(len(agg_nodes) - 1)): if (is_h(agg_nodes[i])): i; | compact();
-        | let indices_with_end = indices + len(agg_nodes)
-        | let indices_len = len(indices)
-        | var result = []
-        | var i = 0
-        | while (i < indices_len):
-            let start_node = indices[i]
-            | let end_node = indices_with_end[i + 1]
-            | let children = agg_nodes[start_node + 1:end_node]
-            | result += [{type: :section, header: agg_nodes[start_node], children: children}]
-            | i = i + 1
-            | result
-          end
-      end
+      else:
+        do
+          let indices = do foreach (i, range(len(agg_nodes) - 1)): if (is_h(agg_nodes[i])): i; | compact();
+          | let indices_with_end = indices + len(agg_nodes)
+          | let indices_len = len(indices)
+          | var result = []
+          | var i = 0
+          | while (i < indices_len):
+              let start_node = indices[i]
+              | let end_node = indices_with_end[i + 1]
+              | let children = agg_nodes[start_node + 1:end_node]
+              | result += [{type: :section, header: agg_nodes[start_node], children: children}]
+              | i = i + 1
+              | result
+            end
+        end
 end
 
 # Filters sections based on a given predicate function.

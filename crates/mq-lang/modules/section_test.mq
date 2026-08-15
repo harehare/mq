@@ -103,6 +103,35 @@ def test_section_section_depth_false_unchanged():
   | assert_eq(len(secs_default), len(secs_depth))
 end
 
+# @parametrize([[false, 1], [true, 3]])
+def test_section_sections_depth_body_len(depth, expected_len):
+  let secs = do test_sections | section::sections(., depth);
+  | let intro = first(secs)
+  | assert_eq(len(section::body(intro)), expected_len)
+end
+
+# @parametrize([[false, false], [true, true]])
+def test_section_sections_depth_includes_subheading(depth, expected_contains):
+  let secs = do test_sections | section::sections(., depth);
+  | let intro = first(secs)
+  | let body_text = to_markdown_string(section::body(intro))
+  | assert_eq(contains(body_text, "Advanced Topics"), expected_contains)
+end
+
+# @parametrize([[section_md, 3], ["# test", 1]])
+def test_section_sections_depth_len(markdown, expected_len):
+  let sections = do markdown | to_markdown() | section::sections(., true);
+  | assert_eq(len(sections), expected_len)
+end
+
+# @parametrize([[0, "Introduction", 1], [1, "Advanced Topics", 2], [2, "Conclusion", 1]])
+def test_section_sections_title_level(index, expected_title, expected_level):
+  let secs = do test_sections | section::sections();
+  | let s = get(secs, index)
+  | assert_eq(section::title(s), expected_title)
+  | assert_eq(section::level(s), expected_level)
+end
+
 def test_section_bodies_pipe():
   let body_list = do test_sections | section::section("Introduction") | section::bodies();
   | assert_eq(len(body_list), 1)
