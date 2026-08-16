@@ -158,6 +158,56 @@ def link(url, value, title = ""): to_link(url, value, title);
 # Returns: markdown
 def image(url, alt, title = ""): to_image(url, alt, title);
 
+# Wraps `value` in a footnote definition node identified by `ident`.
+#
+# Example:
+# ```
+# import "md" | md::footnote("Footnote text", "1")
+# #=> [^1]: Footnote text
+# ```
+#
+# Returns: markdown
+def footnote(value, ident): to_footnote(value, ident);
+
+# Creates a footnote reference node pointing at `ident`.
+#
+# Example:
+# ```
+# import "md" | md::footnote_ref("1")
+# #=> [^1]
+# ```
+#
+# Returns: markdown
+def footnote_ref(ident): to_footnote_ref(ident);
+
+# Creates a link reference definition node (`[ident]: url "title"`) for `ident`,
+# with an optional `title`.
+#
+# Example:
+# ```
+# import "md" | md::definition("https://example.com", "ex", "")
+# #=> [ex]: https://example.com
+# ```
+#
+# Returns: markdown
+def definition(url, ident, title = ""): to_definition(url, ident, title);
+
+# Wraps `value` in a raw HTML node, emitted as-is.
+#
+# Example:
+# ```
+# import "md" | md::html("<br>")
+# #=> <br>
+# ```
+#
+# Returns: markdown
+def html(value): to_md_html(value);
+
+# Creates a hard line break node.
+#
+# Returns: markdown
+def linebreak(): to_break();
+
 # Wraps `value` in a list item node at the given `level` (0-indexed nesting), optionally
 # `ordered` (numbered) and/or `checked` (checkbox); pass `checked = None` for a plain item.
 #
@@ -204,6 +254,25 @@ def table_cell(value, row, column): to_md_table_cell(value, row, column);
 #
 # Returns: markdown
 def table_align(aligns): to_md_table_align(aligns);
+
+# Builds a full table from a `header` array of cell values and a `rows` array of
+# row arrays. `aligns` is an array of alignment strings (e.g. ["left", "right",
+# "center"]) matching `header`'s length; defaults to no alignment. Returns an
+# array of row/align nodes ready to splice into `doc()`.
+#
+# Example:
+# ```
+# import "md" | md::doc(md::table(["A", "B"], [["1", "2"], ["3", "4"]]))
+# #=> |A|B|
+# |---|---|
+# |1|2|
+# |3|4|
+# ```
+#
+# Returns: array
+def table(header, rows, aligns = []):
+  let aligns = if (is_empty(aligns)): map(header, fn(_): "none";) else: aligns
+  | [table_row(header), table_align(aligns)] + map(rows, table_row);
 
 # Combines markdown nodes into a single markdown value. Accepts either a variable
 # number of arguments (`doc(a, b, c)`) or a single array (`doc([a, b, c])`). Nested

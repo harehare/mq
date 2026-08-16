@@ -97,6 +97,46 @@ def test_md_table_align():
   | assert_eq(result, "|:---|---:|")
 end
 
+def test_md_footnote():
+  let result = to_string(md::footnote("Footnote text", "1"))
+  | assert_eq(result, "[^1]: Footnote text")
+end
+
+def test_md_footnote_ref():
+  let result = to_string(md::footnote_ref("1"))
+  | assert_eq(result, "[^1]")
+end
+
+def test_md_definition():
+  let result = to_string(md::definition("https://example.com", "ex", ""))
+  | assert_eq(result, "[ex]: https://example.com")
+end
+
+def test_md_definition_with_title():
+  let result = to_string(md::definition("https://example.com", "ex", "Example"))
+  | assert_eq(result, "[ex]: https://example.com \"Example\"")
+end
+
+def test_md_html():
+  let result = to_string(md::html("<br>"))
+  | assert_eq(result, "<br>")
+end
+
+def test_md_linebreak():
+  let result = to_string(md::linebreak())
+  | assert_eq(result, "\\\n")
+end
+
+def test_md_table():
+  let result = to_string(md::doc(md::table(["A", "B"], [["1", "2"], ["3", "4"]])))
+  | assert_eq(result, "|A|B|\n|---|---|\n|1|2|\n|3|4|")
+end
+
+def test_md_table_with_aligns():
+  let result = to_string(md::doc(md::table(["A", "B"], [["1", "2"]], ["left", "right"])))
+  | assert_eq(result, "|A|B|\n|:---|---:|\n|1|2|")
+end
+
 def test_md_doc():
   let result = to_string(md::doc(md::text("a"), md::text("b")))
   | assert_eq(result, "a\nb")

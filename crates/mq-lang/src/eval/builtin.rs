@@ -2746,6 +2746,80 @@ fn to_callout_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
     }
 }
 
+#[mq_macros::mq_fn(name = "to_footnote", params = Fixed(2))]
+fn to_footnote_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Markdown(node, _), RuntimeValue::String(ident)] => {
+            Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+                ident: ident.to_string(),
+                values: node.node_values(),
+                position: None,
+            })
+            .into())
+        }
+        [a, RuntimeValue::String(ident)] if !a.is_none() => Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
+            ident: ident.to_string(),
+            values: vec![a.to_string().into()],
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_footnote_ref", params = Fixed(1))]
+fn to_footnote_ref_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::String(ident)] => Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
+            ident: ident.to_string(),
+            label: Some(ident.to_string()),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_definition", params = Fixed(3))]
+fn to_definition_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [
+            RuntimeValue::String(url),
+            RuntimeValue::String(ident),
+            RuntimeValue::String(title),
+        ] => Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
+            url: mq_markdown::Url::new(url.to_string()),
+            title: if title.is_empty() {
+                None
+            } else {
+                Some(mq_markdown::Title::new(title.to_string()))
+            },
+            ident: ident.to_string(),
+            label: Some(ident.to_string()),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_md_html", params = Fixed(1))]
+fn to_md_html_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [a] if !a.is_none() => Ok(mq_markdown::Node::Html(mq_markdown::Html {
+            value: a.to_string(),
+            position: None,
+        })
+        .into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "to_break", params = Fixed(0))]
+fn to_break_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    Ok(mq_markdown::Node::Break(mq_markdown::Break { position: None }).into())
+}
+
 #[mq_macros::mq_fn(name = "to_md_text", params = Fixed(1))]
 fn to_md_text_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -4984,6 +5058,11 @@ mq_macros::builtin_dispatch! {
     TO_BLOCKQUOTE,
     TO_DELETE,
     TO_CALLOUT,
+    TO_FOOTNOTE,
+    TO_FOOTNOTE_REF,
+    TO_DEFINITION,
+    TO_MD_HTML,
+    TO_BREAK,
     TO_MD_TEXT,
     TO_MD_LIST,
     TO_MD_TABLE_ROW,
@@ -7800,6 +7879,76 @@ $$"#,
                 code: r#"to_callout("Note text", "note", "")"#,
                 expected: r#"> [!NOTE]
 > Note text"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("to_footnote"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown footnote definition node with the given value and identifier.",
+            params: &["value", "ident"],
+            param_types: &["dynamic", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_footnote("Footnote text", "1")"#,
+                expected: r#"[^1]: Footnote text"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("to_footnote_ref"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown footnote reference node with the given identifier.",
+            params: &["ident"],
+            param_types: &["string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_footnote_ref("1")"#,
+                expected: r#"[^1]"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("to_definition"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown link reference definition node with the given url, identifier, and title.",
+            params: &["url", "ident", "title"],
+            param_types: &["string", "string", "string"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_definition("https://example.com", "ex", "")"#,
+                expected: r#"[ex]: https://example.com"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("to_md_html"),
+        BuiltinFunctionDoc {
+            description: "Creates a raw markdown HTML node with the given value.",
+            params: &["value"],
+            param_types: &["dynamic"],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_md_html("<br>")"#,
+                expected: r#"<br>"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("to_break"),
+        BuiltinFunctionDoc {
+            description: "Creates a markdown hard line break node.",
+            params: &[],
+            param_types: &[],
+            returns: "markdown",
+            examples: &[BuiltinExample {
+                code: r#"to_break()"#,
+                expected: "\\\n",
             }],
             capability: None,
         },
