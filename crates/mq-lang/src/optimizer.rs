@@ -1428,7 +1428,7 @@ fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
         ast::Expr::Call(ident, args) => ident.name == fn_name || args.iter().any(|a| contains_self_call(a, fn_name)),
         ast::Expr::Ident(ident) => ident.name == fn_name,
         ast::Expr::And(ops) | ast::Expr::Or(ops) => ops.iter().any(|o| contains_self_call(o, fn_name)),
-        ast::Expr::If(branches) => branches.iter().any(|(cond, body)| {
+        ast::Expr::If(branches) | ast::Expr::Unless(branches) => branches.iter().any(|(cond, body)| {
             cond.as_ref().is_some_and(|c| contains_self_call(c, fn_name)) || contains_self_call(body, fn_name)
         }),
         ast::Expr::Try(t, _, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
@@ -1553,7 +1553,7 @@ fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>)
                 collect_called_fns_node(n, set);
             }
         }
-        ast::Expr::If(branches) => {
+        ast::Expr::If(branches) | ast::Expr::Unless(branches) => {
             for (cond, body) in branches {
                 if let Some(c) = cond {
                     collect_called_fns_node(c, set);
@@ -1584,7 +1584,7 @@ fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>)
         ast::Expr::Let(_, rhs) | ast::Expr::Var(_, rhs) | ast::Expr::Assign(_, rhs) | ast::Expr::As(_, rhs) => {
             collect_called_fns_node(rhs, set);
         }
-        ast::Expr::While(cond, body) | ast::Expr::Foreach(_, cond, body) => {
+        ast::Expr::While(cond, body) | ast::Expr::Until(cond, body) | ast::Expr::Foreach(_, cond, body) => {
             collect_called_fns_node(cond, set);
             for n in body {
                 collect_called_fns_node(n, set);
@@ -2819,6 +2819,32 @@ mod tests {
         assert!(
             prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
             "Full: Def passed as first-class value must be preserved"
+        );
+    }
+
+    #[rstest]
+    #[case::unless_branch("def helper(x): x + 1; | unless (false): helper(1)", 2)]
+    #[case::while_body("def helper(x): x + 1; | var x = 0 | while (x < 1): x += 1 | helper(x);", 2)]
+    #[case::until_body("def helper(x): x + 1; | var x = 0 | until (x >= 1): x += 1 | helper(x);", 2)]
+    fn def_called_only_inside_conditional_or_loop_not_eliminated(#[case] query: &str, #[case] expected: i64) {
+        // `apply_inline` doesn't recurse into `unless`/`while`/`until` bodies (only `if` is
+        // inlined into), so `helper`'s call site here always survives as a real `Call` node.
+        // Dead-code elimination must still see it via collect_called_fns_node/contains_self_call;
+        // if either is missing an Until/Unless arm, `helper`'s Def gets deleted as "unused"
+        // while a live `Call` to it remains, and the eval below crashes with NotDefined.
+        let prog = ast_full(query);
+        assert!(
+            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            "Full: Def called only inside the branch/loop body must be preserved for query {query:?}"
+        );
+
+        let mut engine = DefaultEngine::default();
+        engine.set_optimization_level(OptimizationLevel::Full);
+        let result = engine.eval(query, vec![crate::RuntimeValue::NONE].into_iter());
+        assert_eq!(
+            result,
+            Ok(vec![crate::RuntimeValue::Number(expected.into())].into()),
+            "Full: eval must not crash with NotDefined for query {query:?}"
         );
     }
 
