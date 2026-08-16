@@ -16,18 +16,18 @@ class MqSettingsConfigurable : Configurable {
 
     private val lspPathField = TextFieldWithBrowseButton().apply {
         addBrowseFolderListener(
-            "mq-lsp Executable",
-            "Path to the mq-lsp language server executable. Leave empty to auto-detect on PATH.",
             null,
-            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
+            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                .withTitle("mq-lsp Executable")
+                .withDescription("Path to the mq-lsp language server executable. Leave empty to auto-detect on PATH."),
         )
     }
     private val dbgPathField = TextFieldWithBrowseButton().apply {
         addBrowseFolderListener(
-            "mq-dbg Executable",
-            "Path to the mq-dbg debug adapter executable. Leave empty to auto-detect on PATH.",
             null,
-            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor(),
+            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                .withTitle("mq-dbg Executable")
+                .withDescription("Path to the mq-dbg debug adapter executable. Leave empty to auto-detect on PATH."),
         )
     }
     private val showExamplesCheckBox = JBCheckBox("Show examples when creating a new .mq file")
