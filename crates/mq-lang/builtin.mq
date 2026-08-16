@@ -1031,9 +1031,7 @@ end
 # ```
 #
 # Returns: dynamic
-def tap(value, expr):
-  expr | value
-end
+def tap(value, expr): expr | value;
 
 # Extracts values from an array of objects based on a specified selector.
 #
@@ -1045,7 +1043,7 @@ def pluck(pluck_obj, selector):
         | :symbol || :string: compact(map(pluck_obj, fn(x): x[selector];))
         | _: compact(selector)
       end
-    | _: do pluck_obj | selector end
+    | _: do pluck_obj | selector;
   end
 end
 

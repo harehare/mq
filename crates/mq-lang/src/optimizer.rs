@@ -2827,11 +2827,6 @@ mod tests {
     #[case::while_body("def helper(x): x + 1; | var x = 0 | while (x < 1): x += 1 | helper(x);", 2)]
     #[case::until_body("def helper(x): x + 1; | var x = 0 | until (x >= 1): x += 1 | helper(x);", 2)]
     fn def_called_only_inside_conditional_or_loop_not_eliminated(#[case] query: &str, #[case] expected: i64) {
-        // `apply_inline` doesn't recurse into `unless`/`while`/`until` bodies (only `if` is
-        // inlined into), so `helper`'s call site here always survives as a real `Call` node.
-        // Dead-code elimination must still see it via collect_called_fns_node/contains_self_call;
-        // if either is missing an Until/Unless arm, `helper`'s Def gets deleted as "unused"
-        // while a live `Call` to it remains, and the eval below crashes with NotDefined.
         let prog = ast_full(query);
         assert!(
             prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),

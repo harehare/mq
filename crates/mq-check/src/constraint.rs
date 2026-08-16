@@ -178,7 +178,69 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     children_index
 }
 
-/// Generates constraints for a single symbol
+fn infer_while_or_until(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+    invert: bool,
+) {
+    let children = get_children(children_index, symbol_id);
+    let range = get_symbol_range(hir, symbol_id);
+
+    if !children.is_empty() {
+        let cond_ty = ctx.get_or_create_symbol_type(children[0]);
+        ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
+
+        if children.len() > 1 {
+            let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
+            if !cond_narrowings.is_empty() {
+                let (body_narrowings, post_loop_narrowings) = if invert {
+                    (cond_narrowings.else_narrowings, cond_narrowings.then_narrowings)
+                } else {
+                    (cond_narrowings.then_narrowings, cond_narrowings.else_narrowings)
+                };
+
+                let body_children: Vec<SymbolId> = children[1..].to_vec();
+                for &body_id in &body_children {
+                    ctx.add_type_narrowing(TypeNarrowing {
+                        then_narrowings: body_narrowings.clone(),
+                        else_narrowings: Vec::new(),
+                        then_branch_id: body_id,
+                        else_branch_ids: Vec::new(),
+                    });
+                }
+
+                if !post_loop_narrowings.is_empty() {
+                    let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
+                    if !post_loop_siblings.is_empty() {
+                        ctx.add_type_narrowing(TypeNarrowing {
+                            then_narrowings: Vec::new(),
+                            else_narrowings: post_loop_narrowings,
+                            then_branch_id: symbol_id, // unused (then_narrowings empty)
+                            else_branch_ids: post_loop_siblings,
+                        });
+                    }
+                }
+            }
+        }
+
+        if children.len() > 1 {
+            let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
+            let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+            break_tys.push(Type::None);
+            let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
+            ctx.set_symbol_type(symbol_id, loop_ty);
+        } else {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+    } else {
+        let ty_var = ctx.fresh_var();
+        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+    }
+}
+
 pub(super) fn generate_symbol_constraints(
     hir: &Hir,
     symbol_id: SymbolId,
@@ -1523,125 +1585,12 @@ pub(super) fn generate_symbol_constraints(
             // While loop: condition must be Bool, result type from body.
             // `break: value` exits with the value's type; multiple break paths may
             // create a union with the normal-exit (body) type.
-            let children = get_children(children_index, symbol_id);
-            let range = get_symbol_range(hir, symbol_id);
-
-            if !children.is_empty() {
-                // First child is the condition
-                let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
-
-                // Analyze condition for type narrowing: narrowings apply inside the loop body
-                // (then-branch) and to code after the loop (else-branch, when condition is false).
-                if children.len() > 1 {
-                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
-                    if !cond_narrowings.is_empty() {
-                        // Loop body is the last child; all body children receive then-narrowings.
-                        let body_children: Vec<SymbolId> = children[1..].to_vec();
-                        for &body_id in &body_children {
-                            ctx.add_type_narrowing(TypeNarrowing {
-                                then_narrowings: cond_narrowings.then_narrowings.clone(),
-                                else_narrowings: Vec::new(),
-                                then_branch_id: body_id,
-                                else_branch_ids: Vec::new(),
-                            });
-                        }
-
-                        // Post-loop narrowing: when the while condition becomes false,
-                        // apply else_narrowings to siblings that follow the While node
-                        // in its parent scope.
-                        if !cond_narrowings.else_narrowings.is_empty() {
-                            let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
-                            if !post_loop_siblings.is_empty() {
-                                ctx.add_type_narrowing(TypeNarrowing {
-                                    then_narrowings: Vec::new(),
-                                    else_narrowings: cond_narrowings.else_narrowings,
-                                    then_branch_id: symbol_id, // unused (then_narrowings empty)
-                                    else_branch_ids: post_loop_siblings,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Result type comes from the body (last child after condition).
-                // `while` always includes `None` in its return type because the condition
-                // may be false on the very first check (loop body never runs).
-                if children.len() > 1 {
-                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
-                    // Condition-initially-false path → None.
-                    break_tys.push(Type::None);
-                    let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
-                    ctx.set_symbol_type(symbol_id, loop_ty);
-                } else {
-                    let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                }
-            } else {
-                let ty_var = ctx.fresh_var();
-                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-            }
+            infer_while_or_until(hir, symbol_id, ctx, children_index, false);
         }
 
         SymbolKind::Until => {
             // Until loop: condition must be Bool, body runs while condition is false.
-            let children = get_children(children_index, symbol_id);
-            let range = get_symbol_range(hir, symbol_id);
-
-            if !children.is_empty() {
-                // First child is the condition
-                let cond_ty = ctx.get_or_create_symbol_type(children[0]);
-                ctx.add_constraint(Constraint::Equal(cond_ty, Type::Bool, range, ConstraintOrigin::General));
-
-                // Analyze condition for type narrowing: polarity is inverted relative
-                // to `while` since the body runs while the condition is false.
-                if children.len() > 1 {
-                    let cond_narrowings = analyze_condition(hir, children[0], children_index, ctx);
-                    if !cond_narrowings.is_empty() {
-                        let body_children: Vec<SymbolId> = children[1..].to_vec();
-                        for &body_id in &body_children {
-                            ctx.add_type_narrowing(TypeNarrowing {
-                                then_narrowings: cond_narrowings.else_narrowings.clone(),
-                                else_narrowings: Vec::new(),
-                                then_branch_id: body_id,
-                                else_branch_ids: Vec::new(),
-                            });
-                        }
-
-                        // Post-loop narrowing: once the condition becomes true,
-                        // then-narrowings hold for code following the loop.
-                        if !cond_narrowings.then_narrowings.is_empty() {
-                            let post_loop_siblings = get_post_loop_siblings(hir, symbol_id, children_index);
-                            if !post_loop_siblings.is_empty() {
-                                ctx.add_type_narrowing(TypeNarrowing {
-                                    then_narrowings: Vec::new(),
-                                    else_narrowings: cond_narrowings.then_narrowings,
-                                    then_branch_id: symbol_id, // unused (then_narrowings empty)
-                                    else_branch_ids: post_loop_siblings,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Result type comes from the body (last child after condition).
-                // `until` always includes `None` in its return type because the
-                // condition may already be true on the very first check.
-                if children.len() > 1 {
-                    let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                    let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
-                    break_tys.push(Type::None);
-                    let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
-                    ctx.set_symbol_type(symbol_id, loop_ty);
-                } else {
-                    let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                }
-            } else {
-                let ty_var = ctx.fresh_var();
-                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-            }
+            infer_while_or_until(hir, symbol_id, ctx, children_index, true);
         }
 
         SymbolKind::Loop => {

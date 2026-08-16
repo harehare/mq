@@ -377,6 +377,18 @@ fn test_narrowing_post_while_loop() {
 }
 
 #[test]
+fn test_narrowing_post_until_loop() {
+    // `until` inverts `while`'s narrowing polarity: the body runs while the condition is
+    // false, so post-loop narrowing (loop exited normally, condition now true) applies
+    // then_narrowings to subsequent code instead of else_narrowings.
+    let result = check_types(r#"def f(x): until (is_string(x)): x; x"#);
+    assert!(
+        result.is_empty(),
+        "Post-loop narrowing should produce no errors: {result:?}"
+    );
+}
+
+#[test]
 fn test_narrowing_selector_heading_then_branch() {
     // if (.h) uses the structural heading selector as a condition.
     // In the then-branch, the first parameter `x` is narrowed to Markdown.

@@ -601,25 +601,39 @@ impl Hir {
             ..
         } = &**node
         {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::While,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-            let loop_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
-            });
+            self.add_loop_expr_with_kind(node, source_id, scope_id, parent, SymbolKind::While);
         }
+    }
+
+    /// Shared lowering for `while`/`until`: both create a loop-scoped symbol and lower
+    /// every child (condition, then body) into that scope; only the resulting `SymbolKind`
+    /// differs.
+    fn add_loop_expr_with_kind(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+        symbol_kind: SymbolKind,
+    ) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: symbol_kind,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+            insertion_order: 0,
+        });
+        let loop_scope_id = self.add_scope(Scope::new(
+            SourceInfo::new(Some(source_id), Some(node.node_range())),
+            ScopeKind::Loop(symbol_id),
+            Some(scope_id),
+        ));
+
+        node.children_without_token().iter().for_each(|child| {
+            self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
+        });
     }
 
     fn add_loop_expr(
@@ -667,24 +681,7 @@ impl Hir {
             ..
         } = &**node
         {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Until,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-            let loop_scope_id = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Loop(symbol_id),
-                Some(scope_id),
-            ));
-
-            node.children_without_token().iter().for_each(|child| {
-                self.add_expr(child, source_id, loop_scope_id, Some(symbol_id));
-            });
+            self.add_loop_expr_with_kind(node, source_id, scope_id, parent, SymbolKind::Until);
         }
     }
 
@@ -856,20 +853,7 @@ impl Hir {
             ..
         } = &**node
         {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::If,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-            let if_scope = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
+            let (symbol_id, if_scope) = self.add_conditional_symbol(node, source_id, scope_id, parent, SymbolKind::If);
 
             if let [cond, then_expr, rest @ ..] = node.children_without_token().as_slice() {
                 self.add_expr(cond, source_id, if_scope, Some(symbol_id));
@@ -881,6 +865,34 @@ impl Hir {
                 }
             }
         }
+    }
+
+    /// Shared lowering for `if`/`unless`: both create a block-scoped symbol for the
+    /// condition/body pair; `if` additionally walks `elif`/`else` siblings, `unless` doesn't.
+    fn add_conditional_symbol(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+        symbol_kind: SymbolKind,
+    ) -> (SymbolId, ScopeId) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: symbol_kind,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+            insertion_order: 0,
+        });
+        let cond_scope = self.add_scope(Scope::new(
+            SourceInfo::new(Some(source_id), Some(node.node_range())),
+            ScopeKind::Block(symbol_id),
+            Some(scope_id),
+        ));
+
+        (symbol_id, cond_scope)
     }
 
     fn add_unless_expr(
@@ -895,20 +907,8 @@ impl Hir {
             ..
         } = &**node
         {
-            let symbol_id = self.add_symbol(Symbol {
-                value: node.name(),
-                kind: SymbolKind::Unless,
-                source: SourceInfo::new(Some(source_id), Some(node.range())),
-                scope: scope_id,
-                doc: node.comments(),
-                parent,
-                insertion_order: 0,
-            });
-            let unless_scope = self.add_scope(Scope::new(
-                SourceInfo::new(Some(source_id), Some(node.node_range())),
-                ScopeKind::Block(symbol_id),
-                Some(scope_id),
-            ));
+            let (symbol_id, unless_scope) =
+                self.add_conditional_symbol(node, source_id, scope_id, parent, SymbolKind::Unless);
 
             if let [cond, then_expr] = node.children_without_token().as_slice() {
                 self.add_expr(cond, source_id, unless_scope, Some(symbol_id));

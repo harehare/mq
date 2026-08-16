@@ -869,6 +869,26 @@ fn test_while_condition_type_errors(#[case] code: &str, #[case] should_succeed: 
     );
 }
 
+// Until Loop Condition Type Errors
+
+#[rstest]
+#[case::number_condition("until (42): 1;", false, "number condition should fail")]
+#[case::string_condition(r#"until ("true"): 1;"#, false, "string condition should fail")]
+#[case::number_expr_condition("until (1 + 2): 1;", false, "number expression condition should fail")]
+#[case::bool_condition("until (false): 1;", true, "bool condition should succeed")]
+#[case::bool_expr_condition("until (1 == 2): 1;", true, "bool expression condition should succeed")]
+#[case::bool_comparison_condition("until (1 > 2): 1;", true, "bool comparison condition should succeed")]
+fn test_until_condition_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Errors={:?}",
+        description,
+        result
+    );
+}
+
 // Match Pattern Type Errors
 
 #[rstest]
