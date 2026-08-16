@@ -5,6 +5,7 @@ Neovim plugin for [mq](https://mqlang.org/) - a jq-like tool for Markdown proces
 ## Features
 
 - 🎨 **Syntax Highlighting** - Full syntax support for `.mq` files
+- 🔗 **Matching Keywords** - `%` jumps between block keywords (`def`, `fn`, `while`, `until`, `loop`, `foreach`, `match`, `module`) and their `end` via matchit
 - 🔧 **LSP Integration** - Code completion, diagnostics, and more via Language Server Protocol
 - 🐛 **DAP Integration** - Debug your mq queries with nvim-dap
 - ⚡  **Commands** - Execute mq queries directly from Neovim
