@@ -3232,6 +3232,10 @@ fn engine() -> DefaultEngine {
     ",
       vec![RuntimeValue::None],
       Ok(vec![RuntimeValue::Number(4.into())].into()))]
+// until: continue on first iteration (first=true path)
+#[case::until_continue_first("var i = 0 | until(i >= 3): i += 1 | if(i == 1): continue else: i;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+// until: break with no previous value (first=true path)
+#[case::until_break_immediately("until(false): break;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::unless_true("unless (true): \"ran\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::unless_false("unless (false): \"ran\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ran".to_string())].into()))]
 #[case::unless_short_circuits("
