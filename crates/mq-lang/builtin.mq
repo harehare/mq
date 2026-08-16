@@ -1042,7 +1042,7 @@ def pluck(pluck_obj, selector):
   match (pluck_obj):
     | :array:
       match (selector):
-        | :symbol: compact(map(pluck_obj, fn(x): x[selector];))
+        | :symbol || :string: compact(map(pluck_obj, fn(x): x[selector];))
         | _: compact(selector)
       end
     | _: do pluck_obj | selector end
