@@ -48,7 +48,7 @@ impl<F: HttpFetcher> Default for HttpModuleResolver<F> {
         Self {
             allowed_remote_domains: Vec::new(),
             fetcher: F::default(),
-            enabled: true,
+            enabled: false,
         }
     }
 }
@@ -90,7 +90,7 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
                 .map(|d| normalize_allowed_domain(&d))
                 .collect(),
             fetcher,
-            enabled: true,
+            enabled: false,
         }
     }
 
@@ -108,8 +108,7 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
 
     /// Enables or disables HTTP module imports outright, independent of the domain allowlist.
     ///
-    /// On by default for direct library use; the `mq` CLI turns this off unless
-    /// `--allow-http-import` is passed, so imports are opt-in there.
+    /// Off by default, for library use as well as the `mq` CLI (which surfaces this as `--allow-http-import`); callers must opt in explicitly.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;
     }
@@ -581,10 +580,11 @@ mod tests {
     #[test]
     #[cfg(feature = "http-import-ureq")]
     fn test_to_fetch_url_allowed_via_github_shorthand_domain() {
-        let resolver = HttpModuleResolver::new(
+        let mut resolver = HttpModuleResolver::new(
             vec!["github.com/alice/lisp".to_string()],
             UreqFetcher::new(Duration::from_secs(10)),
         );
+        resolver.set_enabled(true);
         assert!(resolver.to_fetch_url("github.com/alice/lisp").is_ok());
         assert!(resolver.to_fetch_url("github.com/alice/other").is_err());
     }
@@ -604,7 +604,8 @@ mod tests {
     )]
     #[cfg(feature = "http-import-ureq")]
     fn test_to_fetch_url_with_empty_allowlist(#[case] input: &str, #[case] expected: &str) {
-        let resolver = resolver_with_domains(vec![]);
+        let mut resolver = resolver_with_domains(vec![]);
+        resolver.set_enabled(true);
         assert_eq!(resolver.to_fetch_url(input).unwrap(), expected);
     }
 
@@ -689,7 +690,8 @@ mod tests {
             lockfile_path: dir.path().join("mq.lock"),
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
         assert_eq!(resolver.resolve(url).unwrap(), content);
     }
 
@@ -708,7 +710,8 @@ mod tests {
             cache_dir: dir.path().to_path_buf(),
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
         assert!(resolver.resolve(url).is_err());
     }
 
@@ -733,7 +736,8 @@ mod tests {
             cache_dir: dir.path().to_path_buf(),
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
         assert!(resolver.resolve(url).is_err());
     }
 
@@ -759,7 +763,8 @@ mod tests {
             lockfile_path: dir.path().join("mq.lock"),
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
         assert_eq!(resolver.resolve(url).unwrap(), content);
     }
 
@@ -794,7 +799,8 @@ mod tests {
             lockfile_path: lock_path,
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         let err = resolver.resolve(url).unwrap_err();
         assert!(err.to_string().contains("re-fetch the module"), "message was: {err}");
@@ -817,7 +823,8 @@ mod tests {
             lockfile_path: lock_path,
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         let err = resolver.resolve(url).unwrap_err();
         assert!(err.to_string().contains("reset the module cache"), "message was: {err}");
@@ -837,7 +844,8 @@ mod tests {
             lockfile_path: lock_path.clone(),
             ..UreqFetcher::default()
         };
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         // A cache hit in a project with no mq.lock yet must still create the entry, so the
         // project gains lock protection even when the module never touches the network.
@@ -864,7 +872,8 @@ mod tests {
             ..UreqFetcher::default()
         };
         fetcher.set_lockfile_frozen(true);
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         let err = resolver.resolve(url).unwrap_err();
         assert!(err.to_string().contains("lock file is frozen"), "error was: {err}");
@@ -891,7 +900,8 @@ mod tests {
             ..UreqFetcher::default()
         };
         fetcher.set_lockfile_frozen(true);
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         assert_eq!(resolver.resolve(url).unwrap(), content);
     }
@@ -915,7 +925,8 @@ mod tests {
             ..UreqFetcher::default()
         };
         fetcher.set_lockfile_enabled(false);
-        let resolver = HttpModuleResolver::new(vec![], fetcher);
+        let mut resolver = HttpModuleResolver::new(vec![], fetcher);
+        resolver.set_enabled(true);
 
         assert_eq!(resolver.resolve(url).unwrap(), content);
     }
@@ -956,9 +967,9 @@ mod tests {
 
     #[test]
     #[cfg(feature = "http-import-ureq")]
-    fn test_enabled_by_default() {
+    fn test_disabled_by_default() {
         let resolver = HttpModuleResolver::<UreqFetcher>::default();
-        assert!(resolver.enabled);
+        assert!(!resolver.enabled);
     }
 
     #[rstest]
@@ -1220,7 +1231,8 @@ mod tests {
     )]
     #[cfg(feature = "http-import-ureq")]
     fn test_to_fetch_url_https_github_form(#[case] input: &str, #[case] expected: &str) {
-        let resolver = resolver_with_domains(vec![]);
+        let mut resolver = resolver_with_domains(vec![]);
+        resolver.set_enabled(true);
         assert_eq!(resolver.to_fetch_url(input).unwrap(), expected);
     }
 
