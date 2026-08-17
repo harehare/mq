@@ -18,7 +18,7 @@ pub(crate) fn response(
             .filter_map(|symbol| {
                 symbol.source.text_range.and_then(|text_range| {
                     let kind = match &symbol.kind {
-                        mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Macro(_) => SymbolKind::FUNCTION,
+                        mq_hir::SymbolKind::Function(_) => SymbolKind::FUNCTION,
                         mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::DestructuringBinding => SymbolKind::FIELD,
                         mq_hir::SymbolKind::String => SymbolKind::STRING,
                         mq_hir::SymbolKind::Boolean => SymbolKind::BOOLEAN,

@@ -142,6 +142,29 @@ impl Node {
                 buf.push_str("loop");
                 format_program_block(program, buf, indent);
             }
+            Expr::Until(cond, program) => {
+                buf.push_str("until (");
+                cond.format_to_code(buf, indent);
+                buf.push(')');
+                if needs_block_syntax(program) {
+                    format_program_block(program, buf, indent);
+                } else if let Some(stmt) = program.first() {
+                    buf.push_str(": ");
+                    stmt.format_to_code(buf, indent);
+                }
+            }
+            Expr::Unless(branches) => {
+                if let Some((cond_opt, body)) = branches.first() {
+                    buf.push_str("unless ");
+                    if let Some(cond) = cond_opt {
+                        buf.push('(');
+                        cond.format_to_code(buf, indent);
+                        buf.push(')');
+                    }
+                    buf.push_str(": ");
+                    body.format_to_code(buf, indent);
+                }
+            }
             Expr::Foreach(item, iter, program) => {
                 write!(buf, "foreach({}, ", item).unwrap();
                 iter.format_to_code(buf, indent);
@@ -225,21 +248,6 @@ impl Node {
                     }
                 }
                 buf.push('"');
-            }
-            Expr::Macro(name, params, body) => {
-                write!(buf, "macro {}(", name).unwrap();
-                format_params(params, buf, indent);
-                buf.push_str("): ");
-                body.format_to_code(buf, indent);
-            }
-            Expr::Quote(node) => {
-                buf.push_str("quote: ");
-                node.format_to_code(buf, indent);
-            }
-            Expr::Unquote(node) => {
-                buf.push_str("unquote(");
-                node.format_to_code(buf, indent);
-                buf.push(')');
             }
             Expr::Try(try_expr, error_binder, catch_expr) => {
                 buf.push_str("try ");
@@ -686,6 +694,21 @@ mod tests {
     }
 
     #[rstest]
+    #[case::unless_simple(
+        Expr::Unless(smallvec![
+            (
+                Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
+            )
+        ]),
+        "unless (x): 1"
+    )]
+    fn test_to_code_unless(#[case] expr: Expr, #[case] expected: &str) {
+        let node = create_node(expr);
+        assert_eq!(node.to_code(), expected);
+    }
+
+    #[rstest]
     #[case::while_inline(
         Expr::While(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
@@ -704,6 +727,29 @@ mod tests {
         "while (x) do\n  1 | 2\nend"
     )]
     fn test_to_code_while(#[case] expr: Expr, #[case] expected: &str) {
+        let node = create_node(expr);
+        assert_eq!(node.to_code(), expected);
+    }
+
+    #[rstest]
+    #[case::until_inline(
+        Expr::Until(
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
+            vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+        ),
+        "until (x): 1"
+    )]
+    #[case::until_block(
+        Expr::Until(
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
+            vec![
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
+            ]
+        ),
+        "until (x) do\n  1 | 2\nend"
+    )]
+    fn test_to_code_until(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
     }
@@ -903,48 +949,6 @@ mod tests {
         r#"s"Hello ${name}!""#
     )]
     fn test_to_code_interpolated_string(#[case] expr: Expr, #[case] expected: &str) {
-        let node = create_node(expr);
-        assert_eq!(node.to_code(), expected);
-    }
-
-    #[rstest]
-    #[case::simple(
-        Expr::Macro(
-            IdentWithToken::new("double"),
-            smallvec![Param::new(IdentWithToken::new("x"))],
-            Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))
-        ),
-        "macro double(x): x"
-    )]
-    #[case::with_default_value(
-        Expr::Macro(
-            IdentWithToken::new("greet_macro"),
-            smallvec![
-                Param::new(IdentWithToken::new("name")),
-                Param::with_default(
-                    IdentWithToken::new("prefix"),
-                    Some(Shared::new(create_node(Expr::Literal(Literal::String("Hi".to_string())))))
-                )
-            ],
-            Shared::new(create_node(Expr::Ident(IdentWithToken::new("name"))))
-        ),
-        r#"macro greet_macro(name, prefix = "Hi"): name"#
-    )]
-    fn test_to_code_macro(#[case] expr: Expr, #[case] expected: &str) {
-        let node = create_node(expr);
-        assert_eq!(node.to_code(), expected);
-    }
-
-    #[rstest]
-    #[case::quote(
-        Expr::Quote(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
-        "quote: x"
-    )]
-    #[case::unquote(
-        Expr::Unquote(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
-        "unquote(x)"
-    )]
-    fn test_to_code_quote_unquote(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
     }

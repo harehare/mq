@@ -1,5 +1,5 @@
 use super::env::Env;
-use crate::{AstParams, Ident, Program, Shared, SharedCell, ast, number::Number};
+use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
 use mq_markdown::Node;
 use smol_str::SmolStr;
 use std::{
@@ -104,8 +104,6 @@ pub enum RuntimeValue {
     Dict(Shared<BTreeMap<Ident, RuntimeValue>>),
     /// A module with its exports.
     Module(ModuleEnv),
-    /// An AST node (quoted expression).
-    Ast(Shared<ast::node::Node>),
     /// Raw binary data (e.g. CBOR byte strings).
     Bytes(Vec<u8>),
     /// An empty or null value.
@@ -127,7 +125,6 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
-            (RuntimeValue::Ast(a), RuntimeValue::Ast(b)) => a == b,
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
@@ -333,8 +330,6 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
-            (RuntimeValue::Ast(_), _) => None,
-            (_, RuntimeValue::Ast(_)) => None,
             _ => None,
         }
     }
@@ -354,7 +349,6 @@ impl std::fmt::Display for RuntimeValue {
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Dict(_) => self.string(),
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
-            Self::Ast(node) => Cow::Owned(node.to_code()),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
         };
         write!(f, "{}", value)
@@ -439,7 +433,6 @@ impl RuntimeValue {
             RuntimeValue::NativeFunction(_) => "native_function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Module(_) => "module",
-            RuntimeValue::Ast(_) => "ast",
             RuntimeValue::Bytes(_) => "bytes",
         }
     }
@@ -512,7 +505,6 @@ impl RuntimeValue {
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::Dict(_) => true,
             RuntimeValue::Module(_) => true,
-            RuntimeValue::Ast(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::None => false,
         }
@@ -537,7 +529,6 @@ impl RuntimeValue {
             RuntimeValue::Function(..) => 0,
             RuntimeValue::Module(m) => m.len(),
             RuntimeValue::NativeFunction(..) => 0,
-            RuntimeValue::Ast(_) => 0,
         }
     }
 
@@ -604,7 +595,6 @@ impl RuntimeValue {
             Self::Function(f, _, _) => Cow::Owned(format!("function/{}", f.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
-            Self::Ast(node) => Cow::Owned(node.to_code()),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Dict(map) => {
                 let items = map
@@ -765,7 +755,6 @@ impl RuntimeValues {
                         RuntimeValue::None
                         | RuntimeValue::Function(_, _, _)
                         | RuntimeValue::Module(_)
-                        | RuntimeValue::Ast(_)
                         | RuntimeValue::NativeFunction(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
@@ -1354,7 +1343,6 @@ mod tests {
     #[rstest]
     #[case(RuntimeValue::Symbol(Ident::new("abc")), 3)]
     #[case(RuntimeValue::NativeFunction(Ident::new("f")), 0)]
-    #[case(RuntimeValue::Ast(crate::Shared::new(crate::AstNode { token_id: crate::arena::ArenaId::new(0), expr: crate::Shared::new(crate::AstExpr::Self_) })), 0)]
     fn test_len_less_common(#[case] value: RuntimeValue, #[case] expected: usize) {
         assert_eq!(value.len(), expected);
     }
@@ -1838,15 +1826,5 @@ mod tests {
         let n = RuntimeValue::Number(1.into());
         let s = RuntimeValue::String("a".to_string());
         assert_eq!(n.partial_cmp(&s), None);
-    }
-
-    #[test]
-    fn test_ast_partial_cmp_is_none() {
-        let ast = RuntimeValue::Ast(crate::Shared::new(crate::AstNode {
-            token_id: crate::arena::ArenaId::new(0),
-            expr: crate::Shared::new(crate::AstExpr::Self_),
-        }));
-        assert_eq!(ast.partial_cmp(&RuntimeValue::None), None);
-        assert_eq!(RuntimeValue::None.partial_cmp(&ast), None);
     }
 }

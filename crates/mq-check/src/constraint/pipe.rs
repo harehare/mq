@@ -1,4 +1,4 @@
-//! Pipe chain constraint generation for Block and Function/Macro body expressions.
+//! Pipe chain constraint generation for Block and Function body expressions.
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
@@ -74,7 +74,7 @@ pub(super) fn generate_block_constraints(
     ctx.set_symbol_type(symbol_id, last_ty);
 }
 
-/// Generates pipe constraints for implicit pipe chains in Function/Macro bodies.
+/// Generates pipe constraints for implicit pipe chains in Function bodies.
 ///
 /// When a function body has multiple non-parameter children (e.g., `def f(x): a | b`),
 /// the output of each expression flows into the next as piped input.

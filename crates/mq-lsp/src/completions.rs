@@ -82,7 +82,7 @@ pub(crate) fn response(
                 symbols
                     .iter()
                     .filter_map(|symbol| match &symbol.kind {
-                        mq_hir::SymbolKind::Function(params) | mq_hir::SymbolKind::Macro(params) => {
+                        mq_hir::SymbolKind::Function(params) => {
                             let deprecated = symbol.is_deprecated();
                             Some(CompletionItem {
                                 label: symbol.value.clone().unwrap_or_default().to_string(),

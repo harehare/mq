@@ -62,7 +62,6 @@
     - [Operators](reference/operators.md)
     - [Assignment Operators](reference/assignment_operators.md)
     - [Functions](reference/functions.md)
-    - [Macros](reference/macros.md)
     - [Environment variables](reference/env.md)
     - [Modules and imports](reference/modules_and_imports.md)
     - [Variable Declarations](reference/variables.md)

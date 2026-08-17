@@ -622,16 +622,22 @@ fn test_while_condition_must_be_bool() {
     assert!(!errors.is_empty(), "while with non-bool condition should fail");
 }
 
-// Macro Definition
+// Until / Unless
 
 #[test]
-fn test_macro_definition() {
-    assert!(check_types("macro inc(x): x + 1;").is_empty());
+fn test_until_loop() {
+    assert!(check_types("var x = 0 | until (x > 0): x = x + 1;").is_empty());
 }
 
 #[test]
-fn test_macro_with_multiple_params() {
-    assert!(check_types("macro add(x, y): x + y;").is_empty());
+fn test_until_condition_must_be_bool() {
+    let errors = check_types("until (42): 1;");
+    assert!(!errors.is_empty(), "until with non-bool condition should fail");
+}
+
+#[test]
+fn test_unless_expression() {
+    assert!(check_types("unless (true): 1;").is_empty());
 }
 
 // User-Defined Function Type Checking
@@ -853,6 +859,26 @@ fn test_lambda_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[c
 #[case::bool_expr_condition("while (1 == 1): 1;", true, "bool expression condition should succeed")]
 #[case::bool_comparison_condition("while (1 < 2): 1;", true, "bool comparison condition should succeed")]
 fn test_while_condition_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Errors={:?}",
+        description,
+        result
+    );
+}
+
+// Until Loop Condition Type Errors
+
+#[rstest]
+#[case::number_condition("until (42): 1;", false, "number condition should fail")]
+#[case::string_condition(r#"until ("true"): 1;"#, false, "string condition should fail")]
+#[case::number_expr_condition("until (1 + 2): 1;", false, "number expression condition should fail")]
+#[case::bool_condition("until (false): 1;", true, "bool condition should succeed")]
+#[case::bool_expr_condition("until (1 == 2): 1;", true, "bool expression condition should succeed")]
+#[case::bool_comparison_condition("until (1 > 2): 1;", true, "bool comparison condition should succeed")]
+fn test_until_condition_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
     let result = check_types(code);
     assert_eq!(
         result.is_empty(),

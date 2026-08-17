@@ -32,6 +32,21 @@ The if expression evaluates a condition and executes code based on the result:
 The if expression can be nested and chained with elif and else clauses.
 The conditions must evaluate to boolean values.
 
+## Unless Expression
+
+The unless expression executes code only when a condition is false — the inverse of a single-branch `if`:
+
+```mq
+unless (x == 1):
+  "not one"
+```
+
+```mq
+unless (x == 1):
+  "not one"
+# => None (when x == 1, the body is not evaluated)
+```
+
 ## While Expression
 
 The while loop repeatedly executes code while a condition is true:
@@ -57,6 +72,20 @@ while (x > 0):
 end
 # => "Found three!"
 ```
+
+## Until Expression
+
+The until loop repeatedly executes code while a condition is false — the inverse of `while`:
+
+```mq
+var x = 0 |
+until (x >= 5):
+  x = x + 1 | x
+end
+# => 5
+```
+
+Like `while`, `until` supports `break`/`break: <expr>` and `continue` inside its body.
 
 ## Foreach Expression
 

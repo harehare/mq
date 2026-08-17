@@ -20,8 +20,7 @@ enum SortPriority {
     Include = 1,
     Let = 2,
     Def = 3,
-    Macro = 4,
-    Other = 5,
+    Other = 4,
 }
 
 #[derive(Clone, Debug)]
@@ -52,7 +51,6 @@ impl From<&CstNode> for SortPriority {
             CstNodeKind::Include => SortPriority::Include,
             CstNodeKind::Let | CstNodeKind::Var => SortPriority::Let,
             CstNodeKind::Def | CstNodeKind::Fn => SortPriority::Def,
-            CstNodeKind::Macro => SortPriority::Macro,
             _ => SortPriority::Other,
         }
     }
@@ -61,13 +59,7 @@ impl From<&CstNode> for SortPriority {
 pub(crate) fn ident(node: &CstNode) -> Option<String> {
     match node {
         CstNode {
-            kind:
-                CstNodeKind::Import
-                | CstNodeKind::Include
-                | CstNodeKind::Def
-                | CstNodeKind::Let
-                | CstNodeKind::Var
-                | CstNodeKind::Macro,
+            kind: CstNodeKind::Import | CstNodeKind::Include | CstNodeKind::Def | CstNodeKind::Let | CstNodeKind::Var,
             token: Some(_),
             children,
             ..
@@ -77,7 +69,7 @@ pub(crate) fn ident(node: &CstNode) -> Option<String> {
 }
 
 pub fn needs_pipe(node: &CstNode) -> bool {
-    !matches!(node.kind, CstNodeKind::Def | CstNodeKind::Macro | CstNodeKind::Eof)
+    !matches!(node.kind, CstNodeKind::Def | CstNodeKind::Eof)
 }
 
 impl Formatter {
@@ -248,15 +240,12 @@ impl Formatter {
             mq_lang::CstNodeKind::Block => {
                 self.format_block(&node, indent_level_consider_new_line, indent_level);
             }
-            mq_lang::CstNodeKind::Call | mq_lang::CstNodeKind::MacroCall => {
-                self.format_call(&node, indent_level_consider_new_line)
-            }
+            mq_lang::CstNodeKind::Call => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::CallDynamic => self.format_call_dynamic(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Quote => self.format_quote(&node, indent_level_consider_new_line),
-            mq_lang::CstNodeKind::Unquote => self.format_call(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Def
             | mq_lang::CstNodeKind::Foreach
             | mq_lang::CstNodeKind::While
+            | mq_lang::CstNodeKind::Until
             | mq_lang::CstNodeKind::Loop
             | mq_lang::CstNodeKind::Fn => self.format_expr(
                 &node,
@@ -264,12 +253,12 @@ impl Formatter {
                 indent_level,
                 !matches!(node.kind, mq_lang::CstNodeKind::Fn | mq_lang::CstNodeKind::Loop),
             ),
-            mq_lang::CstNodeKind::Macro => self.format_macro(&node, indent_level_consider_new_line, indent_level),
             mq_lang::CstNodeKind::Eof => {}
             mq_lang::CstNodeKind::Elif => self.format_elif(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Else => self.format_else(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident => self.format_ident(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::If => self.format_if(&node, indent_level_consider_new_line, indent_level),
+            mq_lang::CstNodeKind::Unless => self.format_if(&node, indent_level_consider_new_line, indent_level),
             mq_lang::CstNodeKind::Include => self.format_include(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Import => self.format_import(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Module => self.format_module(&node, indent_level_consider_new_line),
@@ -627,62 +616,6 @@ impl Formatter {
         });
     }
 
-    fn format_macro(
-        &mut self,
-        node: &mq_lang::Shared<mq_lang::CstNode>,
-        indent_level: usize,
-        block_indent_level: usize,
-    ) {
-        let is_prev_pipe = self.is_prev_pipe();
-        let indent_adjustment = self.calculate_indent_adjustment();
-
-        if node.has_new_line() {
-            self.append_indent(indent_level);
-        }
-        self.output.push_str(&node.to_string());
-        self.append_space();
-
-        let colon_index = Self::find_token_position(node, |kind| matches!(kind, mq_lang::TokenKind::Colon));
-
-        // If there's no colon, split before the right parenthesis
-        let expr_index = self.calculate_split_position(node, 0);
-
-        node.children.iter().take(expr_index).for_each(|child| {
-            self.format_node(
-                mq_lang::Shared::clone(child),
-                if child.has_new_line() {
-                    block_indent_level + 1
-                } else {
-                    block_indent_level
-                } + indent_adjustment,
-            );
-        });
-
-        let mut expr_nodes = node.children.iter().skip(expr_index).peekable();
-
-        // Format colon if it exists
-        if colon_index.is_some()
-            && let Some(colon_node) = expr_nodes.next()
-        {
-            self.format_colon_with_spacing(colon_node, &mut expr_nodes, block_indent_level + 1);
-        }
-
-        let block_indent_level = if is_prev_pipe {
-            block_indent_level + 2
-        } else {
-            block_indent_level + 1
-        } + indent_adjustment;
-
-        expr_nodes.for_each(|child| {
-            let child_indent = if matches!(child.kind, mq_lang::CstNodeKind::Block) && colon_index.is_none() {
-                indent_level
-            } else {
-                block_indent_level
-            };
-            self.format_node(mq_lang::Shared::clone(child), child_indent);
-        });
-    }
-
     fn needs_descendant_space(
         prev: &mq_lang::Shared<mq_lang::CstNode>,
         current: &mq_lang::Shared<mq_lang::CstNode>,
@@ -802,28 +735,6 @@ impl Formatter {
         if let Some(name) = node.children.get(1) {
             self.format_node(mq_lang::Shared::clone(name), indent_level);
         }
-    }
-
-    fn format_quote(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
-        self.append_indent(indent_level);
-        self.output.push_str(&node.to_string());
-
-        let current_line_indent = if indent_level == 0 {
-            self.current_line_indent()
-        } else {
-            indent_level
-        };
-
-        node.children.iter().for_each(|child| {
-            self.format_node(
-                mq_lang::Shared::clone(child),
-                if child.has_new_line() {
-                    current_line_indent + 1
-                } else {
-                    current_line_indent
-                },
-            );
-        });
     }
 
     fn format_call(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
@@ -1957,6 +1868,42 @@ else: do
   | if (gt(self, 5)): break;;
 "
     )]
+    #[case::until_multiline(
+        "until(condition()):
+        process();",
+        "until (condition()):
+  process();
+"
+    )]
+    #[case::until_oneline("until(condition()): process();", "until (condition()): process();")]
+    #[case::until_with_pipe(
+        "until(check_condition()):
+        data
+        | process()
+        | output();",
+        "until (check_condition()):
+  data
+  | process()
+  | output();
+"
+    )]
+    #[case::until_with_break(
+        "until(false):
+        add(self,1)
+        |if(gt(self,5)):break;;",
+        "until (false):
+  add(self, 1)
+  | if (gt(self, 5)): break;;
+"
+    )]
+    #[case::unless_multiline(
+        "unless(test):
+        test",
+        "unless (test):
+  test
+"
+    )]
+    #[case::unless_oneline("unless(test): test", "unless (test): test")]
     #[case::def(
         r##".h
 | let link = to_link(add("#", to_text(self)), to_text(self), "");
@@ -2078,12 +2025,6 @@ s"test${val1}"
         "[\n  1,\n  2,\n  3\n]\n"
     )]
     #[case::let_with_array(r#"let arr = [1, 2, 3]"#, r#"let arr = [1, 2, 3]"#)]
-    // --- quote/unquote simple & nested cases ---
-    #[case::quote_simple("quote do test;", "quote do test;")]
-    #[case::unquote_simple("unquote(test)", "unquote(test)")]
-    #[case::quote_unquote_nested("quote do unquote(test);", "quote do unquote(test);")]
-    #[case::quote_with_pipe("quote do test | unquote(expr);", "quote do test | unquote(expr);")]
-    #[case::quote_quote_nested("quote do quote do test;;", "quote do quote do test;;")]
     #[case::let_with_array_multiline(
         r#"let arr = [
 1,
@@ -2609,124 +2550,6 @@ test2"#,
     test2
 "#
     )]
-    #[case::macro_simple_oneline("macro test(): value;", "macro test(): value;")]
-    #[case::macro_with_args_oneline("macro test(x, y): add(x, y);", "macro test(x, y): add(x, y);")]
-    #[case::macro_multiline(
-        r#"macro test():
-  value;"#,
-        r#"macro test():
-  value;
-"#
-    )]
-    #[case::macro_with_args_multiline(
-        r#"macro test(x, y):
-  add(x, y);"#,
-        r#"macro test(x, y):
-  add(x, y);
-"#
-    )]
-    #[case::macro_with_do_block(r#"macro test(): do value end"#, r#"macro test(): do value end"#)]
-    #[case::macro_with_do_block_multiline(
-        r#"macro breakpoint():
-do
-if(is_debug_mode()):
-_breakpoint()
-end
-end"#,
-        r#"macro breakpoint():
-  do
-    if (is_debug_mode()):
-      _breakpoint()
-  end
-end
-"#
-    )]
-    #[case::macro_with_do_block_no_colon(
-        r#"macro breakpoint() do
-quote do
-if(is_debug_mode()):_breakpoint()
-end
-end"#,
-        r#"macro breakpoint() do
-  quote do
-    if (is_debug_mode()): _breakpoint()
-  end
-end
-"#
-    )]
-    #[case::macro_with_if_multiline(
-        r#"macro test(x):
-if(x > 0):
-positive()
-else:
-negative()
-end"#,
-        r#"macro test(x):
-  if (x > 0):
-    positive()
-  else:
-    negative()
-end
-"#
-    )]
-    #[case::macro_complex(
-        r#"macro debug(msg):do
-let formatted=s"DEBUG: ${to_string(msg)}"
-|stderr(formatted)
-end"#,
-        r#"macro debug(msg): do
-    let formatted = s"DEBUG: ${to_string(msg)}"
-    | stderr(formatted)
-  end
-"#
-    )]
-    #[case::quote_multiline(
-        r#"quote do
-test
-|unquote(expr)
-;"#,
-        r#"quote do
-  test
-  | unquote(expr);
-"#
-    )]
-    #[case::quote_multiline_nested(
-        r#"quote do
-let x = 1
-|let y = 2
-|unquote(expr)
-;"#,
-        r#"quote do
-  let x = 1
-  | let y = 2
-  | unquote(expr);
-"#
-    )]
-    #[case::quote_multiline_with_if(
-        r#"quote do
-if(test):
-value
-else:
-other
-end
-;"#,
-        r#"quote do
-  if (test):
-    value
-  else:
-    other
-end;
-"#
-    )]
-    #[case::macro_call_test(
-        r#"unless(cond) do
-expr
-end"#,
-        r#"unless(cond) do
-  expr
-end
-"#
-    )]
     #[case::if_without_colon_oneline("if(test) 1 else 2", "if (test) 1 else 2")]
     #[case::if_without_colon_multiline(
         r#"if(test)
@@ -3132,9 +2955,8 @@ def m(): test;
 def y(): test;
 | let a = 2
 | import "a.mq"
-def b(): test;
-macro m(): test"#,
-        "import \"a.mq\"\n| import \"b.mq\"\n| let a = 2\n| let z = 1\n|\ndef b(): test;\ndef y(): test;\nmacro m(): test\n"
+def b(): test;"#,
+        "import \"a.mq\"\n| import \"b.mq\"\n| let a = 2\n| let z = 1\n|\ndef b(): test;\ndef y(): test;\n"
     )]
     #[case::sort_with_other(
         r#"def z(): test;
@@ -3148,22 +2970,19 @@ def a(): test;"#,
 | let x = 1
 | add() | mul() | sub()
 def a(): test;
-macro m(): test;
 | let y = 2"#,
-        "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\nmacro m(): test\n| add()\n| mul()\n| sub()\n| ;\n"
+        "let x = 1\n| let y = 2\n|\ndef a(): test;\ndef z(): test;\n| add()\n| mul()\n| sub()\n"
     )]
     #[case::sort_all_types(
         r#"add() | sub()
 def func_b(): test;
 | let var_z = 1
 | import "z.mq"
-macro mac_y(): test;
 | let var_a = 2
 def func_a(): test;
 | mul() | div()
-| import "a.mq"
-macro mac_x(): test;"#,
-        "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\nmacro mac_y(): test\nmacro mac_x(): test\n| add()\n| sub()\n| ;\n| mul()\n| div()\n| ;\n"
+| import "a.mq""#,
+        "import \"a.mq\"\n| import \"z.mq\"\n| let var_a = 2\n| let var_z = 1\n|\ndef func_a(): test;\ndef func_b(): test;\n| add()\n| sub()\n| mul()\n| div()\n"
     )]
     fn test_format_with_sort(#[case] code: &str, #[case] expected: &str) {
         let config = FormatterConfig {

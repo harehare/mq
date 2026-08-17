@@ -74,7 +74,7 @@ pub(crate) fn response(
         mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
     )?;
 
-    // Builtin functions/macros live outside any editable source and must not be renamed.
+    // Builtin functions live outside any editable source and must not be renamed.
     if hir_guard.is_builtin_symbol(&symbol) {
         return None;
     }
@@ -224,19 +224,6 @@ mod tests {
         // Parameter declaration + the one usage in the function body.
         assert_eq!(edits.len(), 2);
         assert!(edits.iter().all(|e| e.new_text == "renamed_param"));
-    }
-
-    #[test]
-    fn test_rename_macro_and_call_site() {
-        let code = "macro inc(x): x + 1 | inc(2)";
-        let (hir, url, source_map) = setup(code);
-
-        let result = response(hir, url, Position::new(0, 7), "increment", &source_map);
-
-        assert!(result.is_some());
-        let edits = result.unwrap().changes.unwrap().into_values().next().unwrap();
-        assert_eq!(edits.len(), 2);
-        assert!(edits.iter().all(|e| e.new_text == "increment"));
     }
 
     #[test]

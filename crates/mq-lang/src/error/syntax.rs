@@ -45,18 +45,12 @@ pub enum SyntaxError {
         if .0.is_eof() { "EOF".to_string() } else { .0.to_string() }
     )]
     ParameterWithoutDefaultAfterDefault(Token),
-    /// Macro parameters cannot have default values.
-    #[error("Macro parameters cannot have default values")]
-    MacroParametersCannotHaveDefaults(Token),
     /// A variadic parameter must be the last parameter.
     #[error("Variadic parameter must be the last parameter")]
     VariadicParameterMustBeLast(Token),
     /// Multiple variadic parameters are not allowed.
     #[error("Multiple variadic parameters are not allowed")]
     MultipleVariadicParameters(Token),
-    /// Macro parameters cannot be variadic.
-    #[error("Macro parameters cannot be variadic")]
-    MacroParametersCannotBeVariadic(Token),
     /// The Token is the keyword or operator that required an expression to follow.
     #[error("Expected an expression after `{}` but reached end of file", if .0.is_eof() { "EOF".to_string() } else { .0.to_string() })]
     UnexpectedEOFAfterToken(Token),
@@ -81,10 +75,8 @@ impl SyntaxError {
             SyntaxError::InvalidAssignmentTarget(token) => Some(token),
             SyntaxError::UnknownSelector(selector::UnknownSelector(token)) => Some(token),
             SyntaxError::ParameterWithoutDefaultAfterDefault(token) => Some(token),
-            SyntaxError::MacroParametersCannotHaveDefaults(token) => Some(token),
             SyntaxError::VariadicParameterMustBeLast(token) => Some(token),
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
-            SyntaxError::MacroParametersCannotBeVariadic(token) => Some(token),
             SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
             SyntaxError::UnmatchedEnd(token) => Some(token),
         }
@@ -117,10 +109,8 @@ mod tests {
     #[case(SyntaxError::InvalidAssignmentTarget(eof_token()), true)]
     #[case(SyntaxError::UnknownSelector(selector::UnknownSelector(eof_token())), true)]
     #[case(SyntaxError::ParameterWithoutDefaultAfterDefault(eof_token()), true)]
-    #[case(SyntaxError::MacroParametersCannotHaveDefaults(eof_token()), true)]
     #[case(SyntaxError::VariadicParameterMustBeLast(eof_token()), true)]
     #[case(SyntaxError::MultipleVariadicParameters(eof_token()), true)]
-    #[case(SyntaxError::MacroParametersCannotBeVariadic(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFAfterToken(eof_token()), true)]
     #[case(SyntaxError::UnmatchedEnd(eof_token()), true)]
     fn test_token_presence(#[case] err: SyntaxError, #[case] has_token: bool) {
@@ -130,20 +120,12 @@ mod tests {
     #[rstest]
     #[case(SyntaxError::UnexpectedEOFDetected(ArenaId::new(0)), "Unexpected end of input")]
     #[case(
-        SyntaxError::MacroParametersCannotHaveDefaults(eof_token()),
-        "Macro parameters cannot have default values"
-    )]
-    #[case(
         SyntaxError::VariadicParameterMustBeLast(eof_token()),
         "Variadic parameter must be the last parameter"
     )]
     #[case(
         SyntaxError::MultipleVariadicParameters(eof_token()),
         "Multiple variadic parameters are not allowed"
-    )]
-    #[case(
-        SyntaxError::MacroParametersCannotBeVariadic(eof_token()),
-        "Macro parameters cannot be variadic"
     )]
     #[case(
         SyntaxError::UnmatchedEnd(eof_token()),

@@ -42,6 +42,7 @@ mod strategies {
                 !matches!(
                     s.as_str(),
                     "as" | "if"
+                        | "unless"
                         | "else"
                         | "elif"
                         | "let"
@@ -51,6 +52,7 @@ mod strategies {
                         | "do"
                         | "end"
                         | "while"
+                        | "until"
                         | "foreach"
                         | "match"
                         | "break"
@@ -63,9 +65,6 @@ mod strategies {
                         | "import"
                         | "include"
                         | "module"
-                        | "macro"
-                        | "quote"
-                        | "unquote"
                         | "try"
                 )
             })

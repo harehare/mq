@@ -3,7 +3,7 @@ use std::time::Duration;
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Ident, Token, number::Number};
+use crate::{Token, number::Number};
 
 use super::module::error::ModuleError;
 
@@ -70,24 +70,6 @@ pub enum RuntimeError {
     AssignToImmutable(Token, String),
     #[error("Undefined variable \"{1}\"")]
     UndefinedVariable(Token, String),
-    #[error("quote() is not allowed in runtime context, it should only appear inside macros")]
-    QuoteNotAllowedInRuntimeContext(Token),
-    #[error("unquote() can only be used inside quote()")]
-    UnquoteNotAllowedOutsideQuote(Token),
-    #[error("Undefined macro: {0}")]
-    UndefinedMacro(Ident),
-    #[error("Macro {macro_name} expects {expected} arguments, got {got}")]
-    ArityMismatch {
-        macro_name: Ident,
-        expected: usize,
-        got: usize,
-    },
-    #[error("Maximum macro recursion depth exceeded")]
-    RecursionLimit,
-    #[error("Invalid macro result AST")]
-    InvalidMacroResultAst(Token),
-    #[error("Invalid macro result: expected AST value")]
-    InvalidMacroResult(Token),
     #[error("Invalid convert: {1}")]
     InvalidConvert(Token, String),
     #[error("Destructuring pattern did not match value")]
@@ -124,13 +106,6 @@ impl RuntimeError {
             RuntimeError::EnvNotFound(token, _) => Some(token),
             RuntimeError::AssignToImmutable(token, _) => Some(token),
             RuntimeError::UndefinedVariable(token, _) => Some(token),
-            RuntimeError::QuoteNotAllowedInRuntimeContext(token) => Some(token),
-            RuntimeError::UnquoteNotAllowedOutsideQuote(token) => Some(token),
-            RuntimeError::UndefinedMacro(_) => None,
-            RuntimeError::ArityMismatch { .. } => None,
-            RuntimeError::RecursionLimit => None,
-            RuntimeError::InvalidMacroResultAst(token) => Some(token),
-            RuntimeError::InvalidMacroResult(token) => Some(token),
             RuntimeError::InvalidConvert(token, _) => Some(token),
             RuntimeError::DestructuringFailed(token) => Some(token),
             RuntimeError::HostFunctionError(token, _, _) => Some(token),
@@ -173,13 +148,6 @@ mod tests {
     #[case(RuntimeError::EnvNotFound(eof_token(), "VAR".into()), true)]
     #[case(RuntimeError::AssignToImmutable(eof_token(), "x".to_string()), true)]
     #[case(RuntimeError::UndefinedVariable(eof_token(), "y".to_string()), true)]
-    #[case(RuntimeError::QuoteNotAllowedInRuntimeContext(eof_token()), true)]
-    #[case(RuntimeError::UnquoteNotAllowedOutsideQuote(eof_token()), true)]
-    #[case(RuntimeError::UndefinedMacro(Ident::new("m")), false)]
-    #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("m"), expected: 1, got: 0 }, false)]
-    #[case(RuntimeError::RecursionLimit, false)]
-    #[case(RuntimeError::InvalidMacroResultAst(eof_token()), true)]
-    #[case(RuntimeError::InvalidMacroResult(eof_token()), true)]
     #[case(RuntimeError::InvalidConvert(eof_token(), "msg".to_string()), true)]
     #[case(RuntimeError::DestructuringFailed(eof_token()), true)]
     #[case(RuntimeError::HostFunctionError(eof_token(), "f".into(), "boom".into()), true)]
@@ -193,9 +161,6 @@ mod tests {
         RuntimeError::Timeout(Duration::from_millis(1500)),
         "Execution timed out after 1.500s"
     )]
-    #[case(RuntimeError::RecursionLimit, "Maximum macro recursion depth exceeded")]
-    #[case(RuntimeError::UndefinedMacro(Ident::new("foo")), "Undefined macro: foo")]
-    #[case(RuntimeError::ArityMismatch { macro_name: Ident::new("bar"), expected: 2, got: 1 }, "Macro bar expects 2 arguments, got 1")]
     #[case(
         RuntimeError::HostFunctionError(eof_token(), "f".into(), "boom".into()),
         "Error in host function \"f\": boom"

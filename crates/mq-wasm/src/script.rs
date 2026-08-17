@@ -988,7 +988,7 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let type_scheme = type_env.get(&symbol_id);
 
     let signature = match &symbol.kind {
-        mq_hir::SymbolKind::Function(args) | mq_hir::SymbolKind::Macro(args) => {
+        mq_hir::SymbolKind::Function(args) => {
             let type_annotation = type_scheme.map(|s| format!(": {}", s.ty)).unwrap_or_default();
             format!(
                 "{}({}){}",

@@ -23,7 +23,7 @@ pub(crate) fn response(
             }
 
             let kind = match &symbol.kind {
-                mq_hir::SymbolKind::Function(_) | mq_hir::SymbolKind::Macro(_) => SymbolKind::FUNCTION,
+                mq_hir::SymbolKind::Function(_) => SymbolKind::FUNCTION,
                 mq_hir::SymbolKind::Variable | mq_hir::SymbolKind::DestructuringBinding => SymbolKind::FIELD,
                 mq_hir::SymbolKind::String => SymbolKind::STRING,
                 mq_hir::SymbolKind::Boolean => SymbolKind::BOOLEAN,

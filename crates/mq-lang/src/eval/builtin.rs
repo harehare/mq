@@ -3957,31 +3957,6 @@ fn is_debug_mode_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Re
     }
 }
 
-// AST related built-ins
-#[mq_macros::mq_fn(name = "_ast_get_args", params = Fixed(1))]
-fn _ast_get_args_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [RuntimeValue::Ast(ast)] => match &*ast.expr {
-            ast::Expr::Call(_, args) | ast::Expr::CallDynamic(_, args) => Ok(args
-                .iter()
-                .map(|arg| RuntimeValue::Ast(Shared::clone(arg)))
-                .collect::<Vec<_>>()
-                .into()),
-            _ => Ok(RuntimeValue::NONE),
-        },
-        _ => Ok(RuntimeValue::NONE),
-    }
-}
-
-#[mq_macros::mq_fn(name = "_ast_to_code", params = Fixed(1))]
-fn _ast_to_code_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [RuntimeValue::Ast(ast)] => Ok(ast.to_code().into()),
-        [a] => Ok(a.to_string().into()),
-        _ => Ok(RuntimeValue::NONE),
-    }
-}
-
 #[mq_macros::mq_fn(name = "shift_left", params = Fixed(2))]
 fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5109,8 +5084,6 @@ mq_macros::builtin_dispatch! {
     SET_VARIABLE,
     GET_VARIABLE,
     IS_DEBUG_MODE,
-    _AST_GET_ARGS,
-    _AST_TO_CODE,
     SHIFT_LEFT,
     SHIFT_RIGHT,
     _DIFF,
@@ -5934,28 +5907,6 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
         BuiltinFunctionDoc {
             description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
             params: &[],
-            param_types: &[],
-            returns: "dynamic",
-            examples: &[],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new("_ast_get_args"),
-        BuiltinFunctionDoc {
-            description: "Internal function to extract arguments from an AST call expression, returning an array of arguments to their AST nodes.",
-            params: &["ast_node"],
-            param_types: &[],
-            returns: "dynamic",
-            examples: &[],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new("_ast_to_code"),
-        BuiltinFunctionDoc {
-            description: "Internal function to convert an AST node back to its source code representation as a string.",
-            params: &["ast_node"],
             param_types: &[],
             returns: "dynamic",
             examples: &[],

@@ -43,12 +43,11 @@ pub enum Command {
 /// List of language keywords used for REPL completions.
 ///
 /// This list must be kept in sync with the keyword definitions in
-/// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table around
-/// lines 207–260).
+/// `crates/mq-lang/src/lexer.rs` (see the lexer keyword table in `ident_or_keyword`).
 const KEYWORDS: &[&str; 28] = &[
-    "def", "let", "if", "elif", "else", "end", "while", "loop", "foreach", "self", "nodes", "fn", "break", "continue",
-    "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var", "macro", "quote",
-    "unquote",
+    "def", "let", "if", "unless", "elif", "else", "end", "while", "until", "loop", "foreach", "self", "nodes", "fn",
+    "break", "continue", "include", "true", "false", "None", "match", "try", "catch", "import", "module", "do", "var",
+    "as",
 ];
 
 impl fmt::Display for Command {

@@ -5,7 +5,7 @@
 //! two things:
 //!
 //! - [`reference`]: extracts `MqFnDoc`/`MqExample` from the CST of any mq source, by parsing
-//!   the Markdown-ish doc-comment convention above each `def`/`macro` (used for `builtin.mq`
+//!   the Markdown-ish doc-comment convention above each `def` (used for `builtin.mq`
 //!   and every standard module).
 //! - [`catalog`]: unifies that CST-extracted documentation with `mq-lang`'s native builtin
 //!   and selector doc tables into a single [`HelpEntry`] shape, with lookup, "did you mean"

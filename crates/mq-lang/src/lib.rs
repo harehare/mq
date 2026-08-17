@@ -50,7 +50,6 @@ mod eval;
 mod ident;
 mod io;
 mod lexer;
-mod macro_expand;
 mod module;
 mod number;
 mod optimizer;

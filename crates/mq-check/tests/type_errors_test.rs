@@ -217,12 +217,12 @@ fn test_while_condition_type_mismatch() {
 }
 
 #[test]
-fn test_success_macro_definition() {
-    let result = check_types("macro inc(x): x + 1;");
+fn test_success_until_loop() {
+    let result = check_types("var x = 0 | until (x > 0): x = x + 1;");
     for e in &result {
         eprintln!("Error: {}", e);
     }
-    assert!(result.is_empty(), "Macro definition should succeed");
+    assert!(result.is_empty(), "Until loop should succeed");
 }
 
 #[test]
@@ -370,6 +370,18 @@ fn test_narrowing_post_while_loop() {
     // After `while (is_string(x))`, the loop exits when condition is false.
     // Post-loop narrowing applies else_narrowings to subsequent code (x has String subtracted).
     let result = check_types(r#"def f(x): while (is_string(x)): x; x"#);
+    assert!(
+        result.is_empty(),
+        "Post-loop narrowing should produce no errors: {result:?}"
+    );
+}
+
+#[test]
+fn test_narrowing_post_until_loop() {
+    // `until` inverts `while`'s narrowing polarity: the body runs while the condition is
+    // false, so post-loop narrowing (loop exited normally, condition now true) applies
+    // then_narrowings to subsequent code instead of else_narrowings.
+    let result = check_types(r#"def f(x): until (is_string(x)): x; x"#);
     assert!(
         result.is_empty(),
         "Post-loop narrowing should produce no errors: {result:?}"

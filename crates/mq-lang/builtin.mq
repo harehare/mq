@@ -1031,60 +1031,19 @@ end
 # ```
 #
 # Returns: dynamic
-macro tap(tap_value, tap_expr) do
-  quote do
-    tap_expr | tap_value
-  end
-end
-
-# Executes the expression only if the condition is false.
-#
-# Example:
-# ```
-# unless(false, 1)
-# #=> 1
-# ```
-#
-# Returns: dynamic
-macro unless(unless_cond, unless_expr) do
-  quote do
-    if (unquote(!unless_cond)): unquote(unless_expr)
-  end
-end
-
-# Executes the expression repeatedly until the condition is true.
-#
-# Returns: dynamic
-macro until(until_cond, until_expr) do
-  quote do
-    loop:
-      if (unquote(until_cond)): break
-      | unquote(until_expr)
-    end
-  end
-end
+def tap(value, expr): expr | value;
 
 # Extracts values from an array of objects based on a specified selector.
 #
 # Returns: dynamic
-macro pluck(pluck_obj, selector) do
-  quote do
-    match (unquote(pluck_obj)):
-      | :array: do
-          unquote(pluck_obj)
-          | map(fn(x):
-            match (x):
-              | :dict: x[unquote(selector)]
-              | _: do
-                  x | select(unquote(selector), unquote(selector))
-                end
-            end
-          end) | compact()
-        end
-      | _: do
-          unquote(pluck_obj) | unquote(selector)
-        end
-    end
+def pluck(pluck_obj, selector):
+  match (pluck_obj):
+    | :array:
+      match (selector):
+        | :symbol || :string: compact(map(pluck_obj, fn(x): x[selector];))
+        | _: compact(selector)
+      end
+    | _: do pluck_obj | selector;
   end
 end
 
@@ -1137,6 +1096,8 @@ end
 
 # Executes an expression n times and returns an array of results.
 #
+# Note: `value` is evaluated once (eagerly) and repeated, not re-evaluated per iteration.
+#
 # Example:
 # ```
 # times(3, 1)
@@ -1144,13 +1105,11 @@ end
 # ```
 #
 # Returns: array
-macro times(t_n, t_expr) do
-  quote do
-    if (unquote(t_n) == 0):
-      []
-    else:
-      foreach (_, range(0, unquote(t_n) - 1)): unquote(t_expr);
-  end
+def times(n, value):
+  if (n == 0):
+    []
+  else:
+    foreach (_, range(0, n - 1)): value;
 end
 
 # Checks if a value is between min and max (inclusive).
