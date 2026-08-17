@@ -1105,6 +1105,7 @@ end
 # ```
 #
 # Returns: array
+# Deprecated: use `repeat` instead
 def times(n, value):
   if (n == 0):
     []
