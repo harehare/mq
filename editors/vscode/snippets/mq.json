@@ -20,6 +20,20 @@
         ],
         "description": "Loop while condition is true"
     },
+    "until": {
+        "prefix": "until",
+        "body": [
+            "until (${1:condition}): ${0:body};"
+        ],
+        "description": "Loop until condition is true"
+    },
+    "unless": {
+        "prefix": "unless",
+        "body": [
+            "unless (${1:condition}): ${0:body}"
+        ],
+        "description": "Run body when condition is false"
+    },
     "def": {
         "prefix": "def",
         "body": [
@@ -47,26 +61,5 @@
             "module ${1:name}:\n  ${2:body}\nend"
         ],
         "description": "Create a module that contains related functions and variables"
-    },
-    "macro": {
-        "prefix": "macro",
-        "body": [
-            "macro ${1:name}(${2:args}) do\n  ${3:body}\nend"
-        ],
-        "description": "Define a macro"
-    },
-    "quote": {
-        "prefix": "quote",
-        "body": [
-            "quote do\n  ${1:body}\nend"
-        ],
-        "description": "Quote an expression"
-    },
-    "unquote": {
-        "prefix": "unquote",
-        "body": [
-            "unquote(${1:expr})"
-        ],
-        "description": "Unquote an expression"
     }
 }

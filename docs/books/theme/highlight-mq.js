@@ -6,7 +6,7 @@
   function hljsDefineMq(hljs) {
     const KEYWORDS = {
       keyword:
-        "def do let if elif else end while foreach self nodes match fn break continue include import module var macro quote unquote loop try catch",
+        "def do let if elif else end while until unless foreach self nodes match fn break continue include import module var loop try catch",
       literal: "true false None",
     };
 
@@ -77,7 +77,7 @@
     };
 
     const KEYWORD_ALTERNATION =
-      "def|do|let|if|elif|else|end|while|foreach|self|nodes|match|fn|break|continue|include|import|module|var|macro|quote|unquote|loop|try|catch";
+      "def|do|let|if|elif|else|end|while|until|unless|foreach|self|nodes|match|fn|break|continue|include|import|module|var|loop|try|catch";
 
     const FUNCTION_CALL = {
       className: "title.function.invoke",

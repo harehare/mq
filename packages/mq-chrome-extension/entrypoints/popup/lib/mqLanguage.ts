@@ -6,7 +6,7 @@ type MqState = {
 };
 
 const KEYWORDS =
-  /^\b(let|def|do|match|while|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|macro|quote|unquote|loop)\b/;
+  /^\b(let|def|do|match|while|until|unless|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|loop)\b/;
 const OPERATORS =
   /^(\/\/=|<<|>>|\|\||\?\?|<=|>=|==|!=|=~|&&|\+=|-=|\*=|\/=|\|=|=|\||:|;|\?|!|\+|-|\*|\/|%|<|>|@)/;
 const FUNCTION_CALL = /^[a-zA-Z_]\w*(?=\s*\()/;
