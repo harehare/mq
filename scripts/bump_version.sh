@@ -61,6 +61,13 @@ for dir in ../packages ../editors; do
     done
 done
 
+# Update JetBrains plugin version
+JETBRAINS_GRADLE_PROPERTIES="../editors/jetbrains/gradle.properties"
+if [ -f "$JETBRAINS_GRADLE_PROPERTIES" ]; then
+    tmpfile=$(mktemp)
+    mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::gradle_version()' "$JETBRAINS_GRADLE_PROPERTIES" > "$tmpfile" && mv "$tmpfile" "$JETBRAINS_GRADLE_PROPERTIES"
+fi
+
 # Update README.md with the new version
 mq -U --args VERSION $MQ_VERSION 'import "bump_version" | bump_version::code_block_version(VERSION)' $README > README.md.tmp \
   && mv README.md.tmp $README

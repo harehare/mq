@@ -7,6 +7,12 @@ ${line}"
   else: line
 end
 
+def gradle_version(line):
+  if (starts_with(line, "pluginVersion = ")):
+    s"pluginVersion = ${version}"
+  else: line
+end
+
 def npm_version(line):
   if (starts_with(trim(line), "\"version\": ")):
     s"  \"version\": \"${version}\","
