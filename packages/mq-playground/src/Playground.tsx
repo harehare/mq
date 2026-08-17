@@ -1656,6 +1656,38 @@ export const Playground = () => {
             },
           },
           {
+            label: "until",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "until (${1:condition}): ${0:body};",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Loop until condition is true",
+            documentation:
+              "Creates an until loop that repeats execution while condition is false, the inverse of while.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
+            label: "unless",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "unless (${1:condition}): ${0:body}",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Run body when condition is false",
+            documentation:
+              "Executes the body only when condition is false, the inverse of a single-branch if.",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
             label: "def",
             kind: monaco.languages.CompletionItemKind.Snippet,
             insertText: "def ${0}(${1:args}): ${2:body};",
@@ -1719,54 +1751,6 @@ export const Playground = () => {
               endColumn: wordRange.endColumn,
             },
           },
-          {
-            label: "macro",
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: "macro ${1:name}(${2:args}) do\n  ${3:body}:\nend",
-            insertTextRules:
-              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: "Macro declaration",
-            documentation:
-              "Creates a macro that generates code at compile time for reuse.",
-            range: {
-              startLineNumber: position.lineNumber,
-              startColumn: wordRange.startColumn,
-              endLineNumber: position.lineNumber,
-              endColumn: wordRange.endColumn,
-            },
-          },
-          {
-            label: "quote",
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: "quote do\n  ${1:body}:\nend",
-            insertTextRules:
-              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: "Quote block",
-            documentation:
-              "Creates a quote block that treats the code inside as data rather than executing it.",
-            range: {
-              startLineNumber: position.lineNumber,
-              startColumn: wordRange.startColumn,
-              endLineNumber: position.lineNumber,
-              endColumn: wordRange.endColumn,
-            },
-          },
-          {
-            label: "unquote",
-            kind: monaco.languages.CompletionItemKind.Snippet,
-            insertText: "unquote(${1:expr})",
-            insertTextRules:
-              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-            detail: "Unquote expression",
-            documentation:
-              "Inserts the result of an expression into a quote block.",
-            range: {
-              startLineNumber: position.lineNumber,
-              startColumn: wordRange.startColumn,
-              endLineNumber: position.lineNumber,
-              endColumn: wordRange.endColumn,
-            },
-          },
         ];
 
         return { suggestions: [...suggestions, ...snippets] };
@@ -1815,7 +1799,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|macro|quote|unquote|loop)\b/,
+            /\b(let|def|do|match|while|until|unless|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|loop)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],
