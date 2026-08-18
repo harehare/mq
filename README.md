@@ -198,16 +198,22 @@ Options:
           Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
       --stream
           Enable streaming mode for processing large files line by line
+      --watch
+          Watch the input file(s) for changes and automatically re-run the query whenever they change. Requires at least one input file (stdin cannot be watched). With --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a query error is printed to stderr and watching continues rather than exiting
       --eval-all
           Evaluate the query once against all input files combined (like yq's `eval-all`), instead of once per file. Enables cross-file aggregation in a single query
+      --allow-http-import
+          Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
       --allowed-domain <ALLOWED_DOMAINS>
-          Allow HTTP imports from additional domain(s) beyond the default. By default only `raw.githubusercontent.com/harehare` is permitted. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
+          Allow HTTP imports from additional domain(s) beyond the default. Has no effect unless `--allow-http-import` (or `--allow-all`) is also passed. Use `github.com/{user}/{repo}` to allow a specific repository (expanded automatically), or a plain domain like `example.com` to allow any path under that host. Repeat to allow multiple extra domains
       --refresh-modules
           Force re-fetch of mutable-ref (HEAD/branch) HTTP-imported modules, ignoring the local cache. Versioned (tagged) modules are never re-fetched regardless of this flag
       --clear-cache
           Remove all HTTP module cache including versioned (tagged) modules and lock files. Use this to fully reset the cache when something goes wrong
       --no-lockfile
           Disable the mq.lock integrity check for HTTP imports. By default a fetched URL's content is checked against mq.lock, and a mismatch is rejected unless --refresh-modules is also passed
+      --frozen
+          Fail instead of recording a new mq.lock entry. `--frozen`; use in CI so a new module's content is only ever trusted during a reviewable local run whose mq.lock diff gets committed, not silently during CI
       --lockfile <PATH>
           Path to the mq.lock file used for HTTP import integrity checks. Defaults to ./mq.lock (relative to the current directory)
   -N, --allow-net[=<DOMAIN>...]
@@ -221,9 +227,9 @@ Options:
   -E, --allow-env[=<NAME>...]
           Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment variables. Disabled by default. Pass with no value to allow reading any variable, or `--allow-env=NAME` (repeat the flag, or comma-separate, to add more) to restrict access to just those names. The `=` is required so a bare name after the flag isn't swallowed as a query/file positional instead
   -a, --allow-all
-          Grant every sandboxed permission at once (read/write/net/run/env). Disabled by default. Cannot be combined with the individual --allow-* flags above
+          Grant every sandboxed permission at once (read/write/net/run/env), and also enable HTTP module imports as if --allow-http-import were passed. Disabled by default. Cannot be combined with the individual --allow-* flags above
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, none]
+          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
       --diff
