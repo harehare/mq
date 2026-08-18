@@ -17,6 +17,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <textmate.bundleProvider implementation="org.mqlang.mq.textmate.MqTextMateBundleProvider"/>
+        <fileIconProvider implementation="org.mqlang.mq.icons.MqFileIconProvider"/>
 
         <notificationGroup id="mq" displayType="BALLOON"/>
 
