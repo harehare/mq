@@ -720,6 +720,30 @@ fn utf8_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
     }
 }
 
+#[mq_macros::mq_fn(name = "decode", params = Fixed(2))]
+fn decode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b), RuntimeValue::String(label)] => convert::decode(b, label),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("decode should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "encode", params = Fixed(2))]
+fn encode_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(text), RuntimeValue::String(label)] => convert::encode(text, label),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("encode should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "xor", params = Fixed(2))]
 fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4944,6 +4968,8 @@ mq_macros::builtin_dispatch! {
     FROM_HEX,
     TO_HEX,
     UTF8,
+    DECODE,
+    ENCODE,
     XOR,
     BAND,
     BOR,
@@ -6642,6 +6668,31 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
                 code: r#"utf8(to_bytes("hi"))"#,
                 expected: r#"hi"#,
             }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("decode"),
+        BuiltinFunctionDoc {
+            description: "Decodes bytes as text using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the bytes contain a sequence invalid for that encoding, rather than silently substituting replacement characters.",
+            params: &["bytes", "label"],
+            param_types: &["bytes", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"decode(encode("hi", "shift_jis"), "shift_jis")"#,
+                expected: r#"hi"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("encode"),
+        BuiltinFunctionDoc {
+            description: "Encodes text as bytes using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the text contains a character unmappable in that encoding, rather than silently substituting a replacement byte.",
+            params: &["text", "label"],
+            param_types: &["string", "string"],
+            returns: "bytes",
+            examples: &[],
             capability: None,
         },
     );
@@ -11908,6 +11959,103 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(vec![0xff, 0xfe])],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_shift_jis() {
+        let ident = Ident::new("decode");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0x82, 0xa0]),
+                RuntimeValue::String("shift_jis".to_string()),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::String("あ".to_string())));
+    }
+
+    #[test]
+    fn test_decode_unknown_label() {
+        let ident = Ident::new("decode");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0x00]),
+                RuntimeValue::String("not-a-real-encoding".to_string()),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_decode_invalid_bytes() {
+        let ident = Ident::new("decode");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::Bytes(vec![0xff, 0xff]),
+                RuntimeValue::String("shift_jis".to_string()),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_encode_shift_jis() {
+        let ident = Ident::new("encode");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String("あ".to_string()),
+                RuntimeValue::String("shift_jis".to_string()),
+            ],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x82, 0xa0])));
+    }
+
+    #[test]
+    fn test_encode_decode_roundtrip() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let encoded = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("encode"),
+            vec![
+                RuntimeValue::String("こんにちは".to_string()),
+                RuntimeValue::String("euc-jp".to_string()),
+            ],
+            &env,
+        )
+        .unwrap();
+        let decoded = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("decode"),
+            vec![encoded, RuntimeValue::String("euc-jp".to_string())],
+            &env,
+        );
+        assert_eq!(decoded, Ok(RuntimeValue::String("こんにちは".to_string())));
+    }
+
+    #[test]
+    fn test_encode_unmappable_character() {
+        let ident = Ident::new("encode");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![
+                RuntimeValue::String("😀".to_string()),
+                RuntimeValue::String("shift_jis".to_string()),
+            ],
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());

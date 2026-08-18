@@ -2674,6 +2674,7 @@ dependencies = [
  "codspeed-divan-compat",
  "csv",
  "dirs 6.0.0",
+ "encoding_rs",
  "getrandom 0.4.3",
  "glob",
  "html-escape",
