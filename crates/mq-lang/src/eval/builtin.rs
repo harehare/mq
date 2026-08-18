@@ -6674,7 +6674,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("decode"),
         BuiltinFunctionDoc {
-            description: "Decodes bytes as text using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"). Returns an error if the label is unrecognized or the bytes contain a sequence invalid for that encoding, rather than silently substituting replacement characters.",
+            description: "Decodes bytes as text using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the bytes contain a sequence invalid for that encoding, rather than silently substituting replacement characters.",
             params: &["bytes", "label"],
             param_types: &["bytes", "string"],
             returns: "string",
@@ -6688,7 +6688,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("encode"),
         BuiltinFunctionDoc {
-            description: "Encodes text as bytes using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"). Returns an error if the label is unrecognized or the text contains a character unmappable in that encoding, rather than silently substituting a replacement byte.",
+            description: "Encodes text as bytes using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the text contains a character unmappable in that encoding, rather than silently substituting a replacement byte.",
             params: &["text", "label"],
             param_types: &["string", "string"],
             returns: "bytes",
