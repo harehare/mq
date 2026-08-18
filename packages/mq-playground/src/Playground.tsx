@@ -88,6 +88,7 @@ type EditorSettings = {
   lineNumbers: "on" | "off";
   tabSize: number;
   shareMode: "current" | "all";
+  allowHttpImport: boolean;
 };
 
 const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
@@ -100,6 +101,7 @@ const DEFAULT_EDITOR_SETTINGS: EditorSettings = {
   lineNumbers: "on",
   tabSize: 2,
   shareMode: "current",
+  allowHttpImport: false,
 };
 
 function loadEditorSettings(): EditorSettings {
@@ -247,6 +249,9 @@ export const Playground = () => {
   );
   const [shareMode, setShareMode] = useState<"current" | "all">(
     _initialSettings.shareMode,
+  );
+  const [allowHttpImport, setAllowHttpImport] = useState(
+    _initialSettings.allowHttpImport,
   );
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isExamplesOpen, setIsExamplesOpen] = useState(false);
@@ -579,6 +584,7 @@ export const Playground = () => {
         listStyle,
         linkTitleStyle,
         linkUrlStyle,
+        allowHttpImport,
       });
       setResult(output);
 
@@ -607,6 +613,7 @@ export const Playground = () => {
     listStyle,
     linkUrlStyle,
     linkTitleStyle,
+    allowHttpImport,
     isOPFSSupported,
     loadFiles,
   ]);
@@ -1367,6 +1374,7 @@ export const Playground = () => {
       minimapEnabled,
       wordWrap,
       shareMode,
+      allowHttpImport,
     });
 
     if (theme === "system") {
@@ -1408,6 +1416,7 @@ export const Playground = () => {
     minimapEnabled,
     wordWrap,
     shareMode,
+    allowHttpImport,
   ]);
 
   // Add keyboard shortcut for save (Ctrl+S / Cmd+S)
@@ -2638,6 +2647,8 @@ img{max-width:100%}
         shareMode={shareMode}
         onShareModeChange={setShareMode}
         isOPFSSupported={isOPFSSupported}
+        allowHttpImport={allowHttpImport}
+        onAllowHttpImportToggle={setAllowHttpImport}
         onClearHttpCache={async () => {
           await mq.clearHttpCache();
           showToast("HTTP module cache cleared", "success");

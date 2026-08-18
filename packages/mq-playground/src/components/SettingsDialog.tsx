@@ -21,6 +21,8 @@ type SettingsDialogProps = {
   shareMode: "current" | "all";
   onShareModeChange: (mode: "current" | "all") => void;
   isOPFSSupported: boolean;
+  allowHttpImport: boolean;
+  onAllowHttpImportToggle: (enabled: boolean) => void;
   onClearHttpCache?: () => Promise<void>;
   onClearAllHttpCache?: () => Promise<void>;
 };
@@ -45,6 +47,8 @@ export const SettingsDialog = ({
   shareMode,
   onShareModeChange,
   isOPFSSupported,
+  allowHttpImport,
+  onAllowHttpImportToggle,
   onClearHttpCache,
   onClearAllHttpCache,
 }: SettingsDialogProps) => {
@@ -170,9 +174,18 @@ export const SettingsDialog = ({
               </div>
             </div>
           )}
-          {isOPFSSupported && (onClearHttpCache || onClearAllHttpCache) && (
+          {isOPFSSupported && (
             <div className="settings-section">
-              <h4>Cache</h4>
+              <h4>HTTP Modules</h4>
+              <div className="settings-item">
+                <label htmlFor="allow-http-import">Allow HTTP Imports</label>
+                <input
+                  id="allow-http-import"
+                  type="checkbox"
+                  checked={allowHttpImport}
+                  onChange={(e) => onAllowHttpImportToggle(e.target.checked)}
+                />
+              </div>
               {onClearHttpCache && (
                 <div className="settings-item">
                   <label>HTTP Module Cache</label>
