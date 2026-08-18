@@ -2,6 +2,7 @@ use crate::RuntimeValue;
 use crate::eval::builtin::Error;
 use crate::number::Number;
 use base64::prelude::*;
+use encoding_rs::Encoding;
 use html_escape::decode_html_entities;
 use percent_encoding::{NON_ALPHANUMERIC, percent_decode, utf8_percent_encode};
 use sha2::Digest;
@@ -574,6 +575,36 @@ pub(super) fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
 #[inline(always)]
 pub(super) fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(bytes_to_hex(input)))
+}
+
+/// Decode bytes as text using a WHATWG encoding label. Errors on invalid input rather than substituting.
+#[inline(always)]
+pub(super) fn decode(input: &[u8], label: &str) -> Result<RuntimeValue, Error> {
+    let encoding = Encoding::for_label(label.as_bytes())
+        .ok_or_else(|| Error::Runtime(format!("decode: unrecognized encoding label \"{}\"", label)))?;
+    let (decoded, _, had_errors) = encoding.decode(input);
+    if had_errors {
+        return Err(Error::Runtime(format!(
+            "decode: input contains a byte sequence invalid for encoding \"{}\"",
+            encoding.name()
+        )));
+    }
+    Ok(RuntimeValue::String(decoded.into_owned()))
+}
+
+/// Encode text as bytes using a WHATWG encoding label. Errors on unmappable input rather than substituting.
+#[inline(always)]
+pub(super) fn encode(input: &str, label: &str) -> Result<RuntimeValue, Error> {
+    let encoding = Encoding::for_label(label.as_bytes())
+        .ok_or_else(|| Error::Runtime(format!("encode: unrecognized encoding label \"{}\"", label)))?;
+    let (encoded, _, had_unmappable) = encoding.encode(input);
+    if had_unmappable {
+        return Err(Error::Runtime(format!(
+            "encode: input contains a character unmappable in encoding \"{}\"",
+            encoding.name()
+        )));
+    }
+    Ok(RuntimeValue::Bytes(encoded.into_owned()))
 }
 
 #[inline(always)]

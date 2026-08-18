@@ -1401,6 +1401,12 @@ fn register_bytes(ctx: &mut InferenceContext) {
     register_unary(ctx, "utf8", Type::Bytes, Type::String);
     register_unary(ctx, "utf8", Type::None, Type::None);
 
+    // decode: (bytes, string) -> string
+    register_binary(ctx, "decode", Type::Bytes, Type::String, Type::String);
+
+    // encode: (string, string) -> bytes
+    register_binary(ctx, "encode", Type::String, Type::String, Type::Bytes);
+
     // xor: (bytes, bytes) -> bytes
     register_binary(ctx, "xor", Type::Bytes, Type::Bytes, Type::Bytes);
 
