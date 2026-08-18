@@ -17,6 +17,7 @@ the VS Code and Neovim integrations.
 
 - Smart code completion, hover documentation, go to definition, document symbols and formatting for `.mq` files via `mq-lsp`
 - Syntax highlighting (via the same TextMate grammar as the VS Code extension)
+- Dedicated file icon for `.mq` files in the project tree and editor tabs
 - Execute mq queries directly from the editor
 - Debug `.mq` files with `mq-dbg` (Debug Adapter Protocol)
 - One-click installer that downloads `mq-lsp` and `mq-dbg` from GitHub Releases
