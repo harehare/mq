@@ -113,43 +113,16 @@ impl From<String> for Command {
     }
 }
 
-pub struct CommandContext {
-    pub(crate) engine: mq_lang::DefaultEngine,
-    pub(crate) input: Vec<mq_lang::RuntimeValue>,
-    initial_input: Vec<mq_lang::RuntimeValue>,
-    pub(crate) hir: mq_hir::Hir,
-    pub(crate) source_id: mq_hir::SourceId,
-    pub(crate) scope_id: mq_hir::ScopeId,
-    document_headings: Vec<String>,
-    document_frontmatter_keys: Vec<String>,
-    document_dict_keys: Vec<String>,
+#[derive(Debug, Default)]
+struct DocumentIndex {
+    headings: Vec<String>,
+    frontmatter_keys: Vec<String>,
+    dict_keys: Vec<String>,
 }
 
-impl CommandContext {
-    pub fn new(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
-        let mut hir = mq_hir::Hir::default();
-        let (source_id, scope_id) = hir.add_new_source(None);
-
-        hir.add_builtin();
-
-        let mut ctx = Self {
-            engine,
-            initial_input: input.clone(),
-            input,
-            hir,
-            source_id,
-            scope_id,
-            document_headings: Vec::new(),
-            document_frontmatter_keys: Vec::new(),
-            document_dict_keys: Vec::new(),
-        };
-        ctx.reindex_document();
-        ctx
-    }
-
-    fn reindex_document(&mut self) {
-        let mut headings: Vec<String> = self
-            .input
+impl DocumentIndex {
+    fn new(input: &[mq_lang::RuntimeValue]) -> Self {
+        let mut headings: Vec<String> = input
             .iter()
             .filter_map(|value| match value {
                 mq_lang::RuntimeValue::Markdown(node, _) => match node.as_ref() {
@@ -164,10 +137,8 @@ impl CommandContext {
             .collect();
         headings.sort();
         headings.dedup();
-        self.document_headings = headings;
 
-        let mut keys: Vec<String> = self
-            .input
+        let mut frontmatter_keys: Vec<String> = input
             .iter()
             .flat_map(|value| match value {
                 mq_lang::RuntimeValue::Markdown(node, _) => match node.as_ref() {
@@ -178,17 +149,21 @@ impl CommandContext {
                 _ => Vec::new(),
             })
             .collect();
-        keys.sort();
-        keys.dedup();
-        self.document_frontmatter_keys = keys;
+        frontmatter_keys.sort();
+        frontmatter_keys.dedup();
 
         let mut dict_keys = Vec::new();
-        for value in &self.input {
+        for value in input {
             Self::collect_dict_keys(value, &mut dict_keys);
         }
         dict_keys.sort();
         dict_keys.dedup();
-        self.document_dict_keys = dict_keys;
+
+        Self {
+            headings,
+            frontmatter_keys,
+            dict_keys,
+        }
     }
 
     fn collect_dict_keys(value: &mq_lang::RuntimeValue, keys: &mut Vec<String>) {
@@ -244,18 +219,14 @@ impl CommandContext {
         keys
     }
 
-    fn document_completions(&self, word: &str) -> Vec<CompletionItem> {
+    fn completions(&self, word: &str) -> Vec<CompletionItem> {
         let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
 
-        self.document_headings
+        self.headings
             .iter()
             .map(|heading| (heading, "heading"))
-            .chain(
-                self.document_frontmatter_keys
-                    .iter()
-                    .map(|key| (key, "frontmatter key")),
-            )
-            .chain(self.document_dict_keys.iter().map(|key| (key, "dict key")))
+            .chain(self.frontmatter_keys.iter().map(|key| (key, "frontmatter key")))
+            .chain(self.dict_keys.iter().map(|key| (key, "dict key")))
             .filter(|(value, _)| value.starts_with(word))
             .filter(|(value, _)| seen.insert(value.as_str()))
             .map(|(value, kind)| CompletionItem {
@@ -264,13 +235,48 @@ impl CommandContext {
             })
             .collect()
     }
+}
+
+pub struct CommandContext {
+    pub(crate) engine: mq_lang::DefaultEngine,
+    pub(crate) input: Vec<mq_lang::RuntimeValue>,
+    initial_input: Vec<mq_lang::RuntimeValue>,
+    pub(crate) hir: mq_hir::Hir,
+    pub(crate) source_id: mq_hir::SourceId,
+    pub(crate) scope_id: mq_hir::ScopeId,
+    document_index: DocumentIndex,
+}
+
+impl CommandContext {
+    pub fn new(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
+        let mut hir = mq_hir::Hir::default();
+        let (source_id, scope_id) = hir.add_new_source(None);
+
+        hir.add_builtin();
+
+        let document_index = DocumentIndex::new(&input);
+
+        Self {
+            engine,
+            initial_input: input.clone(),
+            input,
+            hir,
+            source_id,
+            scope_id,
+            document_index,
+        }
+    }
+
+    fn reindex_document(&mut self) {
+        self.document_index = DocumentIndex::new(&self.input);
+    }
 
     pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<CompletionItem>) {
         let prefix = &line[..pos];
 
         if let Some(str_start) = Self::string_literal_start(prefix) {
             let word = &line[str_start..pos];
-            let mut matches = self.document_completions(word);
+            let mut matches = self.document_index.completions(word);
             matches.sort_by(|a, b| a.name.cmp(&b.name));
             return (str_start, matches);
         }
