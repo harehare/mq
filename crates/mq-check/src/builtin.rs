@@ -316,6 +316,7 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "ends_with", Type::String, Type::String, Type::Bool);
     register_binary(ctx, "index", Type::String, Type::String, Type::Number);
     register_binary(ctx, "rindex", Type::String, Type::String, Type::Number);
+    register_binary(ctx, "indices", Type::String, Type::String, Type::array(Type::Number));
     register_unary(ctx, "token_count", Type::String, Type::Number);
     register_binary(ctx, "token_count", Type::String, Type::String, Type::Number);
 
@@ -1426,6 +1427,7 @@ fn register_bytes(ctx: &mut InferenceContext) {
     // index/rindex: (bytes, bytes) -> number
     register_binary(ctx, "index", Type::Bytes, Type::Bytes, Type::Number);
     register_binary(ctx, "rindex", Type::Bytes, Type::Bytes, Type::Number);
+    register_binary(ctx, "indices", Type::Bytes, Type::Bytes, Type::array(Type::Number));
 
     // pack: (string, number) -> bytes
     register_binary(ctx, "pack", Type::String, Type::Number, Type::Bytes);
@@ -1646,6 +1648,7 @@ mod tests {
     #[case::ends_with("ends_with(\"hello\", \"lo\")", true)]
     #[case::index("index(\"hello\", \"ll\")", true)]
     #[case::rindex("rindex(\"hello\", \"l\")", true)]
+    #[case::indices("indices(\"hello world hello\", \"hello\")", true)]
     fn test_string_search_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
