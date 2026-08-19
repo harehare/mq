@@ -6,10 +6,10 @@ The Cookbook is a collection of task-first recipes for mq. Where the [Example](.
 
 Every recipe follows the same four parts:
 
-- **Goal** — the problem being solved, in one sentence.
-- **Prerequisites** — anything the input or environment needs (a module import, an mq flag, a document shape).
-- **Query** — the mq query or command to run.
-- **Output** — the result you should see.
+- Goal: the problem being solved, in one sentence.
+- Prerequisites: anything the input or environment needs (a module import, an mq flag, a document shape).
+- Query: the mq query or command to run.
+- Output: the result you should see.
 
 ## Selecting and filtering content
 

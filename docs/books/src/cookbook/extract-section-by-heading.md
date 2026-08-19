@@ -1,18 +1,18 @@
 # Extract a section by its heading
 
-**Goal**: Pull just one section — say, the "Installation" section of a README — out of a larger document, heading included.
+Goal: Pull just one section (say, the "Installation" section of a README) out of a larger document, heading included.
 
-**Prerequisites**: The `section` module. Section functions need all document nodes at once, not one node at a time, so pass `-A` on the command line or pipe through `nodes` in a script.
+Prerequisites: The `section` module. Section functions need all document nodes at once, not one node at a time, so pass `-A` on the command line or pipe through `nodes` in a script.
 
 ## Query
 
-**`-A` flag** (command line):
+`-A` flag (command line):
 
 ```bash
 $ mq -A 'section::section("Installation")' README.md
 ```
 
-**`import` + `nodes`** (inline query or script):
+`import` + `nodes` (inline query or script):
 
 ```mq
 import "section"
@@ -20,7 +20,7 @@ import "section"
 | section::section("Installation")
 ```
 
-**`include`** (no namespace prefix):
+`include` (no namespace prefix):
 
 ```mq
 include "section"

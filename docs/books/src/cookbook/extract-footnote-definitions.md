@@ -1,8 +1,8 @@
 # Extract footnote definitions
 
-**Goal**: Collect every footnote definition in a document — e.g. to pull out a paper's citations as a standalone reference list.
+Goal: Collect every footnote definition in a document, e.g. to pull out a paper's citations as a standalone reference list.
 
-**Prerequisites**: None.
+Prerequisites: None.
 
 ## Query
 
@@ -36,3 +36,4 @@ Here is a claim[^1] and another[^2].
 
 - This selects the footnote *definitions* (the `[^1]: ...` lines), not the inline reference marks (`[^1]`) in the body text.
 - Pipe through `to_text` to strip the `[^n]:` marker and get just the citation text.
+- Works the same for named labels (`[^note]: ...`), not just numeric ones.
