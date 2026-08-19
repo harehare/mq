@@ -120,6 +120,9 @@ pub struct CommandContext {
     pub(crate) hir: mq_hir::Hir,
     pub(crate) source_id: mq_hir::SourceId,
     pub(crate) scope_id: mq_hir::ScopeId,
+    document_headings: Vec<String>,
+    document_frontmatter_keys: Vec<String>,
+    document_dict_keys: Vec<String>,
 }
 
 impl CommandContext {
@@ -129,18 +132,149 @@ impl CommandContext {
 
         hir.add_builtin();
 
-        Self {
+        let mut ctx = Self {
             engine,
             initial_input: input.clone(),
             input,
             hir,
             source_id,
             scope_id,
+            document_headings: Vec::new(),
+            document_frontmatter_keys: Vec::new(),
+            document_dict_keys: Vec::new(),
+        };
+        ctx.reindex_document();
+        ctx
+    }
+
+    fn reindex_document(&mut self) {
+        let mut headings: Vec<String> = self
+            .input
+            .iter()
+            .filter_map(|value| match value {
+                mq_lang::RuntimeValue::Markdown(node, _) => match node.as_ref() {
+                    mq_markdown::Node::Heading(_) => {
+                        let text = node.value();
+                        (!text.is_empty()).then_some(text)
+                    }
+                    _ => None,
+                },
+                _ => None,
+            })
+            .collect();
+        headings.sort();
+        headings.dedup();
+        self.document_headings = headings;
+
+        let mut keys: Vec<String> = self
+            .input
+            .iter()
+            .flat_map(|value| match value {
+                mq_lang::RuntimeValue::Markdown(node, _) => match node.as_ref() {
+                    mq_markdown::Node::Yaml(yaml) => Self::yaml_top_level_keys(&yaml.value),
+                    mq_markdown::Node::Toml(toml) => Self::toml_top_level_keys(&toml.value),
+                    _ => Vec::new(),
+                },
+                _ => Vec::new(),
+            })
+            .collect();
+        keys.sort();
+        keys.dedup();
+        self.document_frontmatter_keys = keys;
+
+        let mut dict_keys = Vec::new();
+        for value in &self.input {
+            Self::collect_dict_keys(value, &mut dict_keys);
         }
+        dict_keys.sort();
+        dict_keys.dedup();
+        self.document_dict_keys = dict_keys;
+    }
+
+    fn collect_dict_keys(value: &mq_lang::RuntimeValue, keys: &mut Vec<String>) {
+        match value {
+            mq_lang::RuntimeValue::Dict(dict) => {
+                for (key, nested) in dict.iter() {
+                    keys.push(key.to_string());
+                    Self::collect_dict_keys(nested, keys);
+                }
+            }
+            mq_lang::RuntimeValue::Array(array) => {
+                for nested in array.iter() {
+                    Self::collect_dict_keys(nested, keys);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn yaml_top_level_keys(raw: &str) -> Vec<String> {
+        raw.lines()
+            .filter(|line| !line.starts_with(char::is_whitespace) && !line.trim_start().starts_with('#'))
+            .filter_map(|line| {
+                let (key, rest) = line.split_once(':')?;
+                let key = key.trim().trim_matches(['"', '\'']);
+                if key.is_empty() || key.contains(char::is_whitespace) {
+                    return None;
+                }
+                (rest.is_empty() || rest.starts_with(char::is_whitespace)).then(|| key.to_string())
+            })
+            .collect()
+    }
+
+    fn toml_top_level_keys(raw: &str) -> Vec<String> {
+        let mut keys = Vec::new();
+
+        for line in raw.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with('[') {
+                break;
+            }
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            if let Some((key, _)) = trimmed.split_once('=') {
+                let key = key.trim().trim_matches(['"', '\'']);
+                if !key.is_empty() && !key.contains(char::is_whitespace) {
+                    keys.push(key.to_string());
+                }
+            }
+        }
+
+        keys
+    }
+
+    fn document_completions(&self, word: &str) -> Vec<CompletionItem> {
+        let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        self.document_headings
+            .iter()
+            .map(|heading| (heading, "heading"))
+            .chain(
+                self.document_frontmatter_keys
+                    .iter()
+                    .map(|key| (key, "frontmatter key")),
+            )
+            .chain(self.document_dict_keys.iter().map(|key| (key, "dict key")))
+            .filter(|(value, _)| value.starts_with(word))
+            .filter(|(value, _)| seen.insert(value.as_str()))
+            .map(|(value, kind)| CompletionItem {
+                name: value.clone(),
+                display: format!("{:<30}({})", value, kind),
+            })
+            .collect()
     }
 
     pub fn completions(&self, line: &str, pos: usize) -> (usize, Vec<CompletionItem>) {
         let prefix = &line[..pos];
+
+        if let Some(str_start) = Self::string_literal_start(prefix) {
+            let word = &line[str_start..pos];
+            let mut matches = self.document_completions(word);
+            matches.sort_by(|a, b| a.name.cmp(&b.name));
+            return (str_start, matches);
+        }
+
         let start = prefix
             .char_indices()
             .rev()
@@ -214,6 +348,20 @@ impl CommandContext {
         (start, matches)
     }
 
+    fn string_literal_start(prefix: &str) -> Option<usize> {
+        let mut quote_count = 0;
+        let mut start = None;
+
+        for (i, c) in prefix.char_indices() {
+            if c == '"' {
+                quote_count += 1;
+                start = Some(i + 1);
+            }
+        }
+
+        if quote_count % 2 == 1 { start } else { None }
+    }
+
     fn builtin_display(name: &str) -> String {
         if let Some(doc) = mq_lang::BUILTIN_FUNCTION_DOC.get(name) {
             if doc.params.is_empty() {
@@ -245,6 +393,7 @@ impl CommandContext {
                 self.scope_id = scope_id;
                 self.engine = engine;
                 self.input = self.initial_input.clone();
+                self.reindex_document();
                 Ok(CommandOutput::None)
             }
             Command::Copy => {
@@ -313,6 +462,7 @@ impl CommandContext {
 
                     self.hir.add_line_of_code(self.source_id, self.scope_id, code);
                     self.input = eval_result.values().clone();
+                    self.reindex_document();
 
                     Ok(CommandOutput::Value(eval_result.values().clone()))
                 }
@@ -354,6 +504,7 @@ impl CommandContext {
                             mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
 
                         self.input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from).collect();
+                        self.reindex_document();
                         Ok(CommandOutput::None)
                     })
             }
@@ -410,19 +561,24 @@ impl CommandContext {
 
                 let result = self.engine.eval(&code, self.input.clone().into_iter());
 
-                result
+                let output = result
                     .map(|result| {
                         self.hir.add_line_of_code(self.source_id, self.scope_id, &code);
                         self.input = result.values().clone();
                         Ok(CommandOutput::Value(result.values().clone()))
                     })
-                    .map_err(|e| *e)?
+                    .map_err(|e| *e)?;
+                if output.is_ok() {
+                    self.reindex_document();
+                }
+                output
             }
         }
     }
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
@@ -659,6 +815,101 @@ mod tests {
 
         let list_items = ctx.input.iter().filter(|v| v.to_string().contains("List item")).count();
         assert_eq!(list_items, 2);
+    }
+
+    #[rstest]
+    #[case::heading(
+        "structure_heading.md",
+        "# Title\n\n## Installation\n\nParagraph text.",
+        r#"select(to_string() == "Ins"#,
+        "Ins",
+        &["Installation"],
+        &["Title"]
+    )]
+    #[case::yaml_frontmatter(
+        "structure_yaml.md",
+        "---\ntitle: Hello\ntags: [a, b]\n---\n\n# Body\n",
+        r#".yaml | frontmatter | get("ti"#,
+        "ti",
+        &["title"],
+        &[]
+    )]
+    #[case::toml_frontmatter(
+        "structure_toml.md",
+        "+++\ntitle = \"Hello\"\n\n[extra]\nnested = 1\n+++\n\n# Body\n",
+        r#""ti"#,
+        "ti",
+        &["title"],
+        &["nested"]
+    )]
+    fn test_completions_document_structure(
+        #[case] filename: &str,
+        #[case] markdown: &str,
+        #[case] line: &str,
+        #[case] word: &str,
+        #[case] expected_present: &[&str],
+        #[case] expected_absent: &[&str],
+    ) {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let (_, temp_file_path) = create_file(filename, markdown);
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        ctx.execute(&format!("/load {}", temp_file_path.to_str().unwrap()))
+            .unwrap();
+
+        let (start, matches) = ctx.completions(line, line.len());
+        assert_eq!(start, line.len() - word.len());
+        for name in expected_present {
+            assert!(names(&matches).contains(name));
+        }
+        for name in expected_absent {
+            assert!(!names(&matches).contains(name));
+        }
+    }
+
+    #[rstest]
+    #[case::dict_after_eval(r#"{"title": "Hello", "count": 1}"#, r#""ti"#, &["title"])]
+    #[case::dict_nested_in_array_top_level(r#"[{"a": {"nested": 1}}, {"b": 2}]"#, r#""a"#, &["a"])]
+    #[case::dict_nested_in_array_nested(r#"[{"a": {"nested": 1}}, {"b": 2}]"#, r#""ne"#, &["nested"])]
+    fn test_completions_document_dict_keys(#[case] code: &str, #[case] line: &str, #[case] expected_present: &[&str]) {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+
+        ctx.execute(code).unwrap();
+
+        let (_, matches) = ctx.completions(line, line.len());
+        for name in expected_present {
+            assert!(names(&matches).contains(name));
+        }
+    }
+
+    #[test]
+    fn test_completions_document_reset_clears_index() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let (_, temp_file_path) = create_file("test_completions_document_reset_clears_index.md", "# Installation\n");
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        ctx.execute(&format!("/load {}", temp_file_path.to_str().unwrap()))
+            .unwrap();
+        ctx.execute("/reset").unwrap();
+
+        let line = r#""Ins"#;
+        let (_, matches) = ctx.completions(line, line.len());
+        assert!(matches.is_empty());
     }
 
     #[test]
