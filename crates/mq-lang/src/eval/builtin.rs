@@ -1675,6 +1675,63 @@ fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
     }
 }
 
+#[mq_macros::mq_fn(name = "indices", params = Fixed(2))]
+fn indices_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    fn string_indices(haystack: &str, needle: &str) -> Vec<RuntimeValue> {
+        if needle.is_empty() {
+            return Vec::new();
+        }
+
+        haystack
+            .match_indices(needle)
+            .map(|(i, _)| RuntimeValue::Number((i as i64).into()))
+            .collect()
+    }
+
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
+            Ok(RuntimeValue::Array(Shared::new(string_indices(s1, s2))))
+        }
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => Ok(RuntimeValue::Array(Shared::new(
+            node.markdown_node()
+                .map(|md| string_indices(md.value().as_str(), s))
+                .unwrap_or_default(),
+        ))),
+        [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
+            let nlen = needle.len();
+            let mut positions = Vec::new();
+
+            if nlen > 0 {
+                let mut i = 0;
+                while i + nlen <= haystack.len() {
+                    if haystack[i..i + nlen] == needle.as_slice()[..] {
+                        positions.push(RuntimeValue::Number((i as i64).into()));
+                        i += nlen;
+                    } else {
+                        i += 1;
+                    }
+                }
+            }
+
+            Ok(RuntimeValue::Array(Shared::new(positions)))
+        }
+        [RuntimeValue::Array(array), v] => Ok(RuntimeValue::Array(Shared::new(
+            array
+                .iter()
+                .enumerate()
+                .filter(|(_, o)| *o == v)
+                .map(|(i, _)| RuntimeValue::Number((i as i64).into()))
+                .collect(),
+        ))),
+        [RuntimeValue::None, _] => Ok(RuntimeValue::Array(Shared::new(Vec::new()))),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("indices should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "len", params = Fixed(1))]
 fn len_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
@@ -5008,6 +5065,7 @@ mq_macros::builtin_dispatch! {
     SQRT,
     EXP,
     INDEX,
+    INDICES,
     LEN,
     UTF8BYTELEN,
     TOKEN_COUNT,
@@ -7207,6 +7265,20 @@ world"# }],
             examples: &[BuiltinExample {
                 code: r#"index("hello", "ll")"#,
                 expected: r#"2"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("indices"),
+        BuiltinFunctionDoc {
+            description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found.",
+            params: &["value", "needle"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"indices("hello world hello", "hello")"#,
+                expected: r#"[0, 12]"#,
             }],
             capability: None,
         },
@@ -12911,6 +12983,73 @@ mod tests {
         .unwrap();
         let ridx = call("rindex", vec![RuntimeValue::Bytes(h), RuntimeValue::Bytes(n)]).unwrap();
         assert_eq!(idx, ridx);
+    }
+
+    // =========================================================================
+    // indices
+    // =========================================================================
+
+    #[rstest]
+    #[case::string_multiple("hello world hello", "hello", vec![0, 12])]
+    #[case::string_overlap_not_double_counted("aaaa", "aa", vec![0, 2])]
+    #[case::string_not_found("hello", "xyz", vec![])]
+    #[case::string_empty_needle("hello", "", vec![])]
+    fn test_string_indices(#[case] haystack: &str, #[case] needle: &str, #[case] expected: Vec<i64>) {
+        assert_eq!(
+            call(
+                "indices",
+                vec![
+                    RuntimeValue::String(haystack.to_string()),
+                    RuntimeValue::String(needle.to_string())
+                ]
+            ),
+            Ok(RuntimeValue::Array(Shared::new(
+                expected.into_iter().map(|i| RuntimeValue::Number(i.into())).collect()
+            )))
+        );
+    }
+
+    #[rstest]
+    #[case(vec![0x01, 0x02, 0x03, 0x02], vec![0x02], vec![1, 3])]
+    #[case(vec![0x01, 0x02, 0x03],       vec![0x04], vec![])]
+    #[case(vec![0x01, 0x02, 0x01, 0x02], vec![0x01, 0x02], vec![0, 2])]
+    #[case(vec![],                      vec![0x01], vec![])]
+    #[case(vec![0x01],                  vec![],     vec![])]
+    fn test_bytes_indices(#[case] haystack: Vec<u8>, #[case] needle: Vec<u8>, #[case] expected: Vec<i64>) {
+        assert_eq!(
+            call(
+                "indices",
+                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+            ),
+            Ok(RuntimeValue::Array(Shared::new(
+                expected.into_iter().map(|i| RuntimeValue::Number(i.into())).collect()
+            )))
+        );
+    }
+
+    #[test]
+    fn test_array_indices() {
+        let array = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String("a".to_string()),
+        ]));
+        assert_eq!(
+            call("indices", vec![array, RuntimeValue::String("a".to_string())]),
+            Ok(RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Number(0.into()),
+                RuntimeValue::Number(2.into()),
+            ])))
+        );
+    }
+
+    #[test]
+    fn test_array_indices_not_found() {
+        let array = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string())]));
+        assert_eq!(
+            call("indices", vec![array, RuntimeValue::String("z".to_string())]),
+            Ok(RuntimeValue::Array(Shared::new(Vec::new())))
+        );
     }
 
     // =========================================================================
