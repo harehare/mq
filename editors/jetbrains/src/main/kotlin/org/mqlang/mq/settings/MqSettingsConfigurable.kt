@@ -1,6 +1,7 @@
 package org.mqlang.mq.settings
 
 import com.intellij.openapi.options.Configurable
+import com.intellij.openapi.ui.TextBrowseFolderListener
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.ui.components.JBCheckBox
@@ -16,18 +17,20 @@ class MqSettingsConfigurable : Configurable {
 
     private val lspPathField = TextFieldWithBrowseButton().apply {
         addBrowseFolderListener(
-            null,
-            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
-                .withTitle("mq-lsp Executable")
-                .withDescription("Path to the mq-lsp language server executable. Leave empty to auto-detect on PATH."),
+            TextBrowseFolderListener(
+                FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                    .withTitle("mq-lsp Executable")
+                    .withDescription("Path to the mq-lsp language server executable. Leave empty to auto-detect on PATH."),
+            ),
         )
     }
     private val dbgPathField = TextFieldWithBrowseButton().apply {
         addBrowseFolderListener(
-            null,
-            FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
-                .withTitle("mq-dbg Executable")
-                .withDescription("Path to the mq-dbg debug adapter executable. Leave empty to auto-detect on PATH."),
+            TextBrowseFolderListener(
+                FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                    .withTitle("mq-dbg Executable")
+                    .withDescription("Path to the mq-dbg debug adapter executable. Leave empty to auto-detect on PATH."),
+            ),
         )
     }
     private val showExamplesCheckBox = JBCheckBox("Show examples when creating a new .mq file")
