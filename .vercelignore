@@ -22,6 +22,7 @@ fuzz/corpus
 fuzz/artifacts
 editors/vscode
 editors/neovim
+editors/jetbrains
 work
 .claude
 .github
