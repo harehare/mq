@@ -1,8 +1,8 @@
 # Track task-list (checkbox) progress
 
-**Goal**: Count how many `- [x]` items are checked off out of the total in a Markdown task list — e.g. to report progress on a TODO list or project checklist.
+Goal: Count how many `- [x]` items are checked off out of the total in a Markdown task list, e.g. to report progress on a TODO list or project checklist.
 
-**Prerequisites**: `-A`, since the counts are computed across the whole document at once.
+Prerequisites: `-A`, since the counts are computed across the whole document at once.
 
 ## Query
 
@@ -39,6 +39,6 @@ $ mq -A 'let total = count_by(fn(x): x | select(.list);)
 
 ## Notes
 
-- Shorthand: `.done` and `.todo` select checked/unchecked task-list items directly — `.done` is equivalent to `select(.list.checked == true)`, and `.todo` to `select(.list.checked == false)`. The counting query can use `select(.done)` in place of `select(.list.checked == true)` the same way.
-- `.list.checked` is `true`/`false` for task-list items and absent (`None`) for a plain bullet or numbered item — so `select(.list)` alone counts every list item regardless of whether it's a checkbox.
+- Shorthand: `.done` and `.todo` select checked/unchecked task-list items directly: `.done` is equivalent to `select(.list.checked == true)`, and `.todo` to `select(.list.checked == false)`. The counting query can use `select(.done)` in place of `select(.list.checked == true)` the same way.
+- `.list.checked` is `true`/`false` for task-list items and absent (`None`) for a plain bullet or numbered item, so `select(.list)` alone counts every list item regardless of whether it's a checkbox.
 - Swap `== true` for `== false` (or `.done` for `.todo`) to list what's left to do instead of what's done.

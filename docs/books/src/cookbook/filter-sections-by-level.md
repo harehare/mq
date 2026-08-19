@@ -1,8 +1,8 @@
 # Keep only sections at a given heading level
 
-**Goal**: Drop deeper subsections and keep just the top-level (or any one level) sections of a document.
+Goal: Drop deeper subsections and keep just the top-level (or any one level) sections of a document.
 
-**Prerequisites**: The `section` module. Section functions need all document nodes at once — pass `-A` on the command line, or `nodes` in a script.
+Prerequisites: The `section` module. Section functions need all document nodes at once, so pass `-A` on the command line, or `nodes` in a script.
 
 ## Query
 

@@ -1,13 +1,13 @@
 # Find sections that have no content
 
-**Goal**: Spot placeholder or empty sections — headings with nothing written under them yet — as a quick doc-completeness check.
+Goal: Spot placeholder or empty sections, headings with nothing written under them yet, as a quick doc-completeness check.
 
-**Prerequisites**: The `section` module, via `-A` or `nodes`.
+Prerequisites: The `section` module, via `-A` or `nodes`.
 
 ## Query
 
 ```bash
-$ mq -A 'section::sections | filter(fn(s): section::has_content(s);) | section::titles' README.md
+$ mq -A 'section::sections | filter(fn(s): !section::has_content(s);) | section::titles' README.md
 ```
 
 ## Input
@@ -27,10 +27,10 @@ Use the tool like this.
 ## Output
 
 ```
-Introduction
-Usage
+Empty Section
 ```
 
 ## Notes
 
-- This lists sections *with* content; flip the predicate (`!section::has_content(s)`) to list the empty ones you actually want to fill in.
+- Flip the predicate (drop the `!`) to list sections *with* content instead, e.g. as a sanity check that nothing got filtered out by mistake.
+- "No content" means no non-heading nodes directly under it. A subsection's own text doesn't count as its parent's content: a heading followed only by a deeper heading (`# Parent` then `## Child` with text under `Child`) still flags `Parent` as empty.

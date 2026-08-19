@@ -1,8 +1,8 @@
 # Write a reusable custom function
 
-**Goal**: Package a multi-step transformation — like converting `snake_case` to `CamelCase` — into a named function you can call like a builtin.
+Goal: Package a multi-step transformation (like converting `snake_case` to `CamelCase`) into a named function you can call like a builtin.
 
-**Prerequisites**: None.
+Prerequisites: None.
 
 ## Query
 

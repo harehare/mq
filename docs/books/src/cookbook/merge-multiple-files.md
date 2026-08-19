@@ -1,8 +1,8 @@
 # Merge multiple Markdown files into one stream
 
-**Goal**: Concatenate several files, with the source path visible before each one, to review a set of docs in one pass.
+Goal: Concatenate several files, with the source path visible before each one, to review a set of docs in one pass.
 
-**Prerequisites**: None.
+Prerequisites: None.
 
 ## Query
 
@@ -42,4 +42,5 @@ Use it like this.
 ## Notes
 
 - `-S <query>` inserts the result of `<query>` as a separator between files; `__FILE__` is a built-in variable holding the current file's path.
-- `identity` passes each node through unchanged — swap it for a real query to filter/transform while merging.
+- `identity` passes each node through unchanged, swap it for a real query to filter/transform while merging.
+- This runs the query once per file and stitches the results together with `-S`. To instead run one query *across* all files at once, e.g. to count something over the whole set, use `--eval-all`. It has no per-file separator, so it's for aggregation, not this kind of readable concatenation.

@@ -1,8 +1,8 @@
 # Transform, filter, and reduce arrays
 
-**Goal**: Apply the usual `map`/`filter`/`fold` trio to arrays inside an mq query — useful once a query has collected values into a list and you need to post-process them.
+Goal: Apply the usual `map`/`filter`/`fold` trio to arrays inside an mq query, useful once a query has collected values into a list and you need to post-process them.
 
-**Prerequisites**: None.
+Prerequisites: None.
 
 ## Map: transform each element
 
@@ -36,4 +36,5 @@ $ mq -I null 'fold([1, 2, 3, 4], 0, fn(acc, x): acc + x;)'
 
 ## Notes
 
-- These compose naturally with Markdown selectors — e.g. `.h.depth | filter(fn(x): x <= 2;)` to keep only the depths of h1/h2 headings collected across a document (with `-A`).
+- The array can also come from the pipe instead of being passed explicitly, and the three chain together: `[5, 15, 8, 20, 3] | filter(fn(x): x > 10;) | fold(0, fn(acc, x): acc + x;)` gives `35`.
+- These compose naturally with Markdown selectors, e.g. `.h.depth | filter(fn(x): x <= 2;)` to keep only the depths of h1/h2 headings collected across a document (with `-A`).

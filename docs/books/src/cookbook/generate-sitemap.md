@@ -1,8 +1,8 @@
 # Generate an XML sitemap from Markdown files
 
-**Goal**: Build a sitemap entry per file from a set of Markdown docs, based on each file's path.
+Goal: Build a sitemap entry per file from a set of Markdown docs, based on each file's path.
 
-**Prerequisites**: None.
+Prerequisites: None.
 
 ## Query
 
@@ -35,4 +35,4 @@ end
 
 ## Notes
 
-- **Gotcha**: without a query that consumes all of a file's nodes first, mq re-runs the whole pipeline once per node in the file — since `sitemap` here ignores its piped input and only reads `__FILE__`, that means one duplicate `<url>` entry per node. `nodes | first` collapses each file down to a single evaluation before calling `sitemap`, so you get exactly one entry per file.
+- Gotcha: without a query that consumes all of a file's nodes first, mq re-runs the whole pipeline once per node in the file. Since `sitemap` here ignores its piped input and only reads `__FILE__`, that means one duplicate `<url>` entry per node. `nodes | first` collapses each file down to a single evaluation before calling `sitemap`, so you get exactly one entry per file.

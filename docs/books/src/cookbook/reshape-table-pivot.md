@@ -1,8 +1,8 @@
 # Reshape a table between wide and long form
 
-**Goal**: Pivot a table from one-column-per-category (wide) to one-row-per-category (long), or back — the same reshape spreadsheet tools call "unpivot"/"pivot".
+Goal: Pivot a table from one-column-per-category (wide) to one-row-per-category (long), or back. The same reshape spreadsheet tools call "unpivot"/"pivot".
 
-**Prerequisites**: The `table` module, via `-A` or `nodes`.
+Prerequisites: The `table` module, via `-A` or `nodes`.
 
 ## Wide to long (`pivot_longer`)
 
@@ -12,7 +12,7 @@ Unpivot a set of columns into `name`/`value` row pairs, keeping the remaining co
 $ mq -A 'import "table" | let t = first(table::tables()) | table::pivot_longer(t, [1, 2, 3], "quarter", "score")' README.md
 ```
 
-**Input**:
+Input:
 
 ```markdown
 | Name  | Q1 | Q2 | Q3 |
@@ -21,7 +21,7 @@ $ mq -A 'import "table" | let t = first(table::tables()) | table::pivot_longer(t
 | Bob   | 5  | 15 | 25 |
 ```
 
-**Output**:
+Output:
 
 ```markdown
 | Name  | quarter | score |
@@ -47,4 +47,4 @@ Feeding the long output above back in with `pivot_wider(1, 2)` reproduces the or
 ## Notes
 
 - `pivot_longer` and `pivot_wider` are exact inverses of each other for well-formed input, so use whichever direction matches the shape you're starting from.
-- No `table::to_markdown` call needed here — mq expands table objects to Markdown automatically in query output. See [Extract all tables from a document](extract-tables.md) for when `to_markdown` actually is required.
+- No `table::to_markdown` call needed here. mq expands table objects to Markdown automatically in query output. See [Extract all tables from a document](extract-tables.md) for when `to_markdown` actually is required.
