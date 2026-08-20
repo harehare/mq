@@ -2974,6 +2974,9 @@ fn engine() -> DefaultEngine {
 #[case::to_hex_basic(r#"to_hex(b"\xde\xad")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dead".to_string())].into()))]
 #[case::from_hex_len(r#"from_hex("deadbeef") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::hex_roundtrip(r#"to_hex(from_hex("deadbeef"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("deadbeef".to_string())].into()))]
+// hexdump
+#[case::hexdump_basic(r#"hexdump(b"hi")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("00000000  68 69                                             |hi|".to_string())].into()))]
+#[case::hexdump_none("hexdump(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // utf8: bytes to string
 #[case::utf8_basic(r#"utf8(b"hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
 // bitwise byte operations
@@ -3599,6 +3602,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::from_hex_invalid("from_hex(\"xyz\")", vec![RuntimeValue::None],)]
 // to_hex with non-bytes
 #[case::to_hex_non_bytes("to_hex(\"string\")", vec![RuntimeValue::None],)]
+// hexdump with non-bytes
+#[case::hexdump_non_bytes("hexdump(\"string\")", vec![RuntimeValue::None],)]
 // base64d invalid input
 #[case::base64d_invalid(r#"base64d("not-valid-base64!!!")"#, vec![RuntimeValue::None],)]
 // to_bytes with out-of-range element

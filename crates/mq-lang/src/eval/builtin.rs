@@ -710,6 +710,16 @@ fn to_hex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+#[mq_macros::mq_fn(name = "hexdump", params = Fixed(1))]
+fn hexdump_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b)] => convert::hexdump(b),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("hexdump should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "utf8", params = Fixed(1))]
 fn utf8_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5024,6 +5034,7 @@ mq_macros::builtin_dispatch! {
     TO_BYTES,
     FROM_HEX,
     TO_HEX,
+    HEXDUMP,
     UTF8,
     DECODE,
     ENCODE,
@@ -6711,6 +6722,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             examples: &[BuiltinExample {
                 code: r#"to_hex(from_hex("6869"))"#,
                 expected: r#"6869"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("hexdump"),
+        BuiltinFunctionDoc {
+            description: "Renders bytes as a hexdump (offset, hex bytes, ASCII gutter), like `xxd`/`hexdump -C`.",
+            params: &["bytes"],
+            param_types: &["bytes"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"hexdump(to_bytes("hi"))"#,
+                expected: r#"00000000  68 69                                             |hi|"#,
             }],
             capability: None,
         },
@@ -11985,6 +12010,34 @@ mod tests {
         .unwrap();
         let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex], &env).unwrap();
         assert_eq!(roundtripped, RuntimeValue::Bytes(original));
+    }
+
+    #[rstest]
+    #[case::empty(vec![], Ok(RuntimeValue::String("00000000".to_string())))]
+    #[case::short(
+        b"hi".to_vec(),
+        Ok(RuntimeValue::String("00000000  68 69                                             |hi|".to_string()))
+    )]
+    fn test_hexdump(#[case] input: Vec<u8>, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("hexdump");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(input)],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_hexdump_none() {
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("hexdump"),
+            vec![RuntimeValue::None],
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(result, Ok(RuntimeValue::NONE));
     }
 
     #[rstest]

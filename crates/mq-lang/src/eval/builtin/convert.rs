@@ -577,6 +577,51 @@ pub(super) fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
     Ok(RuntimeValue::String(bytes_to_hex(input)))
 }
 
+/// Render bytes as a `hexdump -C`/`xxd`-style dump: offset, hex bytes, and an ASCII gutter.
+#[inline(always)]
+pub(super) fn hexdump(input: &[u8]) -> Result<RuntimeValue, Error> {
+    use std::fmt::Write;
+    const WIDTH: usize = 16;
+
+    if input.is_empty() {
+        return Ok(RuntimeValue::String(format!("{:08x}", 0)));
+    }
+
+    let mut out = String::with_capacity(input.len() / WIDTH * 70 + 70);
+    for (i, chunk) in input.chunks(WIDTH).enumerate() {
+        write!(out, "{:08x}  ", i * WIDTH).unwrap();
+
+        for (j, b) in chunk.iter().enumerate() {
+            write!(out, "{b:02x} ").unwrap();
+            if j == WIDTH / 2 - 1 {
+                out.push(' ');
+            }
+        }
+        for j in chunk.len()..WIDTH {
+            out.push_str("   ");
+            if j == WIDTH / 2 - 1 {
+                out.push(' ');
+            }
+        }
+
+        out.push_str(" |");
+        for b in chunk {
+            out.push(if b.is_ascii_graphic() || *b == b' ' {
+                *b as char
+            } else {
+                '.'
+            });
+        }
+        out.push('|');
+
+        if i + 1 != input.len().div_ceil(WIDTH) {
+            out.push('\n');
+        }
+    }
+
+    Ok(RuntimeValue::String(out))
+}
+
 /// Decode bytes as text using a WHATWG encoding label. Errors on invalid input rather than substituting.
 #[inline(always)]
 pub(super) fn decode(input: &[u8], label: &str) -> Result<RuntimeValue, Error> {
@@ -659,6 +704,26 @@ mod tests {
     use super::*;
     use crate::Ident;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::empty(b"".to_vec(), "00000000")]
+    #[case::short(
+        b"hi".to_vec(),
+        "00000000  68 69                                             |hi|"
+    )]
+    #[case::exactly_one_row(
+        (0u8..16).collect::<Vec<u8>>(),
+        "00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  |................|"
+    )]
+    #[case::multi_row(
+        (0u8..=0x22).collect::<Vec<u8>>(),
+        "00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  |................|\n\
+         00000010  10 11 12 13 14 15 16 17  18 19 1a 1b 1c 1d 1e 1f  |................|\n\
+         00000020  20 21 22                                          | !\"|"
+    )]
+    fn test_hexdump(#[case] input: Vec<u8>, #[case] expected: &str) {
+        assert_eq!(hexdump(&input), Ok(RuntimeValue::String(expected.to_string())));
+    }
 
     // Test convert::try_from
     #[rstest]

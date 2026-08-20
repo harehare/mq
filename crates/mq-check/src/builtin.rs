@@ -1398,6 +1398,10 @@ fn register_bytes(ctx: &mut InferenceContext) {
     register_unary(ctx, "from_hex", Type::String, Type::Bytes);
     register_unary(ctx, "from_hex", Type::None, Type::None);
 
+    // hexdump: (bytes) -> string
+    register_unary(ctx, "hexdump", Type::Bytes, Type::String);
+    register_unary(ctx, "hexdump", Type::None, Type::None);
+
     // utf8: (bytes) -> string
     register_unary(ctx, "utf8", Type::Bytes, Type::String);
     register_unary(ctx, "utf8", Type::None, Type::None);
@@ -2623,6 +2627,8 @@ mod tests {
     #[case::bytes_base64(r#"to_bytes("hello") | base64"#, true)]
     // to_hex: bytes -> string
     #[case::to_hex(r#"to_bytes("hello") | to_hex"#, true)]
+    // hexdump: bytes -> string
+    #[case::hexdump(r#"to_bytes("hello") | hexdump"#, true)]
     // from_hex: string -> bytes
     #[case::from_hex(r#"from_hex("deadbeef")"#, true)]
     // utf8: bytes -> string
@@ -2656,6 +2662,8 @@ mod tests {
     #[case::to_hex_string(r#"to_hex("hello")"#, false, "to_hex expects bytes not string")]
     // utf8 requires bytes, not string
     #[case::utf8_string(r#"utf8("hello")"#, false, "utf8 expects bytes not string")]
+    // hexdump requires bytes, not string
+    #[case::hexdump_string(r#"hexdump("hello")"#, false, "hexdump expects bytes not string")]
     // from_hex requires string, not bytes
     #[case::from_hex_bytes(r#"to_bytes("hello") | from_hex"#, false, "from_hex expects string not bytes")]
     fn test_bytes_type_errors(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
