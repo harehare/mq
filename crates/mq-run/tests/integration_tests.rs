@@ -866,6 +866,123 @@ fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::E
 }
 
 #[test]
+fn test_repl_with_file_arg_loads_content() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, temp_file_path) = create_file("test_repl_file_arg.md", "# Repl File Heading");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd.arg("repl").arg(&temp_file_path).write_stdin("self\n").assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(
+        stdout.contains("Repl File Heading"),
+        "expected repl output to contain file contents, got: {stdout}"
+    );
+    Ok(())
+}
+
+#[test]
+fn test_repl_with_multiple_file_args_combines_content() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, path_a) = create_file("test_repl_multi_file_a.md", "# Multi File Heading A");
+    let (_, path_b) = create_file("test_repl_multi_file_b.md", "# Multi File Heading B");
+    let path_a_clone = path_a.clone();
+    let path_b_clone = path_b.clone();
+
+    defer! {
+        if path_a_clone.exists() {
+            std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+        }
+        if path_b_clone.exists() {
+            std::fs::remove_file(&path_b_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd.arg("repl").arg(&path_a).arg(&path_b).write_stdin("self\n").assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(stdout.contains("Multi File Heading A"), "got: {stdout}");
+    assert!(stdout.contains("Multi File Heading B"), "got: {stdout}");
+    Ok(())
+}
+
+#[test]
+fn test_repl_no_files_still_seeds_empty() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd.arg("repl").write_stdin("self\n").assert();
+
+    assert.success();
+    Ok(())
+}
+
+#[test]
+fn test_repl_load_command_multiple_files() -> Result<(), Box<dyn std::error::Error>> {
+    let (_, path_a) = create_file("test_repl_load_multi_a.md", "# Load Multi Heading A");
+    let (_, path_b) = create_file("test_repl_load_multi_b.md", "# Load Multi Heading B");
+    let path_a_clone = path_a.clone();
+    let path_b_clone = path_b.clone();
+
+    defer! {
+        if path_a_clone.exists() {
+            std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+        }
+        if path_b_clone.exists() {
+            std::fs::remove_file(&path_b_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("repl")
+        .write_stdin(format!(
+            "/load {} {}\nself\n",
+            path_a.to_string_lossy(),
+            path_b.to_string_lossy()
+        ))
+        .assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(stdout.contains("Load Multi Heading A"), "got: {stdout}");
+    assert!(stdout.contains("Load Multi Heading B"), "got: {stdout}");
+    Ok(())
+}
+
+#[test]
+fn test_repl_load_command_glob() -> Result<(), Box<dyn std::error::Error>> {
+    let (temp_dir, path_a) = create_file("test_repl_load_glob_a.md", "# Load Glob Heading A");
+    let (_, path_b) = create_file("test_repl_load_glob_b.md", "# Load Glob Heading B");
+    let path_a_clone = path_a.clone();
+    let path_b_clone = path_b.clone();
+
+    defer! {
+        if path_a_clone.exists() {
+            std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+        }
+        if path_b_clone.exists() {
+            std::fs::remove_file(&path_b_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let pattern = temp_dir.join("test_repl_load_glob_*.md");
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("repl")
+        .write_stdin(format!("/load {}\nself\n", pattern.to_string_lossy()))
+        .assert();
+
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).to_string();
+    assert!(stdout.contains("Load Glob Heading A"), "got: {stdout}");
+    assert!(stdout.contains("Load Glob Heading B"), "got: {stdout}");
+    Ok(())
+}
+
+#[test]
 fn test_collection() -> Result<(), Box<dyn std::error::Error>> {
     let temp_dir = tempfile::tempdir()?;
     std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;

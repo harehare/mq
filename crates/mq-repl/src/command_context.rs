@@ -1,4 +1,4 @@
-use std::{fmt, fs, io::Write, process::Command as ProcessCommand};
+use std::{fmt, fs, io::Write, path::PathBuf, process::Command as ProcessCommand};
 
 #[cfg(all(feature = "clipboard", not(target_os = "android")))]
 use arboard::Clipboard;
@@ -31,7 +31,7 @@ pub enum Command {
     Eval(String),
     Help,
     History,
-    LoadFile(String),
+    LoadFile(Vec<String>),
     NotFound(String),
     Quit,
     Reset,
@@ -81,7 +81,12 @@ impl Command {
             Command::Help => format!("{:<12}{}", "/help", "Print command help"),
             Command::History => format!("{:<12}{}", "/history", "Show command history"),
             Command::Quit => format!("{:<12}{}", "/quit", "Quit evaluation and exit"),
-            Command::LoadFile(_) => format!("{:<12}{}", "/load", "Load a markdown file"),
+            Command::LoadFile(_) => {
+                format!(
+                    "{:<12}{}",
+                    "/load", "Load one or more markdown files (supports globs, e.g. /load *.md)"
+                )
+            }
             Command::SaveFile(_) => format!("{:<12}{}", "/save", "Save a current result to a file"),
             Command::Reset => format!("{:<12}{}", "/reset", "Reset REPL state (clear variables and input)"),
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
@@ -102,7 +107,9 @@ impl From<String> for Command {
             ["/help"] => Command::Help,
             ["/history"] => Command::History,
             ["/quit"] => Command::Quit,
-            ["/load", file_path] => Command::LoadFile(file_path.to_string()),
+            ["/load", first, rest @ ..] => {
+                Command::LoadFile(std::iter::once(first).chain(rest).map(|s| s.to_string()).collect())
+            }
             ["/save", file_path] => Command::SaveFile(file_path.to_string()),
             ["/reset"] => Command::Reset,
             ["/vars"] => Command::Vars,
@@ -502,17 +509,37 @@ impl CommandContext {
                 std::process::exit(0);
             }
             Command::NotFound(s) => Err(miette!(format!("Command not found: {}", s))),
-            Command::LoadFile(file_path) => {
-                fs::read_to_string(file_path)
-                    .into_diagnostic()
-                    .and_then(|markdown_content| {
-                        let markdown: mq_markdown::Markdown =
-                            mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
+            Command::LoadFile(paths) => {
+                let mut resolved_paths: Vec<PathBuf> = Vec::new();
 
-                        self.input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from).collect();
-                        self.reindex_document();
-                        Ok(CommandOutput::None)
-                    })
+                for pattern in paths {
+                    if pattern.contains(['*', '?', '[']) {
+                        let matches: Vec<PathBuf> = glob::glob(&pattern)
+                            .into_diagnostic()?
+                            .collect::<Result<Vec<_>, _>>()
+                            .into_diagnostic()?;
+
+                        if matches.is_empty() {
+                            return Err(miette!("No files matched pattern: {}", pattern));
+                        }
+
+                        resolved_paths.extend(matches);
+                    } else {
+                        resolved_paths.push(PathBuf::from(pattern));
+                    }
+                }
+
+                let mut combined_input = Vec::new();
+
+                for path in &resolved_paths {
+                    let markdown_content = fs::read_to_string(path).into_diagnostic()?;
+                    let markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content)?;
+                    combined_input.extend(markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from));
+                }
+
+                self.input = combined_input;
+                self.reindex_document();
+                Ok(CommandOutput::None)
             }
             Command::SaveFile(file_path) => {
                 let content = self.input.iter().map(|v| v.to_string()).collect::<Vec<_>>().join("\n");
@@ -626,8 +653,14 @@ mod tests {
             panic!("Expected Env command");
         }
 
-        if let Command::LoadFile(path) = Command::from("/load test.md".to_string()) {
-            assert_eq!(path, "test.md");
+        if let Command::LoadFile(paths) = Command::from("/load test.md".to_string()) {
+            assert_eq!(paths, vec!["test.md".to_string()]);
+        } else {
+            panic!("Expected LoadFile command");
+        }
+
+        if let Command::LoadFile(paths) = Command::from("/load a.md b.md".to_string()) {
+            assert_eq!(paths, vec!["a.md".to_string(), "b.md".to_string()]);
         } else {
             panic!("Expected LoadFile command");
         }
@@ -644,7 +677,7 @@ mod tests {
         assert_eq!(format!("{}", Command::Reset), "/reset");
         assert_eq!(format!("{}", Command::Vars), "/vars");
         assert_eq!(format!("{}", Command::Version), "/version");
-        assert_eq!(format!("{}", Command::LoadFile("test.md".to_string())), "/load");
+        assert_eq!(format!("{}", Command::LoadFile(vec!["test.md".to_string()])), "/load");
         assert_eq!(
             format!("{}", Command::Env("key".to_string(), "value".to_string())),
             "/env"
@@ -821,6 +854,111 @@ mod tests {
 
         let list_items = ctx.input.iter().filter(|v| v.to_string().contains("List item")).count();
         assert_eq!(list_items, 2);
+    }
+
+    #[test]
+    fn test_execute_load_file_multiple() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let (_, path_a) = create_file("test_execute_load_file_multiple_a.md", "# Header A");
+        let (_, path_b) = create_file("test_execute_load_file_multiple_b.md", "# Header B");
+        let path_a_clone = path_a.clone();
+        let path_b_clone = path_b.clone();
+
+        defer! {
+            if path_a_clone.exists() {
+                std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+            }
+            if path_b_clone.exists() {
+                std::fs::remove_file(&path_b_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let result = ctx.execute(&format!(
+            "/load {} {}",
+            path_a.to_str().unwrap(),
+            path_b.to_str().unwrap()
+        ));
+        assert!(matches!(result, Ok(CommandOutput::None)));
+
+        let headings: Vec<String> = ctx.input.iter().map(|v| v.to_string()).collect();
+        assert!(headings.iter().any(|h| h.contains("Header A")));
+        assert!(headings.iter().any(|h| h.contains("Header B")));
+        assert!(
+            headings.iter().position(|h| h.contains("Header A")) < headings.iter().position(|h| h.contains("Header B"))
+        );
+    }
+
+    #[test]
+    fn test_execute_load_file_glob() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let (temp_dir, path_a) = create_file("test_glob_load_a.md", "# Glob Header A");
+        let (_, path_b) = create_file("test_glob_load_b.md", "# Glob Header B");
+        let path_a_clone = path_a.clone();
+        let path_b_clone = path_b.clone();
+
+        defer! {
+            if path_a_clone.exists() {
+                std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+            }
+            if path_b_clone.exists() {
+                std::fs::remove_file(&path_b_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let pattern = temp_dir.join("test_glob_load_*.md");
+        let result = ctx.execute(&format!("/load {}", pattern.to_str().unwrap()));
+        assert!(matches!(result, Ok(CommandOutput::None)));
+
+        let headings: Vec<String> = ctx.input.iter().map(|v| v.to_string()).collect();
+        assert!(headings.iter().any(|h| h.contains("Glob Header A")));
+        assert!(headings.iter().any(|h| h.contains("Glob Header B")));
+    }
+
+    #[test]
+    fn test_execute_load_file_glob_no_matches() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+        let temp_dir = std::env::temp_dir();
+        let pattern = temp_dir.join("test_execute_load_file_no_such_glob_*.md");
+
+        let result = ctx.execute(&format!("/load {}", pattern.to_str().unwrap()));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_load_file_nonexistent_literal() {
+        let engine = mq_lang::DefaultEngine::default();
+        let mut ctx = CommandContext::new(engine, vec!["".to_string().into()]);
+
+        let result = ctx.execute("/load /definitely/does/not/exist.md");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_execute_load_file_failure_preserves_existing_input() {
+        let (_, path_a) = create_file("test_load_preserve_a.md", "# Preserved Header");
+        let path_a_clone = path_a.clone();
+
+        defer! {
+            if path_a_clone.exists() {
+                std::fs::remove_file(&path_a_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut ctx = CommandContext::new(mq_lang::DefaultEngine::default(), vec!["".to_string().into()]);
+        ctx.execute(&format!("/load {}", path_a.to_str().unwrap()))
+            .expect("initial load should succeed");
+
+        let result = ctx.execute(&format!(
+            "/load {} /definitely/does/not/exist.md",
+            path_a.to_str().unwrap()
+        ));
+        assert!(result.is_err());
+
+        let headings: Vec<String> = ctx.input.iter().map(|v| v.to_string()).collect();
+        assert!(headings.iter().any(|h| h.contains("Preserved Header")));
     }
 
     #[rstest]

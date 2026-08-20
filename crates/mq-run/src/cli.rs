@@ -543,8 +543,12 @@ impl OutputArgs {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Start a REPL session for interactive query execution
-    Repl,
+    /// Start a REPL session for interactive query execution. Optional FILES are
+    /// combined as the initial input (same file/format handling as `mq QUERY FILES...`).
+    Repl {
+        /// Markdown (or other supported format) files to load as the REPL's initial input
+        files: Option<Vec<PathBuf>>,
+    },
     /// Start a debug adapter for mq
     #[cfg(feature = "debugger")]
     Dap,
@@ -556,15 +560,6 @@ enum Commands {
     },
     /// Show documentation for a builtin function, selector, standard module, standard-module
     /// function, or the `examples` topic.
-    ///
-    /// Looks up NAME among native builtin functions, selectors (with or without a leading
-    /// `.`), `builtin.mq` functions, standard module names (e.g. `section`, `table`), and
-    /// every standard module's functions, and prints its signature, parameter/return types,
-    /// description, examples, required capability (Cargo feature), and the module it belongs
-    /// to (if any). Use `module::function` (e.g. `section::section`) to disambiguate a
-    /// function whose name collides with its own module. Run `mq help examples` for CLI usage
-    /// examples (basic queries, ARGS passing, auto-parsing by file extension). Run with no NAME
-    /// to list everything.
     Help {
         /// Name of a function, selector, module, or `examples`, e.g. `map`, `.h1`, `csv_parse`,
         /// `section`, `examples`
@@ -1303,9 +1298,20 @@ impl Cli {
         }
 
         match &self.commands {
-            Some(Commands::Repl) => {
+            Some(Commands::Repl { files }) => {
                 let engine = self.create_engine()?;
-                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String("".to_string())]).run()
+                let input = match files {
+                    Some(files) if !files.is_empty() => {
+                        let contents = self.read_files_content(files)?;
+                        let mut combined = Vec::new();
+                        for (file, content) in &contents {
+                            combined.extend(self.resolve_input(file, content)?);
+                        }
+                        combined
+                    }
+                    _ => vec![mq_lang::RuntimeValue::String("".to_string())],
+                };
+                mq_repl::Repl::with_engine(engine, input).run()
             }
             None if self.query.is_none() => {
                 let engine = self.create_engine()?;
@@ -2067,6 +2073,22 @@ impl Cli {
             })
     }
 
+    /// Reads each file's raw content, choosing binary or text mode per-file based on its
+    /// detected format. Shared by `read_contents` and the `repl` subcommand's file-seeding.
+    fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
+        files
+            .iter()
+            .map(|file| {
+                let content: ContentData = if self.needs_binary_read_for_file(file) {
+                    fs::read(file).map(Into::into).into_diagnostic()?
+                } else {
+                    fs::read_to_string(file).map(Into::into).into_diagnostic()?
+                };
+                Ok((Some(file.clone()), content))
+            })
+            .collect()
+    }
+
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         if matches!(self.input.input_format, Some(InputFormat::Null)) {
             return Ok(vec![(None, ContentData::empty())]);
@@ -2074,25 +2096,7 @@ impl Cli {
 
         self.files
             .clone()
-            .map(|files| {
-                let load_contents: miette::Result<Vec<ContentData>> = files
-                    .iter()
-                    .map(|file| {
-                        if self.needs_binary_read_for_file(file) {
-                            fs::read(file).map(Into::into).into_diagnostic()
-                        } else {
-                            fs::read_to_string(file).map(Into::into).into_diagnostic()
-                        }
-                    })
-                    .collect();
-                load_contents.map(move |contents| {
-                    files
-                        .into_iter()
-                        .zip(contents)
-                        .map(|(file, content)| (Some(file), content))
-                        .collect::<Vec<_>>()
-                })
-            })
+            .map(|files| self.read_files_content(&files))
             .unwrap_or_else(|| {
                 if io::stdin().is_terminal() {
                     return Ok(vec![(None, ContentData::empty())]);
@@ -4713,8 +4717,6 @@ mod tests {
     fn test_content_data_as_bytes(#[case] input: ContentData, #[case] expected: &[u8]) {
         assert_eq!(input.as_bytes(), expected);
     }
-
-    // --- ContentData::from (Into conversions) ---
 
     #[rstest]
     #[case("hello".to_string(), Some("hello"))]
