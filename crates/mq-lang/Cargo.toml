@@ -26,7 +26,7 @@ glob = {workspace = true}
 ignore = {workspace = true, optional = true}
 itertools = {workspace = true}
 miette = {workspace = true}
-mq-markdown = {workspace = true, features = ["html-to-markdown", "json", "obsidian"]}
+mq-markdown = {workspace = true, features = ["json", "obsidian"]}
 nom = {workspace = true}
 nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
@@ -65,8 +65,9 @@ ast-json = ["smallvec/serde", "smol_str/serde"]
 cst = ["dep:ropey"]
 css-selector = ["dep:scraper"]
 debugger = ["sync"]
-default = ["std"]
+default = ["std", "html-to-markdown"]
 file-io = ["dep:ignore"]
+html-to-markdown = ["mq-markdown/html-to-markdown"]
 process-io = []
 std = []
 sync = []

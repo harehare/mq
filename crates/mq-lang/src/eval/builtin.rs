@@ -876,6 +876,7 @@ fn max_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+#[cfg(feature = "html-to-markdown")]
 #[mq_macros::mq_fn(name = "from_html", params = Fixed(1))]
 fn from_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5010,6 +5011,7 @@ mq_macros::builtin_dispatch! {
     SAMPLE,
     MIN,
     MAX,
+    #[cfg(feature = "html-to-markdown")]
     FROM_HTML,
     TO_HTML,
     HTML_ESCAPE,
@@ -6510,6 +6512,7 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             capability: None,
         },
     );
+    #[cfg(feature = "html-to-markdown")]
     map.insert(
         SmolStr::new("from_html"),
         BuiltinFunctionDoc {
