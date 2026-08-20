@@ -201,6 +201,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/fetch-and-filter-a-web-page</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference</loc>
     <priority>1.0</priority>
   </url>
