@@ -319,7 +319,7 @@ impl Completer for MqLineHelper {
             })
             .collect::<Vec<_>>();
 
-        if line.starts_with(Command::LoadFile("".to_string()).to_string().as_str()) {
+        if line.starts_with(Command::LoadFile(vec![]).to_string().as_str()) {
             let (_, file_completions) = self.file_completer.complete_path(line, pos)?;
             completions.extend(file_completions);
         }

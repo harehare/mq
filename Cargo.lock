@@ -2791,6 +2791,7 @@ dependencies = [
  "arboard",
  "colored 3.1.1",
  "dirs 6.0.0",
+ "glob",
  "miette",
  "mq-hir",
  "mq-lang",
