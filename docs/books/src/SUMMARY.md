@@ -48,6 +48,7 @@
   - [Generate an XML sitemap from Markdown files](cookbook/generate-sitemap.md)
   - [Trim a document down to LLM-sized context](cookbook/extract-context-for-llm-prompts.md)
   - [Generate document statistics](cookbook/generate-document-statistics.md)
+  - [Fetch a web page and filter it](cookbook/fetch-and-filter-a-web-page.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)
   - [Values and Types](reference/types_and_values.md)
