@@ -3,7 +3,7 @@ use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
 use crate::node::{
-    ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, list_own_prefix_width, reindent_all_lines,
+    Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, list_own_prefix_width, reindent_all_lines,
     render_values,
 };
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
@@ -151,6 +151,18 @@ impl Markdown {
                 let own_width = own_indent + list_own_prefix_width(list.ordered, list.index, list.start, list.checked);
                 list_indent_stack.push(own_width);
                 reindent_all_lines(&node.render_with_theme(&self.options, theme), delta)
+            } else if let Node::Code(code) = node
+                && !code.fence
+                && i > 0
+                && matches!(self.nodes[i - 1], Node::List(_))
+            {
+                // Fenced avoids its fixed 4-space indent colliding with the list's own.
+                list_indent_stack.clear();
+                Node::Code(Code {
+                    fence: true,
+                    ..code.clone()
+                })
+                .render_with_theme(&self.options, theme)
             } else {
                 list_indent_stack.clear();
                 node.render_with_theme(&self.options, theme)
@@ -162,11 +174,27 @@ impl Markdown {
             }
 
             if let Some(pos) = node.position() {
-                let new_line_count = pre_position
+                let mut new_line_count = pre_position
                     .as_ref()
                     .map(|p| pos.start.line.saturating_sub(p.end.line))
                     .unwrap_or_else(|| if is_first { 0 } else { 1 })
                     .min(2);
+
+                // Single newline after a block quote reads back as lazy continuation.
+                if new_line_count < 2 && i > 0 && self.nodes[i - 1].is_blockquote_like() {
+                    new_line_count = 2;
+                }
+
+                // Same-list adjacent items separate by `spread`, not source line gap.
+                if i > 0
+                    && let Node::List(cur_list) = node
+                    && let Node::List(prev_list) = &self.nodes[i - 1]
+                    && cur_list.level == prev_list.level
+                    && cur_list.ordered == prev_list.ordered
+                    && cur_list.index == prev_list.index + 1
+                {
+                    new_line_count = if cur_list.spread { 2 } else { 1 };
+                }
 
                 pre_position = Some(pos.clone());
 
@@ -177,6 +205,9 @@ impl Markdown {
             } else {
                 if !is_first {
                     buffer.push('\n');
+                    if i > 0 && self.nodes[i - 1].is_blockquote_like() {
+                        buffer.push('\n');
+                    }
                 }
                 pre_position = None;
                 buffer.push_str(&value);
@@ -588,6 +619,20 @@ mod tests {
     #[cfg_attr(feature = "callout", case::plain_blockquote("> plain quote", 1, "> plain quote\n"))]
     // plain blockquote with list items — second item must not be over-indented
     #[case::blockquote_with_list("> - item 1\n> - item 2", 1, "> - item 1\n> - item 2\n")]
+    // backtick fence switches to tilde when the info string itself has a backtick
+    #[case::fence_switches_to_tilde_on_backtick_in_info("~~~ aa ``` ~~~\nfoo\n~~~", 1, "~~~aa ``` ~~~\nfoo\n~~~\n")]
+    // a sibling right after a block quote needs a blank line, or it's read as lazy continuation
+    #[case::blockquote_sibling_gets_blank_line_separator("> bar\n>\nbaz", 2, "> bar\n\nbaz\n")]
+    // items whose marker sits alone on its own line must stay tight, not go loose
+    #[case::list_tight_despite_marker_on_own_line("-\n  foo\n-\n  bar", 2, "- foo\n- bar\n")]
+    // an indented code block right after a list must not read back as list continuation
+    #[case::code_after_list_uses_fence(" -    one\n\n     two", 2, "- one\n\n```\n two\n```\n")]
+    // a block quote nested in a list item needs its continuation line's own indent
+    #[case::blockquote_in_list_continuation(
+        "> 1. > Blockquote\ncontinued here.",
+        1,
+        "> 1. > Blockquote\n>    > continued here.\n"
+    )]
     // embed round-trips
     #[cfg_attr(feature = "embed", case::embed_plain("![[note.md]]", 1, "![[note.md]]\n"))]
     #[cfg_attr(
