@@ -26,6 +26,7 @@ This makes it easy to add your own tools and workflows to `mq` without modifying
 The following external tools are available to extend mq's functionality:
 
 - [mq-check](https://github.com/harehare/mq/blob/main/crates/mq-check/README.md) - A syntax and semantic checker for mq files.
+- [mq-content-lint](https://github.com/harehare/mq-content-lint) - A Markdown linter that uses mq queries to enforce both built-in rules and custom project-specific content checks.
 - [mq-conv](https://github.com/harehare/mq-conv) - A CLI tool for converting various file formats to Markdown.
 - [mq-crawler](https://github.com/harehare/mq/blob/main/crates/mq-crawler/README.md) - A web crawler that extracts structured data from websites and outputs it in Markdown format.
 - [mq-db](https://github.com/harehare/mq-db) - Markdown-specialized embedded database with interval-indexed block storage and hierarchical query support.
@@ -35,6 +36,7 @@ The following external tools are available to extend mq's functionality:
 - [mq-lint](https://github.com/harehare/mq/blob/main/crates/mq-lint/README.md) - Static analysis linter for mq files (correctness, style, complexity, selector, and module rules).
 - [mq-lsp](https://github.com/harehare/mq/tree/main/crates/mq-lsp/README.md) - Language Server Protocol (LSP) implementation for mq query files, providing IDE features like completion, hover, and diagnostics.
 - [mq-mcp](https://github.com/harehare/mq-mcp) - Model Context Protocol (MCP) server implementation for AI assistants.
+- [mq-mount](https://github.com/harehare/mq-mount) - Mounts Markdown files as a virtual filesystem, where headings become directories and section bodies become `content.md` files.
 - [mq-serve](https://github.com/harehare/mq-serve) - A browser-based Markdown viewer with mq query support.
 - [mq-task](https://github.com/harehare/mq-task) - Task runner using mq for Markdown-based task definitions.
 - [mq-tui](https://github.com/harehare/mq-tui) - Terminal User Interface (TUI) for interactive mq query.
