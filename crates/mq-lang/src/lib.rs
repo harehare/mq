@@ -199,11 +199,13 @@ pub fn parse_mdx_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     Ok(mdx.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
+#[cfg(feature = "html-to-markdown")]
 pub fn parse_html_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     let html = mq_markdown::Markdown::from_html_str(input)?;
     Ok(html.nodes.into_iter().map(RuntimeValue::from).collect())
 }
 
+#[cfg(feature = "html-to-markdown")]
 pub fn parse_html_input_with_options(
     input: &str,
     options: mq_markdown::ConversionOptions,
@@ -372,6 +374,7 @@ mod tests {
         assert_eq!(values.len(), 3);
     }
 
+    #[cfg(feature = "html-to-markdown")]
     #[test]
     fn test_parse_html_input() {
         let input = "<h1>Heading</h1><p>Some text.</p>";
@@ -381,6 +384,7 @@ mod tests {
         assert!(!values.is_empty());
     }
 
+    #[cfg(feature = "html-to-markdown")]
     #[test]
     fn test_parse_html_input_with_options() {
         let input = r#"<html>
