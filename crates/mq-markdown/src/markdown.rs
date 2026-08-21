@@ -142,6 +142,8 @@ impl Markdown {
             current_table = None;
             in_table = false;
 
+            let prev_node = i.checked_sub(1).and_then(|j| self.nodes.get(j));
+
             let value = if let Node::List(list) = node {
                 while list_indent_stack.len() > list.level as usize {
                     list_indent_stack.pop();
@@ -153,8 +155,7 @@ impl Markdown {
                 reindent_all_lines(&node.render_with_theme(&self.options, theme), delta)
             } else if let Node::Code(code) = node
                 && !code.fence
-                && i > 0
-                && matches!(self.nodes[i - 1], Node::List(_))
+                && matches!(prev_node, Some(Node::List(_)))
             {
                 // Fenced avoids its fixed 4-space indent colliding with the list's own.
                 list_indent_stack.clear();
@@ -181,17 +182,16 @@ impl Markdown {
                     .min(2);
 
                 // Single newline after a block quote reads back as lazy continuation.
-                if new_line_count < 2 && i > 0 && self.nodes[i - 1].is_blockquote_like() {
+                if new_line_count < 2 && prev_node.is_some_and(Node::is_blockquote_like) {
                     new_line_count = 2;
                 }
 
                 // Same-list adjacent items separate by `spread`, not source line gap.
-                if i > 0
-                    && let Node::List(cur_list) = node
-                    && let Node::List(prev_list) = &self.nodes[i - 1]
+                if let Node::List(cur_list) = node
+                    && let Some(Node::List(prev_list)) = prev_node
                     && cur_list.level == prev_list.level
                     && cur_list.ordered == prev_list.ordered
-                    && cur_list.index == prev_list.index + 1
+                    && cur_list.index.checked_sub(1) == Some(prev_list.index)
                 {
                     new_line_count = if cur_list.spread { 2 } else { 1 };
                 }
@@ -205,7 +205,7 @@ impl Markdown {
             } else {
                 if !is_first {
                     buffer.push('\n');
-                    if i > 0 && self.nodes[i - 1].is_blockquote_like() {
+                    if prev_node.is_some_and(Node::is_blockquote_like) {
                         buffer.push('\n');
                     }
                 }
