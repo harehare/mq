@@ -387,6 +387,7 @@ mod tests {
             ordered: false,
             checked: None,
             start: None,
+            spread: false,
             position: None,
         })
     }
