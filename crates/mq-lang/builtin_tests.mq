@@ -279,15 +279,45 @@ def test_unique_by(value, f, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([[[1, 2, 3], [2, 3, 4], [1, 2, 3, 4]], [[1, 1, 2], [2, 2, 3], [1, 2, 3]], [[], [1, 2], [1, 2]], [["a", "b"], ["b", "c"], ["a", "b", "c"]]])
+def test_union(value1, value2, expected):
+  let result = union(value1, value2)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[[1, 2, 3], [2, 3, 4], [2, 3]], [[1, 2], [3, 4], []], [[], [1, 2], []], [["a", "b"], ["b", "c"], ["b"]]])
+def test_intersection(value1, value2, expected):
+  let result = intersection(value1, value2)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[[1, 2, 3], [2, 3, 4], [1]], [[1, 2, 2, 3], [], [1, 2, 3]], [[], [1, 2], []], [["a", "b"], ["b", "c"], ["a"]]])
+def test_difference(value1, value2, expected):
+  let result = difference(value1, value2)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[42, 42], ["test", "test"], [[1, 2, 3], [1, 2, 3]]])
 def test_identity(value, expected):
   let result = identity(value)
   | assert_eq(result, expected)
 end
 
+# @parametrize([[5, 0, 10, 5], [15, 0, 10, 10], [-5, 0, 10, 0], [0, 0, 10, 0], [10, 0, 10, 10]])
+def test_clamp(value, lo, hi, expected):
+  let result = clamp(value, lo, hi)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[[[1, 2, 3], [4, 5, 6]], [[1, 4], [2, 5], [3, 6]]], [[], []], [[[1, 2], [3, 4], [5, 6]], [[1, 3, 5], [2, 4, 6]]]])
 def test_transpose(value, expected):
   let result = transpose(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[[[1, 2], [3, 4]], [[1, 3], [1, 4], [2, 3], [2, 4]]], [[], [[]]], [[[1]], [[1]]], [[[1, 2], []], []]])
+def test_combinations(value, expected):
+  let result = combinations(value)
   | assert_eq(result, expected)
 end
 
@@ -471,6 +501,12 @@ def test_percentile(value, p, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([[[1, 2, 3, 4, 5], 3], [[1, 2, 3, 4], 2.5], [[42], 42], [[], None]])
+def test_median(value, expected):
+  let result = median(value)
+  | assert_eq(result, expected)
+end
+
 def test_inspect():
   let v = 1
   | let result1 = inspect(v)
@@ -562,6 +598,18 @@ def test_sum(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([[[1, 2, 3, 4], [1, 3, 6, 10]], [[], []], [[5], [5]], [[-1, 1, -1, 1], [-1, 0, -1, 0]]])
+def test_cumsum(value, expected):
+  let result = cumsum(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[[1, 2, 3, 4], [1, 1.5, 2, 2.5]], [[], []], [[5], [5]]])
+def test_cumavg(value, expected):
+  let result = cumavg(value)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[[1, 2, 3, 4, 5], 3], [[], None], [[10, 20], 15]])
 def test_mean(value, expected):
   let result = mean(value)
@@ -646,6 +694,12 @@ def test_unlines(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([["a\nb\nc", "  ", "  a\n  b\n  c"], ["hello", "> ", "> hello"], ["", "> ", "> "]])
+def test_indent(value, prefix, expected):
+  let result = indent(value, prefix)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["y"], {"y": 20}], [{"key": "value"}, ["nonexistent"], dict()]])
 def test_pick(value, keys, expected):
   let result = pick(value, keys)
@@ -710,6 +764,12 @@ end
 # @parametrize([[{"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];, {"a": 10, "b": 20}], [{}, fn(pair): pair;, dict()]])
 def test_with_entries(value, f, expected):
   let result = with_entries(value, f)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[{"a": 1, "b": 2}, {"1": "a", "2": "b"}], [dict(), dict()], [{"a": 1, "b": 1}, {"1": "b"}]])
+def test_invert(value, expected):
+  let result = invert(value)
   | assert_eq(result, expected)
 end
 
