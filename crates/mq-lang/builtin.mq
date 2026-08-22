@@ -250,7 +250,7 @@ def dicts(d): select(d, is_dict(d));
 # Example:
 # ```
 # nones(None)
-# #=> 
+# #=>
 # ```
 #
 # Returns: dynamic
@@ -2060,6 +2060,17 @@ def lines(s): if (is_none(s)): None else: split(s, "\n");
 # Returns: string
 def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
 
+# Prepends the given prefix to every line of a string.
+#
+# Example:
+# ```
+# indent("a\nb", "  ") == "  a\n  b"
+# #=> true
+# ```
+#
+# Returns: string
+def indent(s, prefix): s | lines | map(fn(line): prefix + line;) | unlines;
+
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 #
 # Example:
@@ -2273,6 +2284,18 @@ def from_entries(arr):
 # Returns: dict
 def with_entries(d, f): from_entries(map(entries(d), f));
 
+# Returns a new dict with keys and values swapped. If multiple keys map to the
+# same value (after conversion to string), the last one wins.
+#
+# Example:
+# ```
+# invert({"a": 1, "b": 2})
+# #=> {"1": "a", "2": "b"}
+# ```
+#
+# Returns: dict
+def invert(d): d | entries | map(fn(e): [e[1], e[0]];) | from_entries;
+
 # Deep merges two values, recursing into dicts key by key. Neither input is mutated.
 # When both sides provide a leaf/array value for the same key, the conflict is resolved
 # according to `policy`, one of:
@@ -2417,4 +2440,3 @@ def human_size(n):
   | let rounded = round(value * 10) / 10
   | sign + to_string(rounded) + units[exponent]
 end
-

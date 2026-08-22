@@ -694,6 +694,12 @@ def test_unlines(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([["a\nb\nc", "  ", "  a\n  b\n  c"], ["hello", "> ", "> hello"], ["", "> ", "> "]])
+def test_indent(value, prefix, expected):
+  let result = indent(value, prefix)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["y"], {"y": 20}], [{"key": "value"}, ["nonexistent"], dict()]])
 def test_pick(value, keys, expected):
   let result = pick(value, keys)
@@ -758,6 +764,12 @@ end
 # @parametrize([[{"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];, {"a": 10, "b": 20}], [{}, fn(pair): pair;, dict()]])
 def test_with_entries(value, f, expected):
   let result = with_entries(value, f)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[{"a": 1, "b": 2}, {"1": "a", "2": "b"}], [dict(), dict()], [{"a": 1, "b": 1}, {"1": "b"}]])
+def test_invert(value, expected):
+  let result = invert(value)
   | assert_eq(result, expected)
 end
 
