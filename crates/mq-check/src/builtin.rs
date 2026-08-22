@@ -264,7 +264,9 @@ fn register_math(ctx: &mut InferenceContext) {
     // Unary math: number -> number
     register_many(
         ctx,
-        &["abs", "ceil", "floor", "round", "trunc", "ln", "log10", "sqrt", "exp"],
+        &[
+            "abs", "ceil", "floor", "round", "trunc", "ln", "log10", "log", "sqrt", "exp", "sin", "cos", "tan",
+        ],
         vec![Type::Number],
         Type::Number,
     );
@@ -1583,10 +1585,15 @@ mod tests {
     #[case::rand_int("rand_int(1, 10)", true)]
     #[case::ln("ln(2.0)", true)]
     #[case::log10("log10(100)", true)]
+    #[case::log("log(2.0)", true)]
     #[case::sqrt("sqrt(4)", true)]
     #[case::exp("exp(1)", true)]
+    #[case::sin("sin(0)", true)]
+    #[case::cos("cos(0)", true)]
+    #[case::tan("tan(0)", true)]
     #[case::ln_string("ln(\"x\")", false)] // Should fail: wrong type
     #[case::sqrt_string("sqrt(\"x\")", false)] // Should fail: wrong type
+    #[case::sin_string("sin(\"x\")", false)] // Should fail: wrong type
     fn test_special_number_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

@@ -1640,6 +1640,42 @@ fn exp_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+#[mq_macros::mq_fn(name = "log", params = Fixed(1))]
+fn log_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().ln().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("log should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "sin", params = Fixed(1))]
+fn sin_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().sin().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("sin should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "cos", params = Fixed(1))]
+fn cos_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().cos().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("cos should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "tan", params = Fixed(1))]
+fn tan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().tan().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("tan should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "index", params = Fixed(2))]
 fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5064,8 +5100,12 @@ mq_macros::builtin_dispatch! {
     POW,
     LN,
     LOG10,
+    LOG,
     SQRT,
     EXP,
+    SIN,
+    COS,
+    TAN,
     INDEX,
     INDICES,
     LEN,
@@ -6269,6 +6309,62 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             examples: &[BuiltinExample {
                 code: r#"log10(100)"#,
                 expected: r#"2"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("log"),
+        BuiltinFunctionDoc {
+            description: "Returns the natural logarithm (base e) of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"log(1)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("sin"),
+        BuiltinFunctionDoc {
+            description: "Returns the sine of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"sin(0)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("cos"),
+        BuiltinFunctionDoc {
+            description: "Returns the cosine of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"cos(0)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("tan"),
+        BuiltinFunctionDoc {
+            description: "Returns the tangent of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"tan(0)"#,
+                expected: r#"0"#,
             }],
             capability: None,
         },
@@ -9507,6 +9603,10 @@ mod tests {
     #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
     #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
     #[case("round", vec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("sin", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("cos", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(1.0.into())))]
+    #[case("tan", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("log", vec![RuntimeValue::Number(1.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
     #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
     #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
     #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
