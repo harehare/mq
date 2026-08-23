@@ -28,6 +28,10 @@ impl TableLayout {
                 Node::TableCell(TableCell {
                     row, column, values, ..
                 }) => {
+                    // row 0 after an align row means an adjacent next table, not a continuation.
+                    if *row == 0 && *column == 0 && !align.is_empty() {
+                        break;
+                    }
                     let width = cell_display_width(values, options);
                     cell_widths.insert((*row, *column), width);
                     if *column >= widths.len() {

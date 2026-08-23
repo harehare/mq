@@ -74,7 +74,8 @@ impl Markdown {
                 row, column, values, ..
             }) = node
             {
-                if current_table.as_ref().is_none_or(|t| i >= t.end) {
+                let is_new_table = current_table.as_ref().is_none_or(|t| i >= t.end);
+                if is_new_table {
                     current_table = Some(TableLayout::compute(&self.nodes, &self.options, i));
                 }
                 let table = current_table.as_ref().unwrap();
@@ -90,15 +91,21 @@ impl Markdown {
                 if is_new_row {
                     if current_table_row.is_some() {
                         buffer.push_str(" |\n");
-                    } else if !in_table && let Some(pos) = node.position() {
-                        // Insert newlines before the first row of a table
-                        let new_line_count = pre_position
-                            .as_ref()
-                            .map(|p| pos.start.line.saturating_sub(p.end.line))
-                            .unwrap_or_else(|| if is_first { 0 } else { 1 })
-                            .min(2);
-                        for _ in 0..new_line_count {
+                    }
+                    if is_new_table {
+                        if in_table {
+                            // Adjacent table: restore the blank line GFM needs to keep them separate.
                             buffer.push('\n');
+                        } else if let Some(pos) = node.position() {
+                            // Insert newlines before the first row of a table
+                            let new_line_count = pre_position
+                                .as_ref()
+                                .map(|p| pos.start.line.saturating_sub(p.end.line))
+                                .unwrap_or_else(|| if is_first { 0 } else { 1 })
+                                .min(2);
+                            for _ in 0..new_line_count {
+                                buffer.push('\n');
+                            }
                         }
                     }
                     current_table_row = Some(*row);
@@ -556,6 +563,19 @@ mod tests {
     // A data row with fewer cells than the header must render only the
     // cells present, without panicking or misaligning later rows.
     #[case::table_ragged_row("| A | B |\n|---|---|\n| 1 |\n", 4, "| A | B |\n| - | - |\n| 1 |\n")]
+    // adjacent tables have no separator node between them; the renderer must still
+    // keep the blank line, or re-parsing merges them into one table.
+    #[case::tables_adjacent(
+        "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C | D |\n|---|---|\n| 3 | 4 |\n",
+        10,
+        "| A | B |\n| - | - |\n| 1 | 2 |\n\n| C | D |\n| - | - |\n| 3 | 4 |\n"
+    )]
+    // adjacent tables of different widths must not share column layout.
+    #[case::tables_adjacent_different_widths(
+        "| A | B |\n|---|---|\n| 1 | 2 |\n\n| C |\n|---|\n| 3 |\n",
+        8,
+        "| A | B |\n| - | - |\n| 1 | 2 |\n\n| C |\n| - |\n| 3 |\n"
+    )]
     #[case::excessive_blank_lines("# Title\n\n\n\nParagraph", 2, "# Title\n\nParagraph\n")]
     #[case::three_blank_lines("Para 1\n\n\n\n\nPara 2", 2, "Para 1\n\nPara 2\n")]
     // GFM autolink literal: link text is the same URL — must not nest on round-trip

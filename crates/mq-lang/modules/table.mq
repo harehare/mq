@@ -38,16 +38,29 @@ def tables(md_nodes):
       | let nodes_len = len(md_nodes)
       | while (i < nodes_len):
           let node = md_nodes[i]
-          | if (is_table_cell(node)):
-              if (node.row != current_row_index) do
-                  if (!is_empty(current_row)):
-                    current_rows += [current_row]
-                  | current_row = []
-                  | current_row_index = node.row
-                  | current_row = [node]
-                end
-              else:
-                current_row += node
+          | if (is_table_cell(node)): do
+                if (node.row == 0 && node.column == 0 && !is_empty(current_align)) do
+                    if (!is_empty(current_row)) do
+                        current_rows += [current_row]
+                        | current_row = []
+                      end
+                    | if (!is_empty(current_rows)) do
+                        tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+                      end
+                    | current_align = []
+                    | current_rows = []
+                    | current_row_index = -1
+                  end
+                | if (node.row != current_row_index) do
+                    if (!is_empty(current_row)):
+                      current_rows += [current_row]
+                    | current_row = []
+                    | current_row_index = node.row
+                    | current_row = [node]
+                  end
+                else:
+                  current_row += node
+              end
             elif (is_table_align(node)): current_align = node
             else: do
                 if (!is_empty(current_row)) do

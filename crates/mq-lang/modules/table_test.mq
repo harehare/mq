@@ -21,6 +21,43 @@ def test_table_tables_empty():
   | assert_eq(result, [])
 end
 
+def test_table_tables_adjacent():
+  let md_nodes = to_markdown("| A | B |\n| - | - |\n| 1 | 2 |\n\n| C | D |\n|---|---|\n| 3 | 4 |\n")
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 2)
+  | assert_eq(to_string(result[0][:header][0]), "A")
+  | assert_eq(len(result[0][:rows]), 1)
+  | assert_eq(to_string(result[1][:header][0]), "C")
+  | assert_eq(len(result[1][:rows]), 1)
+  | assert_eq(to_string(result[1][:rows][0][0]), "3")
+end
+
+def test_table_tables_three_adjacent():
+  let md_nodes = to_markdown("| A |\n| - |\n| 1 |\n\n| B |\n| - |\n| 2 |\n\n| C |\n| - |\n| 3 |\n")
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 3)
+  | assert_eq(to_string(result[0][:header][0]), "A")
+  | assert_eq(to_string(result[1][:header][0]), "B")
+  | assert_eq(to_string(result[2][:header][0]), "C")
+end
+
+def test_table_tables_adjacent_different_widths():
+  let md_nodes = to_markdown("| A | B |\n| - | - |\n| 1 | 2 |\n\n| C |\n| - |\n| 3 |\n")
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 2)
+  | assert_eq(len(result[0][:header]), 2)
+  | assert_eq(len(result[1][:header]), 1)
+  | assert_eq(len(result[1][:rows][0]), 1)
+end
+
+def test_table_tables_adjacent_header_only():
+  let md_nodes = to_markdown("| A | B |\n| - | - |\n\n| C | D |\n| - | - |\n| 1 | 2 |\n")
+  | let result = table::tables(md_nodes)
+  | assert_eq(len(result), 2)
+  | assert_eq(len(result[0][:rows]), 0)
+  | assert_eq(len(result[1][:rows]), 1)
+end
+
 # @parametrize([[table_md_followed_by_paragraph], [table_md_followed_by_heading], [table_md_followed_by_break]])
 def test_table_tables_followed_by(markdown):
   let md_nodes = to_markdown(markdown)
