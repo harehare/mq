@@ -20,10 +20,10 @@ rustc-hash = {workspace = true}
 scraper = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive"], optional = true}
 serde_json = {workspace = true, optional = true}
-serde_yaml = {workspace = true, optional = true}
 smol_str = {workspace = true}
 unicode-width = {workspace = true}
 url = {workspace = true, optional = true}
+yaml-rust2 = {workspace = true, optional = true}
 
 [dev-dependencies]
 divan = {workspace = true}
@@ -40,7 +40,7 @@ callout = []
 color = []
 default = ["std"]
 embed = []
-html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_json", "dep:serde_yaml", "dep:url"]
+html-to-markdown = ["dep:scraper", "dep:ego-tree", "dep:serde_json", "dep:yaml-rust2", "dep:url"]
 json = ["dep:serde", "dep:serde_json", "smol_str/serde"]
 obsidian = ["wikilink", "callout", "embed"]
 std = []

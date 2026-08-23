@@ -135,22 +135,6 @@ def yaml_to_json(data):
 end
 
 # Converts a data structure to a YAML front matter string.
-# deprecated: use to_frontmatter instead
-#
-# Example:
-# ```
-# import "yaml" | yaml::to_front_matter({"key": 1})
-# #=> ---
-# key: 1
-# ---
-# ```
-#
-# Returns: string
-def to_front_matter(data):
-  "---\n" + yaml_stringify(data) + "\n---"
-end
-
-# Converts a data structure to a YAML front matter string.
 #
 # Example:
 # ```
@@ -164,4 +148,3 @@ end
 def to_frontmatter(data):
   "---\n" + yaml_stringify(data) + "\n---"
 end
-

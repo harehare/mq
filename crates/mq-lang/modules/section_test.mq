@@ -39,11 +39,17 @@ def test_section_title():
   | assert(contains(title_text, "Introduction"))
 end
 
-def test_section_content():
+def test_section_body():
   let sections = do test_sections | section::split(1);
   | let first_section = first(sections)
-  | let content_nodes = section::content(first_section)
-  | assert_snapshot("section_content", to_markdown_string(content_nodes))
+  | let body_nodes = section::body(first_section)
+  | assert_snapshot("section_body", to_markdown_string(body_nodes))
+end
+
+def test_section_has_body():
+  let sections = do test_sections | section::split(1);
+  | let first_section = first(sections)
+  | assert(section::has_body(first_section))
 end
 
 def test_section_level():

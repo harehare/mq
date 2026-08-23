@@ -593,18 +593,6 @@ def is_text(text): to_md_name(text) == "text";
 # Returns: bool
 def is_list(list): to_md_name(list) == "list";
 
-# Checks if markdown node's URL matches a specified URL
-# deprecated: use select(.link.url == url) instead
-#
-# Example:
-# ```
-# matches_url(to_link("https://example.com", "x", ""), "https://example.com")
-# #=> true
-# ```
-#
-# Returns: bool
-def matches_url(node, url): get_url(node) == url;
-
 # Checks if markdown is MDX Flow Expression
 #
 # Returns: bool
@@ -1160,25 +1148,6 @@ def get_or(dict, key, default):
   | if (is_none(val)): default else: val
 end
 
-# Executes an expression n times and returns an array of results.
-#
-# Note: `value` is evaluated once (eagerly) and repeated, not re-evaluated per iteration.
-#
-# Example:
-# ```
-# times(3, 1)
-# #=> [1, 1, 1]
-# ```
-#
-# Returns: array
-# Deprecated: use `repeat` instead
-def times(n, value):
-  if (n == 0):
-    []
-  else:
-    foreach (_, range(0, n - 1)): value;
-end
-
 # Checks if a value is between min and max (inclusive).
 #
 # Example:
@@ -1468,34 +1437,6 @@ end
 #
 # Returns: markdown
 def promote_heading(node):
-  decrease_header_depth(node)
-end
-
-# Deprecated: use `increase_header_depth` or `demote_heading` instead.
-# Kept for backward compatibility; behavior unchanged.
-#
-# Example:
-# ```
-# increase_header_level(to_h("t", 1))
-# #=> ## t
-# ```
-#
-# Returns: markdown
-def increase_header_level(node):
-  increase_header_depth(node)
-end
-
-# Deprecated: use `decrease_header_depth` or `promote_heading` instead.
-# Kept for backward compatibility; behavior unchanged.
-#
-# Example:
-# ```
-# decrease_header_level(to_h("t", 2))
-# #=> # t
-# ```
-#
-# Returns: markdown
-def decrease_header_level(node):
   decrease_header_depth(node)
 end
 

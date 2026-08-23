@@ -372,7 +372,7 @@ $ mq -A 'section::sections() | section::toc()' README.md
 Filter sections that have content beyond the header:
 
 ```bash
-$ mq -A 'section::sections() | filter(fn(s): section::has_content(s);) | section::titles()' README.md
+$ mq -A 'section::sections() | filter(fn(s): section::has_body(s);) | section::titles()' README.md
 ```
 
 **Input example**:
