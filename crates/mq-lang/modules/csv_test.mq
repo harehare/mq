@@ -1,4 +1,5 @@
 import "csv"
+| import "json"
 | include "test"
 
 # -- CSV and PSV Tests --
@@ -27,6 +28,18 @@ def test_csv_stringify_roundtrip_with_quotes():
   let original = [{"a": "he said \"hi\"", "b": "x,y"}]
   | let result = csv::csv_parse(csv::csv_stringify(original, ","), true)
   | assert_eq(result, original)
+end
+
+def test_csv_to_json_escapes_special_characters():
+  let original = [{"a": "back\\slash and \"quote\" and\nnewline\tend"}]
+  | let result = csv::csv_to_json(original)
+  | assert_eq(json::json_parse(result), original)
+end
+
+def test_csv_to_json_escapes_key():
+  let original = [{"a\"b": "1"}]
+  | let result = csv::csv_to_json(original)
+  | assert_eq(json::json_parse(result), original)
 end
 
 | let psv_input = "a|b|c\n\"1,2\"|\"2,3\"|\"3,4\"\n4|5|6\n\"multi\nline\"|7|8\n9|10|\"quoted,comma\"\n\"\"|11|12\n13|14|15\n" |

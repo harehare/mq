@@ -138,16 +138,25 @@ end
 # import "csv" | csv::csv_to_json([{"name": "Alice", "age": 30}])
 # #=> [{"name":"Alice","age":30}]
 # ```
+# Example:
+# ```
+# import "csv" | csv::csv_to_json([{"name": "back\\slash"}])
+# #=> [{"name":"back\\slash"}]
+# ```
 #
 # Returns: string
 def csv_to_json(data):
+  def _escape_json_string(str):
+    replace(replace(replace(replace(str, "\\", "\\\\"), "\"", "\\\""), "\n", "\\n"), "\t", "\\t")
+  end
+
   def _to_json(value):
     if (is_dict(value)):
-      "{" + join(map(keys(value), fn(k): "\"" + k + "\":" + _to_json(value[k]);), ",") + "}"
+      "{" + join(map(keys(value), fn(k): "\"" + _escape_json_string(k) + "\":" + _to_json(value[k]);), ",") + "}"
     elif (is_array(value)):
       "[" + join(map(value, _to_json), ",") + "]"
     elif (is_string(value)):
-      "\"" + replace(replace(value, "\"", "\\\""), "\n", "\\n") + "\""
+      "\"" + _escape_json_string(value) + "\""
     elif (is_number(value)):
       to_string(value)
     elif (is_bool(value)):
@@ -155,7 +164,7 @@ def csv_to_json(data):
     elif (is_none(value)):
       "null"
     else:
-      "\"" + to_string(value) + "\""
+      "\"" + _escape_json_string(to_string(value)) + "\""
   end
 
   | if (is_array(data) && len(data) > 0 && is_dict(first(data))):
