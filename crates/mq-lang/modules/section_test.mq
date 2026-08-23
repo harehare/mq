@@ -156,6 +156,42 @@ def test_section_by_level_empty():
   | assert_eq(secs, [])
 end
 
+def test_section_shift_level_demotes_header_and_descendants():
+  let secs = do test_sections | section::sections(., true);
+  | let intro = first(secs)
+  | let shifted = section::shift_level(intro, 1)
+  | assert_eq(section::level(shifted), 2)
+  | let sub_heading = first(filter(shifted[:children], is_h))
+  | assert(is_h3(sub_heading))
+end
+
+def test_section_shift_level_promotes():
+  let secs = do test_sections | section::sections(., true);
+  | let intro = first(secs)
+  | let demoted = section::shift_level(intro, 1)
+  | let promoted = section::shift_level(demoted, -1)
+  | assert_eq(section::level(promoted), 1)
+end
+
+def test_section_shift_level_promote_clamps_at_min():
+  let secs = do test_sections | section::sections();
+  | let intro = first(secs)
+  | let shifted = section::shift_level(intro, -5)
+  | assert_eq(section::level(shifted), 1)
+end
+
+def test_section_shift_level_preserves_children_count():
+  let secs = do test_sections | section::sections(., true);
+  | let intro = first(secs)
+  | let shifted = section::shift_level(intro, 1)
+  | assert_eq(len(shifted[:children]), len(intro[:children]))
+end
+
+def test_section_shift_level_non_section_returns_unchanged():
+  let result = section::shift_level("not a section", 1)
+  | assert_eq(result, "not a section")
+end
+
 # A single node (not wrapped in an array) means the caller forgot to aggregate
 # input (missing `-A`/`nodes |`). This should be normalized to a one-element
 # array instead of silently producing meaningless results.

@@ -89,6 +89,20 @@ def tables(md_nodes):
     end
 end
 
+# Returns the index of the column whose header matches `name` (compared as
+# text), or -1 if no column has that header.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")) | first(self) | table::column_index(self, "b")
+# #=> 1
+# ```
+#
+# Returns: number
+def column_index(table, name):
+  index(map(table[:header], to_string), name)
+end
+
 # Set the alignment for a table.
 #
 # Example:
@@ -172,6 +186,58 @@ def remove_row(table, row_index):
   set(table, :rows, del(table[:rows], row_index))
 end
 
+# Returns a new table containing only the given column indices, in the
+# order given, so this can also reorder columns. Column numbers on the
+# resulting header/row cells are renumbered to match their new positions.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b | c |\n| --- | --- | --- |\n| 1 | 2 | 3 |")) | first(self) | table::select_columns(self, [2, 0]) | table::to_csv(self)
+# #=> c,a
+# 3,1
+# ```
+#
+# Returns: dict
+def select_columns(table, indices):
+  let align_tokens = split(attr(table[:align], "align"), ",")
+  | var col = 0
+  | let new_header = foreach (i, indices):
+        let cell = to_md_table_cell(to_string(table[:header][i]), 0, col)
+        | col += 1
+        | cell
+      end
+  | let new_align_tokens = foreach (i, indices):
+        align_tokens[i]
+      end
+  | let new_align = to_md_table_align(new_align_tokens)
+  | var row_num = 0
+  | let new_rows = foreach (row, table[:rows]):
+        row_num += 1
+        | var c = 0
+        | let cells = foreach (i, indices):
+              let cell = to_md_table_cell(to_string(row[i]), row_num, c)
+              | c += 1
+              | cell
+            end
+        | cells
+      end
+  | {type: :table, align: new_align, header: new_header, rows: new_rows}
+end
+
+# Returns a new table with the header text at `index` replaced by `name`.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")) | first(self) | table::rename_column(self, 0, "x") | table::to_csv(self)
+# #=> x,b
+# 1,2
+# ```
+#
+# Returns: dict
+def rename_column(table, index, name):
+  set(table, :header, set(table[:header], index, to_md_table_cell(name, 0, index)))
+end
+
 # Remove a column from a table at the specified index.
 #
 # Example:
@@ -182,10 +248,8 @@ end
 #
 # Returns: dict
 def remove_column(table, col_index):
-  let rows = foreach (row, table[:rows]):
-      del(row, col_index)
-    end
-  | set(table, :rows, rows)
+  let indices = filter(range(0, len(table[:header]) - 1), fn(i): i != col_index;)
+  | select_columns(table, indices)
 end
 
 # Map a function over each row in the table.
@@ -296,6 +360,47 @@ def to_array(table)
   | map(table[:rows], fn(row):
         fold(range(0, len(headers) - 1), dict(), fn(acc, i): set(acc, headers[i], to_string(row[i])););
       )
+end
+
+# Builds a table structure from an array of dict records keyed by column
+# name (the inverse of `to_array`). Column order follows the keys of the
+# first record; a key missing from a later record renders as an empty cell.
+#
+# Example:
+# ```
+# import "table" | table::from_array([{"a": "1", "b": "2"}, {"a": "3", "b": "4"}]) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
+def from_array(records):
+  if (is_empty(records)):
+    {type: :table, align: to_md_table_align([]), header: [], rows: []}
+  else:
+    do
+      let headers = map(keys(first(records)), to_string)
+      | var col = 0
+      | let header_cells = foreach (h, headers):
+            let cell = to_md_table_cell(h, 0, col)
+            | col += 1
+            | cell
+          end
+      | let align = to_md_table_align(map(headers, fn(_): "none";))
+      | var row_num = 0
+      | let rows = foreach (record, records):
+            row_num += 1
+            | var c = 0
+            | let cells = foreach (h, headers):
+                  let cell = to_md_table_cell(to_string(get_or(record, h, "")), row_num, c)
+                  | c += 1
+                  | cell
+                end
+            | cells
+          end
+      | {type: :table, align: align, header: header_cells, rows: rows}
+    end
 end
 
 # Reshape a table from wide format to long format (a.k.a. melt/unpivot).
