@@ -238,20 +238,6 @@ def title(section):
     ""
 end
 
-# Returns the content of a section (all nodes except the header).
-# Deprecated: Use body() instead, as content()
-#
-# Example:
-# ```
-# import "section" | len(section::content(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
-# #=> 1
-# ```
-#
-# Returns: array
-def content(section):
-  body(section)
-end
-
 # Returns the body of a section (all nodes except the header).
 #
 # Example:

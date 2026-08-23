@@ -14,7 +14,7 @@ mq 'select(.list.checked == false)' todo.md                 # Unchecked tasks
 ## Transformation
 
 ```bash
-mq '.h | increase_header_level(self)' file.md               # Increase heading levels
+mq '.h | increase_header_depth(self)' file.md               # Increase heading levels
 mq '.code | set_code_block_lang(self, "ts")' file.md        # Change code language
 mq '.list | set_list_ordered(self, true)' file.md           # Make lists ordered
 mq -U '.code.lang |= "rust"' file.md                        # Update code lang in place
