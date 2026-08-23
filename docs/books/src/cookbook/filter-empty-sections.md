@@ -7,7 +7,7 @@ Prerequisites: The `section` module, via `-A` or `nodes`.
 ## Query
 
 ```bash
-$ mq -A 'section::sections | filter(fn(s): !section::has_content(s);) | section::titles' README.md
+$ mq -A 'section::sections | filter(fn(s): !section::has_body(s);) | section::titles' README.md
 ```
 
 ## Input

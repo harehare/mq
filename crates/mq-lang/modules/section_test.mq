@@ -46,6 +46,12 @@ def test_section_body():
   | assert_snapshot("section_body", to_markdown_string(body_nodes))
 end
 
+def test_section_has_body():
+  let sections = do test_sections | section::split(1);
+  | let first_section = first(sections)
+  | assert(section::has_body(first_section))
+end
+
 def test_section_level():
   let sections = do test_sections | section::split(1);
   | let first_section = first(sections)

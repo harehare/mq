@@ -405,18 +405,32 @@ end
 #
 # Example:
 # ```
+# import "section" | section::has_body(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
+# #=> true
+# ```
+#
+# Returns: bool
+def has_body(section):
+  if (!is_dict(section)):
+    error("Expected a dictionary, but got a different type.")
+  elif (_is_section(section)):
+    len(body(section)) > 0
+  else:
+    false
+end
+
+# Checks if a section has any content beyond the header.
+# Deprecated: use has_body() instead.
+#
+# Example:
+# ```
 # import "section" | section::has_content(first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"))))
 # #=> true
 # ```
 #
 # Returns: bool
 def has_content(section):
-  if (!is_dict(section)):
-    error("Expected a dictionary, but got a different type.")
-  elif (_is_section(section)):
-    len(content(section)) > 0
-  else:
-    false
+  has_body(section)
 end
 
 # Flattens sections back to markdown nodes for output.
