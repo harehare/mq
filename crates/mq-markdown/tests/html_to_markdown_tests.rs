@@ -142,7 +142,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nkeywords:\n- rust\n---\n\nB",
+    "---\nkeywords:\n  - rust\n---\n\nB",
 )]
 #[case::front_matter_keywords_multiple_comma_separated(
     "<html><head><meta name=\"keywords\" content=\"rust, web, html\"></head><body><p>B</p></body></html>",
@@ -150,7 +150,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB",
+    "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB",
 )]
 #[case::front_matter_keywords_comma_space_separated(
     "<html><head><meta name=\"keywords\" content=\"rust, web,  html \"></head><body><p>B</p></body></html>",
@@ -158,7 +158,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nkeywords:\n- rust\n- web\n- html\n---\n\nB",
+    "---\nkeywords:\n  - rust\n  - web\n  - html\n---\n\nB",
 )]
 #[case::front_matter_author(
     "<html><head><meta name=\"author\" content=\"Jules Verne\"></head><body><p>B</p></body></html>",
@@ -174,7 +174,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n- key1\n- key2\ntitle: Full Test\n---\n\nContent",
+    "---\nauthor: Author Name\ndescription: Desc here\nkeywords:\n  - key1\n  - key2\ntitle: Full Test\n---\n\nContent",
 )]
 #[case::front_matter_no_head_tag(
     "<html><body><p>Only body</p></body></html>",
@@ -247,7 +247,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nauthor: '@jverne'\n---\n\nB",
+    "---\nauthor: \"@jverne\"\n---\n\nB",
 )]
 #[case::front_matter_article_published_time(
     "<html><head><meta property=\"article:published_time\" content=\"2024-01-02T00:00:00Z\"></head><body><p>B</p></body></html>",
@@ -255,7 +255,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\npublished: 2024-01-02T00:00:00Z\n---\n\nB",
+    "---\npublished: \"2024-01-02T00:00:00Z\"\n---\n\nB",
 )]
 #[case::front_matter_og_image_and_site_name(
     "<html><head><meta property=\"og:image\" content=\"https://example.com/a.png\"><meta property=\"og:site_name\" content=\"Example Site\"></head><body><p>B</p></body></html>",
@@ -263,7 +263,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         generate_front_matter: true,
         ..ConversionOptions::default()
     },
-    "---\nimage: https://example.com/a.png\nsite: Example Site\n---\n\nB",
+    "---\nimage: \"https://example.com/a.png\"\nsite: Example Site\n---\n\nB",
 )]
 #[case::front_matter_multibyte_description_and_author(
     "<html><head><meta name=\"description\" content=\"日本語の説明文です\"><meta name=\"author\" content=\"山田太郎\"></head><body><p>本文</p></body></html>",

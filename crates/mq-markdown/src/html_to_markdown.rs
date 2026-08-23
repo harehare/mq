@@ -12,6 +12,8 @@ pub use options::ConversionOptions;
 use scraper::Html;
 use scraper::Selector;
 use std::collections::BTreeMap;
+use yaml_rust2::Yaml;
+use yaml_rust2::yaml::Hash;
 
 fn find_element<'a>(html: &'a Html, selector_str: &str) -> Option<scraper::ElementRef<'a>> {
     Selector::parse(selector_str)
@@ -156,7 +158,7 @@ fn first_non_empty<const N: usize>(candidates: [Option<String>; N]) -> Option<St
     candidates.into_iter().flatten().find(|s| !s.trim().is_empty())
 }
 
-fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, serde_yaml::Value>> {
+fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, Yaml>> {
     let head_element = find_element(html, "head")?;
     let mut fm_map = BTreeMap::new();
 
@@ -165,7 +167,7 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
     {
         let title_str = title_node.text().collect::<String>().trim().to_string();
         if !title_str.is_empty() {
-            fm_map.insert("title".to_string(), serde_yaml::Value::String(title_str));
+            fm_map.insert("title".to_string(), Yaml::String(title_str));
         }
     }
 
@@ -174,14 +176,14 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
     let schema_field = |key: &str| schema.as_ref().and_then(|s| s.get(key)).and_then(schema_text);
 
     if let Some(keywords_content) = meta.get("keywords") {
-        let keywords: Vec<serde_yaml::Value> = keywords_content
+        let keywords: Vec<Yaml> = keywords_content
             .split(',')
             .map(str::trim)
             .filter(|s| !s.is_empty())
-            .map(|k| serde_yaml::Value::String(k.to_string()))
+            .map(|k| Yaml::String(k.to_string()))
             .collect();
         if !keywords.is_empty() {
-            fm_map.insert("keywords".to_string(), serde_yaml::Value::Sequence(keywords));
+            fm_map.insert("keywords".to_string(), Yaml::Array(keywords));
         }
     }
 
@@ -230,7 +232,7 @@ fn extract_front_matter_from_head_ref(html: &Html) -> Option<BTreeMap<String, se
     ];
     for (key, candidates) in fields {
         if let Some(value) = first_non_empty(candidates) {
-            fm_map.insert(key.to_string(), serde_yaml::Value::String(value));
+            fm_map.insert(key.to_string(), Yaml::String(value));
         }
     }
 
@@ -250,28 +252,21 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
         && let Some(fm_data) = extract_front_matter_from_head_ref(&html)
         && !fm_data.is_empty()
     {
-        // Convert BTreeMap<String, Value> to serde_yaml::Mapping (which is BTreeMap<Value, Value>)
-        let mut yaml_map = serde_yaml::Mapping::new();
+        // fm_data is a BTreeMap, so key order stays sorted going into the Hash.
+        let mut yaml_hash = Hash::new();
         for (k, v) in fm_data {
-            yaml_map.insert(serde_yaml::Value::String(k), v);
+            yaml_hash.insert(Yaml::String(k), v);
         }
-        let yaml_value = serde_yaml::Value::Mapping(yaml_map);
+        let yaml_value = Yaml::Hash(yaml_hash);
+        let mut yaml = String::new();
 
-        match serde_yaml::to_string(&yaml_value) {
-            Ok(yaml) => {
-                // serde_yaml::to_string might add its own "---" if it's a single doc,
-                // or not if it's just a mapping. We want to ensure our format.
-                // It typically does not add --- for a Value::Mapping.
-                let content = yaml
-                    .trim_start_matches("---\n")
-                    .trim_end_matches('\n')
-                    .trim_end_matches("...");
-                front_matter_str = format!("---\n{}\n---\n\n", content.trim());
-            }
-            Err(_) => {
-                return Err(miette!("YAML serialization failed"));
-            }
-        }
+        yaml_rust2::YamlEmitter::new(&mut yaml)
+            .dump(&yaml_value)
+            .map_err(|_| miette!("YAML serialization failed"))?;
+
+        // `dump` always prefixes with `---`; we add our own delimiters below.
+        let content = yaml.strip_prefix("---\n").unwrap_or(&yaml).trim_end_matches('\n');
+        front_matter_str = format!("---\n{}\n---\n\n", content.trim());
     }
 
     // Smart extraction: prefer semantic/entry-point containers, then content-scoring
