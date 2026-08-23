@@ -20,11 +20,20 @@ end
 # import "json" | json::json_stringify({"a": 1})
 # #=> {"a": 1}
 # ```
+# Example:
+# ```
+# import "json" | json::json_stringify({"a": "he said \"hi\"\nbye"})
+# #=> {"a": "he said \"hi\"\nbye"}
+# ```
 #
 # Returns: string
 def json_stringify(data):
+  def _escape_string(str):
+    replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+  end
+
   def _format_json_stringify(data):
-    "\"" + data + "\""
+    "\"" + _escape_string(data) + "\""
   end
 
   def _json_array_stringify(data):
@@ -34,7 +43,7 @@ def json_stringify(data):
   def _json_object_stringify(data):
     "{" + join(
       map(entries(data),
-        fn(entry): "\"" + first(entry) + "\": " + json_stringify(last(entry));), ", ") + "}"
+        fn(entry): "\"" + _escape_string(first(entry)) + "\": " + json_stringify(last(entry));), ", ") + "}"
   end
 
   | if (is_string(data)):

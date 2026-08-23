@@ -15,6 +15,18 @@ def test_json_stringify():
   | assert_snapshot("json_stringify", result)
 end
 
+def test_json_stringify_escapes_special_characters():
+  let original = {"a": "he said \"hi\"\nline2\tend\\slash"}
+  | let result = json::json_stringify(original)
+  | assert_eq(json::json_parse(result), original)
+end
+
+def test_json_stringify_escapes_key():
+  let original = {"a\"b": 1}
+  | let result = json::json_stringify(original)
+  | assert_eq(json::json_parse(result), original)
+end
+
 def test_json_to_markdown_table():
   let result = json::json_parse(json_input)
   | let result = json::json_to_markdown_table(result["users"])
