@@ -194,7 +194,7 @@ In {year}, the snowfall was above average.
 "##)
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
+    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .definition), get_url() == "a/b/c.html")): update("x/y/z.html")"#],
     "- another item\n\n  [another link]: a/b/c.html",
     Some("- another item\n\n  [another link]: x/y/z.html\n")
 )]
@@ -204,12 +204,12 @@ In {year}, the snowfall was above average.
     Some("# `test`\n# `test`\n")
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
+    vec!["--unbuffered", "--update" , r#"if (and(or(.link, .link_ref, .definition), get_url() == "a/b/c.html")): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n",
     Some("- item\n\n  [another link]: x/y/z.html \"this\n  is a title\"\n\n<!-- -->\n\n    [link2](a/b/c.html)\n    test\n"),
 )]
 #[case::nested_item(
-    vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", r#"if (and(or(.link, .link_ref, .definition), matches_url("a/b/c.html"))): update("x/y/z.html")"#],
+    vec!["--unbuffered", "--update", "--link-title-style", "paren", "--link-url-style", "angle", r#"if (and(or(.link, .link_ref, .definition), get_url() == "a/b/c.html")): update("x/y/z.html")"#],
     "- item\n\n  [another link]: <a/b/c.html> (this  is a title)\n",
     Some("- item\n\n  [another link]: <x/y/z.html> (this  is a title)\n"),
 )]

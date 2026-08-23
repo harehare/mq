@@ -581,18 +581,6 @@ fn engine() -> DefaultEngine {
 #[case::interpolated_string("s\"${self} World!\"",
         vec![RuntimeValue::String("Hello".into())],
              Ok(vec!["Hello World!".to_string().into()].into()))]
-#[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, ident: "ident".to_string(), label: None }))],
-      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
-#[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ position: None, url: mq_markdown::Url::new("https://github.com".to_string()), title: None, values: Vec::new()}))],
-      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
-#[case::matches_url("matches_url(\"https://github.com\")",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::Image(mq_markdown::Image{ alt: "".to_string(), position: None, url: "https://github.com".to_string(), title: None }))],
-      Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
-#[case::matches_url("matches_url(\"https://gitlab.com\")",
-      vec![RuntimeValue::String("https://gitlab.com".to_string())],
-      Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::nest(".link | update(\"test\")",
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
            mq_markdown::Node::Link(mq_markdown::Link { url: mq_markdown::Url::new("url".to_string()), title: None, values: Vec::new(), position: None }),
