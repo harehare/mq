@@ -250,7 +250,7 @@ def dicts(d): select(d, is_dict(d));
 # Example:
 # ```
 # nones(None)
-# #=> 
+# #=>
 # ```
 #
 # Returns: dynamic
@@ -985,6 +985,39 @@ def unique_by(arr, f):
     end
 end
 
+# Returns the union of two arrays: every distinct element from either array, in first-seen order.
+#
+# Example:
+# ```
+# union([1, 2, 3], [2, 3, 4])
+# #=> [1, 2, 3, 4]
+# ```
+#
+# Returns: array
+def union(arr1, arr2): arr1 + arr2 | uniq();
+
+# Returns the intersection of two arrays: the distinct elements of the first array that also appear in the second.
+#
+# Example:
+# ```
+# intersection([1, 2, 3], [2, 3, 4])
+# #=> [2, 3]
+# ```
+#
+# Returns: array
+def intersection(arr1, arr2): arr1 | filter(fn(x): in(arr2, x);) | uniq();
+
+# Returns the difference of two arrays: the distinct elements of the first array that do not appear in the second.
+#
+# Example:
+# ```
+# difference([1, 2, 3], [2, 3, 4])
+# #=> [1]
+# ```
+#
+# Returns: array
+def difference(arr1, arr2): arr1 | filter(fn(x): !in(arr2, x);) | uniq();
+
 # Returns the input value unchanged.
 #
 # Example:
@@ -995,6 +1028,17 @@ end
 #
 # Returns: dynamic
 def identity(x): x;
+
+# Clamps a number between a minimum and maximum value.
+#
+# Example:
+# ```
+# clamp(15, 0, 10)
+# #=> 10
+# ```
+#
+# Returns: number
+def clamp(x, lo, hi): x | min(hi) | max(lo);
 
 # Transposes a 2D array (matrix), swapping rows and columns.
 #
@@ -1019,6 +1063,28 @@ def transpose(matrix):
             matrix[i][j]
           end
         end
+    end
+end
+
+# Returns the Cartesian product of the given array of arrays, combining one element from each array.
+#
+# Example:
+# ```
+# combinations([[1, 2], [3, 4]])
+# #=> [[1, 3], [1, 4], [2, 3], [2, 4]]
+# ```
+#
+# Returns: array
+def combinations(arrays):
+  if (!is_array(arrays)):
+    error("combinations: input must be an array of arrays")
+  elif (is_empty(arrays)):
+    [[]]
+  elif (!all(arrays, is_array)):
+    error("combinations: all elements must be arrays")
+  else:
+    do
+      arrays | fold([[]], fn(acc, arr): acc | fold([], fn(acc2, partial): acc2 + map(arr, fn(e): partial + [e];););)
     end
 end
 
@@ -1510,6 +1576,17 @@ def percentile(arr, p):
     end
 end
 
+# Returns the median of an array of numbers, or None if the array is empty.
+#
+# Example:
+# ```
+# median([1, 2, 3, 4])
+# #=> 2.5
+# ```
+#
+# Returns: number
+def median(arr): arr | percentile(0.5);
+
 # Splits an array into chunks of a specified size, returning an array of arrays.
 #
 # Example:
@@ -1659,6 +1736,55 @@ def juxt(*fns): fn(x): map(fns, fn(f): f(x););;
 # Returns: number
 def sum(arr): sum_by(arr, identity);
 
+# Returns an array of running (cumulative) sums of the given array of numbers.
+#
+# Example:
+# ```
+# cumsum([1, 2, 3, 4])
+# #=> [1, 3, 6, 10]
+# ```
+#
+# Returns: array
+def cumsum(arr):
+  if (not(is_array(arr))):
+    error("cumsum: input must be an array")
+  elif (is_empty(arr)):
+    []
+  else:
+    do
+      var result = []
+      | var total = 0
+      | var i = 0
+      | while (i < len(arr)):
+          total += arr[i]
+          | result += [total]
+          | i += 1
+        end
+      | result
+    end
+end
+
+# Returns an array of running (cumulative) averages of the given array of numbers.
+#
+# Example:
+# ```
+# cumavg([1, 2, 3, 4])
+# #=> [1, 1.5, 2, 2.5]
+# ```
+#
+# Returns: array
+def cumavg(arr):
+  if (not(is_array(arr))):
+    error("cumavg: input must be an array")
+  elif (is_empty(arr)):
+    []
+  else:
+    do
+      let sums = cumsum(arr)
+      | foreach (i, range(0, len(sums) - 1)): sums[i] / (i + 1);
+    end
+end
+
 # Returns the average (mean) of an array of numbers, or None if the array is empty.
 #
 # Example:
@@ -1763,7 +1889,7 @@ end
 # Example:
 # ```
 # describe([1, 2, 3, 4, 5])
-# #=> {"count": 5, "min": 1, "max": 5, "mean": 3, "variance": 2, "stddev": 1.414214, "median": 3}
+# #=> {"count": 5, "min": 1, "max": 5, "median": 3, "mean": 3, "variance": 2, "stddev": 1.414214}
 # ```
 #
 # Returns: dict
@@ -1933,6 +2059,17 @@ def lines(s): if (is_none(s)): None else: split(s, "\n");
 #
 # Returns: string
 def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
+
+# Prepends the given prefix to every line of a string.
+#
+# Example:
+# ```
+# indent("a\nb", "  ") == "  a\n  b"
+# #=> true
+# ```
+#
+# Returns: string
+def indent(s, prefix): s | lines | map(fn(line): prefix + line;) | unlines;
 
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 #
@@ -2147,6 +2284,18 @@ def from_entries(arr):
 # Returns: dict
 def with_entries(d, f): from_entries(map(entries(d), f));
 
+# Returns a new dict with keys and values swapped. If multiple keys map to the
+# same value (after conversion to string), the last one wins.
+#
+# Example:
+# ```
+# invert({"a": 1, "b": 2})
+# #=> {"1": "a", "2": "b"}
+# ```
+#
+# Returns: dict
+def invert(d): d | entries | map(fn(e): [e[1], e[0]];) | from_entries;
+
 # Deep merges two values, recursing into dicts key by key. Neither input is mutated.
 # When both sides provide a leaf/array value for the same key, the conflict is resolved
 # according to `policy`, one of:
@@ -2291,4 +2440,3 @@ def human_size(n):
   | let rounded = round(value * 10) / 10
   | sign + to_string(rounded) + units[exponent]
 end
-
