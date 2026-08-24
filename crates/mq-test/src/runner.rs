@@ -461,7 +461,7 @@ impl TestRunner {
 
         while i < lines.len() {
             let trimmed = lines[i].trim();
-            let unclosed = trimmed.contains('(') && !trimmed.ends_with(')');
+            let unclosed = trimmed.starts_with('@') && trimmed.contains('(') && !trimmed.ends_with(')');
 
             if unclosed {
                 let mut end = i + 1;
@@ -622,6 +622,28 @@ mod tests {
         let merged = TestRunner::merge_annotation_comments(&node.leading_trivia);
 
         assert_eq!(merged, vec![" @test".to_string(), " @tags(slow)".to_string()]);
+    }
+
+    #[test]
+    fn test_merge_annotation_comments_ignores_unmatched_parens_in_plain_comments() {
+        let content = concat!(
+            "# Explanatory note with an unmatched paren (like this\n",
+            "# that spans lines without closing it.\n",
+            "# @parametrize([[1, 2], [3, 4]])\n",
+            "def test_add(a, b):\n  None\nend\n",
+        );
+        let node = first_def(content);
+
+        let merged = TestRunner::merge_annotation_comments(&node.leading_trivia);
+
+        assert_eq!(
+            merged,
+            vec![
+                " Explanatory note with an unmatched paren (like this".to_string(),
+                " that spans lines without closing it.".to_string(),
+                " @parametrize([[1, 2], [3, 4]])".to_string(),
+            ]
+        );
     }
 
     fn first_def(content: &str) -> mq_lang::Shared<mq_lang::CstNode> {
