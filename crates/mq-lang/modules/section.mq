@@ -113,6 +113,56 @@ def sections(md_nodes, depth = false):
         end
 end
 
+def _tree_from_nodes(items):
+  if (is_empty(items)):
+    []
+  else:
+    do
+      let h_idxs = do foreach (i, range(0, len(items) - 1)): if (is_h(items[i])): i; | compact();
+      | if (is_empty(h_idxs)):
+          []
+        else:
+          do
+            let min_level = first(sort(map(h_idxs, fn(i): _h_level_num(items[i]);)))
+            | let top_idxs = filter(h_idxs, fn(i): _h_level_num(items[i]) == min_level;)
+            | let top_idxs_with_end = top_idxs + [len(items)]
+            | let n = len(top_idxs)
+            | var result = []
+            | var k = 0
+            | while (k != n):
+                let start = top_idxs[k]
+                | let end_idx = top_idxs_with_end[k + 1]
+                | let span = items[start + 1:end_idx]
+                | let sub_h_idxs = do foreach (j, range(0, len(span) - 1)): if (is_h(span[j])): j; | compact();
+                | let first_sub = first(sub_h_idxs)
+                | let own_body = if (is_none(first_sub)): span else: span[0:first_sub]
+                | let rest = if (is_none(first_sub)): [] else: span[first_sub:len(span)]
+                | result += [{type: :section, header: items[start], children: own_body, subsections: _tree_from_nodes(rest)}]
+                | k += 1
+                | result
+              end
+          end
+    end
+end
+
+# Groups sections into a nested tree by heading level: each section dict
+# gets a `subsections` field holding the sections whose heading sits
+# directly beneath it (recursively nested the same way). A section's own
+# `children` stays exactly what `section::sections` would give it: the
+# section's own body up to its next heading of any level, not including the
+# content of its subsections.
+#
+# Example:
+# ```
+# import "section" | len(section::subsections(first(section::tree(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
+# #=> 1
+# ```
+#
+# Returns: array
+def tree(md_nodes):
+  _tree_from_nodes(_ensure_aggregated(md_nodes))
+end
+
 # Filters sections based on a given predicate function.
 #
 # Example:
@@ -272,6 +322,23 @@ def all_nodes(section):
     []
 end
 
+# Returns the direct child sections of a section built by `section::tree`
+# (an empty array for a leaf section, or for a section not built by `tree`).
+#
+# Example:
+# ```
+# import "section" | len(section::subsections(first(section::tree(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))))
+# #=> 1
+# ```
+#
+# Returns: array
+def subsections(section):
+  if (_is_section(section)):
+    get_or(section, :subsections, [])
+  else:
+    []
+end
+
 # Filters sections by heading level. l can be a number (exact level) or a range array (e.g. 1..2).
 #
 # Example:
@@ -398,6 +465,44 @@ def toc(sections):
                 ""
             end
       | map(sections, create_toc_entry)
+    end
+end
+
+# Generates a Markdown table-of-contents with links to each section's
+# heading anchor (`[title](#slug)`), indented by heading level. Anchors come
+# from `slugify`; a repeated anchor gets a numeric suffix (`-1`, `-2`, ...)
+# the same way GitHub disambiguates duplicate headings. Note the slug is only
+# an approximation of GitHub's own anchor algorithm.
+#
+# Example:
+# ```
+# import "section" | section::toc_markdown(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")))
+# #=> ["  - [A](#a)", "    - [A1](#a1)", "  - [B](#b)"]
+# ```
+#
+# Returns: array
+def toc_markdown(sections):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      var seen = dict()
+      | var result = []
+      | foreach (section, sections):
+            if (_is_section(section)) do
+                let lvl = level(section)
+                | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
+                | let title_text = title(section)
+                | let base_slug = slugify(title_text)
+                | let count = get_or(seen, base_slug, -1)
+                | let slug = if (count < 0): base_slug else: base_slug + "-" + to_string(count + 1)
+                | seen = set(seen, base_slug, count + 1)
+                | result += [indent + "- [" + title_text + "](#" + slug + ")"]
+              end
+            else:
+              None
+          end
+      | result
     end
 end
 

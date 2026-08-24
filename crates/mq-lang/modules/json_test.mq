@@ -32,3 +32,12 @@ def test_json_to_markdown_table():
   | let result = json::json_to_markdown_table(result["users"])
   | assert_snapshot("json_to_markdown_table", result)
 end
+
+# @parametrize([[{"title": "title", "draft": false}], [{}], [{"tags": ["a", "b"]}]])
+def test_json_to_frontmatter(input):
+  let result = json::to_frontmatter(input)
+  | assert(starts_with(result, ";;;\n"))
+  | assert(ends_with(result, "\n;;;"))
+  | let body = result[4:len(result) - 4]
+  | assert_eq(json::json_parse(body), input)
+end

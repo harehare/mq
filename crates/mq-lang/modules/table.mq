@@ -103,6 +103,82 @@ def column_index(table, name):
   index(map(table[:header], to_string), name)
 end
 
+# Returns the number of data rows in the table (excludes the header).
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::num_rows(self)
+# #=> 2
+# ```
+#
+# Returns: number
+def num_rows(table): len(table[:rows]);
+
+# Returns the number of columns in the table.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")) | first(self) | table::num_cols(self)
+# #=> 2
+# ```
+#
+# Returns: number
+def num_cols(table): len(table[:header]);
+
+# Returns the string value of the data cell at `row_index`, `col_index`
+# (0-indexed, excluding the header row), or None if either index is out of
+# range.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::get_cell(self, 1, 0)
+# #=> 3
+# ```
+#
+# Returns: dynamic
+def get_cell(table, row_index, col_index):
+  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+    None
+  else:
+    to_string(table[:rows][row_index][col_index])
+end
+
+# Returns a new table with the data cell at `row_index`, `col_index`
+# (0-indexed, excluding the header row) replaced by `value`.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::set_cell(self, 0, 1, "9") | table::to_csv(self)
+# #=> a,b
+# 1,9
+# 3,4
+# ```
+#
+# Returns: dict
+def set_cell(table, row_index, col_index, value):
+  if (row_index < 0 || row_index >= len(table[:rows]) || col_index < 0 || col_index >= len(table[:header])):
+    error("Row or column index out of range.")
+  else: do
+      let old_cell = table[:rows][row_index][col_index]
+      | let new_cell = to_md_table_cell(to_string(value), old_cell.row, old_cell.column)
+      | let new_row = set(table[:rows][row_index], col_index, new_cell)
+      | set(table, :rows, set(table[:rows], row_index, new_row))
+    end
+end
+
+# Returns the data values (as strings) of column `col_index`, one per row.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::column_values(self, 1)
+# #=> ["2", "4"]
+# ```
+#
+# Returns: array
+def column_values(table, col_index):
+  map(table[:rows], fn(row): to_string(row[col_index]);)
+end
+
 # Set the alignment for a table.
 #
 # Example:
@@ -143,6 +219,40 @@ def add_row(table, row):
     end
 end
 
+# Insert a new row into the table at data-row index `index` (0-indexed),
+# shifting subsequent rows down. Row numbers on every row are renumbered so
+# they stay consistent.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::insert_row(self, 1, ["5", "6"]) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 5,6
+# 3,4
+# ```
+#
+# Returns: dict
+def insert_row(table, index, row):
+  if (len(row) != len(table[:header])):
+    error("Row length does not match table header length.")
+  else: do
+      let new_rows_raw = insert(table[:rows], index, row)
+      | var row_num = 0
+      | let new_rows = foreach (r, new_rows_raw):
+            row_num += 1
+            | var c = 0
+            | let cells = foreach (v, r):
+                  let cell = to_md_table_cell(to_string(v), row_num, c)
+                  | c += 1
+                  | cell
+                end
+            | cells
+          end
+      | set(table, :rows, new_rows)
+    end
+end
+
 # Add a new column to a table.
 #
 # Example:
@@ -169,6 +279,82 @@ def add_column(table, col):
             end
       | let table_with_header = set(table, :header, new_header)
       | set(table_with_header, :rows, new_rows)
+    end
+end
+
+# Insert a new column into the table at `index` (0-indexed), shifting
+# existing columns right. `col` is `[header_value, row0_value, row1_value,
+# ...]`, like `add_column`'s argument. Column numbers on every cell are
+# renumbered so they stay consistent; the new column's alignment is "none".
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::insert_column(self, 1, ["c", "9", "10"]) | table::to_csv(self)
+# #=> a,c,b
+# 1,9,2
+# 3,10,4
+# ```
+#
+# Returns: dict
+def insert_column(table, index, col):
+  if (len(col) != len(table[:rows]) + 1):
+    error("Column length does not match table row count.")
+  else: do
+      let new_header_values = insert(map(table[:header], to_string), index, to_string(col[0]))
+      | var c = 0
+      | let new_header = foreach (h, new_header_values):
+            let cell = to_md_table_cell(h, 0, c)
+            | c += 1
+            | cell
+          end
+      | let align_tokens = split(attr(table[:align], "align"), ",")
+      | let new_align = to_md_table_align(insert(align_tokens, index, "none"))
+      | var row_num = 0
+      | let new_rows = foreach (row, table[:rows]):
+            row_num += 1
+            | let values = insert(map(row, to_string), index, to_string(col[row_num]))
+            | var c = 0
+            | let cells = foreach (v, values):
+                  let cell = to_md_table_cell(v, row_num, c)
+                  | c += 1
+                  | cell
+                end
+            | cells
+          end
+      | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
+    end
+end
+
+# Concatenates the data rows of `table_b` onto `table_a`. Errors if the two
+# tables don't have the same number of columns. `table_a`'s header and
+# alignment are kept; row numbers on the appended cells are renumbered to
+# continue after `table_a`'s existing rows.
+#
+# Example:
+# ```
+# import "table" | let a = first(table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |"))) | let b = first(table::tables(to_markdown("| a | b |\n| --- | --- |\n| 3 | 4 |"))) | table::to_csv(table::union(a, b))
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
+def union(table_a, table_b):
+  if (len(table_a[:header]) != len(table_b[:header])):
+    error("Tables must have the same number of columns.")
+  else: do
+      var row_num = len(table_a[:rows])
+      | let appended_rows = foreach (row, table_b[:rows]):
+            row_num += 1
+            | var c = 0
+            | let cells = foreach (v, row):
+                  let cell = to_md_table_cell(to_string(v), row_num, c)
+                  | c += 1
+                  | cell
+                end
+            | cells
+          end
+      | set(table_a, :rows, table_a[:rows] + appended_rows)
     end
 end
 
@@ -267,6 +453,24 @@ def map_rows(table, f):
   set(table, :rows, map(table[:rows], f))
 end
 
+# Applies `f` to the string value of every data cell in the table (the
+# header is untouched). Row/column numbers are preserved.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| x | y |")) | first(self) | table::map_cells(self, upcase) | table::to_csv(self)
+# #=> a,b
+# X,Y
+# ```
+#
+# Returns: dict
+def map_cells(table, f):
+  let new_rows = map(table[:rows], fn(row):
+        map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
+      )
+  | set(table, :rows, new_rows)
+end
+
 # Filter tables from markdown nodes based on a predicate function.
 #
 # Example:
@@ -311,6 +515,35 @@ def sort_rows(table, column_index = None):
     sort(table[:rows])
   else:
     sort_by(table[:rows], fn(row): row[column_index];)
+  | set(table, :rows, new_rows)
+end
+
+# Removes data rows that are exact duplicates of an earlier row (compared by
+# cell text), keeping the first occurrence. Row numbers are renumbered so
+# they stay consistent.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |")) | first(self) | table::dedupe_rows(self) | table::to_csv(self)
+# #=> a,b
+# 1,2
+# 3,4
+# ```
+#
+# Returns: dict
+def dedupe_rows(table):
+  let unique_rows = unique_by(table[:rows], fn(row): map(row, to_string);)
+  | var row_num = 0
+  | let new_rows = foreach (row, unique_rows):
+        row_num += 1
+        | var c = 0
+        | let cells = foreach (v, row):
+              let cell = to_md_table_cell(to_string(v), row_num, c)
+              | c += 1
+              | cell
+            end
+        | cells
+      end
   | set(table, :rows, new_rows)
 end
 

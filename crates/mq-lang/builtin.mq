@@ -965,7 +965,7 @@ def unique_by(arr, f):
           let item = get(arr, i)
           | let key = to_string(f(item))
           | let already_seen = get(seen, key)
-          | result = if (is_none(already_seen)): result + item else: result
+          | result = if (is_none(already_seen)): result + [item] else: result
           | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
           | i += 1
           | result

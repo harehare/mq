@@ -1,5 +1,35 @@
 # gron Implementation in mq.
 
+import "json" |
+
+# Returns true if `key` can be written as a bare `path.key` segment (matching
+# the `gron` tool's own escaping rules); otherwise it needs bracket notation.
+def _is_bare_ident(key): test(key, "^[A-Za-z_][A-Za-z0-9_]*$");
+
+# Joins a gron path with the next key, using dot notation (`path.key`) when
+# `key` is a bare identifier, and bracket notation (`path["key"]`) otherwise.
+def _join_key(path, key):
+  if (_is_bare_ident(key)):
+    path + "." + key
+  else:
+    path + "[" + json::json_stringify(key) + "]"
+end
+
+def _gron_lines(path, value):
+  if (is_dict(value)):
+    if (is_empty(keys(value))):
+      [path + " = {};"]
+    else:
+      [path + " = {};"] + flat_map(sort(keys(value)), fn(k): _gron_lines(_join_key(path, k), value[k]);)
+  elif (is_array(value)):
+    if (is_empty(value)):
+      [path + " = [];"]
+    else:
+      [path + " = [];"] + flat_map(range(0, len(value) - 1), fn(i): _gron_lines(path + "[" + to_string(i) + "]", value[i]);)
+  else:
+    [path + " = " + json::json_stringify(value) + ";"]
+end
+
 # Parses gron-style `path = value;` assignment statements (as produced by `mq -F gron`)
 # and returns the corresponding data structure.
 #
@@ -12,4 +42,23 @@
 # Returns: dynamic
 def gron_parse(input):
   _gron_parse(to_string(input))
+end
+
+# Converts a data structure into gron-style `path = value;` assignment
+# statements (the inverse of `gron_parse`, and matching `mq -F gron`'s
+# output), so a value can be flattened, grepped, and reconstructed without
+# leaving a single query. Paths are rooted at `json`, following the `gron`
+# tool's own convention.
+#
+# Example:
+# ```
+# import "gron" | gron::gron_stringify({"a": 1, "b": 2})
+# #=> json = {};
+# json.a = 1;
+# json.b = 2;
+# ```
+#
+# Returns: string
+def gron_stringify(data):
+  join(_gron_lines("json", data), "\n")
 end

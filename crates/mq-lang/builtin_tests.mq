@@ -273,7 +273,10 @@ def test_fold(value, init, f, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 2, 1, 4], fn(x): x;, [1, 2, 3, 4]], [[{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];, [{"id": 1}, {"id": 2}]], [[], fn(x): x;, []]])
+# Elements that are themselves arrays (e.g. [[1, 2], [3, 4], [1, 2]]) must be
+# kept as single elements, not concatenated/flattened into the result (`+`
+# on two arrays concatenates, so appending must wrap the element in [item]).
+# @parametrize([[[1, 2, 3, 2, 1, 4], fn(x): x;, [1, 2, 3, 4]], [[{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];, [{"id": 1}, {"id": 2}]], [[], fn(x): x;, []], [[[1, 2], [3, 4], [1, 2]], fn(row): row;, [[1, 2], [3, 4]]]])
 def test_unique_by(value, f, expected):
   let result = unique_by(value, f)
   | assert_eq(result, expected)

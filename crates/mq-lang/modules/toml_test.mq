@@ -16,3 +16,23 @@ def test_toml_to_json():
   | let result = toml::toml_to_json(parsed)
   | assert_eq(json::json_parse(result), parsed)
 end
+
+# Regression test: an array value must round-trip through toml_stringify.
+# A scalar array used to be rendered as an invalid `[[key]]` array-of-tables
+# block containing bare trailing-comma lines instead of `key = [...]`; an
+# array of dicts used to dump each entry as an inline table (`{...}`) on its
+# own trailing-comma line instead of proper `[[key]]` sections.
+# @parametrize([[{"tags": ["a", "b"]}], [{"tags": []}], [{"nums": [1, 2, 3]}], [{"users": [{"name": "a"}, {"name": "b"}]}]])
+def test_toml_stringify_array_round_trips(input):
+  let result = toml::toml_stringify(input)
+  | assert_eq(toml::toml_parse(result), input)
+end
+
+# @parametrize([[{"title": "title", "draft": false}], [{"count": 3}]])
+def test_toml_to_frontmatter(input):
+  let result = toml::to_frontmatter(input)
+  | assert(starts_with(result, "+++\n"))
+  | assert(ends_with(result, "\n+++"))
+  | let body = result[4:len(result) - 4]
+  | assert_eq(toml::toml_parse(body), input)
+end
