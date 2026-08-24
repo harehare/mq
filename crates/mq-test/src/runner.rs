@@ -433,23 +433,53 @@ impl TestRunner {
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
     /// ignoring `@tags(...)` comments (collected separately via `collect_tags`).
     fn find_test_annotation(trivia: &[CstTrivia]) -> Option<TestAnnotation> {
-        trivia
-            .iter()
-            .filter_map(|t| t.comment().and_then(Self::parse_annotation))
+        Self::merge_annotation_comments(trivia)
+            .into_iter()
+            .filter_map(|comment| Self::parse_annotation(&comment))
             .find(|annotation| !matches!(annotation, TestAnnotation::Tags(_)))
     }
 
     /// Collects and flattens every `@tags(...)`/`@tag(...)` comment among `trivia`.
     fn collect_tags(trivia: &[CstTrivia]) -> Vec<String> {
-        trivia
-            .iter()
-            .filter_map(|t| t.comment().and_then(Self::parse_annotation))
+        Self::merge_annotation_comments(trivia)
+            .into_iter()
+            .filter_map(|comment| Self::parse_annotation(&comment))
             .filter_map(|annotation| match annotation {
                 TestAnnotation::Tags(tags) => Some(tags),
                 _ => None,
             })
             .flatten()
             .collect()
+    }
+
+    /// Joins comment lines whose `name(...)` annotation doesn't close on the same line,
+    /// so e.g. `@parametrize(...)` can span multiple comment lines.
+    fn merge_annotation_comments(trivia: &[CstTrivia]) -> Vec<String> {
+        let lines: Vec<&str> = trivia.iter().filter_map(|t| t.comment()).collect();
+        let mut merged = Vec::new();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let trimmed = lines[i].trim();
+            let unclosed = trimmed.starts_with('@') && trimmed.contains('(') && !trimmed.ends_with(')');
+
+            if unclosed {
+                let mut end = i + 1;
+                while end < lines.len() && !lines[end].trim().ends_with(')') {
+                    end += 1;
+                }
+                if end < lines.len() {
+                    end += 1;
+                }
+                merged.push(lines[i..end].join("\n"));
+                i = end;
+            } else {
+                merged.push(lines[i].to_string());
+                i += 1;
+            }
+        }
+
+        merged
     }
 
     /// Returns the number of positional parameters of a `def` node.
@@ -561,6 +591,61 @@ mod tests {
         assert_eq!(TestRunner::parse_annotation(input), expected);
     }
 
+    #[test]
+    fn test_merge_annotation_comments_joins_a_multiline_parametrize_block() {
+        let content = concat!(
+            "# @tags(slow)\n",
+            "# @parametrize([\n",
+            "# [1, 2],\n",
+            "# [3, 4]\n",
+            "# ])\n",
+            "def test_add(a, b):\n  None\nend\n",
+        );
+        let node = first_def(content);
+
+        let merged = TestRunner::merge_annotation_comments(&node.leading_trivia);
+
+        assert_eq!(
+            merged,
+            vec![
+                " @tags(slow)".to_string(),
+                " @parametrize([\n [1, 2],\n [3, 4]\n ])".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_merge_annotation_comments_leaves_single_line_annotations_untouched() {
+        let content = "# @test\n# @tags(slow)\ndef my_check():\n  None\nend\n";
+        let node = first_def(content);
+
+        let merged = TestRunner::merge_annotation_comments(&node.leading_trivia);
+
+        assert_eq!(merged, vec![" @test".to_string(), " @tags(slow)".to_string()]);
+    }
+
+    #[test]
+    fn test_merge_annotation_comments_ignores_unmatched_parens_in_plain_comments() {
+        let content = concat!(
+            "# Explanatory note with an unmatched paren (like this\n",
+            "# that spans lines without closing it.\n",
+            "# @parametrize([[1, 2], [3, 4]])\n",
+            "def test_add(a, b):\n  None\nend\n",
+        );
+        let node = first_def(content);
+
+        let merged = TestRunner::merge_annotation_comments(&node.leading_trivia);
+
+        assert_eq!(
+            merged,
+            vec![
+                " Explanatory note with an unmatched paren (like this".to_string(),
+                " that spans lines without closing it.".to_string(),
+                " @parametrize([[1, 2], [3, 4]])".to_string(),
+            ]
+        );
+    }
+
     fn first_def(content: &str) -> mq_lang::Shared<mq_lang::CstNode> {
         let (nodes, _) = mq_lang::parse_recovery(content);
         nodes
@@ -668,6 +753,56 @@ mod tests {
             } => {
                 assert_eq!(name, expected_name);
                 assert_eq!(params_expr, expected_params_expr);
+                assert_eq!(*arity, expected_arity);
+            }
+            other => panic!("expected Parametrized, got {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(
+        concat!(
+            "# @parametrize([\n",
+            "# [\"hello\", 5],\n",
+            "# [\"world\", 5],\n",
+            "# ])\n",
+            "def test_len(input, expected):\n  None\nend\n",
+        ),
+        "test_len",
+        2
+    )]
+    #[case(
+        concat!(
+            "# @parametrize(\n",
+            "#   [[1, 2], [3, 4]]\n",
+            "# )\n",
+            "def test_add(a, b):\n  None\nend\n",
+        ),
+        "test_add",
+        2
+    )]
+    #[case(
+        concat!(
+            "# @tags(slow)\n",
+            "# @parametrize([\n",
+            "# [1, 2],\n",
+            "# [3, 4]\n",
+            "# ])\n",
+            "def test_add(a, b):\n  None\nend\n",
+        ),
+        "test_add",
+        2
+    )]
+    fn test_discover_tests_parametrized_multiline(
+        #[case] content: &str,
+        #[case] expected_name: &str,
+        #[case] expected_arity: usize,
+    ) {
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 1);
+        match &tests[0] {
+            DiscoveredTest::Parametrized { name, arity, .. } => {
+                assert_eq!(name, expected_name);
                 assert_eq!(*arity, expected_arity);
             }
             other => panic!("expected Parametrized, got {other:?}"),
@@ -894,6 +1029,32 @@ mod tests {
         )
         .unwrap();
         test_file
+    }
+
+    #[test]
+    fn test_run_executes_a_multiline_parametrize_block() {
+        let dir = temp_project_dir("multiline_parametrize");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "# @parametrize([\n",
+                "#   [\"hello\", 5],\n",
+                "#   [\"world\", 5],\n",
+                "#   [\"\", 0],\n",
+                "# ])\n",
+                "def test_len(input, expected):\n",
+                "  assert_eq(len(input), expected)\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

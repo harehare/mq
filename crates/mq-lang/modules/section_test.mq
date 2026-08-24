@@ -251,7 +251,10 @@ def test_section_subsections_non_section():
   assert_eq(section::subsections("not a section"), [])
 end
 
-# @parametrize([[section_md, ["  - [Introduction](#introduction)", "    - [Advanced Topics](#advanced-topics)", "  - [Conclusion](#conclusion)"]], ["# Notes\n\nA\n\n# Notes\n\nB\n", ["  - [Notes](#notes)", "  - [Notes](#notes-1)"]]])
+# @parametrize([
+#   [section_md, ["  - [Introduction](#introduction)", "    - [Advanced Topics](#advanced-topics)", "  - [Conclusion](#conclusion)"]],
+#   ["# Notes\n\nA\n\n# Notes\n\nB\n", ["  - [Notes](#notes)", "  - [Notes](#notes-1)"]],
+# ])
 def test_section_toc_markdown(markdown, expected):
   let secs = section::sections(to_markdown(markdown))
   | assert_eq(section::toc_markdown(secs), expected)

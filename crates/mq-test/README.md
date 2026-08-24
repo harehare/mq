@@ -162,6 +162,23 @@ end
 This produces three test cases — `len[0]`, `len[1]`, `len[2]` — each called
 with the corresponding `[input, expected]` pair.
 
+The annotation's `(...)` can also span multiple comment lines — handy once the
+array of cases gets long:
+
+```mq
+include "test"
+|
+
+# @parametrize([
+#   ["hello", 5],
+#   ["world", 5],
+#   ["", 0],
+# ])
+def test_len(input, expected):
+  assert_eq(len(input), expected)
+end
+```
+
 ### Tags
 
 Use `# @tags(a, b)` (or the singular `# @tag(a)`) immediately before a test
