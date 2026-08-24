@@ -19,7 +19,15 @@ def test_gron_parse_array():
   | assert_eq(result, ["x", "y"])
 end
 
-# @parametrize([["hello", "json = \"hello\";"], [{"a": {"b": "deep"}}, "json = {};\njson.a = {};\njson.a.b = \"deep\";"], [["x", "y"], "json = [];\njson[0] = \"x\";\njson[1] = \"y\";"], [{}, "json = {};"], [[], "json = [];"], [{"weird key": "v"}, "json = {};\njson[\"weird key\"] = \"v\";"], [{"b": 1, "a": 2}, "json = {};\njson.a = 2;\njson.b = 1;"]])
+# @parametrize([
+#   ["hello", "json = \"hello\";"],
+#   [{"a": {"b": "deep"}}, "json = {};\njson.a = {};\njson.a.b = \"deep\";"],
+#   [["x", "y"], "json = [];\njson[0] = \"x\";\njson[1] = \"y\";"],
+#   [{}, "json = {};"],
+#   [[], "json = [];"],
+#   [{"weird key": "v"}, "json = {};\njson[\"weird key\"] = \"v\";"],
+#   [{"b": 1, "a": 2}, "json = {};\njson.a = 2;\njson.b = 1;"],
+# ])
 def test_gron_stringify(value, expected):
   assert_eq(gron::gron_stringify(value), expected)
 end

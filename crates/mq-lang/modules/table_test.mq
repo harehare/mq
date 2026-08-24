@@ -133,7 +133,14 @@ end
 # Every one of these ops validates the shape of its input against the
 # table's existing header/rows and should error rather than silently
 # producing a header/row column-count mismatch.
-# @parametrize([[fn(table): table::add_row(table, ["x"]);], [fn(table): table::add_column(table, ["c", "x"]);], [fn(table): table::insert_row(table, 0, ["x"]);], [fn(table): table::insert_column(table, 0, ["c", "x"]);], [fn(table): table::set_cell(table, 99, 0, "x");], [fn(table): table::set_cell(table, 0, 99, "x");]])
+# @parametrize([
+#   [fn(table): table::add_row(table, ["x"]);],
+#   [fn(table): table::add_column(table, ["c", "x"]);],
+#   [fn(table): table::insert_row(table, 0, ["x"]);],
+#   [fn(table): table::insert_column(table, 0, ["c", "x"]);],
+#   [fn(table): table::set_cell(table, 99, 0, "x");],
+#   [fn(table): table::set_cell(table, 0, 99, "x");],
+# ])
 def test_table_shape_mismatch_errors(op):
   let t = first(table::tables(table_nodes))
   | let result = try: op(t) catch: "error"
@@ -146,7 +153,11 @@ def test_table_map_cells():
   | assert_eq(table::to_csv(result), "Name,Age,City\nALICE,30,TOKYO\nBOB,25,OSAKA")
 end
 
-# @parametrize([["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"], ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"], ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 1 | 2 |", "a,b\n1,2"]])
+# @parametrize([
+#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
+#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
+#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 1 | 2 |", "a,b\n1,2"],
+# ])
 def test_table_dedupe_rows(markdown, expected_csv):
   let md_nodes = to_markdown(markdown)
   | let t = first(table::tables(md_nodes))

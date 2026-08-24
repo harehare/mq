@@ -47,7 +47,12 @@ def test_is_mdx():
   | assert_eq(result3, false)
 end
 
-# @parametrize([["> [!NOTE]\n> This is a note.", true], ["> [!WARNING]\n> Watch out!", true], ["> [!WARNING] Watch out!", true], ["> Just a plain blockquote.", false]])
+# @parametrize([
+#   ["> [!NOTE]\n> This is a note.", true],
+#   ["> [!WARNING]\n> Watch out!", true],
+#   ["> [!WARNING] Watch out!", true],
+#   ["> Just a plain blockquote.", false],
+# ])
 def test_is_callout(markdown, expected):
   let node = do markdown | to_markdown() | first();
   | let result = is_callout(node)
@@ -60,7 +65,12 @@ def test_is_callout_non_node():
 end
 
 # String manipulation tests
-# @parametrize([["hello world", "world", true], ["hello world", "foo", false], [{"a": 1, "b": 2}, "a", true], [{"a": 1, "b": 2}, "c", false]])
+# @parametrize([
+#   ["hello world", "world", true],
+#   ["hello world", "foo", false],
+#   [{"a": 1, "b": 2}, "a", true],
+#   [{"a": 1, "b": 2}, "c", false],
+# ])
 def test_contains(value, needle, expected):
   let result = contains(value, needle)
   | assert_eq(result, expected)
@@ -79,7 +89,16 @@ def test_rtrimstr(value, suffix, expected):
 end
 
 # Collection tests
-# @parametrize([[[], true], ["", true], [dict(), true], [[1, 2, 3], false], ["hello", false], [None, true], [b"binary\x20data", false], [b"", true]])
+# @parametrize([
+#   [[], true],
+#   ["", true],
+#   [dict(), true],
+#   [[1, 2, 3], false],
+#   ["hello", false],
+#   [None, true],
+#   [b"binary\x20data", false],
+#   [b"", true],
+# ])
 def test_is_empty(value, expected):
   let result = is_empty(value)
   | assert_eq(result, expected)
@@ -147,19 +166,31 @@ def test_scalars(value, expected):
 end
 
 # Array manipulation tests
-# @parametrize([[[1, 2, 3], fn(x): x * 2;, [2, 4, 6]], [{"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];, {"a": 2, "b": 4}], [None, fn(x): [x[0], x[1] * 2];, None]])
+# @parametrize([
+#   [[1, 2, 3], fn(x): x * 2;, [2, 4, 6]],
+#   [{"a": 1, "b": 2}, fn(x): [x[0], x[1] * 2];, {"a": 2, "b": 4}],
+#   [None, fn(x): [x[0], x[1] * 2];, None],
+# ])
 def test_map(value, f, expected):
   let result = map(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3], fn(x): [x, x * 2];, [1, 2, 2, 4, 3, 6]], [[[1, 2], [3, 4]], fn(x): x;, [1, 2, 3, 4]], [None, fn(x): [x[0], x[1] * 2];, None]])
+# @parametrize([
+#   [[1, 2, 3], fn(x): [x, x * 2];, [1, 2, 2, 4, 3, 6]],
+#   [[[1, 2], [3, 4]], fn(x): x;, [1, 2, 3, 4]],
+#   [None, fn(x): [x[0], x[1] * 2];, None],
+# ])
 def test_flat_map(value, f, expected):
   let result = flat_map(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 2;, [3, 4, 5]], [{"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;, {"b": 2, "c": 3}], [None, fn(x): [x[0], x[1] * 2];, None]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x > 2;, [3, 4, 5]],
+#   [{"a": 1, "b": 2, "c": 3}, fn(x): x[1] > 1;, {"b": 2, "c": 3}],
+#   [None, fn(x): [x[0], x[1] * 2];, None],
+# ])
 def test_filter(value, f, expected):
   let result = filter(value, f)
   | assert_eq(result, expected)
@@ -189,7 +220,11 @@ def test_fill(value, n, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[["file10", "file2", "file1"], ["file1", "file2", "file10"]], [["chapter-2.md", "chapter-10.md", "chapter-1.md"], ["chapter-1.md", "chapter-2.md", "chapter-10.md"]], [[], []]])
+# @parametrize([
+#   [["file10", "file2", "file1"], ["file1", "file2", "file10"]],
+#   [["chapter-2.md", "chapter-10.md", "chapter-1.md"], ["chapter-1.md", "chapter-2.md", "chapter-10.md"]],
+#   [[], []],
+# ])
 def test_sort_natural(value, expected):
   let result = sort_natural(value)
   | assert_eq(result, expected)
@@ -207,13 +242,21 @@ def test_take(value, n, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x == 3;, 2], [[1, 2, 3, 4, 5], fn(x): x > 10;, -1], [[10, 20, 30], fn(x): x == 10;, 0]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x == 3;, 2],
+#   [[1, 2, 3, 4, 5], fn(x): x > 10;, -1],
+#   [[10, 20, 30], fn(x): x == 10;, 0],
+# ])
 def test_find_index(value, f, expected):
   let result = find_index(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x < 3;, [3, 4, 5]], [[1, 2, 3], fn(x): x > 10;, [1, 2, 3]], [[], fn(x): x < 5;, []]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x < 3;, [3, 4, 5]],
+#   [[1, 2, 3], fn(x): x > 10;, [1, 2, 3]],
+#   [[], fn(x): x < 5;, []],
+# ])
 def test_skip_while(value, f, expected):
   let result = skip_while(value, f)
   | assert_eq(result, expected)
@@ -243,7 +286,12 @@ def test_tally(value, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 2;, 3], [[1, 2, 3, 4, 5], fn(x): x > 10;, 0], [[], fn(x): x > 0;, 0], [[2, 4, 6, 8], fn(x): x % 2 == 0;, 4]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x > 2;, 3],
+#   [[1, 2, 3, 4, 5], fn(x): x > 10;, 0],
+#   [[], fn(x): x > 0;, 0],
+#   [[2, 4, 6, 8], fn(x): x % 2 == 0;, 4],
+# ])
 def test_count_by(value, f, expected):
   let result = count_by(value, f)
   | assert_eq(result, expected)
@@ -255,19 +303,32 @@ def test_any(value, f, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 0;, true], [[1, 2, 3, 4, 5], fn(x): x > 3;, false], [[], fn(x): x > 0;, true]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x > 0;, true],
+#   [[1, 2, 3, 4, 5], fn(x): x > 3;, false],
+#   [[], fn(x): x > 0;, true],
+# ])
 def test_all(value, f, expected):
   let result = all(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], 3, true], [[1, 2, 3], 10, false], [[1, 2, 3, 4, 5], [2, 3], true], ["hello world", "world", true]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], 3, true],
+#   [[1, 2, 3], 10, false],
+#   [[1, 2, 3, 4, 5], [2, 3], true],
+#   ["hello world", "world", true],
+# ])
 def test_in(value, needle, expected):
   let result = in(value, needle)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;, 15], [[1, 2, 3], 1, fn(acc, x): acc * x;, 6], [[], 10, fn(acc, x): acc + x;, 10]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;, 15],
+#   [[1, 2, 3], 1, fn(acc, x): acc * x;, 6],
+#   [[], 10, fn(acc, x): acc + x;, 10],
+# ])
 def test_fold(value, init, f, expected):
   let result = fold(value, init, f)
   | assert_eq(result, expected)
@@ -276,25 +337,45 @@ end
 # Elements that are themselves arrays (e.g. [[1, 2], [3, 4], [1, 2]]) must be
 # kept as single elements, not concatenated/flattened into the result (`+`
 # on two arrays concatenates, so appending must wrap the element in [item]).
-# @parametrize([[[1, 2, 3, 2, 1, 4], fn(x): x;, [1, 2, 3, 4]], [[{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];, [{"id": 1}, {"id": 2}]], [[], fn(x): x;, []], [[[1, 2], [3, 4], [1, 2]], fn(row): row;, [[1, 2], [3, 4]]]])
+# @parametrize([
+#   [[1, 2, 3, 2, 1, 4], fn(x): x;, [1, 2, 3, 4]],
+#   [[{"id": 1}, {"id": 2}, {"id": 1}], fn(x): x["id"];, [{"id": 1}, {"id": 2}]],
+#   [[], fn(x): x;, []],
+#   [[[1, 2], [3, 4], [1, 2]], fn(row): row;, [[1, 2], [3, 4]]],
+# ])
 def test_unique_by(value, f, expected):
   let result = unique_by(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3], [2, 3, 4], [1, 2, 3, 4]], [[1, 1, 2], [2, 2, 3], [1, 2, 3]], [[], [1, 2], [1, 2]], [["a", "b"], ["b", "c"], ["a", "b", "c"]]])
+# @parametrize([
+#   [[1, 2, 3], [2, 3, 4], [1, 2, 3, 4]],
+#   [[1, 1, 2], [2, 2, 3], [1, 2, 3]],
+#   [[], [1, 2], [1, 2]],
+#   [["a", "b"], ["b", "c"], ["a", "b", "c"]],
+# ])
 def test_union(value1, value2, expected):
   let result = union(value1, value2)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3], [2, 3, 4], [2, 3]], [[1, 2], [3, 4], []], [[], [1, 2], []], [["a", "b"], ["b", "c"], ["b"]]])
+# @parametrize([
+#   [[1, 2, 3], [2, 3, 4], [2, 3]],
+#   [[1, 2], [3, 4], []],
+#   [[], [1, 2], []],
+#   [["a", "b"], ["b", "c"], ["b"]],
+# ])
 def test_intersection(value1, value2, expected):
   let result = intersection(value1, value2)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3], [2, 3, 4], [1]], [[1, 2, 2, 3], [], [1, 2, 3]], [[], [1, 2], []], [["a", "b"], ["b", "c"], ["a"]]])
+# @parametrize([
+#   [[1, 2, 3], [2, 3, 4], [1]],
+#   [[1, 2, 2, 3], [], [1, 2, 3]],
+#   [[], [1, 2], []],
+#   [["a", "b"], ["b", "c"], ["a"]],
+# ])
 def test_difference(value1, value2, expected):
   let result = difference(value1, value2)
   | assert_eq(result, expected)
@@ -312,7 +393,11 @@ def test_clamp(value, lo, hi, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[[1, 2, 3], [4, 5, 6]], [[1, 4], [2, 5], [3, 6]]], [[], []], [[[1, 2], [3, 4], [5, 6]], [[1, 3, 5], [2, 4, 6]]]])
+# @parametrize([
+#   [[[1, 2, 3], [4, 5, 6]], [[1, 4], [2, 5], [3, 6]]],
+#   [[], []],
+#   [[[1, 2], [3, 4], [5, 6]], [[1, 3, 5], [2, 4, 6]]],
+# ])
 def test_transpose(value, expected):
   let result = transpose(value)
   | assert_eq(result, expected)
@@ -371,25 +456,45 @@ def test_until():
   | assert_eq(result1, 6)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): if (x > 2): x;, [3, 4, 5]], [[1, 2, 3], fn(x): if (x % 2 == 0): x * 2;, [4]], [[], fn(x): x;, []], [[1, 2, 3], fn(x): None;, []]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): if (x > 2): x;, [3, 4, 5]],
+#   [[1, 2, 3], fn(x): if (x % 2 == 0): x * 2;, [4]],
+#   [[], fn(x): x;, []],
+#   [[1, 2, 3], fn(x): None;, []],
+# ])
 def test_compact_map(value, f, expected):
   let result = compact_map(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, [1, 2, 3]], [[1, 2, 3, 4], fn(x): x % 2 == 0;, [1, 3]], [[], fn(x): x > 0;, []], [[1, 2, 3], fn(x): false;, [1, 2, 3]]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x > 3;, [1, 2, 3]],
+#   [[1, 2, 3, 4], fn(x): x % 2 == 0;, [1, 3]],
+#   [[], fn(x): x > 0;, []],
+#   [[1, 2, 3], fn(x): false;, [1, 2, 3]],
+# ])
 def test_reject(value, f, expected):
   let result = reject(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, [[4, 5], [1, 2, 3]]], [[1, 2, 3, 4], fn(x): x % 2 == 0;, [[2, 4], [1, 3]]], [[], fn(x): x > 0;, [[], []]], [[1, 2, 3], fn(x): true;, [[1, 2, 3], []]]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x > 3;, [[4, 5], [1, 2, 3]]],
+#   [[1, 2, 3, 4], fn(x): x % 2 == 0;, [[2, 4], [1, 3]]],
+#   [[], fn(x): x > 0;, [[], []]],
+#   [[1, 2, 3], fn(x): true;, [[1, 2, 3], []]],
+# ])
 def test_partition(value, f, expected):
   let result = partition(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[dict([["a", 1], ["b", 2]]), "a", 0, 1], [dict([["a", 1], ["b", 2]]), "c", 0, 0], [dict([["a", 1], ["b", 2]]), "b", 999, 2], [dict(), "key", "default", "default"]])
+# @parametrize([
+#   [dict([["a", 1], ["b", 2]]), "a", 0, 1],
+#   [dict([["a", 1], ["b", 2]]), "c", 0, 0],
+#   [dict([["a", 1], ["b", 2]]), "b", 999, 2],
+#   [dict(), "key", "default", "default"],
+# ])
 def test_get_or(d, key, default, expected):
   let result = get_or(d, key, default)
   | assert_eq(result, expected)
@@ -401,13 +506,21 @@ def test_between(value, lo, hi, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4], fn(x): x;, 10], [[1, 2, 3], fn(x): x * 2;, 12], [[], fn(x): x;, 0], [[5, 10, 15], fn(x): x / 5;, 6]])
+# @parametrize([
+#   [[1, 2, 3, 4], fn(x): x;, 10],
+#   [[1, 2, 3], fn(x): x * 2;, 12],
+#   [[], fn(x): x;, 0],
+#   [[5, 10, 15], fn(x): x / 5;, 6],
+# ])
 def test_sum_by(value, f, expected):
   let result = sum_by(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}], fn(item): item["id"];, {"1": {"id": 1, "name": "Alice"}, "2": {"id": 2, "name": "Bob"}}], [[], fn(item): item["id"];, dict()]])
+# @parametrize([
+#   [[{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}], fn(item): item["id"];, {"1": {"id": 1, "name": "Alice"}, "2": {"id": 2, "name": "Bob"}}],
+#   [[], fn(item): item["id"];, dict()],
+# ])
 def test_index_by(value, f, expected):
   let result = index_by(value, f)
   | assert_eq(result, expected)
@@ -492,7 +605,17 @@ def test_join_by_non_array_left_errors():
   | assert(contains(result, "left must be an array"))
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], 0.5, 3], [[1, 2, 3, 4], 0.5, 2.5], [[3, 1, 4, 1, 5], 0, 1], [[3, 1, 4, 1, 5], 1, 5], [[1, 2, 3, 4], 0.25, 1.75], [[1, 2, 3, 4], 0.75, 3.25], [[42], 0.5, 42], [[5, 1, 3], 0.5, 3], [[], 0.5, None]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], 0.5, 3],
+#   [[1, 2, 3, 4], 0.5, 2.5],
+#   [[3, 1, 4, 1, 5], 0, 1],
+#   [[3, 1, 4, 1, 5], 1, 5],
+#   [[1, 2, 3, 4], 0.25, 1.75],
+#   [[1, 2, 3, 4], 0.75, 3.25],
+#   [[42], 0.5, 42],
+#   [[5, 1, 3], 0.5, 3],
+#   [[], 0.5, None],
+# ])
 def test_percentile(value, p, expected):
   let result = percentile(value, p)
   | assert_eq(result, expected)
@@ -534,19 +657,33 @@ def test_bsearch(value, target, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([["Hello World!", "hello-world"], ["This is a test.", "this-is-a-test"], ["Special characters: @#$%^&*()", "special-characters"]])
+# @parametrize([
+#   ["Hello World!", "hello-world"],
+#   ["This is a test.", "this-is-a-test"],
+#   ["Special characters: @#$%^&*()", "special-characters"],
+# ])
 def test_slugify(value, expected):
   let result = slugify(value)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], 2, [[1, 2], [3, 4], [5]]], [[1, 2, 3, 4], 3, [[1, 2, 3], [4]]], [[], 2, []], ["123456", 2, ["12", "34", "56"]]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], 2, [[1, 2], [3, 4], [5]]],
+#   [[1, 2, 3, 4], 3, [[1, 2, 3], [4]]],
+#   [[], 2, []],
+#   ["123456", 2, ["12", "34", "56"]],
+# ])
 def test_chunks(value, n, expected):
   let result = chunks(value, n)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3, 4, 5], fn(x): x % 2;, [[1], [2], [3], [4], [5]]], [[1, 2, 3, 4], fn(x): x > 2;, [[1, 2], [3, 4]]], [[], fn(x): x;, []], ["123456", fn(x): x == "1";, ["1", "23456"]]])
+# @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x % 2;, [[1], [2], [3], [4], [5]]],
+#   [[1, 2, 3, 4], fn(x): x > 2;, [[1, 2], [3, 4]]],
+#   [[], fn(x): x;, []],
+#   ["123456", fn(x): x == "1";, ["1", "23456"]],
+# ])
 def test_chunk_by(value, f, expected):
   let result = chunk_by(value, f)
   | assert_eq(result, expected)
@@ -655,25 +792,44 @@ def test_describe():
   | assert_eq(result2, None)
 end
 
-# @parametrize([["hello", 2, ["he", "el", "ll", "lo"]], ["test", 3, ["tes", "est"]], ["abc", 4, []], [[1, 2, 3, 4], 2, [[1, 2], [2, 3], [3, 4]]], [[1, 2, 3], 1, [[1], [2], [3]]], [[1, 2], 4, []]])
+# @parametrize([
+#   ["hello", 2, ["he", "el", "ll", "lo"]],
+#   ["test", 3, ["tes", "est"]],
+#   ["abc", 4, []],
+#   [[1, 2, 3, 4], 2, [[1, 2], [2, 3], [3, 4]]],
+#   [[1, 2, 3], 1, [[1], [2], [3]]],
+#   [[1, 2], 4, []],
+# ])
 def test_ngram(value, n, expected):
   let result = ngram(value, n)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[1, 2, 3], ["a", "b", "c"], [[1, "a"], [2, "b"], [3, "c"]]], [[1, 2], ["x", "y", "z"], [[1, "x"], [2, "y"]]], [[], ["a", "b"], []]])
+# @parametrize([
+#   [[1, 2, 3], ["a", "b", "c"], [[1, "a"], [2, "b"], [3, "c"]]],
+#   [[1, 2], ["x", "y", "z"], [[1, "x"], [2, "y"]]],
+#   [[], ["a", "b"], []],
+# ])
 def test_zip(value1, value2, expected):
   let result = zip(value1, value2)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 1}], [[], fn(x): x;, None], [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 5}]])
+# @parametrize([
+#   [[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 1}],
+#   [[], fn(x): x;, None],
+#   [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 5}],
+# ])
 def test_min_by(value, f, expected):
   let result = min_by(value, f)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 3}], [[], fn(x): x;, None], [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 10}]])
+# @parametrize([
+#   [[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 3}],
+#   [[], fn(x): x;, None],
+#   [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 10}],
+# ])
 def test_max_by(value, f, expected):
   let result = max_by(value, f)
   | assert_eq(result, expected)
@@ -697,31 +853,55 @@ def test_indent(value, prefix, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["y"], {"y": 20}], [{"key": "value"}, ["nonexistent"], dict()]])
+# @parametrize([
+#   [{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}],
+#   [{"x": 10, "y": 20}, ["y"], {"y": 20}],
+#   [{"key": "value"}, ["nonexistent"], dict()],
+# ])
 def test_pick(value, keys, expected):
   let result = pick(value, keys)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": 2, "c": 3}, ["b"], {"a": 1, "c": 3}], [{"x": 10, "y": 20}, ["x", "y"], {}], [{"key": "value"}, ["nonexistent"], {"key": "value"}]])
+# @parametrize([
+#   [{"a": 1, "b": 2, "c": 3}, ["b"], {"a": 1, "c": 3}],
+#   [{"x": 10, "y": 20}, ["x", "y"], {}],
+#   [{"key": "value"}, ["nonexistent"], {"key": "value"}],
+# ])
 def test_omit(value, keys, expected):
   let result = omit(value, keys)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": 2}, "a", true], [{"a": 1, "b": 2}, "c", false], [[1, 2, 3], 1, true], [[1, 2, 3], 5, false], [[1, 2, 3], -1, false], ["not a container", "key", false]])
+# @parametrize([
+#   [{"a": 1, "b": 2}, "a", true],
+#   [{"a": 1, "b": 2}, "c", false],
+#   [[1, 2, 3], 1, true],
+#   [[1, 2, 3], 5, false],
+#   [[1, 2, 3], -1, false],
+#   ["not a container", "key", false],
+# ])
 def test_has(value, key, expected):
   let result = has(value, key)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 2], [{"a": {"b": 1}}, ["a", "x", "y"], None], [{"a": 1}, [], {"a": 1}], [[1, 2, 3], [10], None]])
+# @parametrize([
+#   [{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 2],
+#   [{"a": {"b": 1}}, ["a", "x", "y"], None],
+#   [{"a": 1}, [], {"a": 1}],
+#   [[1, 2, 3], [10], None],
+# ])
 def test_get_path(value, path, expected):
   let result = get_path(value, path)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 99, {"a": {"b": [1, 99, 3]}}], [{}, ["a", "b", 0], 42, {"a": {"b": [42]}}], [{"a": 1}, [], 99, 99]])
+# @parametrize([
+#   [{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 99, {"a": {"b": [1, 99, 3]}}],
+#   [{}, ["a", "b", 0], 42, {"a": {"b": [42]}}],
+#   [{"a": 1}, [], 99, 99],
+# ])
 def test_set_path(value, path, new_value, expected):
   let result = set_path(value, path, new_value)
   | assert_eq(result, expected)
@@ -734,19 +914,35 @@ def test_set_path_round_trip():
   | assert_eq(result, {"a": {"b": 10, "c": 20}, "d": [30, 40]})
 end
 
-# @parametrize([[{"a": {"b": 1, "c": 2}}, ["a", "b"], {"a": {"c": 2}}], [[1, 2, 3, 4], [1], [1, 3, 4]], [{"a": 1}, ["x", "y"], {"a": 1}], [{"a": 1}, ["b"], {"a": 1}], [[1, 2, 3], [10], [1, 2, 3]], [{"a": 1}, [], None]])
+# @parametrize([
+#   [{"a": {"b": 1, "c": 2}}, ["a", "b"], {"a": {"c": 2}}],
+#   [[1, 2, 3, 4], [1], [1, 3, 4]],
+#   [{"a": 1}, ["x", "y"], {"a": 1}],
+#   [{"a": 1}, ["b"], {"a": 1}],
+#   [[1, 2, 3], [10], [1, 2, 3]],
+#   [{"a": 1}, [], None],
+# ])
 def test_del_path(value, path, expected):
   let result = del_path(value, path)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": 2, "c": 3}, [["a"], ["c"]], {"b": 2}], [[1, 2, 3, 4], [[0], [2]], [2, 4]], [{"a": {"b": 1, "c": 2}}, [["a", "b"], ["a", "c"]], {"a": {}}]])
+# @parametrize([
+#   [{"a": 1, "b": 2, "c": 3}, [["a"], ["c"]], {"b": 2}],
+#   [[1, 2, 3, 4], [[0], [2]], [2, 4]],
+#   [{"a": {"b": 1, "c": 2}}, [["a", "b"], ["a", "c"]], {"a": {}}],
+# ])
 def test_del_paths(value, paths_list, expected):
   let result = del_paths(value, paths_list)
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": {"b": 1, "c": 2}, "d": [3, 4]}, [["a", "b"], ["a", "c"], ["d", 0], ["d", 1]]], [{}, []], [[], []], [42, [[]]]])
+# @parametrize([
+#   [{"a": {"b": 1, "c": 2}, "d": [3, 4]}, [["a", "b"], ["a", "c"], ["d", 0], ["d", 1]]],
+#   [{}, []],
+#   [[], []],
+#   [42, [[]]],
+# ])
 def test_paths(value, expected):
   let result = paths(value)
   | assert_eq(result, expected)
@@ -758,7 +954,10 @@ def test_from_entries(value, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];, {"a": 10, "b": 20}], [{}, fn(pair): pair;, dict()]])
+# @parametrize([
+#   [{"a": 1, "b": 2}, fn(pair): [pair[0], pair[1] * 10];, {"a": 10, "b": 20}],
+#   [{}, fn(pair): pair;, dict()],
+# ])
 def test_with_entries(value, f, expected):
   let result = with_entries(value, f)
   | assert_eq(result, expected)
@@ -770,25 +969,61 @@ def test_invert(value, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace", {"a": 1, "b": {"x": 1, "y": 2}, "c": 3}], [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "replace", {"a": [3], "b": 2}], [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "append", {"a": [1, 2, 3], "b": [1, 2]}], [{"a": 1}, {"a": 2}, "error", "error"], [{"a": 1}, {"a": None}, "replace", {"a": None}], [{"a": 1}, {"a": None}, "append", {"a": 1}], [{}, {}, "invalid", "error"]])
+# @parametrize([
+#   [{"a": 1, "b": {"x": 1}}, {"b": {"y": 2}, "c": 3}, "replace", {"a": 1, "b": {"x": 1, "y": 2}, "c": 3}],
+#   [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "replace", {"a": [3], "b": 2}],
+#   [{"a": [1, 2], "b": 1}, {"a": [3], "b": 2}, "append", {"a": [1, 2, 3], "b": [1, 2]}],
+#   [{"a": 1}, {"a": 2}, "error", "error"],
+#   [{"a": 1}, {"a": None}, "replace", {"a": None}],
+#   [{"a": 1}, {"a": None}, "append", {"a": 1}],
+#   [{}, {}, "invalid", "error"],
+# ])
 def test_merge_with(a, b, policy, expected):
   let result = try: merge_with(a, b, policy) catch: "error"
   | assert_eq(result, expected)
 end
 
-# @parametrize([[{"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3}, {"a": {"x": 1, "y": 2}, "b": 3}], [{"a": [1]}, {"a": [2, 3]}, {"a": [1]}], [{}, {"a": 1, "b": 2}, {"a": 1, "b": 2}]])
+# @parametrize([
+#   [{"a": {"x": 1}}, {"a": {"x": 0, "y": 2}, "b": 3}, {"a": {"x": 1, "y": 2}, "b": 3}],
+#   [{"a": [1]}, {"a": [2, 3]}, {"a": [1]}],
+#   [{}, {"a": 1, "b": 2}, {"a": 1, "b": 2}],
+# ])
 def test_merge_defaults(d, defaults, expected):
   let result = merge_defaults(d, defaults)
   | assert_eq(result, expected)
 end
 
-# @parametrize([["---\ntitle: Hello\nauthor: World\n---\n\n# Heading", {"title": "Hello", "author": "World"}], ["+++\ntitle = \"Hello\"\nauthor = \"World\"\n+++\n\n# Heading", {"title": "Hello", "author": "World"}], ["# Heading", None], ["---\ntitle: My Post\ntags:\n  - rust\n  - markdown\n---\n", {"title": "My Post", "tags": ["rust", "markdown"]}]])
+# @parametrize([
+#   ["---\ntitle: Hello\nauthor: World\n---\n\n# Heading", {"title": "Hello", "author": "World"}],
+#   ["+++\ntitle = \"Hello\"\nauthor = \"World\"\n+++\n\n# Heading", {"title": "Hello", "author": "World"}],
+#   ["# Heading", None],
+#   ["---\ntitle: My Post\ntags:\n  - rust\n  - markdown\n---\n", {"title": "My Post", "tags": ["rust", "markdown"]}],
+# ])
 def test_frontmatter(markdown, expected):
   let result = do markdown | to_markdown() | first() | frontmatter();
   | assert_eq(result, expected)
 end
 
-# @parametrize([[42, fn(x): x * 2;, 84], ["hello", fn(x): if (is_string(x)): upcase(x) else: x;, "HELLO"], [None, identity, None], [true, fn(x): if (is_bool(x)): !x else: x;, false], [[], identity, []], [[1, 2, 3], identity, [1, 2, 3]], [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]], [[[1, 2], [3, 4]], fn(x): if (is_number(x)): x + 10 else: x;, [[11, 12], [13, 14]]], [[[[1]]], fn(x): if (is_number(x)): x + 100 else: x;, [[[101]]]], [[1, "hello", None], identity, [1, "hello", None]], [[2, 4, 6], fn(x): if (is_number(x)): x * -1 else: x;, [-2, -4, -6]], [["a", "b"], fn(x): if (is_string(x)): upcase(x) else: x;, ["A", "B"]], [[true, false], fn(x): if (is_bool(x)): !x else: x;, [false, true]], [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]], [{}, identity, dict()], [{"a": 1, "b": 2}, fn(x): if (is_number(x)): x * 10 else: x;, {"a": 10, "b": 20}], [{"x": "hello"}, fn(x): if (is_string(x)): upcase(x) else: x;, {"x": "HELLO"}], [{"a": 1, "b": 2}, identity, {"a": 1, "b": 2}]])
+# @parametrize([
+#   [42, fn(x): x * 2;, 84],
+#   ["hello", fn(x): if (is_string(x)): upcase(x) else: x;, "HELLO"],
+#   [None, identity, None],
+#   [true, fn(x): if (is_bool(x)): !x else: x;, false],
+#   [[], identity, []],
+#   [[1, 2, 3], identity, [1, 2, 3]],
+#   [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]],
+#   [[[1, 2], [3, 4]], fn(x): if (is_number(x)): x + 10 else: x;, [[11, 12], [13, 14]]],
+#   [[[[1]]], fn(x): if (is_number(x)): x + 100 else: x;, [[[101]]]],
+#   [[1, "hello", None], identity, [1, "hello", None]],
+#   [[2, 4, 6], fn(x): if (is_number(x)): x * -1 else: x;, [-2, -4, -6]],
+#   [["a", "b"], fn(x): if (is_string(x)): upcase(x) else: x;, ["A", "B"]],
+#   [[true, false], fn(x): if (is_bool(x)): !x else: x;, [false, true]],
+#   [[1, 2, 3], fn(x): if (is_number(x)): x * 2 else: x;, [2, 4, 6]],
+#   [{}, identity, dict()],
+#   [{"a": 1, "b": 2}, fn(x): if (is_number(x)): x * 10 else: x;, {"a": 10, "b": 20}],
+#   [{"x": "hello"}, fn(x): if (is_string(x)): upcase(x) else: x;, {"x": "HELLO"}],
+#   [{"a": 1, "b": 2}, identity, {"a": 1, "b": 2}],
+# ])
 def test_walk(value, f, expected):
   let result = walk(value, f)
   | assert_eq(result, expected)

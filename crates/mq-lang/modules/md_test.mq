@@ -43,7 +43,10 @@ def test_md_blockquote():
   | assert_eq(result, "> quote")
 end
 
-# @parametrize([["note body", "note", "", "> [!NOTE]\n> note body"], ["warn body", "warning", "Careful", "> [!WARNING] Careful\n> warn body"]])
+# @parametrize([
+#   ["note body", "note", "", "> [!NOTE]\n> note body"],
+#   ["warn body", "warning", "Careful", "> [!WARNING] Careful\n> warn body"],
+# ])
 def test_md_callout(value, kind, title, expected):
   let result = to_string(md::callout(value, kind, title))
   | assert_eq(result, expected)
@@ -74,7 +77,12 @@ def test_md_image():
   | assert_eq(result, "![Alt](https://example.com/a.png \"\")")
 end
 
-# @parametrize([["Item", 0, false, None, "- Item"], ["Nested", 1, false, None, "  - Nested"], ["Ordered", 0, true, None, "1. Ordered"], ["Checked", 0, false, true, "- [x] Checked"]])
+# @parametrize([
+#   ["Item", 0, false, None, "- Item"],
+#   ["Nested", 1, false, None, "  - Nested"],
+#   ["Ordered", 0, true, None, "1. Ordered"],
+#   ["Checked", 0, false, true, "- [x] Checked"],
+# ])
 def test_md_list(value, level, ordered, checked, expected):
   let result = to_string(md::list(value, level, ordered, checked))
   | assert_eq(result, expected)

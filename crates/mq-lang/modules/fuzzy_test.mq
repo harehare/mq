@@ -23,7 +23,12 @@ def test_fuzzy_best_match_partial():
   | assert(result["score"] < 1 && (result["text"] == "lawn" || result["text"] == "claw"))
 end
 
-# @parametrize([["lawn", "lawn", {"score": 1, "text": "lawn"}], [["flaw", "lawn", "pawn"], "lawn", {"score": 1, "text": "lawn"}], [["lawn", "flaw", "claw"], "flaw", {"score": 1, "text": "flaw"}], [[], "flaw", None]])
+# @parametrize([
+#   ["lawn", "lawn", {"score": 1, "text": "lawn"}],
+#   [["flaw", "lawn", "pawn"], "lawn", {"score": 1, "text": "lawn"}],
+#   [["lawn", "flaw", "claw"], "flaw", {"score": 1, "text": "flaw"}],
+#   [[], "flaw", None],
+# ])
 def test_fuzzy_best_match(candidates, target, expected):
   let result = fuzzy::fuzzy_best_match(candidates, target)
   | assert_eq(result, expected)
@@ -35,7 +40,12 @@ def test_fuzzy_match_levenshtein(a, b, expected):
   | assert_eq(result, expected)
 end
 
-# @parametrize([[["flaw", "lawn", "pawn"], "lawn", 0.9, 1], [["lawn", "claw"], "lawn", 0.7, 2], [["lawn", "claw"], "flaw", 0.6, 2], [[], "flaw", 0.8, 0]])
+# @parametrize([
+#   [["flaw", "lawn", "pawn"], "lawn", 0.9, 1],
+#   [["lawn", "claw"], "lawn", 0.7, 2],
+#   [["lawn", "claw"], "flaw", 0.6, 2],
+#   [[], "flaw", 0.8, 0],
+# ])
 def test_fuzzy_filter(candidates, target, threshold, expected_len):
   let result = fuzzy::fuzzy_filter(candidates, target, threshold)
   | assert_eq(len(result), expected_len)

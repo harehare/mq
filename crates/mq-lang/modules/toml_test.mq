@@ -22,7 +22,12 @@ end
 # block containing bare trailing-comma lines instead of `key = [...]`; an
 # array of dicts used to dump each entry as an inline table (`{...}`) on its
 # own trailing-comma line instead of proper `[[key]]` sections.
-# @parametrize([[{"tags": ["a", "b"]}], [{"tags": []}], [{"nums": [1, 2, 3]}], [{"users": [{"name": "a"}, {"name": "b"}]}]])
+# @parametrize([
+#   [{"tags": ["a", "b"]}],
+#   [{"tags": []}],
+#   [{"nums": [1, 2, 3]}],
+#   [{"users": [{"name": "a"}, {"name": "b"}]}],
+# ])
 def test_toml_stringify_array_round_trips(input):
   let result = toml::toml_stringify(input)
   | assert_eq(toml::toml_parse(result), input)
