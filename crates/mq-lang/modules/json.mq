@@ -107,3 +107,23 @@ def json_to_markdown_table(data):
     else:
       _create_simple_markdown_table(data)
 end
+
+# Converts a data structure to a JSON front matter string, delimited with
+# `;;;` (the convention used by e.g. Hexo). Unlike YAML (`---`) and TOML
+# (`+++`) front matter, mq's Markdown parser does not recognize `;;;` blocks
+# as a distinct front matter node, so this output won't round-trip through
+# `frontmatter`/`is_yaml`/`is_toml`-style selectors — it's meant for
+# generating files for tools that do support this convention.
+#
+# Example:
+# ```
+# import "json" | json::to_frontmatter({"key": 1})
+# #=> ;;;
+# {"key": 1}
+# ;;;
+# ```
+#
+# Returns: string
+def to_frontmatter(data):
+  ";;;\n" + json_stringify(data) + "\n;;;"
+end

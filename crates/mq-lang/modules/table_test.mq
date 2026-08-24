@@ -104,6 +104,56 @@ def test_table_add_column():
   | assert_eq(row1_new_cell.row, row1_first_cell.row)
 end
 
+def test_table_insert_row():
+  let t = first(table::tables(table_nodes))
+  | let result = table::insert_row(t, 1, ["Carol", "40", "Nagoya"])
+  | assert_eq(table::to_csv(result), "Name,Age,City\nAlice,30,Tokyo\nCarol,40,Nagoya\nBob,25,Osaka")
+end
+
+def test_table_insert_column():
+  let t = first(table::tables(table_nodes))
+  | let result = table::insert_column(t, 1, ["Country", "Japan", "Japan"])
+  | assert_eq(table::to_csv(result), "Name,Country,Age,City\nAlice,Japan,30,Tokyo\nBob,Japan,25,Osaka")
+end
+
+def test_table_union():
+  let a = first(table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")))
+  | let b = first(table::tables(to_markdown("| a | b |\n| --- | --- |\n| 3 | 4 |")))
+  | let result = table::union(a, b)
+  | assert_eq(table::to_csv(result), "a,b\n1,2\n3,4")
+end
+
+def test_table_union_mismatched_columns():
+  let a = first(table::tables(to_markdown("| a | b |\n| --- | --- |\n| 1 | 2 |")))
+  | let b = first(table::tables(to_markdown("| a |\n| --- |\n| 3 |")))
+  | let result = try: table::union(a, b) catch: "error"
+  | assert_eq(result, "error")
+end
+
+# Every one of these ops validates the shape of its input against the
+# table's existing header/rows and should error rather than silently
+# producing a header/row column-count mismatch.
+# @parametrize([[fn(table): table::add_row(table, ["x"]);], [fn(table): table::add_column(table, ["c", "x"]);], [fn(table): table::insert_row(table, 0, ["x"]);], [fn(table): table::insert_column(table, 0, ["c", "x"]);], [fn(table): table::set_cell(table, 99, 0, "x");], [fn(table): table::set_cell(table, 0, 99, "x");]])
+def test_table_shape_mismatch_errors(op):
+  let t = first(table::tables(table_nodes))
+  | let result = try: op(t) catch: "error"
+  | assert_eq(result, "error")
+end
+
+def test_table_map_cells():
+  let t = first(table::tables(table_nodes))
+  | let result = table::map_cells(t, upcase)
+  | assert_eq(table::to_csv(result), "Name,Age,City\nALICE,30,TOKYO\nBOB,25,OSAKA")
+end
+
+# @parametrize([["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"], ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"], ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 1 | 2 |", "a,b\n1,2"]])
+def test_table_dedupe_rows(markdown, expected_csv):
+  let md_nodes = to_markdown(markdown)
+  | let t = first(table::tables(md_nodes))
+  | let result = table::dedupe_rows(t)
+  | assert_eq(table::to_csv(result), expected_csv)
+end
+
 def test_table_remove_row():
   let t = first(table::tables(table_nodes))
   | let t = table::remove_row(t, 0)
@@ -120,6 +170,34 @@ def test_table_remove_column():
   | let new_header_cell = t[:header][1]
   | assert_eq(new_header_cell.column, 1)
   | assert_eq(table::to_csv(t), "Name,City\nAlice,Tokyo\nBob,Osaka")
+end
+
+def test_table_num_rows():
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::num_rows(t), 2)
+end
+
+def test_table_num_cols():
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::num_cols(t), 3)
+end
+
+# @parametrize([[0, 0, "Alice"], [1, 2, "Osaka"], [5, 0, None], [0, 5, None], [-1, 0, None]])
+def test_table_get_cell(row_index, col_index, expected):
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::get_cell(t, row_index, col_index), expected)
+end
+
+def test_table_set_cell():
+  let t = first(table::tables(table_nodes))
+  | let result = table::set_cell(t, 0, 1, "31")
+  | assert_eq(table::to_csv(result), "Name,Age,City\nAlice,31,Tokyo\nBob,25,Osaka")
+end
+
+# @parametrize([[0, ["Alice", "Bob"]], [1, ["30", "25"]], [2, ["Tokyo", "Osaka"]]])
+def test_table_column_values(col_index, expected):
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::column_values(t, col_index), expected)
 end
 
 def test_table_column_index():

@@ -2,7 +2,9 @@ import "section"
 | include "test"
 
 | let section_md = "# Introduction\nThis is the introduction section.\n\n## Advanced Topics\nThis section covers advanced topics.\n\n# Conclusion\nThis is the conclusion section.\n"
-| let test_sections = to_markdown(section_md) |
+| let test_sections = to_markdown(section_md)
+| let nested_md = "# A\n\nBody A\n\n## A1\n\nSub A\n\n### A1a\n\nDeep\n\n## A2\n\nSub A2\n\n# B\n\nBody B\n"
+| let nested_sections = to_markdown(nested_md) |
 
 # @parametrize([[section_md, 3], ["# test", 1]])
 def test_section_sections(markdown, expected_len):
@@ -212,4 +214,49 @@ def test_section_split_single_node_normalized():
   let single = first(test_sections)
   | let secs = section::split(single, 1)
   | assert_eq(len(secs), 1)
+end
+
+def test_section_tree_top_level():
+  let roots = section::tree(nested_sections)
+  | assert_eq(len(roots), 2)
+  | assert_eq(section::title(roots[0]), "A")
+  | assert_eq(section::title(roots[1]), "B")
+end
+
+def test_section_tree_nested_subsections():
+  let roots = section::tree(nested_sections)
+  | let a = roots[0]
+  | let a_subs = section::subsections(a)
+  | assert_eq(len(a_subs), 2)
+  | assert_eq(section::title(a_subs[0]), "A1")
+  | assert_eq(section::title(a_subs[1]), "A2")
+  | let a1_subs = section::subsections(a_subs[0])
+  | assert_eq(len(a1_subs), 1)
+  | assert_eq(section::title(a1_subs[0]), "A1a")
+  | assert_eq(section::subsections(a_subs[1]), [])
+end
+
+def test_section_tree_children_excludes_subsection_content():
+  let roots = section::tree(nested_sections)
+  | let a = roots[0]
+  | assert_eq(to_markdown_string(section::body(a)), "Body A\n")
+end
+
+def test_section_tree_leaf_has_no_subsections():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::subsections(roots[1]), [])
+end
+
+def test_section_subsections_non_section():
+  assert_eq(section::subsections("not a section"), [])
+end
+
+# @parametrize([[section_md, ["  - [Introduction](#introduction)", "    - [Advanced Topics](#advanced-topics)", "  - [Conclusion](#conclusion)"]], ["# Notes\n\nA\n\n# Notes\n\nB\n", ["  - [Notes](#notes)", "  - [Notes](#notes-1)"]]])
+def test_section_toc_markdown(markdown, expected):
+  let secs = section::sections(to_markdown(markdown))
+  | assert_eq(section::toc_markdown(secs), expected)
+end
+
+def test_section_toc_markdown_empty():
+  assert_eq(section::toc_markdown([]), [])
 end

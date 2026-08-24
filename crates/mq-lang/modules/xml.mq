@@ -1,5 +1,9 @@
 # XML Implementation in mq
 
+def _escape_string(str):
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+end
+
 # Parses an XML string and returns the corresponding data structure.
 #
 # Example:
@@ -141,4 +145,31 @@ end
 # Returns: string
 def xml_to_markdown_table(data):
   _xml_to_markdown_table(data, 1)
+end
+
+# Converts a data structure (typically the `{tag, attributes, children,
+# text}` shape returned by `xml_parse`) to a JSON string representation.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_to_json({"tag": "a"})
+# #=> {"tag": "a"}
+# ```
+#
+# Returns: string
+def xml_to_json(data):
+  if (is_dict(data)):
+    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + xml_to_json(data[k]);), ", ") + "}"
+  elif (is_array(data)):
+    "[" + join(map(data, xml_to_json), ", ") + "]"
+  elif (is_string(data)):
+    "\"" + _escape_string(data) + "\""
+  elif (is_number(data)):
+    to_string(data)
+  elif (is_bool(data)):
+    if (data): "true" else: "false"
+  elif (is_none(data)):
+    "null"
+  else:
+    "\"" + to_string(data) + "\""
 end

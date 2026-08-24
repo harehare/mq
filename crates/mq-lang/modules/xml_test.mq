@@ -1,4 +1,5 @@
 import "xml"
+| import "json"
 | include "test"
 
 # -- XML Tests --
@@ -18,4 +19,14 @@ end
 def test_xml_to_markdown_table():
   let result = xml::xml_to_markdown_table(xml::xml_parse(xml_input))
   | assert_snapshot("xml_to_markdown_table", result)
+end
+
+def test_xml_to_json():
+  let parsed = xml::xml_parse(xml_input)
+  | let result = xml::xml_to_json(parsed)
+  | assert_eq(json::json_parse(result), parsed)
+end
+
+def test_xml_to_json_simple():
+  assert_eq(xml::xml_to_json({"tag": "a"}), "{\"tag\": \"a\"}")
 end

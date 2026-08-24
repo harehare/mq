@@ -14,7 +14,10 @@ def _add_toml_lines(lines, key, value):
       | lines + ["[" + key + "]"] + body_lines[0:len(body_lines) - 1] + last_line
     end
   elif (is_array(value)):
-    lines + ["[[" + key + "]]"] + if (len(value) == 0): _toml_stringify_value(first(value)) else: map(value, fn(v): _toml_stringify_value(v) + ", ";)
+    if (is_empty(value) || !is_dict(first(value))):
+      lines + [key + " = " + _toml_stringify_value(value)]
+    else:
+      lines + flat_map(value, fn(entry): ["[[" + key + "]]"] + map(keys(entry), fn(k): k + " = " + _toml_stringify_value(entry[k]););)
   else: lines + [key + " = " + _toml_stringify_value(value)]
 end
 
@@ -141,4 +144,19 @@ def toml_to_markdown_table(data):
     _create_dict_markdown_table(data)
   else:
     _create_simple_markdown_table(data)
+end
+
+# Converts a data structure to a TOML front matter string.
+#
+# Example:
+# ```
+# import "toml" | toml::to_frontmatter({"key": 1})
+# #=> +++
+# key = 1
+# +++
+# ```
+#
+# Returns: string
+def to_frontmatter(data):
+  "+++\n" + toml_stringify(data) + "\n+++"
 end

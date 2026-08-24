@@ -1,3 +1,7 @@
+items[3]:
+  - 1
+  - a: 1
+  - text
 context:
   task: Our favorite hikes together
   location: Boulder
@@ -7,10 +11,6 @@ hikes[3]{name,id,distanceKm,elevationGain,companion,wasSunny}:
   Blue Lake Trail,1,7.5,320,ana,true
   Ridge Overlook,2,9.2,540,luis,false
   Wildflower Loop,3,5.1,180,sam,true
-items[3]:
-  - 1
-  - a: 1
-  - text
 items2[2]{name,price}:
   Laptop,999
   Mouse,29
