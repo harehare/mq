@@ -112,8 +112,57 @@ end
 
 def test_table_remove_column():
   let t = first(table::tables(table_nodes))
-  | let t = table::remove_column(t, 0)
+  | let t = table::remove_column(t, 1)
+  | assert_eq(len(t[:header]), 2)
+  | assert_eq(to_string(t[:header][0]), "Name")
+  | assert_eq(to_string(t[:header][1]), "City")
   | assert_eq(len(t[:rows][0]), 2)
+  | let new_header_cell = t[:header][1]
+  | assert_eq(new_header_cell.column, 1)
+  | assert_eq(table::to_csv(t), "Name,City\nAlice,Tokyo\nBob,Osaka")
+end
+
+def test_table_column_index():
+  let t = first(table::tables(table_nodes))
+  | assert_eq(table::column_index(t, "City"), 2)
+  | assert_eq(table::column_index(t, "Missing"), -1)
+end
+
+def test_table_select_columns():
+  let t = first(table::tables(table_nodes))
+  | let result = table::select_columns(t, [2, 0])
+  | assert_eq(len(result[:header]), 2)
+  | assert_eq(to_string(result[:header][0]), "City")
+  | assert_eq(to_string(result[:header][1]), "Name")
+  | let second_header_cell = result[:header][1]
+  | assert_eq(second_header_cell.column, 1)
+  | assert_eq(table::to_csv(result), "City,Name\nTokyo,Alice\nOsaka,Bob")
+end
+
+def test_table_rename_column():
+  let t = first(table::tables(table_nodes))
+  | let result = table::rename_column(t, 0, "FullName")
+  | assert_eq(to_string(result[:header][0]), "FullName")
+  | assert_eq(to_string(result[:header][1]), "Age")
+  | assert_eq(len(result[:rows]), 2)
+end
+
+def test_table_from_array():
+  let records = [{"Name": "Alice", "Age": "30"}, {"Name": "Bob", "Age": "25"}]
+  | let result = table::from_array(records)
+  | assert_eq(table::to_csv(result), "Name,Age\nAlice,30\nBob,25")
+end
+
+def test_table_from_array_empty():
+  let result = table::from_array([])
+  | assert_eq(result[:header], [])
+  | assert_eq(result[:rows], [])
+end
+
+def test_table_from_array_round_trips_with_to_array():
+  let t = first(table::tables(table_nodes))
+  | let result = table::from_array(table::to_array(t))
+  | assert_eq(table::to_csv(result), table::to_csv(t))
 end
 
 def test_table_to_markdown():

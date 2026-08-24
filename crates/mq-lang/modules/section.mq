@@ -433,6 +433,37 @@ def has_content(section):
   has_body(section)
 end
 
+# Shifts the heading level of a section and all of its descendant headings
+# by `delta` (positive demotes, e.g. h1 -> h2; negative promotes), keeping
+# their relative depths intact. Depth is clamped to the valid 1-6 range.
+#
+# Example:
+# ```
+# import "section" | let s = first(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A"), true)) | section::level(section::shift_level(s, 1))
+# #=> 2
+# ```
+#
+# Returns: dict
+def shift_level(section, delta):
+  if (!_is_section(section)):
+    section
+  else:
+    do
+      let shift_node = fn(node):
+            if (is_h(node)):
+              if (delta >= 0):
+                shift_right(node, delta)
+              else:
+                shift_left(node, 0 - delta)
+            else:
+              node
+          end
+      | let new_header = shift_node(section[:header])
+      | let new_children = map(section[:children], shift_node)
+      | set(set(section, :header, new_header), :children, new_children)
+    end
+end
+
 # Flattens sections back to markdown nodes for output.
 # This converts section objects back to their original markdown node arrays.
 #
