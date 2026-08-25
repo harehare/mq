@@ -25,16 +25,16 @@
     "@rolldown/plugin-babel": "^0.2.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
-    "@testing-library/user-event": "^14.6.4",
+    "@testing-library/user-event": "^14.6.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "babel-plugin-react-compiler": "^1.0.0",
     "jsdom": "^30.0.1",
-    "oxlint": "^1.78.0",
+    "oxlint": "^1.79.0",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.11"
   },
   "packageManager": "pnpm@11.5.2"
 }
