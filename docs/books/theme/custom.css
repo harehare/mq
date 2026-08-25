@@ -974,3 +974,79 @@ html:not(.js) .mq-feature-text strong {
         display: none;
     }
 }
+
+/* ===========================================
+   Modules page (search & category filter)
+   =========================================== */
+
+.module-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0 0.75rem;
+}
+
+.module-search-input {
+    flex: 1 1 240px;
+    min-width: 200px;
+    padding: 0.75rem 1rem;
+    font-family: "Inter", sans-serif;
+    font-size: 0.9em;
+    border: 1px solid var(--searchbar-border-color);
+    background-color: var(--searchbar-bg);
+    color: var(--searchbar-fg);
+    border-radius: 6px;
+}
+
+.module-search-input:focus {
+    border-color: var(--mq-accent-primary);
+    box-shadow: 0 0 0 2px rgba(103, 184, 227, 0.2);
+    outline: none;
+}
+
+.module-count {
+    font-size: 0.8em;
+    color: var(--mq-text-muted);
+    white-space: nowrap;
+}
+
+.module-category-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0 0 1.25rem;
+}
+
+.module-chip {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.8em;
+    font-family: "Inter", sans-serif;
+    color: var(--mq-accent-primary);
+    background-color: transparent;
+    border: 1px solid rgba(103, 184, 227, 0.3);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.module-chip:hover {
+    background-color: rgba(103, 184, 227, 0.08);
+}
+
+.module-chip.active {
+    background-color: var(--mq-accent-primary);
+    color: var(--mq-bg-darkest);
+    border-color: var(--mq-accent-primary);
+}
+
+.module-category-badge {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.78em;
+    color: var(--mq-accent-primary);
+    background-color: rgba(103, 184, 227, 0.1);
+    border: 1px solid rgba(103, 184, 227, 0.25);
+    border-radius: 4px;
+    white-space: nowrap;
+}
