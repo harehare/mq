@@ -34,6 +34,7 @@ rand = {workspace = true}
 regex = {workspace = true}
 ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
+ego-tree = {workspace = true, optional = true}
 scraper = {workspace = true, optional = true}
 serde = {workspace = true, features = ["derive", "rc"]}
 serde_json = {workspace = true}
@@ -63,7 +64,7 @@ web-time = {workspace = true}
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
 cst = ["dep:ropey"]
-css-selector = ["dep:scraper"]
+css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
 default = ["std", "html-to-markdown"]
 file-io = ["dep:ignore"]

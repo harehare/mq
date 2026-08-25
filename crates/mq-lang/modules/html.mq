@@ -1,0 +1,175 @@
+# HTML Implementation in mq
+
+let _void_tags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]
+
+| def _escape_text(str):
+  replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+end
+
+| def _escape_attr(str):
+  replace(_escape_text(str), "\"", "&quot;")
+end
+
+| def _format_attributes(attributes):
+  if (is_empty(keys(attributes))):
+    ""
+  else:
+    " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + _escape_attr(last(entry)) + "\"";), " ")
+end
+
+# Parses an HTML string into the `{tag, attributes, children, text}` tree rooted at `<html>`,
+# the same shape `xml::xml_parse` produces.
+#
+# Example:
+# ```
+# import "html" | html::html_parse("<p>hi</p>")["tag"]
+# #=> html
+# ```
+#
+# Returns: dynamic
+def html_parse(input):
+  _html_parse(to_string(input))
+end
+
+def _html_stringify(data):
+  def _format_element(element):
+    let tag = element["tag"]
+    | let attributes = element["attributes"]
+    | let children = element["children"]
+    | let text = element["text"]
+    | let attr_str = _format_attributes(attributes)
+    | if (index(_void_tags, tag) != -1):
+        "<" + tag + attr_str + ">"
+      else:
+        _format_element_with_content(tag, attr_str, children, text)
+  end
+
+  def _format_element_with_content(tag, attr_str, children, text):
+    let content = if (!is_none(text)):
+      _escape_text(text)
+    else:
+      ""
+    | let child_content = if (!is_empty(children)):
+          join(map(children, _html_stringify), "")
+        else:
+          ""
+    | let all_content = content + child_content
+    | "<" + tag + attr_str + ">" + all_content + "</" + tag + ">"
+  end
+
+  | if (is_dict(data) && !is_none(data["tag"])):
+      _format_element(data)
+    else:
+      to_string(data)
+end
+
+# Serializes a `{tag, attributes, children, text}` value back to an HTML string.
+# Void elements (`br`, `img`, ...) get no closing tag.
+#
+# Example:
+# ```
+# import "html" | html::html_stringify({"tag": "p", "attributes": {}, "children": [], "text": "hi"})
+# #=> <p>hi</p>
+# ```
+#
+# Returns: string
+def html_stringify(data):
+  _html_stringify(data)
+end
+
+def _html_find_all(data, tag):
+  let matches = if (data["tag"] == tag): [data] else: []
+  | matches + flat_map(data["children"], fn(child): _html_find_all(child, tag);)
+end
+
+# Recursively finds every element (including `data` itself) whose tag matches
+# `tag`, in document order.
+#
+# Example:
+# ```
+# import "html" | len(html::html_find_all(html::html_parse("<div><p>a</p><p>b</p></div>"), "p"))
+# #=> 2
+# ```
+#
+# Returns: array
+def html_find_all(data, tag):
+  _html_find_all(data, tag)
+end
+
+# Recursively finds the first element (including `data` itself) whose tag
+# matches `tag`, or `None` if there's no match.
+#
+# Example:
+# ```
+# import "html" | html::html_find(html::html_parse("<div><p>hi</p></div>"), "p")["text"]
+# #=> hi
+# ```
+#
+# Returns: dict
+def html_find(data, tag):
+  first(_html_find_all(data, tag))
+end
+
+# Returns the value of attribute `name` on element `data`, or `None` if the
+# attribute isn't set.
+#
+# Example:
+# ```
+# import "html" | html::html_attr(html::html_find(html::html_parse("<a href=\"https://example.com\">x</a>"), "a"), "href")
+# #=> https://example.com
+# ```
+#
+# Returns: string
+def html_attr(data, name):
+  data["attributes"][name]
+end
+
+def _html_text_parts(data):
+  let own = if (is_empty(data["text"])): [] else: [data["text"]]
+  | own + flat_map(data["children"], _html_text_parts)
+end
+
+# Returns the concatenated text content of `data` and all its descendants, in
+# document order.
+#
+# Example:
+# ```
+# import "html" | html::html_text(html::html_parse("<p>hi <b>there</b></p>"))
+# #=> hi there
+# ```
+#
+# Returns: string
+def html_text(data):
+  join(_html_text_parts(data), " ")
+end
+
+def _html_escape_json_string(str):
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+end
+
+# Converts a data structure (typically the `{tag, attributes, children,
+# text}` shape returned by `html_parse`) to a JSON string representation.
+#
+# Example:
+# ```
+# import "html" | html::html_to_json({"tag": "a"})
+# #=> {"tag": "a"}
+# ```
+#
+# Returns: string
+def html_to_json(data):
+  if (is_dict(data)):
+    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + html_to_json(data[k]);), ", ") + "}"
+  elif (is_array(data)):
+    "[" + join(map(data, html_to_json), ", ") + "]"
+  elif (is_string(data)):
+    "\"" + _html_escape_json_string(data) + "\""
+  elif (is_number(data)):
+    to_string(data)
+  elif (is_bool(data)):
+    if (data): "true" else: "false"
+  elif (is_none(data)):
+    "null"
+  else:
+    "\"" + to_string(data) + "\""
+end

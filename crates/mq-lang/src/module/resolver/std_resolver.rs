@@ -60,6 +60,22 @@ mod tests {
         assert!(matches!(resolver.resolve(name), Err(ModuleError::NotFound(_))));
     }
 
+    #[cfg(feature = "css-selector")]
+    #[test]
+    fn test_resolve_html_module() {
+        let resolver = StdModuleResolver;
+        let result = resolver.resolve("html");
+        assert!(result.is_ok(), "expected Ok for std module 'html', got {result:?}");
+        assert!(!result.unwrap().is_empty());
+    }
+
+    #[cfg(not(feature = "css-selector"))]
+    #[test]
+    fn test_resolve_html_module_not_found_without_css_selector() {
+        let resolver = StdModuleResolver;
+        assert!(matches!(resolver.resolve("html"), Err(ModuleError::NotFound(_))));
+    }
+
     #[rstest]
     #[case("csv", "csv")]
     #[case("json", "json")]
