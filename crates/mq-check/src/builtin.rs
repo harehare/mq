@@ -290,9 +290,11 @@ fn register_math(ctx: &mut InferenceContext) {
     register_unary(ctx, "human_bytes", Type::Number, Type::String);
     register_unary(ctx, "human_size", Type::Number, Type::String);
 
-    // Randomness
+    // Randomness. `seed` is optional; the trailing overloads accept it.
     register_nullary(ctx, "rand", Type::Number);
+    register_unary(ctx, "rand", Type::Number, Type::Number);
     register_binary(ctx, "rand_int", Type::Number, Type::Number, Type::Number);
+    register_ternary(ctx, "rand_int", Type::Number, Type::Number, Type::Number, Type::Number);
 }
 
 /// String functions: downcase, upcase, trim, starts_with, ends_with, etc.
@@ -455,8 +457,17 @@ fn register_string(ctx: &mut InferenceContext) {
     register_nullary(ctx, "uuid_v4", Type::String);
     register_nullary(ctx, "uuid_v7", Type::String);
 
-    // random_string: (number, string) -> string
+    // random_string: (number, string) -> string. `seed` is optional; the ternary overload
+    // accepts it.
     register_binary(ctx, "random_string", Type::Number, Type::String, Type::String);
+    register_ternary(
+        ctx,
+        "random_string",
+        Type::Number,
+        Type::String,
+        Type::Number,
+        Type::String,
+    );
 }
 
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
@@ -467,12 +478,32 @@ fn register_array(ctx: &mut InferenceContext) {
         register_unary(ctx, name, Type::array(Type::Var(a)), Type::array(Type::Var(a)));
     }
 
+    // shuffle: ([a], seed: number) -> [a]. `seed` is optional; this overload accepts it.
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "shuffle",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+
     // sample: ([a], number) -> [a]
     let a = ctx.fresh_var();
     register_binary(
         ctx,
         "sample",
         Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+    // sample: ([a], number, seed: number) -> [a]. `seed` is optional; this overload accepts it.
+    let a = ctx.fresh_var();
+    register_ternary(
+        ctx,
+        "sample",
+        Type::array(Type::Var(a)),
+        Type::Number,
         Type::Number,
         Type::array(Type::Var(a)),
     );
@@ -1582,7 +1613,9 @@ mod tests {
     #[case::infinite("infinite()", true)]
     #[case::is_nan("is_nan(1.0)", true)]
     #[case::rand("rand()", true)]
+    #[case::rand_seeded("rand(42)", true)]
     #[case::rand_int("rand_int(1, 10)", true)]
+    #[case::rand_int_seeded("rand_int(1, 10, 42)", true)]
     #[case::ln("ln(2.0)", true)]
     #[case::log10("log10(100)", true)]
     #[case::log("log(2.0)", true)]
@@ -1723,7 +1756,11 @@ mod tests {
     #[case::uuid_v4("uuid_v4()", true)]
     #[case::uuid_v7("uuid_v7()", true)]
     #[case::random_string("random_string(10, \"abc\")", true)]
-    #[case::random_string_wrong_types("random_string(\"10\", 1)", false)] // Should fail: wrong types
+    #[case::random_string_seeded("random_string(10, \"abc\", 42)", true)]
+    // Should fail: wrong types. Uses non-numeric/non-string args so it can't accidentally
+    // satisfy the seeded ternary overload via the implicit-piped-input fallback (a bare
+    // `(String, Number)` pair would coincidentally match that overload's charset/seed slots).
+    #[case::random_string_wrong_types("random_string(true, false)", false)]
     fn test_string_encoding_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
@@ -1744,7 +1781,9 @@ mod tests {
     #[case::uniq("uniq([1, 2, 2, 3])", true)]
     #[case::compact("compact([1, none, 2])", true)]
     #[case::shuffle("shuffle([1, 2, 3])", true)]
+    #[case::shuffle_seeded("shuffle([1, 2, 3], 42)", true)]
     #[case::sample("sample([1, 2, 3], 2)", true)]
+    #[case::sample_seeded("sample([1, 2, 3], 2, 42)", true)]
     fn test_array_manipulation_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

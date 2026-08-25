@@ -606,19 +606,39 @@ fn uuid_v4_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<R
     Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
 }
 
-/// Generates a pseudo-random `f64` in `[0, 1)`. Not cryptographically secure.
-#[mq_macros::mq_fn(name = "rand", params = None)]
-fn rand_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::Number(random::next_f64().into()))
+/// Generates a pseudo-random `f64` in `[0, 1)`. Not cryptographically secure. If `seed` is
+/// given, the result is a deterministic function of it instead of the OS entropy source.
+#[mq_macros::mq_fn(name = "rand", params = Range(0, 1))]
+fn rand_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [] => Ok(RuntimeValue::Number(random::next_f64(None).into())),
+        [RuntimeValue::Number(seed)] if seed.is_int() => Ok(RuntimeValue::Number(
+            random::next_f64(Some(seed.to_int() as u64)).into(),
+        )),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("rand should always receive zero or one arguments"),
+    }
 }
 
-/// Generates a pseudo-random integer uniformly distributed in `[min, max]` (inclusive).
-#[mq_macros::mq_fn(name = "rand_int", params = Fixed(2))]
+/// Generates a pseudo-random integer uniformly distributed in `[min, max]` (inclusive). If
+/// `seed` is given, the result is a deterministic function of it instead of the OS entropy
+/// source.
+#[mq_macros::mq_fn(name = "rand_int", params = Range(2, 3))]
 fn rand_int_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(min), RuntimeValue::Number(max)] if min.is_int() && max.is_int() => {
             let (min_i, max_i) = (min.to_int(), max.to_int());
-            random::next_range_i64(min_i, max_i)
+            random::next_range_i64(min_i, max_i, None)
+                .map(|n| RuntimeValue::Number(n.into()))
+                .ok_or_else(|| Error::Runtime(format!("rand_int: min ({min_i}) must be <= max ({max_i})")))
+        }
+        [
+            RuntimeValue::Number(min),
+            RuntimeValue::Number(max),
+            RuntimeValue::Number(seed),
+        ] if min.is_int() && max.is_int() && seed.is_int() => {
+            let (min_i, max_i) = (min.to_int(), max.to_int());
+            random::next_range_i64(min_i, max_i, Some(seed.to_int() as u64))
                 .map(|n| RuntimeValue::Number(n.into()))
                 .ok_or_else(|| Error::Runtime(format!("rand_int: min ({min_i}) must be <= max ({max_i})")))
         }
@@ -626,26 +646,42 @@ fn rand_int_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!("rand_int should always receive exactly two arguments"),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("rand_int should always receive two or three arguments"),
     }
 }
 
-/// Returns a new array containing the same elements as `arr` in a uniformly random order.
-#[mq_macros::mq_fn(name = "shuffle", params = Fixed(1))]
+/// Returns a new array containing the same elements as `arr` in a uniformly random order. If
+/// `seed` is given, the permutation is a deterministic function of it instead of the OS entropy
+/// source.
+#[mq_macros::mq_fn(name = "shuffle", params = Range(1, 2))]
 fn shuffle_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(arr)] => {
             let mut arr = std::mem::take(arr);
-            random::shuffle(runtime_value::array_mut(&mut arr));
+            random::shuffle(runtime_value::array_mut(&mut arr), None);
+            Ok(RuntimeValue::Array(arr))
+        }
+        [RuntimeValue::Array(arr), RuntimeValue::Number(seed)] if seed.is_int() => {
+            let mut arr = std::mem::take(arr);
+            random::shuffle(runtime_value::array_mut(&mut arr), Some(seed.to_int() as u64));
             Ok(RuntimeValue::Array(arr))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("shuffle should always receive exactly one argument"),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("shuffle should always receive one or two arguments"),
     }
 }
 
-/// Returns `n` elements sampled from `arr` without replacement, in random order.
-#[mq_macros::mq_fn(name = "sample", params = Fixed(2))]
+/// Returns `n` elements sampled from `arr` without replacement, in random order. If `seed` is
+/// given, the sample is a deterministic function of it instead of the OS entropy source.
+#[mq_macros::mq_fn(name = "sample", params = Range(2, 3))]
 fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(arr), RuntimeValue::Number(n)] if n.is_int() && n.value() >= 0.0 => {
@@ -656,25 +692,59 @@ fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
                     arr.len()
                 )));
             }
-            Ok(RuntimeValue::Array(Shared::new(random::sample(arr, n))))
+            Ok(RuntimeValue::Array(Shared::new(random::sample(arr, n, None))))
+        }
+        [
+            RuntimeValue::Array(arr),
+            RuntimeValue::Number(n),
+            RuntimeValue::Number(seed),
+        ] if n.is_int() && n.value() >= 0.0 && seed.is_int() => {
+            let n = n.to_int() as usize;
+            if n > arr.len() {
+                return Err(Error::Runtime(format!(
+                    "sample: n ({n}) must not exceed the array length ({})",
+                    arr.len()
+                )));
+            }
+            Ok(RuntimeValue::Array(Shared::new(random::sample(
+                arr,
+                n,
+                Some(seed.to_int() as u64),
+            ))))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!("sample should always receive exactly two arguments"),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("sample should always receive two or three arguments"),
     }
 }
 
 /// Returns a random string of `len` characters, each independently chosen (with
-/// replacement) from `charset`.
-#[mq_macros::mq_fn(name = "random_string", params = Fixed(2))]
+/// replacement) from `charset`. If `seed` is given, the result is a deterministic function of
+/// it instead of the OS entropy source.
+#[mq_macros::mq_fn(name = "random_string", params = Range(2, 3))]
 fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(len), RuntimeValue::String(charset)] if len.is_int() && len.value() >= 0.0 => {
             let len = len.to_int() as usize;
             let charset: Vec<char> = charset.chars().collect();
-            random::next_string(len, &charset)
+            random::next_string(len, &charset, None)
+                .map(RuntimeValue::String)
+                .ok_or_else(|| Error::Runtime("random_string: charset must not be empty".to_string()))
+        }
+        [
+            RuntimeValue::Number(len),
+            RuntimeValue::String(charset),
+            RuntimeValue::Number(seed),
+        ] if len.is_int() && len.value() >= 0.0 && seed.is_int() => {
+            let len = len.to_int() as usize;
+            let charset: Vec<char> = charset.chars().collect();
+            random::next_string(len, &charset, Some(seed.to_int() as u64))
                 .map(RuntimeValue::String)
                 .ok_or_else(|| Error::Runtime("random_string: charset must not be empty".to_string()))
         }
@@ -682,7 +752,11 @@ fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             ident.to_string(),
             vec![std::mem::take(a), std::mem::take(b)],
         )),
-        _ => unreachable!("random_string should always receive exactly two arguments"),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("random_string should always receive two or three arguments"),
     }
 }
 
@@ -6985,9 +7059,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("rand"),
         BuiltinFunctionDoc {
-            description: "Generates a pseudo-random number in the range [0, 1). Not cryptographically secure.",
-            params: &[],
-            param_types: &[],
+            description: "Generates a pseudo-random number in the range [0, 1). Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
+            params: &["seed?"],
+            param_types: &["number"],
             returns: "number",
             examples: &[],
             capability: None,
@@ -6996,9 +7070,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("rand_int"),
         BuiltinFunctionDoc {
-            description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure.",
-            params: &["min", "max"],
-            param_types: &["number", "number"],
+            description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
+            params: &["min", "max", "seed?"],
+            param_types: &["number", "number", "number"],
             returns: "number",
             examples: &[],
             capability: None,
@@ -7007,9 +7081,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("random_string"),
         BuiltinFunctionDoc {
-            description: "Generates a random string of `len` characters, each independently chosen (with replacement) from `charset`. Not cryptographically secure.",
-            params: &["len", "charset"],
-            param_types: &["number", "string"],
+            description: "Generates a random string of `len` characters, each independently chosen (with replacement) from `charset`. Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
+            params: &["len", "charset", "seed?"],
+            param_types: &["number", "string", "number"],
             returns: "string",
             examples: &[],
             capability: None,
@@ -7018,9 +7092,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("shuffle"),
         BuiltinFunctionDoc {
-            description: "Returns a new array containing the same elements as the input, in a uniformly random order.",
-            params: &["array"],
-            param_types: &["array"],
+            description: "Returns a new array containing the same elements as the input, in a uniformly random order. `seed` is optional; when given, the permutation is a deterministic function of it instead of OS entropy.",
+            params: &["array", "seed?"],
+            param_types: &["array", "number"],
             returns: "array",
             examples: &[],
             capability: None,
@@ -7029,9 +7103,9 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("sample"),
         BuiltinFunctionDoc {
-            description: "Returns n elements sampled from the array without replacement, in random order. Errors if n exceeds the array length.",
-            params: &["array", "n"],
-            param_types: &["array", "number"],
+            description: "Returns n elements sampled from the array without replacement, in random order. Errors if n exceeds the array length. `seed` is optional; when given, the sample is a deterministic function of it instead of OS entropy.",
+            params: &["array", "n", "seed?"],
+            param_types: &["array", "number", "number"],
             returns: "array",
             examples: &[],
             capability: None,
@@ -9808,6 +9882,52 @@ mod tests {
     }
 
     #[test]
+    fn test_rand_seeded_is_deterministic_and_in_unit_range() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let call = |seed: i64| match eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("rand"),
+            vec![RuntimeValue::Number(seed.into())],
+            &env,
+        )
+        .unwrap()
+        {
+            RuntimeValue::Number(n) => n.value(),
+            other => panic!("rand(seed) should return a number, got {other:?}"),
+        };
+        let v = call(42);
+        assert!((0.0..1.0).contains(&v), "rand(42) out of [0, 1)");
+        assert_eq!(v, call(42), "rand(seed) should be deterministic for a fixed seed");
+    }
+
+    #[test]
+    fn test_rand_int_seeded_is_deterministic_and_within_bounds() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let call = |seed: i64| match eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("rand_int"),
+            vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(10.into()),
+                RuntimeValue::Number(seed.into()),
+            ],
+            &env,
+        )
+        .unwrap()
+        {
+            RuntimeValue::Number(n) => n.to_int(),
+            other => panic!("rand_int(min, max, seed) should return a number, got {other:?}"),
+        };
+        let v = call(7);
+        assert!((1..=10).contains(&v), "rand_int(1, 10, 7) produced {v}");
+        assert_eq!(
+            v,
+            call(7),
+            "rand_int(min, max, seed) should be deterministic for a fixed seed"
+        );
+    }
+
+    #[test]
     fn test_rand_int_invalid_range_errors() {
         let env = Shared::new(SharedCell::new(Env::default()));
         let result = eval_builtin(
@@ -9867,6 +9987,31 @@ mod tests {
     }
 
     #[test]
+    fn test_random_string_seeded_is_deterministic() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let call = |seed: i64| match eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("random_string"),
+            vec![
+                RuntimeValue::Number(16.into()),
+                RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
+                RuntimeValue::Number(seed.into()),
+            ],
+            &env,
+        )
+        .unwrap()
+        {
+            RuntimeValue::String(s) => s.to_string(),
+            other => panic!("random_string should return a string, got {other:?}"),
+        };
+        assert_eq!(
+            call(7),
+            call(7),
+            "random_string(len, charset, seed) should be deterministic for a fixed seed"
+        );
+    }
+
+    #[test]
     fn test_random_string_calls_are_unique() {
         let env = Shared::new(SharedCell::new(Env::default()));
         let values: std::collections::HashSet<String> = (0..200)
@@ -9919,6 +10064,31 @@ mod tests {
     }
 
     #[test]
+    fn test_shuffle_seeded_is_deterministic() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
+        let call = |seed: i64| match eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("shuffle"),
+            vec![
+                RuntimeValue::Array(Shared::new(input.clone())),
+                RuntimeValue::Number(seed.into()),
+            ],
+            &env,
+        )
+        .unwrap()
+        {
+            RuntimeValue::Array(shuffled) => (*shuffled).clone(),
+            other => panic!("shuffle should return an array, got {other:?}"),
+        };
+        assert_eq!(
+            call(3),
+            call(3),
+            "shuffle(arr, seed) should be deterministic for a fixed seed"
+        );
+    }
+
+    #[test]
     fn test_sample_returns_subset_without_duplicates() {
         let env = Shared::new(SharedCell::new(Env::default()));
         let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
@@ -9945,6 +10115,32 @@ mod tests {
             }
             other => panic!("sample should return an array, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_sample_seeded_is_deterministic() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
+        let call = |seed: i64| match eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("sample"),
+            vec![
+                RuntimeValue::Array(Shared::new(input.clone())),
+                RuntimeValue::Number(4.into()),
+                RuntimeValue::Number(seed.into()),
+            ],
+            &env,
+        )
+        .unwrap()
+        {
+            RuntimeValue::Array(sampled) => (*sampled).clone(),
+            other => panic!("sample should return an array, got {other:?}"),
+        };
+        assert_eq!(
+            call(11),
+            call(11),
+            "sample(arr, n, seed) should be deterministic for a fixed seed"
+        );
     }
 
     #[test]
