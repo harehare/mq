@@ -1,0 +1,74 @@
+import "gen"
+| include "test"
+
+# @parametrize([[0], [1], [42], [1000]])
+def test_int_within_bounds(seed):
+  let v = (gen::int(-10, 10))(seed)
+  | assert_true(v >= -10 && v <= 10)
+end
+
+def test_int_deterministic_for_same_seed():
+  assert_eq((gen::int(0, 1000000))(42), (gen::int(0, 1000000))(42))
+end
+
+def test_float_within_unit_range():
+  let v = (gen::float())(7)
+  | assert_true(v >= 0.0 && v < 1.0)
+end
+
+def test_bool_is_boolean():
+  assert_true(is_bool((gen::bool())(7)))
+end
+
+def test_string_has_requested_length():
+  assert_eq(len((gen::string("abc", 12))(7)), 12)
+end
+
+def test_string_uses_only_charset_chars():
+  let s = (gen::string("xy", 30))(7)
+  | assert_true(len(filter(to_array(s), fn(c): c != "x" && c != "y";)) == 0)
+end
+
+def test_const_ignores_seed():
+  assert_eq((gen::const("fixed"))(1), "fixed")
+  | assert_eq((gen::const("fixed"))(2), "fixed")
+end
+
+def test_element_returns_a_member_of_the_input():
+  assert_contains(["a", "b", "c"], (gen::element(["a", "b", "c"]))(7))
+end
+
+def test_one_of_returns_one_of_the_generators_values():
+  let v = (gen::one_of([gen::const(1), gen::const(2), gen::const(3)]))(7)
+  | assert_contains([1, 2, 3], v)
+end
+
+def test_array_has_requested_length():
+  assert_eq(len((gen::array(gen::int(0, 9), 5))(7)), 5)
+end
+
+def test_array_of_length_within_bounds():
+  let arr = (gen::array_of(gen::int(0, 9), 1, 5))(7)
+  | assert_true(len(arr) >= 1 && len(arr) <= 5)
+end
+
+def test_transform_applies_the_mapper():
+  assert_eq((gen::transform(gen::const(1), fn(n): n + 100;))(7), 101)
+end
+
+def test_tuple_has_one_value_per_generator():
+  assert_eq(len((gen::tuple([gen::int(0, 9), gen::int(0, 9), gen::int(0, 9)]))(7)), 3)
+end
+
+def test_tuple_derives_a_distinct_seed_per_position():
+  # Same generator repeated twice: if positions shared one seed, every slot would come out
+  # identical every time. With independent sub-seeds, at least one pair differs across a
+  # handful of outer seeds.
+  let results = map(range(0, 9), fn(seed): (gen::tuple([gen::int(0, 1000000), gen::int(0, 1000000)]))(seed);)
+  | assert_true(len(filter(results, fn(pair): pair[0] != pair[1];)) > 0)
+end
+
+def test_tuple_is_deterministic_for_the_same_seed():
+  let gens = [gen::int(0, 1000000), gen::string("abcdefg", 8)]
+  | assert_eq((gen::tuple(gens))(42), (gen::tuple(gens))(42))
+end
