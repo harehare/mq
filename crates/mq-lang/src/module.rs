@@ -43,6 +43,7 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
         "csv" => Cow::Borrowed("csv.mq"),
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
         "gron" => Cow::Borrowed("gron.mq"),
+        "html" => Cow::Borrowed("html.mq"),
         "json" => Cow::Borrowed("json.mq"),
         "md" => Cow::Borrowed("md.mq"),
         "section" => Cow::Borrowed("section.mq"),
@@ -99,6 +100,8 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(csv);
     std_module!(fuzzy);
     std_module!(gron);
+    #[cfg(feature = "css-selector")]
+    std_module!(html);
     std_module!(json);
     std_module!(md);
     std_module!(section);

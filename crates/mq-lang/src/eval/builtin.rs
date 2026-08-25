@@ -4062,6 +4062,16 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+#[cfg(feature = "css-selector")]
+#[mq_macros::mq_fn(name = "_html_parse", params = Fixed(1))]
+fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(html_str)] => Ok(css::parse_html(html_str)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("_html_parse should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "set_variable", params = Fixed(2))]
 fn set_variable_impl(
     ident: &Ident,
@@ -5325,6 +5335,8 @@ mq_macros::builtin_dispatch! {
     CSS_TEXT,
     #[cfg(feature = "css-selector")]
     CSS_ATTR,
+    #[cfg(feature = "css-selector")]
+    _HTML_PARSE,
 }
 
 /// A single runnable, verified example shown by `mq help`.
@@ -6168,6 +6180,18 @@ pub static INTERNAL_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc
             returns: "dynamic",
             examples: &[],
             capability: None,
+        },
+    );
+    #[cfg(feature = "css-selector")]
+    map.insert(
+        SmolStr::new("_html_parse"),
+        BuiltinFunctionDoc {
+            description: "Parses an HTML string and returns the corresponding data structure.",
+            params: &["html_string"],
+            param_types: &[],
+            returns: "dynamic",
+            examples: &[],
+            capability: Some("css-selector"),
         },
     );
     map.insert(

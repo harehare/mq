@@ -10,12 +10,67 @@
 //!
 //! Gated at compile time by the `css-selector` feature.
 
-use scraper::{Html, Selector};
+use std::collections::BTreeMap;
+
+use ego_tree::NodeRef;
+use scraper::{Html, Node, Selector};
+
+use crate::eval::runtime_value::RuntimeValue;
+use crate::{Ident, Shared};
 
 use super::Error;
 
 fn err(msg: impl std::fmt::Display) -> Error {
     Error::Runtime(format!("css: {msg}"))
+}
+
+// Same `{tag, attributes, children, text}` shape as `_xml_parse`; whitespace-only text is dropped.
+fn build_element(node: NodeRef<'_, Node>) -> RuntimeValue {
+    let element = node.value().as_element().expect("node is an element");
+    let mut attributes = BTreeMap::new();
+
+    for (name, value) in element.attrs() {
+        attributes.insert(Ident::new(name), RuntimeValue::String(value.to_string()));
+    }
+
+    let mut children = Vec::new();
+    let mut text: Option<String> = None;
+
+    for child in node.children() {
+        match child.value() {
+            Node::Element(_) => children.push(build_element(child)),
+            Node::Text(t) => {
+                let trimmed = t.trim();
+                if !trimmed.is_empty() {
+                    match &mut text {
+                        Some(existing) => {
+                            existing.push(' ');
+                            existing.push_str(trimmed);
+                        }
+                        None => text = Some(trimmed.to_string()),
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut dict = BTreeMap::new();
+    dict.insert(Ident::new("tag"), RuntimeValue::String(element.name().to_string()));
+    dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attributes)));
+    dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
+    dict.insert(
+        Ident::new("text"),
+        text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
+    );
+    RuntimeValue::Dict(Shared::new(dict))
+}
+
+/// Parses `html` into the `{tag, attributes, children, text}` tree rooted at `<html>`;
+/// comments, doctypes, and processing instructions are dropped.
+pub(super) fn parse_html(html: &str) -> RuntimeValue {
+    let document = Html::parse_document(html);
+    build_element(*document.root_element())
 }
 
 fn parse_selector(selector: &str) -> Result<Selector, Error> {

@@ -1,0 +1,54 @@
+import "html"
+| include "test"
+
+# -- HTML Tests --
+
+| let html_input = "<!DOCTYPE html><html><body><div class=\"a\"><p>hi <b>there</b></p><img src=\"x.png\"></div></body></html>" |
+
+def test_html_parse_root_tag():
+  let result = html::html_parse(html_input)
+  | assert_eq(result["tag"], "html")
+end
+
+def test_html_parse_nested_element():
+  let result = html::html_parse(html_input)
+  | let div = first(result["children"][1]["children"])
+  | assert_eq(div["tag"], "div")
+  | assert_eq(div["attributes"]["class"], "a")
+end
+
+def test_html_parse_collapses_text_around_inline_elements():
+  let result = html::html_parse(html_input)
+  | let div = first(result["children"][1]["children"])
+  | let p = first(div["children"])
+  | assert_eq(p["text"], "hi")
+end
+
+def test_html_parse_void_element_has_no_children_or_text():
+  let result = html::html_parse(html_input)
+  | let div = first(result["children"][1]["children"])
+  | let img = last(div["children"])
+  | assert_eq(img["tag"], "img")
+  | assert_eq(img["attributes"]["src"], "x.png")
+  | assert_true(is_empty(img["children"]))
+  | assert_true(is_none(img["text"]))
+end
+
+def test_html_stringify_void_element():
+  assert_eq(
+    html::html_stringify({"tag": "br", "attributes": {}, "children": [], "text": None}),
+    "<br>")
+end
+
+def test_html_stringify_roundtrip():
+  let parsed = html::html_parse("<p class=\"a\">hi &amp; bye</p>")
+  | let body = last(parsed["children"])
+  | let p = first(body["children"])
+  | assert_eq(html::html_stringify(p), "<p class=\"a\">hi &amp; bye</p>")
+end
+
+def test_html_stringify_escapes_text_and_attributes():
+  assert_eq(
+    html::html_stringify({"tag": "p", "attributes": {"title": "a \"quote\""}, "children": [], "text": "<b> & </b>"}),
+    "<p title=\"a &quot;quote&quot;\">&lt;b&gt; &amp; &lt;/b&gt;</p>")
+end

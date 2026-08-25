@@ -1,0 +1,78 @@
+# HTML Implementation in mq
+
+let _void_tags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]
+
+| def _escape_text(str):
+  replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+end
+
+| def _escape_attr(str):
+  replace(_escape_text(str), "\"", "&quot;")
+end
+
+| def _format_attributes(attributes):
+  if (is_empty(keys(attributes))):
+    ""
+  else:
+    " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + _escape_attr(last(entry)) + "\"";), " ")
+end
+
+# Parses an HTML string into the `{tag, attributes, children, text}` tree rooted at `<html>`,
+# the same shape `xml::xml_parse` produces.
+#
+# Example:
+# ```
+# import "html" | html::html_parse("<p>hi</p>")["tag"]
+# #=> html
+# ```
+#
+# Returns: dynamic
+def html_parse(input):
+  _html_parse(to_string(input))
+end
+
+def _html_stringify(data):
+  def _format_element(element):
+    let tag = element["tag"]
+    | let attributes = element["attributes"]
+    | let children = element["children"]
+    | let text = element["text"]
+    | let attr_str = _format_attributes(attributes)
+    | if (index(_void_tags, tag) != -1):
+        "<" + tag + attr_str + ">"
+      else:
+        _format_element_with_content(tag, attr_str, children, text)
+  end
+
+  def _format_element_with_content(tag, attr_str, children, text):
+    let content = if (!is_none(text)):
+      _escape_text(text)
+    else:
+      ""
+    | let child_content = if (!is_empty(children)):
+          join(map(children, _html_stringify), "")
+        else:
+          ""
+    | let all_content = content + child_content
+    | "<" + tag + attr_str + ">" + all_content + "</" + tag + ">"
+  end
+
+  | if (is_dict(data) && !is_none(data["tag"])):
+      _format_element(data)
+    else:
+      to_string(data)
+end
+
+# Serializes a `{tag, attributes, children, text}` value back to an HTML string.
+# Void elements (`br`, `img`, ...) get no closing tag.
+#
+# Example:
+# ```
+# import "html" | html::html_stringify({"tag": "p", "attributes": {}, "children": [], "text": "hi"})
+# #=> <p>hi</p>
+# ```
+#
+# Returns: string
+def html_stringify(data):
+  _html_stringify(data)
+end
