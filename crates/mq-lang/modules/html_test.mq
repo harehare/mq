@@ -1,4 +1,5 @@
 import "html"
+| import "json"
 | include "test"
 
 # -- HTML Tests --
@@ -51,4 +52,46 @@ def test_html_stringify_escapes_text_and_attributes():
   assert_eq(
     html::html_stringify({"tag": "p", "attributes": {"title": "a \"quote\""}, "children": [], "text": "<b> & </b>"}),
     "<p title=\"a &quot;quote&quot;\">&lt;b&gt; &amp; &lt;/b&gt;</p>")
+end
+
+# @parametrize([["p", 1], ["img", 1], ["div", 1], ["nope", 0]])
+def test_html_find_all(tag, expected_len):
+  let result = html::html_find_all(html::html_parse(html_input), tag)
+  | assert_eq(len(result), expected_len)
+end
+
+# @parametrize([["img", "img"], ["div", "div"], ["nope", None]])
+def test_html_find(tag, expected_tag):
+  let result = html::html_find(html::html_parse(html_input), tag)
+  | let actual_tag = if (is_none(result)): None else: result["tag"]
+  | assert_eq(actual_tag, expected_tag)
+end
+
+# @parametrize([["src", "x.png"], ["alt", None]])
+def test_html_attr(name, expected):
+  let img = html::html_find(html::html_parse(html_input), "img")
+  | assert_eq(html::html_attr(img, name), expected)
+end
+
+# @parametrize([
+#   ["<p>hi <b>there</b></p>", "hi there"],
+#   ["<p><span></span></p>", ""],
+#   ["<div><p>a</p><p>b</p></div>", "a b"],
+# ])
+def test_html_text(input, expected):
+  assert_eq(html::html_text(html::html_parse(input)), expected)
+end
+
+def test_html_to_json_roundtrips():
+  let parsed = html::html_parse(html_input)
+  | let result = html::html_to_json(parsed)
+  | assert_eq(json::json_parse(result), parsed)
+end
+
+# @parametrize([
+#   [{"tag": "a"}, "{\"tag\": \"a\"}"],
+#   [{"tag": "br", "attributes": {}, "children": [], "text": None}, "{\"text\": null, \"tag\": \"br\", \"attributes\": {}, \"children\": []}"],
+# ])
+def test_html_to_json_simple(data, expected):
+  assert_eq(html::html_to_json(data), expected)
 end
