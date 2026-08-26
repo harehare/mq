@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="flowGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#2B5773" />
+      <stop offset="100%" style="stop-color:#61AFEF" />
+    </linearGradient>
+  </defs>
+  <!-- Completed-task badge: rounded card with a centered checkmark -->
+  <rect x="21" y="21" width="58" height="58" rx="14" fill="none" stroke="url(#flowGradient)" stroke-width="7" />
+  <path d="M34 51 L45.5 62.5 L69 34" fill="none" stroke="url(#flowGradient)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

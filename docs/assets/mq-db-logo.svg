@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- Database cylinder, flat silhouette (top cap + body + bottom cap, one fill) -->
+  <ellipse cx="50" cy="78" rx="32" ry="12" fill="#B3402C"/>
+  <rect x="18" y="28" width="64" height="50" fill="#B3402C"/>
+  <ellipse cx="50" cy="28" rx="32" ry="12" fill="#B3402C"/>
+
+  <!-- M mark (Markdown), flat two-color -->
+  <path d="M30 66 L30 46 L40 58 L50 46 L60 58 L70 46 L70 66"
+        fill="none"
+        stroke="#FAF6EF"
+        stroke-width="7"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

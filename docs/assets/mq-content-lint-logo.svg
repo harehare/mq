@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="docGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2B5773" />
+      <stop offset="100%" style="stop-color:#61AFEF" />
+    </linearGradient>
+  </defs>
+  <!-- Document representing a Markdown file -->
+  <rect x="16" y="10" width="52" height="78" rx="6" fill="none" stroke="url(#docGradient)" stroke-width="6" stroke-linejoin="round" />
+  <!-- Content lines -->
+  <line x1="27" y1="30" x2="57" y2="30" stroke="url(#docGradient)" stroke-width="5" stroke-linecap="round" />
+  <line x1="27" y1="44" x2="57" y2="44" stroke="url(#docGradient)" stroke-width="5" stroke-linecap="round" />
+  <line x1="27" y1="58" x2="45" y2="58" stroke="url(#docGradient)" stroke-width="5" stroke-linecap="round" />
+  <!-- Lint check badge -->
+  <circle cx="72" cy="72" r="23" fill="#2ECC71" />
+  <path d="M61 72 L69 80 L84 63" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
+</svg>
