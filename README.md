@@ -167,7 +167,7 @@ Looking for a solution to a specific problem? See the [Cookbook](https://mqlang.
 Usage: mq [OPTIONS] [QUERY OR FILE] [FILES]... [COMMAND]
 
 Commands:
-  repl        Start a REPL session for interactive query execution
+  repl        Start a REPL session for interactive query execution. Optional FILES are combined as the initial input (same file/format handling as `mq QUERY FILES...`)
   completion  Generate a shell completion script and print it to stdout
   help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
 
