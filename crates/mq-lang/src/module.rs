@@ -42,6 +42,7 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
         "cbor" => Cow::Borrowed("cbor.mq"),
         "csv" => Cow::Borrowed("csv.mq"),
         "fuzzy" => Cow::Borrowed("fuzzy.mq"),
+        "gen" => Cow::Borrowed("gen.mq"),
         "gron" => Cow::Borrowed("gron.mq"),
         "html" => Cow::Borrowed("html.mq"),
         "json" => Cow::Borrowed("json.mq"),
@@ -89,16 +90,22 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
 
     macro_rules! std_module {
         ($name:ident) => {
+            std_module!($name, stringify!($name));
+        };
+        ($name:ident, $key:expr) => {
             fn $name() -> &'static str {
-                include_str!(concat!("../modules/", stringify!($name), ".mq"))
+                include_str!(concat!("../modules/", $key, ".mq"))
             }
-            map.insert(SmolStr::new(stringify!($name)), $name as fn() -> &'static str);
+            map.insert(SmolStr::new($key), $name as fn() -> &'static str);
         };
     }
 
     std_module!(cbor);
     std_module!(csv);
     std_module!(fuzzy);
+    // `gen` is a reserved keyword as of the 2024 edition, so the module's Rust binding
+    // needs the raw-identifier escape even though its mq-facing module name is plain "gen".
+    std_module!(r#gen, "gen");
     std_module!(gron);
     #[cfg(feature = "css-selector")]
     std_module!(html);
@@ -557,6 +564,13 @@ mod tests {
         assert!(super::STANDARD_MODULES.contains_key("csv"));
         let csv_content = super::STANDARD_MODULES.get("csv").unwrap()();
         assert!(csv_content.contains("")); // Just check it's a string, optionally check for expected content
+    }
+
+    #[test]
+    fn test_standard_modules_contains_gen() {
+        assert!(super::STANDARD_MODULES.contains_key("gen"));
+        let gen_content = super::STANDARD_MODULES.get("gen").unwrap()();
+        assert!(gen_content.contains("def tuple("));
     }
 
     #[test]

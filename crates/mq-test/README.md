@@ -8,7 +8,8 @@ Standalone test runner for mq — auto-discovers and executes test functions in 
 
 - Its name starts with `test_`, **OR**
 - It is immediately preceded by a `# @test` or `# [test]` annotation comment, **OR**
-- It is immediately preceded by a `# @parametrize(...)` annotation comment.
+- It is immediately preceded by a `# @parametrize(...)` annotation comment, **OR**
+- It is immediately preceded by a `# @property(...)` annotation comment.
 
 Test discovery uses the CST so all conventions are resolved accurately without any line-scanning heuristics.
 
@@ -178,6 +179,36 @@ def test_len(input, expected):
   assert_eq(len(input), expected)
 end
 ```
+
+### Property-Based Tests
+
+Use `# @property(count, generators)` to run a function against `count` generated cases instead
+of a fixed list. `generators` is an array with one generator per test parameter, built from the
+`gen` standard module's combinators (`gen::int`, `gen::string`, `gen::array`, `gen::one_of`, and
+more — `import "gen"` to use them). `count` can be omitted, in which case it defaults to 100:
+
+```mq
+include "test"
+| import "gen"
+|
+
+# @property(100, [gen::int(-1000, 1000), gen::int(-1000, 1000)])
+def test_addition_is_commutative(a, b):
+  assert_eq(a + b, b + a)
+end
+
+# Count defaults to 100 when omitted.
+# @property([gen::string("abcdefghijklmnopqrstuvwxyz", 10)])
+def test_upcase_is_idempotent(s):
+  assert_eq(upcase(upcase(s)), upcase(s))
+end
+```
+
+Like `@parametrize`, generated cases are reported as `name[0]`, `name[1]`, etc., and each index
+doubles as the seed that produced it: a failing `name[42]` can be reproduced deterministically by
+calling `gen::tuple(generators)(42)` with the exact same `generators` array from the annotation
+(not by calling an individual generator directly — `gen::tuple` derives each parameter's actual
+seed from the one passed in). There is no shrinking — the failing seed is the reproduction case.
 
 ### Tags
 

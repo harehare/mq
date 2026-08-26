@@ -1,0 +1,174 @@
+# Generator combinators for property-based testing.
+#
+# A generator is a plain function `fn(seed): value;` — a pure, deterministic mapping from an
+# integer seed to a generated value, built on top of the seeded `rand`/`rand_int`/`random_string`
+# builtins. Combinators below build bigger generators out of smaller ones, deriving a distinct
+# sub-seed for each part so nested generators never accidentally correlate with one another.
+#
+# Pairs with `mq-test`'s `# @property(count, generators)` annotation: `generators` is an array
+# with one generator per test parameter, and each of the `count` iterations calls
+# `gen::tuple(generators)` with the iteration index as the seed. A failing iteration's index is
+# reported the same way `# @parametrize(...)` reports case indices, so it can be reproduced by
+# calling `gen::tuple(generators)(seed)` again with that same `generators` array and the
+# reported index as `seed` — not by calling an individual generator directly, since `tuple`
+# derives each parameter's actual seed from it.
+
+# Derives a well-spread sub-seed for position `i` under a parent `seed`. Not itself a generator —
+# a helper used by every combinator below so that e.g. `tuple`'s per-parameter generators, or
+# `array`'s per-element generator, don't all draw from the exact same seed.
+def _sub_seed(seed, i):
+  seed * 97 + i
+end
+
+# A generator producing a uniformly random integer in `[min, max]` (inclusive).
+#
+# Example:
+# ```
+# import "gen" | (gen::int(1, 10))(42)
+# #=> 6
+# ```
+#
+# Returns: function
+def int(min, max):
+  fn(seed): rand_int(min, max, seed);
+end
+
+# A generator producing a uniformly random float in `[0, 1)`.
+#
+# Example:
+# ```
+# import "gen" | is_number((gen::float())(42))
+# #=> true
+# ```
+#
+# Returns: function
+def float():
+  fn(seed): rand(seed);
+end
+
+# A generator producing a random boolean.
+#
+# Example:
+# ```
+# import "gen" | is_bool((gen::bool())(42))
+# #=> true
+# ```
+#
+# Returns: function
+def bool():
+  fn(seed): rand_int(0, 1, seed) == 1;
+end
+
+# A generator producing a random string of `len` characters drawn (with replacement) from
+# `charset`.
+#
+# Example:
+# ```
+# import "gen" | (gen::string("abc", 5))(42)
+# #=> ababc
+# ```
+#
+# Returns: function
+def string(charset, len):
+  fn(seed): random_string(len, charset, seed);
+end
+
+# A generator that always produces `value`, ignoring the seed. Useful alongside generated fields
+# in `tuple`/`array`/`one_of` for a value that should stay fixed across every iteration.
+#
+# Example:
+# ```
+# import "gen" | (gen::const("literal"))(42)
+# #=> literal
+# ```
+#
+# Returns: function
+def const(value):
+  fn(seed): value;
+end
+
+# A generator that picks a uniformly random element from `values`.
+#
+# Example:
+# ```
+# import "gen" | (gen::element(["a", "b", "c"]))(42)
+# #=> b
+# ```
+#
+# Returns: function
+def element(values):
+  fn(seed): values[rand_int(0, len(values) - 1, seed)];
+end
+
+# A generator that picks one of `gens` (an array of generators) and runs it.
+#
+# Example:
+# ```
+# import "gen" | (gen::one_of([gen::const(1), gen::const(2), gen::const(3)]))(42)
+# #=> 2
+# ```
+#
+# Returns: function
+def one_of(gens):
+  fn(seed): gens[rand_int(0, len(gens) - 1, seed)](_sub_seed(seed, 1));
+end
+
+# A generator producing a fixed-length array of `len` values, each independently drawn from
+# `gen`.
+#
+# Example:
+# ```
+# import "gen" | (gen::array(gen::int(0, 9), 5))(42)
+# #=> [1, 0, 3, 3, 9]
+# ```
+#
+# Returns: function
+def array(gen, len):
+  fn(seed): if (len == 0): [] else: map(range(0, len - 1), fn(i): gen(_sub_seed(seed, i)););
+end
+
+# A generator producing a variable-length array (`min_len` to `max_len`, inclusive) of values,
+# each independently drawn from `gen`.
+#
+# Example:
+# ```
+# import "gen" | let arr = (gen::array_of(gen::int(0, 9), 1, 5))(42) | len(arr) >= 1 && len(arr) <= 5
+# #=> true
+# ```
+#
+# Returns: function
+def array_of(gen, min_len, max_len):
+  fn(seed):
+    let n = rand_int(min_len, max_len, _sub_seed(seed, 999983))
+    | if (n == 0): [] else: map(range(0, n - 1), fn(i): gen(_sub_seed(seed, i)););
+end
+
+# A generator that transforms the value `gen` produces through `mapper`. Named `transform`
+# rather than `map` so it doesn't shadow the built-in `map` used internally by the other
+# combinators in this module.
+#
+# Example:
+# ```
+# import "gen" | (gen::transform(gen::int(1, 1), fn(n): n + 100;))(42)
+# #=> 101
+# ```
+#
+# Returns: function
+def transform(gen, mapper):
+  fn(seed): mapper(gen(seed));
+end
+
+# A generator producing an array with one value per generator in `gens`, each independently
+# seeded. This is what `# @property(count, generators)` calls under the hood to turn an array of
+# per-parameter generators into a single argument list per iteration.
+#
+# Example:
+# ```
+# import "gen" | (gen::tuple([gen::const(1), gen::const(2)]))(42)
+# #=> [1, 2]
+# ```
+#
+# Returns: function
+def tuple(gens):
+  fn(seed): map(zip(range(0, len(gens)), gens), fn(p): p[1](_sub_seed(seed, p[0])););
+end
