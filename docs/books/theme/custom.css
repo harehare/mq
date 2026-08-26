@@ -263,7 +263,29 @@ blockquote {
     color: var(--mq-text-muted);
 }
 
+/* Prevent any single wide element (e.g. an unwrapped table) from
+   forcing the whole page to scroll horizontally on mobile. */
+.content {
+    overflow-x: hidden;
+}
+
 /* Tables */
+
+/* Wraps every table (inserted by theme/table-wrap.js) so wide tables
+   scroll horizontally within their own box instead of overflowing
+   the page on narrow viewports. */
+.table-wrapper {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-wrapper table {
+    margin: 0;
+}
+
 table {
     border-collapse: collapse;
     margin: 1.5rem 0;
@@ -979,6 +1001,11 @@ html:not(.js) .mq-feature-text strong {
    Modules page (search & category filter)
    =========================================== */
 
+.module-toolbar,
+.module-toolbar * {
+    box-sizing: border-box;
+}
+
 .module-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -990,6 +1017,7 @@ html:not(.js) .mq-feature-text strong {
 .module-search-input {
     flex: 1 1 240px;
     min-width: 200px;
+    box-sizing: border-box;
     padding: 0.75rem 1rem;
     font-family: "Inter", sans-serif;
     font-size: 0.9em;
@@ -1049,4 +1077,55 @@ html:not(.js) .mq-feature-text strong {
     border: 1px solid rgba(103, 184, 227, 0.25);
     border-radius: 4px;
     white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    .module-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.5rem;
+    }
+
+    .module-search-input {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+    }
+
+    .module-count {
+        text-align: right;
+    }
+
+    /* The category column duplicates the filter chips above the table
+       and is the main reason the table overflows narrow screens —
+       drop it there and rely on the badge staying visible via the chips. */
+    #modules-table th:nth-child(2),
+    #modules-table td:nth-child(2) {
+        display: none;
+    }
+
+    /* Fix the remaining two columns' widths so long module names
+       (e.g. "parser_combinator.mq") wrap instead of forcing the
+       table wider than the screen. */
+    #modules-table {
+        table-layout: fixed;
+    }
+
+    #modules-table th:nth-child(1),
+    #modules-table td:nth-child(1) {
+        width: 38%;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+
+    #modules-table th:nth-child(3),
+    #modules-table td:nth-child(3) {
+        width: 62%;
+    }
+
+    table th,
+    table td {
+        padding: 8px 10px;
+        font-size: 0.9em;
+    }
 }
