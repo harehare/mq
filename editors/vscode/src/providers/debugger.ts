@@ -3,8 +3,7 @@ import * as vscode from "vscode";
 import which from "which";
 
 export class MqDebugConfigurationProvider
-  implements vscode.DebugConfigurationProvider
-{
+  implements vscode.DebugConfigurationProvider {
   private context: vscode.ExtensionContext;
 
   constructor(context: vscode.ExtensionContext) {
@@ -29,7 +28,7 @@ export class MqDebugConfigurationProvider
     if (!config.queryFile) {
       return vscode.window
         .showInformationMessage("Cannot find a query to debug")
-        .then((_) => {
+        .then(() => {
           return undefined; // abort launch
         });
     }
