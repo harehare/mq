@@ -2,7 +2,7 @@
   "name": "mq-chrome-extension",
   "private": true,
   "description": "Chrome extension for converting web pages to Markdown and filtering them with mq",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "author": "harehare",
   "license": "MIT",
   "bugs": {

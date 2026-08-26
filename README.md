@@ -78,13 +78,13 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.3
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.4
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.8.3
+cargo binstall mq-run@0.8.4
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
@@ -99,7 +99,7 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Chrome         | [![Chrome Extension](https://img.shields.io/badge/chrome-webstore-4285F4?style=flat-square&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/mq-for-markdown/pcgdpjopokfnfeeclnjdikecnjpoholf)                                                                                                                                                               |
 | Neovim         | [![Neovim README](https://img.shields.io/badge/neovim-README-57A143?style=flat-square&logo=neovim&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/neovim/README.md)                                                                                                                                                                                                  |
 | Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
-| JetBrains IDEs | [![JetBrains README](https://img.shields.io/badge/jetbrains-README-000000?style=flat-square&logo=jetbrains&logoColor=white)](https://plugins.jetbrains.com/plugin/33547-mq--jq-like-tool-for-markdown-processing)                                                                                                                                                                                      |
+| JetBrains IDEs | [![JetBrains README](https://img.shields.io/badge/jetbrains-README-000000?style=flat-square&logo=jetbrains&logoColor=white)](https://plugins.jetbrains.com/plugin/33547-mq--jq-like-tool-for-markdown-processing)                                                                                                                                                                       |
 | Obsidian       | [![Obsidian Plugin](https://img.shields.io/badge/obsidian-plugin-7C3AED?style=flat-square&logo=obsidian&logoColor=white)](https://community.obsidian.md/plugins/mq)                                                                                                                                                                                                                     |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
 
