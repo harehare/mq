@@ -56,7 +56,7 @@ const MAX_REPEAT_COUNT: usize = 1_000;
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
 type SharedEnv = Shared<SharedCell<Env>>;
-pub type Args = SmallVec<[RuntimeValue; 3]>;
+pub type Args = SmallVec<[RuntimeValue; 2]>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
