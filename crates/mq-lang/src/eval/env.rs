@@ -350,7 +350,7 @@ impl Env {
             current_parent = parent_env.parent.as_ref().and_then(|p| p.upgrade());
         }
 
-        if ident.resolve_with(builtin::get_builtin_functions_by_str).is_some() {
+        if builtin::get_builtin_functions(&ident).is_some() {
             Ok(RuntimeValue::NativeFunction(ident))
         } else {
             Err(EnvError::UndefinedReference(ident.to_string(), self.defined_names()))

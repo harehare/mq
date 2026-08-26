@@ -34,6 +34,7 @@ use itertools::Itertools;
 use quick_xml::XmlVersion;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use similar::{ChangeTag, TextDiff};
+use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -55,7 +56,7 @@ const MAX_REPEAT_COUNT: usize = 1_000;
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
 type SharedEnv = Shared<SharedCell<Env>>;
-pub type Args = Vec<RuntimeValue>;
+pub type Args = SmallVec<[RuntimeValue; 3]>;
 
 #[derive(Clone, Debug)]
 pub struct BuiltinFunction {
@@ -212,7 +213,7 @@ fn type_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 
 #[mq_macros::mq_fn(name = "array", params = Range(0, u8::MAX))]
 fn array_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::Array(Shared::new(args)))
+    Ok(RuntimeValue::Array(Shared::new(args.into_vec())))
 }
 
 #[mq_macros::mq_fn(name = "flatten", params = Fixed(1))]
@@ -1054,7 +1055,7 @@ fn strip_tags_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 
 #[mq_macros::mq_fn(name = "to_markdown_string", params = Fixed(1))]
 fn to_markdown_string_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    convert::to_markdown_string(args)
+    convert::to_markdown_string(args.into_vec())
 }
 
 #[mq_macros::mq_fn(name = "to_string", params = Fixed(1))]
@@ -1162,7 +1163,12 @@ fn ends_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedE
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .last()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
-                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))], env)
+                eval_builtin(
+                    o,
+                    ident,
+                    smallvec::smallvec![RuntimeValue::String(std::mem::take(s))],
+                    env,
+                )
             })
             .unwrap_or(RuntimeValue::FALSE)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -1186,7 +1192,12 @@ fn starts_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &Share
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .first()
             .map_or(Ok(RuntimeValue::FALSE), |o| {
-                eval_builtin(o, ident, vec![RuntimeValue::String(std::mem::take(s))], env)
+                eval_builtin(
+                    o,
+                    ident,
+                    smallvec::smallvec![RuntimeValue::String(std::mem::take(s))],
+                    env,
+                )
             })
             .unwrap_or(RuntimeValue::FALSE)),
         [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::FALSE),
@@ -9666,23 +9677,23 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("type", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::String("string".into())))]
-    #[case("len", vec![RuntimeValue::String("test".into())], Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into()), RuntimeValue::String("gpt-4".into())], Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("".into()), RuntimeValue::String("gpt-4".into())], Ok(RuntimeValue::Number(0.into())))]
-    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into())], Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("".into())], Ok(RuntimeValue::Number(0.into())))]
+    #[case("type", vec![RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::String("string".into())))]
+    #[case("len", vec![RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into()), RuntimeValue::String("gpt-4".into())].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String("".into()), RuntimeValue::String("gpt-4".into())].into(), Ok(RuntimeValue::Number(0.into())))]
+    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into())].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String("".into())].into(), Ok(RuntimeValue::Number(0.into())))]
     #[case(
         "token_compress",
         vec![
             RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])),
             RuntimeValue::Number(1000.into()),
-        ],
+        ].into(),
         Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])))
     )]
     #[case(
         "token_compress",
-        vec![RuntimeValue::None, RuntimeValue::Number(100.into())],
+        vec![RuntimeValue::None, RuntimeValue::Number(100.into())].into(),
         Ok(RuntimeValue::Array(Shared::new(vec![])))
     )]
     #[case(
@@ -9691,28 +9702,28 @@ mod tests {
             RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])),
             RuntimeValue::Number(1000.into()),
             RuntimeValue::String("gpt-4".into()),
-        ],
+        ].into(),
         Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])))
     )]
     #[case(
         "token_compress",
-        vec![RuntimeValue::None, RuntimeValue::Number(100.into()), RuntimeValue::String("gpt-4".into())],
+        vec![RuntimeValue::None, RuntimeValue::Number(100.into()), RuntimeValue::String("gpt-4".into())].into(),
         Ok(RuntimeValue::Array(Shared::new(vec![])))
     )]
-    #[case("abs", vec![RuntimeValue::Number((-10).into())], Ok(RuntimeValue::Number(10.into())))]
-    #[case("ceil", vec![RuntimeValue::Number(3.2.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("floor", vec![RuntimeValue::Number(3.8.into())], Ok(RuntimeValue::Number(3.0.into())))]
-    #[case("round", vec![RuntimeValue::Number(3.5.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("sin", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
-    #[case("cos", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(1.0.into())))]
-    #[case("tan", vec![RuntimeValue::Number(0.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
-    #[case("log", vec![RuntimeValue::Number(1.0.into())], Ok(RuntimeValue::Number(0.0.into())))]
-    #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(5.0.into())))]
-    #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())], Ok(RuntimeValue::Number(2.0.into())))]
-    #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(8.0.into())))]
-    #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())], Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())], Ok(RuntimeValue::Boolean(true)))]
-    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())], Ok(RuntimeValue::Boolean(true)))]
+    #[case("abs", vec![RuntimeValue::Number((-10).into())].into(), Ok(RuntimeValue::Number(10.into())))]
+    #[case("ceil", vec![RuntimeValue::Number(3.2.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("floor", vec![RuntimeValue::Number(3.8.into())].into(), Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("round", vec![RuntimeValue::Number(3.5.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("sin", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("cos", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(1.0.into())))]
+    #[case("tan", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("log", vec![RuntimeValue::Number(1.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(5.0.into())))]
+    #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.0.into())))]
+    #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(8.0.into())))]
+    #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
+    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())].into(), Ok(RuntimeValue::Boolean(true)))]
     fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new(func_name);
         assert_eq!(
@@ -9727,10 +9738,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())], Error::ZeroDivision)]
-    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())], Error::NotDefined("unknown_func".to_string(), vec![]))]
-    #[case("add", vec![], Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
-    #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())],
+    #[case("div", vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(0.0.into())].into(), Error::ZeroDivision)]
+    #[case("unknown_func", vec![RuntimeValue::Number(1.0.into())].into(), Error::NotDefined("unknown_func".to_string(), vec![]))]
+    #[case("add", vec![].into(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
+    #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
     fn test_eval_builtin_errors(#[case] func_name: &str, #[case] args: Args, #[case] expected_error: Error) {
         let ident = Ident::new(func_name);
@@ -9753,7 +9764,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
@@ -9780,7 +9791,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
@@ -9811,17 +9822,17 @@ mod tests {
         let arr = eval_builtin(
             &RuntimeValue::None,
             &gmtime_ident,
-            vec![RuntimeValue::Number(secs.into())],
+            vec![RuntimeValue::Number(secs.into())].into(),
             &env,
         )
         .unwrap();
-        let result = eval_builtin(&RuntimeValue::None, &mktime_ident, vec![arr], &env).unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &mktime_ident, vec![arr].into(), &env).unwrap();
         assert_eq!(result, RuntimeValue::Number(expected.into()));
     }
 
     fn call_uuid_fn(name: &str) -> String {
         let env = Shared::new(SharedCell::new(Env::default()));
-        match eval_builtin(&RuntimeValue::None, &Ident::new(name), vec![], &env).unwrap() {
+        match eval_builtin(&RuntimeValue::None, &Ident::new(name), vec![].into(), &env).unwrap() {
             RuntimeValue::String(s) => s.to_string(),
             other => panic!("{name} should return a string, got {other:?}"),
         }
@@ -9874,7 +9885,7 @@ mod tests {
     fn test_rand_is_in_unit_range() {
         let env = Shared::new(SharedCell::new(Env::default()));
         for _ in 0..200 {
-            match eval_builtin(&RuntimeValue::None, &Ident::new("rand"), vec![], &env).unwrap() {
+            match eval_builtin(&RuntimeValue::None, &Ident::new("rand"), vec![].into(), &env).unwrap() {
                 RuntimeValue::Number(n) => assert!((0.0..1.0).contains(&n.value()), "rand() out of [0, 1)"),
                 other => panic!("rand() should return a number, got {other:?}"),
             }
@@ -9891,7 +9902,7 @@ mod tests {
             let result = eval_builtin(
                 &RuntimeValue::None,
                 &Ident::new("rand_int"),
-                vec![RuntimeValue::Number(min.into()), RuntimeValue::Number(max.into())],
+                vec![RuntimeValue::Number(min.into()), RuntimeValue::Number(max.into())].into(),
                 &env,
             )
             .unwrap();
@@ -9911,7 +9922,7 @@ mod tests {
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
             &Ident::new("rand"),
-            vec![RuntimeValue::Number(seed.into())],
+            vec![RuntimeValue::Number(seed.into())].into(),
             &env,
         )
         .unwrap()
@@ -9934,7 +9945,8 @@ mod tests {
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(10.into()),
                 RuntimeValue::Number(seed.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap()
@@ -9957,7 +9969,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("rand_int"),
-            vec![RuntimeValue::Number(10.into()), RuntimeValue::Number(1.into())],
+            vec![RuntimeValue::Number(10.into()), RuntimeValue::Number(1.into())].into(),
             &env,
         );
         assert!(result.is_err(), "rand_int(10, 1) should error since min > max");
@@ -9969,7 +9981,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(12.into()), RuntimeValue::String("abc".into())],
+            vec![RuntimeValue::Number(12.into()), RuntimeValue::String("abc".into())].into(),
             &env,
         )
         .unwrap();
@@ -9988,7 +10000,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(0.into()), RuntimeValue::String("abc".into())],
+            vec![RuntimeValue::Number(0.into()), RuntimeValue::String("abc".into())].into(),
             &env,
         )
         .unwrap();
@@ -10001,7 +10013,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(5.into()), RuntimeValue::String("".into())],
+            vec![RuntimeValue::Number(5.into()), RuntimeValue::String("".into())].into(),
             &env,
         );
         assert!(
@@ -10020,7 +10032,8 @@ mod tests {
                 RuntimeValue::Number(16.into()),
                 RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
                 RuntimeValue::Number(seed.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap()
@@ -10046,7 +10059,8 @@ mod tests {
                     vec![
                         RuntimeValue::Number(16.into()),
                         RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
-                    ],
+                    ]
+                    .into(),
                     &env,
                 )
                 .unwrap()
@@ -10070,7 +10084,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("shuffle"),
-            vec![RuntimeValue::Array(Shared::new(input.clone()))],
+            vec![RuntimeValue::Array(Shared::new(input.clone()))].into(),
             &env,
         )
         .unwrap();
@@ -10097,7 +10111,8 @@ mod tests {
             vec![
                 RuntimeValue::Array(Shared::new(input.clone())),
                 RuntimeValue::Number(seed.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap()
@@ -10122,7 +10137,8 @@ mod tests {
             vec![
                 RuntimeValue::Array(Shared::new(input.clone())),
                 RuntimeValue::Number(4.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap();
@@ -10152,7 +10168,8 @@ mod tests {
                 RuntimeValue::Array(Shared::new(input.clone())),
                 RuntimeValue::Number(4.into()),
                 RuntimeValue::Number(seed.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap()
@@ -10174,7 +10191,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("sample"),
-            vec![RuntimeValue::Array(Shared::new(input)), RuntimeValue::Number(10.into())],
+            vec![RuntimeValue::Array(Shared::new(input)), RuntimeValue::Number(10.into())].into(),
             &env,
         );
         assert!(
@@ -10193,7 +10210,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
@@ -10210,7 +10227,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
@@ -10227,7 +10244,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -10238,7 +10255,7 @@ mod tests {
         eval_builtin(
             &RuntimeValue::None,
             &Ident::new("gmtime"),
-            vec![RuntimeValue::Number(secs.into())],
+            vec![RuntimeValue::Number(secs.into())].into(),
             &env,
         )
         .unwrap()
@@ -10258,12 +10275,12 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_add"),
-            vec![arr, RuntimeValue::Number(n.into()), RuntimeValue::String(unit.into())],
+            vec![arr, RuntimeValue::Number(n.into()), RuntimeValue::String(unit.into())].into(),
             &env,
         )
         .unwrap();
         // convert result array back to timestamp via mktime and compare
-        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result].into(), &env).unwrap();
         assert_eq!(ts, RuntimeValue::Number(expected_secs.into()));
     }
 
@@ -10280,12 +10297,13 @@ mod tests {
                 arr,
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::String("months".into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap();
         // 2024-02-29T00:00:00Z = 1709164800
-        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result].into(), &env).unwrap();
         assert_eq!(ts, RuntimeValue::Number(1709164800_i64.into()));
     }
 
@@ -10301,12 +10319,13 @@ mod tests {
                 arr,
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::String("years".into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap();
         // 2025-02-28T00:00:00Z = 1740700800
-        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result], &env).unwrap();
+        let ts = eval_builtin(&RuntimeValue::None, &Ident::new("mktime"), vec![result].into(), &env).unwrap();
         assert_eq!(ts, RuntimeValue::Number(1740700800_i64.into()));
     }
 
@@ -10321,7 +10340,8 @@ mod tests {
                 arr,
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::String("centuries".into()),
-            ],
+            ]
+            .into(),
             &env,
         );
         assert!(matches!(result, Err(Error::Runtime(_))));
@@ -10342,7 +10362,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![arr1, arr2, RuntimeValue::String(unit.into())],
+            vec![arr1, arr2, RuntimeValue::String(unit.into())].into(),
             &env,
         )
         .unwrap();
@@ -10356,7 +10376,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![arr.clone(), arr, RuntimeValue::String("months".into())],
+            vec![arr.clone(), arr, RuntimeValue::String("months".into())].into(),
             &env,
         );
         assert!(matches!(result, Err(Error::Runtime(_))));
@@ -10369,7 +10389,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
@@ -10382,7 +10402,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            args,
+            args.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
@@ -10399,7 +10419,8 @@ mod tests {
                 bad_arr,
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::String("days".into()),
-            ],
+            ]
+            .into(),
             &env,
         );
         match result {
@@ -10415,7 +10436,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![bad_arr.clone(), bad_arr, RuntimeValue::String("days".into())],
+            vec![bad_arr.clone(), bad_arr, RuntimeValue::String("days".into())].into(),
             &env,
         );
         match result {
@@ -10442,7 +10463,8 @@ mod tests {
             vec![
                 RuntimeValue::Number(1705276800_i64.into()),
                 RuntimeValue::String(input.into()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap();
@@ -10458,7 +10480,8 @@ mod tests {
             vec![
                 RuntimeValue::Number(1705276800_i64.into()),
                 RuntimeValue::String("not a relative date".into()),
-            ],
+            ]
+            .into(),
             &env,
         );
         match result {
@@ -10476,7 +10499,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_relative"),
-            vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+            vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into(),
             &env,
         );
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
@@ -10488,7 +10511,12 @@ mod tests {
         let first_arg = RuntimeValue::String("hello world".into());
         let args = vec![RuntimeValue::String("hello".into())];
 
-        let result = eval_builtin(&first_arg, &ident, args, &Shared::new(SharedCell::new(Env::default())));
+        let result = eval_builtin(
+            &first_arg,
+            &ident,
+            args.into(),
+            &Shared::new(SharedCell::new(Env::default())),
+        );
         assert_eq!(result, Ok(RuntimeValue::Boolean(true)));
     }
 
@@ -10863,7 +10891,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Dict(Shared::new(d1)), RuntimeValue::Dict(Shared::new(d2))],
+            vec![RuntimeValue::Dict(Shared::new(d1)), RuntimeValue::Dict(Shared::new(d2))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Dict(Shared::new(expected))));
@@ -10875,7 +10903,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![],
+            vec![].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_ok());
@@ -10893,7 +10921,8 @@ mod tests {
             vec![RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::String("key".into()),
                 RuntimeValue::String("value".into()),
-            ]))],
+            ]))]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -10918,7 +10947,7 @@ mod tests {
         let result1 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args1,
+            args1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result1.is_ok());
@@ -10942,7 +10971,7 @@ mod tests {
         let result2 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args2,
+            args2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result2.is_ok());
@@ -10967,7 +10996,7 @@ mod tests {
         let result3 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args3,
+            args3.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result3.is_ok());
@@ -10995,7 +11024,7 @@ mod tests {
         let result4 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args4,
+            args4.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result4.is_ok());
@@ -11015,7 +11044,7 @@ mod tests {
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args_err1,
+            args_err1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11038,7 +11067,7 @@ mod tests {
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_set,
-            args_err2,
+            args_err2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11066,7 +11095,7 @@ mod tests {
         let result1 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            args1,
+            args1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
@@ -11075,7 +11104,7 @@ mod tests {
         let result2 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            args2,
+            args2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result2, Ok(RuntimeValue::None));
@@ -11087,7 +11116,7 @@ mod tests {
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            args_err1,
+            args_err1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11105,7 +11134,7 @@ mod tests {
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            args_err2,
+            args_err2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11125,7 +11154,7 @@ mod tests {
         let result1 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
-            args1,
+            args1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
@@ -11138,7 +11167,7 @@ mod tests {
         let result2 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
-            args2,
+            args2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result2.is_ok());
@@ -11161,7 +11190,7 @@ mod tests {
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
-            args_err1,
+            args_err1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11176,7 +11205,7 @@ mod tests {
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
-            args_err2,
+            args_err2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11193,7 +11222,7 @@ mod tests {
         let result1 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
-            args1,
+            args1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
@@ -11206,7 +11235,7 @@ mod tests {
         let result2 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
-            args2,
+            args2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result2.is_ok());
@@ -11223,7 +11252,7 @@ mod tests {
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
-            args_err1,
+            args_err1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11238,7 +11267,7 @@ mod tests {
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
-            args_err2,
+            args_err2.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -11441,7 +11470,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(csv.to_string())],
+            vec![RuntimeValue::String(csv.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11507,7 +11536,8 @@ mod tests {
                 RuntimeValue::String(csv.to_string()),
                 RuntimeValue::String(",".to_string()),
                 RuntimeValue::Boolean(true),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11556,7 +11586,8 @@ mod tests {
                 RuntimeValue::String(csv.to_string()),
                 RuntimeValue::String(delimiter.to_string()),
                 RuntimeValue::Boolean(has_header),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11570,7 +11601,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![invalid_arg],
+            vec![invalid_arg].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -11616,7 +11647,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(json.to_string())],
+            vec![RuntimeValue::String(json.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11634,7 +11665,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![arg],
+            vec![arg].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -11709,7 +11740,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(yaml.to_string())],
+            vec![RuntimeValue::String(yaml.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11726,7 +11757,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![arg],
+            vec![arg].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -11805,7 +11836,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(toon.to_string())],
+            vec![RuntimeValue::String(toon.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11846,7 +11877,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![input],
+            vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::String(expected.to_string())));
@@ -11883,7 +11914,13 @@ mod tests {
         let env = Shared::new(SharedCell::new(Env::default()));
 
         let ident_stringify = Ident::new("_toon_stringify");
-        let stringified = eval_builtin(&RuntimeValue::None, &ident_stringify, vec![original.clone()], &env).unwrap();
+        let stringified = eval_builtin(
+            &RuntimeValue::None,
+            &ident_stringify,
+            vec![original.clone()].into(),
+            &env,
+        )
+        .unwrap();
         let RuntimeValue::String(toon_str) = stringified else {
             panic!("expected a string result");
         };
@@ -11892,7 +11929,7 @@ mod tests {
         let round_tripped = eval_builtin(
             &RuntimeValue::None,
             &ident_parse,
-            vec![RuntimeValue::String(toon_str)],
+            vec![RuntimeValue::String(toon_str)].into(),
             &env,
         )
         .unwrap();
@@ -11946,7 +11983,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(toml.to_string())],
+            vec![RuntimeValue::String(toml.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11959,7 +11996,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())],
+            vec![RuntimeValue::String(input.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -11972,7 +12009,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![input],
+            vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -11994,7 +12031,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())],
+            vec![RuntimeValue::String(input.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12008,7 +12045,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())],
+            vec![RuntimeValue::String(input.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12021,7 +12058,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![input],
+            vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12046,7 +12083,7 @@ mod tests {
         let parsed = eval_builtin(
             &RuntimeValue::None,
             &ident_parse,
-            vec![RuntimeValue::String(base64_input.to_string())],
+            vec![RuntimeValue::String(base64_input.to_string())].into(),
             &env,
         );
         assert!(parsed.is_ok());
@@ -12054,7 +12091,12 @@ mod tests {
 
         // stringify
         let ident_stringify = Ident::new("_cbor_stringify");
-        let bytes_result = eval_builtin(&RuntimeValue::None, &ident_stringify, vec![parsed.unwrap()], &env);
+        let bytes_result = eval_builtin(
+            &RuntimeValue::None,
+            &ident_stringify,
+            vec![parsed.unwrap()].into(),
+            &env,
+        );
         assert!(bytes_result.is_ok());
         assert!(matches!(bytes_result.unwrap(), RuntimeValue::Bytes(_)));
     }
@@ -12069,7 +12111,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(cbor_bytes)],
+            vec![RuntimeValue::Bytes(cbor_bytes)].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_ok());
@@ -12085,7 +12127,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(bytes)],
+            vec![RuntimeValue::Bytes(bytes)].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::String("SGVsbG8=".to_string())));
@@ -12121,7 +12163,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![input],
+            vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12140,7 +12182,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![input],
+            vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12152,7 +12194,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![3, 4])],
+            vec![RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![3, 4])].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![1, 2, 3, 4])));
@@ -12164,7 +12206,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![1, 2, 3])],
+            vec![RuntimeValue::Bytes(vec![1, 2, 3])].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![3, 2, 1])));
@@ -12180,7 +12222,8 @@ mod tests {
                 RuntimeValue::Bytes(vec![10, 20, 30, 40, 50]),
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(4.into()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![20, 30, 40])));
@@ -12192,7 +12235,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -12207,7 +12250,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -12224,7 +12267,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String("hello".to_string())],
+            vec![RuntimeValue::String("hello".to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -12241,7 +12284,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
@@ -12261,7 +12304,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())],
+            vec![RuntimeValue::String(input.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12275,7 +12318,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())],
+            vec![RuntimeValue::String(input.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result.is_err(), is_err);
@@ -12291,7 +12334,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(input)],
+            vec![RuntimeValue::Bytes(input)].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12304,11 +12347,11 @@ mod tests {
         let hex = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("to_hex"),
-            vec![RuntimeValue::Bytes(original.clone())],
+            vec![RuntimeValue::Bytes(original.clone())].into(),
             &env,
         )
         .unwrap();
-        let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex], &env).unwrap();
+        let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex].into(), &env).unwrap();
         assert_eq!(roundtripped, RuntimeValue::Bytes(original));
     }
 
@@ -12331,7 +12374,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(lhs), RuntimeValue::Bytes(rhs)],
+            vec![RuntimeValue::Bytes(lhs), RuntimeValue::Bytes(rhs)].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Boolean(expected)));
@@ -12343,7 +12386,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())],
+            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::String("hello".to_string())));
@@ -12355,7 +12398,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![0xff, 0xfe])],
+            vec![RuntimeValue::Bytes(vec![0xff, 0xfe])].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12370,7 +12413,8 @@ mod tests {
             vec![
                 RuntimeValue::Bytes(vec![0x82, 0xa0]),
                 RuntimeValue::String("shift_jis".to_string()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::String("あ".to_string())));
@@ -12385,7 +12429,8 @@ mod tests {
             vec![
                 RuntimeValue::Bytes(vec![0x00]),
                 RuntimeValue::String("not-a-real-encoding".to_string()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12400,7 +12445,8 @@ mod tests {
             vec![
                 RuntimeValue::Bytes(vec![0xff, 0xff]),
                 RuntimeValue::String("shift_jis".to_string()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12415,7 +12461,8 @@ mod tests {
             vec![
                 RuntimeValue::String("あ".to_string()),
                 RuntimeValue::String("shift_jis".to_string()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x82, 0xa0])));
@@ -12430,14 +12477,15 @@ mod tests {
             vec![
                 RuntimeValue::String("こんにちは".to_string()),
                 RuntimeValue::String("euc-jp".to_string()),
-            ],
+            ]
+            .into(),
             &env,
         )
         .unwrap();
         let decoded = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("decode"),
-            vec![encoded, RuntimeValue::String("euc-jp".to_string())],
+            vec![encoded, RuntimeValue::String("euc-jp".to_string())].into(),
             &env,
         );
         assert_eq!(decoded, Ok(RuntimeValue::String("こんにちは".to_string())));
@@ -12452,7 +12500,8 @@ mod tests {
             vec![
                 RuntimeValue::String("😀".to_string()),
                 RuntimeValue::String("shift_jis".to_string()),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12467,7 +12516,8 @@ mod tests {
             vec![
                 RuntimeValue::Bytes(vec![0xaa, 0xbb]),
                 RuntimeValue::Bytes(vec![0x55, 0x44]),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0xff, 0xff])));
@@ -12482,7 +12532,8 @@ mod tests {
             vec![
                 RuntimeValue::Bytes(vec![0x01, 0x02, 0x03]),
                 RuntimeValue::Bytes(vec![0x00, 0x00, 0x00]),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x01, 0x02, 0x03])));
@@ -12494,7 +12545,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![0x01, 0x02]), RuntimeValue::Bytes(vec![0x01])],
+            vec![RuntimeValue::Bytes(vec![0x01, 0x02]), RuntimeValue::Bytes(vec![0x01])].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12582,7 +12633,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(xml.to_string())],
+            vec![RuntimeValue::String(xml.to_string())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12594,7 +12645,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String("abc".into()), RuntimeValue::String("abc ".into())],
+            vec![RuntimeValue::String("abc".into()), RuntimeValue::String("abc ".into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
 
@@ -12641,7 +12692,8 @@ mod tests {
             vec![
                 RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into())])),
                 RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
-            ],
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
 
@@ -13118,7 +13170,7 @@ mod tests {
     }
 
     fn call(name: &str, args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {
-        eval_builtin(&RuntimeValue::None, &Ident::new(name), args, &env())
+        eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env())
     }
 
     // =========================================================================

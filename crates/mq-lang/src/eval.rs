@@ -395,7 +395,11 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         define(
                             &self.env,
                             ident.name,
-                            RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(&self.env)),
+                            RuntimeValue::Function(
+                                Box::new(params.clone()),
+                                Shared::new(program.clone()),
+                                Shared::clone(&self.env),
+                            ),
                         );
                     }
                     _ => nodes.push(Shared::clone(node)),
@@ -535,7 +539,11 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 define(
                     env,
                     ident.name,
-                    RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(env)),
+                    RuntimeValue::Function(
+                        Box::new(params.clone()),
+                        Shared::new(program.clone()),
+                        Shared::clone(env),
+                    ),
                 );
             }
         }
@@ -740,7 +748,11 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     define(
                         &module_env,
                         ident.name,
-                        RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(&module_env)),
+                        RuntimeValue::Function(
+                            Box::new(params.clone()),
+                            Shared::new(program.clone()),
+                            Shared::clone(&module_env),
+                        ),
                     );
                 }
                 ast::Expr::Let(pattern, rhs) => {
@@ -1403,13 +1415,17 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Unless(condition) => self.eval_unless(runtime_value, condition, env),
             ast::Expr::Def(ident, params, program) => {
-                let function = RuntimeValue::Function(Box::new(params.clone()), program.clone(), Shared::clone(env));
+                let function = RuntimeValue::Function(
+                    Box::new(params.clone()),
+                    Shared::new(program.clone()),
+                    Shared::clone(env),
+                );
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
                 Box::new(params.clone()),
-                program.clone(),
+                Shared::new(program.clone()),
                 Shared::clone(env),
             )),
             ast::Expr::As(ident, node) => {
@@ -2076,7 +2092,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             return args.iter().map(|arg| self.eval_expr(runtime_value, arg, env)).collect();
         }
 
-        let mut evaluated: builtin::Args = Vec::with_capacity(args.len());
+        let mut evaluated: builtin::Args = builtin::Args::with_capacity(args.len());
 
         for arg in args.iter() {
             match &*arg.expr {
