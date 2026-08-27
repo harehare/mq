@@ -27,7 +27,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://cdn.tailwindcss.com" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@700;800&family=Space+Grotesk:wght@500;700&display=swap"
       rel="stylesheet"
     />
     <link
@@ -72,6 +72,7 @@
               headline: ["Space Grotesk"],
               body: ["Inter"],
               label: ["Inter"],
+              logo: ["Sora", "sans-serif"],
             },
             borderRadius: {
               DEFAULT: "0.125rem",
@@ -153,7 +154,7 @@
           <a href="#" class="flex items-center gap-2 group">
             <img src="./assets/logo.svg" alt="mq logo" class="h-8 w-8 block" />
             <span
-              class="text-xl font-bold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r from-[#85d4ff] to-[#67b8e3] font-headline leading-none pb-1"
+              class="text-xl font-extrabold tracking-[0.02em] text-[#85d4ff] font-logo leading-none"
               >mq</span
             >
           </a>
@@ -195,7 +196,7 @@
               >code</span
             >
             <span
-              class="hidden md:inline text-sm font-medium font-headline tracking-tight"
+              class="hidden md:inline text-sm font-semibold font-logo tracking-tight"
               >GitHub</span
             >
           </a>
@@ -208,7 +209,7 @@
               >menu_book</span
             >
             <span
-              class="hidden md:inline text-sm font-medium font-headline tracking-tight"
+              class="hidden md:inline text-sm font-semibold font-logo tracking-tight"
               >Documentation</span
             >
           </a>
@@ -921,9 +922,9 @@
               class="flex items-center gap-2 px-4 py-3 bg-surface-container-low"
             >
               <div class="flex gap-1.5">
-                <div class="w-3 h-3 rounded-full bg-error/40"></div>
-                <div class="w-3 h-3 rounded-full bg-tertiary/40"></div>
-                <div class="w-3 h-3 rounded-full bg-primary/40"></div>
+                <div class="w-3 h-3 rounded-full bg-error"></div>
+                <div class="w-3 h-3 rounded-full bg-tertiary"></div>
+                <div class="w-3 h-3 rounded-full bg-primary"></div>
               </div>
               <span class="ml-2 text-xs text-on-surface-variant font-mono"
                 >playground.mq</span
@@ -948,18 +949,39 @@
                     >Markdown Input</label
                   >
                 </div>
-                <textarea
-                  id="playground-input"
-                  class="h-56 bg-transparent p-4 font-mono text-sm text-on-surface resize-none focus:outline-none"
-                  spellcheck="false"
-># Slice and Filter
+                <div class="relative flex h-56">
+                  <div
+                    id="playground-input-gutter"
+                    class="w-10 shrink-0 overflow-hidden select-none bg-transparent py-4 text-right font-mono text-xs leading-5 text-slate-600"
+                  >
+                    1
+                  </div>
+                  <textarea
+                    id="playground-input"
+                    class="flex-1 min-w-0 bg-transparent py-4 pr-4 pl-2 font-mono text-sm leading-5 whitespace-pre text-on-surface resize-none border-0 focus:outline-none focus:ring-0 overflow-auto"
+                    spellcheck="false"
+                    wrap="off"
+                  ># Slice and Filter
 
 Extract specific parts of your Markdown documents with ease.
 
 ## Map and Transform
 
-Apply transformations to your Markdown content.</textarea
-                >
+Apply transformations to your Markdown content.
+
+- Query
+- Filter
+- Transform
+
+```rust
+fn main() {
+    println!("mq");
+}
+```
+
+See the [full docs](https://mqlang.org/book/) for more.</textarea
+                  >
+                </div>
               </div>
               <div class="flex flex-col">
                 <div
@@ -980,6 +1002,50 @@ Apply transformations to your Markdown content.</textarea
                   class="h-56 p-4 font-mono text-sm text-[#85d4ff] overflow-auto whitespace-pre-wrap"
                 ></pre>
               </div>
+            </div>
+
+            <!-- Presets -->
+            <div
+              class="flex flex-wrap items-center gap-2 px-4 py-3 bg-surface-container-low/60 border-t border-outline-variant/20"
+            >
+              <span class="text-xs uppercase tracking-widest text-slate-500"
+                >Try:</span
+              >
+              <button
+                type="button"
+                data-query=".h"
+                class="playground-preset px-2.5 py-1 rounded-full bg-surface-container-highest/60 hover:bg-surface-container-highest transition-colors text-xs font-mono text-on-surface-variant"
+              >
+                <span class="text-primary">.h</span> headings
+              </button>
+              <button
+                type="button"
+                data-query=".code"
+                class="playground-preset px-2.5 py-1 rounded-full bg-surface-container-highest/60 hover:bg-surface-container-highest transition-colors text-xs font-mono text-on-surface-variant"
+              >
+                <span class="text-primary">.code</span> code blocks
+              </button>
+              <button
+                type="button"
+                data-query=".link"
+                class="playground-preset px-2.5 py-1 rounded-full bg-surface-container-highest/60 hover:bg-surface-container-highest transition-colors text-xs font-mono text-on-surface-variant"
+              >
+                <span class="text-primary">.link</span> links
+              </button>
+              <button
+                type="button"
+                data-query=".list"
+                class="playground-preset px-2.5 py-1 rounded-full bg-surface-container-highest/60 hover:bg-surface-container-highest transition-colors text-xs font-mono text-on-surface-variant"
+              >
+                <span class="text-primary">.list</span> lists
+              </button>
+              <button
+                type="button"
+                data-query=".code.lang"
+                class="playground-preset px-2.5 py-1 rounded-full bg-surface-container-highest/60 hover:bg-surface-container-highest transition-colors text-xs font-mono text-on-surface-variant"
+              >
+                <span class="text-primary">.code.lang</span> code language
+              </button>
             </div>
 
             <!-- Query bar -->
@@ -1055,67 +1121,6 @@ Apply transformations to your Markdown content.</textarea
     </footer>
 
     <script>
-      function copyCode(button) {
-        const code = button.previousElementSibling.innerText
-          .replace(/\s+/g, " ")
-          .trim();
-        navigator.clipboard.writeText(code).then(() => {
-          const originalIcon = button.textContent;
-          button.textContent = "check";
-          button.classList.add("text-primary");
-          setTimeout(() => {
-            button.textContent = originalIcon;
-            button.classList.remove("text-primary");
-          }, 2000);
-        });
-      }
-
-      document.addEventListener("DOMContentLoaded", () => {
-        const tabButtons = document.querySelectorAll(".tab-button");
-        const tabContents = document.querySelectorAll(".tab-content");
-
-        const userAgent = navigator.userAgent;
-        const platform = (
-          navigator.userAgentData?.platform ||
-          navigator.platform ||
-          ""
-        ).toLowerCase();
-        let defaultTab = "linux";
-
-        if (platform.includes("win") || /Windows/.test(userAgent)) {
-          defaultTab = "windows";
-        } else if (
-          platform.includes("mac") ||
-          /Macintosh|MacIntel|iPhone|iPad|iPod/.test(userAgent)
-        ) {
-          defaultTab = "macos";
-        } else if (platform.includes("linux") || /Linux/.test(userAgent)) {
-          defaultTab = "linux";
-        }
-
-        function switchTab(platformId) {
-          tabButtons.forEach((btn) => {
-            const isActive = btn.getAttribute("data-platform") === platformId;
-            btn.classList.toggle("active", isActive);
-            btn.classList.toggle("text-primary", isActive);
-            btn.classList.toggle("border-primary", isActive);
-            btn.classList.toggle("text-slate-400", !isActive);
-            btn.classList.toggle("border-transparent", !isActive);
-          });
-          tabContents.forEach((content) => {
-            content.classList.toggle("hidden", content.id !== platformId);
-          });
-        }
-
-        tabButtons.forEach((button) => {
-          button.addEventListener("click", () => {
-            switchTab(button.getAttribute("data-platform"));
-          });
-        });
-
-        switchTab(defaultTab);
-      });
-
       document.addEventListener("DOMContentLoaded", () => {
         const API_URL = "https://api.mqlang.org/api/v1/query";
         const runButton = document.getElementById("playground-run");
@@ -1123,8 +1128,52 @@ Apply transformations to your Markdown content.</textarea
         const markdownInput = document.getElementById("playground-input");
         const output = document.getElementById("playground-output");
         const status = document.getElementById("playground-status");
+        const gutter = document.getElementById("playground-input-gutter");
+        const presetButtons = document.querySelectorAll(".playground-preset");
 
         if (!runButton || !queryInput || !markdownInput || !output) return;
+
+        function updateGutter() {
+          if (!gutter) return;
+          const lineCount = markdownInput.value.split("\n").length;
+          gutter.innerHTML = Array.from(
+            { length: lineCount },
+            (_, i) => i + 1,
+          ).join("<br>");
+        }
+
+        function escapeHtml(str) {
+          return str
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        function highlightMarkdown(text) {
+          return text
+            .split("\n")
+            .map((line) => {
+              const escaped = escapeHtml(line);
+              const heading = escaped.match(/^(#{1,6})(\s.*)$/);
+              if (heading) {
+                return `<span class="text-white font-bold">${heading[1]}${heading[2]}</span>`;
+              }
+              return escaped
+                .replace(
+                  /`([^`]+)`/g,
+                  '<code class="bg-white/10 text-amber-300 px-1 rounded">$1</code>',
+                )
+                .replace(
+                  /\*\*([^*]+)\*\*/g,
+                  '<strong class="text-white">$1</strong>',
+                )
+                .replace(
+                  /\[([^\]]+)\]\(([^)]+)\)/g,
+                  '<span class="text-white underline">$1</span><span class="text-slate-500">($2)</span>',
+                );
+            })
+            .join("\n");
+        }
 
         async function runPlaygroundQuery() {
           const query = queryInput.value.trim();
@@ -1150,7 +1199,9 @@ Apply transformations to your Markdown content.</textarea
               output.textContent = data.error || data.title || "Query failed.";
               status.textContent = `Error (${response.status})`;
             } else {
-              output.textContent = (data.results || []).join("\n");
+              output.innerHTML = highlightMarkdown(
+                (data.results || []).join("\n"),
+              );
               status.textContent = "Done";
             }
           } catch (err) {
@@ -1167,6 +1218,21 @@ Apply transformations to your Markdown content.</textarea
             event.preventDefault();
             runPlaygroundQuery();
           }
+        });
+
+        if (gutter) {
+          updateGutter();
+          markdownInput.addEventListener("input", updateGutter);
+          markdownInput.addEventListener("scroll", () => {
+            gutter.scrollTop = markdownInput.scrollTop;
+          });
+        }
+
+        presetButtons.forEach((button) => {
+          button.addEventListener("click", () => {
+            queryInput.value = button.dataset.query;
+            runPlaygroundQuery();
+          });
         });
       });
     </script>
