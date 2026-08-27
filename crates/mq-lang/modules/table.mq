@@ -739,3 +739,47 @@ def pivot_wider(table, names_from, values_from):
   | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
 end
 
+# Splits each row into multiple rows by exploding a delimiter-separated value
+# in column `col`: one row is emitted per split value, with every other
+# column copied unchanged onto each generated row. A row whose `col` value
+# has no `sep` in it still produces exactly one row.
+#
+# Example:
+# ```
+# import "table" | table::from_array([{"id": "1", "tags": "a;b"}]) | table::nest_rows(self, "tags", ";") | table::to_csv(self)
+# #=> id,tags
+# 1,a
+# 1,b
+# ```
+#
+# Returns: dict
+def nest_rows(table, col, sep):
+  flat_map(to_array(table), fn(record):
+    map(split(get_or(record, col, ""), sep), fn(v): set(record, col, v););
+  ) | from_array
+end
+
+# Inverse of `nest_rows`: collapses rows that share identical values in every
+# column except `col` into a single row, joining their `col` values with
+# `sep`. Column order follows the table's original header.
+#
+# Example:
+# ```
+# import "table" | table::from_array([{"id": "1", "tags": "a"}, {"id": "1", "tags": "b"}]) | table::unnest_rows(self, "tags", ";") | table::to_csv(self)
+# #=> id,tags
+# 1,a;b
+# ```
+#
+# Returns: dict
+def unnest_rows(table, col, sep):
+  let headers = map(table[:header], to_string)
+  | let key_of = fn(record): to_string(omit(record, [col]));
+  | map(entries(group_by(to_array(table), key_of)), fn(e):
+      let rows_for_key = e[1]
+      | let joined = join(map(rows_for_key, fn(r): get_or(r, col, "");), sep)
+      | fold(headers, dict(), fn(acc, h):
+          set(acc, h, if (h == col): joined else: get_or(first(rows_for_key), h, ""));
+        );
+    ) | from_array
+end
+

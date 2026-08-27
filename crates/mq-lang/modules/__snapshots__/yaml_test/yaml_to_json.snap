@@ -1,1 +1,1 @@
-{"array": ["item1", "item2", "item3"], "number": 42, "float": 3.14, "bool_true": true, "bool_false": false, "null_value": null, "object": {"key1": "value1", "key2": "value2"}, "nested": {"arr": ["a", "b"], "obj": {"subkey": "subval"}}}
+{"array": ["item1", "item2", "item3"], "nested": {"arr": ["a", "b"], "obj": {"subkey": "subval"}}, "number": 42, "float": 3.14, "bool_true": true, "bool_false": false, "null_value": null, "object": {"key1": "value1", "key2": "value2"}}
