@@ -1886,7 +1886,7 @@ end
 # Example:
 # ```
 # stats_by([{"g": "a", "v": 1}, {"g": "a", "v": 3}, {"g": "b", "v": 2}], fn(x): get(x, "g");, fn(x): get(x, "v");)
-# #=> [{"group": "a", "count": 2, "sum": 4, "mean": 2, "min": 1, "max": 3, "stddev": 1}, {"group": "b", "count": 1, "sum": 2, "mean": 2, "min": 2, "max": 2, "stddev": 0}]
+# #=> [{"count": 2, "min": 1, "max": 3, "group": "a", "sum": 4, "mean": 2, "stddev": 1}, {"count": 1, "min": 2, "max": 2, "group": "b", "sum": 2, "mean": 2, "stddev": 0}]
 # ```
 #
 # Returns: array
