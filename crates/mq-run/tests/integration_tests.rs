@@ -1659,6 +1659,47 @@ fn test_watch_requires_input_file() {
 }
 
 #[test]
+fn test_csv_delimiter_rejected_for_non_tabular_format() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("-I")
+        .arg("json")
+        .arg("--csv-delimiter")
+        .arg(";")
+        .arg("self")
+        .write_stdin(r#"{"a": 1}"#)
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_no_header_rejected_for_non_tabular_format() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("-I")
+        .arg("json")
+        .arg("--no-header")
+        .arg("self")
+        .write_stdin(r#"{"a": 1}"#)
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_csv_delimiter_allowed_for_tsv() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("-I")
+        .arg("tsv")
+        .arg("--csv-delimiter")
+        .arg(";")
+        .arg("self")
+        .write_stdin("a\tb\n1\t2")
+        .assert()
+        .success();
+}
+
+#[test]
 fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> {
     use assert_cmd::prelude::*;
     use std::io::{BufRead, BufReader};

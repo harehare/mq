@@ -282,6 +282,18 @@ struct InputArgs {
     #[arg(short = 'I', long, value_enum)]
     input_format: Option<InputFormat>,
 
+    /// Custom delimiter for `-I csv` input (a single ASCII character). Has no effect on
+    /// `-I tsv`/`-I psv`, which use a fixed tab/pipe delimiter by design; pass `-I csv`
+    /// with this flag instead if you need a different delimiter (e.g. `;`)
+    #[arg(long = "csv-delimiter", value_name = "CHAR")]
+    csv_delimiter: Option<char>,
+
+    /// Treat csv/tsv/psv input as headerless: each row becomes an array of values
+    /// instead of a dict keyed by header names. Applies to `-I csv`, `-I tsv`, and
+    /// `-I psv`
+    #[arg(long = "no-header", default_value_t = false)]
+    no_header: bool,
+
     /// Search modules from the directory
     #[arg(short = 'L', long = "directory")]
     module_directories: Option<Vec<PathBuf>>,
@@ -1297,6 +1309,14 @@ impl Cli {
             return Err(miette!("--diff is not supported with -F grep"));
         }
 
+        if (self.input.csv_delimiter.is_some() || self.input.no_header)
+            && matches!(&self.input.input_format, Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
+        {
+            return Err(miette!(
+                "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
+            ));
+        }
+
         match &self.commands {
             Some(Commands::Repl { files }) => {
                 let engine = self.create_engine()?;
@@ -1517,18 +1537,35 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
-    /// Returns a query prefix that auto-imports and parses a module-backed format.
-    ///
-    /// If an explicit `-I <format>` is given and it is a module-backed format, the prefix
-    /// for that format is returned. Otherwise the file extension is used for detection.
+    /// Returns a query prefix that auto-imports and parses a module-backed format,
+    /// from an explicit `-I <format>` or else the file extension.
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
-        if let Some(fmt) = &self.input.input_format {
-            return fmt.module_query_prefix().map(str::to_string);
+        let fmt = match &self.input.input_format {
+            Some(fmt) => fmt.clone(),
+            None => {
+                let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
+                InputFormat::from_extension(&ext)
+            }
+        };
+        self.tabular_query_prefix(&fmt)
+            .or_else(|| fmt.module_query_prefix().map(str::to_string))
+    }
+
+    /// `--csv-delimiter`/`--no-header`-aware prefix for csv/tsv/psv; `None` otherwise.
+    fn tabular_query_prefix(&self, fmt: &InputFormat) -> Option<String> {
+        let has_header = !self.input.no_header;
+        match fmt {
+            InputFormat::Csv => Some(match self.input.csv_delimiter {
+                Some(delimiter) => format!(
+                    r#"import "csv" | csv::csv_parse_with_delimiter({:?}, {has_header})"#,
+                    delimiter.to_string()
+                ),
+                None => format!(r#"import "csv" | csv::csv_parse({has_header})"#),
+            }),
+            InputFormat::Tsv => Some(format!(r#"import "csv" | csv::tsv_parse({has_header})"#)),
+            InputFormat::Psv => Some(format!(r#"import "csv" | csv::psv_parse({has_header})"#)),
+            _ => None,
         }
-        let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
-        InputFormat::from_extension(&ext)
-            .module_query_prefix()
-            .map(str::to_string)
     }
 
     fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: &Path) {
@@ -4616,6 +4653,44 @@ mod tests {
         assert_eq!(cli.auto_query_prefix(&None), None);
     }
 
+    #[rstest]
+    #[case(InputFormat::Csv, None, false, r#"import "csv" | csv::csv_parse(true)"#)]
+    #[case(InputFormat::Csv, None, true, r#"import "csv" | csv::csv_parse(false)"#)]
+    #[case(
+        InputFormat::Csv,
+        Some(';'),
+        false,
+        r#"import "csv" | csv::csv_parse_with_delimiter(";", true)"#
+    )]
+    #[case(InputFormat::Tsv, None, true, r#"import "csv" | csv::tsv_parse(false)"#)]
+    #[case(InputFormat::Psv, None, true, r#"import "csv" | csv::psv_parse(false)"#)]
+    fn test_tabular_query_prefix(
+        #[case] fmt: InputFormat,
+        #[case] csv_delimiter: Option<char>,
+        #[case] no_header: bool,
+        #[case] expected: &str,
+    ) {
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(fmt.clone()),
+                csv_delimiter,
+                no_header,
+                ..Default::default()
+            },
+            ..Cli::default()
+        };
+        assert_eq!(cli.tabular_query_prefix(&fmt).as_deref(), Some(expected));
+    }
+
+    #[test]
+    fn test_tabular_query_prefix_none_for_non_tabular_format() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            ..Cli::default()
+        };
+        assert_eq!(cli.tabular_query_prefix(&InputFormat::Json), None);
+    }
+
     #[test]
     fn test_json_auto_parse() {
         let (_, temp_file_path) = create_file("auto_parse_test.json", r#"{"key": "value"}"#);
@@ -4683,6 +4758,47 @@ mod tests {
         let content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(content.contains("Alice"), "CSV should be parsed automatically");
         assert!(content.contains("name"), "CSV header should be parsed");
+    }
+
+    #[test]
+    fn test_csv_delimiter_and_no_header_flags() {
+        let (_, temp_file_path) = create_file("custom_delim_test.csv", "Alice;30\nBob;25\n");
+        let temp_file_path_clone = temp_file_path.clone();
+        let (_, output_file) = create_file("custom_delim_output.json", "");
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Csv),
+                csv_delimiter: Some(';'),
+                no_header: true,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Json,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let json: serde_json::Value = serde_json::from_str(&content).expect("output should be valid JSON");
+        // Headerless: every row is an array of values, not a dict keyed by a first-row header.
+        assert_eq!(json, serde_json::json!([["Alice", "30"], ["Bob", "25"]]));
     }
 
     fn create_binary_file(name: &str, content: &[u8]) -> (PathBuf, PathBuf) {
