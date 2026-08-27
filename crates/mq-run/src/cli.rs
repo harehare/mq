@@ -147,6 +147,21 @@ impl InputFormat {
         }
     }
 
+    /// Like `from_extension`, but for a `name.<fmt>.gz` file, infers the format from the
+    /// inner extension (e.g. `data.csv.gz` -> Csv) rather than from `gz` itself.
+    fn from_path(path: &Path) -> Self {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+        if ext.eq_ignore_ascii_case("gz") {
+            let inner_ext = Path::new(path.file_stem().unwrap_or_default())
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or_default();
+            Self::from_extension(inner_ext)
+        } else {
+            Self::from_extension(ext)
+        }
+    }
+
     fn needs_binary_read(&self) -> bool {
         matches!(self, Self::Bytes | Self::Cbor)
     }
@@ -1542,10 +1557,7 @@ impl Cli {
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
         let fmt = match &self.input.input_format {
             Some(fmt) => fmt.clone(),
-            None => {
-                let ext = file.as_ref()?.extension()?.to_string_lossy().to_lowercase();
-                InputFormat::from_extension(&ext)
-            }
+            None => InputFormat::from_path(file.as_ref()?),
         };
         self.tabular_query_prefix(&fmt)
             .or_else(|| fmt.module_query_prefix().map(str::to_string))
@@ -1589,7 +1601,7 @@ impl Cli {
         Ok(
             match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
                 if let Some(file) = file {
-                    InputFormat::from_extension(&file.extension().unwrap_or_default().to_string_lossy())
+                    InputFormat::from_path(file)
                 } else if io::stdin().is_terminal() {
                     InputFormat::Null
                 } else {
@@ -2116,7 +2128,13 @@ impl Cli {
         files
             .iter()
             .map(|file| {
-                let content: ContentData = if self.needs_binary_read_for_file(file) {
+                let is_gzip = file
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("gz"));
+                let content = if is_gzip {
+                    self.read_gzip_file(file)?
+                } else if self.needs_binary_read_for_file(file) {
                     fs::read(file).map(Into::into).into_diagnostic()?
                 } else {
                     fs::read_to_string(file).map(Into::into).into_diagnostic()?
@@ -2124,6 +2142,34 @@ impl Cli {
                 Ok((Some(file.clone()), content))
             })
             .collect()
+    }
+
+    /// Reads and gunzips a `.gz` file, returning text or binary content based on the
+    /// format inferred from the inner filename (e.g. `data.csv.gz` -> text) or an
+    /// explicit `-I <format>`.
+    fn read_gzip_file(&self, file: &Path) -> miette::Result<ContentData> {
+        let raw = fs::read(file).into_diagnostic()?;
+        let mut decompressed = Vec::new();
+        flate2::read::GzDecoder::new(&raw[..])
+            .read_to_end(&mut decompressed)
+            .into_diagnostic()?;
+
+        let fmt = self
+            .input
+            .input_format
+            .clone()
+            .unwrap_or_else(|| InputFormat::from_path(file));
+        if fmt.needs_binary_read() {
+            Ok(ContentData::Bytes(decompressed))
+        } else {
+            String::from_utf8(decompressed).map(ContentData::Text).map_err(|e| {
+                miette!(
+                    "{} does not contain valid UTF-8 after decompression: {}",
+                    file.display(),
+                    e
+                )
+            })
+        }
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
@@ -4609,6 +4655,17 @@ mod tests {
     }
 
     #[rstest]
+    #[case("file.csv", InputFormat::Csv)]
+    #[case("file.csv.gz", InputFormat::Csv)]
+    #[case("file.json.gz", InputFormat::Json)]
+    #[case("file.tar.gz", InputFormat::Markdown)] // "tar" isn't a recognized inner extension
+    #[case("file.gz", InputFormat::Markdown)] // no inner extension at all
+    #[case("file.md", InputFormat::Markdown)]
+    fn test_input_format_from_path(#[case] filename: &str, #[case] expected: InputFormat) {
+        assert_eq!(InputFormat::from_path(&PathBuf::from(filename)), expected);
+    }
+
+    #[rstest]
     #[case("file.json", Some(r#"import "json" | json::json_parse()"#))]
     #[case("file.gron", Some(r#"import "gron" | gron::gron_parse()"#))]
     #[case("file.yaml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
@@ -4620,6 +4677,8 @@ mod tests {
     #[case("file.tsv", Some(r#"import "csv" | csv::tsv_parse(true)"#))]
     #[case("file.psv", Some(r#"import "csv" | csv::psv_parse(true)"#))]
     #[case("file.cbor", Some(r#"import "cbor" | cbor::cbor_parse()"#))]
+    #[case("file.csv.gz", Some(r#"import "csv" | csv::csv_parse(true)"#))]
+    #[case("file.json.gz", Some(r#"import "json" | json::json_parse()"#))]
     #[case("file.md", None)]
     #[case("file.txt", None)]
     fn test_auto_query_prefix(#[case] filename: &str, #[case] expected: Option<&str>) {
