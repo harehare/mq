@@ -147,17 +147,21 @@ impl InputFormat {
         }
     }
 
-    /// Like `from_extension`, but for a `name.<fmt>.gz` file, infers the format from the
-    /// inner extension (e.g. `data.csv.gz` -> Csv) rather than from `gz` itself.
+    fn is_gzip_path(path: &Path) -> bool {
+        path.extension()
+            .and_then(|e| e.to_str())
+            .is_some_and(|e| e.eq_ignore_ascii_case("gz"))
+    }
+
     fn from_path(path: &Path) -> Self {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
-        if ext.eq_ignore_ascii_case("gz") {
+        if Self::is_gzip_path(path) {
             let inner_ext = Path::new(path.file_stem().unwrap_or_default())
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or_default();
             Self::from_extension(inner_ext)
         } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
             Self::from_extension(ext)
         }
     }
@@ -2122,17 +2126,11 @@ impl Cli {
             })
     }
 
-    /// Reads each file's raw content, choosing binary or text mode per-file based on its
-    /// detected format. Shared by `read_contents` and the `repl` subcommand's file-seeding.
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         files
             .iter()
             .map(|file| {
-                let is_gzip = file
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .is_some_and(|e| e.eq_ignore_ascii_case("gz"));
-                let content = if is_gzip {
+                let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
                 } else if self.needs_binary_read_for_file(file) {
                     fs::read(file).map(Into::into).into_diagnostic()?
@@ -2144,9 +2142,6 @@ impl Cli {
             .collect()
     }
 
-    /// Reads and gunzips a `.gz` file, returning text or binary content based on the
-    /// format inferred from the inner filename (e.g. `data.csv.gz` -> text) or an
-    /// explicit `-I <format>`.
     fn read_gzip_file(&self, file: &Path) -> miette::Result<ContentData> {
         let raw = fs::read(file).into_diagnostic()?;
         let mut decompressed = Vec::new();
@@ -2212,9 +2207,6 @@ impl Cli {
     }
 
     /// Recursively collects Markdown nodes from a `RuntimeValue`.
-    ///
-    /// Flattens nested `Array` values so that any Markdown nodes contained
-    /// within are returned as a flat list.
     fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_markdown::Node>) {
         match value {
             mq_lang::RuntimeValue::Markdown(node, _) => nodes.push((**node).clone()),
