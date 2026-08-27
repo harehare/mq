@@ -364,3 +364,38 @@ def test_table_pivot_wider_missing_combination():
   | assert_eq(to_string(result[:rows][1][1]), "25")
   | assert_eq(to_string(result[:rows][1][2]), "")
 end
+
+# @parametrize([
+#   [[{"id": "1", "tags": "a;b;c"}, {"id": "2", "tags": "x"}], [
+#     {"id": "1", "tags": "a"},
+#     {"id": "1", "tags": "b"},
+#     {"id": "1", "tags": "c"},
+#     {"id": "2", "tags": "x"},
+#   ]],
+#   [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
+# ])
+def test_table_nest_rows(records, expected):
+  let t = table::from_array(records)
+  | let result = table::nest_rows(t, "tags", ";")
+  | assert_eq(table::to_array(result), expected)
+end
+
+# @parametrize([
+#   [[{"id": "1", "tags": "a"}, {"id": "1", "tags": "b"}, {"id": "2", "tags": "x"}], [
+#     {"id": "1", "tags": "a;b"},
+#     {"id": "2", "tags": "x"},
+#   ]],
+#   [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
+# ])
+def test_table_unnest_rows(records, expected):
+  let t = table::from_array(records)
+  | let result = table::unnest_rows(t, "tags", ";")
+  | assert_eq(table::to_array(result), expected)
+end
+
+def test_table_nest_unnest_roundtrip():
+  let t = table::from_array([{"id": "1", "tags": "a;b"}])
+  | let nested = table::nest_rows(t, "tags", ";")
+  | let result = table::unnest_rows(nested, "tags", ";")
+  | assert_eq(table::to_array(result), [{"id": "1", "tags": "a;b"}])
+end

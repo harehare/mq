@@ -741,6 +741,29 @@ def take(arr, n):
     slice(arr, 0, n)
 end
 
+# Returns the top `n` elements of an array, ranked by descending value of a key
+# function. Pass `group_f` to rank independently within each group (grouped the
+# same way as `group_by`), which returns a dict of `{group: [top elements]}`
+# instead of a flat array.
+#
+# Example:
+# ```
+# top_by([3, 1, 4, 1, 5, 9, 2], identity, 3)
+# #=> [9, 5, 4]
+# ```
+#
+# Returns: dynamic
+def top_by(arr, f, n, group_f = None):
+  if (!is_array(arr)):
+    error("top_by: first argument must be an array")
+  elif (n < 0):
+    error("top_by: n must be non-negative")
+  elif (is_none(group_f)):
+    take(reverse(sort_by(arr, f)), n)
+  else:
+    with_entries(group_by(arr, group_f), fn(e): [e[0], take(reverse(sort_by(e[1], f)), n)];)
+end
+
 # Returns the index of the first element in an array that satisfies the provided function.
 #
 # Example:
@@ -1851,6 +1874,83 @@ def describe(arr):
         variance: variance(arr),
         count: len(arr),
       }
+    end
+end
+
+# Groups `arr` by `group_f` and computes summary statistics over `value_f(x)`
+# for each group, returning an array of dicts `{group, count, ...aggs}` ready
+# to pipe into `-F table` or `-F csv`. `group` and `count` are always
+# included; `aggs` picks which of `sum`, `mean`, `min`, `max`, `stddev`,
+# `median`, `variance` to compute.
+#
+# Example:
+# ```
+# stats_by([{"g": "a", "v": 1}, {"g": "a", "v": 3}, {"g": "b", "v": 2}], fn(x): get(x, "g");, fn(x): get(x, "v");)
+# #=> [{"group": "a", "count": 2, "sum": 4, "mean": 2, "min": 1, "max": 3, "stddev": 1}, {"group": "b", "count": 1, "sum": 2, "mean": 2, "min": 2, "max": 2, "stddev": 0}]
+# ```
+#
+# Returns: array
+def stats_by(arr, group_f, value_f, aggs = ["sum", "mean", "min", "max", "stddev"]):
+  if (!is_array(arr)):
+    error("stats_by: first argument must be an array")
+  else:
+    map(entries(group_by(arr, group_f)), fn(e):
+      let values = map(e[1], value_f)
+      | fold(aggs, {group: e[0], count: len(values)}, fn(acc, agg):
+          if (agg == "sum"): set(acc, "sum", sum(values))
+          elif (agg == "mean"): set(acc, "mean", mean(values))
+          elif (agg == "min"): set(acc, "min", first(sort(values)))
+          elif (agg == "max"): set(acc, "max", last(sort(values)))
+          elif (agg == "stddev"): set(acc, "stddev", stddev(values))
+          elif (agg == "median"): set(acc, "median", median(values))
+          elif (agg == "variance"): set(acc, "variance", variance(values))
+          else: error("stats_by: unknown agg \"" + agg + "\"");
+        );
+    )
+end
+
+# Buckets a numeric array into `buckets` equal-width bins between its min and
+# max, returning an array of `{range, count, bar}` — `bar` is a block-character
+# bar scaled so the tallest bucket is 40 characters wide, handy for a quick
+# terminal or Markdown look at a distribution.
+#
+# Example:
+# ```
+# get(histogram([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 5)[0], "range")
+# #=> 1-2.8
+# ```
+#
+# Returns: array
+def histogram(arr, buckets = 10):
+  if (!is_array(arr)):
+    error("histogram: first argument must be an array")
+  elif (buckets <= 0):
+    error("histogram: buckets must be a positive integer")
+  elif (is_empty(arr)):
+    []
+  else:
+    do
+      let sorted = sort(arr)
+      | let lo = first(sorted)
+      | let hi = last(sorted)
+      | let span = if (hi == lo): 1 else: hi - lo
+      | let width = span / buckets
+      | let bucket_of = fn(x):
+          let idx = floor((x - lo) / width)
+          | if (idx >= buckets): buckets - 1 else: idx;
+      | let counts = fold(arr, foreach (i, range(0, buckets - 1)): 0;, fn(acc, x):
+          set(acc, bucket_of(x), acc[bucket_of(x)] + 1);
+        )
+      | let max_count = max_by(counts, identity)
+      | foreach (i, range(0, buckets - 1)):
+          let count = counts[i]
+          | let bar_len = if (max_count == 0): 0 else: round(count / max_count * 40)
+          | {
+            range: to_string(round(100 * (lo + i * width)) / 100) + "-" + to_string(round(100 * (lo + (i + 1) * width)) / 100),
+            count: count,
+            bar: repeat("█", bar_len),
+          }
+        end
     end
 end
 
