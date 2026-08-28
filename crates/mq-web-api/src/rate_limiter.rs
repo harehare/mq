@@ -51,6 +51,15 @@ impl RateLimiter {
     }
 
     pub async fn check_and_increment(&self, identifier: &str) -> Result<(), RateLimitError> {
+        self.check_and_increment_with_limit(identifier, None).await
+    }
+
+    pub async fn check_and_increment_with_limit(
+        &self,
+        identifier: &str,
+        limit_override: Option<i64>,
+    ) -> Result<(), RateLimitError> {
+        let limit = limit_override.unwrap_or(self.config.requests_per_window);
         let now = current_timestamp();
         let window_start = self.get_window_start(now);
         let expires_at = window_start + self.config.window_size_seconds;
@@ -73,14 +82,11 @@ impl RateLimiter {
 
         debug!(
             "Rate limit check for '{}': {}/{} requests in current window",
-            identifier, count, self.config.requests_per_window
+            identifier, count, limit
         );
 
-        if count > self.config.requests_per_window {
-            return Err(RateLimitError::LimitExceeded {
-                requests: count,
-                limit: self.config.requests_per_window,
-            });
+        if count > limit {
+            return Err(RateLimitError::LimitExceeded { requests: count, limit });
         }
 
         Ok(())
@@ -232,6 +238,28 @@ mod tests {
 
         let result = limiter.check_and_increment(identifier).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_check_and_increment_with_limit_override() {
+        let limiter = RateLimiter::new(RateLimitConfig {
+            requests_per_window: 100,
+            ..RateLimitConfig::default()
+        });
+        let identifier = "key:acme";
+
+        for _ in 1..=3 {
+            limiter
+                .check_and_increment_with_limit(identifier, Some(3))
+                .await
+                .unwrap();
+        }
+
+        let result = limiter.check_and_increment_with_limit(identifier, Some(3)).await;
+        assert!(matches!(
+            result,
+            Err(RateLimitError::LimitExceeded { requests: 4, limit: 3 })
+        ));
     }
 
     #[tokio::test]

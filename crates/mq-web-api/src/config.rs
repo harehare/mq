@@ -18,6 +18,14 @@ pub struct Config {
     pub query_timeout: Duration,
     /// Short-lived cache for repeated `{query, input, input_format, args}` combinations.
     pub query_cache: QueryCacheConfig,
+    pub auth: AuthConfig,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct AuthConfig {
+    pub enabled: bool,
+    pub keys: Vec<String>,
+    pub keys_file: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +47,7 @@ impl Default for Config {
             otel_service_name: "mq-web-api".to_string(),
             query_timeout: Duration::from_secs(10),
             query_cache: QueryCacheConfig::default(),
+            auth: AuthConfig::default(),
         }
     }
 }
@@ -175,6 +184,30 @@ impl Config {
                     max_entries_str, config.query_cache.max_entries
                 );
             }
+        }
+
+        if let Ok(enabled_str) = env::var("AUTH_ENABLED") {
+            match enabled_str.parse::<bool>() {
+                Ok(enabled) => config.auth.enabled = enabled,
+                Err(_) => eprintln!(
+                    "Warning: Invalid AUTH_ENABLED value '{}', using default {}",
+                    enabled_str, config.auth.enabled
+                ),
+            }
+        }
+
+        if let Ok(keys) = env::var("API_KEYS") {
+            config.auth.keys = keys
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
+
+        if let Ok(keys_file) = env::var("API_KEYS_FILE")
+            && !keys_file.is_empty()
+        {
+            config.auth.keys_file = Some(keys_file);
         }
 
         config

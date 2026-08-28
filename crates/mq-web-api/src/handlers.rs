@@ -9,7 +9,10 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tracing::{debug, error, info};
-use utoipa::{OpenApi, ToSchema};
+use utoipa::{
+    Modify, OpenApi, ToSchema,
+    openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme},
+};
 
 use crate::{
     api::{
@@ -149,9 +152,23 @@ pub async fn health_check() -> Json<HealthResponse> {
     ),
     tags(
         (name = "mq-api", description = "Markdown Query API")
-    )
+    ),
+    modifiers(&SecurityAddon)
 )]
 pub struct ApiDoc;
+
+struct SecurityAddon;
+
+impl Modify for SecurityAddon {
+    fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
+        if let Some(components) = openapi.components.as_mut() {
+            components.add_security_scheme(
+                "api_key",
+                SecurityScheme::Http(HttpBuilder::new().scheme(HttpAuthScheme::Bearer).build()),
+            );
+        }
+    }
+}
 
 #[utoipa::path(
     get,
@@ -164,7 +181,8 @@ pub struct ApiDoc;
         ("query" = String, Query, description = "mq query string to execute"),
         ("input" = String, Query, description = "Input content to process"),
         ("input_format" = Option<String>, Query, description = "Input format: markdown, mdx, text, html, raw, null, csv, tsv, psv, json, yaml, toml, xml, or toon")
-    )
+    ),
+    security(("api_key" = []))
 )]
 pub async fn get_query_api(
     ValidatedQuery(params): ValidatedQuery<QueryParams>,
@@ -219,7 +237,8 @@ pub async fn get_query_api(
         (status = 200, description = "Query executed successfully", body = QueryApiResponse),
         (status = 400, description = "Invalid request parameters"),
     ),
-    request_body = ApiRequest
+    request_body = ApiRequest,
+    security(("api_key" = []))
 )]
 pub async fn post_query_api(
     State(state): State<AppState>,
@@ -259,7 +278,8 @@ pub async fn post_query_api(
         (status = 200, description = "Batch processed (see per-item `error` fields for per-document failures)", body = BatchApiResponse),
         (status = 400, description = "Invalid request parameters, or `inputs` exceeds the batch size limit"),
     ),
-    request_body = BatchApiRequest
+    request_body = BatchApiRequest,
+    security(("api_key" = []))
 )]
 pub async fn post_batch_api(
     State(state): State<AppState>,
@@ -337,7 +357,8 @@ fn sniff_input_format(body: &str) -> Option<InputFormat> {
     responses(
         (status = 200, description = "Query executed successfully", body = QueryApiResponse),
         (status = 400, description = "Invalid query or request"),
-    )
+    ),
+    security(("api_key" = []))
 )]
 pub async fn post_shorthand_query_api(
     State(state): State<AppState>,

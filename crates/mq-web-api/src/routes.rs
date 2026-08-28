@@ -16,18 +16,23 @@ use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 use crate::{
+    auth::ApiKeyStore,
     config::Config,
     handlers::{
         ApiDoc, AppState, get_function_api, get_functions_api, get_query_api, get_selector_api, get_selectors_api,
         health_check, post_batch_api, post_check_api, post_format_api, post_lint_api, post_query_api,
         post_shorthand_query_api,
     },
-    middleware::rate_limit_middleware,
+    middleware::{AuthState, auth_middleware, rate_limit_middleware},
     query_cache::QueryCache,
     rate_limiter::RateLimiter,
 };
 
-pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router {
+pub fn create_router(
+    config: &Config,
+    rate_limiter: Arc<RateLimiter>,
+    api_key_store: Option<Arc<ApiKeyStore>>,
+) -> Router {
     let state = AppState {
         query_timeout: config.query_timeout,
         query_cache: Arc::new(QueryCache::new(config.query_cache.clone())),
@@ -67,7 +72,7 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
         .route("/selectors/{name}", get(get_selector_api))
         .route("/lint", post(post_lint_api));
 
-    Router::new()
+    let router = Router::new()
         .merge(SwaggerUi::new("/docs").url("/api/v1/openapi.json", ApiDoc::openapi()))
         .route("/health", get(health_check))
         .nest("/api/v1", v1_routes)
@@ -91,7 +96,21 @@ pub fn create_router(config: &Config, rate_limiter: Arc<RateLimiter>) -> Router 
                 .layer(CompressionLayer::new())
                 .layer(TraceLayer::new_for_http())
                 .layer(cors),
-        )
+        );
+
+    let router = if let Some(store) = api_key_store {
+        router.layer(middleware::from_fn_with_state(
+            AuthState {
+                store,
+                rate_limiter: rate_limiter.clone(),
+            },
+            auth_middleware,
+        ))
+    } else {
+        router
+    };
+
+    router
         .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
         .with_state(state)
 }
