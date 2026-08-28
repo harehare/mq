@@ -142,7 +142,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                     remaining.push(param.clone());
                 }
             }
-            Ok(RuntimeValue::Function(Box::new(remaining), program, partial_env))
+            Ok(RuntimeValue::Function(Shared::new(remaining), program, partial_env))
         }
         other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
     }
@@ -5102,8 +5102,20 @@ const fn fnv1a_hash_64(s: &str) -> u64 {
     hash
 }
 
+thread_local! {
+    static BUILTIN_LOOKUP_CACHE: std::cell::RefCell<FxHashMap<Ident, Option<&'static BuiltinFunction>>> =
+        std::cell::RefCell::new(FxHashMap::default());
+}
+
 pub fn get_builtin_functions(name: &Ident) -> Option<&'static BuiltinFunction> {
-    name.resolve_with(get_builtin_functions_by_str)
+    BUILTIN_LOOKUP_CACHE.with(|cache| {
+        if let Some(found) = cache.borrow().get(name) {
+            return *found;
+        }
+        let result = name.resolve_with(get_builtin_functions_by_str);
+        cache.borrow_mut().insert(*name, result);
+        result
+    })
 }
 
 mq_macros::builtin_dispatch! {

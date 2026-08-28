@@ -396,7 +396,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                             &self.env,
                             ident.name,
                             RuntimeValue::Function(
-                                Box::new(params.clone()),
+                                Shared::new(params.clone()),
                                 Shared::new(program.clone()),
                                 Shared::clone(&self.env),
                             ),
@@ -540,7 +540,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     env,
                     ident.name,
                     RuntimeValue::Function(
-                        Box::new(params.clone()),
+                        Shared::new(params.clone()),
                         Shared::new(program.clone()),
                         Shared::clone(env),
                     ),
@@ -749,7 +749,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         &module_env,
                         ident.name,
                         RuntimeValue::Function(
-                            Box::new(params.clone()),
+                            Shared::new(params.clone()),
                             Shared::new(program.clone()),
                             Shared::clone(&module_env),
                         ),
@@ -1416,7 +1416,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             ast::Expr::Unless(condition) => self.eval_unless(runtime_value, condition, env),
             ast::Expr::Def(ident, params, program) => {
                 let function = RuntimeValue::Function(
-                    Box::new(params.clone()),
+                    Shared::new(params.clone()),
                     Shared::new(program.clone()),
                     Shared::clone(env),
                 );
@@ -1424,7 +1424,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 Ok(function)
             }
             ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
-                Box::new(params.clone()),
+                Shared::new(params.clone()),
                 Shared::new(program.clone()),
                 Shared::clone(env),
             )),

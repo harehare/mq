@@ -95,13 +95,13 @@ pub enum RuntimeValue {
     Markdown(Box<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
     ///
-    /// The body is behind [`Shared`] for the same reason as [`Array`]/[`Dict`]: cloning a
-    /// `Function` value (e.g. on every `Env` lookup) is an O(1) refcount bump instead of an
-    /// O(n) deep copy of the body's `Vec`.
+    /// Both the params and the body are behind [`Shared`] for the same reason as
+    /// [`Array`]/[`Dict`]: cloning a `Function` value (e.g. on every `Env` lookup) is an O(1)
+    /// refcount bump instead of an O(n) deep copy.
     ///
     /// [`Array`]: RuntimeValue::Array
     /// [`Dict`]: RuntimeValue::Dict
-    Function(Box<AstParams>, Shared<Program>, Shared<SharedCell<Env>>),
+    Function(Shared<AstParams>, Shared<Program>, Shared<SharedCell<Env>>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A dictionary mapping identifiers to runtime values.
@@ -892,7 +892,7 @@ mod tests {
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
+                Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -952,7 +952,7 @@ mod tests {
         assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
+                Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -987,11 +987,11 @@ mod tests {
         assert!(RuntimeValue::Boolean(false) < RuntimeValue::Boolean(true));
         assert!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
+                Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                Box::new(smallvec![Param::new(IdentWithToken::new("test"))]),
+                Shared::new(smallvec![Param::new(IdentWithToken::new("test"))]),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
@@ -1047,7 +1047,7 @@ mod tests {
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function = RuntimeValue::Function(
-            Box::new(SmallVec::new()),
+            Shared::new(SmallVec::new()),
             Shared::new(Vec::new()),
             Shared::new(SharedCell::new(Env::default())),
         );
