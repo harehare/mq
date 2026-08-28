@@ -2819,6 +2819,7 @@ dependencies = [
  "colored 3.1.1",
  "csv",
  "dirs 6.0.0",
+ "flate2",
  "miette",
  "mimalloc",
  "mq-dap",

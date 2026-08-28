@@ -14,6 +14,22 @@ pub fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
     (temp_dir, temp_file_path)
 }
 
+pub fn create_gzip_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
+    let temp_dir = std::env::temp_dir();
+    let temp_file_path = temp_dir.join(name);
+    let file = File::create(&temp_file_path).expect("Failed to create temp file");
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    encoder
+        .write_all(content.as_bytes())
+        .expect("Failed to write gzip content");
+    encoder.finish().expect("Failed to finish gzip stream");
+
+    (temp_dir, temp_file_path)
+}
+
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
@@ -1697,6 +1713,63 @@ fn test_csv_delimiter_allowed_for_tsv() {
         .write_stdin("a\tb\n1\t2")
         .assert()
         .success();
+}
+
+#[test]
+fn test_gzip_csv_auto_detected_by_extension() {
+    let (_, file_path) = create_gzip_file("gzip_auto_detect.csv.gz", "name,age\nAlice,30\n");
+    let file_path_clone = file_path.clone();
+    defer! {
+        if file_path_clone.exists() {
+            std::fs::remove_file(&file_path_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd.arg("-F").arg("json").arg("self").arg(&file_path).assert().success();
+
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert!(stdout.contains("Alice"));
+    assert!(stdout.contains("name"));
+}
+
+#[test]
+fn test_gzip_with_explicit_input_format() {
+    let (_, file_path) = create_gzip_file("gzip_explicit_format.gz", r#"{"key": "value"}"#);
+    let file_path_clone = file_path.clone();
+    defer! {
+        if file_path_clone.exists() {
+            std::fs::remove_file(&file_path_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd
+        .arg("-I")
+        .arg("json")
+        .arg("-F")
+        .arg("json")
+        .arg("self")
+        .arg(&file_path)
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert!(stdout.contains("value"));
+}
+
+#[test]
+fn test_gzip_invalid_content_fails_cleanly() {
+    let (_, file_path) = create_file("gzip_invalid.csv.gz", "not actually gzip data");
+    let file_path_clone = file_path.clone();
+    defer! {
+        if file_path_clone.exists() {
+            std::fs::remove_file(&file_path_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("self").arg(&file_path).assert().failure();
 }
 
 #[test]
