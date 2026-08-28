@@ -213,6 +213,34 @@ cached.
 | `RATE_LIMIT_WINDOW_SIZE_SECONDS` | `3600` | Window size in seconds |
 | `RATE_LIMIT_CLEANUP_INTERVAL_SECONDS` | `3600` | Expired-entry cleanup interval |
 
+### Authentication
+
+Disabled by default. When `AUTH_ENABLED=true`, every endpoint except `/health`, `/docs`, and the OpenAPI spec requires `Authorization: Bearer <key>`. Keys carry a scope (`read`: `functions`/`selectors`/`check`/`format`/`lint`, `query`: `/api/v1/query`, `/api/v1/batch`, `/{query}`) and an optional rate limit override enforced independently of the IP-based limit above.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AUTH_ENABLED` | `false` | Require an API key on protected endpoints |
+| `API_KEYS` | — | Comma-separated keys; each gets both scopes and no rate limit override |
+| `API_KEYS_FILE` | — | Path to a JSON file for per-key name/scopes/rate limit (takes precedence over `API_KEYS`) |
+
+`API_KEYS_FILE` format:
+
+```json
+[
+  { "key": "sk_live_...", "name": "acme-corp", "scopes": ["read", "query"], "rate_limit_per_window": 5000 },
+  { "key": "sk_live_...", "name": "acme-readonly", "scopes": ["read"] }
+]
+```
+
+`scopes` defaults to `["read", "query"]` when omitted; `rate_limit_per_window` defaults to the server-wide `RATE_LIMIT_REQUESTS_PER_WINDOW`.
+
+```bash
+curl -H "Authorization: Bearer sk_live_..." \
+  -X POST http://localhost:8080/api/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": ".h1", "input": "# Title"}'
+```
+
 ### OpenTelemetry (requires `otel` feature)
 
 | Variable | Default | Description |

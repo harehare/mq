@@ -8,6 +8,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 static TRACER_PROVIDER: std::sync::OnceLock<opentelemetry_sdk::trace::SdkTracerProvider> = std::sync::OnceLock::new();
 
 use crate::{
+    auth::ApiKeyStore,
     cleanup::CleanupService,
     config::{Config, LogFormat},
     rate_limiter::RateLimiter,
@@ -115,12 +116,19 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
     info!("Rate limiter initialized successfully");
 
-    let app = create_router(&config, rate_limiter.clone()).layer(TraceLayer::new_for_http().on_response(
-        |response: &axum::response::Response, latency: Duration, _span: &tracing::Span| {
-            let ms = latency.as_secs_f64() * 1000.0;
-            info!("response latency: {:.2}ms, status: {}", ms, response.status());
-        },
-    ));
+    let api_key_store = ApiKeyStore::from_config(&config.auth).map(Arc::new);
+    match &api_key_store {
+        Some(store) => info!("API key authentication enabled with {} key(s)", store.len()),
+        None => info!("API key authentication disabled"),
+    }
+
+    let app =
+        create_router(&config, rate_limiter.clone(), api_key_store).layer(TraceLayer::new_for_http().on_response(
+            |response: &axum::response::Response, latency: Duration, _span: &tracing::Span| {
+                let ms = latency.as_secs_f64() * 1000.0;
+                info!("response latency: {:.2}ms, status: {}", ms, response.status());
+            },
+        ));
 
     let bind_address = config.bind_address();
     let listener = tokio::net::TcpListener::bind(&bind_address)
@@ -145,6 +153,9 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("  QUERY_CACHE_ENABLED: Cache repeated query/input combinations (default: true)");
     info!("  QUERY_CACHE_TTL_SECONDS: How long a cached result stays fresh (default: 30)");
     info!("  QUERY_CACHE_MAX_ENTRIES: Max number of cached query results (default: 1000)");
+    info!("  AUTH_ENABLED: Require an API key on protected endpoints (default: false)");
+    info!("  API_KEYS: Comma-separated API keys (all get read+query scope, no rate limit override)");
+    info!("  API_KEYS_FILE: Path to a JSON file of {{key, name, scopes, rate_limit_per_window}} entries");
 
     // Start cleanup service
     let mut cleanup_service = CleanupService::new(

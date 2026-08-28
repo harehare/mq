@@ -46,6 +46,10 @@
 //! - Configurable request windows
 //! - Automatic cleanup of expired entries
 //!
+//! # Authentication
+//!
+//! Opt-in via `AUTH_ENABLED=true`, `API_KEYS`/`API_KEYS_FILE`, and `Authorization: Bearer <key>`.
+//!
 //! # Configuration
 //!
 //! Configure the server using environment variables:
@@ -54,8 +58,10 @@
 //! - `HOST` - Bind address (default: 0.0.0.0)
 //! - `RATE_LIMIT_REQUESTS` - Max requests per window
 //! - `RATE_LIMIT_WINDOW` - Time window in seconds
+//! - `AUTH_ENABLED` - Require an API key (default: false)
 //!
 pub mod api;
+pub mod auth;
 pub mod banner;
 pub mod cleanup;
 pub mod config;
@@ -68,6 +74,7 @@ pub mod routes;
 pub mod server;
 
 pub use api::{ApiRequest, InputFormat, query};
+pub use auth::{ApiKeyStore, Scope};
 pub use cleanup::CleanupService;
 pub use config::Config;
 pub use query_cache::{QueryCache, QueryCacheConfig};
