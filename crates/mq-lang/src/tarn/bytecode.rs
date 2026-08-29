@@ -134,8 +134,16 @@ pub(crate) enum OpCode {
     /// Pops a catch closure then a try closure (both 0/1-arg, no-upvalue-restriction
     /// closures compiled like any nested `fn`); runs the try closure, and on error runs
     /// the catch closure instead (passing it a `{"message": ...}` dict if it takes a
-    /// parameter). `break`/`continue` cannot cross this boundary — see `compile_try`.
-    TryCatch(bool),
+    /// parameter). A `break` raised by the nested try chunk bypasses the catch and jumps
+    /// to the enclosing loop's patched exit target.
+    TryCatch {
+        has_binder: bool,
+        break_acc_slot: Option<u16>,
+        break_offset: Option<i32>,
+    },
+    /// Exits a loop outside this nested chunk. The enclosing `TryCatch` owns the actual
+    /// jump target and accumulator slot.
+    FlowBreak(bool),
     /// Raised when a `let`/`var` destructuring pattern doesn't match its value (e.g.
     /// `let [a, b] = [1]`) — mirrors `RuntimeError::DestructuringFailed`.
     RaiseDestructuringFailed,
@@ -147,6 +155,11 @@ pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
     pub(crate) constants: Vec<RuntimeValue>,
     pub(crate) local_count: u16,
+    /// Source names for local slots. Kept in non-debug builds too because legacy dynamic
+    /// builtins such as `get_variable` resolve names against the current lexical scope.
+    pub(crate) local_names: Vec<Ident>,
+    /// Source names for captured slots; see [`Self::local_names`].
+    pub(crate) upvalue_names: Vec<Ident>,
     /// Run-length-encoded `pc -> TokenId` map: `(pc_start, token_id)` pairs, one per run
     /// of consecutive instructions attributed to the same source token. Looked up via
     /// `token_at` to recover error spans.
@@ -195,6 +208,15 @@ impl Chunk {
         match &mut self.code[at] {
             OpCode::Jump(o) | OpCode::JumpIfFalse(o) => *o = offset,
             _ => unreachable!("patch_jump target is not a jump instruction"),
+        }
+    }
+
+    /// Patches a `TryCatch` control-flow break target to the next instruction.
+    pub(crate) fn patch_try_break(&mut self, at: usize) {
+        let offset = (self.code.len() - at - 1) as i32;
+        match &mut self.code[at] {
+            OpCode::TryCatch { break_offset, .. } => *break_offset = Some(offset),
+            _ => unreachable!("flow-break target is not a TryCatch instruction"),
         }
     }
 

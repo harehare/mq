@@ -114,7 +114,12 @@ pub(crate) enum VmError {
     EnvNotFound(String),
     UndefinedGlobal(String),
     Corrupt(&'static str),
-    ArityMismatch { expected: u8, actual: u8 },
+    ArityMismatch {
+        expected: u8,
+        actual: u8,
+    },
+    /// Internal control flow emitted by a `break` inside a nested `try` chunk.
+    FlowBreak(Option<RuntimeValue>),
     DestructuringFailed,
     InvalidForeachTarget(String),
     Timeout(Duration),
@@ -135,6 +140,7 @@ impl fmt::Display for VmError {
             VmError::ArityMismatch { expected, actual } => {
                 write!(f, "expected {expected} argument(s), got {actual}")
             }
+            VmError::FlowBreak(_) => write!(f, "break outside a loop"),
             VmError::DestructuringFailed => write!(f, "destructuring pattern did not match value"),
             VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
             VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
@@ -562,10 +568,49 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
     }
 }
 
+#[cfg(not(feature = "tarn"))]
+fn into_runtime_value(v: StackValue, _chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
+    match v {
+        StackValue::Value(rv) => rv,
+        StackValue::Closure(_) => RuntimeValue::None,
+    }
+}
+
 fn current_self(locals: &[Cell]) -> RuntimeValue {
     match read_cell(&locals[SELF_SLOT as usize]) {
         StackValue::Value(v) => v,
         StackValue::Closure(_) => RuntimeValue::None,
+    }
+}
+
+/// Makes statically-resolved slots visible to the legacy variable builtins. This is deliberately
+/// limited to `get_variable`/`set_variable`: publishing every frame's locals to the shared
+/// compatibility environment would leak catch binders after their lexical scope ends.
+fn sync_dynamic_env(
+    chunk: &Chunk,
+    locals: &[Cell],
+    upvalues: &[Cell],
+    chunks: &Shared<Vec<Chunk>>,
+    env: &Shared<SharedCell<Env>>,
+) {
+    #[cfg(not(feature = "sync"))]
+    let mut env = env.borrow_mut();
+    #[cfg(feature = "sync")]
+    let mut env = env.write().unwrap();
+
+    for (slot, name) in chunk.local_names.iter().enumerate() {
+        if *name != Ident::default()
+            && let Some(cell) = locals.get(slot)
+        {
+            env.define(*name, into_runtime_value(read_cell(cell), chunks));
+        }
+    }
+    for (slot, name) in chunk.upvalue_names.iter().enumerate() {
+        if *name != Ident::default()
+            && let Some(cell) = upvalues.get(slot)
+        {
+            env.define(*name, into_runtime_value(read_cell(cell), chunks));
+        }
     }
 }
 
@@ -886,6 +931,9 @@ fn run_chunk(
                     args.push(pop_value!());
                 }
                 args.reverse();
+                if ident == Ident::new("get_variable") || ident == Ident::new("set_variable") {
+                    sync_dynamic_env(chunk, &locals, upvalues, chunks, env);
+                }
                 stack.push(StackValue::Value(
                     call_builtin(&ident, &args, &current_self(&locals), env, host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
@@ -944,7 +992,11 @@ fn run_chunk(
                     stack.push(value);
                 }
             }
-            OpCode::TryCatch(has_binder) => {
+            OpCode::TryCatch {
+                has_binder,
+                break_acc_slot,
+                break_offset,
+            } => {
                 let StackValue::Closure(catch_closure) = pop!() else {
                     bail!(VmError::Corrupt("TryCatch catch operand is not a closure"));
                 };
@@ -966,6 +1018,16 @@ fn run_chunk(
                 ) {
                     Ok(value) => stack.push(value),
                     Err(e) => {
+                        if let Some(value) = flow_break_value(&e) {
+                            let (Some(acc_slot), Some(offset)) = (break_acc_slot, break_offset) else {
+                                return Err(e);
+                            };
+                            if let Some(value) = value {
+                                write_cell(&locals[acc_slot as usize], StackValue::Value(value));
+                            }
+                            ip = (ip as i64 + offset as i64) as usize;
+                            continue;
+                        }
                         let catch_locals = fresh_locals(chunks[catch_closure.chunk_index as usize].local_count);
                         write_cell(
                             &catch_locals[SELF_SLOT as usize],
@@ -987,6 +1049,10 @@ fn run_chunk(
                         )?);
                     }
                 }
+            }
+            OpCode::FlowBreak(has_value) => {
+                let value = if has_value { Some(pop_value!()) } else { None };
+                bail!(VmError::FlowBreak(value));
             }
             OpCode::RaiseDestructuringFailed => {
                 bail!(VmError::DestructuringFailed);
@@ -1267,6 +1333,14 @@ fn error_message(e: &VmError) -> String {
         VmError::Located(inner, _) => error_message(inner),
         VmError::Builtin(inner) => builtin_error_message(inner),
         other => other.to_string(),
+    }
+}
+
+fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
+    match e {
+        VmError::FlowBreak(value) => Some(value.clone()),
+        VmError::Located(inner, _) => flow_break_value(inner),
+        _ => None,
     }
 }
 

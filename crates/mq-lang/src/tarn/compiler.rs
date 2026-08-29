@@ -54,6 +54,10 @@ type CompileResult<T> = Result<T, CompileError>;
 
 pub(crate) struct CompiledProgram {
     pub(crate) chunks: Shared<Vec<Chunk>>,
+    /// Source metadata captured from the same module loader that assigned every token's
+    /// module ID. The debugger must not reconstruct this through a fresh loader instance.
+    #[cfg(feature = "debugger")]
+    pub(crate) debug_sources: Vec<(crate::ModuleId, crate::Source)>,
 }
 
 enum Resolved {
@@ -69,6 +73,7 @@ enum ContinueTarget {
 struct LoopCtx {
     continue_target: ContinueTarget,
     break_jumps: Vec<usize>,
+    break_try_catches: Vec<usize>,
     acc_slot: u16,
     chunk_index: usize,
 }
@@ -84,6 +89,9 @@ struct Compiler<R: ModuleResolver> {
     qualified_bindings: FxHashMap<(crate::Ident, crate::Ident), (usize, u16)>,
     external_globals: FxHashSet<crate::Ident>,
     used_unresolved_call_name: bool,
+    /// Bare names in a `try`/`catch` must fail while running so the surrounding catch
+    /// expression can handle them, matching the tree-walker's dynamic lookup semantics.
+    try_depth: usize,
 }
 
 pub(crate) fn compile_program<R: ModuleResolver>(
@@ -163,6 +171,7 @@ fn compile_program_impl<R: ModuleResolver>(
         qualified_bindings: FxHashMap::default(),
         external_globals: external_globals.iter().copied().collect(),
         used_unresolved_call_name: false,
+        try_depth: 0,
     };
     if load_builtin_prelude {
         let builtin_module = compiler
@@ -175,20 +184,74 @@ fn compile_program_impl<R: ModuleResolver>(
     compiler.compile_top_level(program)?;
     compiler.emit(OpCode::Return);
     compiler.chunks[0].local_count = compiler.scopes[0].local_count();
+    compiler.chunks[0].local_names = compiler.scopes[0].local_names();
+    compiler.chunks[0].upvalue_names = compiler.scopes[0].upvalue_names();
     #[cfg(feature = "debugger")]
     {
         compiler.chunks[0].debug_symbols =
             DebugSymbolTable::new(compiler.scopes[0].debug_locals(), compiler.scopes[0].debug_upvalues());
     }
+    #[cfg(feature = "debugger")]
+    let debug_sources = compiler.debug_sources();
     Ok((
         CompiledProgram {
             chunks: Shared::new(compiler.chunks),
+            #[cfg(feature = "debugger")]
+            debug_sources,
         },
         compiler.used_unresolved_call_name,
     ))
 }
 
 impl<R: ModuleResolver> Compiler<R> {
+    #[cfg(feature = "debugger")]
+    fn debug_sources(&self) -> Vec<(crate::ModuleId, crate::Source)> {
+        #[cfg(not(feature = "sync"))]
+        let token_ids = self
+            .token_arena
+            .borrow()
+            .as_slice()
+            .iter()
+            .map(|token| token.module_id)
+            .fold(Vec::new(), |mut ids, module_id| {
+                if !ids.contains(&module_id) {
+                    ids.push(module_id);
+                }
+                ids
+            });
+        #[cfg(feature = "sync")]
+        let token_ids = self
+            .token_arena
+            .read()
+            .unwrap()
+            .as_slice()
+            .iter()
+            .map(|token| token.module_id)
+            .fold(Vec::new(), |mut ids, module_id| {
+                if !ids.contains(&module_id) {
+                    ids.push(module_id);
+                }
+                ids
+            });
+
+        token_ids
+            .into_iter()
+            .filter(|module_id| *module_id != crate::Module::TOP_LEVEL_MODULE_ID)
+            .map(|module_id| {
+                (
+                    module_id,
+                    crate::Source {
+                        name: Some(self.module_loader.module_file_name(module_id)),
+                        code: self
+                            .module_loader
+                            .get_source_code_for_debug(module_id)
+                            .unwrap_or_default(),
+                    },
+                )
+            })
+            .collect()
+    }
+
     fn compile_top_level(&mut self, program: &Program) -> CompileResult<()> {
         enum Deferred {
             Statement(Shared<Node>),
@@ -323,6 +386,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let finished = self.scopes.pop().expect("scope pushed above");
         self.chunks[new_index as usize].local_count = finished.local_count();
+        self.chunks[new_index as usize].local_names = finished.local_names();
+        self.chunks[new_index as usize].upvalue_names = finished.upvalue_names();
         self.chunks[new_index as usize].param_shape = ParamShape {
             bindings,
             required,
@@ -346,18 +411,36 @@ impl<R: ModuleResolver> Compiler<R> {
         catch: &Shared<Node>,
     ) -> CompileResult<()> {
         let try_program: Program = vec![Shared::clone(body)];
-        let (try_chunk, try_upvalues) = self.compile_function(&ast::Params::new(), &try_program, None)?;
+        self.try_depth += 1;
+        let try_result = self.compile_function(&ast::Params::new(), &try_program, None);
+        self.try_depth -= 1;
+        let (try_chunk, try_upvalues) = try_result?;
 
         let mut catch_params = ast::Params::new();
         if let Some(binder) = binder {
             catch_params.push(ast::Param::new(binder.clone()));
         }
         let catch_program: Program = vec![Shared::clone(catch)];
-        let (catch_chunk, catch_upvalues) = self.compile_function(&catch_params, &catch_program, None)?;
+        self.try_depth += 1;
+        let catch_result = self.compile_function(&catch_params, &catch_program, None);
+        self.try_depth -= 1;
+        let (catch_chunk, catch_upvalues) = catch_result?;
 
         self.emit(OpCode::MakeClosure(try_chunk, try_upvalues));
         self.emit(OpCode::MakeClosure(catch_chunk, catch_upvalues));
-        self.emit(OpCode::TryCatch(binder.is_some()));
+        let break_acc_slot = self
+            .loops
+            .last()
+            .filter(|loop_ctx| loop_ctx.chunk_index == self.current)
+            .map(|loop_ctx| loop_ctx.acc_slot);
+        let try_catch = self.emit(OpCode::TryCatch {
+            has_binder: binder.is_some(),
+            break_acc_slot,
+            break_offset: None,
+        });
+        if break_acc_slot.is_some() {
+            self.loops.last_mut().unwrap().break_try_catches.push(try_catch);
+        }
         Ok(())
     }
 
@@ -955,10 +1038,11 @@ impl<R: ModuleResolver> Compiler<R> {
                     .last()
                     .ok_or(CompileError::Unsupported("break outside a loop", self.current_token_id))?;
                 if loop_ctx.chunk_index != self.current {
-                    return Err(CompileError::Unsupported(
-                        "break cannot cross into a nested chunk (a try/catch body)",
-                        self.current_token_id,
-                    ));
+                    if let Some(v) = value {
+                        self.compile_expr(v)?;
+                    }
+                    self.emit(OpCode::FlowBreak(value.is_some()));
+                    return Ok(());
                 }
                 let acc_slot = loop_ctx.acc_slot;
                 if let Some(v) = value {
@@ -1055,6 +1139,10 @@ impl<R: ModuleResolver> Compiler<R> {
             None if builtin::get_builtin_functions(&name).is_some() => {
                 let idx = self.chunk_mut().push_const(RuntimeValue::NativeFunction(name));
                 self.emit(OpCode::Const(idx));
+                Ok(())
+            }
+            None if self.try_depth > 0 => {
+                self.emit(OpCode::GetExternalGlobal(name));
                 Ok(())
             }
             None => Err(CompileError::UndefinedIdent(name.to_string(), self.current_token_id)),
@@ -1280,10 +1368,11 @@ impl<R: ModuleResolver> Compiler<R> {
         continue_target: usize,
         acc_slot: u16,
         body: &Program,
-    ) -> CompileResult<Vec<usize>> {
+    ) -> CompileResult<(Vec<usize>, Vec<usize>)> {
         self.loops.push(LoopCtx {
             continue_target: ContinueTarget::Fixed(continue_target),
             break_jumps: Vec::new(),
+            break_try_catches: Vec::new(),
             acc_slot,
             chunk_index: self.current,
         });
@@ -1293,7 +1382,8 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
         let back = self.chunk_mut().backward_offset(continue_target);
         self.emit(OpCode::Jump(back));
-        Ok(self.loops.pop().unwrap().break_jumps)
+        let loop_ctx = self.loops.pop().unwrap();
+        Ok((loop_ctx.break_jumps, loop_ctx.break_try_catches))
     }
 
     fn compile_foreach(&mut self, ident: crate::Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
@@ -1330,6 +1420,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.loops.push(LoopCtx {
             continue_target: ContinueTarget::Pending(Vec::new()),
             break_jumps: Vec::new(),
+            break_try_catches: Vec::new(),
             acc_slot,
             chunk_index: self.current,
         });
@@ -1359,6 +1450,9 @@ impl<R: ModuleResolver> Compiler<R> {
         for jump in finished.break_jumps {
             self.chunk_mut().patch_jump(jump);
         }
+        for try_catch in finished.break_try_catches {
+            self.chunk_mut().patch_try_break(try_catch);
+        }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())
     }
@@ -1382,11 +1476,14 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::Not);
         }
         let exit_jump = self.emit(OpCode::JumpIfFalse(0));
-        let mut patch_sites = self.compile_loop_body(loop_start, acc_slot, body)?;
+        let (mut patch_sites, break_try_catches) = self.compile_loop_body(loop_start, acc_slot, body)?;
         patch_sites.push(exit_jump);
 
         for jump in patch_sites {
             self.chunk_mut().patch_jump(jump);
+        }
+        for try_catch in break_try_catches {
+            self.chunk_mut().patch_try_break(try_catch);
         }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())
@@ -1398,10 +1495,13 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
 
         let loop_start = self.chunk_mut().code.len();
-        let patch_sites = self.compile_loop_body(loop_start, acc_slot, body)?;
+        let (patch_sites, break_try_catches) = self.compile_loop_body(loop_start, acc_slot, body)?;
 
         for jump in patch_sites {
             self.chunk_mut().patch_jump(jump);
+        }
+        for try_catch in break_try_catches {
+            self.chunk_mut().patch_try_break(try_catch);
         }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())

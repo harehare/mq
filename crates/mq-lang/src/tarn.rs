@@ -118,6 +118,7 @@ pub(crate) fn vm_error_to_runtime_error(
                     expected: *expected,
                     actual: *actual,
                 },
+                VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
                 VmError::DestructuringFailed => RuntimeError::DestructuringFailed(token),
                 VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
                     token,
@@ -378,9 +379,20 @@ where
 {
     let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
     let Some((before, after)) = split_at_nodes(program) else {
-        let compiled =
-            compiler::compile_program_for_engine(program, Shared::clone(&token_arena), module_loader, &global_names)?;
-        let mut hook = debugger::VmDebuggerHook::new(debugger, handler, token_arena, source);
+        let compiled = compiler::compile_program_for_engine(
+            program,
+            Shared::clone(&token_arena),
+            module_loader.clone(),
+            &global_names,
+        )?;
+        let mut hook = debugger::VmDebuggerHook::new(
+            debugger,
+            handler,
+            token_arena,
+            source,
+            module_loader.clone(),
+            compiled.debug_sources.clone(),
+        );
         return inputs
             .map(|input| {
                 match run_for_input(input, |v| {
@@ -409,7 +421,14 @@ where
         module_loader.clone(),
         &global_names,
     )?;
-    let mut hook = debugger::VmDebuggerHook::new(debugger, handler, Shared::clone(&token_arena), source);
+    let mut hook = debugger::VmDebuggerHook::new(
+        debugger,
+        handler,
+        Shared::clone(&token_arena),
+        source,
+        module_loader.clone(),
+        compiled.debug_sources.clone(),
+    );
     let values = inputs
         .map(|input| {
             match run_for_input(input, |v| {
@@ -433,6 +452,7 @@ where
         .collect::<Result<Vec<_>, Error>>()?;
     let aggregate_compiled =
         compiler::compile_program_for_engine(&after.to_vec(), token_arena, module_loader, &global_names)?;
+    hook.set_sources(aggregate_compiled.debug_sources.clone());
     match interpreter::run_with_debug_hook_and_globals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
@@ -1063,6 +1083,8 @@ mod tests {
                 name: None,
                 code: String::new(),
             },
+            ModuleLoader::new(StdModuleResolver),
+            Default::default(),
         );
 
         interpreter::run_with_debug_hook_and_globals(
@@ -1133,6 +1155,8 @@ mod tests {
                 name: None,
                 code: String::new(),
             },
+            ModuleLoader::new(StdModuleResolver),
+            Default::default(),
         );
 
         interpreter::run_with_debug_hook_and_globals(
@@ -1197,12 +1221,17 @@ mod tests {
         assert!(matches!(err, Error::Vm(_)));
     }
 
-    #[rstest]
-    #[case::break_inside_try_body("while(true): try: break catch: 1;;", "break")]
-    #[case::continue_inside_try_body("while(true): try: continue catch: 1;;", "continue")]
-    fn break_or_continue_crossing_a_try_boundary_is_a_compile_error(#[case] code: &str, #[case] _which: &str) {
+    #[test]
+    fn break_crossing_a_try_boundary_exits_the_enclosing_loop() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let program = crate::parse("while(true): try: break catch: 1;;", Shared::clone(&token_arena)).unwrap();
+        assert_eq!(compile_and_run(&program, token_arena).unwrap(), RuntimeValue::None);
+    }
+
+    #[test]
+    fn continue_crossing_a_try_boundary_is_a_compile_error() {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("while(true): try: continue catch: 1;;", Shared::clone(&token_arena)).unwrap();
         let err = compile_and_run(&program, token_arena).unwrap_err();
         assert!(matches!(err, Error::Compile(compiler::CompileError::Unsupported(..))));
     }
