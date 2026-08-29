@@ -3,6 +3,7 @@ import { syntaxHighlighting } from "@codemirror/language";
 import { markdown } from "@codemirror/lang-markdown";
 import { mqLanguage } from "../lib/mqLanguage";
 import { editorHighlightStyle } from "../lib/editorHighlight";
+import type { KeyboardEventHandler } from "react";
 
 export type EditorLanguage = "markdown" | "mq";
 
@@ -14,6 +15,7 @@ type CodeEditorProps = {
   highlightActiveLine?: boolean;
   className?: string;
   onChange?: (value: string) => void;
+  onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
 };
 
 const languageExtension = (language: EditorLanguage) => {
@@ -71,6 +73,7 @@ export function CodeEditor({
   highlightActiveLine = !readOnly,
   className,
   onChange,
+  onKeyDown,
 }: CodeEditorProps) {
   return (
     <CodeMirror
@@ -89,6 +92,7 @@ export function CodeEditor({
       theme={editorTheme}
       extensions={[languageExtension(language), syntaxHighlighting(editorHighlightStyle)]}
       onChange={onChange}
+      onKeyDown={onKeyDown}
     />
   );
 }

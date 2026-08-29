@@ -10,11 +10,14 @@ nothing is sent to a server.
 
 ## What it does
 
-1. **Extract page** — grabs the current tab's raw HTML and converts it to
-   Markdown in the source pane, which you can also edit or paste your own
-   content into.
-2. **Run a query** — filters the source Markdown and shows the result,
-   with a Copy button.
+1. **Extract page** — when you open the popup, it grabs the current tab's raw
+   HTML and converts it to Markdown in the source pane. You can also edit or
+   paste your own content into it.
+2. **Run a query** — filters the source Markdown and shows the result.
+   Queries run automatically shortly after you stop typing, or immediately
+   with **Cmd/Ctrl+Enter** or the Run button.
+3. **Reuse the result** — copy it or download it as `mq-result.md`; the
+   result pane also shows the output size and execution time.
 
 ## Install (unpacked, not yet on the Chrome Web Store)
 
