@@ -1,7 +1,6 @@
 use super::env::Env;
 use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
 use mq_markdown::Node;
-use smol_str::SmolStr;
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -19,7 +18,7 @@ pub enum Selector {
 /// Represents a module's runtime environment with its exports.
 #[derive(Clone, Debug)]
 pub struct ModuleEnv {
-    name: SmolStr,
+    name: Ident,
     exports: Shared<SharedCell<Env>>,
 }
 
@@ -27,14 +26,14 @@ impl ModuleEnv {
     /// Creates a new module environment with the given name and exports.
     pub fn new(name: &str, exports: Shared<SharedCell<Env>>) -> Self {
         Self {
-            name: SmolStr::new(name),
+            name: Ident::new(name),
             exports,
         }
     }
 
     /// Returns the name of the module.
-    pub fn name(&self) -> &str {
-        &self.name
+    pub fn name(&self) -> String {
+        self.name.as_str()
     }
 
     /// Returns a reference to the module's exports environment.
@@ -95,7 +94,14 @@ pub enum RuntimeValue {
     /// A markdown node with an optional selector for indexing.
     Markdown(Box<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
-    Function(Box<AstParams>, Program, Shared<SharedCell<Env>>),
+    ///
+    /// Both the params and the body are behind [`Shared`] for the same reason as
+    /// [`Array`]/[`Dict`]: cloning a `Function` value (e.g. on every `Env` lookup) is an O(1)
+    /// refcount bump instead of an O(n) deep copy.
+    ///
+    /// [`Array`]: RuntimeValue::Array
+    /// [`Dict`]: RuntimeValue::Dict
+    Function(Shared<AstParams>, Shared<Program>, Shared<SharedCell<Env>>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A dictionary mapping identifiers to runtime values.
@@ -886,8 +892,8 @@ mod tests {
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
-                Vec::new(),
+                Shared::new(SmallVec::new()),
+                Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
             .name(),
@@ -946,8 +952,8 @@ mod tests {
         assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
-                Vec::new(),
+                Shared::new(SmallVec::new()),
+                Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
             .is_truthy()
@@ -981,12 +987,12 @@ mod tests {
         assert!(RuntimeValue::Boolean(false) < RuntimeValue::Boolean(true));
         assert!(
             RuntimeValue::Function(
-                Box::new(SmallVec::new()),
-                Vec::new(),
+                Shared::new(SmallVec::new()),
+                Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             ) < RuntimeValue::Function(
-                Box::new(smallvec![Param::new(IdentWithToken::new("test"))]),
-                Vec::new(),
+                Shared::new(smallvec![Param::new(IdentWithToken::new("test"))]),
+                Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
             )
         );
@@ -1041,8 +1047,8 @@ mod tests {
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
         let function = RuntimeValue::Function(
-            Box::new(SmallVec::new()),
-            Vec::new(),
+            Shared::new(SmallVec::new()),
+            Shared::new(Vec::new()),
             Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(format!("{:?}", function), "function/0");
@@ -1818,7 +1824,14 @@ mod tests {
         let e2 = Shared::new(SharedCell::new(Env::default()));
         let m1 = RuntimeValue::Module(ModuleEnv::new("alpha", e1));
         let m2 = RuntimeValue::Module(ModuleEnv::new("beta", e2));
-        assert!(m1 < m2);
+        // `ModuleEnv::name` is an interned `Ident`, so ordering follows intern order rather
+        // than lexicographic order; compare against the `Ident` ordering directly instead of
+        // assuming "alpha" < "beta" (which isn't guaranteed and would make this test flaky
+        // depending on what else has been interned by the time it runs).
+        assert_eq!(
+            m1.partial_cmp(&m2),
+            Ident::new("alpha").partial_cmp(&Ident::new("beta"))
+        );
     }
 
     #[test]
