@@ -126,6 +126,13 @@ body {
   padding-left: 7px;
 }
 
+.pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .pane-textarea {
   display: flex;
   width: 100%;
@@ -139,6 +146,15 @@ body {
 
 .query-textarea {
   min-height: 0;
+}
+
+.keyboard-hint,
+.result-meta {
+  padding: 5px 10px;
+  color: var(--muted);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: 11px;
 }
 
 .pane-footer {
@@ -176,15 +192,13 @@ button:disabled {
   cursor: not-allowed;
 }
 
-button.primary,
-button.run-button {
+button.primary {
   background: var(--accent);
   color: var(--accent-fg);
   border-color: var(--accent);
 }
 
-button.primary:hover:not(:disabled),
-button.run-button:hover:not(:disabled) {
+button.primary:hover:not(:disabled) {
   background: var(--accent-strong);
   border-color: var(--accent-strong);
   color: var(--accent-fg);

@@ -1,4 +1,5 @@
 import { EXAMPLE_CATEGORIES } from "../lib/examples";
+import { isRunShortcut } from "../lib/shortcuts";
 import { CodeEditor } from "./CodeEditor";
 
 type QueryEditorProps = {
@@ -49,15 +50,16 @@ export function QueryEditor({
         value={query}
         highlightActiveLine={false}
         onChange={onChange}
+        onKeyDown={(event) => {
+          if (isRunShortcut(event)) {
+            event.preventDefault();
+            if (!disabled && !isRunning) onRun();
+          }
+        }}
       />
-      <button
-        type="button"
-        className="run-button"
-        onClick={onRun}
-        disabled={disabled || isRunning}
-      >
-        {isRunning ? "Running…" : "Run"}
-      </button>
+      <span className="keyboard-hint">
+        {isRunning ? "Running…" : "Auto-run enabled · ⌘/Ctrl + Enter to run now"}
+      </span>
     </section>
   );
 }

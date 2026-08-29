@@ -33,8 +33,8 @@ importers:
         specifier: ^6.0.2
         version: 6.0.2
       mq-web:
-        specifier: 0.8.3
-        version: 0.8.3
+        specifier: 0.8.4
+        version: 0.8.4
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -1262,8 +1262,8 @@ packages:
   mlly@1.8.2:
     resolution: {integrity: sha512-d+ObxMQFmbt10sretNDytwt85VrbkhhUA/JBGm1MPaWJ65Cl4wOgLaB1NYvJSZ0Ef03MMEU/0xpPMXUIQ29UfA==}
 
-  mq-web@0.8.3:
-    resolution: {integrity: sha512-jyxh1xw/iLUl4O0MArjHHOMwTRpK1Q09R74bzEpihE7c+zy3B79tdoqYznU1zBb974L3/Gl4c85ybvlSR47yug==}
+  mq-web@0.8.4:
+    resolution: {integrity: sha512-FIISCftrBMEXVs0r56najswbv+QhAWDkU0xqDKbN/srHyGdoImjOcBGj/LVjpJUN0D2BNVxXg1PrIIbjJy6fVg==}
 
   nano-spawn@2.1.0:
     resolution: {integrity: sha512-yTW+2okrElHiH4fsiz/+/zc0EDo9BDDoC3iKk8dpv1GeRc9nUWzUZHx6TofMWErchhUQR8hY9/Eu1Uja9x1nqA==}
@@ -2693,7 +2693,7 @@ snapshots:
       pkg-types: 1.3.1
       ufo: 1.6.4
 
-  mq-web@0.8.3: {}
+  mq-web@0.8.4: {}
 
   nano-spawn@2.1.0: {}
 

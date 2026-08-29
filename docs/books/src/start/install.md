@@ -139,8 +139,10 @@ You can install the VSCode extension from the [Visual Studio Marketplace](https:
 ### Chrome Extension
 
 The mq Chrome extension converts the page you're viewing to Markdown and
-runs mq queries against it from the toolbar popup. It isn't on the Chrome
-Web Store yet, so install it unpacked:
+runs mq queries against it from the toolbar popup. Queries run automatically
+after editing, or immediately with Cmd/Ctrl+Enter; results can be copied or
+downloaded as Markdown. It isn't on the Chrome Web Store yet, so install it
+unpacked:
 
 ```sh
 git clone https://github.com/harehare/mq.git
