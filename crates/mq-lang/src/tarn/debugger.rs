@@ -2,24 +2,25 @@ use super::interpreter::{DebugEvent, DebugHook};
 use super::{compiler, interpreter};
 use crate::eval::env::Env;
 use crate::eval::host::HostFunctions;
-use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::{
-    DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source, TokenArena,
-    get_token,
+    DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, ModuleResolver, RuntimeValue, Shared, SharedCell,
+    Source, TokenArena, get_token,
 };
 
 /// Adapts VM boundary events to the debugger API shared with the tree-walking evaluator.
 #[allow(dead_code)] // Wired into Engine when the VM becomes its execution backend in M5.
-pub(crate) struct VmDebuggerHook {
+pub(crate) struct VmDebuggerHook<R: ModuleResolver> {
     debugger: Shared<SharedCell<Debugger>>,
     handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
     token_arena: TokenArena,
     source: Source,
+    module_loader: ModuleLoader<R>,
+    sources: Vec<(crate::ModuleId, Source)>,
     last_context: Option<DebugContext>,
 }
 
 #[allow(dead_code)]
-impl VmDebuggerHook {
+impl<R: ModuleResolver> VmDebuggerHook<R> {
     /// Creates a VM debugger adapter for one compiled source.
     #[allow(dead_code)]
     pub(crate) fn new(
@@ -27,12 +28,16 @@ impl VmDebuggerHook {
         handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
         token_arena: TokenArena,
         source: Source,
+        module_loader: ModuleLoader<R>,
+        sources: Vec<(crate::ModuleId, Source)>,
     ) -> Self {
         Self {
             debugger,
             handler,
             token_arena,
             source,
+            module_loader,
+            sources,
             last_context: None,
         }
     }
@@ -46,6 +51,10 @@ impl VmDebuggerHook {
         }
     }
 
+    pub(crate) fn set_sources(&mut self, sources: Vec<(crate::ModuleId, Source)>) {
+        self.sources = sources;
+    }
+
     fn eval_expression(&self, code: &str, bindings: &[(Ident, RuntimeValue)]) -> Option<RuntimeValue> {
         let program = crate::parse(code, Shared::clone(&self.token_arena)).ok()?;
         let names = bindings.iter().map(|(name, _)| *name).collect::<Vec<_>>();
@@ -53,7 +62,7 @@ impl VmDebuggerHook {
         let compiled = compiler::compile_debug_expression(
             &program,
             Shared::clone(&self.token_arena),
-            ModuleLoader::new(StdModuleResolver),
+            ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
             &names,
         )
         .ok()?;
@@ -118,7 +127,7 @@ impl VmDebuggerHook {
     }
 }
 
-impl DebugHook for VmDebuggerHook {
+impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
     fn on_boundary(&mut self, event: DebugEvent) {
         if !self.debugger.read().unwrap().is_active() {
             return;
@@ -136,7 +145,12 @@ impl DebugHook for VmDebuggerHook {
             token: Shared::clone(&token),
             call_stack: event.call_stack,
             env,
-            source: self.source.clone(),
+            source: self
+                .sources
+                .iter()
+                .find(|(module_id, _)| *module_id == token.module_id)
+                .map(|(_, source)| source.clone())
+                .unwrap_or_else(|| self.source.clone()),
         };
         self.last_context = Some(context.clone());
 

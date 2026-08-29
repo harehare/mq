@@ -75,6 +75,16 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) evaluator: Evaluator<T, IO>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     optimization_level: OptimizationLevel,
+    vm_module_prelude: Vec<VmModulePrelude>,
+}
+
+/// A module explicitly prepared through the Engine API, replayed before VM compilation.
+/// The tree walker stores these in its dynamic environment; the VM instead needs their AST
+/// declarations present while it statically resolves the user's query.
+#[derive(Debug, Clone)]
+enum VmModulePrelude {
+    Include(String),
+    Import(String),
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -110,6 +120,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
             token_arena,
             optimization_level: OptimizationLevel::default(),
+            vm_module_prelude: Vec::new(),
         }
     }
 
@@ -128,6 +139,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
             token_arena: Shared::clone(&token_arena),
             optimization_level: self.optimization_level,
+            vm_module_prelude: self.vm_module_prelude.clone(),
         }
     }
 }
@@ -147,6 +159,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             evaluator: Evaluator::with_io(ModuleLoader::new(module_resolver), Shared::clone(&token_arena), io),
             token_arena,
             optimization_level: OptimizationLevel::default(),
+            vm_module_prelude: Vec::new(),
         }
     }
 
@@ -287,6 +300,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 self.evaluator.module_loader.clone(),
             ))
         })?;
+        self.vm_module_prelude
+            .push(VmModulePrelude::Import(module_name.to_string()));
 
         Ok(())
     }
@@ -309,7 +324,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 e.into(),
                 self.evaluator.module_loader.clone(),
             ))
-        })
+        })?;
+        self.vm_module_prelude
+            .push(VmModulePrelude::Include(module_name.to_string()));
+        Ok(())
     }
 
     /// The main engine for evaluating mq code.
@@ -436,9 +454,27 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(not(feature = "sync"))]
         let host_functions = self.evaluator.host_functions.borrow().clone();
         let global_bindings = self.evaluator.global_bindings();
+        let mut vm_prelude = crate::ast::Program::new();
+        for module in &self.vm_module_prelude {
+            let directive = match module {
+                VmModulePrelude::Include(name) => format!("include {name:?}"),
+                VmModulePrelude::Import(name) => format!("import {name:?}"),
+            };
+            vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
+        }
+        let mut vm_program = vm_prelude.clone();
+        if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
+            // `nodes` runs the trailing half as a separate VM program. Replay Engine-loaded
+            // modules there too, so their statically-resolved exports remain available.
+            vm_program.extend(compiled.program[..=nodes_index].iter().cloned());
+            vm_program.extend(vm_prelude);
+            vm_program.extend(compiled.program[nodes_index + 1..].iter().cloned());
+        } else {
+            vm_program.extend(compiled.program.iter().cloned());
+        }
         #[cfg(feature = "debugger")]
         let result = crate::tarn::compile_and_run_debugged_many(
-            &compiled.program,
+            &vm_program,
             input,
             &host_functions,
             self.evaluator.options.timeout,
@@ -455,7 +491,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         );
         #[cfg(not(feature = "debugger"))]
         let result = crate::tarn::compile_and_run_many(
-            &compiled.program,
+            &vm_program,
             input,
             &host_functions,
             self.evaluator.options.timeout,

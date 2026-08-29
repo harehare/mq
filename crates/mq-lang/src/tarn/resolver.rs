@@ -72,6 +72,14 @@ impl FunctionScope {
         self.locals.len() as u16
     }
 
+    pub(crate) fn local_names(&self) -> Vec<Ident> {
+        self.locals.clone()
+    }
+
+    pub(crate) fn upvalue_names(&self) -> Vec<Ident> {
+        self.upvalues.iter().map(|(name, _)| *name).collect()
+    }
+
     pub(crate) fn upvalue_sources(&self) -> Vec<UpvalueSource> {
         self.upvalues.iter().map(|(_, s)| *s).collect()
     }

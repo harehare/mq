@@ -62,6 +62,7 @@ const TEST_ASSERTION_MODULE: &str = "test";
 pub(crate) struct CoverageHandler(pub(crate) CoverageData);
 
 fn is_trackable_module(module_name: &str) -> bool {
+    let module_name = module_name.strip_suffix(".mq").unwrap_or(module_name);
     module_name != Module::BUILTIN_MODULE && module_name != TEST_ASSERTION_MODULE
 }
 
