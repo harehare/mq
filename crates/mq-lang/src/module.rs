@@ -134,6 +134,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    pub(crate) fn with_same_resolver(&self) -> Self {
+        Self::new(self.resolver.clone())
+    }
+
     #[inline(always)]
     pub fn module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
         match module_id {
@@ -179,6 +183,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
+        let module = Self::classify_module(module_name, program)?;
+        self.loaded_modules.alloc(module_name.into());
+        Ok(module)
+    }
+
+    fn classify_module(module_name: &str, program: &Program) -> Result<Module, ModuleError> {
         let modules = program
             .iter()
             .filter(|node| {
@@ -208,14 +218,24 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::InvalidModule);
         }
 
-        self.loaded_modules.alloc(module_name.into());
-
         Ok(Module {
             name: module_name.to_string(),
             functions,
             modules,
             vars,
         })
+    }
+
+    pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        let code = self
+            .source_cache
+            .get(name.as_str())
+            .cloned()
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
+        let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
+        let program = Self::parse_program(&code, module_id, token_arena)?;
+        Self::classify_module(&name, &program)
     }
 
     pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {

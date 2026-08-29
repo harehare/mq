@@ -63,6 +63,10 @@ web-time = {workspace = true}
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
+# Routes `Engine::eval`/`eval_compiled` through Tarn, the bytecode VM (`src/tarn.rs`),
+# instead of the tree-walking evaluator (`src/eval.rs`). Opt-in for now while Tarn is
+# validated against real usage; the tree-walker stays the default until it's dropped.
+tarn = []
 cst = ["dep:ropey"]
 css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
@@ -88,3 +92,7 @@ tempfile = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
+
+[[bench]]
+harness = false
+name = "tarn_benchmark"

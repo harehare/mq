@@ -232,6 +232,12 @@ impl Variable {
                 value: "native function".to_string(),
                 type_field: "native_function".to_string(),
             },
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(_) => Variable {
+                name: ident.to_string(),
+                value: "function".to_string(),
+                type_field: "function".to_string(),
+            },
             RuntimeValue::Module(m) => Variable {
                 name: m.name().to_string(),
                 value: format!("module/{}", m.len()),
@@ -321,6 +327,14 @@ impl Env {
     /// Returns the number of bindings in the current scope, excluding parent scopes.
     pub fn len(&self) -> usize {
         self.context.len()
+    }
+
+    /// Snapshot of this scope's own bindings (not the parent chain), for callers that need
+    /// a plain list rather than dynamic lookup — the VM's static compiler/interpreter uses
+    /// this to see names defined via `Engine::define_value`/`define_string_value`, which
+    /// write directly into the root `Env` and have no other VM-side representation.
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (Ident, RuntimeValue)> + '_ {
+        self.context.iter_entries().map(|(ident, value)| (ident, value.clone()))
     }
 
     /// Defines or overwrites an immutable binding for `ident` in the current scope.

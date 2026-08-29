@@ -56,6 +56,7 @@ mod optimizer;
 mod range;
 mod selector;
 pub mod suggest;
+mod tarn;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -191,6 +192,15 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
     )
     .parse()
     .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+}
+
+/// M1 bytecode-VM prototype entry point, for benchmarking only; not part of the public
+/// language surface yet (see the VM milestone plan).
+#[doc(hidden)]
+pub fn __tarn_bench_eval(code: &str) -> Result<RuntimeValue, String> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = parse(code, Shared::clone(&token_arena)).map_err(|e| e.to_string())?;
+    tarn::compile_and_run(&program, token_arena).map_err(|e| e.to_string())
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
