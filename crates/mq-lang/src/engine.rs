@@ -12,7 +12,7 @@ use crate::{
     module::resolver::DefaultModuleResolver, token_alloc,
 };
 #[cfg(feature = "debugger")]
-use crate::{Debugger, DebuggerHandler};
+use crate::{Debugger, DebuggerHandler, Source};
 
 use crate::{
     ModuleLoader, Token,
@@ -341,10 +341,21 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(code.to_string());
 
-        self.evaluator
-            .eval(&program, input.into_iter())
-            .map(|values| values.into())
-            .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+        #[cfg(feature = "tarn")]
+        {
+            let compiled = CompiledProgram {
+                source: code.to_string(),
+                program,
+            };
+            self.eval_compiled_vm(&compiled, input.into_iter())
+        }
+        #[cfg(not(feature = "tarn"))]
+        {
+            self.evaluator
+                .eval(&program, input.into_iter())
+                .map(|values| values.into())
+                .map_err(|e| Box::new(error::Error::from_error(code, e, self.evaluator.module_loader.clone())))
+        }
     }
 
     /// Compiles mq code into a [`CompiledProgram`] that can be evaluated multiple times.
@@ -390,16 +401,76 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.evaluator.module_loader.set_source_code(compiled.source.clone());
 
-        self.evaluator
-            .eval(&compiled.program, input)
-            .map(|values| values.into())
-            .map_err(|e| {
-                Box::new(error::Error::from_error(
-                    &compiled.source,
-                    e,
-                    self.evaluator.module_loader.clone(),
-                ))
-            })
+        #[cfg(feature = "tarn")]
+        {
+            self.eval_compiled_vm(compiled, input)
+        }
+        #[cfg(not(feature = "tarn"))]
+        {
+            self.evaluator
+                .eval(&compiled.program, input)
+                .map(|values| values.into())
+                .map_err(|e| {
+                    Box::new(error::Error::from_error(
+                        &compiled.source,
+                        e,
+                        self.evaluator.module_loader.clone(),
+                    ))
+                })
+        }
+    }
+
+    /// Evaluates one input through the bytecode VM (`bytecode-vm` feature). Same `MqResult`
+    /// shape as `eval_compiled`.
+    #[cfg_attr(not(feature = "tarn"), allow(dead_code))]
+    pub(crate) fn eval_compiled_vm<I>(&mut self, compiled: &CompiledProgram, input: I) -> MqResult
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
+        // Scoped like `eval`/`eval_compiled`, so bare `$VAR` resolution (and anything else
+        // reading the ambient `Io`) inside VM-executed builtins sees this engine's `Io`
+        // rather than whatever the previous scope (or none) left in place.
+        let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
+        #[cfg(feature = "sync")]
+        let host_functions = self.evaluator.host_functions.read().unwrap().clone();
+        #[cfg(not(feature = "sync"))]
+        let host_functions = self.evaluator.host_functions.borrow().clone();
+        let global_bindings = self.evaluator.global_bindings();
+        #[cfg(feature = "debugger")]
+        let result = crate::tarn::compile_and_run_debugged_many(
+            &compiled.program,
+            input,
+            &host_functions,
+            self.evaluator.options.timeout,
+            self.evaluator.options.max_call_stack_depth,
+            Shared::clone(&self.token_arena),
+            self.evaluator.module_loader.with_same_resolver(),
+            &global_bindings,
+            self.evaluator.debugger(),
+            Shared::clone(&self.evaluator.debugger_handler),
+            Source {
+                name: None,
+                code: compiled.source.clone(),
+            },
+        );
+        #[cfg(not(feature = "debugger"))]
+        let result = crate::tarn::compile_and_run_many(
+            &compiled.program,
+            input,
+            &host_functions,
+            self.evaluator.options.timeout,
+            self.evaluator.options.max_call_stack_depth,
+            Shared::clone(&self.token_arena),
+            self.evaluator.module_loader.with_same_resolver(),
+            &global_bindings,
+        );
+        result.map(Into::into).map_err(|error| {
+            Box::new(error::Error::from_error(
+                &compiled.source,
+                error.into_inner_error(Shared::clone(&self.token_arena)),
+                self.evaluator.module_loader.clone(),
+            ))
+        })
     }
 
     /// Returns a reference to the debugger instance.
@@ -893,7 +964,12 @@ mod tests {
         handle.join().expect("Threaded engine usage failed");
     }
 
-    #[cfg(feature = "debugger")]
+    // `switch_env` evaluates an ad-hoc expression against a paused frame's *live*, dynamic
+    // `Env` — inherently tree-walker-specific (the VM resolves names to slots statically at
+    // compile time, so it has no equivalent for "a name defined into a live scope at
+    // runtime"). Replacing it is tracked as still-open work before `tarn` is safe to make
+    // the default; not attempted here.
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
     #[test]
     fn test_switch_env() {
         use crate::eval::env::Env;
@@ -909,6 +985,172 @@ mod tests {
         assert_eq!(
             new_engine.eval("runtime", null_input().into_iter()).unwrap()[0],
             RuntimeValue::NONE
+        );
+    }
+
+    #[test]
+    fn test_eval_compiled_vm_error_is_a_real_miette_diagnostic() {
+        use crate::RuntimeValue;
+
+        // `eval_compiled_vm` used to return a bare `Result<_, String>` — this checks it now
+        // produces the same public `error::Error` shape `eval_compiled` does: a real cause
+        // (not just a `Display` string) with a non-trivial source span pointing at the
+        // failing expression, matching the tree-walker's own error for the same program.
+        let code = "1 | 1 / 0";
+        let mut tree_walk_engine = DefaultEngine::default();
+        let tree_walk_err = tree_walk_engine
+            .eval(code, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(code).unwrap();
+        let vm_err = engine
+            .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+
+        assert!(matches!(
+            vm_err.cause,
+            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::ZeroDivision(_))
+        ));
+        assert_eq!(vm_err.to_string(), tree_walk_err.to_string());
+        assert_eq!(vm_err.location, tree_walk_err.location);
+        assert!(
+            !vm_err.location.is_empty(),
+            "span should cover the failing expression, not be empty"
+        );
+    }
+
+    #[test]
+    fn test_eval_compiled_vm_uses_engine_host_functions() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("double", |args: &[RuntimeValue]| {
+            let RuntimeValue::Number(value) = &args[0] else {
+                return Err("expected number".into());
+            };
+            Ok(RuntimeValue::Number((value.value() * 2.0).into()))
+        });
+        let compiled = engine.compile("double(21)").unwrap();
+
+        let values = engine
+            .eval_compiled_vm(
+                &compiled,
+                [RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())].into_iter(),
+            )
+            .unwrap();
+        assert_eq!(
+            values.values(),
+            &vec![RuntimeValue::Number(42.0.into()), RuntimeValue::Number(42.0.into())]
+        );
+    }
+
+    #[test]
+    fn test_eval_compiled_vm_resolves_names_defined_via_define_value() {
+        use crate::RuntimeValue;
+
+        // `Engine::define_value`/`define_string_value` write directly into the tree-walker's
+        // root `Env`, which the VM's static slot resolution has no other way to see —
+        // regression test for the gap `mq-ffi`'s `test_define_string_value_and_use_in_eval`/
+        // `test_define_string_value_overwrites_previous` caught under `--all-features`
+        // (`OpCode::GetExternalGlobal`, seeded from `Evaluator::global_bindings`).
+        let mut engine = DefaultEngine::default();
+        engine.define_string_value("greeting", "hello");
+        engine.define_value("answer", RuntimeValue::Number(42.0.into()));
+        let compiled = engine.compile("[greeting, answer]").unwrap();
+
+        let values = engine
+            .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(
+            values.values(),
+            &vec![RuntimeValue::Array(crate::Shared::new(vec![
+                RuntimeValue::String("hello".to_string()),
+                RuntimeValue::Number(42.0.into()),
+            ]))]
+        );
+
+        // Re-defining before a second compile-and-run picks up the new value, not a stale
+        // one — `global_bindings` is re-snapshotted on every `eval_compiled_vm` call.
+        engine.define_string_value("greeting", "goodbye");
+        let compiled = engine.compile("greeting").unwrap();
+        let values = engine
+            .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(values.values(), &vec![RuntimeValue::String("goodbye".to_string())]);
+    }
+
+    #[test]
+    fn test_eval_compiled_vm_resolves_a_local_file_import() {
+        use crate::RuntimeValue;
+
+        // Mirrors `test_eval_import_as_alias` (the tree-walker's own local-file import
+        // test), but through `eval_compiled_vm` — this only works because `eval_compiled_vm`
+        // now threads `self.evaluator.module_loader.clone()` into the VM compiler instead of
+        // it hardcoding an in-memory-only `StdModuleResolver` (`STANDARD_MODULES` only, no
+        // filesystem access) as it did before this session's module-resolver-parity work.
+        let (temp_dir, temp_file_path) = create_file(
+            "greeter_vm_engine_test.mq",
+            r#"def greet(name): "Hello, " + name + "!";"#,
+        );
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        let compiled = engine
+            .compile(r#"import "greeter_vm_engine_test" as g | g::greet("World")"#)
+            .unwrap();
+
+        let values = engine
+            .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(
+            values.values(),
+            &vec![RuntimeValue::String("Hello, World!".to_string())]
+        );
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_eval_compiled_vm_notifies_debugger_of_uncaught_error() {
+        use crate::{DebugContext, DebuggerHandler, RuntimeValue};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Debug)]
+        struct ErrorHandler(Arc<Mutex<Vec<String>>>);
+
+        impl DebuggerHandler for ErrorHandler {
+            fn on_error(&self, message: &str, _context: &DebugContext) {
+                self.0.lock().unwrap().push(message.to_string());
+            }
+        }
+
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let mut engine = DefaultEngine::default();
+        engine.set_debugger_handler(Box::new(ErrorHandler(Arc::clone(&errors))));
+        engine.debugger().write().unwrap().activate();
+        let compiled = engine.compile("1 / 0").unwrap();
+
+        assert!(
+            engine
+                .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+                .is_err()
+        );
+        assert!(
+            errors
+                .lock()
+                .unwrap()
+                .iter()
+                // "Division by zero" — `RuntimeError::ZeroDivision`'s wording, the same the
+                // tree-walker uses; `notify_error` converts through it rather than using
+                // `VmError`'s own (not user-facing) `Display`. See `notify_error`'s doc comment.
+                .any(|message| message.contains("Division by zero"))
         );
     }
 

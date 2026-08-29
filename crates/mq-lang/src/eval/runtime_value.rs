@@ -104,6 +104,13 @@ pub enum RuntimeValue {
     Function(Shared<AstParams>, Shared<Program>, Shared<SharedCell<Env>>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
+    /// A VM closure that has crossed into plain-value territory (stored in an array/dict,
+    /// passed to `partial`, ...) — see `tarn::value::VmClosureValue`. Only exists behind the
+    /// `tarn` feature; the tree-walker never creates one. `VmClosureValue` is deliberately
+    /// `pub(crate)` — this variant is constructible only from within the crate.
+    #[cfg(feature = "tarn")]
+    #[allow(private_interfaces)]
+    VmClosure(crate::tarn::value::VmClosureValue),
     /// A dictionary mapping identifiers to runtime values.
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
@@ -353,6 +360,8 @@ impl std::fmt::Display for RuntimeValue {
             Self::None => Cow::Borrowed(""),
             Self::Function(params, ..) => Cow::Owned(format!("function/{}", params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
+            #[cfg(feature = "tarn")]
+            Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Dict(_) => self.string(),
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
@@ -437,6 +446,8 @@ impl RuntimeValue {
             RuntimeValue::None => "None",
             RuntimeValue::Function(_, _, _) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(_) => "function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Module(_) => "module",
             RuntimeValue::Bytes(_) => "bytes",
@@ -449,9 +460,13 @@ impl RuntimeValue {
         matches!(self, RuntimeValue::None)
     }
 
-    /// Returns `true` if this value is a user-defined function.
+    /// Returns `true` if this value is a user-defined function (tree-walker or VM).
     #[inline(always)]
     pub fn is_function(&self) -> bool {
+        #[cfg(feature = "tarn")]
+        if matches!(self, RuntimeValue::VmClosure(_)) {
+            return true;
+        }
         matches!(self, RuntimeValue::Function(_, _, _))
     }
 
@@ -510,6 +525,8 @@ impl RuntimeValue {
             | RuntimeValue::Function(_, _, _)
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::Dict(_) => true,
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(_) => true,
             RuntimeValue::Module(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::None => false,
@@ -535,6 +552,8 @@ impl RuntimeValue {
             RuntimeValue::Function(..) => 0,
             RuntimeValue::Module(m) => m.len(),
             RuntimeValue::NativeFunction(..) => 0,
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(..) => 0,
         }
     }
 
@@ -600,6 +619,8 @@ impl RuntimeValue {
             Self::None => Cow::Borrowed(""),
             Self::Function(f, _, _) => Cow::Owned(format!("function/{}", f.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
+            #[cfg(feature = "tarn")]
+            Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Dict(map) => {
@@ -762,6 +783,8 @@ impl RuntimeValues {
                         | RuntimeValue::Function(_, _, _)
                         | RuntimeValue::Module(_)
                         | RuntimeValue::NativeFunction(_) => current_value.clone(),
+                        #[cfg(feature = "tarn")]
+                        RuntimeValue::VmClosure(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {
