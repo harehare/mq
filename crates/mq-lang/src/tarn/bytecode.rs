@@ -8,6 +8,7 @@ use crate::ast::TokenId;
 use crate::ast::node::Node;
 use crate::eval::runtime_value::RuntimeValue;
 use crate::selector::Selector;
+use std::fmt;
 
 /// Every chunk reserves local slot 0 for the implicit pipeline value (`.` / `self`),
 /// declared before params/other locals so its index is stable across all chunks.
@@ -258,5 +259,320 @@ impl Chunk {
     /// Offset for a backward jump from the next-emitted instruction to `target`.
     pub(crate) fn backward_offset(&self, target: usize) -> i32 {
         (target as i32) - (self.code.len() as i32) - 1
+    }
+}
+
+/// A structural bytecode error emitted by the compiler's post-generation verifier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BytecodeError {
+    EmptyChunk(usize),
+    MissingReturn(usize),
+    ConstantOutOfBounds { chunk: usize, pc: usize, index: u16 },
+    LocalOutOfBounds { chunk: usize, pc: usize, slot: u16 },
+    ChunkOutOfBounds { chunk: usize, pc: usize, target: u16 },
+    JumpOutOfBounds { chunk: usize, pc: usize, target: isize },
+}
+
+impl fmt::Display for BytecodeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyChunk(chunk) => write!(f, "chunk {chunk} has no instructions"),
+            Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in Return"),
+            Self::ConstantOutOfBounds { chunk, pc, index } => {
+                write!(f, "chunk {chunk} pc {pc} references constant {index} out of bounds")
+            }
+            Self::LocalOutOfBounds { chunk, pc, slot } => {
+                write!(f, "chunk {chunk} pc {pc} references local slot {slot} out of bounds")
+            }
+            Self::ChunkOutOfBounds { chunk, pc, target } => {
+                write!(f, "chunk {chunk} pc {pc} references chunk {target} out of bounds")
+            }
+            Self::JumpOutOfBounds { chunk, pc, target } => {
+                write!(f, "chunk {chunk} pc {pc} jumps to {target} out of bounds")
+            }
+        }
+    }
+}
+
+impl std::error::Error for BytecodeError {}
+
+/// Applies semantics-preserving local rewrites after compilation.
+///
+/// This pass deliberately does not fold expressions: that belongs to the AST optimizer.
+/// It only removes compiler artifacts and retargets jumps without crossing source-debug
+/// boundaries or changing observable evaluation order.
+pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
+    for chunk in chunks {
+        optimize_chunk(chunk);
+    }
+}
+
+fn optimize_chunk(chunk: &mut Chunk) {
+    if chunk.code.is_empty() {
+        return;
+    }
+
+    let old_code = std::mem::take(&mut chunk.code);
+    let old_lines = std::mem::take(&mut chunk.lines);
+    let mut keep = vec![true; old_code.len()];
+    let targets = jump_targets(&old_code);
+
+    let mut pc = 0;
+    while pc < old_code.len() {
+        match (&old_code[pc], old_code.get(pc + 1)) {
+            (OpCode::Const(_), Some(OpCode::Pop)) if !targets.contains(&pc) && !targets.contains(&(pc + 1)) => {
+                keep[pc] = false;
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::GetLocal(source), Some(OpCode::SetLocal(target)))
+                if source == target && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                keep[pc] = false;
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::Jump(0), _) => {
+                keep[pc] = false;
+                pc += 1;
+            }
+            _ => pc += 1,
+        }
+    }
+
+    let old_to_new = old_to_new_pc_map(&keep);
+    let mut new_code = Vec::with_capacity(old_code.len());
+    let mut new_lines = Vec::with_capacity(old_lines.len());
+    for (old_pc, op) in old_code.into_iter().enumerate() {
+        if !keep[old_pc] {
+            continue;
+        }
+        let new_pc = new_code.len();
+        let token_id = token_at(&old_lines, old_pc);
+        if new_lines.last().map(|(_, token)| *token) != Some(token_id) {
+            new_lines.push((new_pc, token_id));
+        }
+        new_code.push(rewrite_targets(op, old_pc, new_pc, &old_to_new));
+    }
+    chunk.code = new_code;
+    chunk.lines = new_lines;
+}
+
+fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
+    let mut targets = std::collections::BTreeSet::new();
+    for (pc, op) in code.iter().enumerate() {
+        match op {
+            OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
+                if let Some(target) = jump_target(pc, *offset) {
+                    targets.insert(target);
+                }
+            }
+            OpCode::TryCatch {
+                break_offset: Some(offset),
+                continue_offset,
+                ..
+            } => {
+                if let Some(target) = jump_target(pc, *offset) {
+                    targets.insert(target);
+                }
+                if let Some(offset) = continue_offset
+                    && let Some(target) = jump_target(pc, *offset)
+                {
+                    targets.insert(target);
+                }
+            }
+            OpCode::TryCatch {
+                continue_offset: Some(offset),
+                ..
+            } => {
+                if let Some(target) = jump_target(pc, *offset) {
+                    targets.insert(target);
+                }
+            }
+            _ => {}
+        }
+    }
+    targets
+}
+
+fn old_to_new_pc_map(keep: &[bool]) -> Vec<usize> {
+    let mut map = vec![0; keep.len() + 1];
+    let mut next = keep.iter().filter(|keep| **keep).count();
+    map[keep.len()] = next;
+    for pc in (0..keep.len()).rev() {
+        if keep[pc] {
+            next -= 1;
+        }
+        map[pc] = next;
+    }
+    map
+}
+
+fn token_at(lines: &[(usize, TokenId)], pc: usize) -> TokenId {
+    lines
+        .partition_point(|(start, _)| *start <= pc)
+        .checked_sub(1)
+        .map(|index| lines[index].1)
+        .unwrap_or_else(|| TokenId::new(0))
+}
+
+fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> OpCode {
+    let rewrite = |offset: i32| {
+        let old_target = jump_target(old_pc, offset).expect("compiler-generated jump must not underflow");
+        (map[old_target] as i32) - (new_pc as i32) - 1
+    };
+    match op {
+        OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
+        OpCode::JumpIfFalse(offset) => OpCode::JumpIfFalse(rewrite(offset)),
+        OpCode::TryCatch {
+            has_binder,
+            break_acc_slot,
+            break_offset,
+            continue_offset,
+        } => OpCode::TryCatch {
+            has_binder,
+            break_acc_slot,
+            break_offset: break_offset.map(rewrite),
+            continue_offset: continue_offset.map(rewrite),
+        },
+        other => other,
+    }
+}
+
+fn jump_target(pc: usize, offset: i32) -> Option<usize> {
+    pc.checked_add(1)?.checked_add_signed(offset as isize)
+}
+
+/// Verifies generated bytecode before it becomes executable.
+pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
+    for (chunk_index, chunk) in chunks.iter().enumerate() {
+        if chunk.code.is_empty() {
+            return Err(BytecodeError::EmptyChunk(chunk_index));
+        }
+        if !matches!(chunk.code.last(), Some(OpCode::Return)) {
+            return Err(BytecodeError::MissingReturn(chunk_index));
+        }
+        for (pc, op) in chunk.code.iter().enumerate() {
+            match op {
+                OpCode::Const(index) | OpCode::GetEnvVar(index) => {
+                    if *index as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                }
+                OpCode::GetLocal(slot) | OpCode::SetLocal(slot) => {
+                    if *slot >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *slot,
+                        });
+                    }
+                }
+                OpCode::MakeClosure(target, _) => verify_chunk_target(chunks, chunk_index, pc, *target)?,
+                OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
+                OpCode::TryCatch {
+                    break_offset,
+                    continue_offset,
+                    ..
+                } => {
+                    if let Some(offset) = break_offset {
+                        verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    }
+                    if let Some(offset) = continue_offset {
+                        verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for binding in &chunk.param_shape.bindings {
+            if binding.slot() >= chunk.local_count {
+                return Err(BytecodeError::LocalOutOfBounds {
+                    chunk: chunk_index,
+                    pc: chunk.code.len() - 1,
+                    slot: binding.slot(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn verify_chunk_target(chunks: &[Chunk], chunk: usize, pc: usize, target: u16) -> Result<(), BytecodeError> {
+    if target as usize >= chunks.len() {
+        return Err(BytecodeError::ChunkOutOfBounds { chunk, pc, target });
+    }
+    Ok(())
+}
+
+fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32) -> Result<(), BytecodeError> {
+    let Some(target) = jump_target(pc, offset) else {
+        return Err(BytecodeError::JumpOutOfBounds {
+            chunk: chunk_index,
+            pc,
+            target: -1,
+        });
+    };
+    if target >= chunk.code.len() {
+        return Err(BytecodeError::JumpOutOfBounds {
+            chunk: chunk_index,
+            pc,
+            target: target as isize,
+        });
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn peephole_removes_unused_constants_local_moves_and_empty_jumps() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Const(0),
+                OpCode::Pop,
+                OpCode::GetLocal(0),
+                OpCode::SetLocal(0),
+                OpCode::Jump(0),
+                OpCode::PushNone,
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(chunk.code.as_slice(), [OpCode::PushNone, OpCode::Return]));
+    }
+
+    #[test]
+    fn verifier_rejects_invalid_constant_and_jump_targets() {
+        let invalid_constant = Chunk {
+            code: vec![OpCode::Const(0), OpCode::Return],
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[invalid_constant]),
+            Err(BytecodeError::ConstantOutOfBounds { .. })
+        ));
+
+        let invalid_jump = Chunk {
+            code: vec![OpCode::Jump(4), OpCode::Return],
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[invalid_jump]),
+            Err(BytecodeError::JumpOutOfBounds { .. })
+        ));
     }
 }
