@@ -334,6 +334,15 @@ impl<R: ModuleResolver> Compiler<R> {
         self.chunk_mut().emit(op, token_id)
     }
 
+    fn emit_closure(&mut self, chunk_index: u16, upvalues: Vec<UpvalueSource>) {
+        if upvalues.is_empty() {
+            let closure_index = self.chunk_mut().push_static_closure(chunk_index);
+            self.emit(OpCode::MakeStaticClosure(closure_index));
+        } else {
+            self.emit(OpCode::MakeClosure(chunk_index, upvalues));
+        }
+    }
+
     fn compile_body(&mut self, body: &Program) -> CompileResult<()> {
         for node in body {
             if let Expr::Def(ident, _, _) = &*node.expr {
@@ -442,8 +451,8 @@ impl<R: ModuleResolver> Compiler<R> {
         self.try_depth -= 1;
         let (catch_chunk, catch_upvalues) = catch_result?;
 
-        self.emit(OpCode::MakeClosure(try_chunk, try_upvalues));
-        self.emit(OpCode::MakeClosure(catch_chunk, catch_upvalues));
+        self.emit_closure(try_chunk, try_upvalues);
+        self.emit_closure(catch_chunk, catch_upvalues);
         let break_acc_slot = self
             .loops
             .last()
@@ -476,7 +485,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.scope_mut().mark_immutable(slot);
                 }
                 let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-                self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+                self.emit_closure(chunk_idx, upvalues);
                 self.emit(OpCode::SetLocal(slot));
             }
             Pattern::Ident(ident) => {
@@ -768,7 +777,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-            self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+            self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(slot));
         }
         Ok(())
@@ -817,7 +826,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-            self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+            self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(*slot));
             self.qualified_bindings
                 .insert((module_alias, ident.name), (depth, *slot));
@@ -855,7 +864,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 Expr::Def(def_ident, params, body) => {
                     let slot = def_slots[&def_ident.name];
                     let (chunk_idx, upvalues) = self.compile_function(params, body, Some(def_ident.name))?;
-                    self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+                    self.emit_closure(chunk_idx, upvalues);
                     self.emit(OpCode::SetLocal(slot));
                     self.qualified_bindings
                         .insert((module_alias, def_ident.name), (depth, slot));
@@ -1027,14 +1036,14 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Def(ident, params, body) => {
                 let slot = self.scope_mut().declare_or_reuse(ident.name);
                 let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-                self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+                self.emit_closure(chunk_idx, upvalues);
                 self.emit(OpCode::SetLocal(slot));
                 self.emit(OpCode::GetLocal(slot));
                 Ok(())
             }
             Expr::Fn(params, body) => {
                 let (chunk_idx, upvalues) = self.compile_function(params, body, None)?;
-                self.emit(OpCode::MakeClosure(chunk_idx, upvalues));
+                self.emit_closure(chunk_idx, upvalues);
                 Ok(())
             }
             Expr::As(ident, value) => {
@@ -1178,6 +1187,18 @@ impl<R: ModuleResolver> Compiler<R> {
         let shadowed = self.scope_mut().shadowed_builtin == Some(ident);
 
         if !shadowed && let Some(resolved) = self.resolve(ident) {
+            let local_call = match resolved {
+                Resolved::Local(slot) if self.scopes.last().is_some_and(|scope| scope.is_immutable(slot)) => Some(slot),
+                _ => None,
+            };
+            if let Some(slot) = local_call {
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                self.current_token_id = call_token_id;
+                self.emit(OpCode::CallLocal(slot, args.len() as u8));
+                return Ok(());
+            }
             match resolved {
                 Resolved::Local(slot) => {
                     self.emit(OpCode::GetLocal(slot));
