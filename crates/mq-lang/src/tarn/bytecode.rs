@@ -134,16 +134,20 @@ pub(crate) enum OpCode {
     /// Pops a catch closure then a try closure (both 0/1-arg, no-upvalue-restriction
     /// closures compiled like any nested `fn`); runs the try closure, and on error runs
     /// the catch closure instead (passing it a `{"message": ...}` dict if it takes a
-    /// parameter). A `break` raised by the nested try chunk bypasses the catch and jumps
-    /// to the enclosing loop's patched exit target.
+    /// parameter). Loop control raised by the nested try chunk bypasses the catch and
+    /// jumps to the enclosing loop's patched target.
     TryCatch {
         has_binder: bool,
         break_acc_slot: Option<u16>,
         break_offset: Option<i32>,
+        continue_offset: Option<i32>,
     },
     /// Exits a loop outside this nested chunk. The enclosing `TryCatch` owns the actual
     /// jump target and accumulator slot.
     FlowBreak(bool),
+    /// Continues a loop outside this nested chunk. The enclosing `TryCatch` owns the
+    /// actual jump target.
+    FlowContinue,
     /// Raised when a `let`/`var` destructuring pattern doesn't match its value (e.g.
     /// `let [a, b] = [1]`) — mirrors `RuntimeError::DestructuringFailed`.
     RaiseDestructuringFailed,
@@ -217,6 +221,20 @@ impl Chunk {
         match &mut self.code[at] {
             OpCode::TryCatch { break_offset, .. } => *break_offset = Some(offset),
             _ => unreachable!("flow-break target is not a TryCatch instruction"),
+        }
+    }
+
+    /// Patches a `TryCatch` control-flow continue target to the next instruction.
+    pub(crate) fn patch_try_continue(&mut self, at: usize) {
+        self.patch_try_continue_to(at, self.code.len());
+    }
+
+    /// Patches a `TryCatch` control-flow continue target to `target`.
+    pub(crate) fn patch_try_continue_to(&mut self, at: usize, target: usize) {
+        let offset = target as i32 - at as i32 - 1;
+        match &mut self.code[at] {
+            OpCode::TryCatch { continue_offset, .. } => *continue_offset = Some(offset),
+            _ => unreachable!("flow-continue target is not a TryCatch instruction"),
         }
     }
 
