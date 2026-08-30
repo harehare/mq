@@ -1246,9 +1246,28 @@ mod tests {
         assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
 
         let second = engine
-            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .eval_compiled(
+                &compiled,
+                [RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+            )
             .unwrap();
-        assert_eq!(second.values(), first.values());
+        assert_eq!(
+            second.values(),
+            &[RuntimeValue::Number(42.into()), RuntimeValue::Number(42.into())]
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_cached_bytecode_preserves_markdown_input_handling() {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(".h1").unwrap();
+        let input = crate::parse_markdown_input("# Heading\n\nBody").unwrap();
+
+        let first = engine.eval_compiled(&compiled, input.clone().into_iter()).unwrap();
+        let second = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+
+        assert_eq!(second, first);
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
