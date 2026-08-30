@@ -74,6 +74,7 @@ struct LoopCtx {
     continue_target: ContinueTarget,
     break_jumps: Vec<usize>,
     break_try_catches: Vec<usize>,
+    continue_try_catches: Vec<usize>,
     acc_slot: u16,
     chunk_index: usize,
 }
@@ -437,9 +438,12 @@ impl<R: ModuleResolver> Compiler<R> {
             has_binder: binder.is_some(),
             break_acc_slot,
             break_offset: None,
+            continue_offset: None,
         });
         if break_acc_slot.is_some() {
-            self.loops.last_mut().unwrap().break_try_catches.push(try_catch);
+            let loop_ctx = self.loops.last_mut().unwrap();
+            loop_ctx.break_try_catches.push(try_catch);
+            loop_ctx.continue_try_catches.push(try_catch);
         }
         Ok(())
     }
@@ -1059,11 +1063,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.current_token_id,
                 ))?;
                 if loop_ctx.chunk_index != self.current {
-                    // See `Expr::Break`'s comment above — same reasoning, same fix.
-                    return Err(CompileError::Unsupported(
-                        "continue cannot cross into a nested chunk (a try/catch body)",
-                        self.current_token_id,
-                    ));
+                    self.emit(OpCode::FlowContinue);
+                    return Ok(());
                 }
                 let fixed_target = match &loop_ctx.continue_target {
                     ContinueTarget::Fixed(target) => Some(*target),
@@ -1368,11 +1369,12 @@ impl<R: ModuleResolver> Compiler<R> {
         continue_target: usize,
         acc_slot: u16,
         body: &Program,
-    ) -> CompileResult<(Vec<usize>, Vec<usize>)> {
+    ) -> CompileResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
         self.loops.push(LoopCtx {
             continue_target: ContinueTarget::Fixed(continue_target),
             break_jumps: Vec::new(),
             break_try_catches: Vec::new(),
+            continue_try_catches: Vec::new(),
             acc_slot,
             chunk_index: self.current,
         });
@@ -1383,7 +1385,11 @@ impl<R: ModuleResolver> Compiler<R> {
         let back = self.chunk_mut().backward_offset(continue_target);
         self.emit(OpCode::Jump(back));
         let loop_ctx = self.loops.pop().unwrap();
-        Ok((loop_ctx.break_jumps, loop_ctx.break_try_catches))
+        Ok((
+            loop_ctx.break_jumps,
+            loop_ctx.break_try_catches,
+            loop_ctx.continue_try_catches,
+        ))
     }
 
     fn compile_foreach(&mut self, ident: crate::Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
@@ -1421,6 +1427,7 @@ impl<R: ModuleResolver> Compiler<R> {
             continue_target: ContinueTarget::Pending(Vec::new()),
             break_jumps: Vec::new(),
             break_try_catches: Vec::new(),
+            continue_try_catches: Vec::new(),
             acc_slot,
             chunk_index: self.current,
         });
@@ -1437,6 +1444,9 @@ impl<R: ModuleResolver> Compiler<R> {
         };
         for site in continue_sites {
             self.chunk_mut().patch_jump(site);
+        }
+        for try_catch in finished.continue_try_catches {
+            self.chunk_mut().patch_try_continue(try_catch);
         }
         self.emit(OpCode::GetLocal(index_slot));
         let one = self.chunk_mut().push_const(RuntimeValue::Number(1.0.into()));
@@ -1476,7 +1486,8 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::Not);
         }
         let exit_jump = self.emit(OpCode::JumpIfFalse(0));
-        let (mut patch_sites, break_try_catches) = self.compile_loop_body(loop_start, acc_slot, body)?;
+        let (mut patch_sites, break_try_catches, continue_try_catches) =
+            self.compile_loop_body(loop_start, acc_slot, body)?;
         patch_sites.push(exit_jump);
 
         for jump in patch_sites {
@@ -1484,6 +1495,9 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         for try_catch in break_try_catches {
             self.chunk_mut().patch_try_break(try_catch);
+        }
+        for try_catch in continue_try_catches {
+            self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())
@@ -1495,13 +1509,17 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
 
         let loop_start = self.chunk_mut().code.len();
-        let (patch_sites, break_try_catches) = self.compile_loop_body(loop_start, acc_slot, body)?;
+        let (patch_sites, break_try_catches, continue_try_catches) =
+            self.compile_loop_body(loop_start, acc_slot, body)?;
 
         for jump in patch_sites {
             self.chunk_mut().patch_jump(jump);
         }
         for try_catch in break_try_catches {
             self.chunk_mut().patch_try_break(try_catch);
+        }
+        for try_catch in continue_try_catches {
+            self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())

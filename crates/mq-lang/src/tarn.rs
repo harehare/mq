@@ -1,9 +1,8 @@
 //! Tarn: mq's bytecode VM, an alternative to the tree-walking evaluator (`eval.rs`).
 //! Enabled via the `tarn` feature, which routes `Engine::eval`/`eval_compiled` here instead.
 //!
-//! Known gap: `partial` (the one native builtin taking a function value) can't be called
-//! with a VM closure argument — closures have no `RuntimeValue` representation. Compiling
-//! such a call is fine; only executing it errors.
+//! VM closures have a `RuntimeValue::VmClosure` representation, so they can be stored in
+//! collections and passed to native higher-order functions such as `partial`.
 
 mod bytecode;
 mod compiler;
@@ -119,6 +118,7 @@ pub(crate) fn vm_error_to_runtime_error(
                     actual: *actual,
                 },
                 VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
+                VmError::FlowContinue => RuntimeError::Runtime(token, "continue outside a loop".to_string()),
                 VmError::DestructuringFailed => RuntimeError::DestructuringFailed(token),
                 VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
                     token,
@@ -475,6 +475,7 @@ where
 mod tests {
     use super::*;
     use crate::{Arena, Shared, SharedCell};
+    use proptest::prelude::*;
     use rstest::rstest;
 
     fn run(code: &str) -> RuntimeValue {
@@ -1202,23 +1203,47 @@ mod tests {
         assert!(matches!(err, Error::Vm(_)));
     }
 
-    #[test]
-    fn calling_with_too_few_arguments_and_no_default_or_variadic_errors() {
+    #[rstest]
+    #[case::missing_required("def add(a, b): a + b; | add()", 2, 0)]
+    #[case::too_many_required("def add(a, b): a + b; | add(1, 2, 3)", 2, 3)]
+    #[case::too_many_optional("def add(a, b = 1): a + b; | add(1, 2, 3)", 2, 3)]
+    #[case::too_many_zero_arity("def constant(): 1; | constant(1)", 0, 1)]
+    fn invalid_function_arity_reports_the_declared_bounds(
+        #[case] code: &str,
+        #[case] expected: u8,
+        #[case] actual: u8,
+    ) {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-        // Two required params, zero args supplied: one short of required (1) would trigger
-        // the implicit-`.` fill-in for a *single*-required-param function, but here it's
-        // two short, so it must be a real arity error, not a self-fill.
-        let program = crate::parse("def add(a, b): a + b; | add()", Shared::clone(&token_arena)).unwrap();
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
         let err = compile_and_run(&program, token_arena).unwrap_err();
-        assert!(matches!(err, Error::Vm(_)));
+        assert!(
+            matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual))
+        );
     }
 
-    #[test]
-    fn calling_with_too_many_arguments_errors() {
-        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-        let program = crate::parse("def add(a, b): a + b; | add(1, 2, 3)", Shared::clone(&token_arena)).unwrap();
-        let err = compile_and_run(&program, token_arena).unwrap_err();
-        assert!(matches!(err, Error::Vm(_)));
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn generated_programs_preserve_arithmetic_closure_and_foreach_semantics(
+            left in -100i16..100,
+            right in -100i16..100,
+            scale in -10i16..10,
+            values in proptest::collection::vec(-50i16..50, 0..12),
+        ) {
+            let arithmetic = format!("({left} + {right}) * {scale}");
+            let arithmetic_expected = (i32::from(left) + i32::from(right)) * i32::from(scale);
+            prop_assert_eq!(run(&arithmetic), RuntimeValue::Number(f64::from(arithmetic_expected).into()));
+
+            let closure = format!("let base = {left} | let add_base = fn(value): base + value; | add_base({right})");
+            let closure_expected = i32::from(left) + i32::from(right);
+            prop_assert_eq!(run(&closure), RuntimeValue::Number(f64::from(closure_expected).into()));
+
+            let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            let foreach = format!("var total = 0 | foreach(value, [{elements}]): total += value; | total");
+            let foreach_expected: i32 = values.iter().map(|value| i32::from(*value)).sum();
+            prop_assert_eq!(run(&foreach), RuntimeValue::Number(f64::from(foreach_expected).into()));
+        }
     }
 
     #[test]
@@ -1228,12 +1253,14 @@ mod tests {
         assert_eq!(compile_and_run(&program, token_arena).unwrap(), RuntimeValue::None);
     }
 
-    #[test]
-    fn continue_crossing_a_try_boundary_is_a_compile_error() {
-        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-        let program = crate::parse("while(true): try: continue catch: 1;;", Shared::clone(&token_arena)).unwrap();
-        let err = compile_and_run(&program, token_arena).unwrap_err();
-        assert!(matches!(err, Error::Compile(compiler::CompileError::Unsupported(..))));
+    #[rstest]
+    #[case::while_loop("var x = 0 | while(x < 4) do x += 1 | try: continue catch: 0 end | x", 4.0)]
+    #[case::foreach_loop(
+        "var total = 0 | foreach(x, array(1, 2, 3, 4)) do try: continue catch: 0 end | total",
+        0.0
+    )]
+    fn continue_crossing_try_boundary_reaches_the_enclosing_loop(#[case] code: &str, #[case] expected: f64) {
+        assert_eq!(run(code), RuntimeValue::Number(expected.into()));
     }
 
     #[test]

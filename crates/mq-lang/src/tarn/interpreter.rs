@@ -120,6 +120,8 @@ pub(crate) enum VmError {
     },
     /// Internal control flow emitted by a `break` inside a nested `try` chunk.
     FlowBreak(Option<RuntimeValue>),
+    /// Internal control flow emitted by a `continue` inside a nested `try` chunk.
+    FlowContinue,
     DestructuringFailed,
     InvalidForeachTarget(String),
     Timeout(Duration),
@@ -141,6 +143,7 @@ impl fmt::Display for VmError {
                 write!(f, "expected {expected} argument(s), got {actual}")
             }
             VmError::FlowBreak(_) => write!(f, "break outside a loop"),
+            VmError::FlowContinue => write!(f, "continue outside a loop"),
             VmError::DestructuringFailed => write!(f, "destructuring pattern did not match value"),
             VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
             VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
@@ -176,6 +179,14 @@ impl From<builtin::Error> for VmError {
 }
 
 type VmResult<T> = Result<T, VmError>;
+
+/// Runtime services shared by parameter binding and default-value evaluation.
+struct ParameterContext<'a> {
+    chunks: &'a Shared<Vec<Chunk>>,
+    env: &'a Shared<SharedCell<Env>>,
+    limits: &'a mut ExecutionLimits,
+    host_functions: &'a HostFunctions,
+}
 
 pub(crate) fn run(
     compiled: &CompiledProgram,
@@ -410,10 +421,12 @@ fn call_stack_value(
         args,
         &callee_locals,
         &callee_upvalues,
-        callee_chunks,
-        env,
-        limits,
-        host_functions,
+        &mut ParameterContext {
+            chunks: callee_chunks,
+            env,
+            limits,
+            host_functions,
+        },
         #[cfg(feature = "debugger")]
         debug,
     )
@@ -451,43 +464,17 @@ fn call_stack_value(
     call_result
 }
 
-#[allow(clippy::too_many_arguments)]
 fn bind_params(
     shape: &ParamShape,
     args: Vec<StackValue>,
     callee_locals: &[Cell],
     enclosing_upvalues: &[Cell],
-    chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
-    limits: &mut ExecutionLimits,
-    host_functions: &HostFunctions,
+    context: &mut ParameterContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<()> {
     let arg_count = args.len();
     let param_count = shape.bindings.len();
-    let required = shape.required;
-
-    let use_self_param = if shape.has_variadic {
-        if arg_count >= required {
-            false
-        } else if arg_count + 1 >= required {
-            true
-        } else {
-            return Err(VmError::ArityMismatch {
-                expected: required as u8,
-                actual: arg_count as u8,
-            });
-        }
-    } else if arg_count >= required && arg_count <= param_count {
-        false
-    } else if arg_count + 1 >= required && arg_count < param_count {
-        true
-    } else {
-        return Err(VmError::ArityMismatch {
-            expected: param_count as u8,
-            actual: arg_count as u8,
-        });
-    };
+    let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
 
     let mut bindings = shape.bindings.iter();
     let mut args = args.into_iter();
@@ -501,7 +488,10 @@ fn bind_params(
         match binding {
             ParamBinding::Variadic(slot) => {
                 #[cfg(feature = "tarn")]
-                let collected: Vec<RuntimeValue> = args.by_ref().map(|arg| into_runtime_value(arg, chunks)).collect();
+                let collected: Vec<RuntimeValue> = args
+                    .by_ref()
+                    .map(|arg| into_runtime_value(arg, context.chunks))
+                    .collect();
                 #[cfg(not(feature = "tarn"))]
                 let collected: Vec<RuntimeValue> = {
                     let mut collected = Vec::new();
@@ -536,19 +526,19 @@ fn bind_params(
                     write_cell(&callee_locals[*slot as usize], value);
                 } else {
                     let captured = capture_upvalues(default_upvalues, callee_locals, enclosing_upvalues);
-                    let default_locals = fresh_locals(chunks[*default_chunk as usize].local_count);
+                    let default_locals = fresh_locals(context.chunks[*default_chunk as usize].local_count);
                     write_cell(
                         &default_locals[SELF_SLOT as usize],
                         read_cell(&callee_locals[SELF_SLOT as usize]),
                     );
                     let value = run_chunk(
                         *default_chunk,
-                        chunks,
+                        context.chunks,
                         default_locals,
                         &captured,
-                        env,
-                        limits,
-                        host_functions,
+                        context.env,
+                        context.limits,
+                        context.host_functions,
                         #[cfg(feature = "debugger")]
                         debug,
                     )?;
@@ -558,6 +548,32 @@ fn bind_params(
         }
     }
     Ok(())
+}
+
+/// Decides whether a call binds the pipeline value as its first parameter.
+///
+/// This is the VM equivalent of the evaluator's one-argument-short implicit `.` rule.
+/// Keeping arity validation here makes the parameter-binding loop below purely mechanical.
+fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
+    let parameter_count = shape.bindings.len();
+    let accepts_explicit_args = arg_count >= shape.required && (shape.has_variadic || arg_count <= parameter_count);
+    if accepts_explicit_args {
+        return Ok(false);
+    }
+
+    let accepts_implicit_self = arg_count.saturating_add(1) >= shape.required && arg_count < parameter_count;
+    if accepts_implicit_self {
+        return Ok(true);
+    }
+
+    Err(VmError::ArityMismatch {
+        expected: if shape.has_variadic {
+            shape.required as u8
+        } else {
+            parameter_count as u8
+        },
+        actual: arg_count as u8,
+    })
 }
 
 #[cfg(feature = "tarn")]
@@ -996,6 +1012,7 @@ fn run_chunk(
                 has_binder,
                 break_acc_slot,
                 break_offset,
+                continue_offset,
             } => {
                 let StackValue::Closure(catch_closure) = pop!() else {
                     bail!(VmError::Corrupt("TryCatch catch operand is not a closure"));
@@ -1028,6 +1045,13 @@ fn run_chunk(
                             ip = (ip as i64 + offset as i64) as usize;
                             continue;
                         }
+                        if flow_continue(&e) {
+                            let Some(offset) = continue_offset else {
+                                return Err(e);
+                            };
+                            ip = (ip as i64 + offset as i64) as usize;
+                            continue;
+                        }
                         let catch_locals = fresh_locals(chunks[catch_closure.chunk_index as usize].local_count);
                         write_cell(
                             &catch_locals[SELF_SLOT as usize],
@@ -1054,6 +1078,7 @@ fn run_chunk(
                 let value = if has_value { Some(pop_value!()) } else { None };
                 bail!(VmError::FlowBreak(value));
             }
+            OpCode::FlowContinue => bail!(VmError::FlowContinue),
             OpCode::RaiseDestructuringFailed => {
                 bail!(VmError::DestructuringFailed);
             }
@@ -1341,6 +1366,14 @@ fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
         VmError::FlowBreak(value) => Some(value.clone()),
         VmError::Located(inner, _) => flow_break_value(inner),
         _ => None,
+    }
+}
+
+fn flow_continue(e: &VmError) -> bool {
+    match e {
+        VmError::FlowContinue => true,
+        VmError::Located(inner, _) => flow_continue(inner),
+        _ => false,
     }
 }
 
