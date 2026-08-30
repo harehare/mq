@@ -245,6 +245,13 @@ struct CallSite<'a> {
     ip: usize,
 }
 
+/// Static properties of a direct fixed-arity closure call.
+struct FixedClosureCall<'a> {
+    closure: &'a Closure,
+    argc: u8,
+    remove_callee: bool,
+}
+
 pub(crate) fn run(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -506,6 +513,106 @@ fn call_stack_value(
         callee_chunks,
         callee_locals,
         callee_upvalues,
+        execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    );
+    execution.limits.exit_call();
+    #[cfg(feature = "debugger")]
+    if pushed_call {
+        debug.call_stack.pop();
+    }
+    #[cfg(feature = "debugger")]
+    {
+        debug.current_node = caller_node;
+    }
+    call_result
+}
+
+/// Calls a fixed-arity closure by moving arguments straight from the caller's operand stack
+/// into its parameter slots. This avoids the temporary argument vector used by dynamic calls.
+fn call_fixed_closure_from_stack(
+    call: FixedClosureCall<'_>,
+    stack: &mut Vec<StackValue>,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> VmResult<StackValue> {
+    let closure = call.closure;
+    let callee_chunk = &chunks[closure.chunk_index as usize];
+    let Some(arity) = callee_chunk.param_shape.fixed_required_arity() else {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::Corrupt("fixed call has non-fixed parameters"),
+        ));
+    };
+    let argc = call.argc as usize;
+    let uses_implicit_self = arity > 0 && argc + 1 == arity;
+    if argc != arity && !uses_implicit_self {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::ArityMismatch {
+                expected: arity as u8,
+                actual: argc as u8,
+            },
+        ));
+    }
+    if stack.len() < argc + usize::from(call.remove_callee) {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::Corrupt("stack underflow in fixed closure call"),
+        ));
+    }
+
+    let callee_locals = execution.limits.take_locals(callee_chunk.local_count);
+    let self_value = read_cell(&call_site.locals[SELF_SLOT as usize]);
+    write_cell(&callee_locals[SELF_SLOT as usize], self_value.clone());
+    let first_arg_slot = if uses_implicit_self {
+        write_cell(&callee_locals[SELF_SLOT as usize + 1], self_value);
+        SELF_SLOT as usize + 2
+    } else {
+        SELF_SLOT as usize + 1
+    };
+    for offset in (0..argc).rev() {
+        let Some(value) = stack.pop() else {
+            return Err(locate(
+                call_site.chunk,
+                call_site.ip,
+                VmError::Corrupt("stack underflow while binding fixed-call arguments"),
+            ));
+        };
+        write_cell(&callee_locals[first_arg_slot + offset], value);
+    }
+    if call.remove_callee && stack.pop().is_none() {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::Corrupt("stack underflow while removing fixed-call callee"),
+        ));
+    }
+
+    #[cfg(feature = "debugger")]
+    let caller_node = debug.current_node.clone();
+    #[cfg(feature = "debugger")]
+    let pushed_call = if let Some(node) = &caller_node {
+        debug.call_stack.push(Shared::clone(node));
+        true
+    } else {
+        false
+    };
+    execution
+        .limits
+        .enter_call()
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+    let call_result = run_chunk(
+        closure.chunk_index,
+        chunks,
+        callee_locals,
+        &closure.upvalues,
         execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -1133,7 +1240,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(RuntimeValue::String(joined)));
             }
             OpCode::CallBuiltin(ident, argc) => {
-                let mut args = Vec::with_capacity(*argc as usize);
+                let mut args = Args::with_capacity(*argc as usize);
                 for _ in 0..*argc {
                     args.push(pop_value!());
                 }
@@ -1142,9 +1249,9 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     sync_dynamic_env(chunk, locals, upvalues, chunks, execution.env);
                 }
                 stack.push(StackValue::Value(
-                    call_builtin(
+                    call_builtin_args(
                         ident,
-                        &args,
+                        args,
                         &current_self(locals),
                         execution.env,
                         execution.host_functions,
@@ -1153,13 +1260,36 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 ));
             }
             OpCode::CallLocal(slot, argc) => {
+                let callee = read_cell(&locals[*slot as usize]);
+                if let StackValue::Closure(closure) = &callee
+                    && chunks[closure.chunk_index as usize]
+                        .param_shape
+                        .fixed_required_arity()
+                        .is_some()
+                {
+                    let result = call_fixed_closure_from_stack(
+                        FixedClosureCall {
+                            closure,
+                            argc: *argc,
+                            remove_callee: false,
+                        },
+                        stack,
+                        CallSite { locals, chunk, ip },
+                        chunks,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    )?;
+                    stack.push(result);
+                    continue;
+                }
                 let mut args = Vec::with_capacity(*argc as usize);
                 for _ in 0..*argc {
                     args.push(pop!());
                 }
                 args.reverse();
                 let result = call_stack_value(
-                    read_cell(&locals[*slot as usize]),
+                    callee,
                     args,
                     CallSite { locals, chunk, ip },
                     chunks,
@@ -1170,6 +1300,33 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 stack.push(result);
             }
             OpCode::CallValue(argc) => {
+                let callee_index = stack
+                    .len()
+                    .checked_sub(*argc as usize + 1)
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in CallValue")))?;
+                if let StackValue::Closure(closure) = &stack[callee_index]
+                    && chunks[closure.chunk_index as usize]
+                        .param_shape
+                        .fixed_required_arity()
+                        .is_some()
+                {
+                    let closure = closure.clone();
+                    let result = call_fixed_closure_from_stack(
+                        FixedClosureCall {
+                            closure: &closure,
+                            argc: *argc,
+                            remove_callee: true,
+                        },
+                        stack,
+                        CallSite { locals, chunk, ip },
+                        chunks,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    )?;
+                    stack.push(result);
+                    continue;
+                }
                 let mut args = Vec::with_capacity(*argc as usize);
                 for _ in 0..*argc {
                     args.push(pop!());
@@ -1384,20 +1541,38 @@ fn call_builtin(
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    let call_args: Args = args.iter().cloned().collect();
-    match builtin::eval_builtin(self_value, ident, call_args, env) {
+    call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
+}
+
+/// Calls a builtin with its already-owned small argument buffer.
+fn call_builtin_args(
+    ident: &crate::Ident,
+    args: Args,
+    self_value: &RuntimeValue,
+    env: &Shared<SharedCell<Env>>,
+    host_functions: &HostFunctions,
+) -> VmResult<RuntimeValue> {
+    // Builtins take ownership of `Args`; retain a copy only for the uncommon host-function
+    // fallback path, which needs the same values after an unknown-builtin result.
+    let host_args = host_functions.get(ident).map(|_| args.clone());
+    match builtin::eval_builtin(self_value, ident, args, env) {
         Ok(v) => Ok(v),
         Err(builtin::Error::NotDefined(_, _)) => match host_functions.get(ident) {
             // Catches a panic at the boundary, matching the tree-walker's `eval_host_fn` —
             // a misbehaving host closure can't unwind through the VM.
-            Some(host_fn) => std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(args)))
-                .unwrap_or_else(|payload| {
-                    Err(crate::eval::host::HostFunctionError::new(format!(
-                        "panic: {}",
-                        crate::eval::host::panic_message(&*payload)
-                    )))
-                })
-                .map_err(|e| VmError::Host(*ident, e.message().to_string())),
+            Some(host_fn) => {
+                let Some(host_args) = host_args.as_deref() else {
+                    return Err(VmError::Corrupt("host function arguments were not retained"));
+                };
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(host_args)))
+                    .unwrap_or_else(|payload| {
+                        Err(crate::eval::host::HostFunctionError::new(format!(
+                            "panic: {}",
+                            crate::eval::host::panic_message(&*payload)
+                        )))
+                    })
+                    .map_err(|e| VmError::Host(*ident, e.message().to_string()))
+            }
             None => Err(VmError::Builtin(builtin::Error::NotDefined(
                 ident.to_string(),
                 Vec::new(),
