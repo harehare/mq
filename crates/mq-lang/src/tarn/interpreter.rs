@@ -4,6 +4,7 @@ use super::compiler::CompiledProgram;
 use super::value::VmClosureValue;
 use super::value::{Cell, Closure, StackValue, new_cell, read_cell, write_cell};
 use crate::ast::TokenId;
+use crate::ast::constants::builtins;
 use crate::eval::builtin::{self, Args};
 use crate::eval::env::Env;
 use crate::eval::host::HostFunctions;
@@ -524,6 +525,10 @@ fn bind_params(
     context: &mut ParameterContext<'_, '_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<()> {
+    if let Some(arity) = shape.fixed_required_arity() {
+        return bind_fixed_required_params(arity, args, callee_locals);
+    }
+
     let arg_count = args.len();
     let param_count = shape.bindings.len();
     let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
@@ -605,6 +610,31 @@ fn bind_params(
                 }
             }
         }
+    }
+    Ok(())
+}
+
+/// Binds the common all-required form without inspecting each `ParamBinding` at call time.
+/// Function compilation reserves slot 0 for `self` and then assigns parameter slots contiguously.
+fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals: &[Cell]) -> VmResult<()> {
+    let arg_count = args.len();
+    let first_arg_slot = if arg_count == arity {
+        SELF_SLOT as usize + 1
+    } else if arity > 0 && arg_count + 1 == arity {
+        write_cell(
+            &callee_locals[SELF_SLOT as usize + 1],
+            StackValue::Value(current_self(callee_locals)),
+        );
+        SELF_SLOT as usize + 2
+    } else {
+        return Err(VmError::ArityMismatch {
+            expected: arity as u8,
+            actual: arg_count as u8,
+        });
+    };
+
+    for (offset, value) in args.into_iter().enumerate() {
+        write_cell(&callee_locals[first_arg_slot + offset], value);
     }
     Ok(())
 }
@@ -1524,4 +1554,48 @@ fn builtin_error_message(e: &builtin::Error) -> String {
     }
 }
 
-use crate::ast::constants::builtins;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn number(value: i64) -> StackValue {
+        StackValue::Value(RuntimeValue::Number(value.into()))
+    }
+
+    fn value_at(locals: &[Cell], slot: usize) -> RuntimeValue {
+        match read_cell(&locals[slot]) {
+            StackValue::Value(value) => value,
+            StackValue::Closure(_) => panic!("expected a runtime value"),
+        }
+    }
+
+    #[test]
+    fn fixed_required_binder_handles_explicit_and_implicit_self_arguments() {
+        let explicit_locals = vec![
+            new_cell(StackValue::Value(RuntimeValue::None)),
+            new_cell(StackValue::Value(RuntimeValue::None)),
+            new_cell(StackValue::Value(RuntimeValue::None)),
+        ];
+        bind_fixed_required_params(2, vec![number(3), number(4)], &explicit_locals).unwrap();
+        assert_eq!(value_at(&explicit_locals, 1), RuntimeValue::Number(3.into()));
+        assert_eq!(value_at(&explicit_locals, 2), RuntimeValue::Number(4.into()));
+
+        let implicit_locals = vec![
+            new_cell(number(10)),
+            new_cell(StackValue::Value(RuntimeValue::None)),
+            new_cell(StackValue::Value(RuntimeValue::None)),
+        ];
+        bind_fixed_required_params(2, vec![number(4)], &implicit_locals).unwrap();
+        assert_eq!(value_at(&implicit_locals, 1), RuntimeValue::Number(10.into()));
+        assert_eq!(value_at(&implicit_locals, 2), RuntimeValue::Number(4.into()));
+    }
+
+    #[test]
+    fn fixed_required_binder_rejects_invalid_arity() {
+        let locals = vec![new_cell(StackValue::Value(RuntimeValue::None))];
+        assert!(matches!(
+            bind_fixed_required_params(0, vec![number(1)], &locals),
+            Err(VmError::ArityMismatch { expected: 0, actual: 1 })
+        ));
+    }
+}

@@ -37,6 +37,13 @@ impl ParamBinding {
     }
 }
 
+impl ParamShape {
+    /// Returns the arity when every parameter is required and occupies its declared slot.
+    pub(crate) fn fixed_required_arity(&self) -> Option<usize> {
+        (!self.has_variadic && self.required == self.bindings.len()).then_some(self.required)
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ParamShape {
     pub(crate) bindings: Vec<ParamBinding>,
