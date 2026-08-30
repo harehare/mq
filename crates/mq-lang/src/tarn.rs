@@ -617,6 +617,7 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, OpCode::CallLocal(_, 1)))
         );
+        assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
     }
 
     #[test]
