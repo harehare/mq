@@ -80,3 +80,24 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
         *cell.write().unwrap() = value;
     }
 }
+
+/// Appends to an array held in a VM cell without cloning the enclosing `RuntimeValue`.
+pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(), &'static str> {
+    #[cfg(not(feature = "sync"))]
+    {
+        let mut stored = cell.borrow_mut();
+        let StackValue::Value(RuntimeValue::Array(array)) = &mut *stored else {
+            return Err("ForeachCollect accumulator is not an array");
+        };
+        crate::eval::runtime_value::array_mut(array).push(value);
+    }
+    #[cfg(feature = "sync")]
+    {
+        let mut stored = cell.write().unwrap();
+        let StackValue::Value(RuntimeValue::Array(array)) = &mut *stored else {
+            return Err("ForeachCollect accumulator is not an array");
+        };
+        crate::eval::runtime_value::array_mut(array).push(value);
+    }
+    Ok(())
+}

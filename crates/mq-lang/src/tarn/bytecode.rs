@@ -73,8 +73,6 @@ pub(crate) enum OpCode {
     /// Duplicates the top stack value (used by `&&`/`||` to test an operand's
     /// truthiness without losing the value it may short-circuit to).
     Dup,
-    /// Swaps the top two stack values.
-    Swap,
     Jump(i32),
     JumpIfFalse(i32),
     Add,
@@ -112,6 +110,17 @@ pub(crate) enum OpCode {
     /// Reads `array[index]` (or `None` if out of range) directly, without the `get`
     /// builtin's clone-on-write mutation path.
     ArrayGetAt,
+    /// Starts a `foreach` iteration: exits when the index reaches the array length;
+    /// otherwise binds the current element to both the loop variable and `self`, then
+    /// advances the synthetic index before the loop body runs.
+    ForeachNext {
+        array_slot: u16,
+        index_slot: u16,
+        value_slot: u16,
+        exit_offset: i32,
+    },
+    /// Appends the loop body's result directly to `foreach`'s synthetic accumulator.
+    ForeachCollect(u16),
     /// Pops an index and an `Array`, pushes a new `Array` of the elements from that index
     /// onward (the `..rest` binding in an `ArrayRest` match pattern).
     ArraySliceFrom,
@@ -245,12 +254,13 @@ impl Chunk {
             .map(|i| self.lines[i].1)
     }
 
-    /// Rewrites a previously-emitted `Jump`/`JumpIfFalse` at `at` so its offset lands on
+    /// Rewrites a previously-emitted control-flow instruction at `at` so its offset lands on
     /// the instruction that will be emitted next.
     pub(crate) fn patch_jump(&mut self, at: usize) {
         let offset = (self.code.len() - at - 1) as i32;
         match &mut self.code[at] {
             OpCode::Jump(o) | OpCode::JumpIfFalse(o) => *o = offset,
+            OpCode::ForeachNext { exit_offset, .. } => *exit_offset = offset,
             _ => unreachable!("patch_jump target is not a jump instruction"),
         }
     }
@@ -262,11 +272,6 @@ impl Chunk {
             OpCode::TryCatch { break_offset, .. } => *break_offset = Some(offset),
             _ => unreachable!("flow-break target is not a TryCatch instruction"),
         }
-    }
-
-    /// Patches a `TryCatch` control-flow continue target to the next instruction.
-    pub(crate) fn patch_try_continue(&mut self, at: usize) {
-        self.patch_try_continue_to(at, self.code.len());
     }
 
     /// Patches a `TryCatch` control-flow continue target to `target`.
@@ -396,6 +401,11 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
                     targets.insert(target);
                 }
             }
+            OpCode::ForeachNext { exit_offset, .. } => {
+                if let Some(target) = jump_target(pc, *exit_offset) {
+                    targets.insert(target);
+                }
+            }
             OpCode::TryCatch {
                 break_offset: Some(offset),
                 continue_offset,
@@ -453,6 +463,17 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
         OpCode::JumpIfFalse(offset) => OpCode::JumpIfFalse(rewrite(offset)),
+        OpCode::ForeachNext {
+            array_slot,
+            index_slot,
+            value_slot,
+            exit_offset,
+        } => OpCode::ForeachNext {
+            array_slot,
+            index_slot,
+            value_slot,
+            exit_offset: rewrite(exit_offset),
+        },
         OpCode::TryCatch {
             has_binder,
             break_acc_slot,
@@ -492,7 +513,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
-                OpCode::GetLocal(slot) | OpCode::SetLocal(slot) | OpCode::CallLocal(slot, _) => {
+                OpCode::GetLocal(slot)
+                | OpCode::SetLocal(slot)
+                | OpCode::CallLocal(slot, _)
+                | OpCode::ForeachCollect(slot) => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -500,6 +524,23 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             slot: *slot,
                         });
                     }
+                }
+                OpCode::ForeachNext {
+                    array_slot,
+                    index_slot,
+                    value_slot,
+                    exit_offset,
+                } => {
+                    for slot in [array_slot, index_slot, value_slot] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *exit_offset)?;
                 }
                 OpCode::MakeClosure(target, _) => verify_chunk_target(chunks, chunk_index, pc, *target)?,
                 OpCode::MakeStaticClosure(index) => {
