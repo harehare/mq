@@ -16,6 +16,15 @@ pub(crate) struct Closure {
     pub(crate) upvalues: Vec<Cell>,
 }
 
+impl std::fmt::Debug for Closure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Closure")
+            .field("chunk_index", &self.chunk_index)
+            .field("upvalue_count", &self.upvalues.len())
+            .finish()
+    }
+}
+
 /// A VM closure that has crossed into plain-`RuntimeValue` territory — stored in an
 /// array/dict, passed to a native builtin like `partial`, or returned from `Engine::eval`.
 /// Unlike `StackValue::Closure` (only ever a transient value *on the VM stack*, scoped to

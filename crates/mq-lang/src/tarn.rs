@@ -597,6 +597,67 @@ mod tests {
     }
 
     #[test]
+    fn non_capturing_closures_use_chunk_static_storage() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("let f = fn(x): x + 1; | f(2)", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert_eq!(compiled.chunks[0].static_closures.len(), 1);
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::MakeStaticClosure(0)))
+        );
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::CallLocal(_, 1)))
+        );
+    }
+
+    #[test]
+    fn capturing_closures_keep_dynamic_capture_sources() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("let x = 1 | let f = fn(): x; | f()", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::MakeClosure(_, _)))
+        );
+    }
+
+    #[test]
+    fn mutable_local_calls_keep_the_generic_value_call_path() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("var f = fn(x): x + 1; | f(2)", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::CallValue(1)))
+        );
+        assert!(
+            !compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::CallLocal(_, _)))
+        );
+    }
+
+    #[test]
     fn let_shadowing_a_loop_local_reuses_its_slot_instead_of_hanging() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
         let program = crate::parse(

@@ -1,7 +1,7 @@
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSymbolTable;
+use super::value::Closure;
 use crate::Ident;
-#[cfg(feature = "debugger")]
 use crate::Shared;
 use crate::ast::TokenId;
 #[cfg(feature = "debugger")]
@@ -58,6 +58,8 @@ pub(crate) enum OpCode {
     GetUpvalue(u16),
     SetUpvalue(u16),
     MakeClosure(u16, Vec<UpvalueSource>),
+    /// Pushes a shared closure with no captured cells.
+    MakeStaticClosure(u16),
     /// Pops and discards the top value (used to drop a flattened module statement's
     /// value, since only its side effect — defining a name — matters).
     Pop,
@@ -127,6 +129,8 @@ pub(crate) enum OpCode {
     /// subject) for selectors with runtime arguments (`.h(1..2)`, `.code("rust")`).
     SelectorMatchWithArgs(Selector, u8),
     CallBuiltin(Ident, u8),
+    /// Calls an immutable local binding without materializing the callee on the operand stack.
+    CallLocal(u16, u8),
     CallValue(u8),
     /// "Paren-free" call: calls the top-of-stack value with zero args if it's a
     /// closure/native function needing at most one (the implicit `.`); otherwise leaves it
@@ -159,6 +163,8 @@ pub(crate) enum OpCode {
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
     pub(crate) constants: Vec<RuntimeValue>,
+    /// Non-capturing closures allocated once when the program is compiled.
+    pub(crate) static_closures: Vec<Shared<Closure>>,
     pub(crate) local_count: u16,
     /// Source names for local slots. Kept in non-debug builds too because legacy dynamic
     /// builtins such as `get_variable` resolve names against the current lexical scope.
@@ -182,6 +188,15 @@ pub(crate) struct Chunk {
 }
 
 impl Chunk {
+    /// Adds a non-capturing closure and returns its chunk-local index.
+    pub(crate) fn push_static_closure(&mut self, target_chunk: u16) -> u16 {
+        self.static_closures.push(Shared::new(Closure {
+            chunk_index: target_chunk,
+            upvalues: Vec::new(),
+        }));
+        (self.static_closures.len() - 1) as u16
+    }
+
     /// Whether a closure or parameter default can retain one of this frame's local cells.
     pub(crate) fn captures_local_slots(&self) -> bool {
         self.code.iter().any(|op| {
@@ -270,6 +285,7 @@ pub(crate) enum BytecodeError {
     ConstantOutOfBounds { chunk: usize, pc: usize, index: u16 },
     LocalOutOfBounds { chunk: usize, pc: usize, slot: u16 },
     ChunkOutOfBounds { chunk: usize, pc: usize, target: u16 },
+    StaticClosureOutOfBounds { chunk: usize, pc: usize, index: u16 },
     JumpOutOfBounds { chunk: usize, pc: usize, target: isize },
 }
 
@@ -286,6 +302,12 @@ impl fmt::Display for BytecodeError {
             }
             Self::ChunkOutOfBounds { chunk, pc, target } => {
                 write!(f, "chunk {chunk} pc {pc} references chunk {target} out of bounds")
+            }
+            Self::StaticClosureOutOfBounds { chunk, pc, index } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} references static closure {index} out of bounds"
+                )
             }
             Self::JumpOutOfBounds { chunk, pc, target } => {
                 write!(f, "chunk {chunk} pc {pc} jumps to {target} out of bounds")
@@ -463,7 +485,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
-                OpCode::GetLocal(slot) | OpCode::SetLocal(slot) => {
+                OpCode::GetLocal(slot) | OpCode::SetLocal(slot) | OpCode::CallLocal(slot, _) => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -473,6 +495,16 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                 }
                 OpCode::MakeClosure(target, _) => verify_chunk_target(chunks, chunk_index, pc, *target)?,
+                OpCode::MakeStaticClosure(index) => {
+                    let Some(closure) = chunk.static_closures.get(*index as usize) else {
+                        return Err(BytecodeError::StaticClosureOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    };
+                    verify_chunk_target(chunks, chunk_index, pc, closure.chunk_index)?;
+                }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
@@ -573,6 +605,15 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[invalid_jump]),
             Err(BytecodeError::JumpOutOfBounds { .. })
+        ));
+
+        let invalid_static_closure = Chunk {
+            code: vec![OpCode::MakeStaticClosure(0), OpCode::Return],
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[invalid_static_closure]),
+            Err(BytecodeError::StaticClosureOutOfBounds { .. })
         ));
     }
 }

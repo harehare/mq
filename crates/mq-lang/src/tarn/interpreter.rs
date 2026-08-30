@@ -814,6 +814,13 @@ fn run_chunk_inner(
                     upvalues: captured,
                 })));
             }
+            OpCode::MakeStaticClosure(index) => {
+                let closure = chunk
+                    .static_closures
+                    .get(*index as usize)
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("static closure index out of bounds")))?;
+                stack.push(StackValue::Closure(Shared::clone(closure)));
+            }
             OpCode::Pop => {
                 pop!();
             }
@@ -1049,6 +1056,23 @@ fn run_chunk_inner(
                     )
                     .map_err(|e| locate(chunk, ip, e))?,
                 ));
+            }
+            OpCode::CallLocal(slot, argc) => {
+                let mut args = Vec::with_capacity(*argc as usize);
+                for _ in 0..*argc {
+                    args.push(pop!());
+                }
+                args.reverse();
+                let result = call_stack_value(
+                    read_cell(&locals[*slot as usize]),
+                    args,
+                    CallSite { locals, chunk, ip },
+                    chunks,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                )?;
+                stack.push(result);
             }
             OpCode::CallValue(argc) => {
                 let mut args = Vec::with_capacity(*argc as usize);
