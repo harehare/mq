@@ -1,3 +1,4 @@
+use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -180,6 +181,9 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandbox
     /// identifier isn't a local binding, before falling back to the built-in table. Empty by
     /// default: a host must opt in via [`crate::Engine::register_fn`].
     pub(crate) host_functions: Shared<SharedCell<HostFunctions>>,
+    /// Values explicitly added through `define_value`/`define_string_value`. Tarn snapshots
+    /// this instead of cloning and filtering every legacy environment binding on each run.
+    vm_global_bindings: Shared<SharedCell<FxHashMap<Ident, RuntimeValue>>>,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -199,6 +203,7 @@ impl<T: ModuleResolver, IO: Io + Default> Default for Evaluator<T, IO> {
             module_loader: module::ModuleLoader::new(T::default()),
             io: Shared::new(IO::default()),
             host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
+            vm_global_bindings: Shared::new(SharedCell::new(FxHashMap::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -220,6 +225,7 @@ impl<T: ModuleResolver, IO: Io> Clone for Evaluator<T, IO> {
             module_loader: self.module_loader.clone(),
             io: Shared::clone(&self.io),
             host_functions: Shared::clone(&self.host_functions),
+            vm_global_bindings: Shared::clone(&self.vm_global_bindings),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -273,6 +279,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             module_loader,
             io,
             host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
+            vm_global_bindings: Shared::new(SharedCell::new(FxHashMap::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -491,28 +498,31 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
 
     /// Defines a new string variable in the current environment.
     pub fn define_string_value(&self, name: &str, value: &str) {
-        define(&self.env, Ident::new(name), RuntimeValue::String(value.to_string()));
+        self.define_vm_global_value(Ident::new(name), RuntimeValue::String(value.to_string()));
     }
 
     /// Defines an arbitrary runtime value in the current environment.
     pub fn define_value(&self, name: &str, value: RuntimeValue) {
-        define(&self.env, Ident::new(name), value);
+        self.define_vm_global_value(Ident::new(name), value);
+    }
+
+    fn define_vm_global_value(&self, name: Ident, value: RuntimeValue) {
+        define(&self.env, name, value.clone());
+        #[cfg(not(feature = "sync"))]
+        self.vm_global_bindings.borrow_mut().insert(name, value);
+        #[cfg(feature = "sync")]
+        self.vm_global_bindings.write().unwrap().insert(name, value);
     }
 
     /// Snapshot of names/values from `define_value`/`define_string_value`, for the VM (whose
-    /// static slots have no dynamic `Env` to see these in). Excludes function-shaped values,
-    /// since `load_builtin_module` flattens builtin.mq into this same `Env` and those aren't
-    /// callable as the VM's own closures.
+    /// static slots have no dynamic `Env` to see these in).
     #[cfg_attr(not(feature = "tarn"), allow(dead_code))]
     pub(crate) fn global_bindings(&self) -> Vec<(Ident, RuntimeValue)> {
         #[cfg(not(feature = "sync"))]
-        let entries: Vec<_> = self.env.borrow().entries().collect();
+        let bindings = self.vm_global_bindings.borrow();
         #[cfg(feature = "sync")]
-        let entries: Vec<_> = self.env.read().unwrap().entries().collect();
-        entries
-            .into_iter()
-            .filter(|(_, value)| !value.is_function() && !value.is_native_function())
-            .collect()
+        let bindings = self.vm_global_bindings.read().unwrap();
+        bindings.iter().map(|(ident, value)| (*ident, value.clone())).collect()
     }
 
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
