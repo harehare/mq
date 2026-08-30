@@ -92,7 +92,3 @@ tempfile = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
-
-[[bench]]
-harness = false
-name = "tarn_benchmark"

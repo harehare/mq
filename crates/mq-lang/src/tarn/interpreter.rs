@@ -201,11 +201,31 @@ impl From<builtin::Error> for VmError {
 type VmResult<T> = Result<T, VmError>;
 
 /// Runtime services shared by parameter binding and default-value evaluation.
-struct ParameterContext<'a> {
-    chunks: &'a Shared<Vec<Chunk>>,
+struct ParameterContext<'chunks, 'execution> {
+    chunks: &'chunks Shared<Vec<Chunk>>,
+    env: &'execution Shared<SharedCell<Env>>,
+    limits: &'execution mut ExecutionLimits,
+    host_functions: &'execution HostFunctions,
+}
+
+/// Mutable services shared by all frames of one VM evaluation.
+struct ExecutionContext<'a> {
     env: &'a Shared<SharedCell<Env>>,
     limits: &'a mut ExecutionLimits,
     host_functions: &'a HostFunctions,
+}
+
+struct RunOptions<'a> {
+    host_functions: &'a HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+    global_bindings: &'a [(Ident, RuntimeValue)],
+}
+
+struct CallSite<'a> {
+    locals: &'a [Cell],
+    chunk: &'a Chunk,
+    ip: usize,
 }
 
 pub(crate) fn run(
@@ -235,10 +255,12 @@ pub(crate) fn run_with_globals(
     run_impl(
         compiled,
         input,
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
+        RunOptions {
+            host_functions,
+            timeout,
+            max_call_stack_depth,
+            global_bindings,
+        },
         #[cfg(feature = "debugger")]
         &mut debug,
     )
@@ -262,10 +284,12 @@ pub(crate) fn run_with_debug_hook_and_globals(
     run_impl(
         compiled,
         input,
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
+        RunOptions {
+            host_functions,
+            timeout,
+            max_call_stack_depth,
+            global_bindings,
+        },
         &mut debug,
     )
 }
@@ -273,20 +297,14 @@ pub(crate) fn run_with_debug_hook_and_globals(
 fn run_impl(
     compiled: &CompiledProgram,
     input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
+    options: RunOptions<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
     run_impl_with_bindings(
         compiled,
         input,
-        host_functions,
         &[],
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
+        options,
         #[cfg(feature = "debugger")]
         debug,
     )
@@ -307,32 +325,30 @@ pub(crate) fn run_debug_expression(
     run_impl_with_bindings(
         compiled,
         RuntimeValue::None,
-        host_functions,
         bindings,
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        RunOptions {
+            host_functions,
+            timeout: None,
+            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            global_bindings: &[],
+        },
         &mut debug,
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_impl_with_bindings(
     compiled: &CompiledProgram,
     input: RuntimeValue,
-    host_functions: &HostFunctions,
     initial_bindings: &[RuntimeValue],
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
+    options: RunOptions<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
     let mut env = Env::default();
-    for (ident, value) in global_bindings {
+    for (ident, value) in options.global_bindings {
         env.define(*ident, value.clone());
     }
     let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
-    let mut limits = ExecutionLimits::new(timeout, max_call_stack_depth);
+    let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth);
     let locals = limits.take_locals(compiled.chunks[0].local_count);
     write_cell(&locals[SELF_SLOT as usize], StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
@@ -341,14 +357,17 @@ fn run_impl_with_bindings(
     for (slot, value) in initial_bindings.iter().cloned().enumerate() {
         write_cell(&locals[slot + 1], StackValue::Value(value));
     }
+    let mut execution = ExecutionContext {
+        env: &placeholder_env,
+        limits: &mut limits,
+        host_functions: options.host_functions,
+    };
     let result = run_chunk(
         0,
         &compiled.chunks,
         locals,
         &[],
-        &placeholder_env,
-        &mut limits,
-        host_functions,
+        &mut execution,
         #[cfg(feature = "debugger")]
         debug,
     )?;
@@ -378,18 +397,13 @@ fn capture_upvalues(sources: &[UpvalueSource], locals: &[Cell], upvalues: &[Cell
 }
 
 /// Calls `callee` with `args`. Shared by `OpCode::CallValue` and `OpCode::MaybeAutoCall`.
-#[allow(clippy::too_many_arguments)]
 fn call_stack_value(
     callee: StackValue,
     #[cfg_attr(not(feature = "tarn"), allow(unused_mut))] mut args: Vec<StackValue>,
-    locals: &[Cell],
+    call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
-    limits: &mut ExecutionLimits,
-    host_functions: &HostFunctions,
+    execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-    chunk: &Chunk,
-    ip: usize,
 ) -> VmResult<StackValue> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
         #[cfg(feature = "tarn")]
@@ -400,15 +414,21 @@ fn call_stack_value(
             .map(|a| match a {
                 StackValue::Value(v) => Ok(v),
                 StackValue::Closure(_) => Err(locate(
-                    chunk,
-                    ip,
+                    call_site.chunk,
+                    call_site.ip,
                     VmError::Corrupt("closures can't be passed to a native function value"),
                 )),
             })
             .collect::<VmResult<Vec<_>>>()?;
-        let self_value = current_self(locals);
-        let result =
-            call_builtin(&ident, &arg_values, &self_value, env, host_functions).map_err(|e| locate(chunk, ip, e))?;
+        let self_value = current_self(call_site.locals);
+        let result = call_builtin(
+            &ident,
+            &arg_values,
+            &self_value,
+            execution.env,
+            execution.host_functions,
+        )
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
         return Ok(StackValue::Value(result));
     }
 
@@ -423,18 +443,18 @@ fn call_stack_value(
             }
             (&vc.chunks, vc.chunk_index, vc.upvalues.clone())
         }
-        _ => return Err(locate(chunk, ip, VmError::NotCallable)),
+        _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     #[cfg(not(feature = "tarn"))]
     let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, Vec<Cell>) = match &callee {
         StackValue::Closure(closure) => (chunks, closure.chunk_index, closure.upvalues.clone()),
-        _ => return Err(locate(chunk, ip, VmError::NotCallable)),
+        _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
-    let callee_locals = limits.take_locals(callee_chunk.local_count);
+    let callee_locals = execution.limits.take_locals(callee_chunk.local_count);
     write_cell(
         &callee_locals[SELF_SLOT as usize],
-        read_cell(&locals[SELF_SLOT as usize]),
+        read_cell(&call_site.locals[SELF_SLOT as usize]),
     );
     bind_params(
         &callee_chunk.param_shape,
@@ -443,14 +463,14 @@ fn call_stack_value(
         &callee_upvalues,
         &mut ParameterContext {
             chunks: callee_chunks,
-            env,
-            limits,
-            host_functions,
+            env: execution.env,
+            limits: execution.limits,
+            host_functions: execution.host_functions,
         },
         #[cfg(feature = "debugger")]
         debug,
     )
-    .map_err(|e| locate(chunk, ip, e))?;
+    .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
     #[cfg(feature = "debugger")]
     let caller_node = debug.current_node.clone();
     #[cfg(feature = "debugger")]
@@ -460,19 +480,20 @@ fn call_stack_value(
     } else {
         false
     };
-    limits.enter_call().map_err(|e| locate(chunk, ip, e))?;
+    execution
+        .limits
+        .enter_call()
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
     let call_result = run_chunk(
         callee_chunk_index,
         callee_chunks,
         callee_locals,
         &callee_upvalues,
-        env,
-        limits,
-        host_functions,
+        execution,
         #[cfg(feature = "debugger")]
         debug,
     );
-    limits.exit_call();
+    execution.limits.exit_call();
     #[cfg(feature = "debugger")]
     if pushed_call {
         debug.call_stack.pop();
@@ -489,7 +510,7 @@ fn bind_params(
     args: Vec<StackValue>,
     callee_locals: &[Cell],
     enclosing_upvalues: &[Cell],
-    context: &mut ParameterContext<'_>,
+    context: &mut ParameterContext<'_, '_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<()> {
     let arg_count = args.len();
@@ -553,17 +574,22 @@ fn bind_params(
                         &default_locals[SELF_SLOT as usize],
                         read_cell(&callee_locals[SELF_SLOT as usize]),
                     );
-                    let value = run_chunk(
-                        *default_chunk,
-                        context.chunks,
-                        default_locals,
-                        &captured,
-                        context.env,
-                        context.limits,
-                        context.host_functions,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    )?;
+                    let value = {
+                        let mut execution = ExecutionContext {
+                            env: context.env,
+                            limits: context.limits,
+                            host_functions: context.host_functions,
+                        };
+                        run_chunk(
+                            *default_chunk,
+                            context.chunks,
+                            default_locals,
+                            &captured,
+                            &mut execution,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        )?
+                    };
                     write_cell(&callee_locals[*slot as usize], value);
                 }
             }
@@ -652,15 +678,12 @@ fn sync_dynamic_env(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_chunk(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
     locals: Vec<Cell>,
     upvalues: &[Cell],
-    env: &Shared<SharedCell<Env>>,
-    limits: &mut ExecutionLimits,
-    host_functions: &HostFunctions,
+    execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let reusable_locals = !chunks[chunk_index as usize].captures_local_slots();
@@ -669,27 +692,22 @@ fn run_chunk(
         chunks,
         &locals,
         upvalues,
-        env,
-        limits,
-        host_functions,
+        execution,
         #[cfg(feature = "debugger")]
         debug,
     );
     if reusable_locals {
-        limits.recycle_locals(locals);
+        execution.limits.recycle_locals(locals);
     }
     result
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_chunk_inner(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
     locals: &[Cell],
     upvalues: &[Cell],
-    env: &Shared<SharedCell<Env>>,
-    limits: &mut ExecutionLimits,
-    host_functions: &HostFunctions,
+    execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let chunk = &chunks[chunk_index as usize];
@@ -727,7 +745,7 @@ fn run_chunk_inner(
     }
 
     while ip < chunk.code.len() {
-        limits.check().map_err(|e| locate(chunk, ip, e))?;
+        execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
         let op = chunk.code[ip].clone();
         ip += 1;
 
@@ -812,22 +830,30 @@ fn run_chunk_inner(
                 let b = pop_value!();
                 let a = pop_value!();
                 stack.push(StackValue::Value(
-                    binop(op, a, b, locals, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
+                    binop(op, a, b, locals, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
                 let b = pop_value!();
                 let a = pop_value!();
                 stack.push(StackValue::Value(
-                    cmp_op(op, a, b, locals, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
+                    cmp_op(op, a, b, locals, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::Neg => {
                 let a = pop_value!();
                 stack.push(StackValue::Value(match a {
                     RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
-                    other => call_builtin(negate_ident(), &[other], &current_self(locals), env, host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?,
+                    other => call_builtin(
+                        negate_ident(),
+                        &[other],
+                        &current_self(locals),
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?,
                 }));
             }
             OpCode::Not => {
@@ -975,9 +1001,9 @@ fn run_chunk_inner(
             }
             OpCode::GetExternalGlobal(ident) => {
                 #[cfg(not(feature = "sync"))]
-                let resolved = env.borrow().resolve(ident);
+                let resolved = execution.env.borrow().resolve(ident);
                 #[cfg(feature = "sync")]
-                let resolved = env.read().unwrap().resolve(ident);
+                let resolved = execution.env.read().unwrap().resolve(ident);
                 let value = resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))?;
                 stack.push(StackValue::Value(value));
             }
@@ -997,11 +1023,17 @@ fn run_chunk_inner(
                 }
                 args.reverse();
                 if ident == Ident::new("get_variable") || ident == Ident::new("set_variable") {
-                    sync_dynamic_env(chunk, locals, upvalues, chunks, env);
+                    sync_dynamic_env(chunk, locals, upvalues, chunks, execution.env);
                 }
                 stack.push(StackValue::Value(
-                    call_builtin(&ident, &args, &current_self(locals), env, host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?,
+                    call_builtin(
+                        &ident,
+                        &args,
+                        &current_self(locals),
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::CallValue(argc) => {
@@ -1014,15 +1046,11 @@ fn run_chunk_inner(
                 let result = call_stack_value(
                     callee,
                     args,
-                    locals,
+                    CallSite { locals, chunk, ip },
                     chunks,
-                    env,
-                    limits,
-                    host_functions,
+                    execution,
                     #[cfg(feature = "debugger")]
                     debug,
-                    chunk,
-                    ip,
                 )?;
                 stack.push(result);
             }
@@ -1042,15 +1070,11 @@ fn run_chunk_inner(
                     let result = call_stack_value(
                         value,
                         Vec::new(),
-                        locals,
+                        CallSite { locals, chunk, ip },
                         chunks,
-                        env,
-                        limits,
-                        host_functions,
+                        execution,
                         #[cfg(feature = "debugger")]
                         debug,
-                        chunk,
-                        ip,
                     )?;
                     stack.push(result);
                 } else {
@@ -1069,16 +1093,16 @@ fn run_chunk_inner(
                 let StackValue::Closure(try_closure) = pop!() else {
                     bail!(VmError::Corrupt("TryCatch try operand is not a closure"));
                 };
-                let try_locals = limits.take_locals(chunks[try_closure.chunk_index as usize].local_count);
+                let try_locals = execution
+                    .limits
+                    .take_locals(chunks[try_closure.chunk_index as usize].local_count);
                 write_cell(&try_locals[SELF_SLOT as usize], read_cell(&locals[SELF_SLOT as usize]));
                 match run_chunk(
                     try_closure.chunk_index,
                     chunks,
                     try_locals,
                     &try_closure.upvalues,
-                    env,
-                    limits,
-                    host_functions,
+                    execution,
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
@@ -1101,7 +1125,9 @@ fn run_chunk_inner(
                             ip = (ip as i64 + offset as i64) as usize;
                             continue;
                         }
-                        let catch_locals = limits.take_locals(chunks[catch_closure.chunk_index as usize].local_count);
+                        let catch_locals = execution
+                            .limits
+                            .take_locals(chunks[catch_closure.chunk_index as usize].local_count);
                         write_cell(
                             &catch_locals[SELF_SLOT as usize],
                             read_cell(&locals[SELF_SLOT as usize]),
@@ -1114,9 +1140,7 @@ fn run_chunk_inner(
                             chunks,
                             catch_locals,
                             &catch_closure.upvalues,
-                            env,
-                            limits,
-                            host_functions,
+                            execution,
                             #[cfg(feature = "debugger")]
                             debug,
                         )?);

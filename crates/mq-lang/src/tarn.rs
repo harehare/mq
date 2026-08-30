@@ -258,68 +258,80 @@ fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) ->
 
 type ProgramSlice<'a> = &'a [Shared<Node>];
 
+/// Engine-provided services needed to compile and execute a VM program.
+pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
+    pub(crate) host_functions: &'a HostFunctions,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) max_call_stack_depth: u32,
+    pub(crate) token_arena: TokenArena,
+    pub(crate) module_loader: ModuleLoader<R>,
+    pub(crate) global_bindings: &'a [(crate::Ident, RuntimeValue)],
+}
+
+#[cfg(feature = "debugger")]
+pub(crate) struct DebugRunContext<'a, R: ModuleResolver> {
+    pub(crate) engine: EngineRunContext<'a, R>,
+    pub(crate) debugger: Shared<SharedCell<Debugger>>,
+    pub(crate) handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
+    pub(crate) source: Source,
+}
+
 fn split_at_nodes(program: &Program) -> Option<(ProgramSlice<'_>, ProgramSlice<'_>)> {
     let index = program.iter().position(|node| node.is_nodes())?;
     Some(program.split_at(index))
 }
 
-#[allow(clippy::too_many_arguments)]
 fn run_nodes_aggregate<R: ModuleResolver>(
     after: &[Shared<Node>],
     values: Vec<RuntimeValue>,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
+    context: &EngineRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error> {
     let compiled = compiler::compile_program_for_engine(
         &after.to_vec(),
-        token_arena,
-        module_loader,
-        &global_bindings.iter().map(|(ident, _)| *ident).collect::<Vec<_>>(),
+        Shared::clone(&context.token_arena),
+        context.module_loader.clone(),
+        &context
+            .global_bindings
+            .iter()
+            .map(|(ident, _)| *ident)
+            .collect::<Vec<_>>(),
     )?;
     match interpreter::run_with_globals(
         &compiled,
         RuntimeValue::Array(Shared::new(values)),
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
+        context.host_functions,
+        context.timeout,
+        context.max_call_stack_depth,
+        context.global_bindings,
     )? {
         RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
         value => Ok(vec![value]),
     }
 }
 
-#[allow(dead_code, clippy::too_many_arguments)]
+#[allow(dead_code)]
 pub(crate) fn compile_and_run_many<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
+    context: EngineRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     let Some((before, after)) = split_at_nodes(program) else {
-        let compiled = compiler::compile_program_for_engine(program, token_arena, module_loader, &global_names)?;
+        let compiled =
+            compiler::compile_program_for_engine(program, context.token_arena, context.module_loader, &global_names)?;
         return inputs
             .map(|input| {
                 run_for_input(input, |v| {
                     interpreter::run_with_globals(
                         &compiled,
                         v,
-                        host_functions,
-                        timeout,
-                        max_call_stack_depth,
-                        global_bindings,
+                        context.host_functions,
+                        context.timeout,
+                        context.max_call_stack_depth,
+                        context.global_bindings,
                     )
                 })
                 .map_err(Error::from)
@@ -328,8 +340,8 @@ where
     };
     let compiled = compiler::compile_program_for_engine(
         &before.to_vec(),
-        Shared::clone(&token_arena),
-        module_loader.clone(),
+        Shared::clone(&context.token_arena),
+        context.module_loader.clone(),
         &global_names,
     )?;
     let values = inputs
@@ -338,58 +350,27 @@ where
                 interpreter::run_with_globals(
                     &compiled,
                     v,
-                    host_functions,
-                    timeout,
-                    max_call_stack_depth,
-                    global_bindings,
+                    context.host_functions,
+                    context.timeout,
+                    context.max_call_stack_depth,
+                    context.global_bindings,
                 )
             })
             .map_err(Error::from)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    run_nodes_aggregate(
-        after,
-        values,
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        token_arena,
-        module_loader,
-        global_bindings,
-    )
+    run_nodes_aggregate(after, values, &context)
 }
 
 /// Runs one input through the VM while adapting boundaries to the existing debugger API.
 #[cfg(feature = "debugger")]
 #[allow(dead_code)] // Called by Engine's opt-in VM path before the M5 default cutover.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn compile_and_run_debugged<R: ModuleResolver>(
     program: &Program,
     input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
-    debugger: Shared<SharedCell<Debugger>>,
-    handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
-    source: Source,
+    context: DebugRunContext<'_, R>,
 ) -> Result<RuntimeValue, Error> {
-    compile_and_run_debugged_many(
-        program,
-        std::iter::once(input),
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        token_arena,
-        module_loader,
-        global_bindings,
-        debugger,
-        handler,
-        source,
-    )
-    .and_then(|mut values| {
+    compile_and_run_debugged_many(program, std::iter::once(input), context).and_then(|mut values| {
         values
             .pop()
             .ok_or(Error::Vm(interpreter::VmError::Corrupt("missing VM result")))
@@ -398,37 +379,28 @@ pub(crate) fn compile_and_run_debugged<R: ModuleResolver>(
 
 #[cfg(feature = "debugger")]
 #[allow(dead_code)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn compile_and_run_debugged_many<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
-    debugger: Shared<SharedCell<Debugger>>,
-    handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
-    source: Source,
+    context: DebugRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let global_names: Vec<crate::Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
     let Some((before, after)) = split_at_nodes(program) else {
         let compiled = compiler::compile_program_for_engine(
             program,
-            Shared::clone(&token_arena),
-            module_loader.clone(),
+            Shared::clone(&context.engine.token_arena),
+            context.engine.module_loader.clone(),
             &global_names,
         )?;
         let mut hook = debugger::VmDebuggerHook::new(
-            debugger,
-            handler,
-            token_arena,
-            source,
-            module_loader.clone(),
+            context.debugger,
+            context.handler,
+            context.engine.token_arena,
+            context.source,
+            context.engine.module_loader.clone(),
             compiled.debug_sources.clone(),
         );
         return inputs
@@ -437,10 +409,10 @@ where
                     interpreter::run_with_debug_hook_and_globals(
                         &compiled,
                         v,
-                        host_functions,
-                        timeout,
-                        max_call_stack_depth,
-                        global_bindings,
+                        context.engine.host_functions,
+                        context.engine.timeout,
+                        context.engine.max_call_stack_depth,
+                        context.engine.global_bindings,
                         &mut hook,
                     )
                 }) {
@@ -455,16 +427,16 @@ where
     };
     let compiled = compiler::compile_program_for_engine(
         &before.to_vec(),
-        Shared::clone(&token_arena),
-        module_loader.clone(),
+        Shared::clone(&context.engine.token_arena),
+        context.engine.module_loader.clone(),
         &global_names,
     )?;
     let mut hook = debugger::VmDebuggerHook::new(
-        debugger,
-        handler,
-        Shared::clone(&token_arena),
-        source,
-        module_loader.clone(),
+        context.debugger,
+        context.handler,
+        Shared::clone(&context.engine.token_arena),
+        context.source,
+        context.engine.module_loader.clone(),
         compiled.debug_sources.clone(),
     );
     let values = inputs
@@ -473,10 +445,10 @@ where
                 interpreter::run_with_debug_hook_and_globals(
                     &compiled,
                     v,
-                    host_functions,
-                    timeout,
-                    max_call_stack_depth,
-                    global_bindings,
+                    context.engine.host_functions,
+                    context.engine.timeout,
+                    context.engine.max_call_stack_depth,
+                    context.engine.global_bindings,
                     &mut hook,
                 )
             }) {
@@ -488,16 +460,20 @@ where
             }
         })
         .collect::<Result<Vec<_>, Error>>()?;
-    let aggregate_compiled =
-        compiler::compile_program_for_engine(&after.to_vec(), token_arena, module_loader, &global_names)?;
+    let aggregate_compiled = compiler::compile_program_for_engine(
+        &after.to_vec(),
+        context.engine.token_arena,
+        context.engine.module_loader,
+        &global_names,
+    )?;
     hook.set_sources(aggregate_compiled.debug_sources.clone());
     match interpreter::run_with_debug_hook_and_globals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
-        host_functions,
-        timeout,
-        max_call_stack_depth,
-        global_bindings,
+        context.engine.host_functions,
+        context.engine.timeout,
+        context.engine.max_call_stack_depth,
+        context.engine.global_bindings,
         &mut hook,
     ) {
         Ok(RuntimeValue::Array(values)) => Ok(Shared::unwrap_or_clone(values)),
@@ -512,9 +488,82 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Arena, Shared, SharedCell};
+    use crate::Selector;
+    use crate::ast::node::{self as ast, Args, MatchArm, Param, Pattern};
+    use crate::error::runtime::RuntimeError;
+    use crate::number::{INFINITE, NAN, Number};
+    use crate::range::Range;
+    use crate::{
+        AstExpr, AstNode, DefaultModuleLoader, Ident, IdentWithToken, Program, Token, TokenKind, arena::Arena,
+        error::InnerError, token_alloc,
+    };
+    use crate::{Shared, SharedCell};
     use proptest::prelude::*;
     use rstest::rstest;
+    use smallvec::{SmallVec, smallvec};
+    use std::f64::consts::PI;
+
+    #[rstest::fixture]
+    fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
+        token_alloc(
+            &token_arena,
+            &Shared::new(Token {
+                kind: TokenKind::Eof,
+                range: Range::default(),
+                module_id: 1.into(),
+            }),
+        );
+        token_arena
+    }
+
+    fn ast_node(expr: AstExpr) -> Shared<AstNode> {
+        Shared::new(AstNode {
+            token_id: 0.into(),
+            expr: Shared::new(expr),
+        })
+    }
+
+    fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
+        Shared::new(AstNode {
+            token_id: 0.into(),
+            expr: Shared::new(ast::Expr::Call(IdentWithToken::new(name), args)),
+        })
+    }
+
+    // Keep the evaluator's AST table intact while executing every same case as a VM test.
+    // The shared macro prevents the two engines' case lists from drifting apart.
+    crate::eval_table_cases!(
+        evaluator_table_cases_run_on_vm,
+        token_arena,
+        runtime_values,
+        program,
+        expected,
+        {
+            let host_functions = HostFunctions::default();
+            let vm_result = compile_and_run_many(
+                &program,
+                runtime_values.into_iter(),
+                EngineRunContext {
+                    host_functions: &host_functions,
+                    // Hand-built AST cases must never leave the VM test worker running forever.
+                    timeout: Some(std::time::Duration::from_secs(1)),
+                    max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                    token_arena,
+                    module_loader: DefaultModuleLoader::default(),
+                    global_bindings: &[],
+                },
+            );
+
+            match expected {
+                Ok(expected_values) => assert_eq!(
+                    vm_result.expect("VM should accept a successful evaluator table case"),
+                    expected_values,
+                ),
+                Err(_) => assert!(vm_result.is_err(), "VM should reject an evaluator error case"),
+            }
+        }
+    );
 
     fn run(code: &str) -> RuntimeValue {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
@@ -696,6 +745,50 @@ mod tests {
         assert_eq!(run(code), RuntimeValue::Number(expected.into()));
     }
 
+    #[cfg(feature = "tarn")]
+    #[rstest]
+    #[case::arithmetic_and_assignment("var total = 1 | foreach(x, [2, 3, 4]): total += x; | total")]
+    #[case::recursive_closure("let make = fn(x): fn(y): x + y;; | let add_two = make(2) | add_two(40)")]
+    #[case::defaults_and_variadic("def f(first, rest = 2, *tail): first + rest + len(tail); | f(10, 20, 1, 2)")]
+    #[case::try_continue("var total = 0 | foreach(x, array(1, 2, 3)) do try: continue catch: 0 end | total")]
+    #[case::match_and_destructuring(
+        "let [first, ..rest] = [10, 20, 30] | match(rest) do | [a, b]: first + a + b | _: 0 end"
+    )]
+    #[case::module_resolution("module math: def twice(x): x * 2; end | math::twice(21)")]
+    #[case::string_interpolation(r#"let name = "mq" | s"hello, ${name}!""#)]
+    #[case::array_spread("len([0, ...[1, 2, 3], 4])")]
+    #[case::builtin_map(r#"range(0, 20, 1) | map(fn(x): x * 2;)"#)]
+    #[case::builtin_filter(r#"range(0, 20, 1) | filter(fn(x): x % 3 == 0;)"#)]
+    #[case::builtin_fold(r#"def sum(acc, x): add(acc, x); | fold(range(0, 20, 1), 0, sum)"#)]
+    #[case::builtin_chain(
+        r#"range(0, 50, 1) | filter(fn(x): x % 2 == 0;) | map(fn(x): x * 3;) | filter(fn(x): x > 10;)"#
+    )]
+    fn compiled_engine_matches_tree_walker(#[case] code: &str) {
+        assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[rstest]
+    #[case::self_and_pipe(". + 1 | . * 2", RuntimeValue::Number(42.0.into()))]
+    #[case::multiple_inputs(". * .", RuntimeValue::Number(7.0.into()))]
+    #[case::markdown_selector(".h1", heading(1))]
+    fn compiled_engine_matches_tree_walker_with_input(#[case] code: &str, #[case] input: RuntimeValue) {
+        assert_vm_matches_tree_walker(code, vec![input]);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn compiled_engine_matches_tree_walker_for_nodes_aggregation() {
+        assert_vm_matches_tree_walker(
+            ". * 10 | nodes | len()",
+            vec![
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ],
+        );
+    }
+
     #[rstest]
     #[case::self_is_the_input_value(".", 42.0)]
     #[case::self_threads_through_pipe(". + 1 | . * 2", 86.0)]
@@ -777,22 +870,40 @@ mod tests {
         })
     }
 
-    /// Reference output from the tree-walker for the same code/input, used to cross-check
-    /// `run_for_input`'s port of `eval_markdown_node` against the real thing rather than a
-    /// hand-derived expectation — `map_values`' "recurse into a container only when the
-    /// query found nothing to match at this level, via `to_fragment`" behavior is subtle
-    /// enough that re-deriving it by hand is easy to get wrong.
+    /// Reference output from the tree-walker for the same code/input.
+    ///
+    /// Calling `Engine::eval` here would select the VM when the `tarn` feature is enabled,
+    /// so invoke the evaluator directly to keep this a genuine differential test.
     fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-        let mut engine = crate::DefaultEngine::default();
-        engine.load_builtin_module();
-        let values = engine.eval(code, std::iter::once(input)).unwrap();
-        values.values()[0].clone()
+        tree_walk_eval_many(code, vec![input]).remove(0)
     }
 
     fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
         let mut engine = crate::DefaultEngine::default();
         engine.load_builtin_module();
-        engine.eval(code, inputs.into_iter()).unwrap().values().clone()
+        let compiled = engine.compile(code).unwrap();
+        engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
+    }
+
+    #[cfg(feature = "tarn")]
+    fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+        let mut engine = crate::DefaultEngine::default();
+        engine.load_builtin_module();
+        let compiled = engine.compile(code).unwrap();
+        engine
+            .eval_compiled(&compiled, inputs.into_iter())
+            .unwrap()
+            .values()
+            .clone()
+    }
+
+    #[cfg(feature = "tarn")]
+    fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
+        assert_eq!(
+            vm_engine_eval_many(code, inputs.clone()),
+            tree_walk_eval_many(code, inputs),
+            "VM and tree-walker disagreed for: {code}"
+        );
     }
 
     #[test]
@@ -812,12 +923,14 @@ mod tests {
         let results = compile_and_run_many(
             &program,
             inputs.clone().into_iter(),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
+            EngineRunContext {
+                host_functions: &HostFunctions::default(),
+                timeout: None,
+                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                token_arena,
+                module_loader: ModuleLoader::new(StdModuleResolver),
+                global_bindings: &[],
+            },
         )
         .unwrap();
         assert_eq!(results, tree_walk_eval_many(code, inputs));
@@ -841,17 +954,21 @@ mod tests {
         let results = compile_and_run_debugged_many(
             &program,
             inputs.into_iter(),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
-            debugger,
-            handler,
-            Source {
-                name: None,
-                code: code.to_string(),
+            DebugRunContext {
+                engine: EngineRunContext {
+                    host_functions: &HostFunctions::default(),
+                    timeout: None,
+                    max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                    token_arena,
+                    module_loader: ModuleLoader::new(StdModuleResolver),
+                    global_bindings: &[],
+                },
+                debugger,
+                handler,
+                source: Source {
+                    name: None,
+                    code: code.to_string(),
+                },
             },
         )
         .unwrap();
@@ -867,12 +984,14 @@ mod tests {
         let results = compile_and_run_many(
             &program,
             inputs.clone().into_iter(),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
+            EngineRunContext {
+                host_functions: &HostFunctions::default(),
+                timeout: None,
+                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                token_arena,
+                module_loader: ModuleLoader::new(StdModuleResolver),
+                global_bindings: &[],
+            },
         )
         .unwrap();
         assert_eq!(results, tree_walk_eval_many(code, inputs));
@@ -890,12 +1009,14 @@ mod tests {
         let results = compile_and_run_many(
             &program,
             std::iter::once(RuntimeValue::new_markdown(fragment.clone())),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
+            EngineRunContext {
+                host_functions: &HostFunctions::default(),
+                timeout: None,
+                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                token_arena,
+                module_loader: ModuleLoader::new(StdModuleResolver),
+                global_bindings: &[],
+            },
         )
         .unwrap();
         assert_eq!(results.len(), 1);
@@ -921,12 +1042,14 @@ mod tests {
         let results = compile_and_run_many(
             &program,
             std::iter::once(RuntimeValue::new_markdown(outer.clone())),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
+            EngineRunContext {
+                host_functions: &HostFunctions::default(),
+                timeout: None,
+                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                token_arena,
+                module_loader: ModuleLoader::new(StdModuleResolver),
+                global_bindings: &[],
+            },
         )
         .unwrap();
         assert_eq!(results[0], tree_walk_eval(code, RuntimeValue::new_markdown(outer)));
@@ -939,12 +1062,14 @@ mod tests {
         let results = compile_and_run_many(
             &program,
             std::iter::once(heading(1)),
-            &HostFunctions::default(),
-            None,
-            crate::eval::Options::default().max_call_stack_depth,
-            token_arena,
-            ModuleLoader::new(StdModuleResolver),
-            &[],
+            EngineRunContext {
+                host_functions: &HostFunctions::default(),
+                timeout: None,
+                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                token_arena,
+                module_loader: ModuleLoader::new(StdModuleResolver),
+                global_bindings: &[],
+            },
         )
         .unwrap();
         assert_ne!(results[0], RuntimeValue::None);
@@ -1281,6 +1406,26 @@ mod tests {
             let foreach = format!("var total = 0 | foreach(value, [{elements}]): total += value; | total");
             let foreach_expected: i32 = values.iter().map(|value| i32::from(*value)).sum();
             prop_assert_eq!(run(&foreach), RuntimeValue::Number(f64::from(foreach_expected).into()));
+        }
+    }
+
+    #[cfg(feature = "tarn")]
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(96))]
+
+        #[test]
+        fn generated_compiled_programs_match_the_tree_walker(
+            initial in -100i16..100,
+            scale in -10i16..10,
+            offset in -100i16..100,
+            input in -100i16..100,
+            values in proptest::collection::vec(-50i16..50, 0..12),
+        ) {
+            let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            let code = format!(
+                "var total = {initial} | foreach(value, [{elements}]): total += value * {scale}; | let finish = fn(extra): total + extra + {offset}; | finish(.)"
+            );
+            assert_vm_matches_tree_walker(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
         }
     }
 

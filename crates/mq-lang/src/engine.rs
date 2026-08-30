@@ -30,7 +30,7 @@ pub struct CompiledProgram {
     pub(crate) source: String,
     pub(crate) program: crate::ast::Program,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    vm_cache: Shared<SharedCell<Option<crate::tarn::CachedProgram>>>,
+    vm_cache: Option<Shared<SharedCell<Option<crate::tarn::CachedProgram>>>>,
 }
 
 impl CompiledProgram {
@@ -45,26 +45,30 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    fn cached_vm_program(&self) -> Option<crate::tarn::CachedProgram> {
+    fn cached_vm_program(&self) -> Option<Option<crate::tarn::CachedProgram>> {
+        let cache = self.vm_cache.as_ref()?;
         #[cfg(feature = "sync")]
         {
-            self.vm_cache.read().unwrap().clone()
+            Some(cache.read().unwrap().clone())
         }
         #[cfg(not(feature = "sync"))]
         {
-            self.vm_cache.borrow().clone()
+            Some(cache.borrow().clone())
         }
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     fn cache_vm_program(&self, program: crate::tarn::CachedProgram) {
+        let Some(cache) = &self.vm_cache else {
+            return;
+        };
         #[cfg(feature = "sync")]
         {
-            *self.vm_cache.write().unwrap() = Some(program);
+            *cache.write().unwrap() = Some(program);
         }
         #[cfg(not(feature = "sync"))]
         {
-            *self.vm_cache.borrow_mut() = Some(program);
+            *cache.borrow_mut() = Some(program);
         }
     }
 }
@@ -76,7 +80,7 @@ impl From<crate::ast::Program> for CompiledProgram {
             source: String::new(),
             program,
             #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-            vm_cache: Shared::new(SharedCell::new(None)),
+            vm_cache: Some(Shared::new(SharedCell::new(None))),
         }
     }
 }
@@ -393,7 +397,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 source: code.to_string(),
                 program,
                 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-                vm_cache: Shared::new(SharedCell::new(None)),
+                vm_cache: None,
             };
             self.eval_compiled_vm(&compiled, input.into_iter())
         }
@@ -415,7 +419,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 source: String::new(),
                 program: vec![],
                 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-                vm_cache: Shared::new(SharedCell::new(None)),
+                vm_cache: Some(Shared::new(SharedCell::new(None))),
             });
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
@@ -425,7 +429,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             source: code.to_string(),
             program,
             #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-            vm_cache: Shared::new(SharedCell::new(None)),
+            vm_cache: Some(Shared::new(SharedCell::new(None))),
         })
     }
 
@@ -491,39 +495,41 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         if self.vm_module_prelude.is_empty() && global_bindings.is_empty() && !has_nodes {
-            let cached = match compiled.cached_vm_program() {
-                Some(cached) => Some(cached),
-                None => crate::tarn::compile_cached_program(
-                    &compiled.program,
-                    Shared::clone(&self.token_arena),
-                    self.evaluator.module_loader.with_same_resolver(),
-                )
-                .map_err(|error| {
-                    Box::new(error::Error::from_error(
-                        &compiled.source,
-                        error.into_inner_error(Shared::clone(&self.token_arena)),
-                        self.evaluator.module_loader.clone(),
-                    ))
-                })?,
-            };
-            if let Some(cached) = cached {
-                compiled.cache_vm_program(cached.clone());
+            if let Some(cached) = compiled.cached_vm_program() {
+                let cached = match cached {
+                    Some(cached) => Some(cached),
+                    None => crate::tarn::compile_cached_program(
+                        &compiled.program,
+                        Shared::clone(&self.token_arena),
+                        self.evaluator.module_loader.with_same_resolver(),
+                    )
+                    .map_err(|error| {
+                        Box::new(error::Error::from_error(
+                            &compiled.source,
+                            error.into_inner_error(Shared::clone(&self.token_arena)),
+                            self.evaluator.module_loader.clone(),
+                        ))
+                    })?,
+                };
+                if let Some(cached) = cached {
+                    compiled.cache_vm_program(cached.clone());
 
-                return crate::tarn::run_cached_many(
-                    &cached,
-                    input,
-                    &host_functions,
-                    self.evaluator.options.timeout,
-                    self.evaluator.options.max_call_stack_depth,
-                )
-                .map(Into::into)
-                .map_err(|error| {
-                    Box::new(error::Error::from_error(
-                        &compiled.source,
-                        error.into_inner_error(Shared::clone(&self.token_arena)),
-                        self.evaluator.module_loader.clone(),
-                    ))
-                });
+                    return crate::tarn::run_cached_many(
+                        &cached,
+                        input,
+                        &host_functions,
+                        self.evaluator.options.timeout,
+                        self.evaluator.options.max_call_stack_depth,
+                    )
+                    .map(Into::into)
+                    .map_err(|error| {
+                        Box::new(error::Error::from_error(
+                            &compiled.source,
+                            error.into_inner_error(Shared::clone(&self.token_arena)),
+                            self.evaluator.module_loader.clone(),
+                        ))
+                    });
+                }
             }
         }
         // The common `compile` + `eval_compiled` path needs neither Engine-loaded module
@@ -557,29 +563,35 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let result = crate::tarn::compile_and_run_debugged_many(
             vm_program,
             input,
-            &host_functions,
-            self.evaluator.options.timeout,
-            self.evaluator.options.max_call_stack_depth,
-            Shared::clone(&self.token_arena),
-            self.evaluator.module_loader.with_same_resolver(),
-            &global_bindings,
-            self.evaluator.debugger(),
-            Shared::clone(&self.evaluator.debugger_handler),
-            Source {
-                name: None,
-                code: compiled.source.clone(),
+            crate::tarn::DebugRunContext {
+                engine: crate::tarn::EngineRunContext {
+                    host_functions: &host_functions,
+                    timeout: self.evaluator.options.timeout,
+                    max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
+                    token_arena: Shared::clone(&self.token_arena),
+                    module_loader: self.evaluator.module_loader.with_same_resolver(),
+                    global_bindings: &global_bindings,
+                },
+                debugger: self.evaluator.debugger(),
+                handler: Shared::clone(&self.evaluator.debugger_handler),
+                source: Source {
+                    name: None,
+                    code: compiled.source.clone(),
+                },
             },
         );
         #[cfg(not(feature = "debugger"))]
         let result = crate::tarn::compile_and_run_many(
             &vm_program,
             input,
-            &host_functions,
-            self.evaluator.options.timeout,
-            self.evaluator.options.max_call_stack_depth,
-            Shared::clone(&self.token_arena),
-            self.evaluator.module_loader.with_same_resolver(),
-            &global_bindings,
+            crate::tarn::EngineRunContext {
+                host_functions: &host_functions,
+                timeout: self.evaluator.options.timeout,
+                max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
+                token_arena: Shared::clone(&self.token_arena),
+                module_loader: self.evaluator.module_loader.with_same_resolver(),
+                global_bindings: &global_bindings,
+            },
         );
         result.map(Into::into).map_err(|error| {
             Box::new(error::Error::from_error(
@@ -1169,13 +1181,13 @@ mod tests {
 
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile("def twice(x): x * 2; | twice(21)").unwrap();
-        assert!(compiled.cached_vm_program().is_none());
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
 
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
-        assert!(compiled.cached_vm_program().is_some());
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
 
         let second = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))

@@ -4,6 +4,16 @@ fn main() {
     divan::main();
 }
 
+/// Measures steady-state execution after parsing and optimization on the selected engine.
+fn bench_compiled<F>(bencher: divan::Bencher, engine: &mut mq_lang::DefaultEngine, code: &str, mut input: F)
+where
+    F: FnMut() -> Vec<mq_lang::RuntimeValue>,
+{
+    let compiled = engine.compile(code).unwrap();
+    engine.eval_compiled(&compiled, input().into_iter()).unwrap();
+    bencher.bench_local(|| engine.eval_compiled(&compiled, input().into_iter()).unwrap());
+}
+
 #[divan::bench()]
 fn eval_fibonacci() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -23,21 +33,17 @@ fn eval_fibonacci() -> mq_lang::RuntimeValues {
 #[divan::bench]
 fn eval_compiled_fibonacci(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
-    let compiled = engine
-        .compile(
-            "
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "
      def fibonacci(x):
       if (x < 2):
         x
       else:
         fibonacci(x - 1) + fibonacci(x - 2); | fibonacci(20)",
-        )
-        .unwrap();
-    bencher.bench_local(|| {
-        engine
-            .eval_compiled(&compiled, vec![mq_lang::RuntimeValue::Number(20.into())].into_iter())
-            .unwrap()
-    });
+        || vec![mq_lang::RuntimeValue::Number(20.into())],
+    );
 }
 
 #[divan::bench()]
@@ -252,6 +258,54 @@ fn eval_array_chained_operations() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+#[divan::bench]
+fn eval_compiled_array_map(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"range(0, 1000, 1) | map(fn(x): x * 2;)"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
+}
+
+#[divan::bench]
+fn eval_compiled_array_filter(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"range(0, 1000, 1) | filter(fn(x): x % 2 == 0;)"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
+}
+
+#[divan::bench]
+fn eval_compiled_array_fold(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def sum(acc, x): add(acc, x); | fold(range(0, 100, 1), 0, sum)"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
+}
+
+#[divan::bench]
+fn eval_compiled_array_chained_operations(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"range(0, 500, 1) | filter(fn(x): x % 2 == 0;) | map(fn(x): x * 3;) | filter(fn(x): x > 100;)"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
+}
+
 // Object/Hash Access Benchmarks
 
 #[divan::bench()]
@@ -298,6 +352,18 @@ fn eval_function_call_overhead() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+/// Isolates repeated non-capturing user-function calls after bytecode compilation.
+#[divan::bench]
+fn eval_compiled_function_call_overhead(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def identity(x): x; | foreach(i, range(0, 1000, 1)): identity(i);"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
+}
+
 #[divan::bench()]
 fn eval_nested_function_calls() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -308,6 +374,19 @@ fn eval_nested_function_calls() -> mq_lang::RuntimeValues {
             vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
         )
         .unwrap()
+}
+
+/// Isolates nested call-frame setup and teardown after bytecode compilation.
+#[divan::bench]
+fn eval_compiled_nested_function_calls(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def add1(x): x + 1; | def add2(x): add1(add1(x)); | def add4(x): add2(add2(x));
+            | foreach(i, range(0, 100, 1)): add4(i);"#,
+        || vec![mq_lang::RuntimeValue::String(String::new())],
+    );
 }
 
 // Pipeline Processing Benchmarks
