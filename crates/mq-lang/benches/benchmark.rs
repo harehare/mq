@@ -115,6 +115,15 @@ fn eval_foreach() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+#[divan::bench]
+fn eval_compiled_foreach(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(bencher, &mut engine, r#"foreach(x, range(0, 1000, 1)): x + 1;"#, || {
+        vec![mq_lang::RuntimeValue::String(String::new())]
+    });
+}
+
 #[divan::bench()]
 fn eval_csv_parse() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();

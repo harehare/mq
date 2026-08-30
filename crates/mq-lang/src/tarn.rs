@@ -621,6 +621,34 @@ mod tests {
     }
 
     #[test]
+    fn foreach_uses_the_specialized_iteration_opcode() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("foreach(x, [1, 2]): x;", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ForeachNext { .. }))
+        );
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ForeachCollect(_)))
+        );
+        assert!(
+            !compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ArrayLen | OpCode::ArrayGetAt))
+        );
+    }
+
+    #[test]
     fn capturing_closures_keep_dynamic_capture_sources() {
         use super::bytecode::OpCode;
 
@@ -1150,6 +1178,26 @@ mod tests {
             vm_err.token_id().is_some(),
             "division-by-zero error should carry a source token"
         );
+    }
+
+    #[test]
+    fn timeout_enabled_execution_still_checks_the_deadline() {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("loop: 1;", Shared::clone(&token_arena)).unwrap();
+        let err = compile_and_run_full(
+            &program,
+            RuntimeValue::None,
+            &HostFunctions::default(),
+            Some(std::time::Duration::ZERO),
+            token_arena,
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            Error::Vm(interpreter::VmError::Located(inner, _))
+                if matches!(*inner, interpreter::VmError::Timeout(_))
+        ));
     }
 
     #[cfg(feature = "debugger")]

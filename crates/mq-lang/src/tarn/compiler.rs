@@ -72,13 +72,8 @@ enum Resolved {
     Upvalue(u16),
 }
 
-enum ContinueTarget {
-    Fixed(usize),
-    Pending(Vec<usize>),
-}
-
 struct LoopCtx {
-    continue_target: ContinueTarget,
+    continue_target: usize,
     break_jumps: Vec<usize>,
     break_try_catches: Vec<usize>,
     continue_try_catches: Vec<usize>,
@@ -1098,23 +1093,9 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::FlowContinue);
                     return Ok(());
                 }
-                let fixed_target = match &loop_ctx.continue_target {
-                    ContinueTarget::Fixed(target) => Some(*target),
-                    ContinueTarget::Pending(_) => None,
-                };
-                match fixed_target {
-                    Some(target) => {
-                        let offset = self.chunk_mut().backward_offset(target);
-                        self.emit(OpCode::Jump(offset));
-                    }
-                    None => {
-                        let at = self.emit(OpCode::Jump(0));
-                        match &mut self.loops.last_mut().unwrap().continue_target {
-                            ContinueTarget::Pending(sites) => sites.push(at),
-                            ContinueTarget::Fixed(_) => unreachable!(),
-                        }
-                    }
-                }
+                let continue_target = loop_ctx.continue_target;
+                let offset = self.chunk_mut().backward_offset(continue_target);
+                self.emit(OpCode::Jump(offset));
                 Ok(())
             }
             Expr::Foreach(ident, iterable, body) => self.compile_foreach(ident.name, iterable, body),
@@ -1415,7 +1396,7 @@ impl<R: ModuleResolver> Compiler<R> {
         body: &Program,
     ) -> CompileResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
         self.loops.push(LoopCtx {
-            continue_target: ContinueTarget::Fixed(continue_target),
+            continue_target,
             break_jumps: Vec::new(),
             break_try_catches: Vec::new(),
             continue_try_catches: Vec::new(),
@@ -1453,22 +1434,16 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let loop_var_slot = self.scope_mut().declare(ident);
 
-        let cond_check = self.chunk_mut().code.len();
-        self.emit(OpCode::GetLocal(index_slot));
-        self.emit(OpCode::GetLocal(array_slot));
-        self.emit(OpCode::ArrayLen);
-        self.emit(OpCode::Lt);
-        let exit_jump = self.emit(OpCode::JumpIfFalse(0));
-
-        self.emit(OpCode::GetLocal(array_slot));
-        self.emit(OpCode::GetLocal(index_slot));
-        self.emit(OpCode::ArrayGetAt);
-        self.emit(OpCode::SetLocal(loop_var_slot));
-        self.emit(OpCode::GetLocal(loop_var_slot));
-        self.emit(OpCode::SetLocal(SELF_SLOT));
+        let loop_start = self.chunk_mut().code.len();
+        let exit_jump = self.emit(OpCode::ForeachNext {
+            array_slot,
+            index_slot,
+            value_slot: loop_var_slot,
+            exit_offset: 0,
+        });
 
         self.loops.push(LoopCtx {
-            continue_target: ContinueTarget::Pending(Vec::new()),
+            continue_target: loop_start,
             break_jumps: Vec::new(),
             break_try_catches: Vec::new(),
             continue_try_catches: Vec::new(),
@@ -1477,27 +1452,13 @@ impl<R: ModuleResolver> Compiler<R> {
         });
 
         self.compile_body(body)?;
-        self.emit(OpCode::GetLocal(acc_slot));
-        self.emit(OpCode::Swap);
-        self.emit(OpCode::ArrayPush);
-        self.emit(OpCode::SetLocal(acc_slot));
+        self.emit(OpCode::ForeachCollect(acc_slot));
 
         let finished = self.loops.pop().unwrap();
-        let ContinueTarget::Pending(continue_sites) = finished.continue_target else {
-            unreachable!("foreach always pushes a Pending continue target")
-        };
-        for site in continue_sites {
-            self.chunk_mut().patch_jump(site);
-        }
         for try_catch in finished.continue_try_catches {
-            self.chunk_mut().patch_try_continue(try_catch);
+            self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
-        self.emit(OpCode::GetLocal(index_slot));
-        let one = self.chunk_mut().push_const(RuntimeValue::Number(1.0.into()));
-        self.emit(OpCode::Const(one));
-        self.emit(OpCode::Add);
-        self.emit(OpCode::SetLocal(index_slot));
-        let back = self.chunk_mut().backward_offset(cond_check);
+        let back = self.chunk_mut().backward_offset(loop_start);
         self.emit(OpCode::Jump(back));
 
         self.chunk_mut().patch_jump(exit_jump);

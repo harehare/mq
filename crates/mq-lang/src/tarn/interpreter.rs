@@ -2,7 +2,7 @@ use super::bytecode::{Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, Upvalu
 use super::compiler::CompiledProgram;
 #[cfg(feature = "tarn")]
 use super::value::VmClosureValue;
-use super::value::{Cell, Closure, StackValue, new_cell, read_cell, write_cell};
+use super::value::{Cell, Closure, StackValue, append_to_array_cell, new_cell, read_cell, write_cell};
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::eval::builtin::{self, Args};
@@ -59,6 +59,11 @@ impl ExecutionLimits {
         } else {
             Ok(())
         }
+    }
+
+    #[inline(always)]
+    fn has_deadline(&self) -> bool {
+        self.deadline.is_some()
     }
 
     /// Call before recursing into a closure's chunk; pair with `exit_call` once it returns
@@ -755,6 +760,40 @@ fn run_chunk_inner(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
+    if execution.limits.has_deadline() {
+        run_chunk_inner_impl::<true>(
+            chunk_index,
+            chunks,
+            locals,
+            upvalues,
+            stack,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        )
+    } else {
+        run_chunk_inner_impl::<false>(
+            chunk_index,
+            chunks,
+            locals,
+            upvalues,
+            stack,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        )
+    }
+}
+
+fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
+    chunk_index: u16,
+    chunks: &Shared<Vec<Chunk>>,
+    locals: &[Cell],
+    upvalues: &[Cell],
+    stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> VmResult<StackValue> {
     let chunk = &chunks[chunk_index as usize];
     let mut ip: usize = 0;
 
@@ -789,7 +828,9 @@ fn run_chunk_inner(
     }
 
     while ip < chunk.code.len() {
-        execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
+        if CHECK_TIMEOUT {
+            execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
+        }
         let op = &chunk.code[ip];
         ip += 1;
 
@@ -860,13 +901,6 @@ fn run_chunk_inner(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in Dup")))?
                     .clone();
                 stack.push(top);
-            }
-            OpCode::Swap => {
-                let len = stack.len();
-                if len < 2 {
-                    bail!(VmError::Corrupt("stack underflow in Swap"));
-                }
-                stack.swap(len - 1, len - 2);
             }
             OpCode::Jump(offset) => {
                 ip = (ip as i64 + *offset as i64) as usize;
@@ -989,6 +1023,37 @@ fn run_chunk_inner(
                 };
                 let elem = arr.get(idx.value() as usize).cloned().unwrap_or(RuntimeValue::None);
                 stack.push(StackValue::Value(elem));
+            }
+            OpCode::ForeachNext {
+                array_slot,
+                index_slot,
+                value_slot,
+                exit_offset,
+            } => {
+                let array = read_cell(&locals[*array_slot as usize]);
+                let index = read_cell(&locals[*index_slot as usize]);
+                let (StackValue::Value(RuntimeValue::Array(array)), StackValue::Value(RuntimeValue::Number(index))) =
+                    (array, index)
+                else {
+                    bail!(VmError::Corrupt("ForeachNext has invalid loop state"));
+                };
+                let index_value = index.value();
+                if index_value >= array.len() as f64 {
+                    ip = (ip as i64 + *exit_offset as i64) as usize;
+                    continue;
+                }
+                let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
+                write_cell(
+                    &locals[*index_slot as usize],
+                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
+                );
+                write_cell(&locals[*value_slot as usize], StackValue::Value(value.clone()));
+                write_cell(&locals[SELF_SLOT as usize], StackValue::Value(value));
+            }
+            OpCode::ForeachCollect(slot) => {
+                let value = pop_value!();
+                append_to_array_cell(&locals[*slot as usize], value)
+                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
             }
             OpCode::ArraySliceFrom => {
                 let idx = pop_value!();
