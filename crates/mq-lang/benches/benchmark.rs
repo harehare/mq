@@ -20,6 +20,26 @@ fn eval_fibonacci() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+#[divan::bench]
+fn eval_compiled_fibonacci(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let compiled = engine
+        .compile(
+            "
+     def fibonacci(x):
+      if (x < 2):
+        x
+      else:
+        fibonacci(x - 1) + fibonacci(x - 2); | fibonacci(20)",
+        )
+        .unwrap();
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, vec![mq_lang::RuntimeValue::Number(20.into())].into_iter())
+            .unwrap()
+    });
+}
+
 #[divan::bench()]
 fn eval_while_speed_test() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();

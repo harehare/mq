@@ -181,6 +181,23 @@ pub(crate) struct Chunk {
 }
 
 impl Chunk {
+    /// Whether a closure or parameter default can retain one of this frame's local cells.
+    pub(crate) fn captures_local_slots(&self) -> bool {
+        self.code.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::MakeClosure(_, sources)
+                    if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
+            )
+        }) || self.param_shape.bindings.iter().any(|binding| {
+            matches!(
+                binding,
+                ParamBinding::Optional(_, _, sources)
+                    if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
+            )
+        })
+    }
+
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
         self.constants.push(value);
         (self.constants.len() - 1) as u16

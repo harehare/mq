@@ -52,8 +52,13 @@ impl std::error::Error for CompileError {}
 
 type CompileResult<T> = Result<T, CompileError>;
 
+#[derive(Debug, Clone)]
 pub(crate) struct CompiledProgram {
     pub(crate) chunks: Shared<Vec<Chunk>>,
+    /// Whether recompiling this program can observe an external module changing. Programs
+    /// without `include`/`import` directives are safe to retain in `Engine::CompiledProgram`.
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) cacheable: bool,
     /// Source metadata captured from the same module loader that assigned every token's
     /// module ID. The debugger must not reconstruct this through a fresh loader instance.
     #[cfg(feature = "debugger")]
@@ -90,6 +95,8 @@ struct Compiler<R: ModuleResolver> {
     qualified_bindings: FxHashMap<(crate::Ident, crate::Ident), (usize, u16)>,
     external_globals: FxHashSet<crate::Ident>,
     used_unresolved_call_name: bool,
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    used_external_module: bool,
     /// Bare names in a `try`/`catch` must fail while running so the surrounding catch
     /// expression can handle them, matching the tree-walker's dynamic lookup semantics.
     try_depth: usize,
@@ -172,6 +179,8 @@ fn compile_program_impl<R: ModuleResolver>(
         qualified_bindings: FxHashMap::default(),
         external_globals: external_globals.iter().copied().collect(),
         used_unresolved_call_name: false,
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        used_external_module: false,
         try_depth: 0,
     };
     if load_builtin_prelude {
@@ -197,6 +206,8 @@ fn compile_program_impl<R: ModuleResolver>(
     Ok((
         CompiledProgram {
             chunks: Shared::new(compiler.chunks),
+            #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+            cacheable: !compiler.used_external_module,
             #[cfg(feature = "debugger")]
             debug_sources,
         },
@@ -682,6 +693,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.current_token_id,
             ));
         };
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        {
+            self.used_external_module = true;
+        }
         let module = self.load_module_or_reload(path)?;
         self.compile_discarding(&module.modules)?;
         self.predeclare_module_var_slots(&module.vars);
@@ -771,6 +786,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.current_token_id,
             ));
         };
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        {
+            self.used_external_module = true;
+        }
         let module = self.load_module_or_reload(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
 

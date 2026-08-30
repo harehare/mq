@@ -26,6 +26,14 @@ bench: build-bench
 bench-local:
     cargo bench
 
+# Run the shared mq-lang benchmark suite on the tree-walking evaluator.
+bench-tree:
+    cargo bench -p mq-lang --bench benchmark
+
+# Run the same mq-lang benchmark suite on Tarn. `tarn` routes Engine::eval to the VM.
+bench-vm:
+    cargo bench -p mq-lang --bench benchmark --features tarn
+
 # Build the project in release mode
 build:
     cargo build --release -p mq-run --bin mq
