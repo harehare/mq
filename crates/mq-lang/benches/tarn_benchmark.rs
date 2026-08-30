@@ -1,5 +1,8 @@
-//! M1 speed-signal check: bytecode VM dispatch vs. the tree-walking evaluator, for the
-//! narrow subset the VM prototype currently supports (arithmetic, if, recursive calls).
+//! Focused recursive-call benchmark retained from the VM prototype.
+//!
+//! For an apples-to-apples comparison across the full benchmark suite, use
+//! `just bench-tree` and `just bench-vm`: both run `benchmark.rs`; the latter enables
+//! the `tarn` feature, which routes `Engine::eval` through the bytecode VM.
 
 fn main() {
     divan::main();

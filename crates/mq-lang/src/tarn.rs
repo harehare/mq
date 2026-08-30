@@ -67,6 +67,44 @@ impl Error {
     }
 }
 
+/// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[derive(Debug, Clone)]
+pub(crate) struct CachedProgram(compiler::CompiledProgram);
+
+/// Compiles an Engine program for reuse when its bytecode cannot depend on an external module.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+pub(crate) fn compile_cached_program<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+) -> Result<Option<CachedProgram>, Error> {
+    let compiled = compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?;
+    Ok(compiled.cacheable.then_some(CachedProgram(compiled)))
+}
+
+/// Runs a bytecode program cached by [`compile_cached_program`] for every input.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+pub(crate) fn run_cached_many<I>(
+    compiled: &CachedProgram,
+    inputs: I,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+) -> Result<Vec<RuntimeValue>, Error>
+where
+    I: Iterator<Item = RuntimeValue>,
+{
+    inputs
+        .map(|input| {
+            run_for_input(input, |value| {
+                interpreter::run(&compiled.0, value, host_functions, timeout, max_call_stack_depth)
+            })
+            .map_err(Error::from)
+        })
+        .collect()
+}
+
 fn compile_error_to_runtime_error(
     err: compiler::CompileError,
     token_arena: TokenArena,

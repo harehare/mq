@@ -29,6 +29,8 @@ use crate::{
 pub struct CompiledProgram {
     pub(crate) source: String,
     pub(crate) program: crate::ast::Program,
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    vm_cache: Shared<SharedCell<Option<crate::tarn::CachedProgram>>>,
 }
 
 impl CompiledProgram {
@@ -41,6 +43,30 @@ impl CompiledProgram {
     pub fn program(&self) -> &crate::ast::Program {
         &self.program
     }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    fn cached_vm_program(&self) -> Option<crate::tarn::CachedProgram> {
+        #[cfg(feature = "sync")]
+        {
+            self.vm_cache.read().unwrap().clone()
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            self.vm_cache.borrow().clone()
+        }
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    fn cache_vm_program(&self, program: crate::tarn::CachedProgram) {
+        #[cfg(feature = "sync")]
+        {
+            *self.vm_cache.write().unwrap() = Some(program);
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            *self.vm_cache.borrow_mut() = Some(program);
+        }
+    }
 }
 
 impl From<crate::ast::Program> for CompiledProgram {
@@ -49,6 +75,8 @@ impl From<crate::ast::Program> for CompiledProgram {
         Self {
             source: String::new(),
             program,
+            #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+            vm_cache: Shared::new(SharedCell::new(None)),
         }
     }
 }
@@ -364,6 +392,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             let compiled = CompiledProgram {
                 source: code.to_string(),
                 program,
+                #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+                vm_cache: Shared::new(SharedCell::new(None)),
             };
             self.eval_compiled_vm(&compiled, input.into_iter())
         }
@@ -384,6 +414,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             return Ok(CompiledProgram {
                 source: String::new(),
                 program: vec![],
+                #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+                vm_cache: Shared::new(SharedCell::new(None)),
             });
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
@@ -392,6 +424,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         Ok(CompiledProgram {
             source: code.to_string(),
             program,
+            #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+            vm_cache: Shared::new(SharedCell::new(None)),
         })
     }
 
@@ -454,27 +488,74 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(not(feature = "sync"))]
         let host_functions = self.evaluator.host_functions.borrow().clone();
         let global_bindings = self.evaluator.global_bindings();
-        let mut vm_prelude = crate::ast::Program::new();
-        for module in &self.vm_module_prelude {
-            let directive = match module {
-                VmModulePrelude::Include(name) => format!("include {name:?}"),
-                VmModulePrelude::Import(name) => format!("import {name:?}"),
+        let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        if self.vm_module_prelude.is_empty() && global_bindings.is_empty() && !has_nodes {
+            let cached = match compiled.cached_vm_program() {
+                Some(cached) => Some(cached),
+                None => crate::tarn::compile_cached_program(
+                    &compiled.program,
+                    Shared::clone(&self.token_arena),
+                    self.evaluator.module_loader.with_same_resolver(),
+                )
+                .map_err(|error| {
+                    Box::new(error::Error::from_error(
+                        &compiled.source,
+                        error.into_inner_error(Shared::clone(&self.token_arena)),
+                        self.evaluator.module_loader.clone(),
+                    ))
+                })?,
             };
-            vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
+            if let Some(cached) = cached {
+                compiled.cache_vm_program(cached.clone());
+
+                return crate::tarn::run_cached_many(
+                    &cached,
+                    input,
+                    &host_functions,
+                    self.evaluator.options.timeout,
+                    self.evaluator.options.max_call_stack_depth,
+                )
+                .map(Into::into)
+                .map_err(|error| {
+                    Box::new(error::Error::from_error(
+                        &compiled.source,
+                        error.into_inner_error(Shared::clone(&self.token_arena)),
+                        self.evaluator.module_loader.clone(),
+                    ))
+                });
+            }
         }
-        let mut vm_program = vm_prelude.clone();
-        if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
-            // `nodes` runs the trailing half as a separate VM program. Replay Engine-loaded
-            // modules there too, so their statically-resolved exports remain available.
-            vm_program.extend(compiled.program[..=nodes_index].iter().cloned());
-            vm_program.extend(vm_prelude);
-            vm_program.extend(compiled.program[nodes_index + 1..].iter().cloned());
+        // The common `compile` + `eval_compiled` path needs neither Engine-loaded module
+        // declarations nor `nodes` splitting. Compile the original AST directly instead of
+        // cloning every node into a temporary program.
+        let vm_program = if self.vm_module_prelude.is_empty() && !has_nodes {
+            None
         } else {
-            vm_program.extend(compiled.program.iter().cloned());
-        }
+            let mut vm_prelude = crate::ast::Program::new();
+            for module in &self.vm_module_prelude {
+                let directive = match module {
+                    VmModulePrelude::Include(name) => format!("include {name:?}"),
+                    VmModulePrelude::Import(name) => format!("import {name:?}"),
+                };
+                vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
+            }
+            let mut program = vm_prelude.clone();
+            if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
+                // `nodes` runs the trailing half as a separate VM program. Replay Engine-loaded
+                // modules there too, so their statically-resolved exports remain available.
+                program.extend(compiled.program[..=nodes_index].iter().cloned());
+                program.extend(vm_prelude);
+                program.extend(compiled.program[nodes_index + 1..].iter().cloned());
+            } else {
+                program.extend(compiled.program.iter().cloned());
+            }
+            Some(program)
+        };
+        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
         #[cfg(feature = "debugger")]
         let result = crate::tarn::compile_and_run_debugged_many(
-            &vm_program,
+            vm_program,
             input,
             &host_functions,
             self.evaluator.options.timeout,
@@ -1079,6 +1160,27 @@ mod tests {
             values.values(),
             &vec![RuntimeValue::Number(42.0.into()), RuntimeValue::Number(42.0.into())]
         );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_caches_module_free_bytecode() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile("def twice(x): x * 2; | twice(21)").unwrap();
+        assert!(compiled.cached_vm_program().is_none());
+
+        let first = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
+        assert!(compiled.cached_vm_program().is_some());
+
+        let second = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(second.values(), first.values());
     }
 
     #[test]

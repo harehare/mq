@@ -27,6 +27,7 @@ struct ExecutionLimits {
     step: u32,
     call_depth: u32,
     max_call_stack_depth: u32,
+    local_pool: Vec<Vec<Cell>>,
 }
 
 impl ExecutionLimits {
@@ -37,6 +38,7 @@ impl ExecutionLimits {
             step: 0,
             call_depth: 0,
             max_call_stack_depth,
+            local_pool: Vec::new(),
         }
     }
 
@@ -71,6 +73,24 @@ impl ExecutionLimits {
     #[inline(always)]
     fn exit_call(&mut self) {
         self.call_depth = self.call_depth.saturating_sub(1);
+    }
+
+    fn take_locals(&mut self, count: u16) -> Vec<Cell> {
+        let count = count as usize;
+        let locals = self
+            .local_pool
+            .iter()
+            .position(|locals| locals.len() == count)
+            .map(|index| self.local_pool.swap_remove(index))
+            .unwrap_or_else(|| fresh_locals(count));
+        for local in &locals {
+            write_cell(local, StackValue::Value(RuntimeValue::None));
+        }
+        locals
+    }
+
+    fn recycle_locals(&mut self, locals: Vec<Cell>) {
+        self.local_pool.push(locals);
     }
 }
 
@@ -312,7 +332,8 @@ fn run_impl_with_bindings(
         env.define(*ident, value.clone());
     }
     let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
-    let locals = fresh_locals(compiled.chunks[0].local_count);
+    let mut limits = ExecutionLimits::new(timeout, max_call_stack_depth);
+    let locals = limits.take_locals(compiled.chunks[0].local_count);
     write_cell(&locals[SELF_SLOT as usize], StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
         return Err(VmError::Corrupt("too many initial debug bindings"));
@@ -320,7 +341,6 @@ fn run_impl_with_bindings(
     for (slot, value) in initial_bindings.iter().cloned().enumerate() {
         write_cell(&locals[slot + 1], StackValue::Value(value));
     }
-    let mut limits = ExecutionLimits::new(timeout, max_call_stack_depth);
     let result = run_chunk(
         0,
         &compiled.chunks,
@@ -338,7 +358,7 @@ fn run_impl_with_bindings(
     }
 }
 
-fn fresh_locals(count: u16) -> Vec<Cell> {
+fn fresh_locals(count: usize) -> Vec<Cell> {
     (0..count)
         .map(|_| new_cell(StackValue::Value(RuntimeValue::None)))
         .collect()
@@ -411,7 +431,7 @@ fn call_stack_value(
         _ => return Err(locate(chunk, ip, VmError::NotCallable)),
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
-    let callee_locals = fresh_locals(callee_chunk.local_count);
+    let callee_locals = limits.take_locals(callee_chunk.local_count);
     write_cell(
         &callee_locals[SELF_SLOT as usize],
         read_cell(&locals[SELF_SLOT as usize]),
@@ -526,7 +546,9 @@ fn bind_params(
                     write_cell(&callee_locals[*slot as usize], value);
                 } else {
                     let captured = capture_upvalues(default_upvalues, callee_locals, enclosing_upvalues);
-                    let default_locals = fresh_locals(context.chunks[*default_chunk as usize].local_count);
+                    let default_locals = context
+                        .limits
+                        .take_locals(context.chunks[*default_chunk as usize].local_count);
                     write_cell(
                         &default_locals[SELF_SLOT as usize],
                         read_cell(&callee_locals[SELF_SLOT as usize]),
@@ -641,6 +663,35 @@ fn run_chunk(
     host_functions: &HostFunctions,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
+    let reusable_locals = !chunks[chunk_index as usize].captures_local_slots();
+    let result = run_chunk_inner(
+        chunk_index,
+        chunks,
+        &locals,
+        upvalues,
+        env,
+        limits,
+        host_functions,
+        #[cfg(feature = "debugger")]
+        debug,
+    );
+    if reusable_locals {
+        limits.recycle_locals(locals);
+    }
+    result
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_chunk_inner(
+    chunk_index: u16,
+    chunks: &Shared<Vec<Chunk>>,
+    locals: &[Cell],
+    upvalues: &[Cell],
+    env: &Shared<SharedCell<Env>>,
+    limits: &mut ExecutionLimits,
+    host_functions: &HostFunctions,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> VmResult<StackValue> {
     let chunk = &chunks[chunk_index as usize];
     let mut stack: Vec<StackValue> = Vec::with_capacity(8);
     let mut ip: usize = 0;
@@ -706,7 +757,7 @@ fn run_chunk(
                     hook.on_boundary(DebugEvent {
                         token_id,
                         node,
-                        current_value: current_self(&locals),
+                        current_value: current_self(locals),
                         bindings,
                         call_stack: debug.call_stack.clone(),
                     });
@@ -725,7 +776,7 @@ fn run_chunk(
                 write_cell(&upvalues[idx as usize], v);
             }
             OpCode::MakeClosure(target_chunk, ref sources) => {
-                let captured = capture_upvalues(sources, &locals, upvalues);
+                let captured = capture_upvalues(sources, locals, upvalues);
                 stack.push(StackValue::Closure(Shared::new(Closure {
                     chunk_index: target_chunk,
                     upvalues: captured,
@@ -760,24 +811,22 @@ fn run_chunk(
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
                 let b = pop_value!();
                 let a = pop_value!();
-                let self_value = current_self(&locals);
                 stack.push(StackValue::Value(
-                    binop(op, a, b, &self_value, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
+                    binop(op, a, b, locals, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
                 let b = pop_value!();
                 let a = pop_value!();
-                let self_value = current_self(&locals);
                 stack.push(StackValue::Value(
-                    cmp_op(op, a, b, &self_value, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
+                    cmp_op(op, a, b, locals, env, host_functions).map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::Neg => {
                 let a = pop_value!();
                 stack.push(StackValue::Value(match a {
                     RuntimeValue::Number(n) => RuntimeValue::Number(Number::new(-n.value())),
-                    other => call_builtin(negate_ident(), &[other], &current_self(&locals), env, host_functions)
+                    other => call_builtin(negate_ident(), &[other], &current_self(locals), env, host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 }));
             }
@@ -948,10 +997,10 @@ fn run_chunk(
                 }
                 args.reverse();
                 if ident == Ident::new("get_variable") || ident == Ident::new("set_variable") {
-                    sync_dynamic_env(chunk, &locals, upvalues, chunks, env);
+                    sync_dynamic_env(chunk, locals, upvalues, chunks, env);
                 }
                 stack.push(StackValue::Value(
-                    call_builtin(&ident, &args, &current_self(&locals), env, host_functions)
+                    call_builtin(&ident, &args, &current_self(locals), env, host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
@@ -965,7 +1014,7 @@ fn run_chunk(
                 let result = call_stack_value(
                     callee,
                     args,
-                    &locals,
+                    locals,
                     chunks,
                     env,
                     limits,
@@ -993,7 +1042,7 @@ fn run_chunk(
                     let result = call_stack_value(
                         value,
                         Vec::new(),
-                        &locals,
+                        locals,
                         chunks,
                         env,
                         limits,
@@ -1020,7 +1069,7 @@ fn run_chunk(
                 let StackValue::Closure(try_closure) = pop!() else {
                     bail!(VmError::Corrupt("TryCatch try operand is not a closure"));
                 };
-                let try_locals = fresh_locals(chunks[try_closure.chunk_index as usize].local_count);
+                let try_locals = limits.take_locals(chunks[try_closure.chunk_index as usize].local_count);
                 write_cell(&try_locals[SELF_SLOT as usize], read_cell(&locals[SELF_SLOT as usize]));
                 match run_chunk(
                     try_closure.chunk_index,
@@ -1052,7 +1101,7 @@ fn run_chunk(
                             ip = (ip as i64 + offset as i64) as usize;
                             continue;
                         }
-                        let catch_locals = fresh_locals(chunks[catch_closure.chunk_index as usize].local_count);
+                        let catch_locals = limits.take_locals(chunks[catch_closure.chunk_index as usize].local_count);
                         write_cell(
                             &catch_locals[SELF_SLOT as usize],
                             read_cell(&locals[SELF_SLOT as usize]),
@@ -1095,7 +1144,7 @@ fn binop(
     op: OpCode,
     a: RuntimeValue,
     b: RuntimeValue,
-    self_value: &RuntimeValue,
+    locals: &[Cell],
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -1122,14 +1171,20 @@ fn binop(
         OpCode::Mod => builtins::MOD,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(&crate::Ident::new(ident), &[a, b], self_value, env, host_functions)
+    call_builtin(
+        &crate::Ident::new(ident),
+        &[a, b],
+        &current_self(locals),
+        env,
+        host_functions,
+    )
 }
 
 fn cmp_op(
     op: OpCode,
     a: RuntimeValue,
     b: RuntimeValue,
-    self_value: &RuntimeValue,
+    locals: &[Cell],
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -1153,7 +1208,13 @@ fn cmp_op(
         OpCode::Ge => builtins::GTE,
         _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
     };
-    call_builtin(&crate::Ident::new(ident), &[a, b], self_value, env, host_functions)
+    call_builtin(
+        &crate::Ident::new(ident),
+        &[a, b],
+        &current_self(locals),
+        env,
+        host_functions,
+    )
 }
 
 /// Calls a builtin by name, falling back to a registered host function — matching the
