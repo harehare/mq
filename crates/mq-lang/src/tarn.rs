@@ -122,6 +122,7 @@ fn compile_error_to_runtime_error(
             RuntimeError::Runtime(token, format!("unsupported expression: {what}"))
         }
         compiler::CompileError::AssignToImmutable(name, _) => RuntimeError::AssignToImmutable(token, name),
+        compiler::CompileError::InvalidBytecode(message) => RuntimeError::Runtime(token, message),
         compiler::CompileError::Module(_) => unreachable!("routed to InnerError::Module by into_inner_error instead"),
     }
 }

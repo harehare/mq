@@ -28,6 +28,7 @@ struct ExecutionLimits {
     call_depth: u32,
     max_call_stack_depth: u32,
     local_pool: Vec<Vec<Cell>>,
+    stack_pool: Vec<Vec<StackValue>>,
 }
 
 impl ExecutionLimits {
@@ -39,6 +40,7 @@ impl ExecutionLimits {
             call_depth: 0,
             max_call_stack_depth,
             local_pool: Vec::new(),
+            stack_pool: Vec::new(),
         }
     }
 
@@ -91,6 +93,15 @@ impl ExecutionLimits {
 
     fn recycle_locals(&mut self, locals: Vec<Cell>) {
         self.local_pool.push(locals);
+    }
+
+    fn take_stack(&mut self) -> Vec<StackValue> {
+        self.stack_pool.pop().unwrap_or_else(|| Vec::with_capacity(8))
+    }
+
+    fn recycle_stack(&mut self, mut stack: Vec<StackValue>) {
+        stack.clear();
+        self.stack_pool.push(stack);
     }
 }
 
@@ -433,21 +444,21 @@ fn call_stack_value(
     }
 
     #[cfg(feature = "tarn")]
-    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, Vec<Cell>) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, closure.upvalues.clone()),
+    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
+        StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
         StackValue::Value(RuntimeValue::VmClosure(vc)) => {
             if !vc.bound_args.is_empty() {
                 let mut combined: Vec<StackValue> = vc.bound_args.iter().cloned().map(StackValue::Value).collect();
                 combined.append(&mut args);
                 args = combined;
             }
-            (&vc.chunks, vc.chunk_index, vc.upvalues.clone())
+            (&vc.chunks, vc.chunk_index, &vc.upvalues)
         }
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     #[cfg(not(feature = "tarn"))]
-    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, Vec<Cell>) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, closure.upvalues.clone()),
+    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
+        StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
@@ -460,7 +471,7 @@ fn call_stack_value(
         &callee_chunk.param_shape,
         args,
         &callee_locals,
-        &callee_upvalues,
+        callee_upvalues,
         &mut ParameterContext {
             chunks: callee_chunks,
             env: execution.env,
@@ -488,7 +499,7 @@ fn call_stack_value(
         callee_chunk_index,
         callee_chunks,
         callee_locals,
-        &callee_upvalues,
+        callee_upvalues,
         execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -687,11 +698,13 @@ fn run_chunk(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let reusable_locals = !chunks[chunk_index as usize].captures_local_slots();
+    let mut stack = execution.limits.take_stack();
     let result = run_chunk_inner(
         chunk_index,
         chunks,
         &locals,
         upvalues,
+        &mut stack,
         execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -699,6 +712,7 @@ fn run_chunk(
     if reusable_locals {
         execution.limits.recycle_locals(locals);
     }
+    execution.limits.recycle_stack(stack);
     result
 }
 
@@ -707,11 +721,11 @@ fn run_chunk_inner(
     chunks: &Shared<Vec<Chunk>>,
     locals: &[Cell],
     upvalues: &[Cell],
+    stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let chunk = &chunks[chunk_index as usize];
-    let mut stack: Vec<StackValue> = Vec::with_capacity(8);
     let mut ip: usize = 0;
 
     macro_rules! pop {
@@ -746,7 +760,7 @@ fn run_chunk_inner(
 
     while ip < chunk.code.len() {
         execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
-        let op = chunk.code[ip].clone();
+        let op = &chunk.code[ip];
         ip += 1;
 
         match op {
@@ -755,7 +769,7 @@ fn run_chunk_inner(
                 let node = chunk
                     .debug_nodes
                     .iter()
-                    .rfind(|(candidate, _)| *candidate == token_id)
+                    .rfind(|(candidate, _)| *candidate == *token_id)
                     .map(|(_, node)| Shared::clone(node))
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
@@ -773,7 +787,7 @@ fn run_chunk_inner(
                 }
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_boundary(DebugEvent {
-                        token_id,
+                        token_id: *token_id,
                         node,
                         current_value: current_self(locals),
                         bindings,
@@ -781,22 +795,22 @@ fn run_chunk_inner(
                     });
                 }
             }
-            OpCode::Const(idx) => stack.push(StackValue::Value(chunk.constants[idx as usize].clone())),
+            OpCode::Const(idx) => stack.push(StackValue::Value(chunk.constants[*idx as usize].clone())),
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            OpCode::GetLocal(slot) => stack.push(read_cell(&locals[slot as usize])),
+            OpCode::GetLocal(slot) => stack.push(read_cell(&locals[*slot as usize])),
             OpCode::SetLocal(slot) => {
                 let v = pop!();
-                write_cell(&locals[slot as usize], v);
+                write_cell(&locals[*slot as usize], v);
             }
-            OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[idx as usize])),
+            OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
             OpCode::SetUpvalue(idx) => {
                 let v = pop!();
-                write_cell(&upvalues[idx as usize], v);
+                write_cell(&upvalues[*idx as usize], v);
             }
-            OpCode::MakeClosure(target_chunk, ref sources) => {
+            OpCode::MakeClosure(target_chunk, sources) => {
                 let captured = capture_upvalues(sources, locals, upvalues);
                 stack.push(StackValue::Closure(Shared::new(Closure {
-                    chunk_index: target_chunk,
+                    chunk_index: *target_chunk,
                     upvalues: captured,
                 })));
             }
@@ -818,12 +832,12 @@ fn run_chunk_inner(
                 stack.swap(len - 1, len - 2);
             }
             OpCode::Jump(offset) => {
-                ip = (ip as i64 + offset as i64) as usize;
+                ip = (ip as i64 + *offset as i64) as usize;
             }
             OpCode::JumpIfFalse(offset) => {
                 let cond = pop_value!();
                 if !cond.is_truthy() {
-                    ip = (ip as i64 + offset as i64) as usize;
+                    ip = (ip as i64 + *offset as i64) as usize;
                 }
             }
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
@@ -977,21 +991,21 @@ fn run_chunk_inner(
             }
             OpCode::SelectorMatch(selector) => {
                 let subject = pop_value!();
-                let result = eval_selector_expr(&subject, &selector);
+                let result = eval_selector_expr(&subject, selector);
                 stack.push(StackValue::Value(result));
             }
             OpCode::SelectorMatchWithArgs(selector, argc) => {
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
+                let mut args = Vec::with_capacity(*argc as usize);
+                for _ in 0..*argc {
                     args.push(pop_value!());
                 }
                 args.reverse();
                 let subject = pop_value!();
-                let result = eval_selector_expr_with_args(&subject, &selector, &args);
+                let result = eval_selector_expr_with_args(&subject, selector, &args);
                 stack.push(StackValue::Value(result));
             }
             OpCode::GetEnvVar(name_idx) => {
-                let RuntimeValue::String(name) = &chunk.constants[name_idx as usize] else {
+                let RuntimeValue::String(name) = &chunk.constants[*name_idx as usize] else {
                     bail!(VmError::Corrupt("GetEnvVar constant is not a string"));
                 };
                 let value = builtin::io_context::current()
@@ -1001,15 +1015,15 @@ fn run_chunk_inner(
             }
             OpCode::GetExternalGlobal(ident) => {
                 #[cfg(not(feature = "sync"))]
-                let resolved = execution.env.borrow().resolve(ident);
+                let resolved = execution.env.borrow().resolve(*ident);
                 #[cfg(feature = "sync")]
-                let resolved = execution.env.read().unwrap().resolve(ident);
+                let resolved = execution.env.read().unwrap().resolve(*ident);
                 let value = resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))?;
                 stack.push(StackValue::Value(value));
             }
             OpCode::InterpString(n) => {
-                let mut parts = Vec::with_capacity(n as usize);
-                for _ in 0..n {
+                let mut parts = Vec::with_capacity(*n as usize);
+                for _ in 0..*n {
                     parts.push(pop_value!());
                 }
                 parts.reverse();
@@ -1017,17 +1031,17 @@ fn run_chunk_inner(
                 stack.push(StackValue::Value(RuntimeValue::String(joined)));
             }
             OpCode::CallBuiltin(ident, argc) => {
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
+                let mut args = Vec::with_capacity(*argc as usize);
+                for _ in 0..*argc {
                     args.push(pop_value!());
                 }
                 args.reverse();
-                if ident == Ident::new("get_variable") || ident == Ident::new("set_variable") {
+                if *ident == Ident::new("get_variable") || *ident == Ident::new("set_variable") {
                     sync_dynamic_env(chunk, locals, upvalues, chunks, execution.env);
                 }
                 stack.push(StackValue::Value(
                     call_builtin(
-                        &ident,
+                        ident,
                         &args,
                         &current_self(locals),
                         execution.env,
@@ -1037,8 +1051,8 @@ fn run_chunk_inner(
                 ));
             }
             OpCode::CallValue(argc) => {
-                let mut args = Vec::with_capacity(argc as usize);
-                for _ in 0..argc {
+                let mut args = Vec::with_capacity(*argc as usize);
+                for _ in 0..*argc {
                     args.push(pop!());
                 }
                 args.reverse();
@@ -1113,16 +1127,16 @@ fn run_chunk_inner(
                                 return Err(e);
                             };
                             if let Some(value) = value {
-                                write_cell(&locals[acc_slot as usize], StackValue::Value(value));
+                                write_cell(&locals[*acc_slot as usize], StackValue::Value(value));
                             }
-                            ip = (ip as i64 + offset as i64) as usize;
+                            ip = (ip as i64 + *offset as i64) as usize;
                             continue;
                         }
                         if flow_continue(&e) {
                             let Some(offset) = continue_offset else {
                                 return Err(e);
                             };
-                            ip = (ip as i64 + offset as i64) as usize;
+                            ip = (ip as i64 + *offset as i64) as usize;
                             continue;
                         }
                         let catch_locals = execution
@@ -1132,7 +1146,7 @@ fn run_chunk_inner(
                             &catch_locals[SELF_SLOT as usize],
                             read_cell(&locals[SELF_SLOT as usize]),
                         );
-                        if has_binder {
+                        if *has_binder {
                             write_cell(&catch_locals[1], StackValue::Value(error_dict(&e)));
                         }
                         stack.push(run_chunk(
@@ -1148,7 +1162,7 @@ fn run_chunk_inner(
                 }
             }
             OpCode::FlowBreak(has_value) => {
-                let value = if has_value { Some(pop_value!()) } else { None };
+                let value = if *has_value { Some(pop_value!()) } else { None };
                 bail!(VmError::FlowBreak(value));
             }
             OpCode::FlowContinue => bail!(VmError::FlowContinue),
@@ -1165,7 +1179,7 @@ fn run_chunk_inner(
 }
 
 fn binop(
-    op: OpCode,
+    op: &OpCode,
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &[Cell],
@@ -1205,7 +1219,7 @@ fn binop(
 }
 
 fn cmp_op(
-    op: OpCode,
+    op: &OpCode,
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &[Cell],
