@@ -4,21 +4,21 @@
 
 Standard modules are built into `mq` — use them with `include` or `import`, no installation needed.
 
-| Module | Description |
-|---|---|
-| `json` | JSON parser and formatter |
-| `yaml` | YAML 1.2 parser and formatter |
-| `toml` | TOML parser and formatter |
-| `xml` | XML parser and formatter |
-| `html` | HTML parser and formatter (requires the `css-selector` build feature) |
-| `csv` | CSV / TSV parser and formatter |
-| `cbor` | CBOR binary format support |
-| `semver` | Semantic versioning (SemVer) utilities |
-| `section` | Markdown section extraction helpers |
-| `table` | Table rendering utilities |
-| `fuzzy` | Fuzzy string matching |
-| `toon` | TOON format support |
-| `test` | Testing framework (`assert_eq`, `assert_true`, …) |
+| Module    | Description                                                           |
+| --------- | --------------------------------------------------------------------- |
+| `json`    | JSON parser and formatter                                             |
+| `yaml`    | YAML 1.2 parser and formatter                                         |
+| `toml`    | TOML parser and formatter                                             |
+| `xml`     | XML parser and formatter                                              |
+| `html`    | HTML parser and formatter (requires the `css-selector` build feature) |
+| `csv`     | CSV / TSV parser and formatter                                        |
+| `cbor`    | CBOR binary format support                                            |
+| `semver`  | Semantic versioning (SemVer) utilities                                |
+| `section` | Markdown section extraction helpers                                   |
+| `table`   | Table rendering utilities                                             |
+| `fuzzy`   | Fuzzy string matching                                                 |
+| `toon`    | TOON format support                                                   |
+| `test`    | Testing framework (`assert_eq`, `assert_true`, …)                     |
 
 ## Extension Modules
 
@@ -73,6 +73,7 @@ Type to search by name or description, or click a category to filter.
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/asciidoc.mq">asciidoc.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://docs.asciidoctor.org/asciidoc/latest/">AsciiDoc</a> to Markdown converter</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/jsonld.mq">jsonld.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://www.w3.org/TR/json-ld11/">JSON-LD</a> <code>&lt;script type="application/ld+json"&gt;</code> extractor</td></tr>
 <tr data-category="format-parsers"><td><a href="https://github.com/harehare/typst.mq">typst.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://typst.app">Typst</a> markup parser — headings and single-line function-call statements</td></tr>
+<tr data-category="format-parsers"><td><a href="https://github.com/harehare/gomod.mq">gomod.mq</a></td><td><span class="module-category-badge">Format Parsers</span></td><td><a href="https://go.dev/ref/mod">Typst</a> A Go module manifest (go.mod/go.sum) parser implemented as an mq module</td></tr>
 <tr data-category="diagram-graph"><td><a href="https://github.com/harehare/mermaid.mq">mermaid.mq</a></td><td><span class="module-category-badge">Diagram &amp; Graph</span></td><td><a href="https://mermaid.js.org">Mermaid</a> diagrams — flowchart, sequence, pie, class</td></tr>
 <tr data-category="diagram-graph"><td><a href="https://github.com/harehare/dot.mq">dot.mq</a></td><td><span class="module-category-badge">Diagram &amp; Graph</span></td><td><a href="https://graphviz.org">Graphviz DOT</a> — nodes, edges, attributes</td></tr>
 <tr data-category="diagram-graph"><td><a href="https://github.com/harehare/graphql.mq">graphql.mq</a></td><td><span class="module-category-badge">Diagram &amp; Graph</span></td><td>GraphQL SDL — types, enums, interfaces, unions</td></tr>
