@@ -28,21 +28,30 @@ struct ExecutionLimits {
     step: u32,
     call_depth: u32,
     max_call_stack_depth: u32,
+    pools: ExecutionPools,
+}
+
+/// Reusable frame storage retained between executions of cached bytecode.
+#[derive(Default)]
+pub(crate) struct ExecutionPools {
     local_pool: Vec<Vec<Cell>>,
     stack_pool: Vec<Vec<StackValue>>,
 }
 
 impl ExecutionLimits {
-    fn new(timeout: Option<Duration>, max_call_stack_depth: u32) -> Self {
+    fn new(timeout: Option<Duration>, max_call_stack_depth: u32, pools: ExecutionPools) -> Self {
         Self {
             deadline: timeout.map(|t| Instant::now() + t),
             timeout,
             step: 0,
             call_depth: 0,
             max_call_stack_depth,
-            local_pool: Vec::new(),
-            stack_pool: Vec::new(),
+            pools,
         }
+    }
+
+    fn into_pools(self) -> ExecutionPools {
+        self.pools
     }
 
     #[inline(always)]
@@ -84,30 +93,42 @@ impl ExecutionLimits {
     }
 
     fn take_locals(&mut self, count: u16) -> Vec<Cell> {
+        self.take_locals_with_initialized_prefix(count, 0)
+    }
+
+    /// Takes a frame after resetting only slots that will not immediately be overwritten.
+    fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize) -> Vec<Cell> {
         let count = count as usize;
         let locals = self
+            .pools
             .local_pool
             .iter()
             .position(|locals| locals.len() == count)
-            .map(|index| self.local_pool.swap_remove(index))
+            .map(|index| self.pools.local_pool.swap_remove(index))
             .unwrap_or_else(|| fresh_locals(count));
-        for local in &locals {
+        for local in &locals[initialized.min(count)..] {
             write_cell(local, StackValue::Value(RuntimeValue::None));
         }
         locals
     }
 
     fn recycle_locals(&mut self, locals: Vec<Cell>) {
-        self.local_pool.push(locals);
+        const MAX_RETAINED_FRAMES: usize = 32;
+        if self.pools.local_pool.len() < MAX_RETAINED_FRAMES {
+            self.pools.local_pool.push(locals);
+        }
     }
 
     fn take_stack(&mut self) -> Vec<StackValue> {
-        self.stack_pool.pop().unwrap_or_else(|| Vec::with_capacity(8))
+        self.pools.stack_pool.pop().unwrap_or_else(|| Vec::with_capacity(8))
     }
 
     fn recycle_stack(&mut self, mut stack: Vec<StackValue>) {
+        const MAX_RETAINED_FRAMES: usize = 32;
         stack.clear();
-        self.stack_pool.push(stack);
+        if self.pools.stack_pool.len() < MAX_RETAINED_FRAMES {
+            self.pools.stack_pool.push(stack);
+        }
     }
 }
 
@@ -270,6 +291,27 @@ pub(crate) fn run_with_globals(
     max_call_stack_depth: u32,
     global_bindings: &[(Ident, RuntimeValue)],
 ) -> VmResult<RuntimeValue> {
+    run_with_globals_and_pools(
+        compiled,
+        input,
+        host_functions,
+        timeout,
+        max_call_stack_depth,
+        global_bindings,
+        ExecutionPools::default(),
+    )
+    .0
+}
+
+pub(crate) fn run_with_globals_and_pools(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+    global_bindings: &[(Ident, RuntimeValue)],
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
         hook: None,
@@ -285,6 +327,7 @@ pub(crate) fn run_with_globals(
             max_call_stack_depth,
             global_bindings,
         },
+        pools,
         #[cfg(feature = "debugger")]
         &mut debug,
     )
@@ -314,21 +357,25 @@ pub(crate) fn run_with_debug_hook_and_globals(
             max_call_stack_depth,
             global_bindings,
         },
+        ExecutionPools::default(),
         &mut debug,
     )
+    .0
 }
 
 fn run_impl(
     compiled: &CompiledProgram,
     input: RuntimeValue,
     options: RunOptions<'_>,
+    pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<RuntimeValue> {
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
     run_impl_with_bindings(
         compiled,
         input,
         &[],
         options,
+        pools,
         #[cfg(feature = "debugger")]
         debug,
     )
@@ -356,8 +403,10 @@ pub(crate) fn run_debug_expression(
             max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
             global_bindings: &[],
         },
+        ExecutionPools::default(),
         &mut debug,
     )
+    .0
 }
 
 fn run_impl_with_bindings(
@@ -365,18 +414,23 @@ fn run_impl_with_bindings(
     input: RuntimeValue,
     initial_bindings: &[RuntimeValue],
     options: RunOptions<'_>,
+    pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<RuntimeValue> {
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
     let mut env = Env::default();
     for (ident, value) in options.global_bindings {
         env.define(*ident, value.clone());
     }
     let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
-    let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth);
+    let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let locals = limits.take_locals(compiled.chunks[0].local_count);
     write_cell(&locals[SELF_SLOT as usize], StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
-        return Err(VmError::Corrupt("too many initial debug bindings"));
+        limits.recycle_locals(locals);
+        return (
+            Err(VmError::Corrupt("too many initial debug bindings")),
+            limits.into_pools(),
+        );
     }
     for (slot, value) in initial_bindings.iter().cloned().enumerate() {
         write_cell(&locals[slot + 1], StackValue::Value(value));
@@ -394,11 +448,12 @@ fn run_impl_with_bindings(
         &mut execution,
         #[cfg(feature = "debugger")]
         debug,
-    )?;
-    match result {
+    )
+    .and_then(|result| match result {
         StackValue::Value(v) => Ok(v),
         StackValue::Closure(_) => Err(VmError::Corrupt("top-level result is a closure")),
-    }
+    });
+    (result, limits.into_pools())
 }
 
 fn fresh_locals(count: usize) -> Vec<Cell> {
@@ -568,7 +623,12 @@ fn call_fixed_closure_from_stack(
         ));
     }
 
-    let callee_locals = execution.limits.take_locals(callee_chunk.local_count);
+    // Fixed-arity functions reserve contiguous slots for `self` and all required arguments.
+    // Those slots are overwritten below, so only the remaining local slots need clearing.
+    let initialized_slots = SELF_SLOT as usize + 1 + arity;
+    let callee_locals = execution
+        .limits
+        .take_locals_with_initialized_prefix(callee_chunk.local_count, initialized_slots);
     let self_value = read_cell(&call_site.locals[SELF_SLOT as usize]);
     write_cell(&callee_locals[SELF_SLOT as usize], self_value.clone());
     let first_arg_slot = if uses_implicit_self {

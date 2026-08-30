@@ -15,6 +15,8 @@ mod resolver;
 pub(crate) mod value;
 
 use crate::Shared;
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+use crate::SharedCell;
 use crate::TokenArena;
 use crate::ast::Program;
 use crate::ast::node::Node;
@@ -69,10 +71,21 @@ impl Error {
 
 /// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation.
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
     configuration: Vec<String>,
+    execution_pools: Shared<SharedCell<interpreter::ExecutionPools>>,
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+impl fmt::Debug for CachedProgram {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CachedProgram")
+            .field("program", &self.program)
+            .field("configuration", &self.configuration)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Compiles an Engine program for repeated evaluation, recording any external module sources
@@ -87,6 +100,7 @@ pub(crate) fn compile_cached_program<R: ModuleResolver>(
     Ok(CachedProgram {
         program: compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?,
         configuration,
+        execution_pools: Shared::new(SharedCell::new(interpreter::ExecutionPools::default())),
     })
 }
 
@@ -118,14 +132,59 @@ pub(crate) fn run_cached_many<I>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    inputs
-        .map(|input| {
-            run_for_input(input, |value| {
-                interpreter::run(&compiled.program, value, host_functions, timeout, max_call_stack_depth)
-            })
-            .map_err(Error::from)
-        })
-        .collect()
+    let mut pools = take_execution_pools(&compiled.execution_pools);
+    let mut values = Vec::new();
+    for input in inputs {
+        let result = run_for_input(input, |value| {
+            let execution_pools = std::mem::take(&mut pools);
+            let (result, next_pools) = interpreter::run_with_globals_and_pools(
+                &compiled.program,
+                value,
+                host_functions,
+                timeout,
+                max_call_stack_depth,
+                &[],
+                execution_pools,
+            );
+            pools = next_pools;
+            result
+        });
+        match result {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                restore_execution_pools(&compiled.execution_pools, pools);
+                return Err(Error::from(error));
+            }
+        }
+    }
+    restore_execution_pools(&compiled.execution_pools, pools);
+    Ok(values)
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger"), not(feature = "sync")))]
+fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
+    std::mem::take(&mut *pools.borrow_mut())
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger"), feature = "sync"))]
+fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
+    std::mem::take(&mut *pools.write().expect("execution pool lock is poisoned"))
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger"), not(feature = "sync")))]
+fn restore_execution_pools(
+    pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
+    execution_pools: interpreter::ExecutionPools,
+) {
+    *pools.borrow_mut() = execution_pools;
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger"), feature = "sync"))]
+fn restore_execution_pools(
+    pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
+    execution_pools: interpreter::ExecutionPools,
+) {
+    *pools.write().expect("execution pool lock is poisoned") = execution_pools;
 }
 
 fn compile_error_to_runtime_error(
