@@ -2427,6 +2427,10 @@ mod tests {
         })
     }
 
+    #[allow(clippy::crate_in_macro_def)]
+    #[macro_export]
+    macro_rules! eval_table_cases {
+        ($name:ident, $token_arena:ident, $runtime_values:ident, $program:ident, $expected:ident, $body:block) => {
     #[rstest]
     #[case::starts_with(vec![RuntimeValue::String("test".to_string())],
        vec![
@@ -7370,17 +7374,24 @@ mod tests {
         ))],
         Ok(vec![RuntimeValue::String("other".to_string())])
     )]
-    fn test_eval(
-        token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-        #[case] runtime_values: Vec<RuntimeValue>,
-        #[case] program: Program,
-        #[case] expected: Result<Vec<RuntimeValue>, InnerError>,
+    fn $name(
+        $token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+        #[case] $runtime_values: Vec<RuntimeValue>,
+        #[case] $program: Program,
+        #[case] $expected: Result<Vec<RuntimeValue>, InnerError>,
     ) {
+        $body
+    }
+        };
+    }
+
+    crate::eval_table_cases!(test_eval, token_arena, runtime_values, program, expected, {
         assert_eq!(
-            Evaluator::new(DefaultModuleLoader::default(), token_arena).eval(&program, runtime_values.into_iter()),
+            Evaluator::new(DefaultModuleLoader::default(), Shared::clone(&token_arena))
+                .eval(&program, runtime_values.into_iter()),
             expected
         );
-    }
+    });
 
     #[test]
     fn test_include() {

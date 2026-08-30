@@ -34,6 +34,12 @@ bench-tree:
 bench-vm:
     cargo bench -p mq-lang --bench benchmark --features tarn
 
+# Run the same shared benchmark on the tree-walker and VM in sequence.
+# Example: just bench-compare eval_compiled_fibonacci
+bench-compare filter:
+    cargo bench -p mq-lang --bench benchmark {{filter}}
+    cargo bench -p mq-lang --bench benchmark --features tarn {{filter}}
+
 # Build the project in release mode
 build:
     cargo build --release -p mq-run --bin mq
@@ -90,8 +96,16 @@ build-node: build-node-wasm
 fmt:
     cargo fmt --all -- --check
 
-test-mq:
+# Run bundled mq tests through the tree-walking evaluator.
+test-mq-tree:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+
+# Run the identical bundled mq tests through Tarn.
+test-mq-vm:
+    cargo run -p mq-test --features tarn -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+
+# Keep both execution engines as a required validation gate until cutover.
+test-mq: test-mq-tree test-mq-vm
 
 # Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
 test-gfm-spec:

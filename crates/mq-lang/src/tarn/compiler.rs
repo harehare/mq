@@ -1524,7 +1524,10 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_loop(&mut self, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
-        self.emit(OpCode::PushNone);
+        // `loop` keeps the incoming pipeline value when its first operation is a bare
+        // `break`, matching `Evaluator::eval_loop`. Conditional loops intentionally start
+        // their accumulator at `None` instead.
+        self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
 
         let loop_start = self.chunk_mut().code.len();
