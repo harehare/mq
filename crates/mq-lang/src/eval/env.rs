@@ -329,14 +329,6 @@ impl Env {
         self.context.len()
     }
 
-    /// Snapshot of this scope's own bindings (not the parent chain), for callers that need
-    /// a plain list rather than dynamic lookup — the VM's static compiler/interpreter uses
-    /// this to see names defined via `Engine::define_value`/`define_string_value`, which
-    /// write directly into the root `Env` and have no other VM-side representation.
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (Ident, RuntimeValue)> + '_ {
-        self.context.iter_entries().map(|(ident, value)| (ident, value.clone()))
-    }
-
     /// Defines or overwrites an immutable binding for `ident` in the current scope.
     #[inline(always)]
     pub fn define(&mut self, ident: Ident, runtime_value: RuntimeValue) {

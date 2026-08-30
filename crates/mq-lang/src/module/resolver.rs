@@ -9,8 +9,8 @@ pub mod lockfile;
 pub mod ssrf;
 pub(crate) mod std_resolver;
 
-use crate::Shared;
 use crate::module::error::ModuleError;
+use crate::{STANDARD_MODULES, Shared};
 use std::path::PathBuf;
 
 /// Core interface for resolving mq module source code by name.
@@ -30,6 +30,11 @@ pub trait ModuleResolver: Clone + Default {
     /// `github.com/alice/mymod.mq@v1.0` becomes `"mymod"`.
     fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
         module_path
+    }
+    /// Whether this module's source is embedded in the current binary and therefore cannot
+    /// change during the lifetime of an Engine.
+    fn is_immutable_module(&self, _module_path: &str) -> bool {
+        false
     }
 }
 
@@ -105,6 +110,10 @@ impl ModuleResolver for DefaultModuleResolver {
             }
         }
         module_path
+    }
+
+    fn is_immutable_module(&self, module_path: &str) -> bool {
+        STANDARD_MODULES.contains_key(module_path)
     }
 }
 

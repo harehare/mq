@@ -124,6 +124,10 @@ fn eval_compiled_foreach(bencher: divan::Bencher) {
     });
 }
 
+const CSV_PARSE_INPUT: &str =
+    "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n";
+
+/// Includes and compiles the CSV module on every invocation, representing one-shot use.
 #[divan::bench()]
 fn eval_csv_parse() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -131,9 +135,20 @@ fn eval_csv_parse() -> mq_lang::RuntimeValues {
     engine
         .eval(
             r#"include "csv" | csv_parse(true)"#,
-            vec![mq_lang::RuntimeValue::String("a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n".to_string())].into_iter(),
+            vec![mq_lang::RuntimeValue::String(CSV_PARSE_INPUT.to_string())].into_iter(),
         )
         .unwrap()
+}
+
+/// Reuses the optimized query/module bytecode after one warm-up evaluation.
+#[divan::bench]
+fn eval_compiled_csv_parse(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.load_module("csv").unwrap();
+    bench_compiled(bencher, &mut engine, "csv_parse(true)", || {
+        vec![mq_lang::RuntimeValue::String(CSV_PARSE_INPUT.to_string())]
+    });
 }
 
 #[divan::bench()]

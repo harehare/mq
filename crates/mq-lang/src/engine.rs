@@ -177,6 +177,17 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
 }
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    fn vm_cache_configuration(&self) -> Vec<String> {
+        self.vm_module_prelude
+            .iter()
+            .map(|module| match module {
+                VmModulePrelude::Include(name) => format!("include:{name}"),
+                VmModulePrelude::Import(name) => format!("import:{name}"),
+            })
+            .collect()
+    }
+
     /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
     /// takes the [`Io`] value up front — for hosts that need to select the `Io` *type* at
     /// construction time, not just its value via [`set_io`](Self::set_io). Useful for e.g. a
@@ -494,47 +505,38 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let global_bindings = self.evaluator.global_bindings();
         let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-        if self.vm_module_prelude.is_empty() && global_bindings.is_empty() && !has_nodes {
-            if let Some(cached) = compiled.cached_vm_program() {
-                let cached = match cached {
-                    Some(cached) => Some(cached),
-                    None => crate::tarn::compile_cached_program(
-                        &compiled.program,
-                        Shared::clone(&self.token_arena),
-                        self.evaluator.module_loader.with_same_resolver(),
-                    )
-                    .map_err(|error| {
-                        Box::new(error::Error::from_error(
-                            &compiled.source,
-                            error.into_inner_error(Shared::clone(&self.token_arena)),
-                            self.evaluator.module_loader.clone(),
-                        ))
-                    })?,
-                };
-                if let Some(cached) = cached {
-                    compiled.cache_vm_program(cached.clone());
-
-                    return crate::tarn::run_cached_many(
-                        &cached,
-                        input,
-                        &host_functions,
-                        self.evaluator.options.timeout,
-                        self.evaluator.options.max_call_stack_depth,
-                    )
-                    .map(Into::into)
-                    .map_err(|error| {
-                        Box::new(error::Error::from_error(
-                            &compiled.source,
-                            error.into_inner_error(Shared::clone(&self.token_arena)),
-                            self.evaluator.module_loader.clone(),
-                        ))
-                    });
-                }
-            }
+        let cache_configuration = self.vm_cache_configuration();
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        if global_bindings.is_empty()
+            && !has_nodes
+            && let Some(Some(cached)) = compiled.cached_vm_program()
+            && crate::tarn::cached_program_is_current(&cached, &self.evaluator.module_loader, &cache_configuration)
+                .map_err(|error| {
+                    Box::new(error::Error::from_error(
+                        &compiled.source,
+                        error.into_inner_error(Shared::clone(&self.token_arena)),
+                        self.evaluator.module_loader.clone(),
+                    ))
+                })?
+        {
+            return crate::tarn::run_cached_many(
+                &cached,
+                input,
+                &host_functions,
+                self.evaluator.options.timeout,
+                self.evaluator.options.max_call_stack_depth,
+            )
+            .map(Into::into)
+            .map_err(|error| {
+                Box::new(error::Error::from_error(
+                    &compiled.source,
+                    error.into_inner_error(Shared::clone(&self.token_arena)),
+                    self.evaluator.module_loader.clone(),
+                ))
+            });
         }
-        // The common `compile` + `eval_compiled` path needs neither Engine-loaded module
-        // declarations nor `nodes` splitting. Compile the original AST directly instead of
-        // cloning every node into a temporary program.
+        // Engine-loaded modules are replayed as directives so the VM can resolve their
+        // bindings statically. Keep this AST alive for either cached or one-shot compilation.
         let vm_program = if self.vm_module_prelude.is_empty() && !has_nodes {
             None
         } else {
@@ -559,6 +561,60 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             Some(program)
         };
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        if global_bindings.is_empty()
+            && !has_nodes
+            && let Some(cached) = compiled.cached_vm_program()
+        {
+            let cached = match cached {
+                Some(cached)
+                    if crate::tarn::cached_program_is_current(
+                        &cached,
+                        &self.evaluator.module_loader,
+                        &cache_configuration,
+                    )
+                    .map_err(|error| {
+                        Box::new(error::Error::from_error(
+                            &compiled.source,
+                            error.into_inner_error(Shared::clone(&self.token_arena)),
+                            self.evaluator.module_loader.clone(),
+                        ))
+                    })? =>
+                {
+                    cached
+                }
+                Some(_) | None => crate::tarn::compile_cached_program(
+                    vm_program,
+                    Shared::clone(&self.token_arena),
+                    self.evaluator.module_loader.with_same_resolver(),
+                    cache_configuration,
+                )
+                .map_err(|error| {
+                    Box::new(error::Error::from_error(
+                        &compiled.source,
+                        error.into_inner_error(Shared::clone(&self.token_arena)),
+                        self.evaluator.module_loader.clone(),
+                    ))
+                })?,
+            };
+            compiled.cache_vm_program(cached.clone());
+
+            return crate::tarn::run_cached_many(
+                &cached,
+                input,
+                &host_functions,
+                self.evaluator.options.timeout,
+                self.evaluator.options.max_call_stack_depth,
+            )
+            .map(Into::into)
+            .map_err(|error| {
+                Box::new(error::Error::from_error(
+                    &compiled.source,
+                    error.into_inner_error(Shared::clone(&self.token_arena)),
+                    self.evaluator.module_loader.clone(),
+                ))
+            });
+        }
         #[cfg(feature = "debugger")]
         let result = crate::tarn::compile_and_run_debugged_many(
             vm_program,
@@ -582,7 +638,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         );
         #[cfg(not(feature = "debugger"))]
         let result = crate::tarn::compile_and_run_many(
-            &vm_program,
+            vm_program,
             input,
             crate::tarn::EngineRunContext {
                 host_functions: &host_functions,
@@ -1192,6 +1248,56 @@ mod tests {
         let second = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
+        assert_eq!(second.values(), first.values());
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_caches_external_module_bytecode_until_source_changes() {
+        use crate::RuntimeValue;
+
+        let (temp_dir, temp_file_path) = create_file("cached_vm_module_test.mq", r#"def greeting(): "first";"#);
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        let compiled = engine
+            .compile(r#"include "cached_vm_module_test" | greeting()"#)
+            .unwrap();
+
+        let first = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(first.values(), &[RuntimeValue::String("first".to_string())]);
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+
+        std::fs::write(&temp_file_path, r#"def greeting(): "second";"#).unwrap();
+        let second = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(second.values(), &[RuntimeValue::String("second".to_string())]);
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_caches_engine_loaded_module_bytecode() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_module("csv").unwrap();
+        let compiled = engine.compile("csv_parse(true)").unwrap();
+        let input = || RuntimeValue::String("name,age\nAda,36\n".to_string());
+
+        let first = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
+        assert_eq!(first.values().len(), 1);
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+
+        let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(second.values(), first.values());
     }
 

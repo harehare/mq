@@ -12,6 +12,8 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
 
 use crate::Token;
@@ -76,6 +78,22 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
+}
+
+/// The source identity recorded for an external module compiled into VM bytecode.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ModuleDependency {
+    path: String,
+    /// `None` means the module source is embedded in this binary and immutable.
+    source_hash: Option<u64>,
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+fn source_hash(source: &str) -> u64 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    source.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl Module {
@@ -236,6 +254,37 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
         let program = Self::parse_program(&code, module_id, token_arena)?;
         Self::classify_module(&name, &program)
+    }
+
+    /// Captures the source identity of a module that has just been loaded by this loader.
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) fn module_dependency(&self, module_path: &str) -> Result<ModuleDependency, ModuleError> {
+        let name = self.resolver.canonical_name(module_path);
+        let source_hash = if self.resolver.is_immutable_module(module_path) {
+            None
+        } else {
+            let source = self
+                .source_cache
+                .get(name)
+                .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.to_string())))?;
+            Some(source_hash(source))
+        };
+        Ok(ModuleDependency {
+            path: module_path.to_string(),
+            source_hash,
+        })
+    }
+
+    /// Checks whether every source that was compiled into cached VM bytecode is unchanged.
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) fn dependencies_are_current(&self, dependencies: &[ModuleDependency]) -> Result<bool, ModuleError> {
+        dependencies.iter().try_fold(true, |current, dependency| {
+            let Some(expected_hash) = dependency.source_hash else {
+                return Ok(current);
+            };
+            let source = self.resolve(&dependency.path)?;
+            Ok(current && source_hash(&source) == expected_hash)
+        })
     }
 
     pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {

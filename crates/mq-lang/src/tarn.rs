@@ -70,17 +70,40 @@ impl Error {
 /// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation.
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
 #[derive(Debug, Clone)]
-pub(crate) struct CachedProgram(compiler::CompiledProgram);
+pub(crate) struct CachedProgram {
+    program: compiler::CompiledProgram,
+    configuration: Vec<String>,
+}
 
-/// Compiles an Engine program for reuse when its bytecode cannot depend on an external module.
+/// Compiles an Engine program for repeated evaluation, recording any external module sources
+/// that must remain unchanged before the bytecode is reused.
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
 pub(crate) fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-) -> Result<Option<CachedProgram>, Error> {
-    let compiled = compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?;
-    Ok(compiled.cacheable.then_some(CachedProgram(compiled)))
+    configuration: Vec<String>,
+) -> Result<CachedProgram, Error> {
+    Ok(CachedProgram {
+        program: compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?,
+        configuration,
+    })
+}
+
+/// Returns whether every external module compiled into this program still has identical source.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+pub(crate) fn cached_program_is_current<R: ModuleResolver>(
+    compiled: &CachedProgram,
+    module_loader: &ModuleLoader<R>,
+    configuration: &[String],
+) -> Result<bool, Error> {
+    if compiled.configuration != configuration {
+        return Ok(false);
+    }
+    module_loader
+        .dependencies_are_current(&compiled.program.module_dependencies)
+        .map_err(compiler::CompileError::Module)
+        .map_err(Error::from)
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.
@@ -98,7 +121,7 @@ where
     inputs
         .map(|input| {
             run_for_input(input, |value| {
-                interpreter::run(&compiled.0, value, host_functions, timeout, max_call_stack_depth)
+                interpreter::run(&compiled.program, value, host_functions, timeout, max_call_stack_depth)
             })
             .map_err(Error::from)
         })
