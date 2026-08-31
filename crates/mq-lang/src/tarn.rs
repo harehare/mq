@@ -1096,8 +1096,47 @@ mod tests {
     #[case::builtin_chain(
         r#"range(0, 50, 1) | filter(fn(x): x % 2 == 0;) | map(fn(x): x * 3;) | filter(fn(x): x > 10;)"#
     )]
+    #[case::foreach_closures_share_the_loop_variables_captured_cell(
+        "let fns = foreach(i, [1, 2, 3]): fn(): i;; | fns | map(fn(f): f();)"
+    )]
+    #[case::three_level_nested_closure(
+        "let x = 1 | let make = fn(y): fn(z): fn(w): x + y + z + w;;; | let step1 = make(2) | let step2 = step1(3) | step2(4)"
+    )]
+    #[case::sibling_closures_capture_independent_lets(
+        "let a = 1 | let b = 2 | let f = fn(): a; | let g = fn(): b; | f() + g()"
+    )]
+    #[case::closure_over_var_sees_later_mutation("var x = 1 | let f = fn(): x; | x = 99 | f()")]
+    #[case::implicit_self_visible_inside_a_closure_created_by_a_def(
+        "def outer(): let g = fn(): . + 1; | g(); | 41 | outer()"
+    )]
+    #[case::implicit_self_fill_combined_with_variadic("def f(first, *rest): first + len(rest); | 5 | f()")]
+    #[case::shadowing_across_if_branches_does_not_leak_to_the_outer_binding(
+        "let x = 1 | let inner_a = fn(): let x = 2 | x; | let inner_b = fn(): let x = 3 | x; | let r = if(true): inner_a() else: inner_b() | r + x"
+    )]
+    #[case::shadowing_in_sibling_closures_does_not_leak_between_them(
+        "let f = fn(): let x = 1 | x; | let g = fn(): let x = 2 | x; | f() + g()"
+    )]
     fn compiled_engine_matches_tree_walker(#[case] code: &str) {
         assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    }
+
+    // Documents real (matching) behavior, not an aspirational "fresh cell per iteration"
+    // semantics: both engines reuse the same captured binding for `foreach`'s loop variable
+    // across iterations, so every closure created inside the loop sees the final value.
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn foreach_closures_share_the_loop_variables_captured_cell_exact_values() {
+        assert_eq!(
+            run_with_prelude("let fns = foreach(i, [1, 2, 3]): fn(): i;; | fns | map(fn(f): f();)"),
+            RuntimeValue::Array(
+                vec![
+                    RuntimeValue::Number(3.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into()
+            )
+        );
     }
 
     #[cfg(feature = "tarn")]
@@ -1777,6 +1816,34 @@ mod tests {
                 "var total = {initial} | foreach(value, [{elements}]): total += value * {scale}; | let finish = fn(extra): total + extra + {offset}; | finish(.)"
             );
             assert_vm_matches_tree_walker(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
+        }
+    }
+
+    #[cfg(feature = "tarn")]
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn generated_nested_closures_match_the_tree_walker(
+            x in -50i16..50,
+            y in -50i16..50,
+            z in -50i16..50,
+            w in -50i16..50,
+        ) {
+            let code = format!(
+                "let x = {x} | let make = fn(y): fn(z): x + y + z + {w};; | let step = make({y}) | step({z})"
+            );
+            assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+        }
+
+        #[test]
+        fn generated_foreach_closures_match_the_tree_walker(
+            values in proptest::collection::vec(-30i16..30, 1..8),
+        ) {
+            let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
+            let code =
+                format!("let fns = foreach(i, [{elements}]): fn(): i * 2;; | fns | map(fn(f): f();)");
+            assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
         }
     }
 
