@@ -81,6 +81,29 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     }
 }
 
+/// Reads an array's length and one element without cloning the enclosing array value.
+pub(crate) fn array_len_and_element_at_cell(
+    cell: &Cell,
+    index: usize,
+) -> Result<(usize, Option<RuntimeValue>), &'static str> {
+    #[cfg(not(feature = "sync"))]
+    {
+        let stored = cell.borrow();
+        let StackValue::Value(RuntimeValue::Array(array)) = &*stored else {
+            return Err("ForeachNext array slot is not an array");
+        };
+        Ok((array.len(), array.get(index).cloned()))
+    }
+    #[cfg(feature = "sync")]
+    {
+        let stored = cell.read().unwrap();
+        let StackValue::Value(RuntimeValue::Array(array)) = &*stored else {
+            return Err("ForeachNext array slot is not an array");
+        };
+        Ok((array.len(), array.get(index).cloned()))
+    }
+}
+
 /// Appends to an array held in a VM cell without cloning the enclosing `RuntimeValue`.
 pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(), &'static str> {
     #[cfg(not(feature = "sync"))]

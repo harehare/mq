@@ -525,7 +525,31 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         bindings.iter().map(|(ident, value)| (*ident, value.clone())).collect()
     }
 
+    #[cfg(not(feature = "tarn"))]
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
+        match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
+            Ok(module) => self.load_module(module),
+            Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    // The VM compiles its own prelude independently, so populating `env` here is wasted
+    // work under `tarn`. Still parses builtin.mq (interning its identifiers, which
+    // `Ident`'s intern-order-based `Ord` depends on) rather than skipping entirely.
+    #[cfg(feature = "tarn")]
+    pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
+        match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
+            Ok(_) => Ok(()),
+            Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Always the full population, regardless of feature config — for tests that use the
+    /// tree-walker directly as an oracle even in a `tarn`-enabled build.
+    #[cfg(test)]
+    pub(crate) fn load_builtin_module_full(&mut self) -> Result<(), RuntimeError> {
         match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
             Ok(module) => self.load_module(module),
             Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
