@@ -1,4 +1,4 @@
-use super::bytecode::{self, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
+use super::bytecode::{self, BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use super::resolver::FunctionScope;
 use crate::Shared;
 use crate::ast::constants::builtins;
@@ -6,11 +6,13 @@ use crate::ast::node::{AccessTarget, Expr, Literal, Node, Pattern, StringSegment
 use crate::ast::{Program, node as ast};
 use crate::eval::builtin;
 use crate::eval::runtime_value::RuntimeValue;
+use crate::module::BUILTIN_FILE;
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
 use crate::module::ModuleDependency;
 use crate::{ModuleError, ModuleLoader, ModuleResolver, TokenArena};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
+use std::sync::LazyLock;
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSymbolTable;
@@ -135,6 +137,11 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
+    if program_uses_soft_builtin(program) {
+        return compile_program_impl(program, token_arena, module_loader, true, &[], external_globals)
+            .map(|(compiled, _)| compiled);
+    }
+
     match compile_program_impl(
         program,
         Shared::clone(&token_arena),
@@ -149,6 +156,79 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
                 .map(|(compiled, _)| compiled)
         }
         Err(other) => Err(other),
+    }
+}
+
+/// Names implemented by `builtin.mq`, rather than native Rust builtins.
+static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| {
+    BUILTIN_FILE
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("def "))
+        .filter_map(|definition| {
+            definition
+                .split_once('(')
+                .map(|(name, _)| crate::Ident::new(name.trim()))
+        })
+        .collect()
+});
+
+/// Selects the prelude on the first compilation pass for common Engine queries.
+///
+/// Without this check, every `map`/`fold`/`filter` query is compiled once without the
+/// soft-builtin definitions and then compiled again after the unresolved call is found.
+fn program_uses_soft_builtin(program: &Program) -> bool {
+    program.iter().any(node_uses_soft_builtin)
+}
+
+fn node_uses_soft_builtin(node: &Shared<Node>) -> bool {
+    match &*node.expr {
+        Expr::As(_, value)
+        | Expr::Let(_, value)
+        | Expr::Var(_, value)
+        | Expr::Assign(_, value)
+        | Expr::Paren(value) => node_uses_soft_builtin(value),
+        Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => program_uses_soft_builtin(body),
+        Expr::Call(ident, args) => SOFT_BUILTIN_NAMES.contains(&ident.name) || args.iter().any(node_uses_soft_builtin),
+        Expr::CallDynamic(callee, args) => node_uses_soft_builtin(callee) || args.iter().any(node_uses_soft_builtin),
+        Expr::Def(_, params, body) | Expr::Fn(params, body) => {
+            params
+                .iter()
+                .filter_map(|parameter| parameter.default.as_ref())
+                .any(node_uses_soft_builtin)
+                || program_uses_soft_builtin(body)
+        }
+        Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_uses_soft_builtin),
+        Expr::InterpolatedString(segments) => segments.iter().any(|segment| match segment {
+            StringSegment::Expr(expr) => node_uses_soft_builtin(expr),
+            StringSegment::Text(_) | StringSegment::Env(_) | StringSegment::Self_ => false,
+        }),
+        Expr::SelectorCall(_, args) => args.iter().any(node_uses_soft_builtin),
+        Expr::While(condition, body) | Expr::Until(condition, body) => {
+            node_uses_soft_builtin(condition) || program_uses_soft_builtin(body)
+        }
+        Expr::Foreach(_, iterable, body) => node_uses_soft_builtin(iterable) || program_uses_soft_builtin(body),
+        Expr::If(branches) | Expr::Unless(branches) => branches.iter().any(|(condition, body)| {
+            condition.as_ref().is_some_and(node_uses_soft_builtin) || node_uses_soft_builtin(body)
+        }),
+        Expr::Match(subject, arms) => {
+            node_uses_soft_builtin(subject)
+                || arms.iter().any(|arm| {
+                    arm.guard.as_ref().is_some_and(node_uses_soft_builtin) || node_uses_soft_builtin(&arm.body)
+                })
+        }
+        Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => args.iter().any(node_uses_soft_builtin),
+        Expr::Try(body, _, catch) => node_uses_soft_builtin(body) || node_uses_soft_builtin(catch),
+        Expr::Break(value) => value.as_ref().is_some_and(node_uses_soft_builtin),
+        Expr::Literal(_)
+        | Expr::Ident(_)
+        | Expr::Selector(_)
+        | Expr::SelectorChain(_)
+        | Expr::Include(_)
+        | Expr::Import(_, _)
+        | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
+        | Expr::Self_
+        | Expr::Nodes
+        | Expr::Continue => false,
     }
 }
 
@@ -1208,16 +1288,34 @@ impl<R: ModuleResolver> Compiler<R> {
         if args.len() == 2
             && let Some(op) = fast_path_binop(&ident)
         {
+            if self.compile_local_binary(op, args) {
+                return Ok(());
+            }
             self.compile_expr(&args[0])?;
             self.compile_expr(&args[1])?;
             self.current_token_id = call_token_id;
-            self.emit(op);
+            self.emit(binary_op_opcode(op));
             return Ok(());
         }
         if args.len() == 1 && ident == builtins::NEGATE.into() {
             self.compile_expr(&args[0])?;
             self.current_token_id = call_token_id;
             self.emit(OpCode::Neg);
+            return Ok(());
+        }
+        if ident == builtins::LEN.into()
+            && args.len() == 1
+            && let Some(slot) = self.current_local_slot(&args[0])
+        {
+            self.emit(OpCode::ArrayLenLocal(slot));
+            return Ok(());
+        }
+        if ident == builtins::GET.into()
+            && args.len() == 2
+            && let (Some(array_slot), Some(index_slot)) =
+                (self.current_local_slot(&args[0]), self.current_local_slot(&args[1]))
+        {
+            self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
             return Ok(());
         }
         if ident == builtins::ARRAY.into() {
@@ -1238,6 +1336,45 @@ impl<R: ModuleResolver> Compiler<R> {
         self.current_token_id = call_token_id;
         self.emit(OpCode::CallBuiltin(ident, args.len() as u8));
         Ok(())
+    }
+
+    /// Emits a compact binary operation when both operands are current-frame locals or a local
+    /// plus a literal. Upvalues stay on the general path because their lookup semantics differ.
+    fn compile_local_binary(&mut self, op: BinaryOp, args: &ast::Args) -> bool {
+        let Some(left_slot) = self.current_local_slot(&args[0]) else {
+            return false;
+        };
+
+        match &*args[1].expr {
+            Expr::Ident(_) => {
+                let Some(right_slot) = self.current_local_slot(&args[1]) else {
+                    return false;
+                };
+                self.emit(OpCode::BinaryLocalLocal {
+                    op,
+                    left: left_slot,
+                    right: right_slot,
+                });
+                true
+            }
+            Expr::Literal(literal) => {
+                let constant = self.chunk_mut().push_const(literal_to_runtime_value(literal));
+                self.emit(OpCode::BinaryLocalConst {
+                    op,
+                    local: left_slot,
+                    constant,
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn current_local_slot(&self, node: &Shared<Node>) -> Option<u16> {
+        let Expr::Ident(ident) = &*node.expr else {
+            return None;
+        };
+        self.scopes.last().and_then(|scope| scope.resolve_local(ident.name))
     }
 
     fn is_spread(arg: &Node) -> bool {
@@ -1543,32 +1680,48 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 }
 
-fn fast_path_binop(name: &crate::Ident) -> Option<OpCode> {
+fn fast_path_binop(name: &crate::Ident) -> Option<BinaryOp> {
     let name = *name;
     if name == builtins::ADD.into() {
-        Some(OpCode::Add)
+        Some(BinaryOp::Add)
     } else if name == builtins::SUB.into() {
-        Some(OpCode::Sub)
+        Some(BinaryOp::Sub)
     } else if name == builtins::MUL.into() {
-        Some(OpCode::Mul)
+        Some(BinaryOp::Mul)
     } else if name == builtins::DIV.into() {
-        Some(OpCode::Div)
+        Some(BinaryOp::Div)
     } else if name == builtins::MOD.into() {
-        Some(OpCode::Mod)
+        Some(BinaryOp::Mod)
     } else if name == builtins::EQ.into() {
-        Some(OpCode::Eq)
+        Some(BinaryOp::Eq)
     } else if name == builtins::NE.into() {
-        Some(OpCode::Ne)
+        Some(BinaryOp::Ne)
     } else if name == builtins::LT.into() {
-        Some(OpCode::Lt)
+        Some(BinaryOp::Lt)
     } else if name == builtins::LTE.into() {
-        Some(OpCode::Le)
+        Some(BinaryOp::Le)
     } else if name == builtins::GT.into() {
-        Some(OpCode::Gt)
+        Some(BinaryOp::Gt)
     } else if name == builtins::GTE.into() {
-        Some(OpCode::Ge)
+        Some(BinaryOp::Ge)
     } else {
         None
+    }
+}
+
+fn binary_op_opcode(op: BinaryOp) -> OpCode {
+    match op {
+        BinaryOp::Add => OpCode::Add,
+        BinaryOp::Sub => OpCode::Sub,
+        BinaryOp::Mul => OpCode::Mul,
+        BinaryOp::Div => OpCode::Div,
+        BinaryOp::Mod => OpCode::Mod,
+        BinaryOp::Eq => OpCode::Eq,
+        BinaryOp::Ne => OpCode::Ne,
+        BinaryOp::Lt => OpCode::Lt,
+        BinaryOp::Le => OpCode::Le,
+        BinaryOp::Gt => OpCode::Gt,
+        BinaryOp::Ge => OpCode::Ge,
     }
 }
 
