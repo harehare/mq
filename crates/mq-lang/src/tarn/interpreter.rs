@@ -1,4 +1,4 @@
-use super::bytecode::{Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
+use super::bytecode::{BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use super::compiler::CompiledProgram;
 #[cfg(feature = "tarn")]
 use super::value::VmClosureValue;
@@ -1081,16 +1081,38 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
                 let b = pop_value!();
                 let a = pop_value!();
+                let Some(operation) = binary_op_from_opcode(op) else {
+                    bail!(VmError::Corrupt("missing arithmetic binary operation"));
+                };
                 stack.push(StackValue::Value(
-                    binop(op, a, b, locals, execution.env, execution.host_functions)
+                    binop(operation, a, b, locals, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge => {
                 let b = pop_value!();
                 let a = pop_value!();
+                let Some(operation) = binary_op_from_opcode(op) else {
+                    bail!(VmError::Corrupt("missing comparison binary operation"));
+                };
                 stack.push(StackValue::Value(
-                    cmp_op(op, a, b, locals, execution.env, execution.host_functions)
+                    cmp_op(operation, a, b, locals, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?,
+                ));
+            }
+            OpCode::BinaryLocalLocal { op, left, right } => {
+                let a = local_runtime_value(locals, *left, chunks)?;
+                let b = local_runtime_value(locals, *right, chunks)?;
+                stack.push(StackValue::Value(
+                    eval_binary_op(*op, a, b, locals, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?,
+                ));
+            }
+            OpCode::BinaryLocalConst { op, local, constant } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                let b = chunk.constants[*constant as usize].clone();
+                stack.push(StackValue::Value(
+                    eval_binary_op(*op, a, b, locals, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
@@ -1190,6 +1212,49 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 };
                 let elem = arr.get(idx.value() as usize).cloned().unwrap_or(RuntimeValue::None);
                 stack.push(StackValue::Value(elem));
+            }
+            OpCode::ArrayLenLocal(slot) => {
+                let value = local_runtime_value(locals, *slot, chunks)?;
+                let result = match value {
+                    RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
+                    value => call_builtin(
+                        &crate::Ident::new(builtins::LEN),
+                        &[value],
+                        &current_self(locals),
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?,
+                };
+                stack.push(StackValue::Value(result));
+            }
+            OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
+                let array = local_runtime_value(locals, *array_slot, chunks)?;
+                let index = local_runtime_value(locals, *index_slot, chunks)?;
+                let result = match (array, index) {
+                    (RuntimeValue::Array(mut array), RuntimeValue::Number(index)) => {
+                        let len = array.len();
+                        let index = index.value() as isize;
+                        let index = if index < 0 {
+                            (len as isize + index).max(0) as usize
+                        } else {
+                            index as usize
+                        };
+                        runtime_value::array_mut(&mut array)
+                            .get_mut(index)
+                            .map(std::mem::take)
+                            .unwrap_or(RuntimeValue::None)
+                    }
+                    (array, index) => call_builtin(
+                        &crate::Ident::new(builtins::GET),
+                        &[array, index],
+                        &current_self(locals),
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?,
+                };
+                stack.push(StackValue::Value(result));
             }
             OpCode::ForeachNext {
                 array_slot,
@@ -1514,8 +1579,61 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
     Ok(stack.pop().unwrap_or(StackValue::Value(RuntimeValue::None)))
 }
 
+fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
+    match op {
+        OpCode::Add => Some(BinaryOp::Add),
+        OpCode::Sub => Some(BinaryOp::Sub),
+        OpCode::Mul => Some(BinaryOp::Mul),
+        OpCode::Div => Some(BinaryOp::Div),
+        OpCode::Mod => Some(BinaryOp::Mod),
+        OpCode::Eq => Some(BinaryOp::Eq),
+        OpCode::Ne => Some(BinaryOp::Ne),
+        OpCode::Lt => Some(BinaryOp::Lt),
+        OpCode::Le => Some(BinaryOp::Le),
+        OpCode::Gt => Some(BinaryOp::Gt),
+        OpCode::Ge => Some(BinaryOp::Ge),
+        _ => None,
+    }
+}
+
+fn local_runtime_value(
+    locals: &[Cell],
+    slot: u16,
+    #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<RuntimeValue> {
+    let value = read_cell(&locals[slot as usize]);
+    #[cfg(feature = "tarn")]
+    {
+        Ok(into_runtime_value(value, chunks))
+    }
+    #[cfg(not(feature = "tarn"))]
+    {
+        match value {
+            StackValue::Value(value) => Ok(value),
+            StackValue::Closure(_) => Err(VmError::Corrupt("expected a value, got a closure")),
+        }
+    }
+}
+
+fn eval_binary_op(
+    op: BinaryOp,
+    a: RuntimeValue,
+    b: RuntimeValue,
+    locals: &[Cell],
+    env: &Shared<SharedCell<Env>>,
+    host_functions: &HostFunctions,
+) -> VmResult<RuntimeValue> {
+    if matches!(
+        op,
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
+    ) {
+        return cmp_op(op, a, b, locals, env, host_functions);
+    }
+    binop(op, a, b, locals, env, host_functions)
+}
+
 fn binop(
-    op: &OpCode,
+    op: BinaryOp,
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &[Cell],
@@ -1524,25 +1642,25 @@ fn binop(
 ) -> VmResult<RuntimeValue> {
     if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {
         return Ok(RuntimeValue::Number(match op {
-            OpCode::Add => *n1 + *n2,
-            OpCode::Sub => *n1 - *n2,
-            OpCode::Mul => *n1 * *n2,
-            OpCode::Div => {
+            BinaryOp::Add => *n1 + *n2,
+            BinaryOp::Sub => *n1 - *n2,
+            BinaryOp::Mul => *n1 * *n2,
+            BinaryOp::Div => {
                 if n2.is_zero() {
                     return Err(VmError::ZeroDivision);
                 }
                 *n1 / *n2
             }
-            OpCode::Mod => *n1 % *n2,
+            BinaryOp::Mod => *n1 % *n2,
             _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
         }));
     }
     let ident = match op {
-        OpCode::Add => builtins::ADD,
-        OpCode::Sub => builtins::SUB,
-        OpCode::Mul => builtins::MUL,
-        OpCode::Div => builtins::DIV,
-        OpCode::Mod => builtins::MOD,
+        BinaryOp::Add => builtins::ADD,
+        BinaryOp::Sub => builtins::SUB,
+        BinaryOp::Mul => builtins::MUL,
+        BinaryOp::Div => builtins::DIV,
+        BinaryOp::Mod => builtins::MOD,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
     call_builtin(
@@ -1555,7 +1673,7 @@ fn binop(
 }
 
 fn cmp_op(
-    op: &OpCode,
+    op: BinaryOp,
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &[Cell],
@@ -1564,22 +1682,22 @@ fn cmp_op(
 ) -> VmResult<RuntimeValue> {
     if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {
         return Ok(RuntimeValue::Boolean(match op {
-            OpCode::Eq => n1 == n2,
-            OpCode::Ne => n1 != n2,
-            OpCode::Lt => n1 < n2,
-            OpCode::Le => n1 <= n2,
-            OpCode::Gt => n1 > n2,
-            OpCode::Ge => n1 >= n2,
+            BinaryOp::Eq => n1 == n2,
+            BinaryOp::Ne => n1 != n2,
+            BinaryOp::Lt => n1 < n2,
+            BinaryOp::Le => n1 <= n2,
+            BinaryOp::Gt => n1 > n2,
+            BinaryOp::Ge => n1 >= n2,
             _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
         }));
     }
     let ident = match op {
-        OpCode::Eq => builtins::EQ,
-        OpCode::Ne => builtins::NE,
-        OpCode::Lt => builtins::LT,
-        OpCode::Le => builtins::LTE,
-        OpCode::Gt => builtins::GT,
-        OpCode::Ge => builtins::GTE,
+        BinaryOp::Eq => builtins::EQ,
+        BinaryOp::Ne => builtins::NE,
+        BinaryOp::Lt => builtins::LT,
+        BinaryOp::Le => builtins::LTE,
+        BinaryOp::Gt => builtins::GT,
+        BinaryOp::Ge => builtins::GTE,
         _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
     };
     call_builtin(

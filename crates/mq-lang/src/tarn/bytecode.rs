@@ -20,6 +20,22 @@ pub(crate) enum UpvalueSource {
     Upvalue(u16),
 }
 
+/// Numeric/comparison operation shared by regular and local-slot binary instructions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
 /// How one declared parameter binds an argument, mirroring `ast::Param`/the tree-walker's
 /// `call_fn` binding loop exactly (see `interpreter::bind_params`).
 #[derive(Debug, Clone)]
@@ -86,6 +102,18 @@ pub(crate) enum OpCode {
     Le,
     Gt,
     Ge,
+    /// Evaluates a binary operation directly from two local slots.
+    BinaryLocalLocal {
+        op: BinaryOp,
+        left: u16,
+        right: u16,
+    },
+    /// Evaluates a binary operation directly from a local slot and a constant.
+    BinaryLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
     Neg,
     /// Pops a value and pushes its truthiness negation.
     Not,
@@ -110,6 +138,14 @@ pub(crate) enum OpCode {
     /// Reads `array[index]` (or `None` if out of range) directly, without the `get`
     /// builtin's clone-on-write mutation path.
     ArrayGetAt,
+    /// Computes `len(local)` directly for arrays, falling back to the builtin for other types.
+    ArrayLenLocal(u16),
+    /// Reads `get(array_local, index_local)` directly for array/number values, preserving the
+    /// builtin fallback for every other value combination.
+    ArrayGetLocalAt {
+        array_slot: u16,
+        index_slot: u16,
+    },
     /// Starts a `foreach` iteration: exits when the index reaches the array length;
     /// otherwise binds the current element to both the loop variable and `self`, then
     /// advances the synthetic index before the loop body runs.
@@ -516,13 +552,52 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::CallLocal(slot, _)
-                | OpCode::ForeachCollect(slot) => {
+                | OpCode::ForeachCollect(slot)
+                | OpCode::ArrayLenLocal(slot) => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
                             pc,
                             slot: *slot,
                         });
+                    }
+                }
+                OpCode::BinaryLocalLocal { left, right, .. } => {
+                    for slot in [left, right] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                }
+                OpCode::BinaryLocalConst { local, constant, .. } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                }
+                OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
+                    for slot in [array_slot, index_slot] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
                     }
                 }
                 OpCode::ForeachNext {

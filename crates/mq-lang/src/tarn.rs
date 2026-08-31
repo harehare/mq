@@ -703,6 +703,52 @@ mod tests {
     }
 
     #[test]
+    fn local_binary_expressions_use_compact_bytecode() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("let f = fn(x): x * 2; | f(2)", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[1]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::BinaryLocalConst { .. }))
+        );
+    }
+
+    #[test]
+    fn local_array_accesses_use_compact_bytecode() {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(
+            "let values = [1, 2] | let index = 0 | len(values) + get(values, index)",
+            Shared::clone(&token_arena),
+        )
+        .unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ArrayLenLocal(_)))
+        );
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ArrayGetLocalAt { .. }))
+        );
+        assert_eq!(
+            run("let values = [1] | let index = 0 | get(values, index) | get(values, index)"),
+            RuntimeValue::Number(1.into())
+        );
+    }
+
+    #[test]
     fn foreach_uses_the_specialized_iteration_opcode() {
         use super::bytecode::OpCode;
 
