@@ -151,6 +151,19 @@ fn update_does_not_accept_misleading_in_place_aliases(#[case] alias: &str) {
     cmd.arg(alias).arg("self").write_stdin("# Title\n").assert().failure();
 }
 
+#[test]
+fn test_compact_rejected_without_json_format() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("--compact")
+        .arg("-F")
+        .arg("yaml")
+        .arg("self")
+        .write_stdin("# Title\n")
+        .assert()
+        .failure();
+}
+
 #[rstest]
 #[case::json(
     vec!["--unbuffered", "-F", "json", ".code_inline"],
@@ -382,6 +395,11 @@ In {year}, the snowfall was above average.
     vec!["--unbuffered", "-I", "xml", "self"],
     "<root>text</root>",
     Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
+)]
+#[case::output_format_json_compact(
+    vec!["--unbuffered", "-I", "json", "-F", "json", "--compact", "self"],
+    r#"{"name": "Alice", "age": 30}"#,
+    Some("{\"name\":\"Alice\",\"age\":30}")
 )]
 #[case::output_format_yaml(
     vec!["--unbuffered", "-I", "json", "-F", "yaml", "self"],
