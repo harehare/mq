@@ -31,6 +31,8 @@ pub enum Command {
     Next,
     Quit,
     Step,
+    #[cfg(feature = "debug-trace")]
+    Stack,
 }
 
 impl fmt::Display for Command {
@@ -52,6 +54,8 @@ impl fmt::Display for Command {
             Command::Next => write!(f, "next"),
             Command::Quit => write!(f, "quit"),
             Command::Step => write!(f, "step"),
+            #[cfg(feature = "debug-trace")]
+            Command::Stack => write!(f, "stack"),
         }
     }
 }
@@ -72,6 +76,8 @@ impl Command {
             Command::Next => ("n[ext]", "Step over the next function call"),
             Command::Quit => ("q[uit]", "Quit evaluation and exit"),
             Command::Step => ("s[tep]", "Step into the next function call"),
+            #[cfg(feature = "debug-trace")]
+            Command::Stack => ("stack", "Print the current Tarn VM operand stack"),
         };
         let padding = " ".repeat(20_usize.saturating_sub(cmd.len()));
         // func=#56d4d4, fg_muted=#94a3b8
@@ -110,6 +116,8 @@ impl From<String> for Command {
             ["next"] | ["n"] => Command::Next,
             ["quit"] | ["q"] => Command::Quit,
             ["step"] | ["s"] => Command::Step,
+            #[cfg(feature = "debug-trace")]
+            ["stack"] => Command::Stack,
             _ => Command::Eval(s),
         }
     }
@@ -119,6 +127,10 @@ impl From<String> for Command {
 pub struct DebuggerHandler {
     engine: mq_lang::DefaultEngine,
     stop_on_error: bool,
+    #[cfg(feature = "debug-trace")]
+    dump_stack: bool,
+    #[cfg(feature = "debug-trace")]
+    color_output: bool,
 }
 
 #[cfg(feature = "debugger")]
@@ -156,7 +168,24 @@ pub fn config_dir() -> Option<std::path::PathBuf> {
 
 impl DebuggerHandler {
     pub fn new(engine: mq_lang::DefaultEngine, stop_on_error: bool) -> Self {
-        Self { engine, stop_on_error }
+        Self {
+            engine,
+            stop_on_error,
+            #[cfg(feature = "debug-trace")]
+            dump_stack: false,
+            #[cfg(feature = "debug-trace")]
+            color_output: false,
+        }
+    }
+
+    #[cfg(feature = "debug-trace")]
+    pub fn set_dump_stack(&mut self, dump_stack: bool) {
+        self.dump_stack = dump_stack;
+    }
+
+    #[cfg(feature = "debug-trace")]
+    pub fn set_color_output(&mut self, color_output: bool) {
+        self.color_output = color_output;
     }
 
     pub fn run_debug(&self, context: &mq_lang::DebugContext) -> miette::Result<mq_lang::DebuggerAction> {
@@ -191,6 +220,10 @@ impl DebuggerHandler {
 
         let (start, snippet) = self.get_source_code_with_context(context, context.token.range.start.line as usize, 5);
         Self::print_source_code(start, context.token.range.start.line as usize + 1, snippet);
+        #[cfg(feature = "debug-trace")]
+        if self.dump_stack {
+            self.print_operand_stack(context);
+        }
 
         loop {
             let readline = editor.readline("(mqdbg) ").into_diagnostic()?;
@@ -253,6 +286,8 @@ impl DebuggerHandler {
                             .join("\n")
                     );
                 }
+                #[cfg(feature = "debug-trace")]
+                Command::Stack => self.print_operand_stack(context),
                 Command::Eval(expr) => {
                     editor.add_history_entry(&expr).unwrap();
 
@@ -338,6 +373,79 @@ impl DebuggerHandler {
         println!("{}", display_source_code.collect::<Vec<_>>().join("\n"));
     }
 
+    #[cfg(feature = "debug-trace")]
+    fn print_operand_stack(&self, context: &DebugContext) {
+        let source_name = context.source.name.as_deref().unwrap_or("<query>");
+        let position = &context.token.range.start;
+        if self.color_output {
+            println!("{}", "Tarn VM operand stack".bright_cyan().bold());
+            println!(
+                "  {}: {}:{}:{}",
+                "location".cyan(),
+                source_name.dimmed(),
+                (position.line + 1).to_string().dimmed(),
+                (position.column + 1).to_string().dimmed()
+            );
+            println!(
+                "  {}: {} {}",
+                "values".cyan(),
+                context.operand_stack.len().to_string().bright_yellow(),
+                "(bottom → top)".dimmed()
+            );
+        } else {
+            println!("Tarn VM operand stack");
+            println!(
+                "  location: {source_name}:{}:{}",
+                position.line + 1,
+                position.column + 1
+            );
+            println!("  values: {} (bottom → top)", context.operand_stack.len());
+        }
+        if context.operand_stack.is_empty() {
+            if self.color_output {
+                println!("  {}: {}", "state".cyan(), "empty".dimmed());
+            } else {
+                println!("  state: empty");
+            }
+            return;
+        }
+        if self.color_output {
+            println!("  {}", "entries".bright_green().bold());
+        } else {
+            println!("  entries");
+        }
+        for (index, value) in context.operand_stack.iter().enumerate() {
+            if self.color_output {
+                println!(
+                    "    {} {:<10} {}",
+                    format!("[{index:02}]").dimmed(),
+                    value.name().bright_magenta(),
+                    Self::format_debug_value(value).bright_white()
+                );
+            } else {
+                println!(
+                    "    [{index:02}] {:<10} {}",
+                    value.name(),
+                    Self::format_debug_value(value)
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "debug-trace")]
+    fn format_debug_value(value: &mq_lang::RuntimeValue) -> String {
+        const MAX_CHARS: usize = 96;
+
+        let rendered = value.to_string();
+        let mut chars = rendered.chars();
+        let preview: String = chars.by_ref().take(MAX_CHARS).collect();
+        if chars.next().is_some() {
+            format!("{preview}…")
+        } else {
+            preview
+        }
+    }
+
     fn get_source_code_with_context(
         &self,
         context: &DebugContext,
@@ -400,7 +508,7 @@ fn highlight_syntax(line: &str) -> Cow<'_, str> {
     // Debugger commands (only at start of line)
     collect_spans(
         &mut spans,
-        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env)\b",
+        r"^(backtrace|bt|step|s|next|n|finish|f|info|i|continue|c|help|quit|env|stack)\b",
         line,
         |s| s.truecolor(104, 211, 145).to_string(),
     );
@@ -522,6 +630,9 @@ impl Validator for DebuggerLineHelper {
             || trimmed.starts_with("eval ")
             || trimmed.starts_with("e ");
 
+        #[cfg(feature = "debug-trace")]
+        let is_command = is_command || trimmed == "stack";
+
         if is_command {
             return Ok(ValidationResult::Valid(None));
         }
@@ -565,6 +676,8 @@ mod tests {
         assert!(matches!(Command::from("q".to_string()), Command::Quit));
         assert!(matches!(Command::from("step".to_string()), Command::Step));
         assert!(matches!(Command::from("s".to_string()), Command::Step));
+        #[cfg(feature = "debug-trace")]
+        assert!(matches!(Command::from("stack".to_string()), Command::Stack));
     }
 
     #[test]
@@ -621,6 +734,8 @@ mod tests {
         assert_eq!(Command::Next.to_string(), "next");
         assert_eq!(Command::Quit.to_string(), "quit");
         assert_eq!(Command::Step.to_string(), "step");
+        #[cfg(feature = "debug-trace")]
+        assert_eq!(Command::Stack.to_string(), "stack");
     }
 
     #[test]

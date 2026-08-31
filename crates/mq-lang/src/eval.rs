@@ -743,6 +743,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     .get_source_code_for_debug(token.module_id)
                     .unwrap_or_default(),
             },
+            ..Default::default()
         };
         let breakpoint = Breakpoint {
             id: 0,
@@ -1400,6 +1401,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         .get_source_code_for_debug(token.module_id)
                         .unwrap_or_default(),
                 },
+                ..Default::default()
             };
 
             let breakpoint = self

@@ -67,6 +67,9 @@ ast-json = ["smallvec/serde", "smol_str/serde"]
 # instead of the tree-walking evaluator (`src/eval.rs`). Opt-in for now while Tarn is
 # validated against real usage; the tree-walker stays the default until it's dropped.
 tarn = []
+# Captures VM operand-stack snapshots at debugger statement boundaries. Intended for
+# `mq-dbg` diagnosis; disabled in regular Tarn builds to avoid snapshot allocations.
+debug-trace = ["tarn"]
 cst = ["dep:ropey"]
 css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
