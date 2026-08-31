@@ -3,32 +3,32 @@ use super::{compiler, interpreter};
 use crate::eval::env::Env;
 use crate::eval::host::HostFunctions;
 use crate::{
-    DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, ModuleResolver, RuntimeValue, Shared, SharedCell,
-    Source, TokenArena, get_token,
+    DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source, TokenArena,
+    get_token,
 };
 
 /// Adapts VM boundary events to the debugger API shared with the tree-walking evaluator.
-#[allow(dead_code)] // Wired into Engine when the VM becomes its execution backend in M5.
-pub(crate) struct VmDebuggerHook<R: ModuleResolver> {
+///
+/// Breakpoint condition/logpoint expressions (`eval_expression` below) deliberately always
+/// resolve modules through a fixed `StdModuleResolver` rather than the engine's own
+/// configured one — a breakpoint condition realistically never needs to `include`/`import` a
+/// module — so this type isn't generic over the caller's resolver.
+pub(crate) struct VmDebuggerHook {
     debugger: Shared<SharedCell<Debugger>>,
     handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
     token_arena: TokenArena,
     source: Source,
-    module_loader: ModuleLoader<R>,
     sources: Vec<(crate::ModuleId, Source)>,
     last_context: Option<DebugContext>,
 }
 
-#[allow(dead_code)]
-impl<R: ModuleResolver> VmDebuggerHook<R> {
+impl VmDebuggerHook {
     /// Creates a VM debugger adapter for one compiled source.
-    #[allow(dead_code)]
     pub(crate) fn new(
         debugger: Shared<SharedCell<Debugger>>,
         handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
         token_arena: TokenArena,
         source: Source,
-        module_loader: ModuleLoader<R>,
         sources: Vec<(crate::ModuleId, Source)>,
     ) -> Self {
         Self {
@@ -36,7 +36,6 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             handler,
             token_arena,
             source,
-            module_loader,
             sources,
             last_context: None,
         }
@@ -127,7 +126,7 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
     }
 }
 
-impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
+impl DebugHook for VmDebuggerHook {
     fn on_boundary(&mut self, event: DebugEvent) {
         if !self.debugger.read().unwrap().is_active() {
             return;

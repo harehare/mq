@@ -392,7 +392,9 @@ fn run_nodes_aggregate<R: ModuleResolver>(
     }
 }
 
-#[allow(dead_code)]
+// Used when the `debugger` feature is off; `compile_and_run_debugged_many` takes over below
+// when it's on, which is genuinely dead under `--all-features`.
+#[cfg_attr(feature = "debugger", allow(dead_code))]
 pub(crate) fn compile_and_run_many<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
@@ -461,7 +463,6 @@ pub(crate) fn compile_and_run_debugged<R: ModuleResolver>(
 }
 
 #[cfg(feature = "debugger")]
-#[allow(dead_code)]
 pub(crate) fn compile_and_run_debugged_many<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
@@ -483,7 +484,6 @@ where
             context.handler,
             context.engine.token_arena,
             context.source,
-            context.engine.module_loader.clone(),
             compiled.debug_sources.clone(),
         );
         return inputs
@@ -519,7 +519,6 @@ where
         context.handler,
         Shared::clone(&context.engine.token_arena),
         context.source,
-        context.engine.module_loader.clone(),
         compiled.debug_sources.clone(),
     );
     let values = inputs
@@ -1585,7 +1584,6 @@ mod tests {
                 name: None,
                 code: String::new(),
             },
-            ModuleLoader::new(StdModuleResolver),
             Default::default(),
         );
 
@@ -1657,7 +1655,6 @@ mod tests {
                 name: None,
                 code: String::new(),
             },
-            ModuleLoader::new(StdModuleResolver),
             Default::default(),
         );
 
