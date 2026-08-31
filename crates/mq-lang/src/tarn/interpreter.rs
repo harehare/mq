@@ -13,6 +13,7 @@ use crate::eval::host::HostFunctions;
 use crate::eval::runtime_value::{self, RuntimeValue};
 use crate::number::Number;
 use crate::{Ident, Shared, SharedCell};
+use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::LazyLock;
@@ -42,7 +43,9 @@ struct ExecutionLimits {
 /// Reusable frame storage retained between executions of cached bytecode.
 #[derive(Default)]
 pub(crate) struct ExecutionPools {
-    local_pool: Vec<Vec<Cell>>,
+    // Bucketed by local count, since a hot loop only ever recycles a handful of distinct
+    // chunk shapes — a linear scan over one mixed-length pool showed up as real cost.
+    local_pool: FxHashMap<u16, Vec<Vec<Cell>>>,
     stack_pool: Vec<Vec<StackValue>>,
 }
 
@@ -106,24 +109,23 @@ impl ExecutionLimits {
 
     /// Takes a frame after resetting only slots that will not immediately be overwritten.
     fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize) -> Vec<Cell> {
-        let count = count as usize;
         let locals = self
             .pools
             .local_pool
-            .iter()
-            .position(|locals| locals.len() == count)
-            .map(|index| self.pools.local_pool.swap_remove(index))
-            .unwrap_or_else(|| fresh_locals(count));
-        for local in &locals[initialized.min(count)..] {
+            .get_mut(&count)
+            .and_then(|bucket| bucket.pop())
+            .unwrap_or_else(|| fresh_locals(count as usize));
+        for local in &locals[initialized.min(count as usize)..] {
             write_cell(local, StackValue::Value(RuntimeValue::None));
         }
         locals
     }
 
     fn recycle_locals(&mut self, locals: Vec<Cell>) {
-        const MAX_RETAINED_FRAMES: usize = 32;
-        if self.pools.local_pool.len() < MAX_RETAINED_FRAMES {
-            self.pools.local_pool.push(locals);
+        const MAX_RETAINED_PER_LENGTH: usize = 8;
+        let bucket = self.pools.local_pool.entry(locals.len() as u16).or_default();
+        if bucket.len() < MAX_RETAINED_PER_LENGTH {
+            bucket.push(locals);
         }
     }
 
