@@ -94,6 +94,8 @@ struct Compiler<R: ModuleResolver> {
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<(crate::Ident, crate::Ident), (usize, u16)>,
     external_globals: FxHashSet<crate::Ident>,
+    module_function_roots: FxHashSet<crate::Ident>,
+    prune_module_functions: bool,
     used_unresolved_call_name: bool,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     module_dependencies: Vec<ModuleDependency>,
@@ -107,7 +109,8 @@ pub(crate) fn compile_program<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, false, &[], &[]).map(|(compiled, _)| compiled)
+    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, &[], &[])
+        .map(|(compiled, _)| compiled)
 }
 
 /// Compiles a debugger expression with paused-frame names predeclared as top-level slots.
@@ -119,7 +122,8 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     bindings: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, false, bindings, &[]).map(|(compiled, _)| compiled)
+    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, bindings, &[])
+        .map(|(compiled, _)| compiled)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -128,7 +132,8 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, true, &[], &[]).map(|(compiled, _)| compiled)
+    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::All, &[], &[])
+        .map(|(compiled, _)| compiled)
 }
 
 pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
@@ -137,26 +142,59 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
-    if program_uses_soft_builtin(program) {
-        return compile_program_impl(program, token_arena, module_loader, true, &[], external_globals)
-            .map(|(compiled, _)| compiled);
+    let soft_builtin_names = soft_builtin_names_in_program(program);
+    if !soft_builtin_names.is_empty() {
+        return match compile_program_impl(
+            program,
+            Shared::clone(&token_arena),
+            module_loader.clone(),
+            BuiltinPrelude::Reachable(&soft_builtin_names),
+            &[],
+            external_globals,
+        ) {
+            Ok((compiled, false)) => Ok(compiled),
+            // Imported modules can introduce soft-builtin references not visible in the user's
+            // AST. Preserve complete resolution by retrying with the full prelude.
+            Ok((_, true)) | Err(CompileError::UndefinedIdent(..)) => compile_program_impl(
+                program,
+                token_arena,
+                module_loader,
+                BuiltinPrelude::All,
+                &[],
+                external_globals,
+            )
+            .map(|(compiled, _)| compiled),
+            Err(other) => Err(other),
+        };
     }
 
     match compile_program_impl(
         program,
         Shared::clone(&token_arena),
         module_loader.clone(),
-        false,
+        BuiltinPrelude::None,
         &[],
         external_globals,
     ) {
         Ok((compiled, false)) => Ok(compiled),
-        Ok((_, true)) | Err(CompileError::UndefinedIdent(..)) => {
-            compile_program_impl(program, token_arena, module_loader, true, &[], external_globals)
-                .map(|(compiled, _)| compiled)
-        }
+        Ok((_, true)) | Err(CompileError::UndefinedIdent(..)) => compile_program_impl(
+            program,
+            token_arena,
+            module_loader,
+            BuiltinPrelude::All,
+            &[],
+            external_globals,
+        )
+        .map(|(compiled, _)| compiled),
         Err(other) => Err(other),
     }
+}
+
+#[derive(Clone, Copy)]
+enum BuiltinPrelude<'a> {
+    None,
+    All,
+    Reachable(&'a FxHashSet<crate::Ident>),
 }
 
 /// Names implemented by `builtin.mq`, rather than native Rust builtins.
@@ -172,55 +210,124 @@ static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| 
         .collect()
 });
 
-/// Selects the prelude on the first compilation pass for common Engine queries.
+/// Finds soft-builtin names referenced by a program.
 ///
-/// Without this check, every `map`/`fold`/`filter` query is compiled once without the
-/// soft-builtin definitions and then compiled again after the unresolved call is found.
-fn program_uses_soft_builtin(program: &Program) -> bool {
-    program.iter().any(node_uses_soft_builtin)
+/// This lets the Engine compile only the builtin definitions reachable from a query instead of
+/// compiling the whole standard-library prelude for every one-shot evaluation.
+fn soft_builtin_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
+    soft_builtin_names_in_program_with_shadowed(program, &FxHashSet::default())
 }
 
-fn node_uses_soft_builtin(node: &Shared<Node>) -> bool {
+fn soft_builtin_names_in_program_with_shadowed(
+    program: &Program,
+    inherited_shadowed: &FxHashSet<crate::Ident>,
+) -> FxHashSet<crate::Ident> {
+    let mut names = FxHashSet::default();
+    let mut shadowed = inherited_shadowed.clone();
+    shadowed.extend(program.iter().filter_map(|node| match &*node.expr {
+        Expr::Def(ident, _, _) => Some(ident.name),
+        _ => None,
+    }));
+    for node in program {
+        collect_soft_builtin_names(node, &shadowed, &mut names);
+    }
+    names
+}
+
+fn collect_soft_builtin_names(
+    node: &Shared<Node>,
+    shadowed: &FxHashSet<crate::Ident>,
+    names: &mut FxHashSet<crate::Ident>,
+) {
     match &*node.expr {
         Expr::As(_, value)
         | Expr::Let(_, value)
         | Expr::Var(_, value)
         | Expr::Assign(_, value)
-        | Expr::Paren(value) => node_uses_soft_builtin(value),
-        Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => program_uses_soft_builtin(body),
-        Expr::Call(ident, args) => SOFT_BUILTIN_NAMES.contains(&ident.name) || args.iter().any(node_uses_soft_builtin),
-        Expr::CallDynamic(callee, args) => node_uses_soft_builtin(callee) || args.iter().any(node_uses_soft_builtin),
+        | Expr::Paren(value) => collect_soft_builtin_names(value, shadowed, names),
+        Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
+            names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
+        }
+        Expr::Call(ident, args) => {
+            if SOFT_BUILTIN_NAMES.contains(&ident.name) && !shadowed.contains(&ident.name) {
+                names.insert(ident.name);
+            }
+            for arg in args {
+                collect_soft_builtin_names(arg, shadowed, names);
+            }
+        }
+        Expr::CallDynamic(callee, args) => {
+            collect_soft_builtin_names(callee, shadowed, names);
+            for arg in args {
+                collect_soft_builtin_names(arg, shadowed, names);
+            }
+        }
         Expr::Def(_, params, body) | Expr::Fn(params, body) => {
-            params
-                .iter()
-                .filter_map(|parameter| parameter.default.as_ref())
-                .any(node_uses_soft_builtin)
-                || program_uses_soft_builtin(body)
+            for default in params.iter().filter_map(|parameter| parameter.default.as_ref()) {
+                collect_soft_builtin_names(default, shadowed, names);
+            }
+            names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
         }
-        Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_uses_soft_builtin),
-        Expr::InterpolatedString(segments) => segments.iter().any(|segment| match segment {
-            StringSegment::Expr(expr) => node_uses_soft_builtin(expr),
-            StringSegment::Text(_) | StringSegment::Env(_) | StringSegment::Self_ => false,
-        }),
-        Expr::SelectorCall(_, args) => args.iter().any(node_uses_soft_builtin),
+        Expr::And(operands) | Expr::Or(operands) => {
+            for operand in operands {
+                collect_soft_builtin_names(operand, shadowed, names);
+            }
+        }
+        Expr::InterpolatedString(segments) => {
+            for segment in segments {
+                if let StringSegment::Expr(expr) = segment {
+                    collect_soft_builtin_names(expr, shadowed, names);
+                }
+            }
+        }
+        Expr::SelectorCall(_, args) => {
+            for arg in args {
+                collect_soft_builtin_names(arg, shadowed, names);
+            }
+        }
         Expr::While(condition, body) | Expr::Until(condition, body) => {
-            node_uses_soft_builtin(condition) || program_uses_soft_builtin(body)
+            collect_soft_builtin_names(condition, shadowed, names);
+            names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
         }
-        Expr::Foreach(_, iterable, body) => node_uses_soft_builtin(iterable) || program_uses_soft_builtin(body),
-        Expr::If(branches) | Expr::Unless(branches) => branches.iter().any(|(condition, body)| {
-            condition.as_ref().is_some_and(node_uses_soft_builtin) || node_uses_soft_builtin(body)
-        }),
+        Expr::Foreach(_, iterable, body) => {
+            collect_soft_builtin_names(iterable, shadowed, names);
+            names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
+        }
+        Expr::If(branches) | Expr::Unless(branches) => {
+            for (condition, body) in branches {
+                if let Some(condition) = condition {
+                    collect_soft_builtin_names(condition, shadowed, names);
+                }
+                collect_soft_builtin_names(body, shadowed, names);
+            }
+        }
         Expr::Match(subject, arms) => {
-            node_uses_soft_builtin(subject)
-                || arms.iter().any(|arm| {
-                    arm.guard.as_ref().is_some_and(node_uses_soft_builtin) || node_uses_soft_builtin(&arm.body)
-                })
+            collect_soft_builtin_names(subject, shadowed, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_soft_builtin_names(guard, shadowed, names);
+                }
+                collect_soft_builtin_names(&arm.body, shadowed, names);
+            }
         }
-        Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => args.iter().any(node_uses_soft_builtin),
-        Expr::Try(body, _, catch) => node_uses_soft_builtin(body) || node_uses_soft_builtin(catch),
-        Expr::Break(value) => value.as_ref().is_some_and(node_uses_soft_builtin),
+        Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => {
+            for arg in args {
+                collect_soft_builtin_names(arg, shadowed, names);
+            }
+        }
+        Expr::Try(body, _, catch) => {
+            collect_soft_builtin_names(body, shadowed, names);
+            collect_soft_builtin_names(catch, shadowed, names);
+        }
+        Expr::Break(value) => {
+            if let Some(value) = value {
+                collect_soft_builtin_names(value, shadowed, names);
+            }
+        }
+        Expr::Ident(ident) if SOFT_BUILTIN_NAMES.contains(&ident.name) && !shadowed.contains(&ident.name) => {
+            names.insert(ident.name);
+        }
         Expr::Literal(_)
-        | Expr::Ident(_)
         | Expr::Selector(_)
         | Expr::SelectorChain(_)
         | Expr::Include(_)
@@ -228,7 +335,120 @@ fn node_uses_soft_builtin(node: &Shared<Node>) -> bool {
         | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
         | Expr::Self_
         | Expr::Nodes
-        | Expr::Continue => false,
+        | Expr::Continue
+        | Expr::Ident(_) => {}
+    }
+}
+
+/// Collects direct function names used by a program. Module bodies are side-effect free until
+/// called, so this provides a conservative root set for compiling their reachable exports.
+fn referenced_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
+    let mut names = FxHashSet::default();
+    for node in program {
+        collect_referenced_names(node, &mut names);
+    }
+    names
+}
+
+fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Ident>) {
+    match &*node.expr {
+        Expr::As(_, value)
+        | Expr::Let(_, value)
+        | Expr::Var(_, value)
+        | Expr::Assign(_, value)
+        | Expr::Paren(value) => collect_referenced_names(value, names),
+        Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
+            names.extend(referenced_names_in_program(body));
+        }
+        Expr::Call(ident, args) => {
+            names.insert(ident.name);
+            for arg in args {
+                collect_referenced_names(arg, names);
+            }
+        }
+        Expr::CallDynamic(callee, args) => {
+            collect_referenced_names(callee, names);
+            for arg in args {
+                collect_referenced_names(arg, names);
+            }
+        }
+        Expr::Def(_, params, body) | Expr::Fn(params, body) => {
+            for default in params.iter().filter_map(|parameter| parameter.default.as_ref()) {
+                collect_referenced_names(default, names);
+            }
+            names.extend(referenced_names_in_program(body));
+        }
+        Expr::And(operands) | Expr::Or(operands) => {
+            for operand in operands {
+                collect_referenced_names(operand, names);
+            }
+        }
+        Expr::InterpolatedString(segments) => {
+            for segment in segments {
+                if let StringSegment::Expr(expr) = segment {
+                    collect_referenced_names(expr, names);
+                }
+            }
+        }
+        Expr::SelectorCall(_, args) => {
+            for arg in args {
+                collect_referenced_names(arg, names);
+            }
+        }
+        Expr::While(condition, body) | Expr::Until(condition, body) => {
+            collect_referenced_names(condition, names);
+            names.extend(referenced_names_in_program(body));
+        }
+        Expr::Foreach(_, iterable, body) => {
+            collect_referenced_names(iterable, names);
+            names.extend(referenced_names_in_program(body));
+        }
+        Expr::If(branches) | Expr::Unless(branches) => {
+            for (condition, body) in branches {
+                if let Some(condition) = condition {
+                    collect_referenced_names(condition, names);
+                }
+                collect_referenced_names(body, names);
+            }
+        }
+        Expr::Match(subject, arms) => {
+            collect_referenced_names(subject, names);
+            for arm in arms {
+                if let Some(guard) = &arm.guard {
+                    collect_referenced_names(guard, names);
+                }
+                collect_referenced_names(&arm.body, names);
+            }
+        }
+        Expr::QualifiedAccess(_, AccessTarget::Call(ident, args)) => {
+            names.insert(ident.name);
+            for arg in args {
+                collect_referenced_names(arg, names);
+            }
+        }
+        Expr::QualifiedAccess(_, AccessTarget::Ident(ident)) => {
+            names.insert(ident.name);
+        }
+        Expr::Try(body, _, catch) => {
+            collect_referenced_names(body, names);
+            collect_referenced_names(catch, names);
+        }
+        Expr::Break(value) => {
+            if let Some(value) = value {
+                collect_referenced_names(value, names);
+            }
+        }
+        Expr::Ident(ident) => {
+            names.insert(ident.name);
+        }
+        Expr::Literal(_)
+        | Expr::Selector(_)
+        | Expr::SelectorChain(_)
+        | Expr::Include(_)
+        | Expr::Import(_, _)
+        | Expr::Self_
+        | Expr::Nodes
+        | Expr::Continue => {}
     }
 }
 
@@ -237,7 +457,7 @@ fn compile_program_impl<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    load_builtin_prelude: bool,
+    builtin_prelude: BuiltinPrelude<'_>,
     seed_bindings: &[crate::Ident],
     external_globals: &[crate::Ident],
 ) -> CompileResult<(CompiledProgram, bool)> {
@@ -256,17 +476,23 @@ fn compile_program_impl<R: ModuleResolver>(
         module_loader,
         qualified_bindings: FxHashMap::default(),
         external_globals: external_globals.iter().copied().collect(),
+        module_function_roots: referenced_names_in_program(program),
+        prune_module_functions: true,
         used_unresolved_call_name: false,
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         module_dependencies: Vec::new(),
         try_depth: 0,
     };
-    if load_builtin_prelude {
+    if !matches!(builtin_prelude, BuiltinPrelude::None) {
         let builtin_module = compiler
             .module_loader
             .load_builtin(Shared::clone(&compiler.token_arena))
             .map_err(CompileError::Module)?;
-        compiler.compile_flattened_module(&builtin_module)?;
+        match builtin_prelude {
+            BuiltinPrelude::All => compiler.compile_flattened_module(&builtin_module)?,
+            BuiltinPrelude::Reachable(names) => compiler.compile_reachable_builtin_prelude(&builtin_module, names)?,
+            BuiltinPrelude::None => unreachable!("handled above"),
+        }
     }
 
     compiler.compile_top_level(program)?;
@@ -785,9 +1011,10 @@ impl<R: ModuleResolver> Compiler<R> {
         let module = self.load_module_or_reload(path)?;
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         self.record_module_dependency(path)?;
-        self.compile_discarding(&module.modules)?;
+        self.compile_module_directives(&module.modules)?;
         self.predeclare_module_var_slots(&module.vars);
-        self.compile_functions_with_forward_refs(&module.functions)?;
+        let functions = self.reachable_module_functions(&module);
+        self.compile_functions_with_forward_refs(&functions)?;
         Ok(module)
     }
 
@@ -840,10 +1067,107 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_flattened_module(&mut self, module: &crate::Module) -> CompileResult<()> {
-        self.compile_discarding(&module.modules)?;
-        self.compile_functions_with_forward_refs(&module.functions)?;
-        self.compile_discarding(&module.vars)?;
-        Ok(())
+        let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
+        let result = (|| {
+            self.compile_discarding(&module.modules)?;
+            self.compile_functions_with_forward_refs(&module.functions)?;
+            self.compile_discarding(&module.vars)
+        })();
+        self.prune_module_functions = previously_pruning;
+        result
+    }
+
+    /// Nested module directives may be used by any function in their parent module. Compile
+    /// their exports in full; root-based pruning is only sound for the user-selected module.
+    fn compile_module_directives(&mut self, modules: &Program) -> CompileResult<()> {
+        let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
+        let result = self.compile_discarding(modules);
+        self.prune_module_functions = previously_pruning;
+        result
+    }
+
+    /// Returns the exported functions needed by this query and their intra-module dependencies.
+    /// Modules with directives or top-level values keep their full initialization order.
+    fn reachable_module_functions(&self, module: &crate::Module) -> Program {
+        if !self.prune_module_functions || !module.modules.is_empty() || !module.vars.is_empty() {
+            return module.functions.clone();
+        }
+
+        let definitions: FxHashMap<crate::Ident, &Shared<Node>> = module
+            .functions
+            .iter()
+            .filter_map(|node| match &*node.expr {
+                Expr::Def(ident, _, _) => Some((ident.name, node)),
+                _ => None,
+            })
+            .collect();
+        let mut required: FxHashSet<crate::Ident> = self
+            .module_function_roots
+            .iter()
+            .filter(|name| definitions.contains_key(name))
+            .copied()
+            .collect();
+        let mut pending: Vec<crate::Ident> = required.iter().copied().collect();
+        while let Some(name) = pending.pop() {
+            let Some(definition) = definitions.get(&name) else {
+                continue;
+            };
+            for dependency in referenced_names_in_program(&vec![Shared::clone(definition)]) {
+                if definitions.contains_key(&dependency) && required.insert(dependency) {
+                    pending.push(dependency);
+                }
+            }
+        }
+
+        module
+            .functions
+            .iter()
+            .filter(|node| matches!(&*node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
+            .cloned()
+            .collect()
+    }
+
+    /// Compiles only the standard-library definitions reachable from the query's named uses.
+    fn compile_reachable_builtin_prelude(
+        &mut self,
+        module: &crate::Module,
+        roots: &FxHashSet<crate::Ident>,
+    ) -> CompileResult<()> {
+        // A future prelude with initialization/module directives needs the whole module because
+        // those statements may establish dependencies outside its function definitions.
+        if !module.modules.is_empty() || !module.vars.is_empty() {
+            return self.compile_flattened_module(module);
+        }
+
+        let definitions: FxHashMap<crate::Ident, &Shared<Node>> = module
+            .functions
+            .iter()
+            .filter_map(|node| match &*node.expr {
+                Expr::Def(ident, _, _) => Some((ident.name, node)),
+                _ => None,
+            })
+            .collect();
+        let mut required = roots.clone();
+        let mut pending: Vec<crate::Ident> = roots.iter().copied().collect();
+        while let Some(name) = pending.pop() {
+            let Some(definition) = definitions.get(&name) else {
+                continue;
+            };
+            let dependencies = soft_builtin_names_in_program(&vec![Shared::clone(definition)]);
+            for dependency in dependencies {
+                if required.insert(dependency) {
+                    pending.push(dependency);
+                }
+            }
+        }
+
+        let functions = module
+            .functions
+            .iter()
+            .filter(|node| matches!(&*node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
+            .cloned()
+            .collect();
+        self.compile_functions_with_forward_refs(&functions)
     }
 
     fn compile_functions_with_forward_refs(&mut self, nodes: &Program) -> CompileResult<()> {
@@ -855,7 +1179,9 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.current_token_id,
                 ));
             };
-            slots.push(self.scope_mut().declare(ident.name));
+            let slot = self.scope_mut().declare(ident.name);
+            self.scope_mut().mark_immutable(slot);
+            slots.push(slot);
         }
         for (node, slot) in nodes.iter().zip(slots) {
             self.current_token_id = node.token_id;
@@ -890,21 +1216,24 @@ impl<R: ModuleResolver> Compiler<R> {
         self.record_module_dependency(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
 
-        self.compile_discarding(&module.modules)?;
+        self.compile_module_directives(&module.modules)?;
         self.predeclare_module_var_slots(&module.vars);
+        let functions = self.reachable_module_functions(&module);
 
         let depth = self.scopes.len() - 1;
-        let mut slots = Vec::with_capacity(module.functions.len());
-        for node in &module.functions {
+        let mut slots = Vec::with_capacity(functions.len());
+        for node in &functions {
             let Expr::Def(ident, _, _) = &*node.expr else {
                 return Err(CompileError::Unsupported(
                     "module function is not a def",
                     self.current_token_id,
                 ));
             };
-            slots.push(self.scope_mut().declare(ident.name));
+            let slot = self.scope_mut().declare(ident.name);
+            self.scope_mut().mark_immutable(slot);
+            slots.push(slot);
         }
-        for (node, slot) in module.functions.iter().zip(&slots) {
+        for (node, slot) in functions.iter().zip(&slots) {
             self.current_token_id = node.token_id;
             let Expr::Def(ident, params, body) = &*node.expr else {
                 unreachable!("validated as Def above");
@@ -937,7 +1266,9 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut def_slots = FxHashMap::default();
         for node in program {
             if let Expr::Def(def_ident, _, _) = &*node.expr {
-                def_slots.insert(def_ident.name, self.scope_mut().declare(def_ident.name));
+                let slot = self.scope_mut().declare(def_ident.name);
+                self.scope_mut().mark_immutable(slot);
+                def_slots.insert(def_ident.name, slot);
             }
         }
 
@@ -1119,6 +1450,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::Def(ident, params, body) => {
                 let slot = self.scope_mut().declare_or_reuse(ident.name);
+                self.scope_mut().mark_immutable(slot);
                 let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
                 self.emit_closure(chunk_idx, upvalues);
                 self.emit(OpCode::SetLocal(slot));

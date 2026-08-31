@@ -2626,8 +2626,8 @@ fn attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resu
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
             Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE))
         }
-        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(runtime_value::array_mut(nodes)
-            .iter_mut()
+        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(nodes
+            .iter()
             .flat_map(|node| match node {
                 RuntimeValue::Markdown(node, _) => {
                     let value = node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE);
@@ -2638,7 +2638,7 @@ fn attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resu
                         v => vec![v],
                     }
                 }
-                a => vec![std::mem::take(a)],
+                a => vec![a.clone()],
             })
             .collect::<Vec<_>>()
             .into()),
@@ -2691,11 +2691,11 @@ fn set_children_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
     match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Array(children)] => {
             let mut new_node = std::mem::take(node);
-            let children = runtime_value::array_mut(children)
-                .iter_mut()
+            let children = children
+                .iter()
                 .map(|child| match child {
                     RuntimeValue::Markdown(node, _) => (**node).clone(),
-                    value => std::mem::take(value).to_string().into(),
+                    value => value.to_string().into(),
                 })
                 .collect();
             new_node.set_children(children);
@@ -3365,14 +3365,11 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 #[mq_macros::mq_fn(name = "get", params = Fixed(2))]
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(runtime_value::dict_mut(map)
-            .get_mut(&Ident::new(key))
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(runtime_value::dict_mut(map)
-            .get_mut(key)
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
+        // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE))
+        }
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let len = array.len();
             let idx = index.value() as isize;
@@ -3381,10 +3378,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             } else {
                 idx as usize
             };
-            Ok(runtime_value::array_mut(array)
-                .get_mut(real_idx)
-                .map(std::mem::take)
-                .unwrap_or(RuntimeValue::NONE))
+            Ok(array.get(real_idx).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
             let len = s.chars().count();

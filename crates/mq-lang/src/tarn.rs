@@ -719,6 +719,25 @@ mod tests {
     }
 
     #[test]
+    fn top_level_def_calls_use_call_local() {
+        use super::bytecode::OpCode;
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(
+            r#"def identity(x): x; | foreach(i, range(0, 1000, 1)): identity(i);"#,
+            Shared::clone(&token_arena),
+        )
+        .unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+        assert!(
+            compiled
+                .chunks
+                .iter()
+                .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallLocal(_, _)))),
+            "top-level def call should compile to CallLocal, not the slower CallValue path"
+        );
+    }
+
+    #[test]
     fn local_array_accesses_use_compact_bytecode() {
         use super::bytecode::OpCode;
 
@@ -812,6 +831,86 @@ mod tests {
                 .iter()
                 .any(|op| matches!(op, OpCode::CallLocal(_, _)))
         );
+    }
+
+    #[test]
+    fn dynamic_fixed_call_keeps_the_callee_value_from_before_argument_evaluation() {
+        assert_eq!(
+            run("var f = fn(x): x + 1; | let update = fn(): f = fn(x): x + 2; | 0; | f(update())"),
+            RuntimeValue::Number(1.into())
+        );
+    }
+
+    #[test]
+    fn engine_compiler_loads_only_reachable_soft_builtins() {
+        let selected_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let selected_program =
+            crate::parse("range(0, 3, 1) | map(fn(x): x * 2;)", Shared::clone(&selected_arena)).unwrap();
+        let selected = compiler::compile_program_for_engine(
+            &selected_program,
+            selected_arena,
+            ModuleLoader::new(StdModuleResolver),
+            &[],
+        )
+        .unwrap();
+
+        let full_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let full_program = crate::parse("range(0, 3, 1) | map(fn(x): x * 2;)", Shared::clone(&full_arena)).unwrap();
+        let full = compiler::compile_program_with_builtin_prelude(
+            &full_program,
+            full_arena,
+            ModuleLoader::new(StdModuleResolver),
+        )
+        .unwrap();
+
+        assert!(selected.chunks.len() < full.chunks.len());
+    }
+
+    #[test]
+    fn engine_compiler_skips_soft_builtins_shadowed_by_user_definitions() {
+        let shadowed_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let shadowed_program = crate::parse(
+            "def identity(x): x; | foreach(i, range(0, 3, 1)): identity(i);",
+            Shared::clone(&shadowed_arena),
+        )
+        .unwrap();
+        let shadowed = compiler::compile_program_for_engine(
+            &shadowed_program,
+            shadowed_arena,
+            ModuleLoader::new(StdModuleResolver),
+            &[],
+        )
+        .unwrap();
+
+        let plain_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let plain_program = crate::parse(
+            "def local_identity(x): x; | foreach(i, range(0, 3, 1)): local_identity(i);",
+            Shared::clone(&plain_arena),
+        )
+        .unwrap();
+        let plain = compiler::compile_program_for_engine(
+            &plain_program,
+            plain_arena,
+            ModuleLoader::new(StdModuleResolver),
+            &[],
+        )
+        .unwrap();
+
+        // The soft builtin with the same name must not be compiled just because it exists
+        // in `builtin.mq`; both equivalent user functions should yield the same chunks.
+        assert_eq!(shadowed.chunks.len(), plain.chunks.len());
+    }
+
+    #[test]
+    fn engine_compiler_loads_only_reachable_module_exports() {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("include \"csv\" | csv_parse(true)", Shared::clone(&token_arena)).unwrap();
+        let compiled =
+            compiler::compile_program_for_engine(&program, token_arena, ModuleLoader::new(StdModuleResolver), &[])
+                .unwrap();
+
+        // The top-level chunk and `csv_parse`; the remaining CSV exports are not reachable.
+        assert_eq!(compiled.chunks.len(), 2);
     }
 
     #[test]
@@ -1099,7 +1198,7 @@ mod tests {
 
     fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
         let mut engine = crate::DefaultEngine::default();
-        engine.load_builtin_module();
+        engine.evaluator.load_builtin_module_full().unwrap();
         let compiled = engine.compile(code).unwrap();
         engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
     }

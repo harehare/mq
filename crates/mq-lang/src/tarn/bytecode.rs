@@ -382,6 +382,18 @@ fn optimize_chunk(chunk: &mut Chunk) {
         return;
     }
 
+    let has_rewrite = chunk.code.iter().enumerate().any(|(pc, op)| {
+        matches!(
+            (op, chunk.code.get(pc + 1)),
+            (OpCode::Const(_), Some(OpCode::Pop))
+                | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
+                | (OpCode::Jump(0), _)
+        )
+    });
+    if !has_rewrite {
+        return;
+    }
+
     let old_code = std::mem::take(&mut chunk.code);
     let old_lines = std::mem::take(&mut chunk.lines);
     let mut keep = vec![true; old_code.len()];

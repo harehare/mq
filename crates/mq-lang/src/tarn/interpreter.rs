@@ -2,7 +2,9 @@ use super::bytecode::{BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SL
 use super::compiler::CompiledProgram;
 #[cfg(feature = "tarn")]
 use super::value::VmClosureValue;
-use super::value::{Cell, Closure, StackValue, append_to_array_cell, new_cell, read_cell, write_cell};
+use super::value::{
+    Cell, Closure, StackValue, append_to_array_cell, array_len_and_element_at_cell, new_cell, read_cell, write_cell,
+};
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::eval::builtin::{self, Args};
@@ -13,11 +15,17 @@ use crate::number::Number;
 use crate::{Ident, Shared, SharedCell};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 /// Number of instructions between wall-clock deadline checks — matches
 /// `Evaluator::TIMEOUT_CHECK_INTERVAL`.
 const TIMEOUT_CHECK_INTERVAL: u32 = 1024;
+
+static GET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("get_variable"));
+static SET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("set_variable"));
+static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
+static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
 
 /// Deadline and call-depth enforcement shared across every `run_chunk` invocation in one
 /// execution (top-level body, user function calls, `try`/`catch` closures, default-value
@@ -630,11 +638,12 @@ fn call_fixed_closure_from_stack(
         .limits
         .take_locals_with_initialized_prefix(callee_chunk.local_count, initialized_slots);
     let self_value = read_cell(&call_site.locals[SELF_SLOT as usize]);
-    write_cell(&callee_locals[SELF_SLOT as usize], self_value.clone());
     let first_arg_slot = if uses_implicit_self {
+        write_cell(&callee_locals[SELF_SLOT as usize], self_value.clone());
         write_cell(&callee_locals[SELF_SLOT as usize + 1], self_value);
         SELF_SLOT as usize + 2
     } else {
+        write_cell(&callee_locals[SELF_SLOT as usize], self_value);
         SELF_SLOT as usize + 1
     };
     for offset in (0..argc).rev() {
@@ -1137,88 +1146,25 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             OpCode::ArrayNew => {
                 stack.push(StackValue::Value(RuntimeValue::empty_array()));
             }
-            OpCode::ArrayPush => {
-                let elem = pop_value!();
-                let mut arr = pop_value!();
-                let RuntimeValue::Array(array) = &mut arr else {
-                    bail!(VmError::Corrupt("ArrayPush on a non-array"));
-                };
-                runtime_value::array_mut(array).push(elem);
-                stack.push(StackValue::Value(arr));
+            OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
+                array_misc_op(op, stack, chunks, chunk, ip)?;
             }
             OpCode::ArraySpread => {
                 let source = pop_value!();
-                let mut arr = pop_value!();
-                match source {
-                    RuntimeValue::Array(source) => {
-                        let RuntimeValue::Array(array) = &mut arr else {
-                            bail!(VmError::Corrupt("ArraySpread accumulator is not an array"));
-                        };
-                        runtime_value::array_mut(array).extend(Shared::unwrap_or_clone(source));
-                    }
-                    RuntimeValue::None => {}
-                    other => bail!(VmError::Builtin(builtin::Error::InvalidTypes(
-                        builtins::ARRAY.to_string(),
-                        vec![other]
-                    ))),
-                }
-                stack.push(StackValue::Value(arr));
+                let arr = pop_value!();
+                stack.push(StackValue::Value(array_spread(arr, source, chunk, ip)?));
             }
             OpCode::DictSpread => {
                 let source = pop_value!();
-                let mut arr = pop_value!();
-                match source {
-                    RuntimeValue::Dict(map) => {
-                        let RuntimeValue::Array(array) = &mut arr else {
-                            bail!(VmError::Corrupt("DictSpread accumulator is not an array"));
-                        };
-                        runtime_value::array_mut(array).extend(
-                            Shared::unwrap_or_clone(map)
-                                .into_iter()
-                                .map(|(k, v)| RuntimeValue::Array(Shared::new(vec![RuntimeValue::Symbol(k), v]))),
-                        );
-                    }
-                    RuntimeValue::None => {}
-                    other => bail!(VmError::Builtin(builtin::Error::InvalidTypes(
-                        builtins::DICT.to_string(),
-                        vec![other]
-                    ))),
-                }
-                stack.push(StackValue::Value(arr));
-            }
-            OpCode::ToForeachIterable => {
-                let v = pop_value!();
-                let normalized = match v {
-                    array @ RuntimeValue::Array(_) => array,
-                    RuntimeValue::String(s) => RuntimeValue::Array(Shared::new(
-                        s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
-                    )),
-                    other => bail!(VmError::InvalidForeachTarget(other.to_string())),
-                };
-                stack.push(StackValue::Value(normalized));
-            }
-            OpCode::ArrayLen => {
-                let v = pop_value!();
-                let RuntimeValue::Array(arr) = v else {
-                    bail!(VmError::Corrupt("ArrayLen on a non-array"));
-                };
-                stack.push(StackValue::Value(RuntimeValue::Number(Number::new(arr.len() as f64))));
-            }
-            OpCode::ArrayGetAt => {
-                let idx = pop_value!();
-                let v = pop_value!();
-                let (RuntimeValue::Array(arr), RuntimeValue::Number(idx)) = (v, idx) else {
-                    bail!(VmError::Corrupt("ArrayGetAt on a non-array/non-number"));
-                };
-                let elem = arr.get(idx.value() as usize).cloned().unwrap_or(RuntimeValue::None);
-                stack.push(StackValue::Value(elem));
+                let arr = pop_value!();
+                stack.push(StackValue::Value(dict_spread(arr, source, chunk, ip)?));
             }
             OpCode::ArrayLenLocal(slot) => {
                 let value = local_runtime_value(locals, *slot, chunks)?;
                 let result = match value {
                     RuntimeValue::Array(array) => RuntimeValue::Number(Number::new(array.len() as f64)),
                     value => call_builtin(
-                        &crate::Ident::new(builtins::LEN),
+                        &LEN_IDENT,
                         &[value],
                         &current_self(locals),
                         execution.env,
@@ -1232,7 +1178,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let array = local_runtime_value(locals, *array_slot, chunks)?;
                 let index = local_runtime_value(locals, *index_slot, chunks)?;
                 let result = match (array, index) {
-                    (RuntimeValue::Array(mut array), RuntimeValue::Number(index)) => {
+                    (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
                         let len = array.len();
                         let index = index.value() as isize;
                         let index = if index < 0 {
@@ -1240,13 +1186,11 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         } else {
                             index as usize
                         };
-                        runtime_value::array_mut(&mut array)
-                            .get_mut(index)
-                            .map(std::mem::take)
-                            .unwrap_or(RuntimeValue::None)
+                        // Read-only: avoids `array_mut`'s `make_mut` deep clone.
+                        array.get(index).cloned().unwrap_or(RuntimeValue::None)
                     }
                     (array, index) => call_builtin(
-                        &crate::Ident::new(builtins::GET),
+                        &GET_IDENT,
                         &[array, index],
                         &current_self(locals),
                         execution.env,
@@ -1262,19 +1206,19 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 value_slot,
                 exit_offset,
             } => {
-                let array = read_cell(&locals[*array_slot as usize]);
                 let index = read_cell(&locals[*index_slot as usize]);
-                let (StackValue::Value(RuntimeValue::Array(array)), StackValue::Value(RuntimeValue::Number(index))) =
-                    (array, index)
-                else {
+                let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     bail!(VmError::Corrupt("ForeachNext has invalid loop state"));
                 };
                 let index_value = index.value();
-                if index_value >= array.len() as f64 {
+                let (array_len, value) =
+                    array_len_and_element_at_cell(&locals[*array_slot as usize], index_value as usize)
+                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
+                if index_value >= array_len as f64 {
                     ip = (ip as i64 + *exit_offset as i64) as usize;
                     continue;
                 }
-                let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
+                let value = value.unwrap_or(RuntimeValue::None);
                 write_cell(
                     &locals[*index_slot as usize],
                     StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
@@ -1288,55 +1232,16 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
             }
             OpCode::ArraySliceFrom => {
-                let idx = pop_value!();
-                let v = pop_value!();
-                let (RuntimeValue::Array(arr), RuntimeValue::Number(idx)) = (v, idx) else {
-                    bail!(VmError::Corrupt("ArraySliceFrom on a non-array/non-number"));
-                };
-                let start = (idx.value() as usize).min(arr.len());
-                stack.push(StackValue::Value(RuntimeValue::Array(Shared::new(
-                    arr[start..].to_vec(),
-                ))));
+                array_misc_op(op, stack, chunks, chunk, ip)?;
             }
             OpCode::TypeCheck(type_name) => {
                 let v = pop_value!();
                 let type_str = type_name.as_str();
-                let matches = match type_str.as_str() {
-                    "string" => matches!(v, RuntimeValue::String(_)),
-                    "number" => matches!(v, RuntimeValue::Number(_)),
-                    "bool" => matches!(v, RuntimeValue::Boolean(_)),
-                    "array" => matches!(v, RuntimeValue::Array(_)),
-                    "dict" => matches!(v, RuntimeValue::Dict(_)),
-                    "bytes" => matches!(v, RuntimeValue::Bytes(_)),
-                    "markdown" => matches!(v, RuntimeValue::Markdown(_, _)),
-                    "function" => matches!(v, RuntimeValue::Function(_, _, _)),
-                    "symbol" => matches!(v, RuntimeValue::Symbol(_)),
-                    "none" => matches!(v, RuntimeValue::None),
-                    _ => match &v {
-                        RuntimeValue::Markdown(node, _) => {
-                            crate::selector::Selector::from_selector_str(&format!(".{type_str}"))
-                                .filter(|selector| !selector.is_attribute_selector())
-                                .is_some_and(|selector| builtin::eval_selector(node, &selector) != RuntimeValue::NONE)
-                        }
-                        _ => false,
-                    },
-                };
+                let matches = type_check(&v, type_str.as_str());
                 stack.push(StackValue::Value(RuntimeValue::Boolean(matches)));
             }
-            OpCode::SelectorMatch(selector) => {
-                let subject = pop_value!();
-                let result = eval_selector_expr(&subject, selector);
-                stack.push(StackValue::Value(result));
-            }
-            OpCode::SelectorMatchWithArgs(selector, argc) => {
-                let mut args = Vec::with_capacity(*argc as usize);
-                for _ in 0..*argc {
-                    args.push(pop_value!());
-                }
-                args.reverse();
-                let subject = pop_value!();
-                let result = eval_selector_expr_with_args(&subject, selector, &args);
-                stack.push(StackValue::Value(result));
+            OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_, _) => {
+                selector_op(op, stack, chunks, chunk, ip)?;
             }
             OpCode::GetEnvVar(name_idx) => {
                 let RuntimeValue::String(name) = &chunk.constants[*name_idx as usize] else {
@@ -1348,21 +1253,19 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(RuntimeValue::String(value)));
             }
             OpCode::GetExternalGlobal(ident) => {
-                #[cfg(not(feature = "sync"))]
-                let resolved = execution.env.borrow().resolve(*ident);
-                #[cfg(feature = "sync")]
-                let resolved = execution.env.read().unwrap().resolve(*ident);
-                let value = resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))?;
-                stack.push(StackValue::Value(value));
+                stack.push(StackValue::Value(get_external_global(
+                    *ident,
+                    chunk,
+                    ip,
+                    execution.env,
+                )?));
             }
             OpCode::InterpString(n) => {
                 let mut parts = Vec::with_capacity(*n as usize);
                 for _ in 0..*n {
                     parts.push(pop_value!());
                 }
-                parts.reverse();
-                let joined = parts.iter().map(|v| v.to_string()).collect::<String>();
-                stack.push(StackValue::Value(RuntimeValue::String(joined)));
+                stack.push(StackValue::Value(interp_string(parts)));
             }
             OpCode::CallBuiltin(ident, argc) => {
                 let mut args = Args::with_capacity(*argc as usize);
@@ -1370,7 +1273,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     args.push(pop_value!());
                 }
                 args.reverse();
-                if *ident == Ident::new("get_variable") || *ident == Ident::new("set_variable") {
+                if *ident == *GET_VARIABLE_IDENT || *ident == *SET_VARIABLE_IDENT {
                     sync_dynamic_env(chunk, locals, upvalues, chunks, execution.env);
                 }
                 stack.push(StackValue::Value(
@@ -1435,12 +1338,14 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         .fixed_required_arity()
                         .is_some()
                 {
-                    let closure = closure.clone();
+                    let StackValue::Closure(closure) = stack.remove(callee_index) else {
+                        unreachable!("callee was checked as a closure above");
+                    };
                     let result = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure: &closure,
                             argc: *argc,
-                            remove_callee: true,
+                            remove_callee: false,
                         },
                         stack,
                         CallSite { locals, chunk, ip },
@@ -1502,63 +1407,27 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 break_offset,
                 continue_offset,
             } => {
-                let StackValue::Closure(catch_closure) = pop!() else {
-                    bail!(VmError::Corrupt("TryCatch catch operand is not a closure"));
-                };
-                let StackValue::Closure(try_closure) = pop!() else {
-                    bail!(VmError::Corrupt("TryCatch try operand is not a closure"));
-                };
-                let try_locals = execution
-                    .limits
-                    .take_locals(chunks[try_closure.chunk_index as usize].local_count);
-                write_cell(&try_locals[SELF_SLOT as usize], read_cell(&locals[SELF_SLOT as usize]));
-                match run_chunk(
-                    try_closure.chunk_index,
+                let catch_closure = pop!();
+                let try_closure = pop!();
+                match handle_try_catch(
+                    TryCatchArgs {
+                        has_binder: *has_binder,
+                        break_acc_slot: *break_acc_slot,
+                        break_offset: *break_offset,
+                        continue_offset: *continue_offset,
+                        catch_closure,
+                        try_closure,
+                    },
+                    CallSite { locals, chunk, ip },
                     chunks,
-                    try_locals,
-                    &try_closure.upvalues,
                     execution,
                     #[cfg(feature = "debugger")]
                     debug,
-                ) {
-                    Ok(value) => stack.push(value),
-                    Err(e) => {
-                        if let Some(value) = flow_break_value(&e) {
-                            let (Some(acc_slot), Some(offset)) = (break_acc_slot, break_offset) else {
-                                return Err(e);
-                            };
-                            if let Some(value) = value {
-                                write_cell(&locals[*acc_slot as usize], StackValue::Value(value));
-                            }
-                            ip = (ip as i64 + *offset as i64) as usize;
-                            continue;
-                        }
-                        if flow_continue(&e) {
-                            let Some(offset) = continue_offset else {
-                                return Err(e);
-                            };
-                            ip = (ip as i64 + *offset as i64) as usize;
-                            continue;
-                        }
-                        let catch_locals = execution
-                            .limits
-                            .take_locals(chunks[catch_closure.chunk_index as usize].local_count);
-                        write_cell(
-                            &catch_locals[SELF_SLOT as usize],
-                            read_cell(&locals[SELF_SLOT as usize]),
-                        );
-                        if *has_binder {
-                            write_cell(&catch_locals[1], StackValue::Value(error_dict(&e)));
-                        }
-                        stack.push(run_chunk(
-                            catch_closure.chunk_index,
-                            chunks,
-                            catch_locals,
-                            &catch_closure.upvalues,
-                            execution,
-                            #[cfg(feature = "debugger")]
-                            debug,
-                        )?);
+                )? {
+                    TryCatchOutcome::Value(value) => stack.push(value),
+                    TryCatchOutcome::JumpTo(offset) => {
+                        ip = (ip as i64 + offset as i64) as usize;
+                        continue;
                     }
                 }
             }
@@ -1577,6 +1446,328 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
     }
 
     Ok(stack.pop().unwrap_or(StackValue::Value(RuntimeValue::None)))
+}
+
+struct TryCatchArgs {
+    has_binder: bool,
+    break_acc_slot: Option<u16>,
+    break_offset: Option<i32>,
+    continue_offset: Option<i32>,
+    catch_closure: StackValue,
+    try_closure: StackValue,
+}
+
+enum TryCatchOutcome {
+    Value(StackValue),
+    /// Loop control (`break`/`continue`) raised inside the try chunk bypasses the catch
+    /// and jumps to the enclosing loop's patched target — signaled back to the dispatch
+    /// loop instead of jumping directly, since this function doesn't own `ip`.
+    JumpTo(i32),
+}
+
+/// `try`/`catch` is rare and large; kept out of `run_chunk_inner_impl` to keep it small.
+#[cold]
+#[inline(never)]
+fn handle_try_catch(
+    args: TryCatchArgs,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> VmResult<TryCatchOutcome> {
+    let CallSite { locals, chunk, ip } = call_site;
+    let StackValue::Closure(catch_closure) = args.catch_closure else {
+        return Err(locate(
+            chunk,
+            ip,
+            VmError::Corrupt("TryCatch catch operand is not a closure"),
+        ));
+    };
+    let StackValue::Closure(try_closure) = args.try_closure else {
+        return Err(locate(
+            chunk,
+            ip,
+            VmError::Corrupt("TryCatch try operand is not a closure"),
+        ));
+    };
+    let try_locals = execution
+        .limits
+        .take_locals(chunks[try_closure.chunk_index as usize].local_count);
+    write_cell(&try_locals[SELF_SLOT as usize], read_cell(&locals[SELF_SLOT as usize]));
+    match run_chunk(
+        try_closure.chunk_index,
+        chunks,
+        try_locals,
+        &try_closure.upvalues,
+        execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    ) {
+        Ok(value) => Ok(TryCatchOutcome::Value(value)),
+        Err(e) => {
+            if let Some(value) = flow_break_value(&e) {
+                let (Some(acc_slot), Some(offset)) = (args.break_acc_slot, args.break_offset) else {
+                    return Err(e);
+                };
+                if let Some(value) = value {
+                    write_cell(&locals[acc_slot as usize], StackValue::Value(value));
+                }
+                return Ok(TryCatchOutcome::JumpTo(offset));
+            }
+            if flow_continue(&e) {
+                let Some(offset) = args.continue_offset else {
+                    return Err(e);
+                };
+                return Ok(TryCatchOutcome::JumpTo(offset));
+            }
+            let catch_locals = execution
+                .limits
+                .take_locals(chunks[catch_closure.chunk_index as usize].local_count);
+            write_cell(
+                &catch_locals[SELF_SLOT as usize],
+                read_cell(&locals[SELF_SLOT as usize]),
+            );
+            if args.has_binder {
+                write_cell(&catch_locals[1], StackValue::Value(error_dict(&e)));
+            }
+            let value = run_chunk(
+                catch_closure.chunk_index,
+                chunks,
+                catch_locals,
+                &catch_closure.upvalues,
+                execution,
+                #[cfg(feature = "debugger")]
+                debug,
+            )?;
+            Ok(TryCatchOutcome::Value(value))
+        }
+    }
+}
+
+/// Rare spread-syntax opcodes, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
+#[cold]
+#[inline(never)]
+fn array_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue> {
+    match source {
+        RuntimeValue::Array(source) => {
+            let RuntimeValue::Array(array) = &mut arr else {
+                return Err(locate(
+                    chunk,
+                    ip,
+                    VmError::Corrupt("ArraySpread accumulator is not an array"),
+                ));
+            };
+            runtime_value::array_mut(array).extend(Shared::unwrap_or_clone(source));
+        }
+        RuntimeValue::None => {}
+        other => {
+            return Err(locate(
+                chunk,
+                ip,
+                VmError::Builtin(builtin::Error::InvalidTypes(builtins::ARRAY.to_string(), vec![other])),
+            ));
+        }
+    }
+    Ok(arr)
+}
+
+#[cold]
+#[inline(never)]
+fn dict_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue> {
+    match source {
+        RuntimeValue::Dict(map) => {
+            let RuntimeValue::Array(array) = &mut arr else {
+                return Err(locate(
+                    chunk,
+                    ip,
+                    VmError::Corrupt("DictSpread accumulator is not an array"),
+                ));
+            };
+            runtime_value::array_mut(array).extend(
+                Shared::unwrap_or_clone(map)
+                    .into_iter()
+                    .map(|(k, v)| RuntimeValue::Array(Shared::new(vec![RuntimeValue::Symbol(k), v]))),
+            );
+        }
+        RuntimeValue::None => {}
+        other => {
+            return Err(locate(
+                chunk,
+                ip,
+                VmError::Builtin(builtin::Error::InvalidTypes(builtins::DICT.to_string(), vec![other])),
+            ));
+        }
+    }
+    Ok(arr)
+}
+
+/// Rare `:type` matching, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
+#[cold]
+#[inline(never)]
+fn type_check(v: &RuntimeValue, type_str: &str) -> bool {
+    match type_str {
+        "string" => matches!(v, RuntimeValue::String(_)),
+        "number" => matches!(v, RuntimeValue::Number(_)),
+        "bool" => matches!(v, RuntimeValue::Boolean(_)),
+        "array" => matches!(v, RuntimeValue::Array(_)),
+        "dict" => matches!(v, RuntimeValue::Dict(_)),
+        "bytes" => matches!(v, RuntimeValue::Bytes(_)),
+        "markdown" => matches!(v, RuntimeValue::Markdown(_, _)),
+        "function" => matches!(v, RuntimeValue::Function(_, _, _)),
+        "symbol" => matches!(v, RuntimeValue::Symbol(_)),
+        "none" => matches!(v, RuntimeValue::None),
+        _ => match v {
+            RuntimeValue::Markdown(node, _) => crate::selector::Selector::from_selector_str(&format!(".{type_str}"))
+                .filter(|selector| !selector.is_attribute_selector())
+                .is_some_and(|selector| builtin::eval_selector(node, &selector) != RuntimeValue::NONE),
+            _ => false,
+        },
+    }
+}
+
+/// Standalone equivalent of the `pop_value!` macro, for the cold handlers below.
+fn pop_value_from(
+    stack: &mut Vec<StackValue>,
+    #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
+    chunk: &Chunk,
+    ip: usize,
+) -> VmResult<RuntimeValue> {
+    let v = stack
+        .pop()
+        .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow")))?;
+    #[cfg(feature = "tarn")]
+    {
+        Ok(into_runtime_value(v, chunks))
+    }
+    #[cfg(not(feature = "tarn"))]
+    {
+        match v {
+            StackValue::Value(rv) => Ok(rv),
+            StackValue::Closure(_) => Err(locate(chunk, ip, VmError::Corrupt("expected a value, got a closure"))),
+        }
+    }
+}
+
+/// Rare array opcodes, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
+#[cold]
+#[inline(never)]
+fn array_misc_op(
+    op: &OpCode,
+    stack: &mut Vec<StackValue>,
+    chunks: &Shared<Vec<Chunk>>,
+    chunk: &Chunk,
+    ip: usize,
+) -> VmResult<()> {
+    match op {
+        OpCode::ArrayPush => {
+            let elem = pop_value_from(stack, chunks, chunk, ip)?;
+            let mut arr = pop_value_from(stack, chunks, chunk, ip)?;
+            let RuntimeValue::Array(array) = &mut arr else {
+                return Err(locate(chunk, ip, VmError::Corrupt("ArrayPush on a non-array")));
+            };
+            runtime_value::array_mut(array).push(elem);
+            stack.push(StackValue::Value(arr));
+        }
+        OpCode::ToForeachIterable => {
+            let v = pop_value_from(stack, chunks, chunk, ip)?;
+            let normalized = match v {
+                array @ RuntimeValue::Array(_) => array,
+                RuntimeValue::String(s) => RuntimeValue::Array(Shared::new(
+                    s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
+                )),
+                other => return Err(locate(chunk, ip, VmError::InvalidForeachTarget(other.to_string()))),
+            };
+            stack.push(StackValue::Value(normalized));
+        }
+        OpCode::ArrayLen => {
+            let v = pop_value_from(stack, chunks, chunk, ip)?;
+            let RuntimeValue::Array(arr) = v else {
+                return Err(locate(chunk, ip, VmError::Corrupt("ArrayLen on a non-array")));
+            };
+            stack.push(StackValue::Value(RuntimeValue::Number(Number::new(arr.len() as f64))));
+        }
+        OpCode::ArrayGetAt => {
+            let idx = pop_value_from(stack, chunks, chunk, ip)?;
+            let v = pop_value_from(stack, chunks, chunk, ip)?;
+            let (RuntimeValue::Array(arr), RuntimeValue::Number(idx)) = (v, idx) else {
+                return Err(locate(
+                    chunk,
+                    ip,
+                    VmError::Corrupt("ArrayGetAt on a non-array/non-number"),
+                ));
+            };
+            let elem = arr.get(idx.value() as usize).cloned().unwrap_or(RuntimeValue::None);
+            stack.push(StackValue::Value(elem));
+        }
+        OpCode::ArraySliceFrom => {
+            let idx = pop_value_from(stack, chunks, chunk, ip)?;
+            let v = pop_value_from(stack, chunks, chunk, ip)?;
+            let (RuntimeValue::Array(arr), RuntimeValue::Number(idx)) = (v, idx) else {
+                return Err(locate(
+                    chunk,
+                    ip,
+                    VmError::Corrupt("ArraySliceFrom on a non-array/non-number"),
+                ));
+            };
+            let start = (idx.value() as usize).min(arr.len());
+            stack.push(StackValue::Value(RuntimeValue::Array(Shared::new(
+                arr[start..].to_vec(),
+            ))));
+        }
+        _ => unreachable!("array_misc_op called with a non-array-misc opcode"),
+    }
+    Ok(())
+}
+
+fn selector_op(
+    op: &OpCode,
+    stack: &mut Vec<StackValue>,
+    chunks: &Shared<Vec<Chunk>>,
+    chunk: &Chunk,
+    ip: usize,
+) -> VmResult<()> {
+    match op {
+        OpCode::SelectorMatch(selector) => {
+            let subject = pop_value_from(stack, chunks, chunk, ip)?;
+            stack.push(StackValue::Value(eval_selector_expr(&subject, selector)));
+        }
+        OpCode::SelectorMatchWithArgs(selector, argc) => {
+            let mut args = Vec::with_capacity(*argc as usize);
+            for _ in 0..*argc {
+                args.push(pop_value_from(stack, chunks, chunk, ip)?);
+            }
+            args.reverse();
+            let subject = pop_value_from(stack, chunks, chunk, ip)?;
+            stack.push(StackValue::Value(eval_selector_expr_with_args(
+                &subject, selector, &args,
+            )));
+        }
+        _ => unreachable!("selector_op called with a non-selector opcode"),
+    }
+    Ok(())
+}
+
+#[cold]
+#[inline(never)]
+fn get_external_global(
+    ident: Ident,
+    chunk: &Chunk,
+    ip: usize,
+    env: &Shared<SharedCell<Env>>,
+) -> VmResult<RuntimeValue> {
+    #[cfg(not(feature = "sync"))]
+    let resolved = env.borrow().resolve(ident);
+    #[cfg(feature = "sync")]
+    let resolved = env.read().unwrap().resolve(ident);
+    resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))
+}
+
+/// `parts` are in reverse (stack pop) order.
+#[cold]
+#[inline(never)]
+fn interp_string(mut parts: Vec<RuntimeValue>) -> RuntimeValue {
+    parts.reverse();
+    RuntimeValue::String(parts.iter().map(|v| v.to_string()).collect())
 }
 
 fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
