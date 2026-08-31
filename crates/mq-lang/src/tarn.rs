@@ -567,6 +567,22 @@ where
     }
 }
 
+/// Compiles and runs `code` with `bindings` predeclared as top-level slots — the VM
+/// counterpart to `switch_env`, for a debug expression evaluated against a paused frame.
+#[cfg(all(feature = "debugger", feature = "tarn"))]
+pub(crate) fn eval_debug_expression<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    bindings: &[(crate::Ident, RuntimeValue)],
+    host_functions: &HostFunctions,
+) -> Result<RuntimeValue, Error> {
+    let names: Vec<crate::Ident> = bindings.iter().map(|(name, _)| *name).collect();
+    let values: Vec<RuntimeValue> = bindings.iter().map(|(_, value)| value.clone()).collect();
+    let compiled = compiler::compile_debug_expression(program, token_arena, module_loader, &names)?;
+    Ok(interpreter::run_debug_expression(&compiled, &values, host_functions)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

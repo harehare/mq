@@ -174,6 +174,49 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm_module_prelude: self.vm_module_prelude.clone(),
         }
     }
+
+    /// Evaluates `code` against a paused debug frame's live bindings in `env`.
+    ///
+    /// Unlike `switch_env(env).eval(...)`, this works under `tarn` too: the VM never reads a
+    /// dynamic [`Env`], so it compiles `code` with `env`'s bindings predeclared as slots instead.
+    #[cfg(feature = "debugger")]
+    pub fn eval_debug_expression(&mut self, code: &str, env: &Shared<SharedCell<Env>>) -> MqResult {
+        #[cfg(feature = "tarn")]
+        {
+            #[cfg(not(feature = "sync"))]
+            let bindings = env.borrow().raw_entries();
+            #[cfg(feature = "sync")]
+            let bindings = env.read().unwrap().raw_entries();
+
+            let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
+            let program = parse(code, Shared::clone(&self.token_arena))?;
+            #[cfg(feature = "sync")]
+            let host_functions = self.evaluator.host_functions.read().unwrap().clone();
+            #[cfg(not(feature = "sync"))]
+            let host_functions = self.evaluator.host_functions.borrow().clone();
+
+            crate::tarn::eval_debug_expression(
+                &program,
+                Shared::clone(&self.token_arena),
+                self.evaluator.module_loader.with_same_resolver(),
+                &bindings,
+                &host_functions,
+            )
+            .map(|value| vec![value].into())
+            .map_err(|error| {
+                Box::new(error::Error::from_error(
+                    code,
+                    error.into_inner_error(Shared::clone(&self.token_arena)),
+                    self.evaluator.module_loader.clone(),
+                ))
+            })
+        }
+        #[cfg(not(feature = "tarn"))]
+        {
+            self.switch_env(Shared::clone(env))
+                .eval(code, crate::null_input().into_iter())
+        }
+    }
 }
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
@@ -1170,6 +1213,38 @@ mod tests {
         assert_eq!(
             new_engine.eval("runtime", null_input().into_iter()).unwrap()[0],
             RuntimeValue::NONE
+        );
+    }
+
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+    #[test]
+    fn test_eval_debug_expression_tree_walker() {
+        use crate::eval::env::Env;
+        use crate::{RuntimeValue, Shared, SharedCell};
+
+        let mut engine = DefaultEngine::default();
+        let env = Shared::new(SharedCell::new(Env::default()));
+        env.write().unwrap().define("runtime".into(), RuntimeValue::NONE);
+
+        assert_eq!(
+            engine.eval_debug_expression("runtime", &env).unwrap()[0],
+            RuntimeValue::NONE
+        );
+    }
+
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    #[test]
+    fn test_eval_debug_expression_vm() {
+        use crate::eval::env::Env;
+        use crate::{RuntimeValue, Shared, SharedCell};
+
+        let mut engine = DefaultEngine::default();
+        let env = Shared::new(SharedCell::new(Env::default()));
+        env.write().unwrap().define("x".into(), RuntimeValue::Number(41.into()));
+
+        assert_eq!(
+            engine.eval_debug_expression("x + 1", &env).unwrap()[0],
+            RuntimeValue::Number(42.into())
         );
     }
 

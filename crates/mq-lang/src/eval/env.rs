@@ -301,6 +301,15 @@ impl Env {
         }
     }
 
+    /// This scope's own bindings, for the VM's debug-expression bridge.
+    #[cfg(feature = "tarn")]
+    pub(crate) fn raw_entries(&self) -> Vec<(Ident, RuntimeValue)> {
+        self.context
+            .iter_entries()
+            .map(|(ident, value)| (ident, value.clone()))
+            .collect()
+    }
+
     /// Collects the names of every binding visible from this scope (this scope plus all
     /// ancestors) so a failed lookup can suggest a "did you mean" among user-defined
     /// functions/variables, not just builtins. Cold path only - never called on the
