@@ -546,6 +546,10 @@ struct OutputArgs {
     /// when source line/column spans aren't needed.
     #[arg(long, default_value_t = false)]
     no_position: bool,
+
+    /// Print JSON on a single line, without pretty-printing. Only valid with -F json.
+    #[arg(long, default_value_t = false)]
+    compact: bool,
 }
 
 impl OutputArgs {
@@ -1326,6 +1330,10 @@ impl Cli {
 
         if self.output.diff && matches!(self.output.output_format, OutputFormat::Grep) {
             return Err(miette!("--diff is not supported with -F grep"));
+        }
+
+        if self.output.compact && !matches!(self.output.output_format, OutputFormat::Json) {
+            return Err(miette!("--compact is only valid with -F json"));
         }
 
         if (self.input.csv_delimiter.is_some() || self.input.no_header)
@@ -2356,7 +2364,8 @@ impl Cli {
             }
             OutputFormat::Json => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
-                let json_str = crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref())?;
+                let json_str =
+                    crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref(), self.output.compact)?;
                 buf.extend_from_slice(json_str.as_bytes());
             }
             OutputFormat::Html => {
