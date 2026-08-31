@@ -22,9 +22,13 @@ use crate::ast::Program;
 use crate::ast::node::Node;
 use crate::eval::host::HostFunctions;
 use crate::eval::runtime_value::RuntimeValue;
+#[cfg(feature = "debug-trace")]
+use crate::get_token;
 use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::{ModuleLoader, ModuleResolver};
 use std::fmt;
+#[cfg(feature = "debug-trace")]
+use std::fmt::Write as _;
 use std::time::Duration;
 
 #[cfg(feature = "debugger")]
@@ -66,6 +70,135 @@ impl Error {
             Error::Compile(other) => crate::error::InnerError::from(compile_error_to_runtime_error(other, token_arena)),
             Error::Vm(e) => crate::error::InnerError::from(vm_error_to_runtime_error(&e, token_arena)),
         }
+    }
+}
+
+/// Compiles a program exactly as the Engine VM path would and renders its bytecode for diagnosis.
+#[cfg(feature = "debug-trace")]
+pub(crate) fn dump_bytecode<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
+) -> Result<String, Error> {
+    let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let mut output = String::new();
+
+    let Some((before, after)) = split_at_nodes(program) else {
+        let compiled =
+            compiler::compile_program_for_engine(program, token_arena.clone(), module_loader, &global_names)?;
+        format_compiled_bytecode(&mut output, "main", &compiled, &token_arena);
+        return Ok(output);
+    };
+
+    let input_compiled = compiler::compile_program_for_engine(
+        &before.to_vec(),
+        token_arena.clone(),
+        module_loader.clone(),
+        &global_names,
+    )?;
+    format_compiled_bytecode(&mut output, "per-input", &input_compiled, &token_arena);
+
+    let aggregate_compiled =
+        compiler::compile_program_for_engine(&after.to_vec(), token_arena.clone(), module_loader, &global_names)?;
+    output.push('\n');
+    format_compiled_bytecode(&mut output, "nodes aggregate", &aggregate_compiled, &token_arena);
+    Ok(output)
+}
+
+#[cfg(feature = "debug-trace")]
+fn format_compiled_bytecode(
+    output: &mut String,
+    phase: &str,
+    compiled: &compiler::CompiledProgram,
+    token_arena: &TokenArena,
+) {
+    let _ = writeln!(output, "Tarn VM bytecode");
+    let _ = writeln!(output, "  phase: {phase}");
+    let _ = writeln!(output, "  chunks: {}", compiled.chunks.len());
+    for (chunk_index, chunk) in compiled.chunks.iter().enumerate() {
+        let _ = writeln!(output, "\nChunk {chunk_index}");
+        let _ = writeln!(output, "  frame");
+        let _ = writeln!(
+            output,
+            "    local slots: {} ({})",
+            chunk.local_count,
+            format_slot_names(&chunk.local_names)
+        );
+        let _ = writeln!(
+            output,
+            "    upvalues: {} ({})",
+            chunk.upvalue_names.len(),
+            format_slot_names(&chunk.upvalue_names)
+        );
+        let _ = writeln!(output, "  instructions");
+        for (pc, opcode) in chunk.code.iter().enumerate() {
+            let location = chunk.token_at(pc).map(|token_id| {
+                let token = get_token(Shared::clone(token_arena), token_id);
+                format!(" @ {}:{}", token.range.start.line + 1, token.range.start.column + 1)
+            });
+            let _ = writeln!(
+                output,
+                "    {pc:04}  {}{}",
+                format_opcode(opcode),
+                location.unwrap_or_default()
+            );
+        }
+        if !chunk.constants.is_empty() {
+            let _ = writeln!(output, "  constants");
+            for (index, value) in chunk.constants.iter().enumerate() {
+                let _ = writeln!(output, "    [{index}] {}", format_value(value));
+            }
+        }
+    }
+}
+
+#[cfg(feature = "debug-trace")]
+fn format_slot_names(names: &[crate::Ident]) -> String {
+    names
+        .iter()
+        .enumerate()
+        .map(|(slot, name)| {
+            let name = name.to_string();
+            if name.is_empty() {
+                format!("{slot}:self")
+            } else {
+                format!("{slot}:{name}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[cfg(feature = "debug-trace")]
+fn format_opcode(opcode: &bytecode::OpCode) -> String {
+    match opcode {
+        #[cfg(feature = "debugger")]
+        bytecode::OpCode::StmtBoundary(_) => "StmtBoundary".to_string(),
+        bytecode::OpCode::Const(index) => format!("Const {index}"),
+        bytecode::OpCode::GetLocal(slot) => format!("GetLocal {slot}"),
+        bytecode::OpCode::SetLocal(slot) => format!("SetLocal {slot}"),
+        bytecode::OpCode::GetUpvalue(slot) => format!("GetUpvalue {slot}"),
+        bytecode::OpCode::SetUpvalue(slot) => format!("SetUpvalue {slot}"),
+        bytecode::OpCode::MakeStaticClosure(chunk) => format!("MakeStaticClosure chunk {chunk}"),
+        bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
+        bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {slot}, argc={argc}"),
+        bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
+        other => format!("{other:?}"),
+    }
+}
+
+#[cfg(feature = "debug-trace")]
+fn format_value(value: &RuntimeValue) -> String {
+    const MAX_CHARS: usize = 96;
+
+    let rendered = value.to_string();
+    let mut chars = rendered.chars();
+    let preview: String = chars.by_ref().take(MAX_CHARS).collect();
+    if chars.next().is_some() {
+        format!("{preview}…")
+    } else {
+        preview
     }
 }
 
@@ -1587,6 +1720,8 @@ mod tests {
         #[derive(Debug)]
         struct RecordingHandler {
             inner_values: Arc<Mutex<Vec<RuntimeValue>>>,
+            #[cfg(feature = "debug-trace")]
+            operand_stacks: Arc<Mutex<Vec<Vec<RuntimeValue>>>>,
         }
 
         impl DebuggerHandler for RecordingHandler {
@@ -1594,6 +1729,8 @@ mod tests {
                 if let Ok(value) = context.env.read().unwrap().resolve(crate::Ident::new("inner")) {
                     self.inner_values.lock().unwrap().push(value);
                 }
+                #[cfg(feature = "debug-trace")]
+                self.operand_stacks.lock().unwrap().push(context.operand_stack.clone());
                 DebuggerAction::Continue
             }
         }
@@ -1627,9 +1764,13 @@ mod tests {
             None,
         );
         let inner_values = Arc::new(Mutex::new(Vec::new()));
+        #[cfg(feature = "debug-trace")]
+        let operand_stacks = Arc::new(Mutex::new(Vec::new()));
         let handler: Shared<SharedCell<Box<dyn DebuggerHandler>>> =
             Shared::new(SharedCell::new(Box::new(RecordingHandler {
                 inner_values: Arc::clone(&inner_values),
+                #[cfg(feature = "debug-trace")]
+                operand_stacks: Arc::clone(&operand_stacks),
             })));
         let mut hook = debugger::VmDebuggerHook::new(
             debugger,
@@ -1654,6 +1795,8 @@ mod tests {
         .unwrap();
 
         assert!(inner_values.lock().unwrap().contains(&RuntimeValue::Number(2.0.into())));
+        #[cfg(feature = "debug-trace")]
+        assert!(!operand_stacks.lock().unwrap().is_empty());
     }
 
     #[cfg(feature = "debugger")]

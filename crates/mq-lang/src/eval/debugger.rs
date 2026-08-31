@@ -68,6 +68,9 @@ pub struct DebugContext {
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
     pub env: Shared<SharedCell<Env>>,
+    /// Snapshot of the VM operand stack at the current statement boundary.
+    #[cfg(feature = "debug-trace")]
+    pub operand_stack: Vec<RuntimeValue>,
     /// Optional source
     pub source: Source,
 }
@@ -87,6 +90,8 @@ impl Default for DebugContext {
             }),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: Vec::new(),
             source: Source::default(),
         }
     }
@@ -535,6 +540,8 @@ mod tests {
             token: Shared::clone(&token),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: Vec::new(),
             source: Source::default(),
         }
     }

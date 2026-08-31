@@ -167,6 +167,8 @@ pub(crate) struct DebugEvent {
     pub(crate) current_value: RuntimeValue,
     pub(crate) bindings: Vec<(Ident, RuntimeValue)>,
     pub(crate) call_stack: Vec<Shared<Node>>,
+    #[cfg(feature = "debug-trace")]
+    pub(crate) operand_stack: Vec<RuntimeValue>,
 }
 
 /// Receives VM debug boundaries. Implementations may inspect, but cannot mutate, frames.
@@ -1049,6 +1051,12 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         current_value: current_self(locals),
                         bindings,
                         call_stack: debug.call_stack.clone(),
+                        #[cfg(feature = "debug-trace")]
+                        operand_stack: stack
+                            .iter()
+                            .cloned()
+                            .map(|value| into_runtime_value(value, chunks))
+                            .collect(),
                     });
                 }
             }

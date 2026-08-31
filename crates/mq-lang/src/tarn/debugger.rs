@@ -144,6 +144,8 @@ impl DebugHook for VmDebuggerHook {
             token: Shared::clone(&token),
             call_stack: event.call_stack,
             env,
+            #[cfg(feature = "debug-trace")]
+            operand_stack: event.operand_stack,
             source: self
                 .sources
                 .iter()

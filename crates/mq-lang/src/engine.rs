@@ -530,6 +530,53 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
     }
 
+    /// Renders the Tarn bytecode that would be executed for `compiled`.
+    ///
+    /// This is available only with the `debug-trace` feature and is intended for diagnostic
+    /// tools such as `mq-dbg`; it does not execute the program.
+    #[cfg(feature = "debug-trace")]
+    pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
+        self.evaluator.module_loader.set_source_code(compiled.source.clone());
+        let global_bindings = self.evaluator.global_bindings();
+        let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
+        let vm_program = if self.vm_module_prelude.is_empty() && !has_nodes {
+            None
+        } else {
+            let mut vm_prelude = crate::ast::Program::new();
+            for module in &self.vm_module_prelude {
+                let directive = match module {
+                    VmModulePrelude::Include(name) => format!("include {name:?}"),
+                    VmModulePrelude::Import(name) => format!("import {name:?}"),
+                };
+                vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
+            }
+            let mut program = vm_prelude.clone();
+            if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
+                program.extend(compiled.program[..=nodes_index].iter().cloned());
+                program.extend(vm_prelude);
+                program.extend(compiled.program[nodes_index + 1..].iter().cloned());
+            } else {
+                program.extend(compiled.program.iter().cloned());
+            }
+            Some(program)
+        };
+        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+
+        crate::tarn::dump_bytecode(
+            vm_program,
+            Shared::clone(&self.token_arena),
+            self.evaluator.module_loader.with_same_resolver(),
+            &global_bindings,
+        )
+        .map_err(|error| {
+            Box::new(error::Error::from_error(
+                &compiled.source,
+                error.into_inner_error(Shared::clone(&self.token_arena)),
+                self.evaluator.module_loader.clone(),
+            ))
+        })
+    }
+
     /// Evaluates one input through the bytecode VM (`bytecode-vm` feature). Same `MqResult`
     /// shape as `eval_compiled`.
     #[cfg_attr(not(feature = "tarn"), allow(dead_code))]
@@ -977,6 +1024,22 @@ mod tests {
         let compiled = engine.compile(query).unwrap();
         assert_eq!(compiled.source(), "");
         assert!(compiled.program().is_empty());
+    }
+
+    #[cfg(feature = "debug-trace")]
+    #[test]
+    fn test_dump_bytecode_renders_vm_instructions() {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile("1 + 2").unwrap();
+
+        let dump = engine.dump_bytecode(&compiled).unwrap();
+
+        assert!(dump.contains("Tarn VM bytecode"));
+        assert!(dump.contains("phase: main"));
+        assert!(dump.contains("Const 0"));
+        assert!(dump.contains("Add"));
+        assert!(dump.contains("Return"));
+        assert!(dump.contains("[0] 1"));
     }
 
     // --- builtin cache tests ---

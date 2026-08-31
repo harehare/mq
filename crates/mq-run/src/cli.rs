@@ -90,6 +90,16 @@ pub struct Cli {
     #[cfg(feature = "debugger")]
     #[arg(long = "stop-on-error", default_value_t = false)]
     stop_on_error: bool,
+
+    /// Print the Tarn VM operand stack whenever the debugger stops (mq-dbg `debug-trace` build only).
+    #[cfg(feature = "debug-trace")]
+    #[arg(long = "dump-stack", default_value_t = false)]
+    dump_stack: bool,
+
+    /// Print the Tarn VM bytecode to stderr before execution (mq-dbg `debug-trace` build only).
+    #[cfg(feature = "debug-trace")]
+    #[arg(long = "dump-bytecode", default_value_t = false)]
+    dump_bytecode: bool,
 }
 
 #[cfg(unix)]
@@ -1634,6 +1644,14 @@ impl Cli {
         #[cfg(feature = "debugger")]
         {
             use crate::debugger::DebuggerHandler;
+            #[cfg(feature = "debug-trace")]
+            let handler = {
+                let mut handler = DebuggerHandler::new(engine.clone(), self.stop_on_error);
+                handler.set_dump_stack(self.dump_stack);
+                handler.set_color_output(self.output.color_output && !Self::is_no_color());
+                handler
+            };
+            #[cfg(not(feature = "debug-trace"))]
             let handler = DebuggerHandler::new(engine.clone(), self.stop_on_error);
             engine.set_debugger_handler(Box::new(handler));
             engine.debugger().write().unwrap().activate();
@@ -1836,15 +1854,34 @@ impl Cli {
             self.set_file_vars(engine, f);
         }
 
+        #[cfg(feature = "debug-trace")]
+        let program = engine.compile(query).map_err(|error| *error)?;
+        #[cfg(feature = "debug-trace")]
+        self.dump_compiled_bytecode(engine, &program)?;
+
         let input = self.resolve_input(file, content)?;
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
         let runtime_values = if self.output.update {
-            let results = engine.eval(query, input.clone().into_iter()).map_err(|e| *e)?;
+            #[cfg(feature = "debug-trace")]
+            let results = engine
+                .eval_compiled(&program, input.clone().into_iter())
+                .map_err(|error| *error)?;
+            #[cfg(not(feature = "debug-trace"))]
+            let results = engine.eval(query, input.clone().into_iter()).map_err(|error| *error)?;
             self.apply_update(input, results)?
         } else {
-            engine.eval(query, input.into_iter()).map_err(|e| *e)?
+            #[cfg(feature = "debug-trace")]
+            {
+                engine
+                    .eval_compiled(&program, input.into_iter())
+                    .map_err(|error| *error)?
+            }
+            #[cfg(not(feature = "debug-trace"))]
+            {
+                engine.eval(query, input.into_iter()).map_err(|error| *error)?
+            }
         };
 
         if self.output.update && self.output.diff {
@@ -1870,6 +1907,75 @@ impl Cli {
             Some(prefix) => format!("{} | {}", prefix, query),
             None => query.to_string(),
         }
+    }
+
+    #[cfg(feature = "debug-trace")]
+    fn dump_compiled_bytecode(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        program: &mq_lang::CompiledProgram,
+    ) -> miette::Result<()> {
+        if self.dump_bytecode {
+            let bytecode = engine.dump_bytecode(program).map_err(|error| *error)?;
+            if self.output.color_output && !Self::is_no_color() {
+                eprint!("{}", Self::colorize_bytecode(&bytecode));
+            } else {
+                eprint!("{bytecode}");
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "debug-trace")]
+    fn colorize_bytecode(bytecode: &str) -> String {
+        let mut rendered = bytecode
+            .lines()
+            .map(|line| {
+                if line == "Tarn VM bytecode" {
+                    return line.bright_cyan().bold().to_string();
+                }
+                if line.starts_with("Chunk ") {
+                    return line.bright_yellow().bold().to_string();
+                }
+                if matches!(line, "  frame" | "  instructions" | "  constants") {
+                    return line.bright_green().bold().to_string();
+                }
+                if let Some((label, value)) = line.trim_start().split_once(": ") {
+                    let indent = &line[..line.len() - line.trim_start().len()];
+                    return format!("{indent}{}: {}", label.cyan(), value.dimmed());
+                }
+                if let Some(instruction) = line.strip_prefix("    ")
+                    && instruction
+                        .get(..4)
+                        .is_some_and(|pc| pc.bytes().all(|byte| byte.is_ascii_digit()))
+                {
+                    let (pc, rest) = instruction.split_at(4);
+                    let (opcode, location) = rest.trim_start().split_once(" @ ").unwrap_or((rest.trim_start(), ""));
+                    let location = (!location.is_empty()).then(|| format!(" @ {}", location.dimmed()));
+                    return format!(
+                        "    {}  {}{}",
+                        pc.dimmed(),
+                        opcode.bright_blue(),
+                        location.unwrap_or_default()
+                    );
+                }
+                line.to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if bytecode.ends_with('\n') {
+            rendered.push('\n');
+        }
+        rendered
+    }
+
+    #[cfg(not(feature = "debug-trace"))]
+    fn dump_compiled_bytecode(
+        &self,
+        _engine: &mut mq_lang::DefaultEngine,
+        _program: &mq_lang::CompiledProgram,
+    ) -> miette::Result<()> {
+        Ok(())
     }
 
     /// Returns true if all files would produce the same effective query prefix.
@@ -2053,6 +2159,7 @@ impl Cli {
             if files.len() > 1 && self.all_files_same_prefix(&files) && self.output.separator.is_none() {
                 let effective = self.effective_query(&query, &files[0].0);
                 let program = engine.compile(&effective).map_err(|e| *e)?;
+                self.dump_compiled_bytecode(&mut engine, &program)?;
                 for (file, content) in &files {
                     self.execute_compiled(&mut engine, &program, file, content)?;
                 }
@@ -2085,9 +2192,18 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
 
+        #[cfg(feature = "debug-trace")]
+        let program = engine.compile(&effective_query).map_err(|error| *error)?;
+        #[cfg(feature = "debug-trace")]
+        self.dump_compiled_bytecode(&mut engine, &program)?;
+        #[cfg(feature = "debug-trace")]
+        let runtime_values = engine
+            .eval_compiled(&program, combined_input.into_iter())
+            .map_err(|error| *error)?;
+        #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
-            .map_err(|e| *e)?;
+            .map_err(|error| *error)?;
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -2141,8 +2257,17 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        #[cfg(feature = "debug-trace")]
+        let program = engine.compile(query).map_err(|error| *error)?;
+        #[cfg(feature = "debug-trace")]
+        self.dump_compiled_bytecode(engine, &program)?;
         let input = self.resolve_input(file, content)?;
-        let runtime_values = engine.eval(query, input.into_iter()).map_err(|e| *e)?;
+        #[cfg(feature = "debug-trace")]
+        let runtime_values = engine
+            .eval_compiled(&program, input.into_iter())
+            .map_err(|error| *error)?;
+        #[cfg(not(feature = "debug-trace"))]
+        let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
         Ok(self.output.paginate(runtime_values.compact()).len())
     }
 
