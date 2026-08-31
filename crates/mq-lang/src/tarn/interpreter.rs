@@ -13,7 +13,6 @@ use crate::eval::host::HostFunctions;
 use crate::eval::runtime_value::{self, RuntimeValue};
 use crate::number::Number;
 use crate::{Ident, Shared, SharedCell};
-use rustc_hash::FxHashMap;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::LazyLock;
@@ -40,14 +39,19 @@ struct ExecutionLimits {
     pools: ExecutionPools,
 }
 
+/// One function call's local slots.
+type LocalFrame = Vec<Cell>;
+
 /// Reusable frame storage retained between executions of cached bytecode.
 #[derive(Default)]
 pub(crate) struct ExecutionPools {
-    // Bucketed by local count, since a hot loop only ever recycles a handful of distinct
-    // chunk shapes — a linear scan over one mixed-length pool showed up as real cost.
-    local_pool: FxHashMap<u16, Vec<Vec<Cell>>>,
+    /// Pooled frames, indexed by local count (not hashed, to skip a per-call hash lookup).
+    local_pool: Vec<Vec<LocalFrame>>,
     stack_pool: Vec<Vec<StackValue>>,
 }
+
+/// Local counts at or above this skip pooling.
+const MAX_POOLED_LOCAL_COUNT: usize = 256;
 
 impl ExecutionLimits {
     fn new(timeout: Option<Duration>, max_call_stack_depth: u32, pools: ExecutionPools) -> Self {
@@ -112,7 +116,7 @@ impl ExecutionLimits {
         let locals = self
             .pools
             .local_pool
-            .get_mut(&count)
+            .get_mut(count as usize)
             .and_then(|bucket| bucket.pop())
             .unwrap_or_else(|| fresh_locals(count as usize));
         for local in &locals[initialized.min(count as usize)..] {
@@ -123,7 +127,14 @@ impl ExecutionLimits {
 
     fn recycle_locals(&mut self, locals: Vec<Cell>) {
         const MAX_RETAINED_PER_LENGTH: usize = 8;
-        let bucket = self.pools.local_pool.entry(locals.len() as u16).or_default();
+        let count = locals.len();
+        if count >= MAX_POOLED_LOCAL_COUNT {
+            return;
+        }
+        if count >= self.pools.local_pool.len() {
+            self.pools.local_pool.resize_with(count + 1, Vec::new);
+        }
+        let bucket = &mut self.pools.local_pool[count];
         if bucket.len() < MAX_RETAINED_PER_LENGTH {
             bucket.push(locals);
         }

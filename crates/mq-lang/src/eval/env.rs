@@ -302,7 +302,7 @@ impl Env {
     }
 
     /// This scope's own bindings, for the VM's debug-expression bridge.
-    #[cfg(feature = "tarn")]
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
     pub(crate) fn raw_entries(&self) -> Vec<(Ident, RuntimeValue)> {
         self.context
             .iter_entries()

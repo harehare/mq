@@ -603,22 +603,44 @@ impl<R: ModuleResolver> Compiler<R> {
             }
         }
         self.compile_functions_with_forward_refs(&defs)?;
-        for item in deferred {
+
+        let Some((last, init)) = deferred.split_last() else {
+            self.emit(OpCode::GetLocal(SELF_SLOT));
+            return Ok(());
+        };
+        for item in init {
             match item {
                 Deferred::Statement(node) => {
-                    self.compile_expr(&node)?;
-                    if Self::is_auto_call_candidate(&node) {
+                    self.compile_expr(node)?;
+                    if Self::is_auto_call_candidate(node) {
                         self.emit(OpCode::MaybeAutoCall);
                     }
                 }
-                Deferred::ModuleVars(module) => self.compile_module_vars(&module)?,
+                Deferred::ModuleVars(module) => self.compile_module_vars(module)?,
                 Deferred::InlineModuleRest(module_alias, depth, rest) => {
-                    self.compile_module_rest(module_alias, depth, &rest)?
+                    self.compile_module_rest(*module_alias, *depth, rest)?
                 }
             }
             self.emit(OpCode::SetLocal(SELF_SLOT));
         }
-        self.emit(OpCode::GetLocal(SELF_SLOT));
+        match last {
+            Deferred::Statement(node) => {
+                self.compile_expr(node)?;
+                if Self::is_auto_call_candidate(node) {
+                    self.emit(OpCode::MaybeAutoCall);
+                }
+            }
+            Deferred::ModuleVars(module) => {
+                self.compile_module_vars(module)?;
+                self.emit(OpCode::SetLocal(SELF_SLOT));
+                self.emit(OpCode::GetLocal(SELF_SLOT));
+            }
+            Deferred::InlineModuleRest(module_alias, depth, rest) => {
+                self.compile_module_rest(*module_alias, *depth, rest)?;
+                self.emit(OpCode::SetLocal(SELF_SLOT));
+                self.emit(OpCode::GetLocal(SELF_SLOT));
+            }
+        }
         Ok(())
     }
 
@@ -650,14 +672,22 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.scope_mut().declare(ident.name);
             }
         }
-        for node in body {
+
+        let Some((last, init)) = body.split_last() else {
+            self.emit(OpCode::GetLocal(SELF_SLOT));
+            return Ok(());
+        };
+        for node in init {
             self.compile_expr(node)?;
             if Self::is_auto_call_candidate(node) {
                 self.emit(OpCode::MaybeAutoCall);
             }
             self.emit(OpCode::SetLocal(SELF_SLOT));
         }
-        self.emit(OpCode::GetLocal(SELF_SLOT));
+        self.compile_expr(last)?;
+        if Self::is_auto_call_candidate(last) {
+            self.emit(OpCode::MaybeAutoCall);
+        }
         Ok(())
     }
 
@@ -1883,6 +1913,12 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::GetLocal(acc_slot));
         self.emit(OpCode::SetLocal(SELF_SLOT));
         self.compile_body(body)?;
+        // compile_body no longer writes SELF_SLOT itself; the loop's condition re-reads it
+        // next iteration, so sync it here explicitly. Written as SetLocal+GetLocal (not Dup)
+        // so the peephole pass can still fold it away when the body's own last op already is
+        // `GetLocal(SELF_SLOT)` (e.g. `i -= 1`, whose value is self, unchanged).
+        self.emit(OpCode::SetLocal(SELF_SLOT));
+        self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
         let back = self.chunk_mut().backward_offset(continue_target);
         self.emit(OpCode::Jump(back));
