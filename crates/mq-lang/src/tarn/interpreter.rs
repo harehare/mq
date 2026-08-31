@@ -150,8 +150,6 @@ use crate::ast::node::Node;
 /// A read-only snapshot of a VM frame at a source evaluation boundary.
 #[cfg(feature = "debugger")]
 #[derive(Debug, Clone)]
-// Consumed by the Engine adapter in the next M4 slice; the standalone VM runner uses no hook.
-#[allow(dead_code)]
 pub(crate) struct DebugEvent {
     pub(crate) token_id: TokenId,
     pub(crate) node: Shared<Node>,
@@ -222,7 +220,7 @@ impl fmt::Display for VmError {
 }
 
 impl VmError {
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
             VmError::Located(_, token_id) => Some(*token_id),
@@ -392,7 +390,6 @@ fn run_impl(
 }
 
 #[cfg(feature = "debugger")]
-#[allow(dead_code)] // Used by the VM debugger adapter before its Engine cutover in M5.
 pub(crate) fn run_debug_expression(
     compiled: &CompiledProgram,
     bindings: &[RuntimeValue],

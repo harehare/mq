@@ -115,7 +115,6 @@ pub(crate) fn compile_program<R: ModuleResolver>(
 
 /// Compiles a debugger expression with paused-frame names predeclared as top-level slots.
 #[cfg(feature = "debugger")]
-#[allow(dead_code)] // Used by the VM debugger adapter before its Engine cutover in M5.
 pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
