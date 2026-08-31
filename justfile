@@ -58,10 +58,10 @@ build-target target:
     cargo build --release --target {{target}} -p mq-lint --features="cli"
     cargo build --release --target {{target}} -p mq-formatter
 
-# Build benchmarks with codspeed
+# Build benchmarks with codspeed. Runs against the tarn VM backend, not the tree-walker.
 [working-directory: 'crates/mq-lang']
 build-bench:
-    cargo codspeed build
+    cargo codspeed build --features tarn
 
 # Build WebAssembly package for web use
 [working-directory: 'crates/mq-wasm']
