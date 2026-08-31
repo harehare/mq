@@ -11,6 +11,9 @@ readme = "README.md"
 repository = "https://github.com/harehare/mq"
 version = "0.8.4"
 
+[features]
+tarn = ["mq-lang/tarn"]
+
 [dependencies]
 crossbeam-channel = {workspace = true}
 dap = {workspace = true}

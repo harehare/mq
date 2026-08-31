@@ -5,7 +5,6 @@ use dap::responses::{
     SetExpressionResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
 };
 use dap::types::Breakpoint;
-use mq_lang::Shared;
 use std::borrow::Cow;
 use std::io;
 use std::path::PathBuf;
@@ -300,19 +299,19 @@ impl MqAdapter {
 
     /// Evaluate code in the current debug context
     fn eval(&self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
-        let mut engine: mq_lang::DefaultEngine = if let Some(ref context) = self.current_debug_context {
-            mq_lang::DefaultEngine::default().switch_env(Shared::clone(&context.env))
-        } else {
+        let Some(context) = self.current_debug_context.as_ref() else {
             return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
                 "Current context not found",
             ))) as Box<dyn std::error::Error>);
         };
 
-        engine.eval(code, mq_lang::null_input().into_iter()).map_err(|e| {
-            let error_msg = format!("Evaluation error: {}", e);
-            error!(error = %error_msg);
-            Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
-        })
+        mq_lang::DefaultEngine::default()
+            .eval_debug_expression(code, &context.env)
+            .map_err(|e| {
+                let error_msg = format!("Evaluation error: {}", e);
+                error!(error = %error_msg);
+                Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
+            })
     }
 
     /// Handle DAP request and send appropriate response
@@ -662,6 +661,7 @@ impl MqAdapter {
 mod tests {
     use super::*;
     use dap::server::Server;
+    use mq_lang::Shared;
     use std::io::{BufReader, BufWriter, Cursor};
 
     #[test]
@@ -1039,6 +1039,21 @@ mod tests {
         let result = adapter.handle_request(req, &mut server);
         // The result might succeed or fail - just ensure it doesn't panic
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_eval_resolves_debug_context_bindings() {
+        let mut adapter = MqAdapter::new();
+        let context = mq_lang::DebugContext::default();
+        context
+            .env
+            .write()
+            .unwrap()
+            .define("x".into(), mq_lang::RuntimeValue::Number(41.into()));
+        adapter.current_debug_context = Some(context);
+
+        let result = adapter.eval("x + 1").unwrap();
+        assert_eq!(result[0], mq_lang::RuntimeValue::Number(42.into()));
     }
 
     #[test]
