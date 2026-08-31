@@ -237,6 +237,9 @@ pub(crate) struct Chunk {
     /// aren't a compiled `ast::Params` function body (the top-level program, `try`/`catch`
     /// closures, ...), which `CallValue` never targets.
     pub(crate) param_shape: ParamShape,
+    /// Memoizes `captures_local_slots` — chunks never change after compilation, but every
+    /// call scans `code`, so a first-call cache turns an O(chunk size) check into O(1).
+    captures_local_slots_cache: std::sync::OnceLock<bool>,
 }
 
 impl Chunk {
@@ -251,18 +254,20 @@ impl Chunk {
 
     /// Whether a closure or parameter default can retain one of this frame's local cells.
     pub(crate) fn captures_local_slots(&self) -> bool {
-        self.code.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::MakeClosure(_, sources)
-                    if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-            )
-        }) || self.param_shape.bindings.iter().any(|binding| {
-            matches!(
-                binding,
-                ParamBinding::Optional(_, _, sources)
-                    if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-            )
+        *self.captures_local_slots_cache.get_or_init(|| {
+            self.code.iter().any(|op| {
+                matches!(
+                    op,
+                    OpCode::MakeClosure(_, sources)
+                        if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
+                )
+            }) || self.param_shape.bindings.iter().any(|binding| {
+                matches!(
+                    binding,
+                    ParamBinding::Optional(_, _, sources)
+                        if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
+                )
+            })
         })
     }
 
