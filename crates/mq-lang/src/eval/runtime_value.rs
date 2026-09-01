@@ -108,9 +108,12 @@ pub enum RuntimeValue {
     /// passed to `partial`, ...) — see `tarn::value::VmClosureValue`. Only exists behind the
     /// `tarn` feature; the tree-walker never creates one. `VmClosureValue` is deliberately
     /// `pub(crate)` — this variant is constructible only from within the crate.
+    ///
+    /// `Shared`-wrapped, not inline: `VmClosureValue` is 64 bytes (chunks/upvalues/bound_args),
+    /// which would otherwise force every `RuntimeValue` variant to that size.
     #[cfg(feature = "tarn")]
     #[allow(private_interfaces)]
-    VmClosure(crate::tarn::value::VmClosureValue),
+    VmClosure(Shared<crate::tarn::value::VmClosureValue>),
     /// A dictionary mapping identifiers to runtime values.
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].

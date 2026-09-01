@@ -156,7 +156,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                 ));
             }
             let mut vc = vc;
-            vc.bound_args.extend(provided);
+            Shared::make_mut(&mut vc).bound_args.extend(provided);
             Ok(RuntimeValue::VmClosure(vc))
         }
         other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
