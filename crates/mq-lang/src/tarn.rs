@@ -202,11 +202,14 @@ fn format_value(value: &RuntimeValue) -> String {
     }
 }
 
-/// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation.
+/// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation. `after` is the
+/// program compiled from the trailing half of a `nodes` split, run once against every input's
+/// aggregated `before` result rather than per input; `None` for a program with no `nodes`.
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
 #[derive(Clone)]
 pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
+    after: Option<compiler::CompiledProgram>,
     configuration: Vec<String>,
     execution_pools: Shared<SharedCell<interpreter::ExecutionPools>>,
 }
@@ -216,6 +219,7 @@ impl fmt::Debug for CachedProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CachedProgram")
             .field("program", &self.program)
+            .field("after", &self.after)
             .field("configuration", &self.configuration)
             .finish_non_exhaustive()
     }
@@ -230,8 +234,30 @@ pub(crate) fn compile_cached_program<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     configuration: Vec<String>,
 ) -> Result<CachedProgram, Error> {
+    let (program, after) = if let Some((before, after)) = split_at_nodes(program) {
+        (
+            compiler::compile_program_for_engine(
+                &before.to_vec(),
+                Shared::clone(&token_arena),
+                module_loader.clone(),
+                &[],
+            )?,
+            Some(compiler::compile_program_for_engine(
+                &after.to_vec(),
+                token_arena,
+                module_loader,
+                &[],
+            )?),
+        )
+    } else {
+        (
+            compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?,
+            None,
+        )
+    };
     Ok(CachedProgram {
-        program: compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?,
+        program,
+        after,
         configuration,
         execution_pools: Shared::new(SharedCell::new(interpreter::ExecutionPools::default())),
     })
@@ -247,10 +273,16 @@ pub(crate) fn cached_program_is_current<R: ModuleResolver>(
     if compiled.configuration != configuration {
         return Ok(false);
     }
-    module_loader
+    let before_current = module_loader
         .dependencies_are_current(&compiled.program.module_dependencies)
-        .map_err(compiler::CompileError::Module)
-        .map_err(Error::from)
+        .map_err(compiler::CompileError::Module)?;
+    let after_current = match &compiled.after {
+        Some(after) => module_loader
+            .dependencies_are_current(&after.module_dependencies)
+            .map_err(compiler::CompileError::Module)?,
+        None => true,
+    };
+    Ok(before_current && after_current)
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.
@@ -291,7 +323,20 @@ where
         }
     }
     restore_execution_pools(&compiled.execution_pools, pools);
-    Ok(values)
+    let Some(after) = &compiled.after else {
+        return Ok(values);
+    };
+    match interpreter::run_with_globals(
+        after,
+        RuntimeValue::Array(Shared::new(values)),
+        host_functions,
+        timeout,
+        max_call_stack_depth,
+        &[],
+    )? {
+        RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
+        value => Ok(vec![value]),
+    }
 }
 
 #[cfg(all(feature = "tarn", not(feature = "debugger"), not(feature = "sync")))]
