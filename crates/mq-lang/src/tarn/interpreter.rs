@@ -1074,7 +1074,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let v = pop!();
                 write_cell(&upvalues[*idx as usize], v);
             }
-            OpCode::MakeClosure(target_chunk, sources) => {
+            OpCode::MakeClosure(payload) => {
+                let (target_chunk, sources) = payload.as_ref();
                 let captured = capture_upvalues(sources, locals, upvalues);
                 stack.push(StackValue::Closure(Shared::new(Closure {
                     chunk_index: *target_chunk,
@@ -1260,7 +1261,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let matches = type_check(&v, type_str.as_str());
                 stack.push(StackValue::Value(RuntimeValue::Boolean(matches)));
             }
-            OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_, _) => {
+            OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_) => {
                 selector_op(op, stack, chunks, chunk, ip)?;
             }
             OpCode::GetEnvVar(name_idx) => {
@@ -1421,20 +1422,15 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     stack.push(value);
                 }
             }
-            OpCode::TryCatch {
-                has_binder,
-                break_acc_slot,
-                break_offset,
-                continue_offset,
-            } => {
+            OpCode::TryCatch(info) => {
                 let catch_closure = pop!();
                 let try_closure = pop!();
                 match handle_try_catch(
                     TryCatchArgs {
-                        has_binder: *has_binder,
-                        break_acc_slot: *break_acc_slot,
-                        break_offset: *break_offset,
-                        continue_offset: *continue_offset,
+                        has_binder: info.has_binder,
+                        break_acc_slot: info.break_acc_slot,
+                        break_offset: info.break_offset,
+                        continue_offset: info.continue_offset,
                         catch_closure,
                         try_closure,
                     },
@@ -1751,7 +1747,8 @@ fn selector_op(
             let subject = pop_value_from(stack, chunks, chunk, ip)?;
             stack.push(StackValue::Value(eval_selector_expr(&subject, selector)));
         }
-        OpCode::SelectorMatchWithArgs(selector, argc) => {
+        OpCode::SelectorMatchWithArgs(payload) => {
+            let (selector, argc) = payload.as_ref();
             let mut args = Vec::with_capacity(*argc as usize);
             for _ in 0..*argc {
                 args.push(pop_value_from(stack, chunks, chunk, ip)?);
