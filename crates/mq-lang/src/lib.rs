@@ -299,7 +299,7 @@ mod tests {
                 )
                 .unwrap(),
             vec![RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "Hello,world!".to_string(),
                     position: None
                 },)),

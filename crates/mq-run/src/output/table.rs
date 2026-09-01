@@ -360,7 +360,7 @@ mod tests {
             value: "hello markdown".to_string(),
             position: None,
         });
-        let values = vec![RuntimeValue::Markdown(Box::new(node), None)];
+        let values = vec![RuntimeValue::Markdown(Shared::new(node), None)];
         let table = runtime_values_to_table(&values, None);
         assert!(!table.to_string().is_empty());
     }
@@ -392,7 +392,7 @@ mod tests {
             })],
             position: None,
         });
-        let values = vec![RuntimeValue::Markdown(Box::new(node), None)];
+        let values = vec![RuntimeValue::Markdown(Shared::new(node), None)];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(s.contains("heading") || s.contains("Title") || !s.is_empty());
@@ -408,7 +408,7 @@ mod tests {
             value: "with_position".to_string(),
             position: Some(pos),
         });
-        let values = vec![RuntimeValue::Markdown(Box::new(node), None)];
+        let values = vec![RuntimeValue::Markdown(Shared::new(node), None)];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
         assert!(!s.is_empty());
@@ -424,7 +424,7 @@ mod tests {
             value: "themed".to_string(),
             position: Some(pos),
         });
-        let values = vec![RuntimeValue::Markdown(Box::new(node), None)];
+        let values = vec![RuntimeValue::Markdown(Shared::new(node), None)];
         let theme = plain();
         let table = runtime_values_to_table(&values, Some(&theme));
         assert!(!table.to_string().is_empty());
@@ -438,8 +438,8 @@ mod tests {
             position: None,
         });
         let values = vec![
-            RuntimeValue::Markdown(Box::new(empty_node), None),
-            RuntimeValue::Markdown(Box::new(text_node), None),
+            RuntimeValue::Markdown(Shared::new(empty_node), None),
+            RuntimeValue::Markdown(Shared::new(text_node), None),
         ];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();
@@ -473,7 +473,10 @@ mod tests {
             position: None,
         });
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("md"), RuntimeValue::Markdown(Box::new(node), None));
+        map.insert(
+            mq_lang::Ident::new("md"),
+            RuntimeValue::Markdown(Shared::new(node), None),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         let s = table.to_string();

@@ -92,7 +92,9 @@ pub enum RuntimeValue {
     /// builtins must go through [`array_mut`] instead of mutating directly.
     Array(Shared<Vec<RuntimeValue>>),
     /// A markdown node with an optional selector for indexing.
-    Markdown(Box<Node>, Option<Selector>),
+    ///
+    /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`markdown_mut`].
+    Markdown(Shared<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
     ///
     /// Both the params and the body are behind [`Shared`] for the same reason as
@@ -409,6 +411,12 @@ pub(crate) fn dict_mut(map: &mut Shared<BTreeMap<Ident, RuntimeValue>>) -> &mut 
     Shared::<BTreeMap<Ident, RuntimeValue>>::make_mut(map)
 }
 
+/// Clone-on-write access to a markdown node; see [`array_mut`].
+#[inline(always)]
+pub(crate) fn markdown_mut(node: &mut Shared<Node>) -> &mut Node {
+    Shared::<Node>::make_mut(node)
+}
+
 impl RuntimeValue {
     /// The boolean `false` value.
     pub const FALSE: RuntimeValue = Self::Boolean(false);
@@ -433,7 +441,7 @@ impl RuntimeValue {
 
     /// Creates a new markdown runtime value from the given node.
     pub fn new_markdown(node: Node) -> RuntimeValue {
-        RuntimeValue::Markdown(Box::new(node), None)
+        RuntimeValue::Markdown(Shared::new(node), None)
     }
 
     /// Returns the type name of this runtime value as a string.
@@ -579,10 +587,10 @@ impl RuntimeValue {
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
             RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
-                RuntimeValue::Markdown(Box::new(n.with_children_value(value, *i)), Some(Selector::Index(*i)))
+                RuntimeValue::Markdown(Shared::new(n.with_children_value(value, *i)), Some(Selector::Index(*i)))
             }
             RuntimeValue::Markdown(n, selector) => {
-                RuntimeValue::Markdown(Box::new(n.with_value(value)), selector.clone())
+                RuntimeValue::Markdown(Shared::new(n.with_value(value)), selector.clone())
             }
             _ => RuntimeValue::NONE,
         }
@@ -603,7 +611,17 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn set_position(&mut self, position: Option<mq_markdown::Position>) {
         if let RuntimeValue::Markdown(node, _) = self {
-            node.set_position(position);
+            markdown_mut(node).set_position(position);
+        }
+    }
+
+    /// Clears position information from a markdown node (recursively).
+    ///
+    /// Only affects markdown values; other value types are unaffected.
+    #[inline(always)]
+    pub fn strip_positions(&mut self) {
+        if let RuntimeValue::Markdown(node, _) = self {
+            markdown_mut(node).strip_positions();
         }
     }
 
@@ -792,7 +810,7 @@ impl RuntimeValues {
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {
                                 if let RuntimeValue::Markdown(mut current_node, selector) = current_value {
-                                    current_node.apply_fragment((**node).clone());
+                                    markdown_mut(&mut current_node).apply_fragment((**node).clone());
                                     RuntimeValue::Markdown(current_node, selector)
                                 } else {
                                     updated_value
@@ -813,7 +831,7 @@ impl RuntimeValues {
                                         None
                                     } else {
                                         Some(RuntimeValue::Markdown(
-                                            Box::new(node.with_value(o.to_string().as_str())),
+                                            Shared::new(node.with_value(o.to_string().as_str())),
                                             None,
                                         ))
                                     }
@@ -931,7 +949,7 @@ mod tests {
         );
         assert_eq!(
             RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
                 })),
@@ -955,7 +973,7 @@ mod tests {
         assert!(!RuntimeValue::Array(Shared::new(Vec::new())).is_truthy());
         assert!(
             RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
                 })),
@@ -965,7 +983,7 @@ mod tests {
         );
         assert!(
             !RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "".to_string(),
                     position: None
                 })),
@@ -997,13 +1015,13 @@ mod tests {
         );
         assert!(
             RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "test".to_string(),
                     position: None
                 })),
                 None
             ) < RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "test2".to_string(),
                     position: None
                 })),
@@ -1032,7 +1050,7 @@ mod tests {
         assert_eq!(RuntimeValue::Array(Shared::new(vec![RuntimeValue::None])).len(), 1);
         assert_eq!(
             RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "a".to_string(),
                     position: None
                 })),
@@ -1119,7 +1137,7 @@ mod tests {
             position: None,
         });
 
-        let markdown_with_selector = RuntimeValue::Markdown(Box::new(parent.clone()), Some(Selector::Index(1)));
+        let markdown_with_selector = RuntimeValue::Markdown(Shared::new(parent.clone()), Some(Selector::Index(1)));
 
         let selected = markdown_with_selector.markdown_node();
         assert!(selected.is_some());
@@ -1323,7 +1341,7 @@ mod tests {
             value: "hi".to_string(),
             position: None,
         });
-        let value = RuntimeValue::Markdown(Box::new(node), None).to_json_value();
+        let value = RuntimeValue::Markdown(Shared::new(node), None).to_json_value();
         assert_eq!(value["type"], serde_json::Value::String("Text".to_string()));
         assert_eq!(value["value"], serde_json::Value::String("hi".to_string()));
     }
@@ -1336,7 +1354,7 @@ mod tests {
             value: "hi".to_string(),
             position: None,
         });
-        let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(node), None)]));
+        let arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Shared::new(node), None)]));
         match arr.to_json_value() {
             serde_json::Value::Array(items) => {
                 assert_ne!(items[0], serde_json::Value::Null);
@@ -1435,7 +1453,7 @@ mod tests {
     #[test]
     fn test_markdown_node_with_no_selector() {
         let node = mq_markdown::Node::Empty;
-        let v = RuntimeValue::Markdown(Box::new(node), None);
+        let v = RuntimeValue::Markdown(Shared::new(node), None);
         assert!(v.markdown_node().is_some());
     }
 
@@ -1794,7 +1812,7 @@ mod tests {
     #[test]
     fn test_update_with_markdown_to_empty_markdown_returns_original() {
         let orig: RuntimeValues = vec![md("orig")].into();
-        let updated: RuntimeValues = vec![RuntimeValue::Markdown(Box::new(mq_markdown::Node::Empty), None)].into();
+        let updated: RuntimeValues = vec![RuntimeValue::Markdown(Shared::new(mq_markdown::Node::Empty), None)].into();
         let result = orig.update_with(updated);
         assert_eq!(result[0], md("orig"));
     }

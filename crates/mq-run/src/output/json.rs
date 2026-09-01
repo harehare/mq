@@ -172,7 +172,7 @@ mod tests {
     #[test]
     fn test_empty_markdown_filtered_out() {
         let empty_node = mq_markdown::Node::Empty;
-        let values = vec![RuntimeValue::Markdown(Box::new(empty_node), None)];
+        let values = vec![RuntimeValue::Markdown(Shared::new(empty_node), None)];
         let result = runtime_values_to_json(&values, None, false).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert!(parsed.is_array());

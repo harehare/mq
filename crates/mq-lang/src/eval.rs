@@ -490,7 +490,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 | RuntimeValue::String(_)
                 | RuntimeValue::Bytes(_) => value.to_string().into(),
                 RuntimeValue::Symbol(i) => i.as_str().into(),
-                RuntimeValue::Markdown(node, _) => *node,
+                RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node),
             })
         })
         .map(RuntimeValue::new_markdown)
