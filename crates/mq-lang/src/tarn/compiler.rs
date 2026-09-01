@@ -213,6 +213,45 @@ static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| 
         .collect()
 });
 
+/// Per-function soft-builtin call graph for `builtin.mq`, cached per thread since walking every
+/// builtin function body on each compile is otherwise wasted work.
+struct BuiltinDependencyGraph {
+    /// `module.functions[0]`, used to detect a reparsed (non-cached) `builtin.mq`.
+    anchor: Shared<Node>,
+    dependencies: FxHashMap<crate::Ident, FxHashSet<crate::Ident>>,
+}
+
+thread_local! {
+    static BUILTIN_DEPENDENCY_GRAPH: std::cell::RefCell<Option<Shared<BuiltinDependencyGraph>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn builtin_dependency_graph(module: &crate::Module) -> Option<Shared<BuiltinDependencyGraph>> {
+    let anchor = module.functions.first()?;
+
+    if let Some(cached) = BUILTIN_DEPENDENCY_GRAPH.with(|cache| cache.borrow().clone())
+        && Shared::ptr_eq(&cached.anchor, anchor)
+    {
+        return Some(cached);
+    }
+
+    let dependencies = module
+        .functions
+        .iter()
+        .filter_map(|node| match &*node.expr {
+            Expr::Def(ident, _, _) => Some((ident.name, soft_builtin_names_in_program(&vec![Shared::clone(node)]))),
+            _ => None,
+        })
+        .collect();
+
+    let graph = Shared::new(BuiltinDependencyGraph {
+        anchor: Shared::clone(anchor),
+        dependencies,
+    });
+    BUILTIN_DEPENDENCY_GRAPH.with(|cache| *cache.borrow_mut() = Some(Shared::clone(&graph)));
+    Some(graph)
+}
+
 /// Finds soft-builtin names referenced by a program.
 ///
 /// This lets the Engine compile only the builtin definitions reachable from a query instead of
@@ -1175,22 +1214,14 @@ impl<R: ModuleResolver> Compiler<R> {
             return self.compile_flattened_module(module);
         }
 
-        let definitions: FxHashMap<crate::Ident, &Shared<Node>> = module
-            .functions
-            .iter()
-            .filter_map(|node| match &*node.expr {
-                Expr::Def(ident, _, _) => Some((ident.name, node)),
-                _ => None,
-            })
-            .collect();
+        let graph = builtin_dependency_graph(module);
         let mut required = roots.clone();
         let mut pending: Vec<crate::Ident> = roots.iter().copied().collect();
         while let Some(name) = pending.pop() {
-            let Some(definition) = definitions.get(&name) else {
+            let Some(dependencies) = graph.as_ref().and_then(|graph| graph.dependencies.get(&name)) else {
                 continue;
             };
-            let dependencies = soft_builtin_names_in_program(&vec![Shared::clone(definition)]);
-            for dependency in dependencies {
+            for &dependency in dependencies {
                 if required.insert(dependency) {
                     pending.push(dependency);
                 }
