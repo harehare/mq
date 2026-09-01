@@ -1107,6 +1107,34 @@ mod tests {
     }
 
     #[test]
+    fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries() {
+        fn compile_and_run_for_engine(code: &str) -> RuntimeValue {
+            let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+            let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+            let compiled =
+                compiler::compile_program_for_engine(&program, token_arena, ModuleLoader::new(StdModuleResolver), &[])
+                    .unwrap();
+            interpreter::run(
+                &compiled,
+                RuntimeValue::None,
+                &HostFunctions::default(),
+                None,
+                crate::eval::Options::default().max_call_stack_depth,
+            )
+            .unwrap()
+        }
+
+        // Interleaves queries reaching disjoint soft-builtin sets, so a stale
+        // `builtin_dependency_graph` cache entry from one would break another.
+        assert_eq!(compile_and_run_for_engine("is_array(1)"), RuntimeValue::Boolean(false));
+        assert_eq!(
+            compile_and_run_for_engine("first([1, 2, 3])"),
+            RuntimeValue::Number(1.into())
+        );
+        assert_eq!(compile_and_run_for_engine("is_array([1])"), RuntimeValue::Boolean(true));
+    }
+
+    #[test]
     fn let_shadowing_a_loop_local_reuses_its_slot_instead_of_hanging() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
         let program = crate::parse(
