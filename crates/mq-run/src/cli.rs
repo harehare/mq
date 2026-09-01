@@ -1349,7 +1349,8 @@ impl Cli {
                 let engine = self.create_engine()?;
                 let input = match files {
                     Some(files) if !files.is_empty() => {
-                        let contents = self.read_files_content(files)?;
+                        let files = Self::expand_glob_patterns(files)?;
+                        let contents = self.read_files_content(&files)?;
                         let mut combined = Vec::new();
                         for (file, content) in &contents {
                             combined.extend(self.resolve_input(file, content)?);
@@ -1780,7 +1781,7 @@ impl Cli {
 
     #[cfg(feature = "watch")]
     fn watch_targets(&self) -> miette::Result<Vec<PathBuf>> {
-        let mut targets = self.files.clone().unwrap_or_default();
+        let mut targets = self.resolved_files()?.unwrap_or_default();
 
         if targets.is_empty() {
             return Err(miette!(
@@ -2095,8 +2096,8 @@ impl Cli {
         F: FnMut(Option<&PathBuf>, String) -> miette::Result<()>,
     {
         // If files are specified, process each file line by line
-        if let Some(files) = &self.files {
-            for file in files {
+        if let Some(files) = self.resolved_files()? {
+            for file in &files {
                 let file_handle = fs::File::open(file).into_diagnostic()?;
                 let reader = io::BufReader::new(file_handle);
                 for line_result in reader.lines() {
@@ -2132,6 +2133,41 @@ impl Cli {
                 let ext = file.extension().unwrap_or_default().to_string_lossy().to_lowercase();
                 InputFormat::from_extension(&ext).needs_binary_read()
             })
+    }
+
+    /// Expands glob patterns (`*`, `?`, `[`) that don't exist as literal paths, so `mq`
+    /// behaves the same on shells that don't expand globs themselves (e.g. Windows `cmd.exe`).
+    fn expand_glob_patterns(files: &[PathBuf]) -> miette::Result<Vec<PathBuf>> {
+        let mut expanded = Vec::with_capacity(files.len());
+
+        for file in files {
+            let pattern = file.to_string_lossy();
+
+            if file.exists() || !pattern.contains(['*', '?', '[']) {
+                expanded.push(file.clone());
+                continue;
+            }
+
+            let matches = glob::glob(&pattern)
+                .map_err(|e| miette!("invalid glob pattern `{}`: {}", pattern, e))?
+                .filter_map(Result::ok)
+                .collect::<Vec<_>>();
+
+            if matches.is_empty() {
+                expanded.push(file.clone());
+            } else {
+                expanded.extend(matches);
+            }
+        }
+
+        Ok(expanded)
+    }
+
+    fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
+        self.files
+            .as_ref()
+            .map(|files| Self::expand_glob_patterns(files))
+            .transpose()
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
@@ -2180,8 +2216,7 @@ impl Cli {
             return Ok(vec![(None, ContentData::empty())]);
         }
 
-        self.files
-            .clone()
+        self.resolved_files()?
             .map(|files| self.read_files_content(&files))
             .unwrap_or_else(|| {
                 if io::stdin().is_terminal() {
@@ -5478,6 +5513,107 @@ mod tests {
             ..Cli::default()
         };
         assert!(cli.run().is_ok(), "multi-file run without --argv should succeed");
+    }
+
+    #[test]
+    fn test_files_glob_pattern_expansion() {
+        let (temp_dir, file1) = create_file("mq_glob_expand_test_a.md", "# File One");
+        let (_, file2) = create_file("mq_glob_expand_test_b.md", "# File Two");
+        let output_file = temp_dir.join("mq_glob_expand_result.md");
+        let file1_clone = file1.clone();
+        let file2_clone = file2.clone();
+        let output_clone = output_file.clone();
+
+        defer! {
+            if file1_clone.exists() { std::fs::remove_file(&file1_clone).ok(); }
+            if file2_clone.exists() { std::fs::remove_file(&file2_clone).ok(); }
+            if output_clone.exists() { std::fs::remove_file(&output_clone).ok(); }
+        }
+
+        let pattern = temp_dir.join("mq_glob_expand_test_*.md");
+        let cli = Cli {
+            input: InputArgs {
+                aggregate: true,
+                eval_all: true,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Text,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(".h | len".to_string()),
+            files: Some(vec![pattern]),
+            argv: None,
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok(), "glob pattern should expand and run successfully");
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(result.trim(), "2", "both files matched by the glob should be counted");
+    }
+
+    #[test]
+    fn test_files_multiple_glob_patterns_expansion() {
+        let (temp_dir, file1) = create_file("mq_glob_multi_test_a.md", "# File One");
+        let (_, file2) = create_file("mq_glob_multi_other_b.md", "# File Two");
+        let output_file = temp_dir.join("mq_glob_multi_result.md");
+        let file1_clone = file1.clone();
+        let file2_clone = file2.clone();
+        let output_clone = output_file.clone();
+
+        defer! {
+            if file1_clone.exists() { std::fs::remove_file(&file1_clone).ok(); }
+            if file2_clone.exists() { std::fs::remove_file(&file2_clone).ok(); }
+            if output_clone.exists() { std::fs::remove_file(&output_clone).ok(); }
+        }
+
+        let pattern1 = temp_dir.join("mq_glob_multi_test_*.md");
+        let pattern2 = temp_dir.join("mq_glob_multi_other_*.md");
+        let cli = Cli {
+            input: InputArgs {
+                aggregate: true,
+                eval_all: true,
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: OutputFormat::Text,
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            query: Some(".h | len".to_string()),
+            files: Some(vec![pattern1, pattern2]),
+            argv: None,
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_ok(),
+            "multiple glob patterns should expand and run successfully"
+        );
+        let result = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert_eq!(
+            result.trim(),
+            "2",
+            "files matched by both glob patterns should be counted"
+        );
+    }
+
+    #[test]
+    fn test_files_glob_pattern_no_matches_falls_through_as_literal() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs::default(),
+            query: Some("self".to_string()),
+            files: Some(vec![PathBuf::from("/nonexistent/mq_glob_no_match_*.md")]),
+            argv: None,
+            ..Cli::default()
+        };
+
+        assert!(
+            cli.run().is_err(),
+            "non-matching glob pattern should surface a file error"
+        );
     }
 
     #[test]

@@ -2820,6 +2820,7 @@ dependencies = [
  "csv",
  "dirs 6.0.0",
  "flate2",
+ "glob",
  "miette",
  "mimalloc",
  "mq-dap",
