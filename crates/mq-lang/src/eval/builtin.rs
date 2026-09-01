@@ -3950,13 +3950,13 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             let mut stack: Vec<(String, BTreeMap<Ident, RuntimeValue>, Vec<RuntimeValue>, Option<String>)> = Vec::new();
             let mut root: Option<RuntimeValue> = None;
 
-            let parse_attrs = |e: &quick_xml::events::BytesStart<'_>, reader: &quick_xml::Reader<&[u8]>| {
+            let parse_attrs = |e: &quick_xml::events::BytesStart<'_>| {
                 let mut attrs = BTreeMap::new();
                 for attr in e.attributes() {
                     let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
-                    let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                    let key = attr.key.as_ref().to_string();
                     let value = attr
-                        .decoded_and_normalized_value(XmlVersion::default(), reader.decoder())
+                        .normalized_value(XmlVersion::default())
                         .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
                         .to_string();
                     attrs.insert(Ident::new(&key), RuntimeValue::String(value));
@@ -3967,12 +3967,12 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             loop {
                 match reader.read_event_into(&mut buf) {
                     Ok(quick_xml::events::Event::Start(e)) => {
-                        let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                        let attrs = parse_attrs(&e, &reader)?;
+                        let tag = e.name().as_ref().to_string();
+                        let attrs = parse_attrs(&e)?;
                         stack.push((tag, attrs, Vec::new(), None));
                     }
                     Ok(quick_xml::events::Event::End(e)) => {
-                        let end_tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                        let end_tag = e.name().as_ref().to_string();
                         let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
                             Error::Runtime(format!(
                                 "XML parse error at position {}: unexpected closing tag </{}>",
@@ -4008,8 +4008,8 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         }
                     }
                     Ok(quick_xml::events::Event::Empty(e)) => {
-                        let tag = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                        let attrs = parse_attrs(&e, &reader)?;
+                        let tag = e.name().as_ref().to_string();
+                        let attrs = parse_attrs(&e)?;
                         let mut dict = BTreeMap::new();
                         dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
                         dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
@@ -4026,11 +4026,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                     }
                     Ok(quick_xml::events::Event::Text(e)) => {
                         if let Some(parent) = stack.last_mut() {
-                            let text = reader
-                                .decoder()
-                                .decode(e.as_ref())
-                                .map_err(|e| Error::Runtime(format!("XML text error: {}", e)))?
-                                .to_string();
+                            let text = e.as_ref().to_string();
 
                             if !text.is_empty() {
                                 match &mut parent.3 {
@@ -4042,11 +4038,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                     }
                     Ok(quick_xml::events::Event::CData(e)) => {
                         if let Some(parent) = stack.last_mut() {
-                            let text = reader
-                                .decoder()
-                                .decode(e.as_ref())
-                                .map_err(|e| Error::Runtime(format!("XML CDATA error: {}", e)))?
-                                .to_string();
+                            let text = e.as_ref().to_string();
                             match &mut parent.3 {
                                 Some(t) => t.push_str(&text),
                                 None => parent.3 = Some(text),
