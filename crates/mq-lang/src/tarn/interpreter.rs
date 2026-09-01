@@ -2,9 +2,7 @@ use super::bytecode::{BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SL
 use super::compiler::CompiledProgram;
 #[cfg(feature = "tarn")]
 use super::value::VmClosureValue;
-use super::value::{
-    Cell, Closure, StackValue, append_to_array_cell, array_len_and_element_at_cell, new_cell, read_cell, write_cell,
-};
+use super::value::{Cell, Closure, Locals, StackValue, read_cell, write_cell};
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::eval::builtin::{self, Args};
@@ -39,14 +37,13 @@ struct ExecutionLimits {
     pools: ExecutionPools,
 }
 
-/// One function call's local slots.
-type LocalFrame = Vec<Cell>;
-
-/// Reusable frame storage retained between executions of cached bytecode.
+/// Reusable frame storage retained between executions of cached bytecode. Only `Locals::Flat`
+/// frames are pooled: `Boxed` frames may outlive this call via a captured closure, so they're
+/// never recycled (see `run_chunk`'s `reusable_locals`).
 #[derive(Default)]
 pub(crate) struct ExecutionPools {
     /// Pooled frames, indexed by local count (not hashed, to skip a per-call hash lookup).
-    local_pool: Vec<Vec<LocalFrame>>,
+    local_pool: Vec<Vec<Locals>>,
     stack_pool: Vec<Vec<StackValue>>,
 }
 
@@ -107,25 +104,29 @@ impl ExecutionLimits {
         self.call_depth = self.call_depth.saturating_sub(1);
     }
 
-    fn take_locals(&mut self, count: u16) -> Vec<Cell> {
-        self.take_locals_with_initialized_prefix(count, 0)
+    fn take_locals(&mut self, count: u16, captures: bool) -> Locals {
+        self.take_locals_with_initialized_prefix(count, 0, captures)
     }
 
     /// Takes a frame after resetting only slots that will not immediately be overwritten.
-    fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize) -> Vec<Cell> {
-        let locals = self
-            .pools
-            .local_pool
-            .get_mut(count as usize)
-            .and_then(|bucket| bucket.pop())
-            .unwrap_or_else(|| fresh_locals(count as usize));
-        for local in &locals[initialized.min(count as usize)..] {
-            write_cell(local, StackValue::Value(RuntimeValue::None));
-        }
+    /// `captures` picks the representation for a freshly-allocated frame (see
+    /// `Chunk::captures_local_slots`); a pooled frame is always `Flat` already (or its
+    /// `sync`-build equivalent), since only those get recycled.
+    fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize, captures: bool) -> Locals {
+        let locals = if captures {
+            None
+        } else {
+            self.pools
+                .local_pool
+                .get_mut(count as usize)
+                .and_then(|bucket| bucket.pop())
+        };
+        let locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captures));
+        locals.reset_from(initialized.min(count as usize));
         locals
     }
 
-    fn recycle_locals(&mut self, locals: Vec<Cell>) {
+    fn recycle_locals(&mut self, locals: Locals) {
         const MAX_RETAINED_PER_LENGTH: usize = 8;
         let count = locals.len();
         if count >= MAX_POOLED_LOCAL_COUNT {
@@ -282,7 +283,7 @@ struct RunOptions<'a> {
 }
 
 struct CallSite<'a> {
-    locals: &'a [Cell],
+    locals: &'a Locals,
     chunk: &'a Chunk,
     ip: usize,
 }
@@ -443,8 +444,9 @@ fn run_impl_with_bindings(
     }
     let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
-    let locals = limits.take_locals(compiled.chunks[0].local_count);
-    write_cell(&locals[SELF_SLOT as usize], StackValue::Value(input));
+    let top_level_chunk = &compiled.chunks[0];
+    let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
+    locals.set(SELF_SLOT, StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
         limits.recycle_locals(locals);
         return (
@@ -453,7 +455,7 @@ fn run_impl_with_bindings(
         );
     }
     for (slot, value) in initial_bindings.iter().cloned().enumerate() {
-        write_cell(&locals[slot + 1], StackValue::Value(value));
+        locals.set(slot as u16 + 1, StackValue::Value(value));
     }
     let mut execution = ExecutionContext {
         env: &placeholder_env,
@@ -476,20 +478,22 @@ fn run_impl_with_bindings(
     (result, limits.into_pools())
 }
 
-fn fresh_locals(count: usize) -> Vec<Cell> {
-    (0..count)
-        .map(|_| new_cell(StackValue::Value(RuntimeValue::None)))
-        .collect()
+fn fresh_locals(count: usize, captures: bool) -> Locals {
+    if captures {
+        Locals::boxed(count)
+    } else {
+        Locals::flat(count)
+    }
 }
 
 /// Resolves a closure's declared upvalue sources against the currently-running frame,
 /// exactly like `MakeClosure`'s handler — shared with `bind_params`, which needs the same
 /// resolution to build a default-value thunk's captures.
-fn capture_upvalues(sources: &[UpvalueSource], locals: &[Cell], upvalues: &[Cell]) -> Vec<Cell> {
+fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell]) -> Vec<Cell> {
     sources
         .iter()
         .map(|source| match source {
-            UpvalueSource::Local(slot) => Shared::clone(&locals[*slot as usize]),
+            UpvalueSource::Local(slot) => Shared::clone(locals.cell(*slot)),
             UpvalueSource::Upvalue(idx) => Shared::clone(&upvalues[*idx as usize]),
         })
         .collect()
@@ -550,11 +554,10 @@ fn call_stack_value(
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
-    let callee_locals = execution.limits.take_locals(callee_chunk.local_count);
-    write_cell(
-        &callee_locals[SELF_SLOT as usize],
-        read_cell(&call_site.locals[SELF_SLOT as usize]),
-    );
+    let callee_locals = execution
+        .limits
+        .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
+    callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     bind_params(
         &callee_chunk.param_shape,
         args,
@@ -646,16 +649,18 @@ fn call_fixed_closure_from_stack(
     // Fixed-arity functions reserve contiguous slots for `self` and all required arguments.
     // Those slots are overwritten below, so only the remaining local slots need clearing.
     let initialized_slots = SELF_SLOT as usize + 1 + arity;
-    let callee_locals = execution
-        .limits
-        .take_locals_with_initialized_prefix(callee_chunk.local_count, initialized_slots);
-    let self_value = read_cell(&call_site.locals[SELF_SLOT as usize]);
+    let callee_locals = execution.limits.take_locals_with_initialized_prefix(
+        callee_chunk.local_count,
+        initialized_slots,
+        callee_chunk.captures_local_slots(),
+    );
+    let self_value = call_site.locals.get(SELF_SLOT);
     let first_arg_slot = if uses_implicit_self {
-        write_cell(&callee_locals[SELF_SLOT as usize], self_value.clone());
-        write_cell(&callee_locals[SELF_SLOT as usize + 1], self_value);
+        callee_locals.set(SELF_SLOT, self_value.clone());
+        callee_locals.set(SELF_SLOT + 1, self_value);
         SELF_SLOT as usize + 2
     } else {
-        write_cell(&callee_locals[SELF_SLOT as usize], self_value);
+        callee_locals.set(SELF_SLOT, self_value);
         SELF_SLOT as usize + 1
     };
     for offset in (0..argc).rev() {
@@ -666,7 +671,7 @@ fn call_fixed_closure_from_stack(
                 VmError::Corrupt("stack underflow while binding fixed-call arguments"),
             ));
         };
-        write_cell(&callee_locals[first_arg_slot + offset], value);
+        callee_locals.set((first_arg_slot + offset) as u16, value);
     }
     if call.remove_callee && stack.pop().is_none() {
         return Err(locate(
@@ -713,7 +718,7 @@ fn call_fixed_closure_from_stack(
 fn bind_params(
     shape: &ParamShape,
     args: Vec<StackValue>,
-    callee_locals: &[Cell],
+    callee_locals: &Locals,
     enclosing_upvalues: &[Cell],
     context: &mut ParameterContext<'_, '_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
@@ -731,7 +736,7 @@ fn bind_params(
 
     if use_self_param && let Some(binding) = bindings.next() {
         let self_value = current_self(callee_locals);
-        write_cell(&callee_locals[binding.slot() as usize], StackValue::Value(self_value));
+        callee_locals.set(binding.slot(), StackValue::Value(self_value));
     }
 
     for binding in bindings {
@@ -757,10 +762,7 @@ fn bind_params(
                     }
                     collected
                 };
-                write_cell(
-                    &callee_locals[*slot as usize],
-                    StackValue::Value(RuntimeValue::Array(Shared::new(collected))),
-                );
+                callee_locals.set(*slot, StackValue::Value(RuntimeValue::Array(Shared::new(collected))));
             }
             ParamBinding::Required(slot) => {
                 let Some(value) = args.next() else {
@@ -769,20 +771,18 @@ fn bind_params(
                         actual: arg_count as u8,
                     });
                 };
-                write_cell(&callee_locals[*slot as usize], value);
+                callee_locals.set(*slot, value);
             }
             ParamBinding::Optional(slot, default_chunk, default_upvalues) => {
                 if let Some(value) = args.next() {
-                    write_cell(&callee_locals[*slot as usize], value);
+                    callee_locals.set(*slot, value);
                 } else {
                     let captured = capture_upvalues(default_upvalues, callee_locals, enclosing_upvalues);
+                    let default_chunk_ref = &context.chunks[*default_chunk as usize];
                     let default_locals = context
                         .limits
-                        .take_locals(context.chunks[*default_chunk as usize].local_count);
-                    write_cell(
-                        &default_locals[SELF_SLOT as usize],
-                        read_cell(&callee_locals[SELF_SLOT as usize]),
-                    );
+                        .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
+                    default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
                     let value = {
                         let mut execution = ExecutionContext {
                             env: context.env,
@@ -799,7 +799,7 @@ fn bind_params(
                             debug,
                         )?
                     };
-                    write_cell(&callee_locals[*slot as usize], value);
+                    callee_locals.set(*slot, value);
                 }
             }
         }
@@ -809,15 +809,12 @@ fn bind_params(
 
 /// Binds the common all-required form without inspecting each `ParamBinding` at call time.
 /// Function compilation reserves slot 0 for `self` and then assigns parameter slots contiguously.
-fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals: &[Cell]) -> VmResult<()> {
+fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals: &Locals) -> VmResult<()> {
     let arg_count = args.len();
     let first_arg_slot = if arg_count == arity {
         SELF_SLOT as usize + 1
     } else if arity > 0 && arg_count + 1 == arity {
-        write_cell(
-            &callee_locals[SELF_SLOT as usize + 1],
-            StackValue::Value(current_self(callee_locals)),
-        );
+        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals)));
         SELF_SLOT as usize + 2
     } else {
         return Err(VmError::ArityMismatch {
@@ -827,7 +824,7 @@ fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals
     };
 
     for (offset, value) in args.into_iter().enumerate() {
-        write_cell(&callee_locals[first_arg_slot + offset], value);
+        callee_locals.set((first_arg_slot + offset) as u16, value);
     }
     Ok(())
 }
@@ -876,8 +873,8 @@ fn into_runtime_value(v: StackValue, _chunks: &Shared<Vec<Chunk>>) -> RuntimeVal
     }
 }
 
-fn current_self(locals: &[Cell]) -> RuntimeValue {
-    match read_cell(&locals[SELF_SLOT as usize]) {
+fn current_self(locals: &Locals) -> RuntimeValue {
+    match locals.get(SELF_SLOT) {
         StackValue::Value(v) => v,
         StackValue::Closure(_) => RuntimeValue::None,
     }
@@ -888,7 +885,7 @@ fn current_self(locals: &[Cell]) -> RuntimeValue {
 /// compatibility environment would leak catch binders after their lexical scope ends.
 fn sync_dynamic_env(
     chunk: &Chunk,
-    locals: &[Cell],
+    locals: &Locals,
     upvalues: &[Cell],
     chunks: &Shared<Vec<Chunk>>,
     env: &Shared<SharedCell<Env>>,
@@ -900,9 +897,9 @@ fn sync_dynamic_env(
 
     for (slot, name) in chunk.local_names.iter().enumerate() {
         if *name != Ident::default()
-            && let Some(cell) = locals.get(slot)
+            && let Some(value) = locals.get_checked(slot as u16)
         {
-            env.define(*name, into_runtime_value(read_cell(cell), chunks));
+            env.define(*name, into_runtime_value(value, chunks));
         }
     }
     for (slot, name) in chunk.upvalue_names.iter().enumerate() {
@@ -917,7 +914,7 @@ fn sync_dynamic_env(
 fn run_chunk(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
-    locals: Vec<Cell>,
+    locals: Locals,
     upvalues: &[Cell],
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
@@ -944,7 +941,7 @@ fn run_chunk(
 fn run_chunk_inner(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
-    locals: &[Cell],
+    locals: &Locals,
     upvalues: &[Cell],
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
@@ -978,7 +975,7 @@ fn run_chunk_inner(
 fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
-    locals: &[Cell],
+    locals: &Locals,
     upvalues: &[Cell],
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
@@ -1037,12 +1034,12 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
 
                 let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
                 for (name, slot) in chunk.debug_symbols.bindings() {
-                    let cell = match slot {
-                        DebugSlot::Local(slot) => locals.get(*slot as usize),
-                        DebugSlot::Upvalue(slot) => upvalues.get(*slot as usize),
+                    let value = match slot {
+                        DebugSlot::Local(slot) => locals.get_checked(*slot),
+                        DebugSlot::Upvalue(slot) => upvalues.get(*slot as usize).map(read_cell),
                     }
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                    if let StackValue::Value(value) = read_cell(cell) {
+                    if let StackValue::Value(value) = value {
                         bindings.push((*name, value));
                     }
                 }
@@ -1064,10 +1061,10 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             }
             OpCode::Const(idx) => stack.push(StackValue::Value(chunk.constants[*idx as usize].clone())),
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            OpCode::GetLocal(slot) => stack.push(read_cell(&locals[*slot as usize])),
+            OpCode::GetLocal(slot) => stack.push(locals.get(*slot)),
             OpCode::SetLocal(slot) => {
                 let v = pop!();
-                write_cell(&locals[*slot as usize], v);
+                locals.set(*slot, v);
             }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
             OpCode::SetUpvalue(idx) => {
@@ -1227,29 +1224,30 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 value_slot,
                 exit_offset,
             } => {
-                let index = read_cell(&locals[*index_slot as usize]);
+                let index = locals.get(*index_slot);
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     bail!(VmError::Corrupt("ForeachNext has invalid loop state"));
                 };
                 let index_value = index.value();
-                let (array_len, value) =
-                    array_len_and_element_at_cell(&locals[*array_slot as usize], index_value as usize)
-                        .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
+                let (array_len, value) = locals
+                    .array_len_and_element_at(*array_slot, index_value as usize)
+                    .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
                 if index_value >= array_len as f64 {
                     ip = (ip as i64 + *exit_offset as i64) as usize;
                     continue;
                 }
                 let value = value.unwrap_or(RuntimeValue::None);
-                write_cell(
-                    &locals[*index_slot as usize],
+                locals.set(
+                    *index_slot,
                     StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
                 );
-                write_cell(&locals[*value_slot as usize], StackValue::Value(value.clone()));
-                write_cell(&locals[SELF_SLOT as usize], StackValue::Value(value));
+                locals.set(*value_slot, StackValue::Value(value.clone()));
+                locals.set(SELF_SLOT, StackValue::Value(value));
             }
             OpCode::ForeachCollect(slot) => {
                 let value = pop_value!();
-                append_to_array_cell(&locals[*slot as usize], value)
+                locals
+                    .append_to_array_at(*slot, value)
                     .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
             }
             OpCode::ArraySliceFrom => {
@@ -1309,7 +1307,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 ));
             }
             OpCode::CallLocal(slot, argc) => {
-                let callee = read_cell(&locals[*slot as usize]);
+                let callee = locals.get(*slot);
                 if let StackValue::Closure(closure) = &callee
                     && chunks[closure.chunk_index as usize]
                         .param_shape
@@ -1506,10 +1504,11 @@ fn handle_try_catch(
             VmError::Corrupt("TryCatch try operand is not a closure"),
         ));
     };
+    let try_chunk = &chunks[try_closure.chunk_index as usize];
     let try_locals = execution
         .limits
-        .take_locals(chunks[try_closure.chunk_index as usize].local_count);
-    write_cell(&try_locals[SELF_SLOT as usize], read_cell(&locals[SELF_SLOT as usize]));
+        .take_locals(try_chunk.local_count, try_chunk.captures_local_slots());
+    try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
     match run_chunk(
         try_closure.chunk_index,
         chunks,
@@ -1526,7 +1525,7 @@ fn handle_try_catch(
                     return Err(e);
                 };
                 if let Some(value) = value {
-                    write_cell(&locals[acc_slot as usize], StackValue::Value(value));
+                    locals.set(acc_slot, StackValue::Value(value));
                 }
                 return Ok(TryCatchOutcome::JumpTo(offset));
             }
@@ -1536,15 +1535,13 @@ fn handle_try_catch(
                 };
                 return Ok(TryCatchOutcome::JumpTo(offset));
             }
+            let catch_chunk = &chunks[catch_closure.chunk_index as usize];
             let catch_locals = execution
                 .limits
-                .take_locals(chunks[catch_closure.chunk_index as usize].local_count);
-            write_cell(
-                &catch_locals[SELF_SLOT as usize],
-                read_cell(&locals[SELF_SLOT as usize]),
-            );
+                .take_locals(catch_chunk.local_count, catch_chunk.captures_local_slots());
+            catch_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
             if args.has_binder {
-                write_cell(&catch_locals[1], StackValue::Value(error_dict(&e)));
+                catch_locals.set(1, StackValue::Value(error_dict(&e)));
             }
             let value = run_chunk(
                 catch_closure.chunk_index,
@@ -1805,11 +1802,11 @@ fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
 }
 
 fn local_runtime_value(
-    locals: &[Cell],
+    locals: &Locals,
     slot: u16,
     #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<RuntimeValue> {
-    let value = read_cell(&locals[slot as usize]);
+    let value = locals.get(slot);
     #[cfg(feature = "tarn")]
     {
         Ok(into_runtime_value(value, chunks))
@@ -1827,7 +1824,7 @@ fn eval_binary_op(
     op: BinaryOp,
     a: RuntimeValue,
     b: RuntimeValue,
-    locals: &[Cell],
+    locals: &Locals,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -1844,7 +1841,7 @@ fn binop(
     op: BinaryOp,
     a: RuntimeValue,
     b: RuntimeValue,
-    locals: &[Cell],
+    locals: &Locals,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -1884,7 +1881,7 @@ fn cmp_op(
     op: BinaryOp,
     a: RuntimeValue,
     b: RuntimeValue,
-    locals: &[Cell],
+    locals: &Locals,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -2188,8 +2185,8 @@ mod tests {
         StackValue::Value(RuntimeValue::Number(value.into()))
     }
 
-    fn value_at(locals: &[Cell], slot: usize) -> RuntimeValue {
-        match read_cell(&locals[slot]) {
+    fn value_at(locals: &Locals, slot: u16) -> RuntimeValue {
+        match locals.get(slot) {
             StackValue::Value(value) => value,
             StackValue::Closure(_) => panic!("expected a runtime value"),
         }
@@ -2197,20 +2194,13 @@ mod tests {
 
     #[test]
     fn fixed_required_binder_handles_explicit_and_implicit_self_arguments() {
-        let explicit_locals = vec![
-            new_cell(StackValue::Value(RuntimeValue::None)),
-            new_cell(StackValue::Value(RuntimeValue::None)),
-            new_cell(StackValue::Value(RuntimeValue::None)),
-        ];
+        let explicit_locals = Locals::boxed(3);
         bind_fixed_required_params(2, vec![number(3), number(4)], &explicit_locals).unwrap();
         assert_eq!(value_at(&explicit_locals, 1), RuntimeValue::Number(3.into()));
         assert_eq!(value_at(&explicit_locals, 2), RuntimeValue::Number(4.into()));
 
-        let implicit_locals = vec![
-            new_cell(number(10)),
-            new_cell(StackValue::Value(RuntimeValue::None)),
-            new_cell(StackValue::Value(RuntimeValue::None)),
-        ];
+        let implicit_locals = Locals::boxed(3);
+        implicit_locals.set(0, number(10));
         bind_fixed_required_params(2, vec![number(4)], &implicit_locals).unwrap();
         assert_eq!(value_at(&implicit_locals, 1), RuntimeValue::Number(10.into()));
         assert_eq!(value_at(&implicit_locals, 2), RuntimeValue::Number(4.into()));
@@ -2218,7 +2208,7 @@ mod tests {
 
     #[test]
     fn fixed_required_binder_rejects_invalid_arity() {
-        let locals = vec![new_cell(StackValue::Value(RuntimeValue::None))];
+        let locals = Locals::boxed(1);
         assert!(matches!(
             bind_fixed_required_params(0, vec![number(1)], &locals),
             Err(VmError::ArityMismatch { expected: 0, actual: 1 })

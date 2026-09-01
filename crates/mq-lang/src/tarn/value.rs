@@ -59,6 +59,136 @@ pub(crate) fn new_cell(value: StackValue) -> Cell {
     Shared::new(SharedCell::new(value))
 }
 
+/// One frame's local slots. `Boxed` cells support upvalue capture (a nested closure can hold
+/// a `Shared` handle to one past this frame's lifetime); `Flat` is for the common case where
+/// `Chunk::captures_local_slots()` is false — same `RefCell`-style borrow/clone access as
+/// `Boxed`, but inline in the `Vec` instead of behind a separate `Rc` allocation, so a
+/// read/write is one memory access instead of two. `Flat` is unavailable under `sync`: a
+/// cached program's pooled frames must stay `Send + Sync` there, and plain `RefCell` isn't
+/// `Sync` (matching why `Boxed` uses `RwLock` under `sync` via `SharedCell`).
+pub(crate) enum Locals {
+    #[cfg(not(feature = "sync"))]
+    Flat(Vec<std::cell::RefCell<StackValue>>),
+    Boxed(Vec<Cell>),
+}
+
+impl Locals {
+    pub(crate) fn flat(count: usize) -> Self {
+        #[cfg(not(feature = "sync"))]
+        {
+            Locals::Flat(
+                (0..count)
+                    .map(|_| std::cell::RefCell::new(StackValue::Value(RuntimeValue::None)))
+                    .collect(),
+            )
+        }
+        #[cfg(feature = "sync")]
+        {
+            Locals::boxed(count)
+        }
+    }
+
+    pub(crate) fn boxed(count: usize) -> Self {
+        Locals::Boxed(
+            (0..count)
+                .map(|_| new_cell(StackValue::Value(RuntimeValue::None)))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => slots.len(),
+            Locals::Boxed(slots) => slots.len(),
+        }
+    }
+
+    /// Resets slots in `range` to `None`, leaving the rest untouched (for a pooled frame whose
+    /// leading slots a caller is about to overwrite anyway).
+    pub(crate) fn reset_from(&self, from: usize) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                for slot in &slots[from.min(slots.len())..] {
+                    *slot.borrow_mut() = StackValue::Value(RuntimeValue::None);
+                }
+            }
+            Locals::Boxed(slots) => {
+                for slot in &slots[from.min(slots.len())..] {
+                    write_cell(slot, StackValue::Value(RuntimeValue::None));
+                }
+            }
+        }
+    }
+
+    pub(crate) fn get(&self, slot: u16) -> StackValue {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => slots[slot as usize].borrow().clone(),
+            Locals::Boxed(slots) => read_cell(&slots[slot as usize]),
+        }
+    }
+
+    /// Bounds-checked read, for the debugger's slot-name lookups (which validate the slot
+    /// exists in `DebugSymbolTable` before trusting it — everywhere else, a compiled chunk's
+    /// slots are already in-bounds by construction).
+    pub(crate) fn get_checked(&self, slot: u16) -> Option<StackValue> {
+        ((slot as usize) < self.len()).then(|| self.get(slot))
+    }
+
+    pub(crate) fn set(&self, slot: u16, value: StackValue) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => *slots[slot as usize].borrow_mut() = value,
+            Locals::Boxed(slots) => write_cell(&slots[slot as usize], value),
+        }
+    }
+
+    /// Only meaningful on `Boxed`: `Chunk::captures_local_slots()` guarantees a `Flat` frame's
+    /// slots are never captured by a nested closure, so this is never reached for `Flat`.
+    pub(crate) fn cell(&self, slot: u16) -> &Cell {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(_) => unreachable!("a non-capturing chunk's locals can't be captured"),
+            Locals::Boxed(slots) => &slots[slot as usize],
+        }
+    }
+
+    pub(crate) fn array_len_and_element_at(
+        &self,
+        slot: u16,
+        index: usize,
+    ) -> Result<(usize, Option<RuntimeValue>), &'static str> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                let borrowed = slots[slot as usize].borrow();
+                let StackValue::Value(RuntimeValue::Array(array)) = &*borrowed else {
+                    return Err("ForeachNext array slot is not an array");
+                };
+                Ok((array.len(), array.get(index).cloned()))
+            }
+            Locals::Boxed(slots) => array_len_and_element_at_cell(&slots[slot as usize], index),
+        }
+    }
+
+    pub(crate) fn append_to_array_at(&self, slot: u16, value: RuntimeValue) -> Result<(), &'static str> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                let mut borrowed = slots[slot as usize].borrow_mut();
+                let StackValue::Value(RuntimeValue::Array(array)) = &mut *borrowed else {
+                    return Err("ForeachCollect accumulator is not an array");
+                };
+                crate::eval::runtime_value::array_mut(array).push(value);
+                Ok(())
+            }
+            Locals::Boxed(slots) => append_to_array_cell(&slots[slot as usize], value),
+        }
+    }
+}
+
 pub(crate) fn read_cell(cell: &Cell) -> StackValue {
     #[cfg(not(feature = "sync"))]
     {
