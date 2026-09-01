@@ -70,7 +70,7 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 | Homebrew (macOS/Linux) | `brew install mq`                           |
 | Arch (yay)             | `yay -S mq-bin`                             |
 | Cargo (crates.io)      | `cargo install mq-run`                      |
-| Docker                 | `docker run --rm ghcr.io/harehare/mq:0.7.0` |
+| Docker                 | `docker run --rm ghcr.io/harehare/mq:latest` |
 
 
 <details>
