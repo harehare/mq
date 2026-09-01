@@ -1280,11 +1280,11 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 )?));
             }
             OpCode::InterpString(n) => {
-                let mut parts = Vec::with_capacity(*n as usize);
+                let mut parts: smallvec::SmallVec<[RuntimeValue; 4]> = smallvec::SmallVec::with_capacity(*n as usize);
                 for _ in 0..*n {
                     parts.push(pop_value!());
                 }
-                stack.push(StackValue::Value(interp_string(parts)));
+                stack.push(StackValue::Value(interp_string(&mut parts)));
             }
             OpCode::CallBuiltin(ident, argc) => {
                 let mut args = Args::with_capacity(*argc as usize);
@@ -1779,9 +1779,14 @@ fn get_external_global(
 /// `parts` are in reverse (stack pop) order.
 #[cold]
 #[inline(never)]
-fn interp_string(mut parts: Vec<RuntimeValue>) -> RuntimeValue {
+fn interp_string(parts: &mut [RuntimeValue]) -> RuntimeValue {
+    use std::fmt::Write;
     parts.reverse();
-    RuntimeValue::String(parts.iter().map(|v| v.to_string()).collect())
+    let mut result = String::new();
+    for part in parts.iter() {
+        let _ = write!(result, "{part}");
+    }
+    RuntimeValue::String(result)
 }
 
 fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
