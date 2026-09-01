@@ -732,6 +732,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             token: Shared::clone(&token),
             call_stack: current_call_stack,
             env: Shared::clone(&env),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: Vec::new(),
             source: Source {
                 name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
                     None
@@ -743,7 +745,6 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     .get_source_code_for_debug(token.module_id)
                     .unwrap_or_default(),
             },
-            ..Default::default()
         };
         let breakpoint = Breakpoint {
             id: 0,
@@ -1390,6 +1391,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 token: Shared::clone(token),
                 call_stack,
                 env: Shared::clone(env),
+                #[cfg(feature = "debug-trace")]
+                operand_stack: Vec::new(),
                 source: Source {
                     name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
                         None
@@ -1401,7 +1404,6 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         .get_source_code_for_debug(token.module_id)
                         .unwrap_or_default(),
                 },
-                ..Default::default()
             };
 
             let breakpoint = self
