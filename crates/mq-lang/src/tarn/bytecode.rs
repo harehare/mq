@@ -80,7 +80,7 @@ pub(crate) enum OpCode {
     SetLocal(u16),
     GetUpvalue(u16),
     SetUpvalue(u16),
-    MakeClosure(u16, Vec<UpvalueSource>),
+    MakeClosure(Box<(u16, Vec<UpvalueSource>)>),
     /// Pushes a shared closure with no captured cells.
     MakeStaticClosure(u16),
     /// Pops and discards the top value (used to drop a flattened module statement's
@@ -176,10 +176,10 @@ pub(crate) enum OpCode {
     InterpString(u16),
     /// Pops a `Markdown` value and pushes the result of matching `selector` against it
     /// (`None` for any other value shape).
-    SelectorMatch(Selector),
+    SelectorMatch(Box<Selector>),
     /// Like `SelectorMatch`, but pops `argc` filter-argument values (pushed before the
     /// subject) for selectors with runtime arguments (`.h(1..2)`, `.code("rust")`).
-    SelectorMatchWithArgs(Selector, u8),
+    SelectorMatchWithArgs(Box<(Selector, u8)>),
     CallBuiltin(Ident, u8),
     /// Calls an immutable local binding without materializing the callee on the operand stack.
     CallLocal(u16, u8),
@@ -193,12 +193,7 @@ pub(crate) enum OpCode {
     /// the catch closure instead (passing it a `{"message": ...}` dict if it takes a
     /// parameter). Loop control raised by the nested try chunk bypasses the catch and
     /// jumps to the enclosing loop's patched target.
-    TryCatch {
-        has_binder: bool,
-        break_acc_slot: Option<u16>,
-        break_offset: Option<i32>,
-        continue_offset: Option<i32>,
-    },
+    TryCatch(Box<TryCatchInfo>),
     /// Exits a loop outside this nested chunk. The enclosing `TryCatch` owns the actual
     /// jump target and accumulator slot.
     FlowBreak(bool),
@@ -209,6 +204,15 @@ pub(crate) enum OpCode {
     /// `let [a, b] = [1]`) — mirrors `RuntimeError::DestructuringFailed`.
     RaiseDestructuringFailed,
     Return,
+}
+
+/// Payload for [`OpCode::TryCatch`], boxed out of the enum to keep `size_of::<OpCode>()` small.
+#[derive(Debug, Clone)]
+pub(crate) struct TryCatchInfo {
+    pub(crate) has_binder: bool,
+    pub(crate) break_acc_slot: Option<u16>,
+    pub(crate) break_offset: Option<i32>,
+    pub(crate) continue_offset: Option<i32>,
 }
 
 #[derive(Debug, Default)]
@@ -258,8 +262,8 @@ impl Chunk {
             self.code.iter().any(|op| {
                 matches!(
                     op,
-                    OpCode::MakeClosure(_, sources)
-                        if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
+                    OpCode::MakeClosure(payload)
+                        if payload.1.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
                 )
             }) || self.param_shape.bindings.iter().any(|binding| {
                 matches!(
@@ -310,7 +314,7 @@ impl Chunk {
     pub(crate) fn patch_try_break(&mut self, at: usize) {
         let offset = (self.code.len() - at - 1) as i32;
         match &mut self.code[at] {
-            OpCode::TryCatch { break_offset, .. } => *break_offset = Some(offset),
+            OpCode::TryCatch(info) => info.break_offset = Some(offset),
             _ => unreachable!("flow-break target is not a TryCatch instruction"),
         }
     }
@@ -319,7 +323,7 @@ impl Chunk {
     pub(crate) fn patch_try_continue_to(&mut self, at: usize, target: usize) {
         let offset = target as i32 - at as i32 - 1;
         match &mut self.code[at] {
-            OpCode::TryCatch { continue_offset, .. } => *continue_offset = Some(offset),
+            OpCode::TryCatch(info) => info.continue_offset = Some(offset),
             _ => unreachable!("flow-continue target is not a TryCatch instruction"),
         }
     }
@@ -459,25 +463,15 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
                     targets.insert(target);
                 }
             }
-            OpCode::TryCatch {
-                break_offset: Some(offset),
-                continue_offset,
-                ..
-            } => {
-                if let Some(target) = jump_target(pc, *offset) {
-                    targets.insert(target);
-                }
-                if let Some(offset) = continue_offset
-                    && let Some(target) = jump_target(pc, *offset)
+            OpCode::TryCatch(info) => {
+                if let Some(offset) = info.break_offset
+                    && let Some(target) = jump_target(pc, offset)
                 {
                     targets.insert(target);
                 }
-            }
-            OpCode::TryCatch {
-                continue_offset: Some(offset),
-                ..
-            } => {
-                if let Some(target) = jump_target(pc, *offset) {
+                if let Some(offset) = info.continue_offset
+                    && let Some(target) = jump_target(pc, offset)
+                {
                     targets.insert(target);
                 }
             }
@@ -527,17 +521,11 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
             value_slot,
             exit_offset: rewrite(exit_offset),
         },
-        OpCode::TryCatch {
-            has_binder,
-            break_acc_slot,
-            break_offset,
-            continue_offset,
-        } => OpCode::TryCatch {
-            has_binder,
-            break_acc_slot,
-            break_offset: break_offset.map(rewrite),
-            continue_offset: continue_offset.map(rewrite),
-        },
+        OpCode::TryCatch(info) => OpCode::TryCatch(Box::new(TryCatchInfo {
+            break_offset: info.break_offset.map(rewrite),
+            continue_offset: info.continue_offset.map(rewrite),
+            ..*info
+        })),
         other => other,
     }
 }
@@ -634,7 +622,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                     verify_jump_target(chunk, chunk_index, pc, *exit_offset)?;
                 }
-                OpCode::MakeClosure(target, _) => verify_chunk_target(chunks, chunk_index, pc, *target)?,
+                OpCode::MakeClosure(payload) => verify_chunk_target(chunks, chunk_index, pc, payload.0)?,
                 OpCode::MakeStaticClosure(index) => {
                     let Some(closure) = chunk.static_closures.get(*index as usize) else {
                         return Err(BytecodeError::StaticClosureOutOfBounds {
@@ -648,16 +636,12 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
-                OpCode::TryCatch {
-                    break_offset,
-                    continue_offset,
-                    ..
-                } => {
-                    if let Some(offset) = break_offset {
-                        verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                OpCode::TryCatch(info) => {
+                    if let Some(offset) = info.break_offset {
+                        verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
-                    if let Some(offset) = continue_offset {
-                        verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                    if let Some(offset) = info.continue_offset {
+                        verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
                 }
                 _ => {}
@@ -725,6 +709,44 @@ mod tests {
         optimize_chunk(&mut chunk);
 
         assert!(matches!(chunk.code.as_slice(), [OpCode::PushNone, OpCode::Return]));
+    }
+
+    #[test]
+    fn peephole_rewrites_try_catch_offsets_past_removed_dead_code() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Const(0),
+                OpCode::Pop,
+                OpCode::TryCatch(Box::new(TryCatchInfo {
+                    has_binder: false,
+                    break_acc_slot: None,
+                    break_offset: Some(0),
+                    continue_offset: Some(1),
+                })),
+                OpCode::PushNone,
+                OpCode::PushNone,
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(1.into())],
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::TryCatch(info),
+                OpCode::PushNone,
+                OpCode::PushNone,
+                OpCode::Return,
+            ] if info.break_offset == Some(0) && info.continue_offset == Some(1)
+        ));
+    }
+
+    #[test]
+    fn opcode_stays_compact() {
+        assert_eq!(std::mem::size_of::<OpCode>(), 16);
     }
 
     #[test]

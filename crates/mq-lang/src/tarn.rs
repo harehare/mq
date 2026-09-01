@@ -1000,7 +1000,7 @@ mod tests {
             compiled.chunks[0]
                 .code
                 .iter()
-                .any(|op| matches!(op, OpCode::MakeClosure(_, _)))
+                .any(|op| matches!(op, OpCode::MakeClosure(_)))
         );
     }
 

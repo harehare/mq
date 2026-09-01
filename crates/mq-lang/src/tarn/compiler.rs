@@ -1,4 +1,6 @@
-use super::bytecode::{self, BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
+use super::bytecode::{
+    self, BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, TryCatchInfo, UpvalueSource,
+};
 use super::resolver::FunctionScope;
 use crate::Shared;
 use crate::ast::constants::builtins;
@@ -706,7 +708,7 @@ impl<R: ModuleResolver> Compiler<R> {
             let closure_index = self.chunk_mut().push_static_closure(chunk_index);
             self.emit(OpCode::MakeStaticClosure(closure_index));
         } else {
-            self.emit(OpCode::MakeClosure(chunk_index, upvalues));
+            self.emit(OpCode::MakeClosure(Box::new((chunk_index, upvalues))));
         }
     }
 
@@ -833,12 +835,12 @@ impl<R: ModuleResolver> Compiler<R> {
             .last()
             .filter(|loop_ctx| loop_ctx.chunk_index == self.current)
             .map(|loop_ctx| loop_ctx.acc_slot);
-        let try_catch = self.emit(OpCode::TryCatch {
+        let try_catch = self.emit(OpCode::TryCatch(Box::new(TryCatchInfo {
             has_binder: binder.is_some(),
             break_acc_slot,
             break_offset: None,
             continue_offset: None,
-        });
+        })));
         if break_acc_slot.is_some() {
             let loop_ctx = self.loops.last_mut().unwrap();
             loop_ctx.break_try_catches.push(try_catch);
@@ -1600,13 +1602,13 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::Selector(selector) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
-                self.emit(OpCode::SelectorMatch(selector.clone()));
+                self.emit(OpCode::SelectorMatch(Box::new(selector.clone())));
                 Ok(())
             }
             Expr::SelectorChain(selectors) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
                 for selector in selectors {
-                    self.emit(OpCode::SelectorMatch(selector.clone()));
+                    self.emit(OpCode::SelectorMatch(Box::new(selector.clone())));
                 }
                 Ok(())
             }
@@ -1615,7 +1617,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::SelectorMatchWithArgs(selector.clone(), args.len() as u8));
+                self.emit(OpCode::SelectorMatchWithArgs(Box::new((
+                    selector.clone(),
+                    args.len() as u8,
+                ))));
                 Ok(())
             }
             Expr::Paren(inner) => self.compile_expr(inner),
