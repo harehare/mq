@@ -187,6 +187,66 @@ fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+fn section_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
+    let markdown_content = (0..30)
+        .map(|i| format!("# Section {i}\n\nIntro paragraph for section {i}.\n\n## Subsection {i}\n\nSome detail text.\n\n- point a\n- point b\n\n"))
+        .collect::<String>();
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
+    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
+}
+
+#[divan::bench()]
+fn eval_section_sections() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(
+            r#"nodes | import "section" | section::sections() | len()"#,
+            section_markdown_input(),
+        )
+        .unwrap()
+}
+
+// A single pre-aggregated array input (no `nodes`), since `nodes` disqualifies the VM's
+// compiled-bytecode cache and this benchmark measures steady-state execution, not compile cost.
+#[divan::bench]
+fn eval_compiled_section_sections(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.load_module("section").unwrap();
+    let nodes: mq_lang::RuntimeValue =
+        mq_lang::RuntimeValue::Array(section_markdown_input().collect::<Vec<_>>().into());
+    bench_compiled(bencher, &mut engine, "sections() | len()", || vec![nodes.clone()]);
+}
+
+fn table_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
+    let header = "| Name | Age | City |\n| --- | --- | --- |\n";
+    let rows = (0..30)
+        .map(|i| format!("| Person {i} | {} | City {i} |\n", 20 + i % 50))
+        .collect::<String>();
+    let markdown_content = format!("{header}{rows}");
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
+    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
+}
+
+#[divan::bench()]
+fn eval_table_tables() -> mq_lang::RuntimeValues {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine
+        .eval(r#"nodes | import "table" | table::tables()"#, table_markdown_input())
+        .unwrap()
+}
+
+#[divan::bench]
+fn eval_compiled_table_tables(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.load_module("table").unwrap();
+    let nodes: mq_lang::RuntimeValue = mq_lang::RuntimeValue::Array(table_markdown_input().collect::<Vec<_>>().into());
+    bench_compiled(bencher, &mut engine, "tables()", || vec![nodes.clone()]);
+}
+
 #[divan::bench()]
 fn eval_string_equality() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();
