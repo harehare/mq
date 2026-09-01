@@ -90,6 +90,20 @@ fn eval_nodes() -> mq_lang::RuntimeValues {
 }
 
 #[divan::bench]
+fn eval_compiled_nodes(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(bencher, &mut engine, ".h | nodes | map(upcase)", || {
+        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+            .unwrap()
+            .nodes
+            .into_iter()
+            .map(mq_lang::RuntimeValue::from)
+            .collect()
+    });
+}
+
+#[divan::bench]
 fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
     let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(100)));
     mq_lang::parse(
@@ -207,16 +221,14 @@ fn eval_section_sections() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
-// A single pre-aggregated array input (no `nodes`), since `nodes` disqualifies the VM's
-// compiled-bytecode cache and this benchmark measures steady-state execution, not compile cost.
 #[divan::bench]
 fn eval_compiled_section_sections(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.load_module("section").unwrap();
-    let nodes: mq_lang::RuntimeValue =
-        mq_lang::RuntimeValue::Array(section_markdown_input().collect::<Vec<_>>().into());
-    bench_compiled(bencher, &mut engine, "sections() | len()", || vec![nodes.clone()]);
+    bench_compiled(bencher, &mut engine, "nodes | sections() | len()", || {
+        section_markdown_input().collect()
+    });
 }
 
 fn table_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
@@ -243,8 +255,9 @@ fn eval_compiled_table_tables(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.load_module("table").unwrap();
-    let nodes: mq_lang::RuntimeValue = mq_lang::RuntimeValue::Array(table_markdown_input().collect::<Vec<_>>().into());
-    bench_compiled(bencher, &mut engine, "tables()", || vec![nodes.clone()]);
+    bench_compiled(bencher, &mut engine, "nodes | tables()", || {
+        table_markdown_input().collect()
+    });
 }
 
 #[divan::bench()]
