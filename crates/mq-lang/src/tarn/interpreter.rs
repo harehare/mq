@@ -862,7 +862,9 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
 fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
     match v {
         StackValue::Value(rv) => rv,
-        StackValue::Closure(closure) => RuntimeValue::VmClosure(VmClosureValue::from_closure(chunks, &closure)),
+        StackValue::Closure(closure) => {
+            RuntimeValue::VmClosure(Shared::new(VmClosureValue::from_closure(chunks, &closure)))
+        }
     }
 }
 
