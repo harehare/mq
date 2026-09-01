@@ -215,6 +215,32 @@ pub(crate) struct TryCatchInfo {
     pub(crate) continue_offset: Option<i32>,
 }
 
+/// A memoized `bool`, `Cell`-backed outside the `sync` build to avoid `OnceLock`'s atomic
+/// check on every call; `OnceLock`-backed under `sync`, where `Chunk` must stay `Sync`.
+#[derive(Debug, Default)]
+struct BoolCache(
+    #[cfg(not(feature = "sync"))] std::cell::Cell<Option<bool>>,
+    #[cfg(feature = "sync")] std::sync::OnceLock<bool>,
+);
+
+impl BoolCache {
+    fn get_or_init(&self, f: impl FnOnce() -> bool) -> bool {
+        #[cfg(not(feature = "sync"))]
+        {
+            if let Some(value) = self.0.get() {
+                return value;
+            }
+            let value = f();
+            self.0.set(Some(value));
+            value
+        }
+        #[cfg(feature = "sync")]
+        {
+            *self.0.get_or_init(f)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
@@ -243,7 +269,7 @@ pub(crate) struct Chunk {
     pub(crate) param_shape: ParamShape,
     /// Memoizes `captures_local_slots` — chunks never change after compilation, but every
     /// call scans `code`, so a first-call cache turns an O(chunk size) check into O(1).
-    captures_local_slots_cache: std::sync::OnceLock<bool>,
+    captures_local_slots_cache: BoolCache,
 }
 
 impl Chunk {
@@ -258,7 +284,7 @@ impl Chunk {
 
     /// Whether a closure or parameter default can retain one of this frame's local cells.
     pub(crate) fn captures_local_slots(&self) -> bool {
-        *self.captures_local_slots_cache.get_or_init(|| {
+        self.captures_local_slots_cache.get_or_init(|| {
             self.code.iter().any(|op| {
                 matches!(
                     op,
