@@ -513,7 +513,7 @@ fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) ->
         | RuntimeValue::String(_)
         | RuntimeValue::Bytes(_) => value.to_string().into(),
         RuntimeValue::Symbol(i) => i.as_str().into(),
-        RuntimeValue::Markdown(node, _) => *node,
+        RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node),
     }
 }
 

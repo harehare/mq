@@ -1,4 +1,5 @@
 use crate::RuntimeValue;
+use crate::Shared;
 use crate::eval::builtin::Error;
 use crate::number::Number;
 use base64::prelude::*;
@@ -177,7 +178,7 @@ impl Convert {
 
         match kind {
             ConvertKind::Heading(depth) => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Heading(mq_markdown::Heading {
+                Shared::new(mq_markdown::Node::Heading(mq_markdown::Heading {
                     depth: *depth,
                     values: vec![text.into()],
                     position: None,
@@ -185,14 +186,14 @@ impl Convert {
                 None,
             ),
             ConvertKind::Blockquote => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
+                Shared::new(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
                     values: vec![text.into()],
                     position: None,
                 })),
                 None,
             ),
             ConvertKind::ListItem => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::List(mq_markdown::List {
+                Shared::new(mq_markdown::Node::List(mq_markdown::List {
                     values: vec![text.into()],
                     index: 0,
                     ordered: false,
@@ -205,7 +206,7 @@ impl Convert {
                 None,
             ),
             ConvertKind::Link(url) => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Link(mq_markdown::Link {
+                Shared::new(mq_markdown::Node::Link(mq_markdown::Link {
                     url: mq_markdown::Url::new(url.to_string()),
                     values: vec![text.into()],
                     title: None,
@@ -214,21 +215,21 @@ impl Convert {
                 None,
             ),
             ConvertKind::Strikethrough => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Delete(mq_markdown::Delete {
+                Shared::new(mq_markdown::Node::Delete(mq_markdown::Delete {
                     values: vec![text.into()],
                     position: None,
                 })),
                 None,
             ),
             ConvertKind::Strong => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Strong(mq_markdown::Strong {
+                Shared::new(mq_markdown::Node::Strong(mq_markdown::Strong {
                     values: vec![text.into()],
                     position: None,
                 })),
                 None,
             ),
             ConvertKind::HorizontalRule => RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+                Shared::new(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
                     position: None,
                 })),
                 None,
@@ -1222,7 +1223,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Heading with depth {}", depth)
         };
-        let mq_markdown::Node::Heading(heading) = *node else {
+        let mq_markdown::Node::Heading(heading) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Heading node")
         };
         assert_eq!(heading.depth, depth);
@@ -1239,7 +1240,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Blockquote")
         };
-        let mq_markdown::Node::Blockquote(blockquote) = *node else {
+        let mq_markdown::Node::Blockquote(blockquote) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Blockquote node")
         };
         assert_eq!(blockquote.values.len(), 1);
@@ -1255,7 +1256,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown List")
         };
-        let mq_markdown::Node::List(list) = *node else {
+        let mq_markdown::Node::List(list) = Shared::unwrap_or_clone(node) else {
             panic!("Expected List node")
         };
         assert!(!list.ordered);
@@ -1274,7 +1275,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Link")
         };
-        let mq_markdown::Node::Link(link) = *node else {
+        let mq_markdown::Node::Link(link) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Link node")
         };
         assert_eq!(link.url.as_str(), "https://example.com/");
@@ -1291,7 +1292,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Delete")
         };
-        let mq_markdown::Node::Delete(delete) = *node else {
+        let mq_markdown::Node::Delete(delete) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Delete node")
         };
         assert_eq!(delete.values.len(), 1);
@@ -1329,7 +1330,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Heading")
         };
-        let mq_markdown::Node::Heading(heading) = *node else {
+        let mq_markdown::Node::Heading(heading) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Heading node")
         };
         assert_eq!(heading.depth, 2);
@@ -1345,7 +1346,7 @@ mod tests {
         let RuntimeValue::Markdown(node, _) = result else {
             panic!("Expected Markdown Heading")
         };
-        let mq_markdown::Node::Heading(heading) = *node else {
+        let mq_markdown::Node::Heading(heading) = Shared::unwrap_or_clone(node) else {
             panic!("Expected Heading node")
         };
         assert_eq!(heading.depth, 1);

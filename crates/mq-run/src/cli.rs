@@ -1840,13 +1840,9 @@ impl Cli {
                 .into_iter()
                 .map(|v| {
                     if had_empties {
-                        match v {
-                            mq_lang::RuntimeValue::Markdown(mut node, meta) => {
-                                node.set_position(None);
-                                mq_lang::RuntimeValue::Markdown(node, meta)
-                            }
-                            other => other,
-                        }
+                        let mut v = v;
+                        v.set_position(None);
+                        v
                     } else {
                         v
                     }
@@ -2620,14 +2616,9 @@ impl Cli {
 
     /// Clears position information from a Markdown value's node (recursively);
     /// other value kinds are passed through unchanged. Used by `--no-position`.
-    fn strip_markdown_position(value: mq_lang::RuntimeValue) -> mq_lang::RuntimeValue {
-        match value {
-            mq_lang::RuntimeValue::Markdown(mut node, meta) => {
-                node.strip_positions();
-                mq_lang::RuntimeValue::Markdown(node, meta)
-            }
-            other => other,
-        }
+    fn strip_markdown_position(mut value: mq_lang::RuntimeValue) -> mq_lang::RuntimeValue {
+        value.strip_positions();
+        value
     }
 
     fn build_markdown(&self, runtime_values: &[mq_lang::RuntimeValue]) -> mq_markdown::Markdown {
