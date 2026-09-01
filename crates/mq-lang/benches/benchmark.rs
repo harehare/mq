@@ -78,6 +78,33 @@ fn eval_string_interpolation() -> mq_lang::RuntimeValues {
         .unwrap()
 }
 
+/// Isolates steady-state execution for a tiny, non-looping query — where compile overhead
+/// (shared with the tree-walker) otherwise swamps the signal in `eval_select_h`.
+#[divan::bench]
+fn eval_compiled_select_h(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let input: Vec<mq_lang::RuntimeValue> =
+        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+            .unwrap()
+            .nodes
+            .into_iter()
+            .map(mq_lang::RuntimeValue::from)
+            .collect();
+    bench_compiled(bencher, &mut engine, ".h1", || input.clone());
+}
+
+/// See `eval_compiled_select_h`.
+#[divan::bench]
+fn eval_compiled_string_interpolation(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let world = "world" | s"$$Hello, ${world}$$""#,
+        || vec!["".into()],
+    );
+}
+
 #[divan::bench(name = "eval_nodes")]
 fn eval_nodes() -> mq_lang::RuntimeValues {
     let markdown: mq_markdown::Markdown =
