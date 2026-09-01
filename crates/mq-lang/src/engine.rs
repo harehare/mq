@@ -598,7 +598,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let cache_configuration = self.vm_cache_configuration();
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         if global_bindings.is_empty()
-            && !has_nodes
             && let Some(Some(cached)) = compiled.cached_vm_program()
             && crate::tarn::cached_program_is_current(&cached, &self.evaluator.module_loader, &cache_configuration)
                 .map_err(|error| {
@@ -653,7 +652,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         if global_bindings.is_empty()
-            && !has_nodes
             && let Some(cached) = compiled.cached_vm_program()
         {
             let cached = match cached {
@@ -1455,6 +1453,30 @@ mod tests {
         assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
 
         let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
+        assert_eq!(second.values(), first.values());
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_caches_a_program_with_nodes() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(". * 10 | nodes | len()").unwrap();
+        let inputs = || {
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter()
+        };
+
+        let first = engine.eval_compiled(&compiled, inputs()).unwrap();
+        assert_eq!(first.values(), &[RuntimeValue::Number(3.0.into())]);
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+
+        let second = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(second.values(), first.values());
     }
 
