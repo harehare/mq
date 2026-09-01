@@ -1794,25 +1794,36 @@ fn test_gzip_invalid_content_fails_cleanly() {
 fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> {
     use assert_cmd::prelude::*;
     use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
+    use std::process::{Child, Command, Stdio};
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
-    let (_, file_path) = create_file("test_watch_reruns_on_file_change.md", "# hello\n");
-    let file_path_clone = file_path.clone();
-    defer! {
-        std::fs::remove_file(&file_path_clone).ok();
+    // Kills the watcher even if an assertion below panics.
+    struct KillOnDrop(Child);
+
+    impl Drop for KillOnDrop {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
 
-    let mut child = Command::cargo_bin("mq")?
-        .arg("--watch")
-        .arg(".h")
-        .arg(&file_path)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
+    // Unique dir avoids collisions with concurrent/leaked runs.
+    let temp_dir = tempfile::tempdir()?;
+    let file_path = temp_dir.path().join("test_watch_reruns_on_file_change.md");
+    std::fs::write(&file_path, "# hello\n")?;
 
-    let stdout = child.stdout.take().expect("child stdout was piped");
+    let mut guard = KillOnDrop(
+        Command::cargo_bin("mq")?
+            .arg("--watch")
+            .arg(".h")
+            .arg(&file_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?,
+    );
+
+    let stdout = guard.0.stdout.take().expect("child stdout was piped");
     let (tx, rx) = mpsc::channel::<String>();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -1822,36 +1833,46 @@ fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> 
         }
     });
 
-    // Bounded polling rather than a fixed sleep: passes as soon as the line shows up,
-    // only takes the full timeout if the watcher is actually broken.
-    let wait_for = |expected: &str, timeout: Duration| -> bool {
+    // Polls until `expected` arrives; `on_timeout_tick` fires each poll interval
+    // so a caller can retry a write in case the watcher missed it.
+    let wait_for = |expected: &str, timeout: Duration, mut on_timeout_tick: Option<&mut dyn FnMut()>| -> bool {
         let deadline = Instant::now() + timeout;
+        let poll_interval = Duration::from_millis(300);
         loop {
-            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            match rx.recv_timeout(remaining.min(poll_interval)) {
                 Ok(line) if line == expected => return true,
                 Ok(_) => {}
-                Err(_) => return false,
-            }
-            if Instant::now() >= deadline {
-                return false;
+                Err(mpsc::RecvTimeoutError::Disconnected) => return false,
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(cb) = on_timeout_tick.as_mut() {
+                        cb();
+                    }
+                }
             }
         }
     };
 
     assert!(
-        wait_for("# hello", Duration::from_secs(10)),
+        wait_for("# hello", Duration::from_secs(10), None),
         "expected the initial run to print the file's current heading"
     );
 
     std::fs::write(&file_path, "# updated\n")?;
 
     assert!(
-        wait_for("# updated", Duration::from_secs(10)),
+        wait_for(
+            "# updated",
+            Duration::from_secs(10),
+            Some(&mut || {
+                let _ = std::fs::write(&file_path, "# updated\n");
+            })
+        ),
         "expected a re-run to print the heading after the file changed"
     );
-
-    child.kill()?;
-    child.wait()?;
 
     Ok(())
 }
