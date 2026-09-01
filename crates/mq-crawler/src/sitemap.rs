@@ -90,20 +90,19 @@ fn parse_sitemap_xml(xml: &str) -> Result<(SitemapKind, Vec<String>), String> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match e.local_name().as_ref() {
-                b"urlset" => kind = Some(SitemapKind::UrlSet),
-                b"sitemapindex" => kind = Some(SitemapKind::SitemapIndex),
-                b"loc" => in_loc = true,
+                "urlset" => kind = Some(SitemapKind::UrlSet),
+                "sitemapindex" => kind = Some(SitemapKind::SitemapIndex),
+                "loc" => in_loc = true,
                 _ => {}
             },
             Ok(Event::End(e)) => {
-                if e.local_name().as_ref() == b"loc" {
+                if e.local_name().as_ref() == "loc" {
                     in_loc = false;
                 }
             }
             Ok(Event::Text(t)) => {
                 if in_loc {
-                    let decoded = t.decode().map_err(|e| format!("Failed to decode <loc> text: {}", e))?;
-                    let text = quick_xml::escape::unescape(&decoded)
+                    let text = quick_xml::escape::unescape(t.as_ref())
                         .map_err(|e| format!("Failed to unescape <loc> text: {}", e))?;
                     let text = text.trim();
                     if !text.is_empty() {
