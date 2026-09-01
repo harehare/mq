@@ -892,8 +892,13 @@ fn test_repl_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::E
         .assert();
 
     let stderr = String::from_utf8_lossy(&assert.get_output().stderr).to_string();
+    let normalized = stderr
+        .replace('│', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
-        stderr.contains("filesystem reads are disabled"),
+        normalized.contains("filesystem reads are disabled"),
         "expected repl output to report reads are disabled, got: {stderr}"
     );
     Ok(())
