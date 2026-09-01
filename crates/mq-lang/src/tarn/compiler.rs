@@ -94,7 +94,11 @@ struct Compiler<R: ModuleResolver> {
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<(crate::Ident, crate::Ident), (usize, u16)>,
     external_globals: FxHashSet<crate::Ident>,
-    module_function_roots: FxHashSet<crate::Ident>,
+    /// The names the top-level query references, used to prune unreached module functions.
+    /// Computed lazily: most compiles never load a module, so most compiles never pay for
+    /// the full-program name-collection walk that produces this.
+    top_level_program: Program,
+    module_function_roots: std::cell::OnceCell<FxHashSet<crate::Ident>>,
     prune_module_functions: bool,
     used_unresolved_call_name: bool,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
@@ -475,7 +479,8 @@ fn compile_program_impl<R: ModuleResolver>(
         module_loader,
         qualified_bindings: FxHashMap::default(),
         external_globals: external_globals.iter().copied().collect(),
-        module_function_roots: referenced_names_in_program(program),
+        top_level_program: program.clone(),
+        module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
         used_unresolved_call_name: false,
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
@@ -1130,8 +1135,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 _ => None,
             })
             .collect();
-        let mut required: FxHashSet<crate::Ident> = self
+        let module_function_roots = self
             .module_function_roots
+            .get_or_init(|| referenced_names_in_program(&self.top_level_program));
+        let mut required: FxHashSet<crate::Ident> = module_function_roots
             .iter()
             .filter(|name| definitions.contains_key(name))
             .copied()
