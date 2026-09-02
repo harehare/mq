@@ -5075,6 +5075,7 @@ dependencies = [
  "futures-core",
  "http 1.5.0",
  "http-body",
+ "http-body-util",
  "percent-encoding",
  "pin-project-lite",
  "tokio",
