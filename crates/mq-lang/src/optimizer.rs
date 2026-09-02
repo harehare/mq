@@ -916,55 +916,10 @@ impl Optimizer {
                 }
             }
 
-            // One operand is a literal: algebraic identity folding.
-            let op = name.as_str();
-            match op.as_str() {
-                builtins::ADD => {
-                    // add(x, 0) → x, add(0, x) → x
-                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
-                        return Some(Shared::clone(&args[0]));
-                    }
-                    if matches!(&lhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
-                        return Some(Shared::clone(&args[1]));
-                    }
-                    // add("", x) → x, add(x, "") → x
-                    if matches!(&rhs_lit, Some(Literal::String(s)) if s.is_empty()) {
-                        return Some(Shared::clone(&args[0]));
-                    }
-                    if matches!(&lhs_lit, Some(Literal::String(s)) if s.is_empty()) {
-                        return Some(Shared::clone(&args[1]));
-                    }
-                }
-                builtins::SUB => {
-                    // sub(x, 0) → x
-                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
-                        return Some(Shared::clone(&args[0]));
-                    }
-                }
-                builtins::MUL => {
-                    // mul(x, 1) → x, mul(1, x) → x
-                    if matches!(&rhs_lit, Some(Literal::Number(n)) if is_one(n)) {
-                        return Some(Shared::clone(&args[0]));
-                    }
-                    if matches!(&lhs_lit, Some(Literal::Number(n)) if is_one(n)) {
-                        return Some(Shared::clone(&args[1]));
-                    }
-                    // mul(x, 0) → 0, mul(0, x) → 0
-                    if matches!(&rhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
-                        return Some(make_lit(Literal::Number(0i64.into())));
-                    }
-                    if matches!(&lhs_lit, Some(Literal::Number(n)) if n.is_zero()) {
-                        return Some(make_lit(Literal::Number(0i64.into())));
-                    }
-                }
-                builtins::DIV => {
-                    // div(x, 1) → x
-                    if matches!(&rhs_lit, Some(Literal::Number(n)) if is_one(n)) {
-                        return Some(Shared::clone(&args[0]));
-                    }
-                }
-                _ => {}
-            }
+            // Deliberately no "one operand is a literal 0/1/''" identity folding here:
+            // add/sub/mul/div are polymorphic (array concat/repeat, markdown value append,
+            // string coercion, ...), so e.g. `add(0, x)` isn't `x` in general — only the
+            // fully-literal fold above, where both operands' concrete types are known, is safe.
         }
 
         if args.len() == 1 {
@@ -1515,12 +1470,6 @@ fn build_tco_loop(fn_name: Ident, param_names: &[Ident], branches: &Branches, to
     result
 }
 
-/// Returns `true` if `n` is exactly the integer 1.
-#[inline]
-fn is_one(n: &crate::number::Number) -> bool {
-    (n.value() - 1.0).abs() < f64::EPSILON
-}
-
 /// Collect the names of every function directly called in `program` (recursively).
 fn collect_called_fns(program: &Program) -> FxHashSet<Ident> {
     let mut set = FxHashSet::default();
@@ -1827,6 +1776,24 @@ mod tests {
             assert!(
                 matches!(&*prog[0].expr, Expr::Call(..)),
                 "{level:?}: dynamic arg must prevent folding, got {:?}",
+                prog[0].expr
+            );
+        }
+    }
+
+    /// Regression: `[1, 2]` isn't an `Expr::Literal`, so `mul`/`add` with an array operand must
+    /// not hit the (Number, Number)/(String, String) fold — `[1, 2] * 0` is `[]` (array repeat),
+    /// not `0`, and `add(0, [1, 2])` is `[0, 1, 2]`, not `[1, 2]`.
+    #[rstest]
+    #[case("[1, 2] * 0")]
+    #[case("add(0, [1, 2])")]
+    fn array_operand_prevents_arithmetic_folding(#[case] query: &str) {
+        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
+            assert!(
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: {query} must stay a Call, got {:?}",
                 prog[0].expr
             );
         }
@@ -2144,9 +2111,8 @@ mod tests {
 
     #[test]
     fn let_non_literal_rhs_not_propagated() {
-        // `let x = add(1, .)` — RHS is not a literal (dynamic arg) → x is not registered.
-        // Full folds `x + 0` to `x` via algebraic identity, but `x` stays as Ident (not a
-        // literal), proving the let binding was not propagated to a constant.
+        // `let x = add(1, .)` — RHS is not a literal (dynamic arg) → x is not registered, so
+        // `x + 0` can't substitute a literal for `x` and stays a Call.
         for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
             let prog = ast_with("let x = add(1, .) | x + 0", level);
             assert_eq!(prog.len(), 2, "{level:?}");
@@ -2432,49 +2398,28 @@ mod tests {
         }
     }
 
-    #[test]
-    fn algebraic_identity_add_zero() {
+    /// `.` could be an array, markdown value, etc. at runtime — `add`/`sub`/`mul`/`div` are
+    /// polymorphic per operand type, so a one-side-literal identity isn't generally sound
+    /// (e.g. `add(0, [1, 2])` is `[0, 1, 2]`, not `[1, 2]`). Only the fully-literal fold, where
+    /// both operands' concrete types are known, may collapse these.
+    #[rstest]
+    #[case(". + 0")]
+    #[case("0 + .")]
+    #[case(". - 0")]
+    #[case(". * 0")]
+    #[case("0 * .")]
+    #[case(". * 1")]
+    #[case("1 * .")]
+    #[case(". / 1")]
+    #[case(". + \"\"")]
+    #[case("\"\" + .")]
+    fn one_sided_literal_arithmetic_stays_as_call(#[case] query: &str) {
         for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(". + 0", level);
-            assert_eq!(prog.len(), 1, "{level:?}");
+            let prog = ast_with(query, level);
+            assert_eq!(prog.len(), 1, "{level:?}: {query}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: . + 0 must fold to Self_, got {:?}",
-                prog[0].expr
-            );
-        }
-    }
-
-    #[test]
-    fn algebraic_identity_mul_zero() {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(". * 0", level);
-            assert_eq!(prog.len(), 1, "{level:?}");
-            assert_literal(&prog[0], "0", &format!("{level:?}: . * 0"));
-        }
-    }
-
-    #[test]
-    fn algebraic_identity_mul_one() {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(". * 1", level);
-            assert_eq!(prog.len(), 1, "{level:?}");
-            assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: . * 1 must fold to Self_, got {:?}",
-                prog[0].expr
-            );
-        }
-    }
-
-    #[test]
-    fn algebraic_identity_div_one() {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(". / 1", level);
-            assert_eq!(prog.len(), 1, "{level:?}");
-            assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: . / 1 must fold to Self_, got {:?}",
+                matches!(&*prog[0].expr, Expr::Call(..)),
+                "{level:?}: {query} must stay a Call, got {:?}",
                 prog[0].expr
             );
         }
@@ -2706,49 +2651,6 @@ mod tests {
             let prog = ast_with(query, level);
             assert_eq!(prog.len(), 1, "{level:?}: {query}");
             assert_literal(&prog[0], expected, &format!("{level:?}: {query}"));
-        }
-    }
-
-    #[rstest]
-    #[case(". + 0")]
-    #[case("0 + .")]
-    #[case(". - 0")]
-    #[case(". * 1")]
-    #[case("1 * .")]
-    #[case(". / 1")]
-    fn algebraic_identity_returns_self(#[case] query: &str) {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(query, level);
-            assert_eq!(prog.len(), 1, "{level:?}: {query}");
-            assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: {query} must fold to Self_"
-            );
-        }
-    }
-
-    #[rstest]
-    #[case(". * 0")]
-    #[case("0 * .")]
-    fn algebraic_mul_zero_returns_literal_zero(#[case] query: &str) {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(query, level);
-            assert_eq!(prog.len(), 1, "{level:?}: {query}");
-            assert_literal(&prog[0], "0", &format!("{level:?}: {query}"));
-        }
-    }
-
-    #[rstest]
-    #[case(". + \"\"")]
-    #[case("\"\" + .")]
-    fn algebraic_add_empty_string_returns_self(#[case] query: &str) {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(query, level);
-            assert_eq!(prog.len(), 1, "{level:?}: {query}");
-            assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: {query} must fold to Self_"
-            );
         }
     }
 
@@ -3082,19 +2984,6 @@ mod tests {
             assert!(
                 matches!(&*prog[0].expr, Expr::Match(..)),
                 "{level:?}: Match must remain when value is not a pattern-eliminating literal"
-            );
-        }
-    }
-
-    // ---- algebraic identity for sub(x, 0) ----
-    #[test]
-    fn algebraic_identity_sub_zero() {
-        for level in [OptimizationLevel::Basic, OptimizationLevel::Full] {
-            let prog = ast_with(". - 0", level);
-            assert_eq!(prog.len(), 1, "{level:?}");
-            assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
-                "{level:?}: . - 0 must fold to Self_"
             );
         }
     }
