@@ -167,6 +167,8 @@ pub(crate) struct DebugEvent {
     pub(crate) node: Shared<Node>,
     pub(crate) current_value: RuntimeValue,
     pub(crate) bindings: Vec<(Ident, RuntimeValue)>,
+    pub(crate) local_bindings: Vec<(Ident, RuntimeValue)>,
+    pub(crate) upvalue_bindings: Vec<(Ident, RuntimeValue)>,
     pub(crate) call_stack: Vec<Shared<Node>>,
     #[cfg(feature = "debug-trace")]
     pub(crate) operand_stack: Vec<RuntimeValue>,
@@ -1033,6 +1035,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 debug.current_node = Some(Shared::clone(&node));
 
                 let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
+                let mut local_bindings = Vec::new();
+                let mut upvalue_bindings = Vec::new();
                 for (name, slot) in chunk.debug_symbols.bindings() {
                     let value = match slot {
                         DebugSlot::Local(slot) => locals.get_checked(*slot),
@@ -1040,7 +1044,12 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     }
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
                     if let StackValue::Value(value) = value {
-                        bindings.push((*name, value));
+                        let binding = (*name, value);
+                        match slot {
+                            DebugSlot::Local(_) => local_bindings.push(binding.clone()),
+                            DebugSlot::Upvalue(_) => upvalue_bindings.push(binding.clone()),
+                        }
+                        bindings.push(binding);
                     }
                 }
                 if let Some(hook) = debug.hook.as_deref_mut() {
@@ -1049,6 +1058,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         node,
                         current_value: current_self(locals),
                         bindings,
+                        local_bindings,
+                        upvalue_bindings,
                         call_stack: debug.call_stack.clone(),
                         #[cfg(feature = "debug-trace")]
                         operand_stack: stack
