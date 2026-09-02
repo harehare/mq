@@ -52,6 +52,12 @@ pub struct Cli {
     #[clap(flatten)]
     output: OutputArgs,
 
+    /// Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`).
+    /// An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid
+    /// on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag.
+    #[arg(short = 'T', long = "format", value_enum)]
+    format: Option<IoFormat>,
+
     #[clap(subcommand)]
     commands: Option<Commands>,
 
@@ -244,7 +250,7 @@ impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
     }
 }
 
-#[derive(Clone, Debug, Default, clap::ValueEnum)]
+#[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum OutputFormat {
     #[default]
     Markdown,
@@ -262,6 +268,79 @@ enum OutputFormat {
     Yaml,
     Shell,
     None,
+}
+
+impl OutputFormat {
+    fn from_extension(ext: &str) -> Self {
+        match ext.to_lowercase().as_str() {
+            "html" | "htm" => Self::Html,
+            "txt" | "log" => Self::Raw,
+            "json" => Self::Json,
+            "csv" => Self::Csv,
+            "toml" => Self::Toml,
+            "toon" => Self::Toon,
+            "xml" => Self::Xml,
+            "yaml" | "yml" => Self::Yaml,
+            "gron" => Self::Gron,
+            _ => Self::Markdown,
+        }
+    }
+
+    fn from_path(path: &Path) -> Self {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
+        Self::from_extension(ext)
+    }
+}
+
+#[derive(Clone, Debug, clap::ValueEnum, PartialEq)]
+enum IoFormat {
+    Markdown,
+    Html,
+    Text,
+    Json,
+    Gron,
+    Raw,
+    Csv,
+    Toml,
+    Toon,
+    Xml,
+    Yaml,
+}
+
+impl From<IoFormat> for InputFormat {
+    fn from(fmt: IoFormat) -> Self {
+        match fmt {
+            IoFormat::Markdown => Self::Markdown,
+            IoFormat::Html => Self::Html,
+            IoFormat::Text => Self::Text,
+            IoFormat::Json => Self::Json,
+            IoFormat::Gron => Self::Gron,
+            IoFormat::Raw => Self::Raw,
+            IoFormat::Csv => Self::Csv,
+            IoFormat::Toml => Self::Toml,
+            IoFormat::Toon => Self::Toon,
+            IoFormat::Xml => Self::Xml,
+            IoFormat::Yaml => Self::Yaml,
+        }
+    }
+}
+
+impl From<IoFormat> for OutputFormat {
+    fn from(fmt: IoFormat) -> Self {
+        match fmt {
+            IoFormat::Markdown => Self::Markdown,
+            IoFormat::Html => Self::Html,
+            IoFormat::Text => Self::Text,
+            IoFormat::Json => Self::Json,
+            IoFormat::Gron => Self::Gron,
+            IoFormat::Raw => Self::Raw,
+            IoFormat::Csv => Self::Csv,
+            IoFormat::Toml => Self::Toml,
+            IoFormat::Toon => Self::Toon,
+            IoFormat::Xml => Self::Xml,
+            IoFormat::Yaml => Self::Yaml,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, clap::ValueEnum)]
@@ -469,9 +548,11 @@ struct InputArgs {
 
 #[derive(Clone, Debug, clap::Args, Default)]
 struct OutputArgs {
-    /// Set output format
-    #[arg(short = 'F', long, value_enum, default_value_t)]
-    output_format: OutputFormat,
+    /// Set output format. When omitted, inferred from the `-o`/`--output` file
+    /// extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to
+    /// markdown.
+    #[arg(short = 'F', long, value_enum)]
+    output_format: Option<OutputFormat>,
 
     /// Update matching Markdown nodes and write the result to stdout
     #[arg(short = 'U', long = "update", default_value_t = false)]
@@ -1067,6 +1148,14 @@ impl Cli {
             out,
             "  mq -F csv 'to_text()' file.md    # every node's text, one per CSV row"
         );
+        let _ = writeln!(
+            out,
+            "  mq -o out.json 'self' file.md    # -F inferred from -o's extension"
+        );
+        let _ = writeln!(
+            out,
+            "  mq -T json 'self' file.txt       # sets both -I and -F at once (-I/-F still override)"
+        );
 
         let _ = writeln!(out, "\n{}", "Updating markdown in place (-U):".bold().cyan());
         let _ = writeln!(
@@ -1204,7 +1293,9 @@ impl Cli {
         let _ = writeln!(out, "\n## Output formats (-F)\n");
         let _ = writeln!(
             out,
-            "```sh\nmq -F json '.h' file.md          # headings as JSON nodes\nmq -F csv 'to_text()' file.md    # every node's text, one per CSV row\n```"
+            "```sh\nmq -F json '.h' file.md          # headings as JSON nodes\nmq -F csv 'to_text()' file.md    # every node's text, one per CSV row\n\
+            mq -o out.json 'self' file.md    # -F inferred from -o's extension\n\
+            mq -T json 'self' file.txt       # sets both -I and -F at once (-I/-F still override)\n```"
         );
 
         let _ = writeln!(out, "\n## Updating markdown in place (-U)\n");
@@ -1285,7 +1376,7 @@ impl Cli {
         if (self.output.before_context.is_some()
             || self.output.after_context.is_some()
             || self.output.context.is_some())
-            && !matches!(self.output.output_format, OutputFormat::Grep)
+            && !matches!(self.resolved_output_format(), OutputFormat::Grep)
         {
             return Err(miette!(
                 "--before-context, --after-context, and --context are only valid with -F grep"
@@ -1324,20 +1415,20 @@ impl Cli {
             }
         }
 
-        if !matches!(self.input.input_format, Some(InputFormat::Markdown) | None) && self.output.update {
+        if !matches!(self.explicit_input_format(), Some(InputFormat::Markdown) | None) && self.output.update {
             return Err(miette!("The output format is not supported for the update option"));
         }
 
-        if self.output.diff && matches!(self.output.output_format, OutputFormat::Grep) {
+        if self.output.diff && matches!(self.resolved_output_format(), OutputFormat::Grep) {
             return Err(miette!("--diff is not supported with -F grep"));
         }
 
-        if self.output.compact && !matches!(self.output.output_format, OutputFormat::Json) {
+        if self.output.compact && !matches!(self.resolved_output_format(), OutputFormat::Json) {
             return Err(miette!("--compact is only valid with -F json"));
         }
 
         if (self.input.csv_delimiter.is_some() || self.input.no_header)
-            && matches!(&self.input.input_format, Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
+            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
         {
             return Err(miette!(
                 "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
@@ -1565,11 +1656,30 @@ impl Cli {
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
     }
 
-    /// Returns a query prefix that auto-imports and parses a module-backed format,
-    /// from an explicit `-I <format>` or else the file extension.
+    fn explicit_input_format(&self) -> Option<InputFormat> {
+        self.input
+            .input_format
+            .clone()
+            .or_else(|| self.format.clone().map(InputFormat::from))
+    }
+
+    fn resolved_output_format(&self) -> OutputFormat {
+        self.output
+            .output_format
+            .clone()
+            .or_else(|| self.format.clone().map(OutputFormat::from))
+            .unwrap_or_else(|| {
+                self.output
+                    .output_file
+                    .as_deref()
+                    .map(OutputFormat::from_path)
+                    .unwrap_or_default()
+            })
+    }
+
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
-        let fmt = match &self.input.input_format {
-            Some(fmt) => fmt.clone(),
+        let fmt = match self.explicit_input_format() {
+            Some(fmt) => fmt,
             None => InputFormat::from_path(file.as_ref()?),
         };
         self.tabular_query_prefix(&fmt)
@@ -1612,7 +1722,7 @@ impl Cli {
     ) -> miette::Result<Vec<mq_lang::RuntimeValue>> {
         let text = content.as_str().unwrap_or("");
         Ok(
-            match self.input.input_format.as_ref().cloned().unwrap_or_else(|| {
+            match self.explicit_input_format().unwrap_or_else(|| {
                 if let Some(file) = file {
                     InputFormat::from_path(file)
                 } else if io::stdin().is_terminal() {
@@ -1727,7 +1837,7 @@ impl Cli {
         }
 
         let input = self.resolve_input(file, content)?;
-        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
         let runtime_values = if self.output.update {
@@ -1972,7 +2082,7 @@ impl Cli {
             combined_input.extend(self.resolve_input(file, content)?);
         }
 
-        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
 
         let runtime_values = engine
@@ -1994,7 +2104,7 @@ impl Cli {
         }
 
         let input = self.resolve_input(file, content)?;
-        let is_grep = matches!(self.output.output_format, OutputFormat::Grep);
+        let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
         let runtime_values = if self.output.update {
@@ -2119,15 +2229,13 @@ impl Cli {
 
     fn is_binary_format(&self) -> bool {
         matches!(
-            self.input.input_format,
+            self.explicit_input_format(),
             Some(InputFormat::Bytes) | Some(InputFormat::Cbor)
         )
     }
 
     fn needs_binary_read_for_file(&self, file: &Path) -> bool {
-        self.input
-            .input_format
-            .as_ref()
+        self.explicit_input_format()
             .map(|fmt| fmt.needs_binary_read())
             .unwrap_or_else(|| {
                 let ext = file.extension().unwrap_or_default().to_string_lossy().to_lowercase();
@@ -2194,9 +2302,7 @@ impl Cli {
             .into_diagnostic()?;
 
         let fmt = self
-            .input
-            .input_format
-            .clone()
+            .explicit_input_format()
             .unwrap_or_else(|| InputFormat::from_path(file));
         if fmt.needs_binary_read() {
             Ok(ContentData::Bytes(decompressed))
@@ -2212,7 +2318,7 @@ impl Cli {
     }
 
     fn read_contents(&self) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
-        if matches!(self.input.input_format, Some(InputFormat::Null)) {
+        if matches!(self.explicit_input_format(), Some(InputFormat::Null)) {
             return Ok(vec![(None, ContentData::empty())]);
         }
 
@@ -2388,7 +2494,7 @@ impl Cli {
     fn render(&self, runtime_values: &[mq_lang::RuntimeValue], colorize: bool) -> miette::Result<Vec<u8>> {
         let mut buf = Vec::new();
 
-        match self.output.output_format {
+        match self.resolved_output_format() {
             OutputFormat::Raw => {
                 for value in runtime_values {
                     match value {
@@ -2987,7 +3093,7 @@ mod tests {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
-                    output_format: format.clone(),
+                    output_format: Some(format.clone()),
                     ..Default::default()
                 },
                 commands: None,
@@ -3371,7 +3477,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3413,7 +3519,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 no_position: true,
                 ..Default::default()
@@ -3460,7 +3566,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3504,7 +3610,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3549,7 +3655,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Gron,
+                output_format: Some(OutputFormat::Gron),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3587,7 +3693,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3629,7 +3735,7 @@ mod tests {
         let to_gron = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Gron,
+                output_format: Some(OutputFormat::Gron),
                 output_file: Some(gron_file.clone()),
                 ..Default::default()
             },
@@ -3643,7 +3749,7 @@ mod tests {
         let from_gron = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(json_file.clone()),
                 ..Default::default()
             },
@@ -3657,7 +3763,7 @@ mod tests {
         let direct_json = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(json_file.with_extension("direct.json")),
                 ..Default::default()
             },
@@ -3697,7 +3803,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3735,7 +3841,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3764,7 +3870,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::None,
+                output_format: Some(OutputFormat::None),
                 ..Default::default()
             },
             commands: None,
@@ -3795,7 +3901,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Table,
+                output_format: Some(OutputFormat::Table),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3828,7 +3934,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Table,
+                output_format: Some(OutputFormat::Table),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3863,7 +3969,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Table,
+                output_format: Some(OutputFormat::Table),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3902,7 +4008,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Table,
+                output_format: Some(OutputFormat::Table),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -3938,7 +4044,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Table,
+                output_format: Some(OutputFormat::Table),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -4092,7 +4198,7 @@ mod tests {
             },
             output: OutputArgs {
                 output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 ..Default::default()
             },
             commands: None,
@@ -4137,7 +4243,7 @@ mod tests {
             },
             output: OutputArgs {
                 output_file: Some(output_file.clone()),
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 ..Default::default()
             },
             commands: None,
@@ -4702,6 +4808,35 @@ mod tests {
     }
 
     #[rstest]
+    #[case("html", OutputFormat::Html)]
+    #[case("htm", OutputFormat::Html)]
+    #[case("txt", OutputFormat::Raw)]
+    #[case("log", OutputFormat::Raw)]
+    #[case("json", OutputFormat::Json)]
+    #[case("csv", OutputFormat::Csv)]
+    #[case("toml", OutputFormat::Toml)]
+    #[case("toon", OutputFormat::Toon)]
+    #[case("xml", OutputFormat::Xml)]
+    #[case("yaml", OutputFormat::Yaml)]
+    #[case("yml", OutputFormat::Yaml)]
+    #[case("gron", OutputFormat::Gron)]
+    #[case("unknown", OutputFormat::Markdown)] // default fallback
+    #[case("md", OutputFormat::Markdown)]
+    fn test_output_format_from_extension(#[case] ext: &str, #[case] expected: OutputFormat) {
+        assert_eq!(OutputFormat::from_extension(ext), expected);
+    }
+
+    #[rstest]
+    #[case("file.json", OutputFormat::Json)]
+    #[case("file.csv", OutputFormat::Csv)]
+    #[case("file.yaml", OutputFormat::Yaml)]
+    #[case("file.md", OutputFormat::Markdown)]
+    #[case("file", OutputFormat::Markdown)] // no extension at all
+    fn test_output_format_from_path(#[case] filename: &str, #[case] expected: OutputFormat) {
+        assert_eq!(OutputFormat::from_path(&PathBuf::from(filename)), expected);
+    }
+
+    #[rstest]
     #[case("file.json", Some(r#"import "json" | json::json_parse()"#))]
     #[case("file.gron", Some(r#"import "gron" | gron::gron_parse()"#))]
     #[case("file.yaml", Some(r#"import "yaml" | yaml::yaml_parse()"#))]
@@ -4805,7 +4940,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -4839,7 +4974,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -4853,6 +4988,159 @@ mod tests {
         let content = fs::read_to_string(&output_file).expect("Failed to read output");
         assert!(content.contains("Alice"), "CSV should be parsed automatically");
         assert!(content.contains("name"), "CSV header should be parsed");
+    }
+
+    #[test]
+    fn test_output_format_auto_detected_from_output_file_extension() {
+        let (_, temp_file_path) = create_file("out_fmt_auto_input.md", "# Test");
+        let (_, output_file) = create_file("out_fmt_auto_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        // No -F given; the `.json` extension on -o should drive the output format.
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert!(parsed.is_array(), "extension-inferred JSON output should be an array");
+        assert_eq!(parsed[0]["type"], "Heading");
+    }
+
+    #[test]
+    fn test_output_format_explicit_flag_overrides_extension() {
+        let (_, temp_file_path) = create_file("out_fmt_override_input.md", "# Test");
+        let (_, output_file) = create_file("out_fmt_override_output.json", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        // -F yaml should win over the `.json` extension on -o.
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_format: Some(OutputFormat::Yaml),
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&output_content).is_err(),
+            "output should be YAML, not JSON"
+        );
+        assert!(output_content.contains("type: Heading") || output_content.contains("type: heading"));
+    }
+
+    #[test]
+    fn test_format_flag_sets_both_input_and_output() {
+        // ".dat" isn't a recognized extension on either side, so without -T this
+        // would parse as markdown and render as markdown.
+        let (_, temp_file_path) = create_file("format_flag_input.dat", r#"{"key": "value"}"#);
+        let (_, output_file) = create_file("format_flag_output.dat", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs::default(),
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            format: Some(IoFormat::Json),
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        let parsed: serde_json::Value = serde_json::from_str(&output_content).expect("Output should be valid JSON");
+        assert_eq!(parsed["key"], "value");
+    }
+
+    #[test]
+    fn test_format_flag_overridden_by_explicit_input_and_output_format() {
+        let (_, temp_file_path) = create_file("format_flag_override_input.dat", "# Test");
+        let (_, output_file) = create_file("format_flag_override_output.dat", "");
+        let temp_file_path_clone = temp_file_path.clone();
+        let output_file_clone = output_file.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).ok();
+            }
+            if output_file_clone.exists() {
+                std::fs::remove_file(&output_file_clone).ok();
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Markdown),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_format: Some(OutputFormat::Table),
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            format: Some(IoFormat::Json),
+            commands: None,
+            query: Some("self".to_string()),
+            files: Some(vec![temp_file_path]),
+            ..Cli::default()
+        };
+
+        assert!(cli.run().is_ok());
+        let output_content = fs::read_to_string(&output_file).expect("Failed to read output");
+        assert!(
+            serde_json::from_str::<serde_json::Value>(&output_content).is_err(),
+            "explicit -F table should win over -T json"
+        );
     }
 
     #[test]
@@ -4879,7 +5167,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Json,
+                output_format: Some(OutputFormat::Json),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5016,7 +5304,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5052,7 +5340,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5096,7 +5384,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5181,7 +5469,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5255,7 +5543,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5305,7 +5593,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5346,7 +5634,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5423,7 +5711,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5451,7 +5739,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5489,7 +5777,7 @@ mod tests {
             let cli = Cli {
                 input: InputArgs::default(),
                 output: OutputArgs {
-                    output_format: OutputFormat::Text,
+                    output_format: Some(OutputFormat::Text),
                     output_file: Some(output.clone()),
                     ..Default::default()
                 },
@@ -5538,7 +5826,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5577,7 +5865,7 @@ mod tests {
                 ..Default::default()
             },
             output: OutputArgs {
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5632,7 +5920,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Raw,
+                output_format: Some(OutputFormat::Raw),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
@@ -5690,7 +5978,7 @@ mod tests {
         let cli = Cli {
             input: InputArgs::default(),
             output: OutputArgs {
-                output_format: OutputFormat::Text,
+                output_format: Some(OutputFormat::Text),
                 output_file: Some(output_file.clone()),
                 ..Default::default()
             },
