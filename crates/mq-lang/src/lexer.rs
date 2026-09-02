@@ -786,7 +786,7 @@ fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
     }
 }
 
-fn token(input: Span) -> IResult<Span, Token> {
+fn token_slow(input: Span) -> IResult<Span, Token> {
     alt((
         env,
         literals,
@@ -800,7 +800,50 @@ fn token(input: Span) -> IResult<Span, Token> {
     .parse(input)
 }
 
-fn token_include_spaces(input: Span) -> IResult<Span, Token> {
+fn dispatch_by_first_char(input: Span) -> IResult<Span, Token> {
+    let Some(c) = input.fragment().chars().next() else {
+        return token_slow(input);
+    };
+    match c {
+        '$' => env(input),
+        '"' => alt((string_literal, empty_string)).parse(input),
+        '0'..='9' => number_literal(input),
+        '-' => alt((number_literal, arrow, minus_equal, minus)).parse(input),
+        '.' => alt((number_literal, spread_op, range_op, selector)).parse(input),
+        'b' => alt((byte_string_literal, ident_or_keyword)).parse(input),
+        's' => alt((interpolated_string, ident_or_keyword)).parse(input),
+        '(' => l_paren(input),
+        ')' => r_paren(input),
+        '{' => l_brace(input),
+        '}' => r_brace(input),
+        '[' => l_bracket(input),
+        ']' => r_bracket(input),
+        ',' => comma(input),
+        ';' => semi_colon(input),
+        ':' => alt((double_colon, colon)).parse(input),
+        '?' => alt((coalesce, question)).parse(input),
+        '|' => alt((pipe_equal, or, pipe)).parse(input),
+        '!' => alt((ne_eq, not_tilde_equal, not)).parse(input),
+        '<' => alt((left_shift, lte, lt)).parse(input),
+        '>' => alt((right_shift, gte, gt)).parse(input),
+        '=' => alt((eq_eq, tilde_equal, equal)).parse(input),
+        '+' => alt((number_literal, plus_equal, plus)).parse(input),
+        '*' => alt((star_equal, asterisk)).parse(input),
+        '/' => alt((slash_equal, double_slash_equal, slash)).parse(input),
+        '%' => alt((percent_equal, percent)).parse(input),
+        '&' => and(input),
+        '@' => convert_op(input),
+        c if c.is_ascii_alphabetic() || c == '_' => ident_or_keyword(input),
+        _ => token_slow(input),
+    }
+}
+
+fn token(input: Span) -> IResult<Span, Token> {
+    dispatch_by_first_char(input)
+}
+
+#[cfg(test)]
+fn token_include_spaces_slow(input: Span) -> IResult<Span, Token> {
     alt((
         newline,
         spaces,
@@ -816,6 +859,16 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
         ident_or_keyword,
     ))
     .parse(input)
+}
+
+fn token_include_spaces(input: Span) -> IResult<Span, Token> {
+    match input.fragment().chars().next() {
+        Some('\n') | Some('\r') => newline(input),
+        Some(' ') => spaces(input),
+        Some('\t') => tab(input),
+        Some('#') => inline_comment(input),
+        _ => dispatch_by_first_char(input),
+    }
 }
 
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
@@ -852,6 +905,7 @@ mod tests {
     use crate::range::Position;
 
     use super::*;
+    use proptest::proptest;
     use rstest::rstest;
 
     #[rstest]
@@ -1584,5 +1638,134 @@ mod tests {
         #[case] expected: Result<Vec<Token>, SyntaxError>,
     ) {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
+    }
+
+    fn assert_dispatch_matches_exhaustive_alt(source: &str) {
+        let module_id = 1.into();
+        let mut span = Span::new_extra(source, module_id);
+        loop {
+            let fast = token(span);
+            let slow = token_slow(span);
+            match (&fast, &slow) {
+                (Ok((f_rem, f_tok)), Ok((s_rem, s_tok))) => {
+                    assert_eq!(
+                        f_tok,
+                        s_tok,
+                        "token() vs token_slow() diverged at {:?}",
+                        span.fragment()
+                    );
+                    assert_eq!(
+                        f_rem.fragment(),
+                        s_rem.fragment(),
+                        "token() vs token_slow() consumed different amounts at {:?}",
+                        span.fragment()
+                    );
+                }
+                (Err(_), Err(_)) => {}
+                _ => panic!(
+                    "token() and token_slow() disagreed on Ok/Err at {:?}: {fast:?} vs {slow:?}",
+                    span.fragment()
+                ),
+            }
+
+            let fast_spaces = token_include_spaces(span);
+            let slow_spaces = token_include_spaces_slow(span);
+            match (&fast_spaces, &slow_spaces) {
+                (Ok((f_rem, f_tok)), Ok((s_rem, s_tok))) => {
+                    assert_eq!(
+                        f_tok,
+                        s_tok,
+                        "token_include_spaces() vs _slow() diverged at {:?}",
+                        span.fragment()
+                    );
+                    assert_eq!(
+                        f_rem.fragment(),
+                        s_rem.fragment(),
+                        "token_include_spaces() vs _slow() consumed different amounts at {:?}",
+                        span.fragment()
+                    );
+                }
+                (Err(_), Err(_)) => {}
+                _ => panic!(
+                    "token_include_spaces() and _slow() disagreed on Ok/Err at {:?}: {fast_spaces:?} vs {slow_spaces:?}",
+                    span.fragment()
+                ),
+            }
+
+            match fast_spaces {
+                Ok((rest, _)) if rest.fragment().len() < span.fragment().len() => span = rest,
+                _ => break,
+            }
+        }
+    }
+
+    #[test]
+    fn dispatch_matches_exhaustive_alt_and_parses_on_real_mq_files() {
+        const FILES: &[(&str, &str)] = &[
+            ("builtin.mq", include_str!("../builtin.mq")),
+            ("builtin_tests.mq", include_str!("../builtin_tests.mq")),
+            ("modules/cbor.mq", include_str!("../modules/cbor.mq")),
+            ("modules/csv.mq", include_str!("../modules/csv.mq")),
+            ("modules/csv_test.mq", include_str!("../modules/csv_test.mq")),
+            ("modules/fuzzy.mq", include_str!("../modules/fuzzy.mq")),
+            ("modules/fuzzy_test.mq", include_str!("../modules/fuzzy_test.mq")),
+            ("modules/gron.mq", include_str!("../modules/gron.mq")),
+            ("modules/gron_test.mq", include_str!("../modules/gron_test.mq")),
+            ("modules/html.mq", include_str!("../modules/html.mq")),
+            ("modules/html_test.mq", include_str!("../modules/html_test.mq")),
+            ("modules/json.mq", include_str!("../modules/json.mq")),
+            ("modules/json_test.mq", include_str!("../modules/json_test.mq")),
+            ("modules/md.mq", include_str!("../modules/md.mq")),
+            ("modules/md_test.mq", include_str!("../modules/md_test.mq")),
+            ("modules/section.mq", include_str!("../modules/section.mq")),
+            ("modules/section_test.mq", include_str!("../modules/section_test.mq")),
+            ("modules/semver.mq", include_str!("../modules/semver.mq")),
+            ("modules/semver_test.mq", include_str!("../modules/semver_test.mq")),
+            ("modules/table.mq", include_str!("../modules/table.mq")),
+            ("modules/table_test.mq", include_str!("../modules/table_test.mq")),
+            ("modules/test.mq", include_str!("../modules/test.mq")),
+            ("modules/toml.mq", include_str!("../modules/toml.mq")),
+            ("modules/toml_test.mq", include_str!("../modules/toml_test.mq")),
+            ("modules/toon.mq", include_str!("../modules/toon.mq")),
+            ("modules/toon_test.mq", include_str!("../modules/toon_test.mq")),
+            ("modules/xml.mq", include_str!("../modules/xml.mq")),
+            ("modules/xml_test.mq", include_str!("../modules/xml_test.mq")),
+            ("modules/yaml.mq", include_str!("../modules/yaml.mq")),
+            ("modules/yaml_test.mq", include_str!("../modules/yaml_test.mq")),
+        ];
+        for (name, source) in FILES {
+            assert_dispatch_matches_exhaustive_alt(source);
+            let token_arena = crate::Shared::new(crate::SharedCell::new(crate::Arena::new(256)));
+            crate::parse(source, token_arena).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
+        }
+    }
+
+    #[test]
+    fn dispatch_matches_exhaustive_alt_on_curated_snippets() {
+        for source in [
+            "def check(arg1, arg2): startswith(\"\\u{0061}\")",
+            r#"let world = "world" | s"$$Hello, ${world}$$""#,
+            r#"b"\xf0\x9f""#,
+            "b foo",
+            "b\"\u{00e9}\"",
+            ".h1 | .[] | .\"quoted key\"",
+            "1..10 | -3 + -4.5e-2 | .5",
+            "+0 +5 a+0 a +0 a+b +=b --5 -+5",
+            "a -> b | a - b | a--b | a---b",
+            "== === =~ !~ != ! << <= < >> >= > && || |= |",
+            "+= -= *= /= //= %= ?? ? :: : ; , @",
+            "self None true false end elif else while until unless loop match module",
+            "import \"m\" as m | m::foo | include \"m\"",
+            "$ENV_VAR | $$not_env",
+        ] {
+            assert_dispatch_matches_exhaustive_alt(source);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn dispatch_matches_exhaustive_alt_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
+            assert_dispatch_matches_exhaustive_alt(&s);
+        }
     }
 }
