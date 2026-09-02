@@ -86,6 +86,20 @@ struct LoopCtx {
     chunk_index: usize,
 }
 
+/// A `module`/`import`-qualified name reference (`alias::name`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct QualifiedName {
+    alias: crate::Ident,
+    name: crate::Ident,
+}
+
+/// Where a [`QualifiedName`] resolves: the scope depth it was declared at, and its slot there.
+#[derive(Clone, Copy)]
+struct QualifiedSlot {
+    depth: usize,
+    slot: u16,
+}
+
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     scopes: Vec<FunctionScope>,
@@ -94,7 +108,7 @@ struct Compiler<R: ModuleResolver> {
     current_token_id: crate::ast::TokenId,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    qualified_bindings: FxHashMap<(crate::Ident, crate::Ident), (usize, u16)>,
+    qualified_bindings: FxHashMap<QualifiedName, QualifiedSlot>,
     external_globals: FxHashSet<crate::Ident>,
     /// The names the top-level query references, used to prune unreached module functions.
     /// Computed lazily: most compiles never load a module, so most compiles never pay for
@@ -622,7 +636,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_top_level(&mut self, program: &Program) -> CompileResult<()> {
         enum Deferred {
             Statement(Shared<Node>),
-            ModuleVars(crate::Module),
+            ModuleVars(crate::Module, Option<crate::Ident>),
             InlineModuleRest(crate::Ident, usize, Program),
         }
         let mut deferred = Vec::with_capacity(program.len());
@@ -637,11 +651,15 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 Expr::Include(literal) => {
                     let module = self.compile_include_functions(literal)?;
-                    deferred.push(Deferred::ModuleVars(module));
+                    deferred.push(Deferred::ModuleVars(module, None));
                 }
                 Expr::Import(literal, alias) => {
                     let module = self.compile_import_functions(literal, alias.as_ref())?;
-                    deferred.push(Deferred::ModuleVars(module));
+                    let module_alias = alias
+                        .as_ref()
+                        .map(|a| a.name)
+                        .unwrap_or_else(|| crate::Ident::new(&module.name));
+                    deferred.push(Deferred::ModuleVars(module, Some(module_alias)));
                 }
                 Expr::Module(ident, inline_program) => {
                     let module_alias = ident.name;
@@ -660,13 +678,26 @@ impl<R: ModuleResolver> Compiler<R> {
         };
         for item in init {
             match item {
+                #[cfg(not(feature = "debugger"))]
+                Deferred::Statement(node) if matches!(&*node.expr, Expr::Let(..) | Expr::Var(..)) => {
+                    let (Expr::Let(pattern, value) | Expr::Var(pattern, value)) = &*node.expr else {
+                        unreachable!("guarded above");
+                    };
+                    self.current_token_id = node.token_id;
+                    self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                    continue;
+                }
                 Deferred::Statement(node) => {
                     self.compile_expr(node)?;
                     if Self::is_auto_call_candidate(node) {
                         self.emit(OpCode::MaybeAutoCall);
                     }
                 }
-                Deferred::ModuleVars(module) => self.compile_module_vars(module)?,
+                // Same idea as the `Let`/`Var` fast path above.
+                Deferred::ModuleVars(module, alias) => {
+                    self.compile_module_vars_binding(module, *alias)?;
+                    continue;
+                }
                 Deferred::InlineModuleRest(module_alias, depth, rest) => {
                     self.compile_module_rest(*module_alias, *depth, rest)?
                 }
@@ -680,9 +711,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::MaybeAutoCall);
                 }
             }
-            Deferred::ModuleVars(module) => {
-                self.compile_module_vars(module)?;
-                self.emit(OpCode::SetLocal(SELF_SLOT));
+            Deferred::ModuleVars(module, alias) => {
+                self.compile_module_vars_binding(module, *alias)?;
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
             Deferred::InlineModuleRest(module_alias, depth, rest) => {
@@ -728,6 +758,13 @@ impl<R: ModuleResolver> Compiler<R> {
             return Ok(());
         };
         for node in init {
+            // See the matching case in `compile_top_level`.
+            #[cfg(not(feature = "debugger"))]
+            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
+                self.current_token_id = node.token_id;
+                self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                continue;
+            }
             self.compile_expr(node)?;
             if Self::is_auto_call_candidate(node) {
                 self.emit(OpCode::MaybeAutoCall);
@@ -854,6 +891,19 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_let_or_var(&mut self, pattern: &Pattern, value: &Shared<Node>, mutable: bool) -> CompileResult<()> {
+        self.compile_let_or_var_binding(pattern, value, mutable)?;
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(())
+    }
+
+    /// Binds `pattern` without pushing `self` — `let`/`var` never change it, so a non-tail
+    /// statement can skip the round trip through `SetLocal(SELF_SLOT)`.
+    fn compile_let_or_var_binding(
+        &mut self,
+        pattern: &Pattern,
+        value: &Shared<Node>,
+        mutable: bool,
+    ) -> CompileResult<()> {
         match pattern {
             Pattern::Ident(ident) if matches!(&*value.expr, Expr::Fn(_, _)) => {
                 let Expr::Fn(params, body) = &*value.expr else {
@@ -901,7 +951,6 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.chunk_mut().patch_jump(end_jump);
             }
         }
-        self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
     }
 
@@ -1077,7 +1126,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_include(&mut self, literal: &Literal) -> CompileResult<()> {
         let module = self.compile_include_functions(literal)?;
-        self.compile_module_vars(&module)
+        self.compile_module_vars(&module, None)
     }
 
     fn compile_include_functions(&mut self, literal: &Literal) -> CompileResult<crate::Module> {
@@ -1131,14 +1180,64 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_module_vars(&mut self, module: &crate::Module) -> CompileResult<()> {
-        self.compile_discarding(&module.vars)?;
+    fn compile_module_vars(&mut self, module: &crate::Module, alias: Option<crate::Ident>) -> CompileResult<()> {
+        self.compile_module_vars_binding(module, alias)?;
         self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(())
+    }
+
+    /// Binds `module.vars`' values without pushing `self`. With `alias` (`import`, not
+    /// `include`), also qualifies each var as `alias::name` and hides its bare name, like
+    /// `compile_import_functions` already does for functions.
+    fn compile_module_vars_binding(
+        &mut self,
+        module: &crate::Module,
+        alias: Option<crate::Ident>,
+    ) -> CompileResult<()> {
+        let var_slots: Vec<(crate::Ident, u16)> = if alias.is_some() {
+            module
+                .vars
+                .iter()
+                .filter_map(|node| match &*node.expr {
+                    Expr::Let(Pattern::Ident(ident), _) => self
+                        .scope_mut()
+                        .resolve_local(ident.name)
+                        .map(|slot| (ident.name, slot)),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        self.compile_discarding(&module.vars)?;
+
+        if let Some(module_alias) = alias {
+            let depth = self.scopes.len() - 1;
+            for (name, slot) in var_slots {
+                self.qualified_bindings.insert(
+                    QualifiedName {
+                        alias: module_alias,
+                        name,
+                    },
+                    QualifiedSlot { depth, slot },
+                );
+                self.scope_mut().set_local_name(slot, crate::Ident::default());
+            }
+        }
         Ok(())
     }
 
     fn compile_discarding(&mut self, nodes: &Program) -> CompileResult<()> {
         for node in nodes {
+            // Unlike `compile_top_level`/`compile_body`, the peephole pass can't clean this up:
+            // `GetLocal(SELF_SLOT)` followed by `Pop` isn't a pattern it recognizes.
+            #[cfg(not(feature = "debugger"))]
+            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
+                self.current_token_id = node.token_id;
+                self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                continue;
+            }
             self.compile_expr(node)?;
             self.emit(OpCode::Pop);
         }
@@ -1270,7 +1369,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_import(&mut self, literal: &Literal, alias: Option<&ast::IdentWithToken>) -> CompileResult<()> {
         let module = self.compile_import_functions(literal, alias)?;
-        self.compile_module_vars(&module)
+        let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
+        self.compile_module_vars(&module, Some(module_alias))
     }
 
     fn compile_import_functions(
@@ -1314,8 +1414,13 @@ impl<R: ModuleResolver> Compiler<R> {
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
             self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(*slot));
-            self.qualified_bindings
-                .insert((module_alias, ident.name), (depth, *slot));
+            self.qualified_bindings.insert(
+                QualifiedName {
+                    alias: module_alias,
+                    name: ident.name,
+                },
+                QualifiedSlot { depth, slot: *slot },
+            );
         }
         // Hide the real names now that every body referencing them has been compiled, so
         // only `alias::name` — not the bare name — resolves to them from here on.
@@ -1354,8 +1459,13 @@ impl<R: ModuleResolver> Compiler<R> {
                     let (chunk_idx, upvalues) = self.compile_function(params, body, Some(def_ident.name))?;
                     self.emit_closure(chunk_idx, upvalues);
                     self.emit(OpCode::SetLocal(slot));
-                    self.qualified_bindings
-                        .insert((module_alias, def_ident.name), (depth, slot));
+                    self.qualified_bindings.insert(
+                        QualifiedName {
+                            alias: module_alias,
+                            name: def_ident.name,
+                        },
+                        QualifiedSlot { depth, slot },
+                    );
                 }
                 Expr::Include(_) | Expr::Let(_, _) | Expr::Import(_, _) | Expr::Module(_, _) => {
                     rest.push(Shared::clone(node));
@@ -1375,15 +1485,21 @@ impl<R: ModuleResolver> Compiler<R> {
             self.current_token_id = node.token_id;
             match &*node.expr {
                 Expr::Include(literal) => {
-                    self.compile_include(literal)?;
-                    self.emit(OpCode::Pop);
+                    // See `compile_discarding`: skip the discarded trailing self-value.
+                    let module = self.compile_include_functions(literal)?;
+                    self.compile_module_vars_binding(&module, None)?;
                 }
                 Expr::Let(Pattern::Ident(let_ident), value) => {
                     self.compile_expr(value)?;
                     let slot = self.scope_mut().declare_synthetic();
                     self.emit(OpCode::SetLocal(slot));
-                    self.qualified_bindings
-                        .insert((module_alias, let_ident.name), (depth, slot));
+                    self.qualified_bindings.insert(
+                        QualifiedName {
+                            alias: module_alias,
+                            name: let_ident.name,
+                        },
+                        QualifiedSlot { depth, slot },
+                    );
                 }
                 Expr::Let(_, _) => {
                     return Err(CompileError::Unsupported(
@@ -1392,8 +1508,13 @@ impl<R: ModuleResolver> Compiler<R> {
                     ));
                 }
                 Expr::Import(literal, alias) => {
-                    self.compile_import(literal, alias.as_ref())?;
-                    self.emit(OpCode::Pop);
+                    // This import's own alias, not the enclosing `module_alias`.
+                    let module = self.compile_import_functions(literal, alias.as_ref())?;
+                    let import_alias = alias
+                        .as_ref()
+                        .map(|a| a.name)
+                        .unwrap_or_else(|| crate::Ident::new(&module.name));
+                    self.compile_module_vars_binding(&module, Some(import_alias))?;
                 }
                 Expr::Module(nested_ident, nested_program) => {
                     self.compile_module(nested_ident, nested_program)?;
@@ -1416,9 +1537,12 @@ impl<R: ModuleResolver> Compiler<R> {
             AccessTarget::Ident(id) => id.name,
             AccessTarget::Call(id, _) => id.name,
         };
-        let (depth, slot) = *self
+        let QualifiedSlot { depth, slot } = *self
             .qualified_bindings
-            .get(&(alias.name, member))
+            .get(&QualifiedName {
+                alias: alias.name,
+                name: member,
+            })
             .ok_or_else(|| CompileError::UndefinedIdent(format!("{}::{member}", alias.name), self.current_token_id))?;
         if depth >= self.scopes.len() {
             return Err(CompileError::Unsupported(
