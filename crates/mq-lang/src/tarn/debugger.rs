@@ -132,11 +132,26 @@ impl DebugHook for VmDebuggerHook {
             return;
         }
 
-        let mut env = Env::default();
-        for (name, value) in &event.bindings {
-            env.define(*name, value.clone());
+        // The tree walker exposes a child environment for a function frame: parameters
+        // and frame locals are LOCAL, while captured names remain visible through the
+        // parent (GLOBAL) environment. Keep that distinction for DAP's scopes and
+        // variables requests instead of flattening every VM binding into one scope.
+        let parent_env = Shared::new(SharedCell::new(Env::default()));
+        for (name, value) in &event.upvalue_bindings {
+            parent_env.write().unwrap().define(*name, value.clone());
         }
-        let env = Shared::new(SharedCell::new(env));
+        let env = if event.call_stack.is_empty() {
+            for (name, value) in &event.local_bindings {
+                parent_env.write().unwrap().define(*name, value.clone());
+            }
+            Shared::clone(&parent_env)
+        } else {
+            let env = Shared::new(SharedCell::new(Env::with_retained_parent(Shared::clone(&parent_env))));
+            for (name, value) in &event.local_bindings {
+                env.write().unwrap().define(*name, value.clone());
+            }
+            env
+        };
         let token = get_token(Shared::clone(&self.token_arena), event.token_id);
         let context = DebugContext {
             current_value: event.current_value,
