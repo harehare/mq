@@ -1066,6 +1066,13 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let v = pop!();
                 locals.set(*slot, v);
             }
+            OpCode::TeeLocal(slot) => {
+                let top = stack
+                    .last()
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in TeeLocal")))?
+                    .clone();
+                locals.set(*slot, top);
+            }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
             OpCode::SetUpvalue(idx) => {
                 let v = pop!();

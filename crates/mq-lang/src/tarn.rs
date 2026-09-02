@@ -779,6 +779,41 @@ mod tests {
     use smallvec::{SmallVec, smallvec};
     use std::f64::consts::PI;
 
+    #[rstest]
+    #[case::selector_chain(".h1 | .text")]
+    #[case::builtin_calls("upcase(.) | trim(.)")]
+    #[cfg(not(feature = "debugger"))]
+    fn non_tail_pipe_stage_fuses_into_tee_local(#[case] code: &str) {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::TeeLocal(_))),
+            "{code:?} should fuse into TeeLocal, got {:?}",
+            compiled.chunks[0].code
+        );
+        assert!(
+            !compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::SetLocal(_)))
+        );
+    }
+
+    #[test]
+    fn tee_local_fusion_preserves_pipe_result() {
+        assert_eq!(
+            run_with_prelude(r#""  hello  " | trim() | upcase()"#),
+            RuntimeValue::String("HELLO".to_string())
+        );
+    }
+
     #[rstest::fixture]
     fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));

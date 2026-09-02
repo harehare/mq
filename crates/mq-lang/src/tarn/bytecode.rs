@@ -78,6 +78,9 @@ pub(crate) enum OpCode {
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
+    /// Stores the top of stack into `slot` without popping it — fuses `SetLocal(slot)` then
+    /// `GetLocal(slot)`.
+    TeeLocal(u16),
     GetUpvalue(u16),
     SetUpvalue(u16),
     MakeClosure(Box<(u16, Vec<UpvalueSource>)>),
@@ -428,6 +431,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
             (op, chunk.code.get(pc + 1)),
             (OpCode::Const(_), Some(OpCode::Pop))
                 | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
+                | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
                 | (OpCode::Jump(0), _)
         )
     });
@@ -435,7 +439,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
         return;
     }
 
-    let old_code = std::mem::take(&mut chunk.code);
+    let mut old_code = std::mem::take(&mut chunk.code);
     let old_lines = std::mem::take(&mut chunk.lines);
     let mut keep = vec![true; old_code.len()];
     let targets = jump_targets(&old_code);
@@ -452,6 +456,15 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 if source == target && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
             {
                 keep[pc] = false;
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            // Fuses SetLocal+GetLocal(same slot) into one TeeLocal dispatch.
+            (OpCode::SetLocal(set_slot), Some(OpCode::GetLocal(get_slot)))
+                if set_slot == get_slot && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                let slot = *set_slot;
+                old_code[pc] = OpCode::TeeLocal(slot);
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -744,6 +757,54 @@ mod tests {
         optimize_chunk(&mut chunk);
 
         assert!(matches!(chunk.code.as_slice(), [OpCode::PushNone, OpCode::Return]));
+    }
+
+    #[test]
+    fn peephole_fuses_set_local_get_local_into_tee_local() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Const(0),
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [OpCode::Const(0), OpCode::TeeLocal(0), OpCode::Return]
+        ));
+    }
+
+    #[test]
+    fn peephole_does_not_fuse_set_local_get_local_across_a_jump_target() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::JumpIfFalse(1),
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::JumpIfFalse(1),
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::Return
+            ]
+        ));
     }
 
     #[test]
