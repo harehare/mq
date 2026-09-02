@@ -2207,6 +2207,18 @@ fn engine() -> DefaultEngine {
 #[case::regex_in_if(r#""test" | if (. =~ "test"): true else: false"#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
+#[case::not_regex_op(r#""hello world" !~ "bye""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::not_regex_non_match(r#""hello world" !~ "hello""#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
+#[case::not_regex_digits(r#""abc" !~ "[0-9]+""#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::not_regex_in_if(r#""foo bar" | if (. !~ "baz"): "not matched" else: "match""#,
+    vec![RuntimeValue::None],
+    Ok(vec!["not matched".into()].into()))]
 #[case::shift_left_number("shift_left(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
 #[case::shift_left_number_operator("1 << 2", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()),)]
 #[case::shift_right_number("shift_right(4, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()),)]
@@ -2483,6 +2495,16 @@ fn engine() -> DefaultEngine {
     r#"match(array(1,2)) do | :array || :dict: "collection" | _: "other" end"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String("collection".to_string())].into()))]
+// type pattern `:markdown` matches any markdown node value
+#[case::match_type_markdown(
+    r#"match (.) do | :markdown: "is markdown" | _: "other" end"#,
+    vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading { depth: 1, values: vec!["Title".to_string().into()], position: None }))],
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "is markdown".to_string(), position: None }))].into()))]
+// type pattern `:markdown` does not match a plain string
+#[case::match_type_markdown_no_match_on_string(
+    r#"match (.) do | :markdown: "is markdown" | _: "other" end"#,
+    vec![RuntimeValue::String("hello".to_string())],
+    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
 #[case::match_or_piped_input_first_alt(
     r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
     vec![RuntimeValue::Number(1.into())],
@@ -2665,6 +2687,10 @@ fn engine() -> DefaultEngine {
 #[case::selector_dict_preserves_type_key(r##"{"type": "mytype"} | .h | entries() | first() | last()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("mytype".to_string())].into()))]
 #[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_call_h(r##"to_markdown("# h1\n\n## h2\n\ntest") | .h(2).depth | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// selector call: multiple numeric args select headings matching any of the given depths
+#[case::selector_call_h_multi_depth(r##"to_markdown("# h1\n\n## h2\n\n### h3\n\n#### h4\n") | .h(2, 3) | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+// selector call: a range argument selects headings within that depth range (inclusive)
+#[case::selector_call_h_range(r##"to_markdown("# h1\n\n## h2\n\n### h3\n\n#### h4\n") | .h(1..3) | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
 #[case::selector_call_link_url_match(r##"to_markdown("[a](https://a.com) [b](https://b.com)") | .link("https://a.com").value | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
 #[case::selector_call_link_url_no_match(r##"to_markdown("[a](https://a.com)") | .link("https://nope.com") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -2744,6 +2770,17 @@ fn engine() -> DefaultEngine {
 #[case::property_selector_nested_three(r#"."a"."b"."c""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(Shared::new(inner))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(mid))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // nested property selector: missing intermediate key returns None
 #[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
+// property selector on an array of dicts: maps over each element
+#[case::property_selector_array_of_dicts(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string())); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Bob".to_string())); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Charlie".to_string())); RuntimeValue::Dict(Shared::new(d))},
+]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), "Bob".into(), "Charlie".into()]))].into()))]
+// property selector on an array of dicts: non-dict elements map to None
+#[case::property_selector_array_of_dicts_non_dict_element(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string())); RuntimeValue::Dict(Shared::new(d))},
+    RuntimeValue::Number(1.into()),
+]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), RuntimeValue::None]))].into()))]
 // property iterator: ."items"[] iterates all elements of the array stored at the key
 #[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))].into()))]
 // property iterator with index: ."items"[0] accesses the first element of the array
@@ -2895,6 +2932,13 @@ fn engine() -> DefaultEngine {
 #[case::try_catch_binder_unused_on_success("try: 42 catch(e): 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // try/catch(e): binder name does not leak outside the catch expression
 #[case::try_catch_binder_scoped(r#"try: error("boom") catch(e): e["message"] | try: e catch: "e is undefined outside catch""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("e is undefined outside catch".to_string())].into()))]
+// error suppression (`?`): a call that fails becomes None instead of an error
+#[case::error_suppression_on_failing_call(r#"div(1, 0)?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+#[case::error_suppression_on_missing_dict_key(r#"get({"a": 1}, "b")?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// error suppression (`?`): a call that succeeds is unaffected
+#[case::error_suppression_on_succeeding_call(r#"get({"a": 1}, "a")?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+// error suppression (`?`): works on a call in pipeline position
+#[case::error_suppression_in_pipeline(r#""x" | undefined_func()?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // foreach over string: iterates each character
 #[case::foreach_string("foreach(c, \"abc\"): c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))].into()))]
 // foreach over string with break
@@ -3253,6 +3297,16 @@ fn engine() -> DefaultEngine {
 #[case::range_char_step("range(\"a\", \"g\", 2) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 // range: multi-char string range (end inclusive)
 #[case::range_multi_char("range(\"aa\", \"ac\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
+// .. operator: sugar for range(start, end), ascending
+#[case::range_operator("1..5", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into())]))].into()))]
+// .. operator: descending when start > end
+#[case::range_operator_reverse("5..1", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(5.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into())]))].into()))]
+// .. operator: single-element range when start == end
+#[case::range_operator_single("3..3", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(3.into())]))].into()))]
+// .. operator: chained with map
+#[case::range_operator_piped_map("1..3 | map(fn(x): x * 2;)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())]))].into()))]
+// .. operator: string (character) range
+#[case::range_operator_char(r#""a".."e""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()]))].into()))]
 // compact: non-array returns the value unchanged
 #[case::compact_non_array_string(r#"compact("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
 #[case::compact_non_array_number("compact(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
