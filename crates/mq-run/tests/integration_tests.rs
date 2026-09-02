@@ -1782,6 +1782,75 @@ fn test_gzip_with_explicit_input_format() {
 }
 
 #[test]
+fn test_output_format_auto_detected_from_output_file_extension() {
+    let (_, output_file) = create_file("cli_auto_output.json", "");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    let parsed: serde_json::Value = serde_json::from_str(&content).expect("Output should be valid JSON");
+    assert_eq!(parsed[0]["type"], "Heading");
+}
+
+#[test]
+fn test_format_flag_sets_input_and_output() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd
+        .arg("-T")
+        .arg("json")
+        .arg("self")
+        .write_stdin(r#"{"key": "value"}"#)
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("stdout should be valid JSON");
+    assert_eq!(parsed["key"], "value");
+}
+
+#[test]
+fn test_format_flag_overridden_by_explicit_output_format() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let result = cmd
+        .arg("--format")
+        .arg("json")
+        .arg("-F")
+        .arg("yaml")
+        .arg("self")
+        .write_stdin(r#"{"key": "value"}"#)
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8_lossy(&result.get_output().stdout);
+    assert!(serde_json::from_str::<serde_json::Value>(&stdout).is_err());
+    assert!(stdout.contains("key: value"));
+}
+
+#[test]
+fn test_format_flag_rejects_output_only_value() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("-T")
+        .arg("table")
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[test]
 fn test_gzip_invalid_content_fails_cleanly() {
     let (_, file_path) = create_file("gzip_invalid.csv.gz", "not actually gzip data");
     let file_path_clone = file_path.clone();
