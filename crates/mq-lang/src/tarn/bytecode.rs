@@ -241,6 +241,14 @@ impl BoolCache {
     }
 }
 
+/// One run of consecutive instructions attributed to the same source token, starting at
+/// `pc_start` — see [`Chunk::lines`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LineEntry {
+    pub(crate) pc_start: usize,
+    pub(crate) token_id: TokenId,
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
@@ -253,10 +261,8 @@ pub(crate) struct Chunk {
     pub(crate) local_names: Vec<Ident>,
     /// Source names for captured slots; see [`Self::local_names`].
     pub(crate) upvalue_names: Vec<Ident>,
-    /// Run-length-encoded `pc -> TokenId` map: `(pc_start, token_id)` pairs, one per run
-    /// of consecutive instructions attributed to the same source token. Looked up via
-    /// `token_at` to recover error spans.
-    pub(crate) lines: Vec<(usize, TokenId)>,
+    /// Run-length-encoded `pc -> TokenId` map, looked up via `token_at` to recover error spans.
+    pub(crate) lines: Vec<LineEntry>,
     /// AST nodes addressable by `StmtBoundary`, omitted from non-debugger builds.
     #[cfg(feature = "debugger")]
     pub(crate) debug_nodes: Vec<(TokenId, Shared<Node>)>,
@@ -310,8 +316,8 @@ impl Chunk {
     /// differs from the previous instruction's, keeping the table run-length-encoded).
     pub(crate) fn emit(&mut self, op: OpCode, token_id: TokenId) -> usize {
         let pc = self.code.len();
-        if self.lines.last().map(|(_, t)| *t) != Some(token_id) {
-            self.lines.push((pc, token_id));
+        if self.lines.last().map(|entry| entry.token_id) != Some(token_id) {
+            self.lines.push(LineEntry { pc_start: pc, token_id });
         }
         self.code.push(op);
         pc
@@ -320,9 +326,9 @@ impl Chunk {
     /// The `TokenId` attributed to the instruction at `pc`, for error reporting.
     pub(crate) fn token_at(&self, pc: usize) -> Option<TokenId> {
         self.lines
-            .partition_point(|(start, _)| *start <= pc)
+            .partition_point(|entry| entry.pc_start <= pc)
             .checked_sub(1)
-            .map(|i| self.lines[i].1)
+            .map(|i| self.lines[i].token_id)
     }
 
     /// Rewrites a previously-emitted control-flow instruction at `at` so its offset lands on
@@ -459,15 +465,18 @@ fn optimize_chunk(chunk: &mut Chunk) {
 
     let old_to_new = old_to_new_pc_map(&keep);
     let mut new_code = Vec::with_capacity(old_code.len());
-    let mut new_lines = Vec::with_capacity(old_lines.len());
+    let mut new_lines: Vec<LineEntry> = Vec::with_capacity(old_lines.len());
     for (old_pc, op) in old_code.into_iter().enumerate() {
         if !keep[old_pc] {
             continue;
         }
         let new_pc = new_code.len();
         let token_id = token_at(&old_lines, old_pc);
-        if new_lines.last().map(|(_, token)| *token) != Some(token_id) {
-            new_lines.push((new_pc, token_id));
+        if new_lines.last().map(|entry| entry.token_id) != Some(token_id) {
+            new_lines.push(LineEntry {
+                pc_start: new_pc,
+                token_id,
+            });
         }
         new_code.push(rewrite_targets(op, old_pc, new_pc, &old_to_new));
     }
@@ -520,11 +529,11 @@ fn old_to_new_pc_map(keep: &[bool]) -> Vec<usize> {
     map
 }
 
-fn token_at(lines: &[(usize, TokenId)], pc: usize) -> TokenId {
+fn token_at(lines: &[LineEntry], pc: usize) -> TokenId {
     lines
-        .partition_point(|(start, _)| *start <= pc)
+        .partition_point(|entry| entry.pc_start <= pc)
         .checked_sub(1)
-        .map(|index| lines[index].1)
+        .map(|index| lines[index].token_id)
         .unwrap_or_else(|| TokenId::new(0))
 }
 
