@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    http::Method,
+    http::{Method, StatusCode},
     middleware,
     response::Redirect,
     routing::{get, post},
@@ -10,6 +10,8 @@ use tower::ServiceBuilder;
 use tower_http::{
     compression::CompressionLayer,
     cors::{Any, CorsLayer},
+    limit::RequestBodyLimitLayer,
+    timeout::TimeoutLayer,
     trace::TraceLayer,
 };
 use utoipa::OpenApi;
@@ -93,9 +95,14 @@ pub fn create_router(
         .route("/{query}", post(post_shorthand_query_api))
         .layer(
             ServiceBuilder::new()
+                .layer(RequestBodyLimitLayer::new(config.max_request_body_size))
                 .layer(CompressionLayer::new())
                 .layer(TraceLayer::new_for_http())
-                .layer(cors),
+                .layer(cors)
+                .layer(TimeoutLayer::with_status_code(
+                    StatusCode::REQUEST_TIMEOUT,
+                    config.request_timeout,
+                )),
         );
 
     let router = if let Some(store) = api_key_store {
@@ -113,4 +120,50 @@ pub fn create_router(
     router
         .layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rate_limiter::RateLimiter;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn test_oversized_request_body_is_rejected() {
+        let config = Config {
+            max_request_body_size: 16,
+            ..Config::default()
+        };
+        let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
+        let router = create_router(&config, rate_limiter, None);
+
+        let body = "x".repeat(64);
+        let request = Request::builder()
+            .method("POST")
+            .uri("/api/v1/format")
+            .header("content-length", body.len())
+            .body(Body::from(body))
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn test_request_within_body_limit_is_not_rejected() {
+        let config = Config::default();
+        let rate_limiter = Arc::new(RateLimiter::new(config.rate_limit.clone()));
+        let router = create_router(&config, rate_limiter, None);
+
+        let request = Request::builder()
+            .method("GET")
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
 }

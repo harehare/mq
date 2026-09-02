@@ -19,6 +19,15 @@ pub struct Config {
     /// Short-lived cache for repeated `{query, input, input_format, args}` combinations.
     pub query_cache: QueryCacheConfig,
     pub auth: AuthConfig,
+    /// Maximum accepted size of an HTTP request body, in bytes. Requests whose
+    /// `Content-Length` (or actual streamed size) exceeds this are rejected with
+    /// `413 Payload Too Large` before a handler runs.
+    pub max_request_body_size: usize,
+    /// Maximum duration allowed to process a single HTTP request end-to-end
+    /// (routing, auth, rate limiting, handler, response). Distinct from
+    /// `query_timeout`, which only bounds query evaluation itself; a request
+    /// that exceeds this is aborted with `408 Request Timeout`.
+    pub request_timeout: Duration,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -48,6 +57,8 @@ impl Default for Config {
             query_timeout: Duration::from_secs(10),
             query_cache: QueryCacheConfig::default(),
             auth: AuthConfig::default(),
+            max_request_body_size: 10 * 1024 * 1024,
+            request_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -210,6 +221,28 @@ impl Config {
             config.auth.keys_file = Some(keys_file);
         }
 
+        if let Ok(size_str) = env::var("MAX_REQUEST_BODY_SIZE") {
+            if let Ok(size) = size_str.parse::<usize>() {
+                config.max_request_body_size = size;
+            } else {
+                eprintln!(
+                    "Warning: Invalid MAX_REQUEST_BODY_SIZE value '{}', using default {}",
+                    size_str, config.max_request_body_size
+                );
+            }
+        }
+
+        if let Ok(timeout_str) = env::var("REQUEST_TIMEOUT_SECONDS") {
+            if let Ok(timeout) = timeout_str.parse::<u64>() {
+                config.request_timeout = Duration::from_secs(timeout);
+            } else {
+                eprintln!(
+                    "Warning: Invalid REQUEST_TIMEOUT_SECONDS value '{}', using default {:?}",
+                    timeout_str, config.request_timeout
+                );
+            }
+        }
+
         config
     }
 
@@ -264,5 +297,12 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config_443.server_url(), "https://example.com");
+    }
+
+    #[test]
+    fn test_default_request_limits() {
+        let config = Config::default();
+        assert_eq!(config.max_request_body_size, 10 * 1024 * 1024);
+        assert_eq!(config.request_timeout, Duration::from_secs(30));
     }
 }

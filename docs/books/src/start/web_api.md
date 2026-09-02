@@ -39,6 +39,8 @@ All settings are controlled through environment variables.
 | `LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `CORS_ORIGINS` | `*` | Comma-separated allowed origins |
 | `QUERY_TIMEOUT_SECONDS` | `10` | Max seconds a single query may run before it's aborted |
+| `MAX_REQUEST_BODY_SIZE` | `10485760` | Max accepted HTTP request body size, in bytes. Larger requests get `413 Payload Too Large` |
+| `REQUEST_TIMEOUT_SECONDS` | `30` | Max seconds a single HTTP request may take end-to-end (routing, auth, rate limiting, handler). Exceeding it returns `408 Request Timeout` |
 
 ### Rate Limiting
 
