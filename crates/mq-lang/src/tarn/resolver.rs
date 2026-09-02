@@ -85,22 +85,22 @@ impl FunctionScope {
     }
 
     #[cfg(feature = "debugger")]
-    pub(crate) fn debug_locals(&self) -> Vec<(Ident, u16)> {
+    pub(crate) fn debug_locals(&self) -> Vec<(Ident, super::debug_symbols::DebugSlot)> {
         self.locals
             .iter()
             .copied()
             .enumerate()
             .filter(|(_, name)| *name != Ident::default())
-            .map(|(slot, name)| (name, slot as u16))
+            .map(|(slot, name)| (name, super::debug_symbols::DebugSlot::Local(slot as u16)))
             .collect()
     }
 
     #[cfg(feature = "debugger")]
-    pub(crate) fn debug_upvalues(&self) -> Vec<(Ident, u16)> {
+    pub(crate) fn debug_upvalues(&self) -> Vec<(Ident, super::debug_symbols::DebugSlot)> {
         self.upvalues
             .iter()
             .enumerate()
-            .map(|(slot, (name, _))| (*name, slot as u16))
+            .map(|(slot, (name, _))| (*name, super::debug_symbols::DebugSlot::Upvalue(slot as u16)))
             .collect()
     }
 }

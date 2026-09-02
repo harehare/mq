@@ -549,8 +549,12 @@ fn compile_program_impl<R: ModuleResolver>(
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
     #[cfg(feature = "debugger")]
     {
-        compiler.chunks[0].debug_symbols =
-            DebugSymbolTable::new(compiler.scopes[0].debug_locals(), compiler.scopes[0].debug_upvalues());
+        compiler.chunks[0].debug_symbols = DebugSymbolTable::new(
+            compiler.scopes[0]
+                .debug_locals()
+                .into_iter()
+                .chain(compiler.scopes[0].debug_upvalues()),
+        );
     }
     #[cfg(feature = "debugger")]
     let debug_sources = compiler.debug_sources();
@@ -798,7 +802,7 @@ impl<R: ModuleResolver> Compiler<R> {
         #[cfg(feature = "debugger")]
         {
             self.chunks[new_index as usize].debug_symbols =
-                DebugSymbolTable::new(finished.debug_locals(), finished.debug_upvalues());
+                DebugSymbolTable::new(finished.debug_locals().into_iter().chain(finished.debug_upvalues()));
         }
         let upvalues = finished.upvalue_sources();
 
