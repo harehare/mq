@@ -15,6 +15,7 @@ version = "0.8.4"
 default = ["use_mimalloc"]
 use_mimalloc = ["mimalloc"]
 otel = ["opentelemetry", "opentelemetry-otlp", "opentelemetry_sdk", "tracing-opentelemetry"]
+tarn = ["mq-lang/tarn"]
 
 [dependencies]
 axum = {workspace = true}
