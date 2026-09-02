@@ -1135,6 +1135,53 @@ mod tests {
     }
 
     #[test]
+    #[cfg(not(feature = "debugger"))]
+    fn non_tail_let_and_var_do_not_round_trip_self_through_local_zero() {
+        use super::bytecode::{OpCode, SELF_SLOT};
+
+        for code in [
+            "let a = 1 | let b = 2 | a + b",
+            "var a = 1 | var b = 2 | a + b",
+            "[1, 2] | let [a, b] = [10, 20] | a + b",
+            "def f(x): let a = x * 2 | let b = a + 1 | b; | f(5)",
+        ] {
+            let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+            let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+            let compiled =
+                compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+            let has_self_round_trip = compiled.chunks.iter().any(|chunk| {
+                chunk.code.windows(2).any(|pair| {
+                    matches!(
+                        pair,
+                        [OpCode::GetLocal(a), OpCode::SetLocal(b)] if *a == SELF_SLOT && *b == SELF_SLOT
+                    )
+                })
+            });
+            assert!(
+                !has_self_round_trip,
+                "{code:?} should not round-trip self through GetLocal(SELF_SLOT)/SetLocal(SELF_SLOT)"
+            );
+        }
+    }
+
+    #[test]
+    fn non_tail_let_and_var_preserve_self_across_bindings() {
+        assert_eq!(
+            run(r#""hello" | let a = 1 | var b = 2 | len()"#),
+            RuntimeValue::Number(5.into())
+        );
+        assert_eq!(
+            run("[1, 2, 3] | let [a, b] = [10, 20] | len()"),
+            RuntimeValue::Number(3.into())
+        );
+        assert_eq!(
+            run("def f(x): let a = x * 2 | let b = a + 1 | b; | f(5)"),
+            RuntimeValue::Number(11.into())
+        );
+    }
+
+    #[test]
     fn let_shadowing_a_loop_local_reuses_its_slot_instead_of_hanging() {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
         let program = crate::parse(
@@ -2181,5 +2228,98 @@ mod tests {
         .unwrap();
         let err = compile_and_run(&program, token_arena).unwrap_err();
         assert!(matches!(err, Error::Vm(_)));
+    }
+
+    /// Real `.mq` file with a top-level `let`, since no bundled stdlib module has one.
+    #[rstest::fixture]
+    fn module_with_vars() -> tempfile::TempDir {
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("mod1.mq"), "def helper(x): x + 1; let base = 10").unwrap();
+        dir
+    }
+
+    fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let resolver = crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![
+            dir.path().to_path_buf(),
+        ]));
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap();
+        interpreter::run(
+            &compiled,
+            RuntimeValue::None,
+            &HostFunctions::default(),
+            None,
+            crate::eval::Options::default().max_call_stack_depth,
+        )
+        .unwrap()
+    }
+
+    /// `include` binds vars unqualified; `import` (top-level or nested) qualifies them too.
+    #[rstest]
+    #[case::top_level_include(r#"include "mod1" | helper(base)"#)]
+    #[case::top_level_import(r#"import "mod1" as m | m::helper(m::base)"#)]
+    #[case::top_level_import_default_alias(r#"import "mod1" | mod1::helper(mod1::base)"#)]
+    #[case::import_nested_in_inline_module(r#"module outer: import "mod1" as m end | m::helper(m::base)"#)]
+    fn module_vars_binding_is_correct(module_with_vars: tempfile::TempDir, #[case] code: &str) {
+        assert_eq!(
+            run_with_local_module(&module_with_vars, code),
+            RuntimeValue::Number(11.into())
+        );
+    }
+
+    /// `import`'s vars must not leak unqualified into the importing scope.
+    #[rstest]
+    #[case::top_level_import(r#"import "mod1" as m | base"#)]
+    #[case::import_nested_in_inline_module(r#"module outer: import "mod1" as m end | base"#)]
+    fn import_does_not_leak_the_bare_var_name(module_with_vars: tempfile::TempDir, #[case] code: &str) {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let resolver = crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![
+            module_with_vars.path().to_path_buf(),
+        ]));
+        let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap_err();
+        assert!(matches!(err, compiler::CompileError::UndefinedIdent(..)));
+    }
+
+    /// A module's vars never change `self`, whichever path binds them.
+    #[rstest]
+    #[case::top_level_include(r#"77 | include "mod1""#)]
+    #[case::top_level_import(r#"77 | import "mod1" as m"#)]
+    #[case::import_nested_in_inline_module(r#"77 | module outer: import "mod1" as m end"#)]
+    fn module_vars_binding_preserves_self(module_with_vars: tempfile::TempDir, #[case] code: &str) {
+        assert_eq!(
+            run_with_local_module(&module_with_vars, code),
+            RuntimeValue::Number(77.into())
+        );
+    }
+
+    /// Non-tail module-var binding must not push and then discard `self`.
+    #[rstest]
+    #[case::top_level_include_non_tail(r#"include "mod1" | helper(base)"#)]
+    #[case::top_level_import_non_tail(r#"import "mod1" as m | m::helper(m::base)"#)]
+    #[case::import_nested_in_inline_module(r#"module outer: import "mod1" as m end | m::helper(m::base)"#)]
+    #[cfg(not(feature = "debugger"))]
+    fn module_vars_binding_does_not_push_and_discard_self(module_with_vars: tempfile::TempDir, #[case] code: &str) {
+        use super::bytecode::{OpCode, SELF_SLOT};
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let resolver = crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![
+            module_with_vars.path().to_path_buf(),
+        ]));
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap();
+
+        let has_wasted_self_push = compiled.chunks.iter().any(|chunk| {
+            chunk.code.windows(2).any(|pair| match pair {
+                [OpCode::GetLocal(a), OpCode::Pop] => *a == SELF_SLOT,
+                [OpCode::GetLocal(a), OpCode::SetLocal(b)] => *a == SELF_SLOT && *b == SELF_SLOT,
+                _ => false,
+            })
+        });
+        assert!(
+            !has_wasted_self_push,
+            "{code:?} should not push self just to discard it"
+        );
     }
 }
