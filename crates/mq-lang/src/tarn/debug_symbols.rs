@@ -16,16 +16,10 @@ pub(crate) struct DebugSymbolTable {
 }
 
 impl DebugSymbolTable {
-    /// Builds a symbol table from the resolver's final local and upvalue layouts.
-    pub(crate) fn new(locals: Vec<(Ident, u16)>, upvalues: Vec<(Ident, u16)>) -> Self {
-        let mut bindings = Vec::with_capacity(locals.len() + upvalues.len());
-        bindings.extend(locals.into_iter().map(|(name, slot)| (name, DebugSlot::Local(slot))));
-        bindings.extend(
-            upvalues
-                .into_iter()
-                .map(|(name, slot)| (name, DebugSlot::Upvalue(slot))),
-        );
-        Self { bindings }
+    pub(crate) fn new(bindings: impl IntoIterator<Item = (Ident, DebugSlot)>) -> Self {
+        Self {
+            bindings: bindings.into_iter().collect(),
+        }
     }
 
     /// Returns all source-visible bindings in declaration order.
