@@ -737,6 +737,7 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn peephole_removes_unused_constants_local_moves_and_empty_jumps() {
@@ -873,6 +874,65 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[invalid_static_closure]),
             Err(BytecodeError::StaticClosureOutOfBounds { .. })
+        ));
+    }
+
+    /// `Locals::get_unchecked`/`set_unchecked` trust this rejection to hold for every opcode
+    /// that carries a local slot — a slot missing from this match would let out-of-bounds
+    /// bytecode through to an unchecked access.
+    #[rstest]
+    #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
+    #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::call_local(vec![OpCode::CallLocal(0, 0), OpCode::Pop, OpCode::Return])]
+    #[case::foreach_collect(vec![OpCode::ForeachCollect(0), OpCode::Return])]
+    #[case::array_len_local(vec![OpCode::ArrayLenLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::binary_local_local(vec![
+        OpCode::BinaryLocalLocal { op: BinaryOp::Add, left: 0, right: 0 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::binary_local_const(vec![
+        OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::array_get_local_at(vec![
+        OpCode::ArrayGetLocalAt { array_slot: 0, index_slot: 0 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::foreach_next(vec![
+        OpCode::ForeachNext { array_slot: 0, index_slot: 0, value_slot: 0, exit_offset: 1 },
+        OpCode::Return,
+    ])]
+    fn verifier_rejects_out_of_bounds_local_slots(#[case] code: Vec<OpCode>) {
+        let chunk = Chunk {
+            code,
+            local_count: 0,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::LocalOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_rejects_out_of_bounds_param_binding_slot() {
+        let chunk = Chunk {
+            code: vec![OpCode::Return],
+            local_count: 0,
+            param_shape: ParamShape {
+                bindings: vec![ParamBinding::Required(0)],
+                required: 1,
+                has_variadic: false,
+            },
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::LocalOutOfBounds { .. })
         ));
     }
 }
