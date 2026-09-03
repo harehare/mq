@@ -21,7 +21,7 @@ use crate::{
     eval::Evaluator,
     eval::builtin::io_context,
     optimizer::{OptimizationLevel, Optimizer},
-    parse,
+    parse, tarn,
 };
 
 /// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
@@ -30,7 +30,7 @@ pub struct CompiledProgram {
     pub(crate) source: String,
     pub(crate) program: crate::ast::Program,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    vm_cache: Option<Shared<SharedCell<Option<crate::tarn::CachedProgram>>>>,
+    vm_cache: Option<Shared<SharedCell<Option<tarn::CachedProgram>>>>,
 }
 
 impl CompiledProgram {
@@ -45,7 +45,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    pub(crate) fn cached_vm_program(&self) -> Option<Option<crate::tarn::CachedProgram>> {
+    pub(crate) fn cached_vm_program(&self) -> Option<Option<tarn::CachedProgram>> {
         let cache = self.vm_cache.as_ref()?;
         #[cfg(feature = "sync")]
         {
@@ -58,7 +58,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    pub(crate) fn cache_vm_program(&self, program: crate::tarn::CachedProgram) {
+    pub(crate) fn cache_vm_program(&self, program: tarn::CachedProgram) {
         let Some(cache) = &self.vm_cache else {
             return;
         };
@@ -195,7 +195,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             #[cfg(not(feature = "sync"))]
             let host_functions = self.evaluator.host_functions.borrow().clone();
 
-            crate::tarn::eval_debug_expression(
+            tarn::eval_debug_expression(
                 &program,
                 Shared::clone(&self.token_arena),
                 self.evaluator.module_loader.with_same_resolver(),
@@ -527,14 +527,14 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.evaluator.module_loader.set_source_code(compiled.source.clone());
         let global_bindings = self.evaluator.global_bindings();
-        let vm_program = crate::tarn::build_program(
+        let vm_program = tarn::build_program(
             &compiled.program,
             Shared::clone(&self.token_arena),
             &self.vm_module_prelude,
         )?;
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
-        crate::tarn::dump_bytecode(
+        tarn::dump_bytecode(
             vm_program,
             Shared::clone(&self.token_arena),
             self.evaluator.module_loader.with_same_resolver(),
@@ -566,15 +566,15 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let host_functions = self.evaluator.host_functions.borrow().clone();
         let global_bindings = self.evaluator.global_bindings();
 
-        let vm_program = crate::tarn::build_program(
+        let vm_program = tarn::build_program(
             &compiled.program,
             Shared::clone(&self.token_arena),
             &self.vm_module_prelude,
         )?;
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
-        let vm = crate::tarn::TarnVm {
-            engine: crate::tarn::EngineRunContext {
+        let vm = tarn::TarnVm {
+            engine: tarn::EngineRunContext {
                 host_functions: &host_functions,
                 timeout: self.evaluator.options.timeout,
                 max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
@@ -582,7 +582,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 module_loader: self.evaluator.module_loader.with_same_resolver(),
                 global_bindings: &global_bindings,
             },
-            #[cfg(not(feature = "debugger"))]
+            #[cfg(all(feature = "tarn", not(feature = "debugger")))]
             module_prelude: &self.vm_module_prelude,
             #[cfg(feature = "debugger")]
             debugger: self.evaluator.debugger(),
@@ -713,6 +713,7 @@ impl Engine<DefaultModuleResolver> {
 mod tests {
     use super::CompiledProgram;
     use crate::DefaultEngine;
+    use crate::error;
     use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
@@ -771,7 +772,7 @@ mod tests {
 
         assert!(matches!(
             result.unwrap_err().cause,
-            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::Timeout(_))
+            error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
         ));
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
     }
@@ -1188,7 +1189,7 @@ mod tests {
 
         assert!(matches!(
             vm_err.cause,
-            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::ZeroDivision(_))
+            error::InnerError::Runtime(error::runtime::RuntimeError::ZeroDivision(_))
         ));
         assert_eq!(vm_err.to_string(), tree_walk_err.to_string());
         assert_eq!(vm_err.location, tree_walk_err.location);
@@ -1562,7 +1563,7 @@ mod tests {
         assert!(message.contains("something went wrong"), "{message}");
         assert!(matches!(
             err.cause,
-            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::HostFunctionError(_, _, _))
+            error::InnerError::Runtime(error::runtime::RuntimeError::HostFunctionError(_, _, _))
         ));
     }
 
@@ -1596,7 +1597,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err.cause,
-            crate::error::InnerError::Runtime(crate::error::runtime::RuntimeError::Timeout(_))
+            error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
         ));
     }
 

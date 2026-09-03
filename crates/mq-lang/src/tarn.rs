@@ -20,6 +20,8 @@ use crate::SharedCell;
 use crate::TokenArena;
 use crate::ast::Program;
 use crate::ast::node::{Expr, Node, Pattern};
+use crate::engine;
+use crate::error;
 use crate::eval::host::HostFunctions;
 use crate::eval::runtime_value::RuntimeValue;
 #[cfg(feature = "debug-trace")]
@@ -64,11 +66,11 @@ impl From<interpreter::VmError> for Error {
 }
 
 impl Error {
-    pub(crate) fn into_inner_error(self, token_arena: TokenArena) -> crate::error::InnerError {
+    pub(crate) fn into_inner_error(self, token_arena: TokenArena) -> error::InnerError {
         match self {
-            Error::Compile(compiler::CompileError::Module(e)) => crate::error::InnerError::from(e),
-            Error::Compile(other) => crate::error::InnerError::from(compile_error_to_runtime_error(other, token_arena)),
-            Error::Vm(e) => crate::error::InnerError::from(vm_error_to_runtime_error(&e, token_arena)),
+            Error::Compile(compiler::CompileError::Module(e)) => error::InnerError::from(e),
+            Error::Compile(other) => error::InnerError::from(compile_error_to_runtime_error(other, token_arena)),
+            Error::Vm(e) => error::InnerError::from(vm_error_to_runtime_error(&e, token_arena)),
         }
     }
 }
@@ -413,8 +415,8 @@ fn restore_execution_pools(
 fn compile_error_to_runtime_error(
     err: compiler::CompileError,
     token_arena: TokenArena,
-) -> crate::error::runtime::RuntimeError {
-    use crate::error::runtime::RuntimeError;
+) -> error::runtime::RuntimeError {
+    use error::runtime::RuntimeError;
     // `TokenId::new(0)` (the dummy EOF token every arena starts with) is a defensive
     // fallback for `CompileError::Module`, which `into_inner_error` never actually routes
     // here — every other variant always carries a real token.
@@ -435,8 +437,8 @@ fn compile_error_to_runtime_error(
 pub(crate) fn vm_error_to_runtime_error(
     err: &interpreter::VmError,
     token_arena: TokenArena,
-) -> crate::error::runtime::RuntimeError {
-    use crate::error::runtime::RuntimeError;
+) -> error::runtime::RuntimeError {
+    use error::runtime::RuntimeError;
     use interpreter::VmError;
     match err {
         VmError::Located(inner, token_id) => {
@@ -587,16 +589,16 @@ pub(crate) struct DebugRunContext<'a, R: ModuleResolver> {
 pub(crate) fn build_program(
     program: &Program,
     token_arena: TokenArena,
-    module_prelude: &[crate::engine::VmModulePrelude],
-) -> Result<Option<Program>, Box<crate::error::Error>> {
+    module_prelude: &[engine::VmModulePrelude],
+) -> Result<Option<Program>, Box<error::Error>> {
     if module_prelude.is_empty() && !program.iter().any(|node| node.is_nodes()) {
         return Ok(None);
     }
     let mut prelude_program = Program::new();
     for module in module_prelude {
         let directive = match module {
-            crate::engine::VmModulePrelude::Include(name) => format!("include {name:?}"),
-            crate::engine::VmModulePrelude::Import(name) => format!("import {name:?}"),
+            engine::VmModulePrelude::Include(name) => format!("include {name:?}"),
+            engine::VmModulePrelude::Import(name) => format!("import {name:?}"),
         };
         prelude_program.extend(crate::parse(&directive, Shared::clone(&token_arena))?);
     }
@@ -614,8 +616,8 @@ pub(crate) fn build_program(
 /// Everything `Engine::eval_compiled_vm` needs to run a compiled program on Tarn.
 pub(crate) struct TarnVm<'a, R: ModuleResolver> {
     pub(crate) engine: EngineRunContext<'a, R>,
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) module_prelude: &'a [crate::engine::VmModulePrelude],
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) module_prelude: &'a [engine::VmModulePrelude],
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
@@ -625,13 +627,13 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
 }
 
 impl<'a, R: ModuleResolver> TarnVm<'a, R> {
-    #[cfg(not(feature = "debugger"))]
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     fn cache_configuration(&self) -> Vec<String> {
         self.module_prelude
             .iter()
             .map(|module| match module {
-                crate::engine::VmModulePrelude::Include(name) => format!("include:{name}"),
-                crate::engine::VmModulePrelude::Import(name) => format!("import:{name}"),
+                engine::VmModulePrelude::Include(name) => format!("include:{name}"),
+                engine::VmModulePrelude::Import(name) => format!("import:{name}"),
             })
             .collect()
     }
@@ -639,14 +641,15 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
     pub(crate) fn run<I>(
         &self,
-        #[cfg_attr(feature = "debugger", allow(unused_variables))] compiled: &crate::engine::CompiledProgram,
+        #[cfg_attr(any(not(feature = "tarn"), feature = "debugger"), allow(unused_variables))]
+        compiled: &engine::CompiledProgram,
         program: &Program,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        #[cfg(not(feature = "debugger"))]
+        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         if self.engine.global_bindings.is_empty()
             && let Some(cached) = compiled.cached_vm_program()
         {
