@@ -877,9 +877,6 @@ mod tests {
         ));
     }
 
-    /// `Locals::get_unchecked`/`set_unchecked` trust this rejection to hold for every opcode
-    /// that carries a local slot — a slot missing from this match would let out-of-bounds
-    /// bytecode through to an unchecked access.
     #[rstest]
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
@@ -933,6 +930,27 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[chunk]),
             Err(BytecodeError::LocalOutOfBounds { .. })
+        ));
+    }
+
+    #[rstest]
+    #[case::const_(vec![OpCode::Const(0), OpCode::Pop, OpCode::Return])]
+    #[case::get_env_var(vec![OpCode::GetEnvVar(0), OpCode::Pop, OpCode::Return])]
+    #[case::binary_local_const(vec![
+        OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
+    fn verifier_rejects_out_of_bounds_constant_index(#[case] code: Vec<OpCode>) {
+        let chunk = Chunk {
+            code,
+            local_count: 1,
+            constants: Vec::new(),
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::ConstantOutOfBounds { .. })
         ));
     }
 }

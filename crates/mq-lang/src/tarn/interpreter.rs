@@ -1196,7 +1196,10 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     });
                 }
             }
-            OpCode::Const(idx) => stack.push(StackValue::Value(chunk.constants[*idx as usize].clone())),
+            // SAFETY: verify_chunks bounds-checks Const/GetEnvVar/BinaryLocalConst constant indices.
+            OpCode::Const(idx) => stack.push(StackValue::Value(
+                unsafe { chunk.constants.get_unchecked(*idx as usize) }.clone(),
+            )),
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
             // SAFETY: verify_chunks bounds-checks GetLocal/SetLocal/TeeLocal slots.
             OpCode::GetLocal(slot) => stack.push(unsafe { locals.get_unchecked(*slot) }),
@@ -1282,7 +1285,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             }
             OpCode::BinaryLocalConst { op, local, constant } => {
                 let a = local_runtime_value(locals, *local, chunks)?;
-                let b = chunk.constants[*constant as usize].clone();
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
                 stack.push(StackValue::Value(
                     eval_binary_op(*op, a, b, locals, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
@@ -1408,7 +1411,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 selector_op(op, stack, chunks, chunk, ip)?;
             }
             OpCode::GetEnvVar(name_idx) => {
-                let RuntimeValue::String(name) = &chunk.constants[*name_idx as usize] else {
+                let RuntimeValue::String(name) = (unsafe { chunk.constants.get_unchecked(*name_idx as usize) }) else {
                     bail!(VmError::Corrupt("GetEnvVar constant is not a string"));
                 };
                 let value = builtin::io_context::current()
