@@ -2186,7 +2186,7 @@ fn _sort_by_impl_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
                             let mut new_node = node.clone();
                             runtime_value::markdown_mut(&mut new_node).set_position(None);
 
-                            runtime_value::array_mut(&mut arr)[1] = RuntimeValue::Markdown(new_node, s.clone());
+                            runtime_value::array_mut(&mut arr)[1] = RuntimeValue::Markdown(new_node, *s);
                             RuntimeValue::Array(arr)
                         } else {
                             RuntimeValue::Array(arr)
@@ -3413,7 +3413,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             };
             Ok(RuntimeValue::Markdown(
                 std::mem::take(node),
-                Some(runtime_value::Selector::Index(real_idx)),
+                Some(runtime_value::Selector::index(real_idx)),
             ))
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),

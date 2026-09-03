@@ -847,10 +847,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         }
 
         // Register the module in the environment
-        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+        let module_runtime_value = RuntimeValue::Module(Shared::new(runtime_value::ModuleEnv::new(
             module_name_to_use,
             Shared::clone(&module_env),
-        ));
+        )));
 
         define(&self.env, Ident::new(module_name_to_use), module_runtime_value);
 
@@ -870,16 +870,19 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         self.load_module_with_env(module, &Shared::clone(&module_env))?;
 
         // Register the module in the environment
-        let module_runtime_value = RuntimeValue::Module(runtime_value::ModuleEnv::new(
+        let module_runtime_value = RuntimeValue::Module(Shared::new(runtime_value::ModuleEnv::new(
             &module_name_to_use,
             Shared::clone(&module_env),
-        ));
+        )));
 
         // The alias, if given, rebinds the module under that name instead of its canonical one.
         let bind_name = alias.unwrap_or_else(|| Ident::new(&module_name_to_use));
         define(&self.env, bind_name, module_runtime_value);
 
-        Ok(RuntimeValue::Module(ModuleEnv::new(&module_name_to_use, module_env)))
+        Ok(RuntimeValue::Module(Shared::new(ModuleEnv::new(
+            &module_name_to_use,
+            module_env,
+        ))))
     }
 
     fn eval_import(

@@ -9,10 +9,22 @@ use std::{
 };
 
 /// Runtime selector for indexing into markdown nodes.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Selector {
-    /// Selects a child node at the specified index.
-    Index(usize),
+    Index(std::num::NonZeroUsize),
+}
+
+impl Selector {
+    #[inline(always)]
+    pub(crate) fn index(i: usize) -> Self {
+        Selector::Index(std::num::NonZeroUsize::new(i + 1).expect("index too large"))
+    }
+
+    #[inline(always)]
+    pub(crate) fn index_value(self) -> usize {
+        let Selector::Index(n) = self;
+        n.get() - 1
+    }
 }
 
 /// Represents a module's runtime environment with its exports.
@@ -134,7 +146,7 @@ pub enum RuntimeValue {
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
     Dict(Shared<BTreeMap<Ident, RuntimeValue>>),
     /// A module with its exports.
-    Module(ModuleEnv),
+    Module(Shared<ModuleEnv>),
     /// Raw binary data (e.g. CBOR byte strings).
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`bytes_mut`].
@@ -584,7 +596,7 @@ impl RuntimeValue {
             RuntimeValue::String(s) => !s.is_empty(),
             RuntimeValue::Array(a) => !a.is_empty(),
             RuntimeValue::Markdown(node, selector) => match selector {
-                Some(Selector::Index(i)) => node.find_at_index(*i).is_some(),
+                Some(sel) => node.find_at_index(sel.index_value()).is_some(),
                 None => true,
             },
             RuntimeValue::Symbol(_)
@@ -629,7 +641,7 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn markdown_node(&self) -> Option<Node> {
         match self {
-            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => n.find_at_index(*i),
+            RuntimeValue::Markdown(n, Some(sel)) => n.find_at_index(sel.index_value()),
             RuntimeValue::Markdown(n, _) => Some((**n).clone()),
             _ => None,
         }
@@ -641,12 +653,10 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
-            RuntimeValue::Markdown(n, Some(Selector::Index(i))) => {
-                RuntimeValue::Markdown(Shared::new(n.with_children_value(value, *i)), Some(Selector::Index(*i)))
+            RuntimeValue::Markdown(n, Some(sel)) => {
+                RuntimeValue::Markdown(Shared::new(n.with_children_value(value, sel.index_value())), Some(*sel))
             }
-            RuntimeValue::Markdown(n, selector) => {
-                RuntimeValue::Markdown(Shared::new(n.with_value(value)), selector.clone())
-            }
+            RuntimeValue::Markdown(n, selector) => RuntimeValue::Markdown(Shared::new(n.with_value(value)), *selector),
             _ => RuntimeValue::NONE,
         }
     }
@@ -1048,7 +1058,7 @@ mod tests {
                     value: "".to_string(),
                     position: None
                 })),
-                Some(Selector::Index(1))
+                Some(Selector::index(1))
             )
             .is_truthy()
         );
@@ -1200,7 +1210,7 @@ mod tests {
             position: None,
         });
 
-        let markdown_with_selector = RuntimeValue::Markdown(Shared::new(parent.clone()), Some(Selector::Index(1)));
+        let markdown_with_selector = RuntimeValue::Markdown(Shared::new(parent.clone()), Some(Selector::index(1)));
 
         let selected = markdown_with_selector.markdown_node();
         assert!(selected.is_some());
@@ -1209,7 +1219,7 @@ mod tests {
         let updated = markdown_with_selector.update_markdown_value("updated child");
         match &updated {
             RuntimeValue::Markdown(node, selector) => {
-                assert_eq!(selector, &Some(Selector::Index(1)));
+                assert_eq!(selector, &Some(Selector::index(1)));
                 assert_eq!(node.find_at_index(1).unwrap().value(), "updated child");
             }
             _ => panic!("Expected Markdown variant"),
@@ -1948,8 +1958,8 @@ mod tests {
         use crate::SharedCell;
         let e1 = Shared::new(SharedCell::new(Env::default()));
         let e2 = Shared::new(SharedCell::new(Env::default()));
-        let m1 = RuntimeValue::Module(ModuleEnv::new("alpha", e1));
-        let m2 = RuntimeValue::Module(ModuleEnv::new("beta", e2));
+        let m1 = RuntimeValue::Module(Shared::new(ModuleEnv::new("alpha", e1)));
+        let m2 = RuntimeValue::Module(Shared::new(ModuleEnv::new("beta", e2)));
         // `ModuleEnv::name` is an interned `Ident`, so ordering follows intern order rather
         // than lexicographic order; compare against the `Ident` ordering directly instead of
         // assuming "alpha" < "beta" (which isn't guaranteed and would make this test flaky
