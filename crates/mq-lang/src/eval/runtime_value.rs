@@ -71,6 +71,17 @@ impl PartialEq for ModuleEnv {
     }
 }
 
+/// A user-defined function's parameters, body, and captured environment.
+///
+/// Held behind a single [`Shared`] in [`RuntimeValue::Function`] so cloning a function
+/// value is one refcount bump rather than three.
+#[derive(Debug, Clone)]
+pub(crate) struct FunctionValue {
+    pub(crate) params: Shared<AstParams>,
+    pub(crate) body: Shared<Program>,
+    pub(crate) env: Shared<SharedCell<Env>>,
+}
+
 /// A value in the mq runtime.
 ///
 /// This enum represents all possible value types that can exist during
@@ -99,13 +110,13 @@ pub enum RuntimeValue {
     Markdown(Shared<Node>, Option<Selector>),
     /// A user-defined function with parameters, body (program), and captured environment.
     ///
-    /// Both the params and the body are behind [`Shared`] for the same reason as
-    /// [`Array`]/[`Dict`]: cloning a `Function` value (e.g. on every `Env` lookup) is an O(1)
-    /// refcount bump instead of an O(n) deep copy.
+    /// `Shared`-wrapped as a whole, not per-field, for the same reason as [`VmClosure`]:
+    /// cloning a `Function` value (e.g. on every `Env` lookup) is one O(1) refcount bump
+    /// instead of three.
     ///
-    /// [`Array`]: RuntimeValue::Array
-    /// [`Dict`]: RuntimeValue::Dict
-    Function(Shared<AstParams>, Shared<Program>, Shared<SharedCell<Env>>),
+    /// [`VmClosure`]: RuntimeValue::VmClosure
+    #[allow(private_interfaces)]
+    Function(Shared<FunctionValue>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
     /// A VM closure that has crossed into plain-value territory (stored in an array/dict,
@@ -143,7 +154,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
-            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => a1 == a2 && b1 == b2,
+            (RuntimeValue::Function(a), RuntimeValue::Function(b)) => a.params == b.params && a.body == b.body,
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
@@ -360,8 +371,8 @@ impl PartialOrd for RuntimeValue {
                 let b = b.to_string();
                 a.to_string().partial_cmp(&b)
             }
-            (RuntimeValue::Function(a1, b1, _), RuntimeValue::Function(a2, b2, _)) => match a1.partial_cmp(a2) {
-                Some(Ordering::Equal) => b1.partial_cmp(b2),
+            (RuntimeValue::Function(a), RuntimeValue::Function(b)) => match a.params.partial_cmp(&b.params) {
+                Some(Ordering::Equal) => a.body.partial_cmp(&b.body),
                 Some(Ordering::Greater) => Some(Ordering::Greater),
                 Some(Ordering::Less) => Some(Ordering::Less),
                 _ => None,
@@ -385,7 +396,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::Array(_) => self.string(),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
-            Self::Function(params, ..) => Cow::Owned(format!("function/{}", params.len())),
+            Self::Function(f) => Cow::Owned(format!("function/{}", f.params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             #[cfg(feature = "tarn")]
             Self::VmClosure(_) => Cow::Borrowed("function"),
@@ -478,6 +489,16 @@ impl RuntimeValue {
         RuntimeValue::Markdown(Shared::new(node), None)
     }
 
+    /// Creates a new user-defined function value from its params, body, and environment.
+    #[inline(always)]
+    pub(crate) fn new_function(
+        params: Shared<AstParams>,
+        body: Shared<Program>,
+        env: Shared<SharedCell<Env>>,
+    ) -> RuntimeValue {
+        RuntimeValue::Function(Shared::new(FunctionValue { params, body, env }))
+    }
+
     /// Returns the type name of this runtime value as a string.
     #[inline(always)]
     pub fn name(&self) -> &str {
@@ -489,7 +510,7 @@ impl RuntimeValue {
             RuntimeValue::Markdown(_, _) => "markdown",
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
-            RuntimeValue::Function(_, _, _) => "function",
+            RuntimeValue::Function(_) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
             #[cfg(feature = "tarn")]
             RuntimeValue::VmClosure(_) => "function",
@@ -512,7 +533,7 @@ impl RuntimeValue {
         if matches!(self, RuntimeValue::VmClosure(_)) {
             return true;
         }
-        matches!(self, RuntimeValue::Function(_, _, _))
+        matches!(self, RuntimeValue::Function(_))
     }
 
     /// Returns `true` if this value is a native (built-in) function.
@@ -567,7 +588,7 @@ impl RuntimeValue {
                 None => true,
             },
             RuntimeValue::Symbol(_)
-            | RuntimeValue::Function(_, _, _)
+            | RuntimeValue::Function(_)
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::Dict(_) => true,
             #[cfg(feature = "tarn")]
@@ -672,7 +693,7 @@ impl RuntimeValue {
             )),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
-            Self::Function(f, _, _) => Cow::Owned(format!("function/{}", f.len())),
+            Self::Function(f) => Cow::Owned(format!("function/{}", f.params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             #[cfg(feature = "tarn")]
             Self::VmClosure(_) => Cow::Borrowed("function"),
@@ -835,7 +856,7 @@ impl RuntimeValues {
                 if let RuntimeValue::Markdown(node, _) = &current_value {
                     match &updated_value {
                         RuntimeValue::None
-                        | RuntimeValue::Function(_, _, _)
+                        | RuntimeValue::Function(_)
                         | RuntimeValue::Module(_)
                         | RuntimeValue::NativeFunction(_) => current_value.clone(),
                         #[cfg(feature = "tarn")]
@@ -975,7 +996,7 @@ mod tests {
         assert_eq!(RuntimeValue::String(Shared::new(String::from("test"))).name(), "string");
         assert_eq!(RuntimeValue::None.name(), "None");
         assert_eq!(
-            RuntimeValue::Function(
+            RuntimeValue::new_function(
                 Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
@@ -1035,7 +1056,7 @@ mod tests {
         assert!(!RuntimeValue::None.is_truthy());
         assert!(RuntimeValue::NativeFunction(Ident::new("name")).is_truthy());
         assert!(
-            RuntimeValue::Function(
+            RuntimeValue::new_function(
                 Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
@@ -1072,11 +1093,11 @@ mod tests {
         );
         assert!(RuntimeValue::Boolean(false) < RuntimeValue::Boolean(true));
         assert!(
-            RuntimeValue::Function(
+            RuntimeValue::new_function(
                 Shared::new(SmallVec::new()),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
-            ) < RuntimeValue::Function(
+            ) < RuntimeValue::new_function(
                 Shared::new(smallvec![Param::new(IdentWithToken::new("test"))]),
                 Shared::new(Vec::new()),
                 Shared::new(SharedCell::new(Env::default()))
@@ -1132,7 +1153,7 @@ mod tests {
         let markdown = RuntimeValue::new_markdown(node);
         assert_eq!(format!("{:?}", markdown), "test markdown");
 
-        let function = RuntimeValue::Function(
+        let function = RuntimeValue::new_function(
             Shared::new(SmallVec::new()),
             Shared::new(Vec::new()),
             Shared::new(SharedCell::new(Env::default())),
