@@ -1,4 +1,3 @@
-use core::f64;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
