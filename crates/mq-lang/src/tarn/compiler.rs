@@ -161,6 +161,17 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
+    compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], external_globals)
+}
+
+/// Like [`compile_program_for_engine`], plus predeclared `seed_bindings` top-level slots.
+pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    seed_bindings: &[crate::Ident],
+    external_globals: &[crate::Ident],
+) -> CompileResult<CompiledProgram> {
     let soft_builtin_names = soft_builtin_names_in_program(program);
     if !soft_builtin_names.is_empty() {
         return match compile_program_impl(
@@ -168,7 +179,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
             Shared::clone(&token_arena),
             module_loader.clone(),
             BuiltinPrelude::Reachable(&soft_builtin_names),
-            &[],
+            seed_bindings,
             external_globals,
         ) {
             Ok((compiled, false)) => Ok(compiled),
@@ -179,7 +190,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
                 token_arena,
                 module_loader,
                 BuiltinPrelude::All,
-                &[],
+                seed_bindings,
                 external_globals,
             )
             .map(|(compiled, _)| compiled),
@@ -192,7 +203,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
         Shared::clone(&token_arena),
         module_loader.clone(),
         BuiltinPrelude::None,
-        &[],
+        seed_bindings,
         external_globals,
     ) {
         Ok((compiled, false)) => Ok(compiled),
@@ -201,7 +212,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
             token_arena,
             module_loader,
             BuiltinPrelude::All,
-            &[],
+            seed_bindings,
             external_globals,
         )
         .map(|(compiled, _)| compiled),
