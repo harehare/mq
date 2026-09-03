@@ -71,8 +71,8 @@ pub fn eval_and_check(context: &Context) {
         let _ = engine.eval(&script, mq_lang::null_input().into_iter());
     });
 
-    if result.is_err() {
+    if let Err(err) = result {
         println!("Fuzzing with context: {:?}", context);
-        result.unwrap();
+        std::panic::resume_unwind(err);
     }
 }
