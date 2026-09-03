@@ -1124,6 +1124,34 @@ mod tests {
         );
     }
 
+    #[test]
+    fn node_selectors_use_compact_bytecode_instructions() {
+        use super::bytecode::{NodeSelectorKind, OpCode};
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(".h1 | .code | .[0]", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::SelectorMatchHeading(1)))
+        );
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::SelectorMatchKind(NodeSelectorKind::Code)))
+        );
+        assert!(
+            compiled.chunks[0]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::SelectorMatch(_)))
+        );
+    }
+
     #[rstest::fixture]
     fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
         let token_arena = Shared::new(SharedCell::new(Arena::new(10)));

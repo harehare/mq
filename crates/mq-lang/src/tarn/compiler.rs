@@ -1752,13 +1752,13 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::Selector(selector) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
-                self.emit(OpCode::SelectorMatch(Box::new(selector.clone())));
+                self.emit_selector(selector);
                 Ok(())
             }
             Expr::SelectorChain(selectors) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
                 for selector in selectors {
-                    self.emit(OpCode::SelectorMatch(Box::new(selector.clone())));
+                    self.emit_selector(selector);
                 }
                 Ok(())
             }
@@ -1776,6 +1776,17 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Paren(inner) => self.compile_expr(inner),
             Expr::And(operands) => self.compile_and(operands),
             Expr::Or(operands) => self.compile_or(operands),
+        }
+    }
+
+    /// Emits the smallest selector instruction that preserves `selector`'s semantics.
+    fn emit_selector(&mut self, selector: &crate::selector::Selector) {
+        if let crate::selector::Selector::Heading(level) = selector {
+            self.emit(OpCode::SelectorMatchHeading(level.unwrap_or(0)));
+        } else if let Some(kind) = super::bytecode::NodeSelectorKind::from_selector(selector) {
+            self.emit(OpCode::SelectorMatchKind(kind));
+        } else {
+            self.emit(OpCode::SelectorMatch(Box::new(selector.clone())));
         }
     }
 

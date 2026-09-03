@@ -36,6 +36,133 @@ pub(crate) enum BinaryOp {
     Ge,
 }
 
+/// A selector with no runtime arguments, encoded directly in bytecode.
+///
+/// Unlike [`Selector`], this is a compact immediate operand: it has no heap allocation and
+/// lets the interpreter test a Markdown node without first dispatching through the generic
+/// selector evaluator. Selectors whose semantics require arguments or recursive traversal
+/// continue to use [`OpCode::SelectorMatch`].
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NodeSelectorKind {
+    Blockquote,
+    Footnote,
+    Toml,
+    Yaml,
+    Break,
+    InlineCode,
+    InlineMath,
+    Delete,
+    Emphasis,
+    FootnoteRef,
+    Html,
+    Image,
+    ImageRef,
+    MdxJsxTextElement,
+    Link,
+    LinkRef,
+    WikiLink,
+    Callout,
+    Embed,
+    Strong,
+    Code,
+    Math,
+    TableAlign,
+    Text,
+    HorizontalRule,
+    Definition,
+    MdxFlowExpression,
+    MdxTextExpression,
+    MdxJsEsm,
+    MdxJsxFlowElement,
+    Task,
+    Todo,
+    Done,
+}
+
+impl NodeSelectorKind {
+    /// Returns the compact representation when `selector` has node-local, argument-free
+    /// semantics. Heading selectors use [`OpCode::SelectorMatchHeading`] to carry their
+    /// level as an immediate operand instead.
+    pub(crate) fn from_selector(selector: &Selector) -> Option<Self> {
+        Some(match selector {
+            Selector::Blockquote => Self::Blockquote,
+            Selector::Footnote => Self::Footnote,
+            Selector::Toml => Self::Toml,
+            Selector::Yaml => Self::Yaml,
+            Selector::Break => Self::Break,
+            Selector::InlineCode => Self::InlineCode,
+            Selector::InlineMath => Self::InlineMath,
+            Selector::Delete => Self::Delete,
+            Selector::Emphasis => Self::Emphasis,
+            Selector::FootnoteRef => Self::FootnoteRef,
+            Selector::Html => Self::Html,
+            Selector::Image => Self::Image,
+            Selector::ImageRef => Self::ImageRef,
+            Selector::MdxJsxTextElement => Self::MdxJsxTextElement,
+            Selector::Link => Self::Link,
+            Selector::LinkRef => Self::LinkRef,
+            Selector::WikiLink => Self::WikiLink,
+            Selector::Callout => Self::Callout,
+            Selector::Embed => Self::Embed,
+            Selector::Strong => Self::Strong,
+            Selector::Code => Self::Code,
+            Selector::Math => Self::Math,
+            Selector::TableAlign => Self::TableAlign,
+            Selector::Text => Self::Text,
+            Selector::HorizontalRule => Self::HorizontalRule,
+            Selector::Definition => Self::Definition,
+            Selector::MdxFlowExpression => Self::MdxFlowExpression,
+            Selector::MdxTextExpression => Self::MdxTextExpression,
+            Selector::MdxJsEsm => Self::MdxJsEsm,
+            Selector::MdxJsxFlowElement => Self::MdxJsxFlowElement,
+            Selector::Task => Self::Task,
+            Selector::Todo => Self::Todo,
+            Selector::Done => Self::Done,
+            _ => return None,
+        })
+    }
+
+    /// Reconstructs the generic selector for array/dict fallback semantics.
+    pub(crate) fn as_selector(self) -> Selector {
+        match self {
+            Self::Blockquote => Selector::Blockquote,
+            Self::Footnote => Selector::Footnote,
+            Self::Toml => Selector::Toml,
+            Self::Yaml => Selector::Yaml,
+            Self::Break => Selector::Break,
+            Self::InlineCode => Selector::InlineCode,
+            Self::InlineMath => Selector::InlineMath,
+            Self::Delete => Selector::Delete,
+            Self::Emphasis => Selector::Emphasis,
+            Self::FootnoteRef => Selector::FootnoteRef,
+            Self::Html => Selector::Html,
+            Self::Image => Selector::Image,
+            Self::ImageRef => Selector::ImageRef,
+            Self::MdxJsxTextElement => Selector::MdxJsxTextElement,
+            Self::Link => Selector::Link,
+            Self::LinkRef => Selector::LinkRef,
+            Self::WikiLink => Selector::WikiLink,
+            Self::Callout => Selector::Callout,
+            Self::Embed => Selector::Embed,
+            Self::Strong => Selector::Strong,
+            Self::Code => Selector::Code,
+            Self::Math => Selector::Math,
+            Self::TableAlign => Selector::TableAlign,
+            Self::Text => Selector::Text,
+            Self::HorizontalRule => Selector::HorizontalRule,
+            Self::Definition => Selector::Definition,
+            Self::MdxFlowExpression => Selector::MdxFlowExpression,
+            Self::MdxTextExpression => Selector::MdxTextExpression,
+            Self::MdxJsEsm => Selector::MdxJsEsm,
+            Self::MdxJsxFlowElement => Selector::MdxJsxFlowElement,
+            Self::Task => Selector::Task,
+            Self::Todo => Selector::Todo,
+            Self::Done => Selector::Done,
+        }
+    }
+}
+
 /// How one declared parameter binds an argument, mirroring `ast::Param`/the tree-walker's
 /// `call_fn` binding loop exactly (see `interpreter::bind_params`).
 #[derive(Debug, Clone)]
@@ -180,6 +307,10 @@ pub(crate) enum OpCode {
     /// Pops a `Markdown` value and pushes the result of matching `selector` against it
     /// (`None` for any other value shape).
     SelectorMatch(Box<Selector>),
+    /// Matches one argument-free Markdown node kind using a compact immediate operand.
+    SelectorMatchKind(NodeSelectorKind),
+    /// Matches a Markdown heading. `0` means any heading level; `1..=6` selects that level.
+    SelectorMatchHeading(u8),
     /// Like `SelectorMatch`, but pops `argc` filter-argument values (pushed before the
     /// subject) for selectors with runtime arguments (`.h(1..2)`, `.code("rust")`).
     SelectorMatchWithArgs(Box<(Selector, u8)>),
