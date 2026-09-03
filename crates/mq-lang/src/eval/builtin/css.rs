@@ -30,7 +30,7 @@ fn build_element(node: NodeRef<'_, Node>) -> RuntimeValue {
     let mut attributes = BTreeMap::new();
 
     for (name, value) in element.attrs() {
-        attributes.insert(Ident::new(name), RuntimeValue::String(value.to_string()));
+        attributes.insert(Ident::new(name), RuntimeValue::String(Shared::new(value.to_string())));
     }
 
     let mut children = Vec::new();
@@ -56,12 +56,16 @@ fn build_element(node: NodeRef<'_, Node>) -> RuntimeValue {
     }
 
     let mut dict = BTreeMap::new();
-    dict.insert(Ident::new("tag"), RuntimeValue::String(element.name().to_string()));
+    dict.insert(
+        Ident::new("tag"),
+        RuntimeValue::String(Shared::new(element.name().to_string())),
+    );
     dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attributes)));
     dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
     dict.insert(
         Ident::new("text"),
-        text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
+        text.map(|t| RuntimeValue::String(t.into()))
+            .unwrap_or(RuntimeValue::NONE),
     );
     RuntimeValue::Dict(Shared::new(dict))
 }

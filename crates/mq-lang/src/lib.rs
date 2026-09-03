@@ -247,7 +247,7 @@ pub fn raw_input(input: &str) -> Vec<RuntimeValue> {
 
 /// Returns a vector containing a single `RuntimeValue::Bytes` for raw binary input.
 pub fn bytes_input(bytes: &[u8]) -> Vec<RuntimeValue> {
-    vec![RuntimeValue::Bytes(bytes.to_vec())]
+    vec![RuntimeValue::Bytes(Shared::new(bytes.to_vec()))]
 }
 
 #[inline(always)]

@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_format_runtime_value_string() {
-        let v = mq_lang::RuntimeValue::String("hello".to_string());
+        let v = mq_lang::RuntimeValue::String("hello".to_string().into());
         let s = format_runtime_value(&v).unwrap();
         assert!(s.contains("hello"));
         assert!(s.contains('"'));

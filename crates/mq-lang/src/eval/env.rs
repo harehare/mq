@@ -1195,7 +1195,7 @@ mod tests {
         ]
     )]
     #[case(
-        vec![("x", RuntimeValue::String("hello".into())), ("y", RuntimeValue::None)],
+        vec![("x", RuntimeValue::String(Shared::new("hello".into()))), ("y", RuntimeValue::None)],
         vec![
             Variable { name: "x".to_string(), value: "hello".to_string(), type_field: "string".to_string() },
             Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }

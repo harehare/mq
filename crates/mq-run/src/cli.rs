@@ -1458,13 +1458,14 @@ impl Cli {
                         }
                         combined
                     }
-                    _ => vec![mq_lang::RuntimeValue::String("".to_string())],
+                    _ => vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))],
                 };
                 mq_repl::Repl::with_engine(engine, input).run()
             }
             None if self.query.is_none() => {
                 let engine = self.create_engine()?;
-                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String("".to_string())]).run()
+                mq_repl::Repl::with_engine(engine, vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))])
+                    .run()
             }
             #[cfg(feature = "debugger")]
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
@@ -1543,7 +1544,10 @@ impl Cli {
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
-                    named.insert(mq_lang::Ident::new(&v[0]), mq_lang::RuntimeValue::String(v[1].clone()));
+                    named.insert(
+                        mq_lang::Ident::new(&v[0]),
+                        mq_lang::RuntimeValue::String(Shared::new(v[1].clone())),
+                    );
                 }
             }
 
@@ -1582,7 +1586,7 @@ impl Cli {
                 .as_deref()
                 .unwrap_or(&[])
                 .iter()
-                .map(|s| mq_lang::RuntimeValue::String(s.clone()))
+                .map(|s| mq_lang::RuntimeValue::String(Shared::new(s.clone())))
                 .collect();
             let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
                 (
@@ -1888,7 +1892,7 @@ impl Cli {
             let separator = engine
                 .eval(
                     separator,
-                    vec![mq_lang::RuntimeValue::String("".to_string())].into_iter(),
+                    vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
             self.print(separator)?;

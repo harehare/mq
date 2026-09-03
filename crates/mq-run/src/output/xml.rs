@@ -140,12 +140,15 @@ mod tests {
     #[test]
     fn test_element_shape_round_trip() {
         let mut attrs = BTreeMap::new();
-        attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
+        attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
         let mut map = BTreeMap::new();
-        map.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+        map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
         map.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
         map.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![])));
-        map.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+        map.insert(
+            Ident::new("text"),
+            RuntimeValue::String(Shared::new("hello".to_string())),
+        );
 
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values).unwrap();
@@ -155,7 +158,10 @@ mod tests {
     #[test]
     fn test_generic_dict() {
         let mut map = BTreeMap::new();
-        map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        map.insert(
+            Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<root>"));
@@ -165,8 +171,8 @@ mod tests {
     #[test]
     fn test_generic_array_becomes_items() {
         let values = vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
         ]))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("<item>a</item>"));
@@ -175,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_text_escaping() {
-        let values = vec![RuntimeValue::String("<tag> & \"quote\"".to_string())];
+        let values = vec![RuntimeValue::String(Shared::new("<tag> & \"quote\"".to_string()))];
         let result = runtime_values_to_xml(&values).unwrap();
         assert!(result.contains("&lt;tag&gt; &amp;"));
     }

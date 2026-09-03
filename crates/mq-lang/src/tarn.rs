@@ -1120,7 +1120,7 @@ mod tests {
     fn tee_local_fusion_preserves_pipe_result() {
         assert_eq!(
             run_with_prelude(r#""  hello  " | trim() | upcase()"#),
-            RuntimeValue::String("HELLO".to_string())
+            RuntimeValue::String(Shared::new("HELLO".to_string()))
         );
     }
 
@@ -1583,7 +1583,7 @@ mod tests {
         let result = engine
             .eval(r#"sort(["b", "a", "c"]) | first"#, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert_eq!(result.values()[0], RuntimeValue::String("a".to_string()));
+        assert_eq!(result.values()[0], RuntimeValue::String(Shared::new("a".to_string())));
     }
 
     #[rstest]
@@ -1791,7 +1791,7 @@ mod tests {
     )]
     #[case::let_dict_destruct(r#"let {name: n} = {"name": "Alice"} | n"#, "Alice")]
     fn programs_yield_string(#[case] code: &str, #[case] expected: &str) {
-        assert_eq!(run(code), RuntimeValue::String(expected.to_string()));
+        assert_eq!(run(code), RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[test]
@@ -1803,7 +1803,7 @@ mod tests {
     fn interpolation_can_reference_self() {
         assert_eq!(
             run_with_input(r#"s"value=${self}""#, RuntimeValue::Number(42.0.into())),
-            RuntimeValue::String("value=42".to_string())
+            RuntimeValue::String(Shared::new("value=42".to_string()))
         );
     }
 
@@ -2559,7 +2559,7 @@ mod tests {
     fn calling_a_bare_native_function_reference_dispatches_to_the_builtin() {
         assert_eq!(
             run_with_prelude(r#"import "csv" as csv | csv::csv_to_markdown_table([["a", "b"], [1, 2]])"#),
-            RuntimeValue::String("| a | b |\n| --- | --- |\n| 1 | 2 |".to_string())
+            RuntimeValue::String(Shared::new("| a | b |\n| --- | --- |\n| 1 | 2 |".to_string()))
         );
     }
 

@@ -1124,12 +1124,16 @@ impl<R: ModuleResolver> Compiler<R> {
         for segment in segments {
             match segment {
                 StringSegment::Text(s) => {
-                    let idx = self.chunk_mut().push_const(RuntimeValue::String(s.clone()));
+                    let idx = self
+                        .chunk_mut()
+                        .push_const(RuntimeValue::String(Shared::new(s.clone())));
                     self.emit(OpCode::Const(idx));
                 }
                 StringSegment::Expr(node) => self.compile_expr(node)?,
                 StringSegment::Env(name) => {
-                    let idx = self.chunk_mut().push_const(RuntimeValue::String(name.to_string()));
+                    let idx = self
+                        .chunk_mut()
+                        .push_const(RuntimeValue::String(Shared::new(name.to_string())));
                     self.emit(OpCode::GetEnvVar(idx));
                 }
                 StringSegment::Self_ => {
@@ -2283,8 +2287,8 @@ fn binary_op_opcode(op: BinaryOp) -> OpCode {
 
 fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
     match lit {
-        Literal::String(s) => RuntimeValue::String(s.clone()),
-        Literal::Bytes(b) => RuntimeValue::Bytes(b.clone()),
+        Literal::String(s) => RuntimeValue::String(Shared::new(s.clone())),
+        Literal::Bytes(b) => RuntimeValue::Bytes(Shared::new(b.clone())),
         Literal::Number(n) => RuntimeValue::Number(*n),
         Literal::Symbol(i) => RuntimeValue::Symbol(*i),
         Literal::Bool(b) => RuntimeValue::Boolean(*b),
