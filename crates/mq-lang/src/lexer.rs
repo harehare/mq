@@ -487,9 +487,14 @@ fn interpolated_string(input: Span) -> IResult<Span, Token> {
     current = remaining;
 
     // Parse remaining segments
-    while let Ok((remaining, segment)) = string_segment(current) {
-        segments.push(segment);
-        current = remaining;
+    while !current.fragment().is_empty() {
+        match string_segment(current) {
+            Ok((remaining, segment)) => {
+                segments.push(segment);
+                current = remaining;
+            }
+            Err(_) => break,
+        }
     }
 
     let (span, _) = char('"')(current)?;
