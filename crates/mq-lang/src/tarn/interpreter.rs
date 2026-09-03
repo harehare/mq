@@ -10,6 +10,7 @@ use crate::eval::env::Env;
 use crate::eval::host::HostFunctions;
 use crate::eval::runtime_value::{self, RuntimeValue};
 use crate::number::Number;
+use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -1410,6 +1411,20 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             OpCode::SelectorMatch(_) | OpCode::SelectorMatchWithArgs(_) => {
                 selector_op(op, stack, chunks, chunk, ip)?;
             }
+            OpCode::SelectorMatchKind(kind) => {
+                let subject = pop_value!();
+                stack.push(StackValue::Value(eval_compact_selector_expr(
+                    &subject,
+                    kind.as_selector(),
+                )));
+            }
+            OpCode::SelectorMatchHeading(level) => {
+                let subject = pop_value!();
+                stack.push(StackValue::Value(eval_compact_selector_expr(
+                    &subject,
+                    Selector::Heading((*level != 0).then_some(*level)),
+                )));
+            }
             OpCode::GetEnvVar(name_idx) => {
                 let RuntimeValue::String(name) = (unsafe { chunk.constants.get_unchecked(*name_idx as usize) }) else {
                     bail!(VmError::Corrupt("GetEnvVar constant is not a string"));
@@ -1428,11 +1443,13 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 )?));
             }
             OpCode::InterpString(n) => {
-                let mut parts: smallvec::SmallVec<[RuntimeValue; 4]> = smallvec::SmallVec::with_capacity(*n as usize);
-                for _ in 0..*n {
-                    parts.push(pop_value!());
-                }
-                stack.push(StackValue::Value(interp_string(&mut parts)));
+                let start = stack
+                    .len()
+                    .checked_sub(*n as usize)
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in InterpString")))?;
+                let value = interp_string(&stack[start..], chunks);
+                stack.truncate(start);
+                stack.push(StackValue::Value(value));
             }
             OpCode::CallBuiltin(ident, argc) => {
                 let mut args = Args::with_capacity(*argc as usize);
@@ -1926,15 +1943,26 @@ fn get_external_global(
     resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))
 }
 
-/// `parts` are in reverse (stack pop) order.
-#[cold]
-#[inline(never)]
-fn interp_string(parts: &mut [RuntimeValue]) -> RuntimeValue {
+fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
     use std::fmt::Write;
-    parts.reverse();
-    let mut result = String::new();
+    let capacity = parts
+        .iter()
+        .map(|part| match part {
+            StackValue::Value(RuntimeValue::String(value)) => value.len(),
+            _ => 32,
+        })
+        .sum();
+    let mut result = String::with_capacity(capacity);
     for part in parts.iter() {
-        let _ = write!(result, "{part}");
+        match part {
+            StackValue::Value(value) => {
+                let _ = write!(result, "{value}");
+            }
+            StackValue::Closure(closure) => {
+                let value = into_runtime_value(StackValue::Closure(Shared::clone(closure)), chunks);
+                let _ = write!(result, "{value}");
+            }
+        }
     }
     RuntimeValue::String(result.into())
 }
@@ -2190,6 +2218,19 @@ fn eval_selector_expr(value: &RuntimeValue, selector: &crate::selector::Selector
             }
         }
         _ => RuntimeValue::None,
+    }
+}
+
+/// Evaluates a selector stored as a compact bytecode operand.
+///
+/// Markdown node semantics remain centralized in [`builtin::eval_selector`]. Arrays and
+/// dictionaries use the generic evaluator because their selector mapping behavior is shared by
+/// every selector kind.
+#[inline]
+fn eval_compact_selector_expr(value: &RuntimeValue, selector: Selector) -> RuntimeValue {
+    match value {
+        RuntimeValue::Markdown(node, _) => builtin::eval_selector(node, &selector),
+        _ => eval_selector_expr(value, &selector),
     }
 }
 
