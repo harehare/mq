@@ -127,9 +127,13 @@ test-all: fmt lint test-mq test-doc test-all-features test
 test-cov:
     cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
-# Run fuzzing tests
+# Run fuzzing tests against the tree-walking evaluator
 test-fuzz:
     cargo +nightly fuzz run interpreter
+
+# Run fuzzing tests against the tarn bytecode VM
+test-fuzz-tarn:
+    cargo +nightly fuzz run tarn --features tarn
 
 # Run WebAssembly tests in Chrome
 [working-directory: 'crates/mq-wasm']

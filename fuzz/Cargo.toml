@@ -8,15 +8,31 @@ version = "0.5.5"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+# Routes fuzzed scripts through `mq-lang`'s `tarn` bytecode VM instead of its tree-walking
+# evaluator. Required by the `tarn` fuzz target; also usable with `interpreter` to fuzz the
+# VM under that target's existing corpus.
+tarn = ["mq-lang/tarn"]
+
 [dependencies]
 arbitrary = { workspace = true }
 itertools = { workspace = true }
 libfuzzer-sys = { workspace = true }
 mq-lang = { workspace = true }
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 bench = false
 doc = false
 name = "interpreter"
 path = "fuzz_targets/interpreter.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "tarn"
+path = "fuzz_targets/tarn.rs"
 test = false
