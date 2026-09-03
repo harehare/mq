@@ -1282,9 +1282,8 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     /// Returns the exported functions needed by this query and their intra-module dependencies.
-    /// Modules with directives or top-level values keep their full initialization order.
     fn reachable_module_functions(&self, module: &crate::Module) -> Program {
-        if !self.prune_module_functions || !module.modules.is_empty() || !module.vars.is_empty() {
+        if !self.prune_module_functions {
             return module.functions.clone();
         }
 
@@ -1299,8 +1298,10 @@ impl<R: ModuleResolver> Compiler<R> {
         let module_function_roots = self
             .module_function_roots
             .get_or_init(|| referenced_names_in_program(&self.top_level_program));
+        let var_roots = referenced_names_in_program(&module.vars);
         let mut required: FxHashSet<crate::Ident> = module_function_roots
             .iter()
+            .chain(var_roots.iter())
             .filter(|name| definitions.contains_key(name))
             .copied()
             .collect();
