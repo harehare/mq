@@ -1770,7 +1770,7 @@ fn type_check(v: &RuntimeValue, type_str: &str) -> bool {
         "dict" => matches!(v, RuntimeValue::Dict(_)),
         "bytes" => matches!(v, RuntimeValue::Bytes(_)),
         "markdown" => matches!(v, RuntimeValue::Markdown(_, _)),
-        "function" => matches!(v, RuntimeValue::Function(_, _, _)),
+        "function" => matches!(v, RuntimeValue::Function(_)),
         "symbol" => matches!(v, RuntimeValue::Symbol(_)),
         "none" => matches!(v, RuntimeValue::None),
         _ => match v {

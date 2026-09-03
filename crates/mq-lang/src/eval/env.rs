@@ -228,9 +228,9 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "markdown".to_string(),
             },
-            RuntimeValue::Function(params, _, _) => Variable {
+            RuntimeValue::Function(f) => Variable {
                 name: ident.to_string(),
-                value: format!("function/{}", params.len()),
+                value: format!("function/{}", f.params.len()),
                 type_field: "function".to_string(),
             },
             RuntimeValue::NativeFunction(_) => Variable {

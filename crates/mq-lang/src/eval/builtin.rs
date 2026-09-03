@@ -119,17 +119,17 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     let provided = args;
 
     match fn_value {
-        RuntimeValue::Function(params, program, fn_env) => {
-            if provided.len() >= params.len() {
+        RuntimeValue::Function(f) => {
+            if provided.len() >= f.params.len() {
                 return Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
-                    params.len() as u8,
+                    f.params.len() as u8,
                     provided.len() as u8 + 1,
                 ));
             }
-            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&fn_env))));
+            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&f.env))));
             let mut remaining = crate::ast::node::Params::new();
-            for (i, param) in params.iter().enumerate() {
+            for (i, param) in f.params.iter().enumerate() {
                 if i < provided.len() {
                     #[cfg(not(feature = "sync"))]
                     partial_env.borrow_mut().define(param.ident.name, provided[i].clone());
@@ -142,7 +142,11 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                     remaining.push(param.clone());
                 }
             }
-            Ok(RuntimeValue::Function(Shared::new(remaining), program, partial_env))
+            Ok(RuntimeValue::new_function(
+                Shared::new(remaining),
+                Shared::clone(&f.body),
+                partial_env,
+            ))
         }
         #[cfg(feature = "tarn")]
         RuntimeValue::VmClosure(vc) => {

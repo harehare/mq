@@ -405,7 +405,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                         define(
                             &self.env,
                             ident.name,
-                            RuntimeValue::Function(
+                            RuntimeValue::new_function(
                                 Shared::new(params.clone()),
                                 Shared::new(program.clone()),
                                 Shared::clone(&self.env),
@@ -473,7 +473,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
 
             Ok(match value {
                 RuntimeValue::None => child_node.to_fragment(),
-                RuntimeValue::Function(_, _, _) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
+                RuntimeValue::Function(_) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
                     mq_markdown::Node::Empty
                 }
                 #[cfg(feature = "tarn")]
@@ -595,7 +595,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 define(
                     env,
                     ident.name,
-                    RuntimeValue::Function(
+                    RuntimeValue::new_function(
                         Shared::new(params.clone()),
                         Shared::new(program.clone()),
                         Shared::clone(env),
@@ -667,12 +667,13 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
         match &value {
-            RuntimeValue::Function(params, _, _) => {
+            RuntimeValue::Function(f) => {
                 let Some(ident) = Self::auto_call_ident(expr) else {
                     return Ok(value);
                 };
 
-                let required_params = params
+                let required_params = f
+                    .params
                     .iter()
                     .filter(|p| p.default.is_none() && !p.is_variadic)
                     .take(2)
@@ -806,7 +807,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     define(
                         &module_env,
                         ident.name,
-                        RuntimeValue::Function(
+                        RuntimeValue::new_function(
                             Shared::new(params.clone()),
                             Shared::new(program.clone()),
                             Shared::clone(&module_env),
@@ -1475,7 +1476,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             ast::Expr::If(condition) => self.eval_if(runtime_value, condition, env),
             ast::Expr::Unless(condition) => self.eval_unless(runtime_value, condition, env),
             ast::Expr::Def(ident, params, program) => {
-                let function = RuntimeValue::Function(
+                let function = RuntimeValue::new_function(
                     Shared::new(params.clone()),
                     Shared::new(program.clone()),
                     Shared::clone(env),
@@ -1483,7 +1484,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 define(env, ident.name, function.clone());
                 Ok(function)
             }
-            ast::Expr::Fn(params, program) => Ok(RuntimeValue::Function(
+            ast::Expr::Fn(params, program) => Ok(RuntimeValue::new_function(
                 Shared::new(params.clone()),
                 Shared::new(program.clone()),
                 Shared::clone(env),
@@ -1955,7 +1956,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     "dict" => matches!(value, RuntimeValue::Dict(_)),
                     "bytes" => matches!(value, RuntimeValue::Bytes(_)),
                     "markdown" => matches!(value, RuntimeValue::Markdown(_, _)),
-                    "function" => matches!(value, RuntimeValue::Function(_, _, _)),
+                    "function" => matches!(value, RuntimeValue::Function(_)),
                     "symbol" => matches!(value, RuntimeValue::Symbol(_)),
                     "none" => matches!(value, RuntimeValue::None),
                     // Node-kind pattern (`:h1`, `:code`, `:list`), backed by the selector table.
@@ -2264,7 +2265,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         runtime_value: &RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> EvalResult {
-        if let RuntimeValue::Function(params, program, fn_env) = fn_value {
+        if let RuntimeValue::Function(f) = fn_value {
+            let params = &f.params;
+            let program = &f.body;
+            let fn_env = &f.env;
             self.enter_scope()?;
             #[cfg(feature = "debugger")]
             self.debugger.write().unwrap().push_call_stack(Shared::clone(&node));
@@ -7720,7 +7724,7 @@ mod tests {
         let program = make_paren_free_qa_program("qa_pf_multi_skip", "add");
         let result =
             Evaluator::new(loader, token_arena).eval(&program, vec![RuntimeValue::Number(1.into())].into_iter());
-        assert!(matches!(result, Ok(ref v) if matches!(v[0], RuntimeValue::Function(_, _, _))));
+        assert!(matches!(result, Ok(ref v) if matches!(v[0], RuntimeValue::Function(_))));
     }
 
     #[test]
