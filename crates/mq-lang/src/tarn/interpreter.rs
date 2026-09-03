@@ -277,11 +277,11 @@ struct ExecutionContext<'a> {
     host_functions: &'a HostFunctions,
 }
 
-struct RunOptions<'a> {
-    host_functions: &'a HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &'a [(Ident, RuntimeValue)],
+pub(crate) struct RunOptions<'a> {
+    pub(crate) host_functions: &'a HostFunctions,
+    pub(crate) timeout: Option<Duration>,
+    pub(crate) max_call_stack_depth: u32,
+    pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
 }
 
 struct CallSite<'a> {
@@ -357,6 +357,33 @@ pub(crate) fn run_with_globals_and_pools(
     )
 }
 
+/// Like [`run_with_globals_and_pools`], but predeclares `bindings` and captures `capture_names`.
+pub(crate) fn run_with_globals_capturing_locals(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    bindings: &[RuntimeValue],
+    options: RunOptions<'_>,
+    capture_names: &[Ident],
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
+    #[cfg(feature = "debugger")]
+    let mut debug = DebugRuntime {
+        hook: None,
+        call_stack: Vec::new(),
+        current_node: None,
+    };
+    run_impl_capturing_locals(
+        compiled,
+        input,
+        bindings,
+        options,
+        pools,
+        capture_names,
+        #[cfg(feature = "debugger")]
+        &mut debug,
+    )
+}
+
 #[cfg(feature = "debugger")]
 pub(crate) fn run_with_debug_hook_and_globals(
     compiled: &CompiledProgram,
@@ -385,6 +412,33 @@ pub(crate) fn run_with_debug_hook_and_globals(
         &mut debug,
     )
     .0
+}
+
+/// Debugger counterpart to [`run_with_globals_capturing_locals`].
+#[cfg(feature = "debugger")]
+pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    bindings: &[RuntimeValue],
+    options: RunOptions<'_>,
+    capture_names: &[Ident],
+    hook: &mut dyn DebugHook,
+) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>) {
+    let mut debug = DebugRuntime {
+        hook: Some(hook),
+        call_stack: Vec::new(),
+        current_node: None,
+    };
+    let (result, captured, _) = run_impl_capturing_locals(
+        compiled,
+        input,
+        bindings,
+        options,
+        ExecutionPools::default(),
+        capture_names,
+        &mut debug,
+    );
+    (result, captured)
 }
 
 fn run_impl(
@@ -478,6 +532,78 @@ fn run_impl_with_bindings(
         StackValue::Closure(_) => Err(VmError::Corrupt("top-level result is a closure")),
     });
     (result, limits.into_pools())
+}
+
+/// Like [`run_impl_with_bindings`], but captures `capture_names`' final slot values. Bypasses
+/// `run_chunk`'s pooling wrapper to keep `locals` readable; not for use on a hot path.
+fn run_impl_capturing_locals(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    bindings: &[RuntimeValue],
+    options: RunOptions<'_>,
+    pools: ExecutionPools,
+    capture_names: &[Ident],
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
+    let mut env = Env::default();
+    for (ident, value) in options.global_bindings {
+        env.define(*ident, value.clone());
+    }
+    let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
+    let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
+    let chunks = &compiled.chunks;
+    let top_level_chunk = &chunks[0];
+    let reusable_locals = !top_level_chunk.captures_local_slots();
+    let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
+    locals.set(SELF_SLOT, StackValue::Value(input));
+    if bindings.len() + 1 > locals.len() {
+        limits.recycle_locals(locals);
+        return (
+            Err(VmError::Corrupt("too many initial bindings")),
+            Vec::new(),
+            limits.into_pools(),
+        );
+    }
+    for (slot, value) in bindings.iter().cloned().enumerate() {
+        locals.set(slot as u16 + 1, StackValue::Value(value));
+    }
+
+    let mut stack = limits.take_stack();
+    let mut execution = ExecutionContext {
+        env: &placeholder_env,
+        limits: &mut limits,
+        host_functions: options.host_functions,
+    };
+    let raw_result = run_chunk_inner(
+        0,
+        chunks,
+        &locals,
+        &[],
+        &mut stack,
+        &mut execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    );
+    let captured = capture_names
+        .iter()
+        .filter_map(|name| {
+            top_level_chunk
+                .local_names
+                .iter()
+                .position(|local| local == name)
+                .and_then(|slot| locals.get_checked(slot as u16))
+                .map(|value| (*name, into_runtime_value(value, chunks)))
+        })
+        .collect();
+    execution.limits.recycle_stack(stack);
+    if reusable_locals {
+        execution.limits.recycle_locals(locals);
+    }
+    let result = raw_result.and_then(|result| match result {
+        StackValue::Value(v) => Ok(v),
+        StackValue::Closure(_) => Err(VmError::Corrupt("top-level result is a closure")),
+    });
+    (result, captured, limits.into_pools())
 }
 
 fn fresh_locals(count: usize, captures: bool) -> Locals {

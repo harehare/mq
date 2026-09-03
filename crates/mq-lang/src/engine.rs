@@ -45,7 +45,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    fn cached_vm_program(&self) -> Option<Option<crate::tarn::CachedProgram>> {
+    pub(crate) fn cached_vm_program(&self) -> Option<Option<crate::tarn::CachedProgram>> {
         let cache = self.vm_cache.as_ref()?;
         #[cfg(feature = "sync")]
         {
@@ -58,7 +58,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    fn cache_vm_program(&self, program: crate::tarn::CachedProgram) {
+    pub(crate) fn cache_vm_program(&self, program: crate::tarn::CachedProgram) {
         let Some(cache) = &self.vm_cache else {
             return;
         };
@@ -114,7 +114,7 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
 /// The tree walker stores these in its dynamic environment; the VM instead needs their AST
 /// declarations present while it statically resolves the user's query.
 #[derive(Debug, Clone)]
-enum VmModulePrelude {
+pub(crate) enum VmModulePrelude {
     Include(String),
     Import(String),
 }
@@ -220,17 +220,6 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
 }
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    fn vm_cache_configuration(&self) -> Vec<String> {
-        self.vm_module_prelude
-            .iter()
-            .map(|module| match module {
-                VmModulePrelude::Include(name) => format!("include:{name}"),
-                VmModulePrelude::Import(name) => format!("import:{name}"),
-            })
-            .collect()
-    }
-
     /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
     /// takes the [`Io`] value up front — for hosts that need to select the `Io` *type* at
     /// construction time, not just its value via [`set_io`](Self::set_io). Useful for e.g. a
@@ -538,28 +527,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.evaluator.module_loader.set_source_code(compiled.source.clone());
         let global_bindings = self.evaluator.global_bindings();
-        let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
-        let vm_program = if self.vm_module_prelude.is_empty() && !has_nodes {
-            None
-        } else {
-            let mut vm_prelude = crate::ast::Program::new();
-            for module in &self.vm_module_prelude {
-                let directive = match module {
-                    VmModulePrelude::Include(name) => format!("include {name:?}"),
-                    VmModulePrelude::Import(name) => format!("import {name:?}"),
-                };
-                vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
-            }
-            let mut program = vm_prelude.clone();
-            if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
-                program.extend(compiled.program[..=nodes_index].iter().cloned());
-                program.extend(vm_prelude);
-                program.extend(compiled.program[nodes_index + 1..].iter().cloned());
-            } else {
-                program.extend(compiled.program.iter().cloned());
-            }
-            Some(program)
-        };
+        let vm_program = crate::tarn::build_program(
+            &compiled.program,
+            Shared::clone(&self.token_arena),
+            &self.vm_module_prelude,
+        )?;
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
         crate::tarn::dump_bytecode(
@@ -593,142 +565,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(not(feature = "sync"))]
         let host_functions = self.evaluator.host_functions.borrow().clone();
         let global_bindings = self.evaluator.global_bindings();
-        let has_nodes = compiled.program.iter().any(|node| node.is_nodes());
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-        let cache_configuration = self.vm_cache_configuration();
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-        if global_bindings.is_empty()
-            && let Some(Some(cached)) = compiled.cached_vm_program()
-            && crate::tarn::cached_program_is_current(&cached, &self.evaluator.module_loader, &cache_configuration)
-                .map_err(|error| {
-                    Box::new(error::Error::from_error(
-                        &compiled.source,
-                        error.into_inner_error(Shared::clone(&self.token_arena)),
-                        self.evaluator.module_loader.clone(),
-                    ))
-                })?
-        {
-            return crate::tarn::run_cached_many(
-                &cached,
-                input,
-                &host_functions,
-                self.evaluator.options.timeout,
-                self.evaluator.options.max_call_stack_depth,
-            )
-            .map(Into::into)
-            .map_err(|error| {
-                Box::new(error::Error::from_error(
-                    &compiled.source,
-                    error.into_inner_error(Shared::clone(&self.token_arena)),
-                    self.evaluator.module_loader.clone(),
-                ))
-            });
-        }
-        // Engine-loaded modules are replayed as directives so the VM can resolve their
-        // bindings statically. Keep this AST alive for either cached or one-shot compilation.
-        let vm_program = if self.vm_module_prelude.is_empty() && !has_nodes {
-            None
-        } else {
-            let mut vm_prelude = crate::ast::Program::new();
-            for module in &self.vm_module_prelude {
-                let directive = match module {
-                    VmModulePrelude::Include(name) => format!("include {name:?}"),
-                    VmModulePrelude::Import(name) => format!("import {name:?}"),
-                };
-                vm_prelude.extend(parse(&directive, Shared::clone(&self.token_arena))?);
-            }
-            let mut program = vm_prelude.clone();
-            if let Some(nodes_index) = compiled.program.iter().position(|node| node.is_nodes()) {
-                // `nodes` runs the trailing half as a separate VM program. Replay Engine-loaded
-                // modules there too, so their statically-resolved exports remain available.
-                program.extend(compiled.program[..=nodes_index].iter().cloned());
-                program.extend(vm_prelude);
-                program.extend(compiled.program[nodes_index + 1..].iter().cloned());
-            } else {
-                program.extend(compiled.program.iter().cloned());
-            }
-            Some(program)
-        };
-        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-        if global_bindings.is_empty()
-            && let Some(cached) = compiled.cached_vm_program()
-        {
-            let cached = match cached {
-                Some(cached)
-                    if crate::tarn::cached_program_is_current(
-                        &cached,
-                        &self.evaluator.module_loader,
-                        &cache_configuration,
-                    )
-                    .map_err(|error| {
-                        Box::new(error::Error::from_error(
-                            &compiled.source,
-                            error.into_inner_error(Shared::clone(&self.token_arena)),
-                            self.evaluator.module_loader.clone(),
-                        ))
-                    })? =>
-                {
-                    cached
-                }
-                Some(_) | None => crate::tarn::compile_cached_program(
-                    vm_program,
-                    Shared::clone(&self.token_arena),
-                    self.evaluator.module_loader.with_same_resolver(),
-                    cache_configuration,
-                )
-                .map_err(|error| {
-                    Box::new(error::Error::from_error(
-                        &compiled.source,
-                        error.into_inner_error(Shared::clone(&self.token_arena)),
-                        self.evaluator.module_loader.clone(),
-                    ))
-                })?,
-            };
-            compiled.cache_vm_program(cached.clone());
 
-            return crate::tarn::run_cached_many(
-                &cached,
-                input,
-                &host_functions,
-                self.evaluator.options.timeout,
-                self.evaluator.options.max_call_stack_depth,
-            )
-            .map(Into::into)
-            .map_err(|error| {
-                Box::new(error::Error::from_error(
-                    &compiled.source,
-                    error.into_inner_error(Shared::clone(&self.token_arena)),
-                    self.evaluator.module_loader.clone(),
-                ))
-            });
-        }
-        #[cfg(feature = "debugger")]
-        let result = crate::tarn::compile_and_run_debugged_many(
-            vm_program,
-            input,
-            crate::tarn::DebugRunContext {
-                engine: crate::tarn::EngineRunContext {
-                    host_functions: &host_functions,
-                    timeout: self.evaluator.options.timeout,
-                    max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
-                    token_arena: Shared::clone(&self.token_arena),
-                    module_loader: self.evaluator.module_loader.with_same_resolver(),
-                    global_bindings: &global_bindings,
-                },
-                debugger: self.evaluator.debugger(),
-                handler: Shared::clone(&self.evaluator.debugger_handler),
-                source: Source {
-                    name: None,
-                    code: compiled.source.clone(),
-                },
-            },
-        );
-        #[cfg(not(feature = "debugger"))]
-        let result = crate::tarn::compile_and_run_many(
-            vm_program,
-            input,
-            crate::tarn::EngineRunContext {
+        let vm_program = crate::tarn::build_program(
+            &compiled.program,
+            Shared::clone(&self.token_arena),
+            &self.vm_module_prelude,
+        )?;
+        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+
+        let vm = crate::tarn::TarnVm {
+            engine: crate::tarn::EngineRunContext {
                 host_functions: &host_functions,
                 timeout: self.evaluator.options.timeout,
                 max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
@@ -736,8 +582,19 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 module_loader: self.evaluator.module_loader.with_same_resolver(),
                 global_bindings: &global_bindings,
             },
-        );
-        result.map(Into::into).map_err(|error| {
+            #[cfg(not(feature = "debugger"))]
+            module_prelude: &self.vm_module_prelude,
+            #[cfg(feature = "debugger")]
+            debugger: self.evaluator.debugger(),
+            #[cfg(feature = "debugger")]
+            debugger_handler: Shared::clone(&self.evaluator.debugger_handler),
+            #[cfg(feature = "debugger")]
+            source: Source {
+                name: None,
+                code: compiled.source.clone(),
+            },
+        };
+        vm.run(compiled, vm_program, input).map(Into::into).map_err(|error| {
             Box::new(error::Error::from_error(
                 &compiled.source,
                 error.into_inner_error(Shared::clone(&self.token_arena)),

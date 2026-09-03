@@ -602,6 +602,18 @@ fn engine() -> DefaultEngine {
         RuntimeValue::String("test".to_string()),
       ],
       Ok(vec![RuntimeValue::NONE, RuntimeValue::NONE].into()))]
+#[case::def_before_nodes_split("def f(x): x + 1 end | nodes | f(1)",
+      vec![RuntimeValue::None, RuntimeValue::None],
+      Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::import_before_nodes_split("import \"json\" | nodes | json::json_stringify({\"a\": 1})",
+      vec![RuntimeValue::None, RuntimeValue::None],
+      Ok(vec![RuntimeValue::String("{\"a\": 1}".to_string())].into()))]
+#[case::include_before_nodes_split("include \"json\" | nodes | json_stringify({\"a\": 1})",
+      vec![RuntimeValue::None, RuntimeValue::None],
+      Ok(vec![RuntimeValue::String("{\"a\": 1}".to_string())].into()))]
+#[case::let_before_nodes_split("let x = self | nodes | x",
+      vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
+      Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::sort_by("sort_by(get_title)",
       vec![RuntimeValue::Array(Shared::new(vec![
           RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{ url: mq_markdown::Url::new("http://mqlang1".to_string()), title: Some(mq_markdown::Title::new("2".to_string())), values: vec![
