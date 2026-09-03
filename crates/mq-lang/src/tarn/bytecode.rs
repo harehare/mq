@@ -604,6 +604,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 }
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
+                | OpCode::TeeLocal(slot)
                 | OpCode::CallLocal(slot, _)
                 | OpCode::ForeachCollect(slot)
                 | OpCode::ArrayLenLocal(slot) => {

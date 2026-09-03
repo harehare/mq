@@ -1198,17 +1198,18 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             }
             OpCode::Const(idx) => stack.push(StackValue::Value(chunk.constants[*idx as usize].clone())),
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            OpCode::GetLocal(slot) => stack.push(locals.get(*slot)),
+            // SAFETY: verify_chunks bounds-checks GetLocal/SetLocal/TeeLocal slots.
+            OpCode::GetLocal(slot) => stack.push(unsafe { locals.get_unchecked(*slot) }),
             OpCode::SetLocal(slot) => {
                 let v = pop!();
-                locals.set(*slot, v);
+                unsafe { locals.set_unchecked(*slot, v) };
             }
             OpCode::TeeLocal(slot) => {
                 let top = stack
                     .last()
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in TeeLocal")))?
                     .clone();
-                locals.set(*slot, top);
+                unsafe { locals.set_unchecked(*slot, top) };
             }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
             OpCode::SetUpvalue(idx) => {
@@ -1957,7 +1958,8 @@ fn local_runtime_value(
     slot: u16,
     #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<RuntimeValue> {
-    let value = locals.get(slot);
+    // SAFETY: verify_chunks bounds-checks every caller's opcode slot.
+    let value = unsafe { locals.get_unchecked(slot) };
     #[cfg(feature = "tarn")]
     {
         Ok(into_runtime_value(value, chunks))

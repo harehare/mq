@@ -145,6 +145,31 @@ impl Locals {
         }
     }
 
+    /// Like [`Locals::get`], without the bounds check.
+    ///
+    /// # Safety
+    /// `slot` must be `< self.len()` (guaranteed by `bytecode::verify_chunks` for any
+    /// GetLocal/SetLocal/TeeLocal/BinaryLocalLocal/BinaryLocalConst/ArrayLenLocal/
+    /// ArrayGetLocalAt opcode slot).
+    #[inline(always)]
+    pub(crate) unsafe fn get_unchecked(&self, slot: u16) -> StackValue {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => unsafe { slots.get_unchecked(slot as usize) }.borrow().clone(),
+            Locals::Boxed(slots) => read_cell(unsafe { slots.get_unchecked(slot as usize) }),
+        }
+    }
+
+    /// Like [`Locals::set`], without the bounds check. See [`Locals::get_unchecked`].
+    #[inline(always)]
+    pub(crate) unsafe fn set_unchecked(&self, slot: u16, value: StackValue) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => *unsafe { slots.get_unchecked(slot as usize) }.borrow_mut() = value,
+            Locals::Boxed(slots) => write_cell(unsafe { slots.get_unchecked(slot as usize) }, value),
+        }
+    }
+
     /// Only meaningful on `Boxed`: `Chunk::captures_local_slots()` guarantees a `Flat` frame's
     /// slots are never captured by a nested closure, so this is never reached for `Flat`.
     pub(crate) fn cell(&self, slot: u16) -> &Cell {
