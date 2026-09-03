@@ -116,7 +116,8 @@ struct Compiler<R: ModuleResolver> {
     top_level_program: Program,
     module_function_roots: std::cell::OnceCell<FxHashSet<crate::Ident>>,
     prune_module_functions: bool,
-    used_unresolved_call_name: bool,
+    /// Names called but not resolvable against the current `BuiltinPrelude`.
+    unresolved_call_names: FxHashSet<crate::Ident>,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     module_dependencies: Vec<ModuleDependency>,
     /// Bare names in a `try`/`catch` must fail while running so the surrounding catch
@@ -164,6 +165,11 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], external_globals)
 }
 
+/// A query calling into an imported module only sees that module's own soft-builtin calls
+/// after compiling it once, so this grows the reachable set by one failed compile's worth of
+/// missing names at a time, instead of jumping straight to the full ~150-function prelude.
+const MAX_PRELUDE_ATTEMPTS: usize = 16;
+
 /// Like [`compile_program_for_engine`], plus predeclared `seed_bindings` top-level slots.
 pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     program: &Program,
@@ -172,52 +178,52 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     seed_bindings: &[crate::Ident],
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
-    let soft_builtin_names = soft_builtin_names_in_program(program);
-    if !soft_builtin_names.is_empty() {
-        return match compile_program_impl(
+    let mut reachable = soft_builtin_names_in_program(program);
+    for _ in 0..MAX_PRELUDE_ATTEMPTS {
+        let prelude = if reachable.is_empty() {
+            BuiltinPrelude::None
+        } else {
+            BuiltinPrelude::Reachable(&reachable)
+        };
+        match compile_program_impl(
             program,
             Shared::clone(&token_arena),
             module_loader.clone(),
-            BuiltinPrelude::Reachable(&soft_builtin_names),
+            prelude,
             seed_bindings,
             external_globals,
         ) {
-            Ok((compiled, false)) => Ok(compiled),
-            // Imported modules can introduce soft-builtin references not visible in the user's
-            // AST. Preserve complete resolution by retrying with the full prelude.
-            Ok((_, true)) | Err(CompileError::UndefinedIdent(..)) => compile_program_impl(
-                program,
-                token_arena,
-                module_loader,
-                BuiltinPrelude::All,
-                seed_bindings,
-                external_globals,
-            )
-            .map(|(compiled, _)| compiled),
-            Err(other) => Err(other),
-        };
+            Ok((compiled, unresolved)) if unresolved.is_empty() => return Ok(compiled),
+            Ok((_, unresolved)) => {
+                let mut grew = false;
+                for name in unresolved {
+                    if SOFT_BUILTIN_NAMES.contains(&name) && reachable.insert(name) {
+                        grew = true;
+                    }
+                }
+                if !grew {
+                    break;
+                }
+            }
+            Err(CompileError::UndefinedIdent(name, _)) => {
+                let ident = crate::Ident::new(&name);
+                if !SOFT_BUILTIN_NAMES.contains(&ident) || !reachable.insert(ident) {
+                    break;
+                }
+            }
+            Err(other) => return Err(other),
+        }
     }
-
-    match compile_program_impl(
+    // Didn't converge on a minimal set within the attempt budget — compile everything.
+    compile_program_impl(
         program,
-        Shared::clone(&token_arena),
-        module_loader.clone(),
-        BuiltinPrelude::None,
+        token_arena,
+        module_loader,
+        BuiltinPrelude::All,
         seed_bindings,
         external_globals,
-    ) {
-        Ok((compiled, false)) => Ok(compiled),
-        Ok((_, true)) | Err(CompileError::UndefinedIdent(..)) => compile_program_impl(
-            program,
-            token_arena,
-            module_loader,
-            BuiltinPrelude::All,
-            seed_bindings,
-            external_globals,
-        )
-        .map(|(compiled, _)| compiled),
-        Err(other) => Err(other),
-    }
+    )
+    .map(|(compiled, _)| compiled)
 }
 
 #[derive(Clone, Copy)]
@@ -521,7 +527,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Id
     }
 }
 
-/// Returns the compiled program plus `Compiler::used_unresolved_call_name`.
+/// Returns the compiled program plus `Compiler::unresolved_call_names`.
 fn compile_program_impl<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -529,7 +535,7 @@ fn compile_program_impl<R: ModuleResolver>(
     builtin_prelude: BuiltinPrelude<'_>,
     seed_bindings: &[crate::Ident],
     external_globals: &[crate::Ident],
-) -> CompileResult<(CompiledProgram, bool)> {
+) -> CompileResult<(CompiledProgram, FxHashSet<crate::Ident>)> {
     let mut scope = FunctionScope::default();
     assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
     for name in seed_bindings {
@@ -548,7 +554,7 @@ fn compile_program_impl<R: ModuleResolver>(
         top_level_program: program.clone(),
         module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
-        used_unresolved_call_name: false,
+        unresolved_call_names: FxHashSet::default(),
         #[cfg(all(feature = "tarn", not(feature = "debugger")))]
         module_dependencies: Vec::new(),
         try_depth: 0,
@@ -591,7 +597,7 @@ fn compile_program_impl<R: ModuleResolver>(
             #[cfg(feature = "debugger")]
             debug_sources,
         },
-        compiler.used_unresolved_call_name,
+        compiler.unresolved_call_names,
     ))
 }
 
@@ -1870,7 +1876,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
         // Might be a soft prelude builtin — can't tell without the prelude loaded.
         if builtin::get_builtin_functions(&ident).is_none() {
-            self.used_unresolved_call_name = true;
+            self.unresolved_call_names.insert(ident);
         }
 
         for arg in args {
