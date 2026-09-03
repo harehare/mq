@@ -9844,7 +9844,7 @@ mod tests {
 
     fn assert_uuid_shape(uuid: &str, expected_version: char) {
         let parts: Vec<&str> = uuid.split('-').collect();
-        assert_eq!(parts.len(), 5, "uuid {uuid} should have 5 hyphen-separated groups");
+        assert_eq!(parts.len(), 5, "uuid should have 5 hyphen-separated groups");
         assert_eq!(
             [
                 parts[0].len(),
@@ -9859,8 +9859,7 @@ mod tests {
         assert_eq!(parts[2].chars().next().unwrap(), expected_version, "version nibble");
         assert!(
             matches!(parts[3].chars().next().unwrap(), '8' | '9' | 'a' | 'b'),
-            "variant nibble should be 10xxxxxx, got {}",
-            parts[3]
+            "variant nibble should be 10xxxxxx"
         );
     }
 
