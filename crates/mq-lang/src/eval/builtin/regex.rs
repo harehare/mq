@@ -15,7 +15,7 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         let matches: Vec<RuntimeValue> = re
             .find_iter(input)
-            .map(|m| RuntimeValue::String(m.as_str().to_string()))
+            .map(|m| RuntimeValue::String(Shared::new(m.as_str().to_string())))
             .collect();
         return Ok(RuntimeValue::Array(Shared::new(matches)));
     }
@@ -26,7 +26,7 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
     REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
     let matches: Vec<RuntimeValue> = re
         .find_iter(input)
-        .map(|m| RuntimeValue::String(m.as_str().to_string()))
+        .map(|m| RuntimeValue::String(Shared::new(m.as_str().to_string())))
         .collect();
     Ok(RuntimeValue::Array(Shared::new(matches)))
 }
@@ -49,7 +49,10 @@ pub(super) fn capture_re_inner(re: &Regex, input: &str) -> Result<RuntimeValue, 
             let mut result = BTreeMap::new();
             for name in names.flatten() {
                 if let Some(m) = caps.name(name) {
-                    result.insert(Ident::new(name), RuntimeValue::String(m.as_str().to_string()));
+                    result.insert(
+                        Ident::new(name),
+                        RuntimeValue::String(Shared::new(m.as_str().to_string())),
+                    );
                 }
             }
             Ok(RuntimeValue::Dict(Shared::new(result)))
@@ -92,13 +95,15 @@ fn scan_re_inner(re: &Regex, input: &str) -> RuntimeValue {
                     caps.iter()
                         .skip(1)
                         .map(|m| {
-                            m.map(|m| RuntimeValue::String(m.as_str().to_string()))
+                            m.map(|m| RuntimeValue::String(Shared::new(m.as_str().to_string())))
                                 .unwrap_or(RuntimeValue::NONE)
                         })
                         .collect(),
                 ))
             } else {
-                RuntimeValue::String(caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default())
+                RuntimeValue::String(Shared::new(
+                    caps.get(0).map(|m| m.as_str().to_string()).unwrap_or_default(),
+                ))
             }
         })
         .collect();
@@ -138,7 +143,9 @@ mod tests {
 
     fn strings(v: Vec<&str>) -> RuntimeValue {
         RuntimeValue::Array(Shared::new(
-            v.into_iter().map(|s| RuntimeValue::String(s.to_string())).collect(),
+            v.into_iter()
+                .map(|s| RuntimeValue::String(Shared::new(s.to_string())))
+                .collect(),
         ))
     }
 
@@ -194,8 +201,14 @@ mod tests {
         assert_eq!(result, result2);
         match result {
             RuntimeValue::Dict(map) => {
-                assert_eq!(map[&Ident::new("year")], RuntimeValue::String("2024".to_string()));
-                assert_eq!(map[&Ident::new("month")], RuntimeValue::String("06".to_string()));
+                assert_eq!(
+                    map[&Ident::new("year")],
+                    RuntimeValue::String(Shared::new("2024".to_string()))
+                );
+                assert_eq!(
+                    map[&Ident::new("month")],
+                    RuntimeValue::String(Shared::new("06".to_string()))
+                );
             }
             other => panic!("expected Dict, got {:?}", other),
         }
@@ -219,7 +232,7 @@ mod tests {
     #[case("no match", r"\d+", "X", "no match")]
     fn test_replace_re(#[case] input: &str, #[case] pattern: &str, #[case] replacement: &str, #[case] expected: &str) {
         let result = replace_re(input, pattern, replacement).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
         // second call hits cache — same result expected
         let result2 = replace_re(input, pattern, replacement).unwrap();
         assert_eq!(result, result2);
@@ -263,12 +276,12 @@ mod tests {
             result,
             RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Array(Shared::new(vec![
-                    RuntimeValue::String("2024".to_string()),
-                    RuntimeValue::String("06".to_string()),
+                    RuntimeValue::String(Shared::new("2024".to_string())),
+                    RuntimeValue::String(Shared::new("06".to_string())),
                 ])),
                 RuntimeValue::Array(Shared::new(vec![
-                    RuntimeValue::String("2025".to_string()),
-                    RuntimeValue::String("07".to_string()),
+                    RuntimeValue::String(Shared::new("2025".to_string())),
+                    RuntimeValue::String(Shared::new("07".to_string())),
                 ])),
             ]))
         );

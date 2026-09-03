@@ -1412,8 +1412,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 };
                 let value = builtin::io_context::current()
                     .env_var(name)
-                    .map_err(|_| locate(chunk, ip, VmError::EnvNotFound(name.clone())))?;
-                stack.push(StackValue::Value(RuntimeValue::String(value)));
+                    .map_err(|_| locate(chunk, ip, VmError::EnvNotFound(name.to_string())))?;
+                stack.push(StackValue::Value(RuntimeValue::String(value.into())));
             }
             OpCode::GetExternalGlobal(ident) => {
                 stack.push(StackValue::Value(get_external_global(
@@ -1830,7 +1830,9 @@ fn array_misc_op(
             let normalized = match v {
                 array @ RuntimeValue::Array(_) => array,
                 RuntimeValue::String(s) => RuntimeValue::Array(Shared::new(
-                    s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
+                    s.chars()
+                        .map(|c| RuntimeValue::String(Shared::new(c.to_string())))
+                        .collect(),
                 )),
                 other => return Err(locate(chunk, ip, VmError::InvalidForeachTarget(other.to_string()))),
             };
@@ -1930,7 +1932,7 @@ fn interp_string(parts: &mut [RuntimeValue]) -> RuntimeValue {
     for part in parts.iter() {
         let _ = write!(result, "{part}");
     }
-    RuntimeValue::String(result)
+    RuntimeValue::String(result.into())
 }
 
 fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
@@ -2274,7 +2276,10 @@ fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
 
 fn error_dict(e: &VmError) -> RuntimeValue {
     let mut map = BTreeMap::new();
-    map.insert(Ident::new("message"), RuntimeValue::String(error_message(e)));
+    map.insert(
+        Ident::new("message"),
+        RuntimeValue::String(Shared::new(error_message(e))),
+    );
     RuntimeValue::Dict(Shared::new(map))
 }
 

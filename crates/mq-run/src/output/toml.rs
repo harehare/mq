@@ -32,7 +32,10 @@ mod tests {
     #[test]
     fn test_dict_value() {
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        map.insert(
+            mq_lang::Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_toml(&values).unwrap();
         assert!(result.contains("name = \"Alice\""));
@@ -41,7 +44,10 @@ mod tests {
     #[test]
     fn test_nested_dict() {
         let mut inner = std::collections::BTreeMap::new();
-        inner.insert(mq_lang::Ident::new("city"), RuntimeValue::String("NYC".to_string()));
+        inner.insert(
+            mq_lang::Ident::new("city"),
+            RuntimeValue::String(Shared::new("NYC".to_string())),
+        );
         let mut outer = std::collections::BTreeMap::new();
         outer.insert(mq_lang::Ident::new("address"), RuntimeValue::Dict(Shared::new(inner)));
         let values = vec![RuntimeValue::Dict(Shared::new(outer))];
@@ -52,7 +58,7 @@ mod tests {
 
     #[test]
     fn test_non_dict_top_level_errors() {
-        let values = vec![RuntimeValue::String("hello".to_string())];
+        let values = vec![RuntimeValue::String(Shared::new("hello".to_string()))];
         let result = runtime_values_to_toml(&values);
         assert!(result.is_err());
     }
@@ -60,7 +66,7 @@ mod tests {
     #[test]
     fn test_array_top_level_errors() {
         let values = vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(
-            "a".to_string(),
+            Shared::new("a".to_string()),
         )]))];
         let result = runtime_values_to_toml(&values);
         assert!(result.is_err());

@@ -249,7 +249,7 @@ mod tests {
 
     #[rstest]
     #[case::non_collection(
-        mq_lang::RuntimeValue::String("hello".to_string()),
+        mq_lang::RuntimeValue::String(Shared::new("hello".to_string())),
         vec![]
     )]
     #[case::empty_array(
@@ -258,21 +258,21 @@ mod tests {
     )]
     #[case::flat_array(
         mq_lang::RuntimeValue::Array(Shared::new(vec![
-            mq_lang::RuntimeValue::String("x".to_string()),
-            mq_lang::RuntimeValue::String("y".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
+            mq_lang::RuntimeValue::String(Shared::new("y".to_string())),
         ])),
         vec![
-            ("[0]".to_string(), mq_lang::RuntimeValue::String("x".to_string())),
-            ("[1]".to_string(), mq_lang::RuntimeValue::String("y".to_string())),
+            ("[0]".to_string(), mq_lang::RuntimeValue::String(Shared::new("x".to_string()))),
+            ("[1]".to_string(), mq_lang::RuntimeValue::String(Shared::new("y".to_string()))),
         ]
     )]
     #[case::nested_array(
         mq_lang::RuntimeValue::Array(Shared::new(vec![
             mq_lang::RuntimeValue::Array(Shared::new(vec![
-                mq_lang::RuntimeValue::String("nested".to_string()),
+                mq_lang::RuntimeValue::String(Shared::new("nested".to_string())),
             ])),
         ])),
-        vec![("[0][0]".to_string(), mq_lang::RuntimeValue::String("nested".to_string()))]
+        vec![("[0][0]".to_string(), mq_lang::RuntimeValue::String(Shared::new("nested".to_string())))]
     )]
     fn test_flatten(#[case] input: mq_lang::RuntimeValue, #[case] expected: Vec<(String, mq_lang::RuntimeValue)>) {
         assert_eq!(flatten(&input), expected);
@@ -283,11 +283,14 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("key"),
-            mq_lang::RuntimeValue::String("val".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         assert_eq!(
             flatten(&mq_lang::RuntimeValue::Dict(Shared::new(m))),
-            vec![("key".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+            vec![(
+                "key".to_string(),
+                mq_lang::RuntimeValue::String(Shared::new("val".to_string()))
+            )]
         );
     }
 
@@ -296,7 +299,7 @@ mod tests {
         let mut inner = BTreeMap::new();
         inner.insert(
             mq_lang::Ident::new("b"),
-            mq_lang::RuntimeValue::String("deep".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("deep".to_string())),
         );
         let mut outer = BTreeMap::new();
         outer.insert(
@@ -305,7 +308,10 @@ mod tests {
         );
         assert_eq!(
             flatten(&mq_lang::RuntimeValue::Dict(Shared::new(outer))),
-            vec![("a.b".to_string(), mq_lang::RuntimeValue::String("deep".to_string()))]
+            vec![(
+                "a.b".to_string(),
+                mq_lang::RuntimeValue::String(Shared::new("deep".to_string()))
+            )]
         );
     }
 
@@ -315,11 +321,16 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("key"),
-            mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::String("val".to_string())])),
+            mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::String(Shared::new(
+                "val".to_string(),
+            ))])),
         );
         assert_eq!(
             flatten(&mq_lang::RuntimeValue::Dict(Shared::new(m))),
-            vec![("key[0]".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+            vec![(
+                "key[0]".to_string(),
+                mq_lang::RuntimeValue::String(Shared::new("val".to_string()))
+            )]
         );
     }
 
@@ -329,18 +340,21 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("b"),
-            mq_lang::RuntimeValue::String("val".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         let input = mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::Dict(Shared::new(m))]));
         assert_eq!(
             flatten(&input),
-            vec![("[0].b".to_string(), mq_lang::RuntimeValue::String("val".to_string()))]
+            vec![(
+                "[0].b".to_string(),
+                mq_lang::RuntimeValue::String(Shared::new("val".to_string()))
+            )]
         );
     }
 
     #[rstest]
     #[case::string(
-        mq_lang::RuntimeValue::String("hello".to_string()),
+        mq_lang::RuntimeValue::String(Shared::new("hello".to_string())),
         vec!["hello".to_string()]
     )]
     #[case::boolean(
@@ -353,8 +367,8 @@ mod tests {
     )]
     #[case::flat_array(
         mq_lang::RuntimeValue::Array(Shared::new(vec![
-            mq_lang::RuntimeValue::String("x".to_string()),
-            mq_lang::RuntimeValue::String("y".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
+            mq_lang::RuntimeValue::String(Shared::new("y".to_string())),
         ])),
         vec!["[0]: x".to_string(), "[1]: y".to_string()]
     )]
@@ -368,7 +382,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("key"),
-            mq_lang::RuntimeValue::String("val".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
         );
         let actual: Vec<String> = to_nodes(&mq_lang::RuntimeValue::Dict(Shared::new(m)))
             .into_iter()

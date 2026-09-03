@@ -160,7 +160,7 @@ impl Convert {
             Convert::Shell => {
                 // Shell script conversion - escape for safe shell usage
                 let text = match input {
-                    RuntimeValue::String(s) => s.clone(),
+                    RuntimeValue::String(s) => (**s).clone(),
                     RuntimeValue::Markdown(node, _) => node.value().to_string(),
                     _ => input.to_string(),
                 };
@@ -171,7 +171,7 @@ impl Convert {
 
     fn convert_to_markdown(&self, input: &RuntimeValue, kind: &ConvertKind) -> RuntimeValue {
         let text = match input {
-            RuntimeValue::String(s) => s.clone(),
+            RuntimeValue::String(s) => (**s).clone(),
             RuntimeValue::Markdown(node, _) => node.value().to_string(),
             _ => input.to_string(),
         };
@@ -340,7 +340,9 @@ pub(super) fn to_array(value: &mut RuntimeValue) -> Result<RuntimeValue, Error> 
     match value {
         RuntimeValue::Array(array) => Ok(RuntimeValue::Array(std::mem::take(array))),
         RuntimeValue::String(s) => Ok(RuntimeValue::Array(crate::Shared::new(
-            s.chars().map(|c| RuntimeValue::String(c.to_string())).collect(),
+            s.chars()
+                .map(|c| RuntimeValue::String(Shared::new(c.to_string())))
+                .collect(),
         ))),
         RuntimeValue::Bytes(bytes) => Ok(RuntimeValue::Array(crate::Shared::new(
             bytes.iter().map(|b| RuntimeValue::Number((*b).into())).collect(),
@@ -383,22 +385,22 @@ pub(super) fn to_date(secs: Number, convert: Option<&str>) -> Result<RuntimeValu
                 .map(|f| dt.format(f).to_string())
                 .unwrap_or(dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
         })
-        .map(RuntimeValue::String)
+        .map(|s| RuntimeValue::String(s.into()))
         .ok_or_else(|| Error::InvalidDateTimeFormat(convert.unwrap_or("").to_string()))
 }
 
 /// Encode to base64
 #[inline(always)]
 pub(super) fn base64(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(BASE64_STANDARD.encode(input)))
+    Ok(RuntimeValue::String(Shared::new(BASE64_STANDARD.encode(input))))
 }
 
 /// Encode to base64 from raw bytes
 #[inline(always)]
 pub(super) fn base64_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(
+    Ok(RuntimeValue::String(Shared::new(
         base64::engine::general_purpose::STANDARD.encode(input),
-    ))
+    )))
 }
 
 /// Decode from base64
@@ -407,13 +409,13 @@ pub(super) fn base64d(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_STANDARD
         .decode(input)
         .map_err(Error::InvalidBase64String)
-        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
+        .map(|v| RuntimeValue::String(Shared::new(String::from_utf8_lossy(&v).to_string())))
 }
 
 /// Encode to base64url
 #[inline(always)]
 pub(super) fn base64url(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(BASE64_URL_SAFE_NO_PAD.encode(input)))
+    Ok(RuntimeValue::String(Shared::new(BASE64_URL_SAFE_NO_PAD.encode(input))))
 }
 
 /// Decode from base64url
@@ -422,23 +424,23 @@ pub(super) fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
     BASE64_URL_SAFE_NO_PAD
         .decode(input)
         .map_err(Error::InvalidBase64String)
-        .map(|v| RuntimeValue::String(String::from_utf8_lossy(&v).to_string()))
+        .map(|v| RuntimeValue::String(Shared::new(String::from_utf8_lossy(&v).to_string())))
 }
 
 /// URL encode
 #[inline(always)]
 pub(super) fn url_encode(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(
+    Ok(RuntimeValue::String(Shared::new(
         utf8_percent_encode(input, NON_ALPHANUMERIC).to_string(),
-    ))
+    )))
 }
 
 /// URL decode
 #[inline(always)]
 pub(super) fn url_decode(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(
+    Ok(RuntimeValue::String(Shared::new(
         percent_decode(input.as_bytes()).decode_utf8_lossy().to_string(),
-    ))
+    )))
 }
 
 /// Escape `&`, `<`, `>`, `"`, and `'` as HTML entities
@@ -455,13 +457,15 @@ pub(super) fn html_escape(input: &str) -> Result<RuntimeValue, Error> {
             _ => result.push(c),
         }
     }
-    Ok(RuntimeValue::String(result))
+    Ok(RuntimeValue::String(result.into()))
 }
 
 /// Decode named and numeric HTML entities into their corresponding characters
 #[inline(always)]
 pub(super) fn html_unescape(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(decode_html_entities(input).into_owned()))
+    Ok(RuntimeValue::String(Shared::new(
+        decode_html_entities(input).into_owned(),
+    )))
 }
 
 /// Strip HTML tags from a string, keeping the surrounding text content
@@ -489,13 +493,13 @@ pub(super) fn strip_tags(input: &str) -> Result<RuntimeValue, Error> {
         }
     }
 
-    Ok(RuntimeValue::String(result))
+    Ok(RuntimeValue::String(result.into()))
 }
 
 /// Sanitize HTML using an allowlist of safe tags/attributes (XSS protection).
 #[inline(always)]
 pub(super) fn sanitize_html(input: &str) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(ammonia::clean(input)))
+    Ok(RuntimeValue::String(Shared::new(ammonia::clean(input))))
 }
 
 /// Compute MD5 hash and return lowercase hex string.
@@ -506,42 +510,42 @@ pub(super) fn sanitize_html(input: &str) -> Result<RuntimeValue, Error> {
 #[inline(always)]
 pub(super) fn md5(input: &str) -> Result<RuntimeValue, Error> {
     let digest = md5::compute(input.as_bytes());
-    Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(&digest.0))))
 }
 
 /// Compute MD5 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
 pub(super) fn md5_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let digest = md5::compute(input);
-    Ok(RuntimeValue::String(bytes_to_hex(&digest.0)))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(&digest.0))))
 }
 
 /// Compute SHA-256 hash and return lowercase hex string.
 #[inline(always)]
 pub(super) fn sha256(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input.as_bytes());
-    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(hash.as_slice()))))
 }
 
 /// Compute SHA-256 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
 pub(super) fn sha256_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha256::digest(input);
-    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(hash.as_slice()))))
 }
 
 /// Compute SHA-512 hash and return lowercase hex string.
 #[inline(always)]
 pub(super) fn sha512(input: &str) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha512::digest(input.as_bytes());
-    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(hash.as_slice()))))
 }
 
 /// Compute SHA-512 hash of raw bytes and return lowercase hex string.
 #[inline(always)]
 pub(super) fn sha512_bytes(input: &[u8]) -> Result<RuntimeValue, Error> {
     let hash = sha2::Sha512::digest(input);
-    Ok(RuntimeValue::String(bytes_to_hex(hash.as_slice())))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(hash.as_slice()))))
 }
 
 /// Parse a lowercase or uppercase hex string into raw bytes.
@@ -562,21 +566,21 @@ pub(super) fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
             u8::from_str_radix(s, 16).map_err(|_| Error::Runtime(format!("from_hex: invalid hex byte \"{}\"", s)))
         })
         .collect::<Result<Vec<u8>, _>>()?;
-    Ok(RuntimeValue::Bytes(bytes))
+    Ok(RuntimeValue::Bytes(bytes.into()))
 }
 
 /// Decode bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.
 #[inline(always)]
 pub(super) fn utf8(input: &[u8]) -> Result<RuntimeValue, Error> {
     String::from_utf8(input.to_vec())
-        .map(RuntimeValue::String)
+        .map(|s| RuntimeValue::String(s.into()))
         .map_err(|e| Error::Runtime(format!("utf8: {}", e)))
 }
 
 /// Encode raw bytes as a lowercase hex string.
 #[inline(always)]
 pub(super) fn to_hex(input: &[u8]) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(bytes_to_hex(input)))
+    Ok(RuntimeValue::String(Shared::new(bytes_to_hex(input))))
 }
 
 /// Decode bytes as text using a WHATWG encoding label. Errors on invalid input rather than substituting.
@@ -591,7 +595,7 @@ pub(super) fn decode(input: &[u8], label: &str) -> Result<RuntimeValue, Error> {
             encoding.name()
         )));
     }
-    Ok(RuntimeValue::String(decoded.into_owned()))
+    Ok(RuntimeValue::String(Shared::new(decoded.into_owned())))
 }
 
 /// Encode text as bytes using a WHATWG encoding label. Errors on unmappable input rather than substituting.
@@ -606,7 +610,7 @@ pub(super) fn encode(input: &str, label: &str) -> Result<RuntimeValue, Error> {
             encoding.name()
         )));
     }
-    Ok(RuntimeValue::Bytes(encoded.into_owned()))
+    Ok(RuntimeValue::Bytes(Shared::new(encoded.into_owned())))
 }
 
 #[inline(always)]
@@ -623,7 +627,7 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 pub(super) fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
     // If the string is empty, return empty quotes
     if input.is_empty() {
-        return Ok(RuntimeValue::String("''".to_string()));
+        return Ok(RuntimeValue::String(Shared::new("''".to_string())));
     }
 
     // Check if the string contains characters that need escaping
@@ -636,13 +640,13 @@ pub(super) fn shell_escape(input: &str) -> Result<RuntimeValue, Error> {
 
     if !needs_quoting {
         // Safe to use without quoting
-        return Ok(RuntimeValue::String(input.to_string()));
+        return Ok(RuntimeValue::String(Shared::new(input.to_string())));
     }
 
     // Use single quotes and escape any single quotes in the string
     // by replacing ' with '\''
     let escaped = input.replace('\'', "'\\''");
-    Ok(RuntimeValue::String(format!("'{}'", escaped)))
+    Ok(RuntimeValue::String(Shared::new(format!("'{}'", escaped))))
 }
 
 pub(super) fn flatten(args: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
@@ -675,17 +679,17 @@ mod tests {
     #[case::sha256_symbol(RuntimeValue::Symbol(Ident::new("sha256")), Convert::Sha256)]
     #[case::text_symbol(RuntimeValue::Symbol(Ident::new("text")), Convert::Text)]
     #[case::sh_symbol(RuntimeValue::Symbol(Ident::new("sh")), Convert::Shell)]
-    #[case::h1_string(RuntimeValue::String("#".to_string()), Convert::Markdown(ConvertKind::Heading(1)))]
-    #[case::h2_string(RuntimeValue::String("##".to_string()), Convert::Markdown(ConvertKind::Heading(2)))]
-    #[case::h3_string(RuntimeValue::String("###".to_string()), Convert::Markdown(ConvertKind::Heading(3)))]
-    #[case::h4_string(RuntimeValue::String("####".to_string()), Convert::Markdown(ConvertKind::Heading(4)))]
-    #[case::h5_string(RuntimeValue::String("#####".to_string()), Convert::Markdown(ConvertKind::Heading(5)))]
-    #[case::h6_string(RuntimeValue::String("######".to_string()), Convert::Markdown(ConvertKind::Heading(6)))]
-    #[case::blockquote_string(RuntimeValue::String(">".to_string()), Convert::Markdown(ConvertKind::Blockquote))]
-    #[case::list_item_string(RuntimeValue::String("-".to_string()), Convert::Markdown(ConvertKind::ListItem))]
-    #[case::strikethrough_string(RuntimeValue::String("~~".to_string()), Convert::Markdown(ConvertKind::Strikethrough))]
-    #[case::strong_string(RuntimeValue::String("**".to_string()), Convert::Markdown(ConvertKind::Strong))]
-    #[case::horizontal_rule_string(RuntimeValue::String("--".to_string()), Convert::Markdown(ConvertKind::HorizontalRule))]
+    #[case::h1_string(RuntimeValue::String(Shared::new("#".to_string())), Convert::Markdown(ConvertKind::Heading(1)))]
+    #[case::h2_string(RuntimeValue::String(Shared::new("##".to_string())), Convert::Markdown(ConvertKind::Heading(2)))]
+    #[case::h3_string(RuntimeValue::String(Shared::new("###".to_string())), Convert::Markdown(ConvertKind::Heading(3)))]
+    #[case::h4_string(RuntimeValue::String(Shared::new("####".to_string())), Convert::Markdown(ConvertKind::Heading(4)))]
+    #[case::h5_string(RuntimeValue::String(Shared::new("#####".to_string())), Convert::Markdown(ConvertKind::Heading(5)))]
+    #[case::h6_string(RuntimeValue::String(Shared::new("######".to_string())), Convert::Markdown(ConvertKind::Heading(6)))]
+    #[case::blockquote_string(RuntimeValue::String(Shared::new(">".to_string())), Convert::Markdown(ConvertKind::Blockquote))]
+    #[case::list_item_string(RuntimeValue::String(Shared::new("-".to_string())), Convert::Markdown(ConvertKind::ListItem))]
+    #[case::strikethrough_string(RuntimeValue::String(Shared::new("~~".to_string())), Convert::Markdown(ConvertKind::Strikethrough))]
+    #[case::strong_string(RuntimeValue::String(Shared::new("**".to_string())), Convert::Markdown(ConvertKind::Strong))]
+    #[case::horizontal_rule_string(RuntimeValue::String(Shared::new("--".to_string())), Convert::Markdown(ConvertKind::HorizontalRule))]
     fn test_convert_convert_try_from_valid(#[case] input: RuntimeValue, #[case] expected: Convert) {
         let result = Convert::try_from(&input);
         assert!(result.is_ok());
@@ -701,7 +705,7 @@ mod tests {
 
     #[rstest]
     #[case::invalid_symbol(RuntimeValue::Symbol(Ident::new("invalid")))]
-    #[case::invalid_string(RuntimeValue::String("invalid".to_string()))]
+    #[case::invalid_string(RuntimeValue::String(Shared::new("invalid".to_string())))]
     #[case::number(RuntimeValue::Number(42.into()))]
     #[case::boolean(RuntimeValue::Boolean(true))]
     fn test_convert_convert_try_from_invalid(#[case] input: RuntimeValue) {
@@ -720,7 +724,7 @@ mod tests {
     #[case("line\nbreak", "bGluZQpicmVhaw==")]
     fn test_base64_encode(#[case] input: &str, #[case] expected: &str) {
         let result = base64(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
@@ -730,7 +734,7 @@ mod tests {
     #[case("", "")]
     fn test_base64_decode(#[case] input: &str, #[case] expected: &str) {
         let result = base64d(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
@@ -753,7 +757,7 @@ mod tests {
     #[case("subjects>", "c3ViamVjdHM-")]
     fn test_base64url_encode(#[case] input: &str, #[case] expected: &str) {
         let result = base64url(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
@@ -762,7 +766,7 @@ mod tests {
     #[case("dGVzdA", "test")]
     fn test_base64url_decode(#[case] input: &str, #[case] expected: &str) {
         let result = base64urld(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test URL encoding
@@ -778,7 +782,7 @@ mod tests {
     #[case("café", "caf%C3%A9")]
     fn test_url_encode(#[case] input: &str, #[case] expected: &str) {
         let result = url_encode(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test html_escape
@@ -791,7 +795,7 @@ mod tests {
     #[case("", "")]
     fn test_html_escape(#[case] input: &str, #[case] expected: &str) {
         let result = html_escape(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test html_unescape
@@ -806,7 +810,7 @@ mod tests {
     #[case("", "")]
     fn test_html_unescape(#[case] input: &str, #[case] expected: &str) {
         let result = html_unescape(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test html_escape/html_unescape round trip
@@ -819,7 +823,7 @@ mod tests {
             panic!("Expected String")
         };
         let unescaped = html_unescape(&escaped).unwrap();
-        assert_eq!(unescaped, RuntimeValue::String(input.to_string()));
+        assert_eq!(unescaped, RuntimeValue::String(Shared::new(input.to_string())));
     }
 
     // Test strip_tags
@@ -836,7 +840,7 @@ mod tests {
     #[case("a > b", "a > b")]
     fn test_strip_tags(#[case] input: &str, #[case] expected: &str) {
         let result = strip_tags(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test sanitize_html
@@ -851,7 +855,7 @@ mod tests {
     #[case("", "")]
     fn test_sanitize_html(#[case] input: &str, #[case] expected: &str) {
         let result = sanitize_html(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test shell escape
@@ -891,24 +895,24 @@ mod tests {
     #[case("rm -rf /", "'rm -rf /'")] // Dangerous command
     fn test_shell_escape(#[case] input: &str, #[case] expected: &str) {
         let result = shell_escape(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test to_string
     #[rstest]
-    #[case::string(RuntimeValue::String("test".to_string()), "test")]
+    #[case::string(RuntimeValue::String(Shared::new("test".to_string())), "test")]
     #[case::symbol(RuntimeValue::Symbol(Ident::new("test")), "test")]
     #[case::number(RuntimeValue::Number(42.into()), "42")]
     #[case::boolean_true(RuntimeValue::Boolean(true), "true")]
     #[case::boolean_false(RuntimeValue::Boolean(false), "false")]
     fn test_to_string(#[case] input: RuntimeValue, #[case] expected: &str) {
         let result = to_string(&input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test to_number
     #[rstest]
-    #[case::string_int(RuntimeValue::String("42".to_string()), RuntimeValue::Number(42.into()))]
+    #[case::string_int(RuntimeValue::String(Shared::new("42".to_string())), RuntimeValue::Number(42.into()))]
     #[case::number(RuntimeValue::Number(42.into()), RuntimeValue::Number(42.into()))]
     #[case::boolean_true(RuntimeValue::Boolean(true), RuntimeValue::Number(1.into()))]
     #[case::boolean_false(RuntimeValue::Boolean(false), RuntimeValue::Number(0.into()))]
@@ -920,7 +924,7 @@ mod tests {
 
     #[test]
     fn test_to_number_invalid_string() {
-        let mut input = RuntimeValue::String("not a number".to_string());
+        let mut input = RuntimeValue::String(Shared::new("not a number".to_string()));
         let result = to_number(&mut input);
         assert!(result.is_err());
     }
@@ -928,7 +932,7 @@ mod tests {
     #[test]
     fn test_to_number_array() {
         let mut input = RuntimeValue::Array(crate::Shared::new(vec![
-            RuntimeValue::String("42".to_string()),
+            RuntimeValue::String(Shared::new("42".to_string())),
             RuntimeValue::Boolean(true),
         ]));
         let result = to_number(&mut input).unwrap();
@@ -945,11 +949,11 @@ mod tests {
     // Test to_array
     #[rstest]
     #[case::string(
-        RuntimeValue::String("abc".to_string()),
+        RuntimeValue::String(Shared::new("abc".to_string())),
         vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
+            RuntimeValue::String(Shared::new("c".to_string())),
         ]
     )]
     #[case::none(RuntimeValue::None, vec![])]
@@ -979,22 +983,22 @@ mod tests {
 
     // Test to_text
     #[rstest]
-    #[case::string(RuntimeValue::String("test".to_string()), "test")]
+    #[case::string(RuntimeValue::String(Shared::new("test".to_string())), "test")]
     #[case::number(RuntimeValue::Number(42.into()), "42")]
     #[case::none(RuntimeValue::None, "")]
     #[case::array(
         RuntimeValue::Array(crate::Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
+            RuntimeValue::String(Shared::new("c".to_string())),
         ])),
         "a,b,c"
     )]
     #[case::array_with_none(
         RuntimeValue::Array(crate::Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
             RuntimeValue::None,
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String(Shared::new("c".to_string())),
         ])),
         "a,,c"
     )]
@@ -1003,20 +1007,20 @@ mod tests {
         let result = to_text(&input).unwrap();
         match result {
             RuntimeValue::None => assert_eq!(expected, ""),
-            RuntimeValue::String(s) => assert_eq!(s, expected),
+            RuntimeValue::String(s) => assert_eq!(s.as_str(), expected),
             _ => panic!("Expected String or None"),
         }
     }
 
     // Test to_html
     #[rstest]
-    #[case::plain_text(RuntimeValue::String("hello".to_string()), "<p>hello</p>")]
-    #[case::bold(RuntimeValue::String("**bold**".to_string()), "<p><strong>bold</strong></p>")]
-    #[case::italic(RuntimeValue::String("*italic*".to_string()), "<p><em>italic</em></p>")]
+    #[case::plain_text(RuntimeValue::String(Shared::new("hello".to_string())), "<p>hello</p>")]
+    #[case::bold(RuntimeValue::String(Shared::new("**bold**".to_string())), "<p><strong>bold</strong></p>")]
+    #[case::italic(RuntimeValue::String(Shared::new("*italic*".to_string())), "<p><em>italic</em></p>")]
     #[case::none(RuntimeValue::None, "")]
-    #[case::heading(RuntimeValue::String("# Heading\n\nParagraph".to_string()), "<h1>Heading</h1>\n<p>Paragraph</p>")]
-    #[case::quote(RuntimeValue::String("> Quote".to_string()), "<blockquote>\n<p>Quote</p>\n</blockquote>")]
-    #[case::list(RuntimeValue::String("- Item 1\n- Item 2".to_string()), "<ul>\n<li>Item 1</li>\n<li>Item 2</li>\n</ul>")]
+    #[case::heading(RuntimeValue::String(Shared::new("# Heading\n\nParagraph".to_string())), "<h1>Heading</h1>\n<p>Paragraph</p>")]
+    #[case::quote(RuntimeValue::String(Shared::new("> Quote".to_string())), "<blockquote>\n<p>Quote</p>\n</blockquote>")]
+    #[case::list(RuntimeValue::String(Shared::new("- Item 1\n- Item 2".to_string())), "<ul>\n<li>Item 1</li>\n<li>Item 2</li>\n</ul>")]
     fn test_to_html(#[case] input: RuntimeValue, #[case] expected: &str) {
         let result = to_html(&input).unwrap();
         match result {
@@ -1104,20 +1108,20 @@ mod tests {
     #[case(1704067200, Some("%Y"), "2024")]
     fn test_to_date(#[case] secs: i64, #[case] convert: Option<&str>, #[case] expected: &str) {
         let result = to_date(secs.into(), convert).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test to_markdown_string
     #[rstest]
     #[case::single_string(
-        vec![RuntimeValue::String("hello".to_string())],
+        vec![RuntimeValue::String(Shared::new("hello".to_string()))],
         "hello"
     )]
     #[case::multiple_strings(
         vec![
-            RuntimeValue::String("hello".to_string()),
-            RuntimeValue::String(" ".to_string()),
-            RuntimeValue::String("world".to_string()),
+            RuntimeValue::String(Shared::new("hello".to_string())),
+            RuntimeValue::String(Shared::new(" ".to_string())),
+            RuntimeValue::String(Shared::new("world".to_string())),
         ],
         "hello\n \nworld"  // Each becomes a separate line
     )]
@@ -1134,15 +1138,15 @@ mod tests {
 
     // Test convert::convert for all converts
     #[rstest]
-    #[case::base64(Convert::Base64, RuntimeValue::String("hello".to_string()), "aGVsbG8=")]
-    #[case::uri_encode(Convert::UriEncode, RuntimeValue::String("hello world".to_string()), "hello%20world")]
-    #[case::uri_decode(Convert::UriDecode, RuntimeValue::String("hello%20world".to_string()), "hello world")]
-    #[case::empty_base64(Convert::Base64, RuntimeValue::String("".to_string()), "")]
-    #[case::empty_html(Convert::Html, RuntimeValue::String("".to_string()), "")]
-    #[case::empty_text(Convert::Text, RuntimeValue::String("".to_string()), "")]
-    #[case::empty_uri(Convert::UriEncode, RuntimeValue::String("".to_string()), "")]
-    #[case::md5(Convert::Md5, RuntimeValue::String("hello".to_string()), "5d41402abc4b2a76b9719d911017c592")]
-    #[case::sha256(Convert::Sha256, RuntimeValue::String("hello".to_string()), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
+    #[case::base64(Convert::Base64, RuntimeValue::String(Shared::new("hello".to_string())), "aGVsbG8=")]
+    #[case::uri_encode(Convert::UriEncode, RuntimeValue::String(Shared::new("hello world".to_string())), "hello%20world")]
+    #[case::uri_decode(Convert::UriDecode, RuntimeValue::String(Shared::new("hello%20world".to_string())), "hello world")]
+    #[case::empty_base64(Convert::Base64, RuntimeValue::String(Shared::new("".to_string())), "")]
+    #[case::empty_html(Convert::Html, RuntimeValue::String(Shared::new("".to_string())), "")]
+    #[case::empty_text(Convert::Text, RuntimeValue::String(Shared::new("".to_string())), "")]
+    #[case::empty_uri(Convert::UriEncode, RuntimeValue::String(Shared::new("".to_string())), "")]
+    #[case::md5(Convert::Md5, RuntimeValue::String(Shared::new("hello".to_string())), "5d41402abc4b2a76b9719d911017c592")]
+    #[case::sha256(Convert::Sha256, RuntimeValue::String(Shared::new("hello".to_string())), "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
     #[case::md5_integer(Convert::Md5, RuntimeValue::Number(42.into()), "a1d0c6e83f027327d8461063f4ac58a6")]
     #[case::sha256_integer(Convert::Sha256, RuntimeValue::Number(42.into()), "73475cb40a568e8da8a045ced110137e159f890ac4da883b6b17dc651b3a8049")]
     #[case::md5_float(
@@ -1157,13 +1161,13 @@ mod tests {
     )]
     fn test_convert_string_converts(#[case] convert: Convert, #[case] input: RuntimeValue, #[case] expected: &str) {
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[test]
     fn test_convert_html() {
         let convert = Convert::Html;
-        let input = RuntimeValue::String("**bold**".to_string());
+        let input = RuntimeValue::String(Shared::new("**bold**".to_string()));
         let result = convert.convert(&input);
         match result {
             RuntimeValue::String(s) => {
@@ -1179,7 +1183,7 @@ mod tests {
         let convert = Convert::Text;
         let input = RuntimeValue::Number(42.into());
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String("42".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("42".to_string())));
     }
 
     #[test]
@@ -1187,24 +1191,24 @@ mod tests {
         let convert = Convert::Shell;
 
         // Simple string without special characters
-        let input = RuntimeValue::String("echo hello".to_string());
+        let input = RuntimeValue::String(Shared::new("echo hello".to_string()));
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String("'echo hello'".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("'echo hello'".to_string())));
 
         // String with single quote
-        let input = RuntimeValue::String("it's".to_string());
+        let input = RuntimeValue::String(Shared::new("it's".to_string()));
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String("'it'\\''s'".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("'it'\\''s'".to_string())));
 
         // Safe alphanumeric string
-        let input = RuntimeValue::String("test123".to_string());
+        let input = RuntimeValue::String(Shared::new("test123".to_string()));
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String("test123".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("test123".to_string())));
 
         // Number
         let input = RuntimeValue::Number(42.into());
         let result = convert.convert(&input);
-        assert_eq!(result, RuntimeValue::String("42".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("42".to_string())));
     }
 
     // Test convert::convert for Markdown headings
@@ -1217,7 +1221,7 @@ mod tests {
     #[case(6)]
     fn test_convert_all_heading_levels(#[case] depth: u8) {
         let convert = Convert::Markdown(ConvertKind::Heading(depth));
-        let input = RuntimeValue::String("Test".to_string());
+        let input = RuntimeValue::String(Shared::new("Test".to_string()));
         let result = convert.convert(&input);
 
         let RuntimeValue::Markdown(node, _) = result else {
@@ -1234,7 +1238,7 @@ mod tests {
     #[test]
     fn test_convert_markdown_blockquote() {
         let convert = Convert::Markdown(ConvertKind::Blockquote);
-        let input = RuntimeValue::String("Important note".to_string());
+        let input = RuntimeValue::String(Shared::new("Important note".to_string()));
         let result = convert.convert(&input);
 
         let RuntimeValue::Markdown(node, _) = result else {
@@ -1250,7 +1254,7 @@ mod tests {
     #[test]
     fn test_convert_markdown_list_item() {
         let convert = Convert::Markdown(ConvertKind::ListItem);
-        let input = RuntimeValue::String("Item text".to_string());
+        let input = RuntimeValue::String(Shared::new("Item text".to_string()));
         let result = convert.convert(&input);
 
         let RuntimeValue::Markdown(node, _) = result else {
@@ -1269,7 +1273,7 @@ mod tests {
     fn test_convert_markdown_link() {
         let url = Url::parse("https://example.com").unwrap();
         let convert = Convert::Markdown(ConvertKind::Link(url.to_string()));
-        let input = RuntimeValue::String("Click here".to_string());
+        let input = RuntimeValue::String(Shared::new("Click here".to_string()));
         let result = convert.convert(&input);
 
         let RuntimeValue::Markdown(node, _) = result else {
@@ -1286,7 +1290,7 @@ mod tests {
     #[test]
     fn test_convert_markdown_strikethrough() {
         let convert = Convert::Markdown(ConvertKind::Strikethrough);
-        let input = RuntimeValue::String("Deleted text".to_string());
+        let input = RuntimeValue::String(Shared::new("Deleted text".to_string()));
         let result = convert.convert(&input);
 
         let RuntimeValue::Markdown(node, _) = result else {
@@ -1356,7 +1360,7 @@ mod tests {
     // Test convert::try_from with URL
     #[test]
     fn test_convert_convert_url() {
-        let url_string = RuntimeValue::String("https://example.com".to_string());
+        let url_string = RuntimeValue::String(Shared::new("https://example.com".to_string()));
         let result = Convert::try_from(&url_string);
         assert!(result.is_ok());
         match result.unwrap() {
@@ -1373,7 +1377,7 @@ mod tests {
     #[case("The quick brown fox jumps over the lazy dog", "9e107d9d372bb6826bd81d3542a419d6")]
     fn test_md5(#[case] input: &str, #[case] expected: &str) {
         let result = md5(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     // Test SHA-256 hash
@@ -1387,7 +1391,7 @@ mod tests {
     )]
     fn test_sha256(#[case] input: &str, #[case] expected: &str) {
         let result = sha256(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
@@ -1396,7 +1400,7 @@ mod tests {
     #[case(b"hello world", "5eb63bbbe01eeed093cb22bb8f5acdc3")]
     fn test_md5_bytes(#[case] input: &[u8], #[case] expected: &str) {
         let result = md5_bytes(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
@@ -1404,14 +1408,14 @@ mod tests {
     #[case(b"hello", "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")]
     fn test_sha256_bytes(#[case] input: &[u8], #[case] expected: &str) {
         let result = sha256_bytes(input).unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
     }
 
     #[rstest]
-    #[case("deadbeef", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
-    #[case("DEADBEEF", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
-    #[case("", Ok(RuntimeValue::Bytes(vec![])))]
-    #[case("00ff", Ok(RuntimeValue::Bytes(vec![0x00, 0xff])))]
+    #[case("deadbeef", Ok(RuntimeValue::Bytes(Shared::new(vec![0xde, 0xad, 0xbe, 0xef]))))]
+    #[case("DEADBEEF", Ok(RuntimeValue::Bytes(Shared::new(vec![0xde, 0xad, 0xbe, 0xef]))))]
+    #[case("", Ok(RuntimeValue::Bytes(Shared::new(vec![]))))]
+    #[case("00ff", Ok(RuntimeValue::Bytes(Shared::new(vec![0x00, 0xff]))))]
     fn test_from_hex(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
         assert_eq!(from_hex(input), expected);
     }
@@ -1426,8 +1430,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(b"hello" as &[u8], Ok(RuntimeValue::String("hello".to_string())))]
-    #[case(b"" as &[u8], Ok(RuntimeValue::String("".to_string())))]
+    #[case(b"hello" as &[u8], Ok(RuntimeValue::String(Shared::new("hello".to_string()))))]
+    #[case(b"" as &[u8], Ok(RuntimeValue::String(Shared::new("".to_string()))))]
     fn test_utf8_valid(#[case] input: &[u8], #[case] expected: Result<RuntimeValue, Error>) {
         assert_eq!(utf8(input), expected);
     }

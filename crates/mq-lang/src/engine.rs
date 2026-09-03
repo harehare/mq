@@ -328,7 +328,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// // Raw form: works with any number of arguments, matched by hand.
     /// engine.register_fn("shout", |args: &[RuntimeValue]| match args {
-    ///     [RuntimeValue::String(s)] => Ok(RuntimeValue::String(format!("{}!", s.to_uppercase()))),
+    ///     [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(format!("{}!", s.to_uppercase())))),
     ///     _ => Err(HostFunctionError::new("shout() expects one string argument")),
     /// });
     ///
@@ -713,6 +713,7 @@ impl Engine<DefaultModuleResolver> {
 mod tests {
     use super::CompiledProgram;
     use crate::DefaultEngine;
+    use crate::Shared;
     use crate::error;
     use rstest::rstest;
     use scopeguard::defer;
@@ -857,7 +858,7 @@ mod tests {
         assert!(result.is_ok(), "{result:?}");
         assert_eq!(
             result.unwrap().into_iter().next(),
-            Some(crate::RuntimeValue::String("Hello, World!".to_string()))
+            Some(crate::RuntimeValue::String(Shared::new("Hello, World!".to_string())))
         );
     }
 
@@ -1286,14 +1287,20 @@ mod tests {
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert_eq!(first.values(), &[RuntimeValue::String("first".to_string())]);
+        assert_eq!(
+            first.values(),
+            &[RuntimeValue::String(Shared::new("first".to_string()))]
+        );
         assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
 
         std::fs::write(&temp_file_path, r#"def greeting(): "second";"#).unwrap();
         let second = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert_eq!(second.values(), &[RuntimeValue::String("second".to_string())]);
+        assert_eq!(
+            second.values(),
+            &[RuntimeValue::String(Shared::new("second".to_string()))]
+        );
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
@@ -1304,7 +1311,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         engine.load_module("csv").unwrap();
         let compiled = engine.compile("csv_parse(true)").unwrap();
-        let input = || RuntimeValue::String("name,age\nAda,36\n".to_string());
+        let input = || RuntimeValue::String(Shared::new("name,age\nAda,36\n".to_string()));
 
         let first = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(first.values().len(), 1);
@@ -1358,7 +1365,7 @@ mod tests {
         assert_eq!(
             values.values(),
             &vec![RuntimeValue::Array(crate::Shared::new(vec![
-                RuntimeValue::String("hello".to_string()),
+                RuntimeValue::String(Shared::new("hello".to_string())),
                 RuntimeValue::Number(42.0.into()),
             ]))]
         );
@@ -1370,7 +1377,10 @@ mod tests {
         let values = engine
             .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert_eq!(values.values(), &vec![RuntimeValue::String("goodbye".to_string())]);
+        assert_eq!(
+            values.values(),
+            &vec![RuntimeValue::String(Shared::new("goodbye".to_string()))]
+        );
     }
 
     #[test]
@@ -1405,7 +1415,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             values.values(),
-            &vec![RuntimeValue::String("Hello, World!".to_string())]
+            &vec![RuntimeValue::String(Shared::new("Hello, World!".to_string()))]
         );
     }
 
@@ -1468,7 +1478,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
         engine.register_fn("greet", |args: &[RuntimeValue]| match args {
-            [RuntimeValue::String(name)] => Ok(RuntimeValue::String(format!("Hello, {name}!"))),
+            [RuntimeValue::String(name)] => Ok(RuntimeValue::String(Shared::new(format!("Hello, {name}!")))),
             _ => Err(crate::HostFunctionError::new("greet() expects one string argument")),
         });
 

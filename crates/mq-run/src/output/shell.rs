@@ -121,8 +121,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![mq_lang::RuntimeValue::String("hello".to_string())], "value=hello\n")]
-    #[case(vec![mq_lang::RuntimeValue::String("hello world".to_string())], "value='hello world'\n")]
+    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello".to_string()))], "value=hello\n")]
+    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello world".to_string()))], "value='hello world'\n")]
     #[case(vec![mq_lang::RuntimeValue::Boolean(true)], "value=true\n")]
     #[case(vec![mq_lang::RuntimeValue::Boolean(false)], "value=false\n")]
     #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "value=3\n")]
@@ -131,8 +131,8 @@ mod tests {
     #[case(vec![mq_lang::RuntimeValue::Dict(Shared::new(BTreeMap::new()))], "")]
     #[case(
         vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
-            mq_lang::RuntimeValue::String("x".to_string()),
-            mq_lang::RuntimeValue::String("y".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
+            mq_lang::RuntimeValue::String(Shared::new("y".to_string())),
         ]))],
         "_0=x\n_1=y\n"
     )]
@@ -145,7 +145,7 @@ mod tests {
         let mut inner = BTreeMap::new();
         inner.insert(
             mq_lang::Ident::new("color"),
-            mq_lang::RuntimeValue::String("turquoise".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("turquoise".to_string())),
         );
         let mut outer = BTreeMap::new();
         outer.insert(
@@ -161,7 +161,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("weird key!"),
-            mq_lang::RuntimeValue::String("v".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(m))];
         assert_eq!(runtime_values_to_shell(&values), "weird_key_=v\n");
@@ -172,7 +172,7 @@ mod tests {
         let mut friend = BTreeMap::new();
         friend.insert(
             mq_lang::Ident::new("name"),
-            mq_lang::RuntimeValue::String("James P. Sullivan".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("James P. Sullivan".to_string())),
         );
         let mut outer = BTreeMap::new();
         outer.insert(
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_shell_top_level_array_gets_digit_prefix() {
         let values = vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
-            mq_lang::RuntimeValue::String("x".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
         ]))];
         assert_eq!(runtime_values_to_shell(&values), "_0=x\n");
     }

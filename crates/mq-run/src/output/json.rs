@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![RuntimeValue::String("hello".to_string())], "\"hello\"")]
+    #[case(vec![RuntimeValue::String(Shared::new("hello".to_string()))], "\"hello\"")]
     #[case(vec![RuntimeValue::Boolean(true)], "true")]
     #[case(vec![RuntimeValue::Boolean(false)], "false")]
     #[case(vec![RuntimeValue::None], "null")]
@@ -166,8 +166,8 @@ mod tests {
     #[test]
     fn test_multiple_values_becomes_array() {
         let values = vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
         ];
         let result = runtime_values_to_json(&values, None, false, "  ").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
@@ -213,7 +213,7 @@ mod tests {
     #[test]
     fn test_with_plain_theme_string() {
         let theme = plain_theme();
-        let values = vec![RuntimeValue::String("hi".to_string())];
+        let values = vec![RuntimeValue::String(Shared::new("hi".to_string()))];
         let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("hi"));
     }
@@ -230,8 +230,8 @@ mod tests {
     fn test_colorize_array_non_empty() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("x".to_string()),
-            RuntimeValue::String("y".to_string()),
+            RuntimeValue::String(Shared::new("x".to_string())),
+            RuntimeValue::String(Shared::new("y".to_string())),
         ]))];
         let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains('[') && result.contains(']'));
@@ -250,7 +250,10 @@ mod tests {
     fn test_colorize_object_non_empty() {
         let theme = plain_theme();
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("key"), RuntimeValue::String("val".to_string()));
+        map.insert(
+            mq_lang::Ident::new("key"),
+            RuntimeValue::String(Shared::new("val".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("key") && result.contains("val"));

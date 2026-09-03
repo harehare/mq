@@ -17,8 +17,8 @@ fn engine() -> DefaultEngine {
        let test = \"WORLD\" | ltrimstr(s, \"hello\") | upcase() | ltrimstr(test);
     | test_fn(\"helloWorld2025\")
     ",
-      vec![RuntimeValue::String("helloWorld".to_string())],
-      Ok(vec![RuntimeValue::String("2025".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new("helloWorld".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("2025".to_string()))].into()))]
 #[case::while_("
     var x = 5 |
     while (x > 0):
@@ -54,7 +54,7 @@ fn engine() -> DefaultEngine {
         x;
     ",
       vec![RuntimeValue::Number(10.into())],
-      Ok(vec![RuntimeValue::String("found".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("found".to_string()))].into()))]
 #[case::while_continue("
     var x = 0 |
     while(x < 4):
@@ -83,7 +83,7 @@ fn engine() -> DefaultEngine {
         x + 10;
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("stopped at 3".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("stopped at 3".to_string()))].into()))]
 #[case::foreach_continue("
     foreach(x, array(1, 2, 3, 4, 5)):
       if(x == 3):
@@ -174,7 +174,7 @@ fn engine() -> DefaultEngine {
     end
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("two".to_string()))].into()))]
 #[case::match_do_end_type_pattern("
     match (array(1, 2, 3)) do
       | :array: \"is_array\"
@@ -183,7 +183,7 @@ fn engine() -> DefaultEngine {
     end
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("is_array".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("is_array".to_string()))].into()))]
 #[case::match_node_kind_h1("
     match(.) do
       | :h1: \"h1\"
@@ -298,7 +298,7 @@ fn engine() -> DefaultEngine {
     end
     ",
       vec![RuntimeValue::Number(1.into())],
-      Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_node_kind_or_pattern("
     match(.) do
       | :h1 || :h2: \"top-level\"
@@ -454,10 +454,10 @@ fn engine() -> DefaultEngine {
         vec![RuntimeValue::Number(2.into())],
         Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::contains("contains(\"test\")",
-      vec![RuntimeValue::String("testString".to_string())],
+      vec![RuntimeValue::String(Shared::new("testString".to_string()))],
       Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::contains("contains(\"test\")",
-      vec![RuntimeValue::String("String".to_string())],
+      vec![RuntimeValue::String(Shared::new("String".to_string()))],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::is_array("is_array()",
       vec![RuntimeValue::Array(Shared::new(Vec::new()))],
@@ -490,31 +490,31 @@ fn engine() -> DefaultEngine {
         vec![RuntimeValue::Number(1.into())],
         Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::ltrimstr("ltrimstr(\"test\")",
-      vec![RuntimeValue::String("testString".to_string())],
-      Ok(vec![RuntimeValue::String("String".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new("testString".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("String".to_string()))].into()))]
 #[case::rtrimstr("rtrimstr(\"test\")",
-      vec![RuntimeValue::String("Stringtest".to_string())],
-      Ok(vec![RuntimeValue::String("String".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new("Stringtest".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("String".to_string()))].into()))]
 #[case::ltrim("ltrim()",
-      vec![RuntimeValue::String(" test ".to_string())],
-      Ok(vec![RuntimeValue::String("test ".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new(" test ".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("test ".to_string()))].into()))]
 #[case::rtrim("rtrim()",
-      vec![RuntimeValue::String(" test ".to_string())],
-      Ok(vec![RuntimeValue::String(" test".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new(" test ".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new(" test".to_string()))].into()))]
 #[case::is_empty("is_empty(\"\")",
-      vec![RuntimeValue::String("String".to_string())],
+      vec![RuntimeValue::String(Shared::new("String".to_string()))],
       Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::is_empty("is_empty(\"test\")",
-      vec![RuntimeValue::String("String".to_string())],
+      vec![RuntimeValue::String(Shared::new("String".to_string()))],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::is_empty("is_empty(array(\"test\"))",
-      vec![RuntimeValue::String("String".to_string())],
+      vec![RuntimeValue::String(Shared::new("String".to_string()))],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::test1("test(\"^hello.*\")",
-      vec![RuntimeValue::String("helloWorld".to_string())],
+      vec![RuntimeValue::String(Shared::new("helloWorld".to_string()))],
       Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::test2("test(\"^world.*\")",
-      vec![RuntimeValue::String("helloWorld".to_string())],
+      vec![RuntimeValue::String(Shared::new("helloWorld".to_string()))],
       Ok(vec![RuntimeValue::FALSE].into()))]
 #[case::test3("select(contains(\"hello\"))",
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello world".to_string(), position: None}))],
@@ -532,8 +532,8 @@ fn engine() -> DefaultEngine {
       vec![RuntimeValue::Array(Shared::new(Vec::new()))],
       Ok(vec![RuntimeValue::None].into()))]
 #[case::select("select(contains(\"hello\"))",
-      vec![RuntimeValue::String("hello world".to_string())],
-      Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new("hello world".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
 #[case::closure("
       def make_adder(x):
         fn(y): add(x, y);
@@ -579,7 +579,7 @@ fn engine() -> DefaultEngine {
         vec![RuntimeValue::Number(0.into())],
              Ok(vec!["Hello World!".to_string().into()].into()))]
 #[case::interpolated_string("s\"${self} World!\"",
-        vec![RuntimeValue::String("Hello".into())],
+        vec![RuntimeValue::String(Shared::new("Hello".into()))],
              Ok(vec!["Hello World!".to_string().into()].into()))]
 #[case::nest(".link | update(\"test\")",
       vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![
@@ -590,7 +590,7 @@ fn engine() -> DefaultEngine {
 #[case::selector("nodes | .h",
       vec![
         RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
-        RuntimeValue::String("test".to_string()),
+        RuntimeValue::String(Shared::new("test".to_string())),
       ],
       Ok(vec![
         RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{ values: vec![mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None }),], position: None, depth: 1 })),
@@ -599,7 +599,7 @@ fn engine() -> DefaultEngine {
 #[case::selector("nodes | .h",
       vec![
         RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "text".to_string(), position: None })),
-        RuntimeValue::String("test".to_string()),
+        RuntimeValue::String(Shared::new("test".to_string())),
       ],
       Ok(vec![RuntimeValue::NONE, RuntimeValue::NONE].into()))]
 #[case::def_before_nodes_split("def f(x): x + 1 end | nodes | f(1)",
@@ -607,10 +607,10 @@ fn engine() -> DefaultEngine {
       Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::import_before_nodes_split("import \"json\" | nodes | json::json_stringify({\"a\": 1})",
       vec![RuntimeValue::None, RuntimeValue::None],
-      Ok(vec![RuntimeValue::String("{\"a\": 1}".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("{\"a\": 1}".to_string()))].into()))]
 #[case::include_before_nodes_split("include \"json\" | nodes | json_stringify({\"a\": 1})",
       vec![RuntimeValue::None, RuntimeValue::None],
-      Ok(vec![RuntimeValue::String("{\"a\": 1}".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("{\"a\": 1}".to_string()))].into()))]
 #[case::let_before_nodes_split("let x = self | nodes | x",
       vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())],
       Ok(vec![RuntimeValue::Number(2.into())].into()))]
@@ -879,7 +879,7 @@ fn engine() -> DefaultEngine {
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(1.into()),
-            RuntimeValue::String("test".to_string()),
+            RuntimeValue::String(Shared::new("test".to_string())),
             RuntimeValue::Array(Shared::new(vec![]))
           ]))].into()))]
 #[case::array_length("len([])",
@@ -917,7 +917,7 @@ fn engine() -> DefaultEngine {
           Ok(vec![RuntimeValue::new_dict()].into()))]
 #[case::dict_set_get_string("let m = dict() | let m = set(m, \"name\", \"Jules\") | get(m, \"name\")",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String("Jules".to_string())].into()))]
+          Ok(vec![RuntimeValue::String(Shared::new("Jules".to_string()))].into()))]
 #[case::dict_set_get_number("let m = set(dict(), \"age\", 30) | get(m, \"age\")",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(30.into())].into()))]
@@ -935,7 +935,7 @@ fn engine() -> DefaultEngine {
           Ok(vec![RuntimeValue::None].into()))]
 #[case::dict_set_overwrite("let m = set(dict(), \"name\", \"Jules\") | let m = set(m, \"name\", \"Vincent\") | get(m, \"name\")",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String("Vincent".to_string())].into()))]
+          Ok(vec![RuntimeValue::String(Shared::new("Vincent".to_string()))].into()))]
 #[case::dict_nested_set_get("let m1 = dict() | let m2 = set(dict(), \"level\", 2) | let m = set(m1, \"nested\", m2) | get(get(m, \"nested\"), \"level\")",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(2.into())].into()))]
@@ -944,13 +944,13 @@ fn engine() -> DefaultEngine {
           Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 #[case::dict_keys_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", 2) | keys(m)",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]))].into()))]
+          Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))].into()))]
 #[case::dict_values_empty("values(dict())",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 #[case::dict_values_non_empty("let m = set(set(dict(), \"a\", 1), \"b\", \"hello\") | values(m)",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::String("hello".to_string())]))].into()))]
+          Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::String(Shared::new("hello".to_string()))]))].into()))]
 #[case::dict_len_empty("len(dict())",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -959,7 +959,7 @@ fn engine() -> DefaultEngine {
           Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::dict_type_is_dict("type(dict())",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+          Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 #[case::dict_contains_existing_key(r#"let m = set(dict(), "name", "Jules") | contains(m, "name")"#,
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![RuntimeValue::Boolean(true)].into()))]
@@ -1091,12 +1091,12 @@ fn engine() -> DefaultEngine {
               len(s);
             | group_by(array("cat", "dog", "bird", "fish", "elephant"), get_length)
             "#,
-              vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string()), RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string()), RuntimeValue::String("elephant".to_string())]))],
+              vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("cat".to_string())), RuntimeValue::String(Shared::new("dog".to_string())), RuntimeValue::String(Shared::new("bird".to_string())), RuntimeValue::String(Shared::new("fish".to_string())), RuntimeValue::String(Shared::new("elephant".to_string()))]))],
               Ok(vec![{
                 let mut dict = BTreeMap::new();
-                dict.insert(Ident::new("3"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string())])));
-                dict.insert(Ident::new("4"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string())])));
-                dict.insert(Ident::new("8"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("elephant".to_string())])));
+                dict.insert(Ident::new("3"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("cat".to_string())), RuntimeValue::String(Shared::new("dog".to_string()))])));
+                dict.insert(Ident::new("4"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("bird".to_string())), RuntimeValue::String(Shared::new("fish".to_string()))])));
+                dict.insert(Ident::new("8"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("elephant".to_string()))])));
                 dict.into()
               }].into()))]
 #[case::group_by_empty_array("
@@ -1665,8 +1665,8 @@ fn engine() -> DefaultEngine {
               add(acc, x);
             | fold(["a", "b", "c"], "", concat)
             "#,
-            vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".into()), RuntimeValue::String("b".into()), RuntimeValue::String("c".into())]))],
-            Ok(vec![RuntimeValue::String("abc".into())].into()))]
+            vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".into())), RuntimeValue::String(Shared::new("b".into())), RuntimeValue::String(Shared::new("c".into()))]))],
+            Ok(vec![RuntimeValue::String(Shared::new("abc".into()))].into()))]
 #[case::fold_empty("
             def sum(acc, x):
               add(acc, x);
@@ -1690,11 +1690,11 @@ fn engine() -> DefaultEngine {
               len(s);
             | unique_by(["cat", "dog", "bird", "fish", "elephant"], get_length)
             "#,
-              vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("cat".to_string()), RuntimeValue::String("dog".to_string()), RuntimeValue::String("bird".to_string()), RuntimeValue::String("fish".to_string()), RuntimeValue::String("elephant".to_string())]))],
+              vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("cat".to_string())), RuntimeValue::String(Shared::new("dog".to_string())), RuntimeValue::String(Shared::new("bird".to_string())), RuntimeValue::String(Shared::new("fish".to_string())), RuntimeValue::String(Shared::new("elephant".to_string()))]))],
               Ok(vec![RuntimeValue::Array(Shared::new(vec![
-              RuntimeValue::String("cat".to_string()),
-              RuntimeValue::String("bird".to_string()),
-              RuntimeValue::String("elephant".to_string()),
+              RuntimeValue::String(Shared::new("cat".to_string())),
+              RuntimeValue::String(Shared::new("bird".to_string())),
+              RuntimeValue::String(Shared::new("elephant".to_string())),
               ]))].into()))]
 #[case::unique_by_empty_array("
             def identity(x):
@@ -1718,12 +1718,12 @@ fn engine() -> DefaultEngine {
             Ok(vec![{
                 let mut dict = BTreeMap::new();
                 dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
-                dict.insert(Ident::new("b"), RuntimeValue::String("two".to_string()));
+                dict.insert(Ident::new("b"), RuntimeValue::String(Shared::new("two".to_string())));
                 dict.into()
             }].into()))]
 #[case::dict_literal_access_after_creation(r#"let d = {"name": "Jules", "occupation": "Philosopher"} | get(d, "name")"#,
             vec![RuntimeValue::Number(0.into())],
-            Ok(vec![RuntimeValue::String("Jules".to_string())].into()))]
+            Ok(vec![RuntimeValue::String(Shared::new("Jules".to_string()))].into()))]
 #[case::dict_literal_trailing_comma(r#"let d = {"a":1, "b":2,} | len(d)"#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![RuntimeValue::Number(2.into())].into()))]
@@ -1816,7 +1816,7 @@ fn engine() -> DefaultEngine {
     end
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
 #[case::do_block_multiple_statements("
     do
       let x = 5
@@ -1831,8 +1831,8 @@ fn engine() -> DefaultEngine {
       add(\"processed: \", self)
     end
     ",
-      vec![RuntimeValue::String("input".to_string())],
-      Ok(vec![RuntimeValue::String("processed: input".to_string())].into()))]
+      vec![RuntimeValue::String(Shared::new("input".to_string()))],
+      Ok(vec![RuntimeValue::String(Shared::new("processed: input".to_string()))].into()))]
 #[case::do_block_nested("
     do
       let x = 5
@@ -1866,7 +1866,7 @@ fn engine() -> DefaultEngine {
     | test_fn(1)
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("one".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("one".to_string()))].into()))]
 #[case::if_elif_no_end("
     def test_fn(x):
       if (eq(x, 1)):
@@ -1878,7 +1878,7 @@ fn engine() -> DefaultEngine {
     | test_fn(2)
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("two".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("two".to_string()))].into()))]
 #[case::if_else_no_end("
     def test_fn(x):
       if (eq(x, 1)):
@@ -1890,7 +1890,7 @@ fn engine() -> DefaultEngine {
     | test_fn(3)
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::nested_if_no_end("
     def test_nested(x, y):
       if (gt(x, 0)):
@@ -1903,7 +1903,7 @@ fn engine() -> DefaultEngine {
     | test_nested(1, 1)
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("both positive".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("both positive".to_string()))].into()))]
 #[case::if_in_do_block("
     do
       let x = 5
@@ -1914,7 +1914,7 @@ fn engine() -> DefaultEngine {
     end
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("greater than 3".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("greater than 3".to_string()))].into()))]
 #[case::if_do_block_simple("
     let v = 1
     | if (v > 0):
@@ -1923,11 +1923,11 @@ fn engine() -> DefaultEngine {
       end
     ",
       vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("HELLO WORLD".to_string()))].into()))]
 #[case::let_do_block_simple("
     let v = do \"hello world\" | upcase() end | v
     ",      vec![RuntimeValue::Number(0.into())],
-      Ok(vec![RuntimeValue::String("HELLO WORLD".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("HELLO WORLD".to_string()))].into()))]
 #[case::array_with_comment("[1 # comment\n, 2, 3]",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(Shared::new(vec![
@@ -1963,9 +1963,9 @@ fn engine() -> DefaultEngine {
 #[case::array_iter_strings(r#"["a", "b", "c"] | .[]"#,
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("c".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
+            RuntimeValue::String(Shared::new("c".to_string())),
         ]))].into()))]
 #[case::dict_iter_values(r#"{"a": 1, "b": 2, "c": 3} | .[]"#,
         vec![RuntimeValue::Number(0.into())],
@@ -2081,11 +2081,11 @@ fn engine() -> DefaultEngine {
           | get_variable(\"a\") + get_variable(\"b\")
           ",
           vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String("foobar".to_string())].into()))]
+          Ok(vec![RuntimeValue::String(Shared::new("foobar".to_string()))].into()))]
 #[case::to_mdx_single_text(
             r#""<Component />" | to_mdx() | first() | to_string()"#,
             vec![RuntimeValue::None],
-            Ok(vec![RuntimeValue::String("<Component />".to_string())].into())
+            Ok(vec![RuntimeValue::String(Shared::new("<Component />".to_string()))].into())
           )]
 #[case::var_basic("
     var x = 10 | x
@@ -2106,7 +2106,7 @@ fn engine() -> DefaultEngine {
     var name = \"Alice\" | name = \"Bob\" | name
     ",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("Bob".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("Bob".to_string()))].into()))]
 #[case::var_in_loop("
     var sum = 0 |
     foreach (i, array(1, 2, 3, 4, 5)):
@@ -2281,16 +2281,16 @@ fn engine() -> DefaultEngine {
     }))].into()))]
 #[case::shift_left_string_basic("\"abcdef\" | shift_left(2)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("cdef".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("cdef".to_string()))].into()))]
 #[case::shift_right_string_basic("\"abcdef\" | shift_right(2)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("abcd".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("abcd".to_string()))].into()))]
 #[case::shift_left_string_amount_greater_than_length("\"abc\" | shift_left(10)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 #[case::shift_right_string_amount_equal_to_length("\"abc\" | shift_right(3)",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 #[case::convert_string_to_h1_function("convert(\"Hello\", :h1)",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading {
@@ -2328,16 +2328,16 @@ fn engine() -> DefaultEngine {
     }))].into()))]
 #[case::convert_string_to_base64_operator("\"text\" @ :base64",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("dGV4dA==".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("dGV4dA==".to_string()))].into()))]
 #[case::convert_string_to_uri_operator("\"hello world\" @ :uri",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("hello%20world".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("hello%20world".to_string()))].into()))]
 #[case::convert_string_to_urid_operator("\"hello%20world\" @ :urid",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
 #[case::convert_string_to_sh_operator("\"hello world\" @ :sh",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("'hello world'".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("'hello world'".to_string()))].into()))]
 #[case::convert_string_to_blockquote_operator("\"Hello\" @ \">\"",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Blockquote(mq_markdown::Blockquote {
@@ -2450,19 +2450,19 @@ fn engine() -> DefaultEngine {
 #[case::match_or_number_first_alt(
     r#"match(1) do | 1 || 2 || 3: "small" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("small".to_string()))].into()))]
 #[case::match_or_number_second_alt(
     r#"match(2) do | 1 || 2 || 3: "small" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("small".to_string()))].into()))]
 #[case::match_or_number_third_alt(
     r#"match(3) do | 1 || 2 || 3: "small" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("small".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("small".to_string()))].into()))]
 #[case::match_or_number_no_match_wildcard(
     r#"match(5) do | 1 || 2 || 3: "small" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_number_no_arm_matches(
     r#"match(9) do | 1 || 2: "one or two" end"#,
     vec![RuntimeValue::None],
@@ -2470,43 +2470,43 @@ fn engine() -> DefaultEngine {
 #[case::match_or_string_first_alt(
     r#"match("a") do | "a" || "b": "letter" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("letter".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("letter".to_string()))].into()))]
 #[case::match_or_string_second_alt(
     r#"match("b") do | "a" || "b": "letter" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("letter".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("letter".to_string()))].into()))]
 #[case::match_or_string_no_match(
     r#"match("c") do | "a" || "b": "letter" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_bool_true(
     r#"match(true) do | true || false: "bool" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("bool".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("bool".to_string()))].into()))]
 #[case::match_or_bool_false(
     r#"match(false) do | true || false: "bool" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("bool".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("bool".to_string()))].into()))]
 #[case::match_or_none_literal(
     r#"match(.) do | none || 1: "matched" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("matched".to_string()))].into()))]
 #[case::match_or_type_string_matches(
     r#"match("hello") do | :string || :bool: "str or bool" | :number: "number" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("str or bool".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("str or bool".to_string()))].into()))]
 #[case::match_or_type_number_matches(
     r#"match(42) do | :string || :bool: "str or bool" | :number: "number" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("number".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 #[case::match_or_type_no_match(
     r#"match(42) do | :string || :bool: "str or bool" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_type_array_or_dict(
     r#"match(array(1,2)) do | :array || :dict: "collection" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("collection".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("collection".to_string()))].into()))]
 // type pattern `:markdown` matches any markdown node value
 #[case::match_type_markdown(
     r#"match (.) do | :markdown: "is markdown" | _: "other" end"#,
@@ -2515,32 +2515,32 @@ fn engine() -> DefaultEngine {
 // type pattern `:markdown` does not match a plain string
 #[case::match_type_markdown_no_match_on_string(
     r#"match (.) do | :markdown: "is markdown" | _: "other" end"#,
-    vec![RuntimeValue::String("hello".to_string())],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    vec![RuntimeValue::String(Shared::new("hello".to_string()))],
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_piped_input_first_alt(
     r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
     vec![RuntimeValue::Number(1.into())],
-    Ok(vec![RuntimeValue::String("one or two".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("one or two".to_string()))].into()))]
 #[case::match_or_piped_input_second_alt(
     r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
     vec![RuntimeValue::Number(2.into())],
-    Ok(vec![RuntimeValue::String("one or two".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("one or two".to_string()))].into()))]
 #[case::match_or_piped_input_no_match(
     r#"match(.) do | 1 || 2: "one or two" | _: "other" end"#,
     vec![RuntimeValue::Number(3.into())],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_with_guard_passes(
     r#"let x = 5 | match(x) do | 4 || 5 || 6 if (x > 4): "big" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("big".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("big".to_string()))].into()))]
 #[case::match_or_with_guard_fails(
     r#"let x = 4 | match(x) do | 4 || 5 || 6 if (x > 4): "big" | _: "other" end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_or_two_alts_with_ident_binding(
     r#"match(3) do | 1 || 2: "small" | x: to_string(x) end"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("3".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("3".to_string()))].into()))]
 #[case::from_html_heading(
     r#""<h1>Hello</h1>" | from_html() | first()"#,
     vec![RuntimeValue::None],
@@ -2552,7 +2552,7 @@ fn engine() -> DefaultEngine {
 #[case::from_html_paragraph(
     r#""<p>Hello world</p>" | from_html() | first() | to_text()"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("Hello world".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("Hello world".to_string()))].into()))]
 #[case::from_html_empty(
     r#""" | from_html()"#,
     vec![RuntimeValue::None],
@@ -2576,8 +2576,8 @@ fn engine() -> DefaultEngine {
 #[case::ne_simple("ne(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::csv_parse_simple(r##"_csv_parse("a,b\n1,2", ",", true)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
     RuntimeValue::Dict(Shared::new(BTreeMap::from([
-        (Ident::new("a"), RuntimeValue::String("1".to_string())),
-        (Ident::new("b"), RuntimeValue::String("2".to_string())),
+        (Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string()))),
+        (Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string()))),
     ])))
 ]))].into()))]
 #[case::json_parse_simple(r##"_json_parse("{\"a\": 1}")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
@@ -2590,10 +2590,10 @@ fn engine() -> DefaultEngine {
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
 #[case::xml_parse_simple(r##"_xml_parse("<root>text</root>")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
-    (Ident::new("tag"), RuntimeValue::String("root".to_string())),
+    (Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string()))),
     (Ident::new("attributes"), RuntimeValue::new_dict()),
     (Ident::new("children"), RuntimeValue::Array(Shared::new(vec![]))),
-    (Ident::new("text"), RuntimeValue::String("text".to_string())),
+    (Ident::new("text"), RuntimeValue::String(Shared::new("text".to_string()))),
 ])))].into()))]
 #[case::and_builtin("and(true, false)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::or_builtin("or(false, true)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
@@ -2614,8 +2614,8 @@ fn engine() -> DefaultEngine {
 #[case::token_compress_under_budget(r##"to_markdown("# Title") | token_compress(1000)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::new_markdown(mq_markdown::Node::Heading(mq_markdown::Heading{depth: 1, values: vec!["Title".to_string().into()], position: None}))]))].into()))]
 #[case::token_compress_none(r#"token_compress(None, 100)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 #[case::explode_simple(r##"explode("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into()), RuntimeValue::Number(99.into())]))].into()))]
-#[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
-#[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("foo".to_string())].into()))]
+#[case::implode_simple(r##"implode([97, 98, 99])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
+#[case::intern_simple(r##"intern("foo")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("foo".to_string()))].into()))]
 #[case::nan_builtin("nan() | is_nan()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::infinite_builtin("infinite() > 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::to_md_text_simple(r##"to_md_text("hello")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text{value: "hello".to_string(), position: None}))].into()))]
@@ -2624,9 +2624,9 @@ fn engine() -> DefaultEngine {
 #[case::to_strong_simple(r##"to_strong("bold")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["bold".to_string().into()], position: None}))].into()))]
 #[case::to_em_simple(r##"to_em("italic")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["italic".to_string().into()], position: None}))].into()))]
 #[case::to_code_inline_simple(r##"to_code_inline("code")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "code".to_string().into(), position: None}))].into()))]
-#[case::get_title_simple(r##"to_markdown("[link](url 'title')") | first() | get_title()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
-#[case::get_url_simple(r##"to_markdown("[link](url)") | first() | get_url()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("url".to_string())].into()))]
-#[case::set_code_block_lang_simple(r##"to_markdown("```\ncode\n```") | first() | set_code_block_lang("rust") | .code.lang"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+#[case::get_title_simple(r##"to_markdown("[link](url 'title')") | first() | get_title()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
+#[case::get_url_simple(r##"to_markdown("[link](url)") | first() | get_url()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("url".to_string()))].into()))]
+#[case::set_code_block_lang_simple(r##"to_markdown("```\ncode\n```") | first() | set_code_block_lang("rust") | .code.lang"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("rust".to_string()))].into()))]
 #[case::set_list_ordered_simple(r##"to_markdown("- item") | first() | set_list_ordered(true) | .list.ordered"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::diff_simple(r##"_diff("abc", "abd") | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::get_markdown_position_simple(r##"to_markdown("# title") | first() | _get_markdown_position() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
@@ -2636,13 +2636,13 @@ fn engine() -> DefaultEngine {
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
 #[case::capture_simple(r##"capture("abc123def", "(?P<num>\\d+)")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
-    (Ident::new("num"), RuntimeValue::String("123".to_string())),
+    (Ident::new("num"), RuntimeValue::String(Shared::new("123".to_string()))),
 ])))].into()))]
 #[case::is_debug_mode_simple("is_debug_mode()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(cfg!(feature = "debugger"))].into()))]
 #[case::set_check_simple(r##"to_markdown("- [ ] task") | first() | set_check(true) | .list.checked"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
-#[case::set_children_simple(r##"to_markdown("# heading") | first() | set_children(["new"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("new".to_string())].into()))]
-#[case::set_children_with_markdown_node(r##"to_markdown("# heading") | first() | set_children([to_strong("bold")]) | to_html()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<h1><strong>bold</strong></h1>".to_string())].into()))]
-#[case::stderr_simple(r##"stderr("test stderr")"##, vec![RuntimeValue::String("val".to_string())], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
+#[case::set_children_simple(r##"to_markdown("# heading") | first() | set_children(["new"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("new".to_string()))].into()))]
+#[case::set_children_with_markdown_node(r##"to_markdown("# heading") | first() | set_children([to_strong("bold")]) | to_html()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<h1><strong>bold</strong></h1>".to_string()))].into()))]
+#[case::stderr_simple(r##"stderr("test stderr")"##, vec![RuntimeValue::String(Shared::new("val".to_string()))], Ok(vec![RuntimeValue::String(Shared::new("val".to_string()))].into()))]
 #[case::to_image_simple(r##"to_image("url", "alt", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Image(mq_markdown::Image{url: "url".to_string(), alt: "alt".to_string(), title: Some("title".to_string()), position: None}))].into()))]
 #[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}))].into()))]
 #[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}))].into()))]
@@ -2653,39 +2653,39 @@ fn engine() -> DefaultEngine {
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),
 ], position: None}))].into()))]
 #[case::to_md_table_cell_simple(r##"to_md_table_cell("val", 1, 2)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 1, column: 2, values: vec!["val".to_string().into()], position: None}))].into()))]
-#[case::to_md_name_simple(r##"to_markdown("# title") | first() | to_md_name()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("h1".to_string())].into()))]
+#[case::to_md_name_simple(r##"to_markdown("# title") | first() | to_md_name()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("h1".to_string()))].into()))]
 #[case::to_footnote_simple(r##"to_footnote("text", "1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Footnote(mq_markdown::Footnote{ident: "1".to_string(), values: vec!["text".to_string().into()], position: None}))].into()))]
 #[case::to_footnote_ref_simple(r##"to_footnote_ref("1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef{ident: "1".to_string(), label: Some("1".to_string()), position: None}))].into()))]
 #[case::to_definition_simple(r##"to_definition("url", "ex", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Definition(mq_markdown::Definition{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), ident: "ex".to_string(), label: Some("ex".to_string()), position: None}))].into()))]
 #[case::to_definition_empty_title(r##"to_definition("url", "ex", "")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Definition(mq_markdown::Definition{url: mq_markdown::Url::new("url".to_string()), title: None, ident: "ex".to_string(), label: Some("ex".to_string()), position: None}))].into()))]
 #[case::to_md_html_simple(r##"to_md_html("<br>")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Html(mq_markdown::Html{value: "<br>".to_string(), position: None}))].into()))]
 #[case::to_break_simple("to_break()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Break(mq_markdown::Break{position: None}))].into()))]
-#[case::entries_simple(r##"entries({"a": 1})"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::Number(1.into())]))]))].into()))]
+#[case::entries_simple(r##"entries({"a": 1})"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::Number(1.into())]))]))].into()))]
 #[case::del_array_simple("del([1, 2, 3], 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())]))].into()))]
 #[case::index_string_simple(r##"index("hello", "e")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
-#[case::set_ref_simple(r##"to_markdown("[link][id]\n\n[id]: url") | first() | set_ref("newlabel") | .link_ref.label"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("newlabel".to_string())].into()))]
-#[case::downcase_simple(r##"downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
-#[case::ascii_downcase_simple(r##"ascii_downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+#[case::set_ref_simple(r##"to_markdown("[link][id]\n\n[id]: url") | first() | set_ref("newlabel") | .link_ref.label"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("newlabel".to_string()))].into()))]
+#[case::downcase_simple(r##"downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
+#[case::ascii_downcase_simple(r##"ascii_downcase("ABC")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
 // downcase is Unicode-aware: "À" (U+00C0) is also lowercased to "à" (U+00E0)
-#[case::downcase_non_ascii(r##"downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abcà".to_string())].into()))]
+#[case::downcase_non_ascii(r##"downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abcà".to_string()))].into()))]
 // ascii_downcase only folds ASCII letters: "À" is left untouched, unlike downcase above
-#[case::ascii_downcase_non_ascii(r##"ascii_downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abcÀ".to_string())].into()))]
-#[case::ascii_upcase_simple(r##"ascii_upcase("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABC".to_string())].into()))]
+#[case::ascii_downcase_non_ascii(r##"ascii_downcase("ABCÀ")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abcÀ".to_string()))].into()))]
+#[case::ascii_upcase_simple(r##"ascii_upcase("abc")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ABC".to_string()))].into()))]
 // upcase is Unicode-aware: "à" (U+00E0) is also uppercased to "À" (U+00C0)
-#[case::upcase_non_ascii(r##"upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCÀ".to_string())].into()))]
+#[case::upcase_non_ascii(r##"upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ABCÀ".to_string()))].into()))]
 // ascii_upcase only folds ASCII letters: "à" is left untouched, unlike upcase above
-#[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ABCà".to_string())].into()))]
-#[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("axbx".to_string())].into()))]
-#[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())]))].into()))]
-#[case::scan_no_groups(r##"scan("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("1".to_string()), RuntimeValue::String("2".to_string())]))].into()))]
+#[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ABCà".to_string()))].into()))]
+#[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("axbx".to_string()))].into()))]
+#[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("1".to_string())), RuntimeValue::String(Shared::new("2".to_string()))]))].into()))]
+#[case::scan_no_groups(r##"scan("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("1".to_string())), RuntimeValue::String(Shared::new("2".to_string()))]))].into()))]
 #[case::scan_with_groups(r##"scan("2024-06 2025-07", "(\\d{4})-(\\d{2})")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
-    RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("2024".to_string()), RuntimeValue::String("06".to_string())])),
-    RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("2025".to_string()), RuntimeValue::String("07".to_string())])),
+    RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("2024".to_string())), RuntimeValue::String(Shared::new("06".to_string()))])),
+    RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("2025".to_string())), RuntimeValue::String(Shared::new("07".to_string()))])),
 ]))].into()))]
-#[case::slice_simple(r##"slice("abcdef", 1, 4)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bcd".to_string())].into()))]
+#[case::slice_simple(r##"slice("abcdef", 1, 4)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bcd".to_string()))].into()))]
 #[case::sort_by_impl_simple(r##"_sort_by_impl([[2, "b"], [1, "a"]])"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
-    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::String("a".to_string())])),
-    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::String("b".to_string())])),
+    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::String(Shared::new("a".to_string()))])),
+    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::String(Shared::new("b".to_string()))])),
 ]))].into()))]
 #[case::selector_task(r##"to_markdown("- [ ] todo\n- [x] done") | .task | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::selector_todo(r##"to_markdown("- [ ] todo\n- [x] done") | .todo | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
@@ -2696,18 +2696,18 @@ fn engine() -> DefaultEngine {
 #[case::selector_definition(r##"to_markdown("[id]: url") | .definition | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_dict_empty_returns_none("{} | .h | is_none()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_dict_with_markdown_values(r##"{"docs": to_markdown("# Title\n\ntext")} | .h | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
-#[case::selector_dict_preserves_type_key(r##"{"type": "mytype"} | .h | entries() | first() | last()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("mytype".to_string())].into()))]
+#[case::selector_dict_preserves_type_key(r##"{"type": "mytype"} | .h | entries() | first() | last()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("mytype".to_string()))].into()))]
 #[case::selector_array_of_dicts_preserves_dict(r##"array({"docs": to_markdown("# Title")}) | .h | first() | is_dict()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::TRUE].into()))]
 #[case::selector_call_h(r##"to_markdown("# h1\n\n## h2\n\ntest") | .h(2).depth | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // selector call: multiple numeric args select headings matching any of the given depths
 #[case::selector_call_h_multi_depth(r##"to_markdown("# h1\n\n## h2\n\n### h3\n\n#### h4\n") | .h(2, 3) | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // selector call: a range argument selects headings within that depth range (inclusive)
 #[case::selector_call_h_range(r##"to_markdown("# h1\n\n## h2\n\n### h3\n\n#### h4\n") | .h(1..3) | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
-#[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
-#[case::selector_call_link_url_match(r##"to_markdown("[a](https://a.com) [b](https://b.com)") | .link("https://a.com").value | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
+#[case::selector_call_code_lang(r##"to_markdown("```rust\ncode\n```") | .code("rust").lang | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("rust".to_string()))].into()))]
+#[case::selector_call_link_url_match(r##"to_markdown("[a](https://a.com) [b](https://b.com)") | .link("https://a.com").value | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
 #[case::selector_call_link_url_no_match(r##"to_markdown("[a](https://a.com)") | .link("https://nope.com") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::selector_call_link_url_multi(r##"to_markdown("[a](https://a.com) [b](https://b.com) [c](https://c.com)") | .link("https://a.com", "https://c.com") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::selector_call_image_url_match(r##"to_markdown("![alt1](a.png) ![alt2](b.png)") | .image("a.png").alt | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("alt1".to_string())].into()))]
+#[case::selector_call_image_url_match(r##"to_markdown("![alt1](a.png) ![alt2](b.png)") | .image("a.png").alt | compact() | first()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("alt1".to_string()))].into()))]
 #[case::selector_call_image_url_no_match(r##"to_markdown("![alt](a.png)") | .image("nope.png") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::selector_call_link_ref_match(r##"to_markdown("[link][id]\n\n[id]: url") | .link_ref("id") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_call_link_ref_no_match(r##"to_markdown("[link][id]\n\n[id]: url") | .link_ref("other") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -2719,11 +2719,11 @@ fn engine() -> DefaultEngine {
 #[case::selector_call_footnote_no_match(r##"to_markdown("[^1]: note\n\n# title") | .footnote("2") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 #[case::selector_call_definition_match(r##"to_markdown("[id]: url") | .definition("id") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::selector_call_definition_no_match(r##"to_markdown("[id]: url") | .definition("other") | compact() | len()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
-#[case::selector_bracket_variable_list(r##"let v = 1 | to_markdown("- a\n- b\n- c") | .[v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
-#[case::selector_bracket_variable_table_row(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[v][] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("c".to_string())].into()))]
-#[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
-#[case::selector_bracket_expr_list(r##"let v = 0 | to_markdown("- a\n- b\n- c") | .[v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("- b".to_string())].into()))]
-#[case::selector_bracket_expr_table_col(r##"let v = 0 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
+#[case::selector_bracket_variable_list(r##"let v = 1 | to_markdown("- a\n- b\n- c") | .[v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("- b".to_string()))].into()))]
+#[case::selector_bracket_variable_table_row(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[v][] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("c".to_string()))].into()))]
+#[case::selector_bracket_variable_table_col(r##"let v = 1 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
+#[case::selector_bracket_expr_list(r##"let v = 0 | to_markdown("- a\n- b\n- c") | .[v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("- b".to_string()))].into()))]
+#[case::selector_bracket_expr_table_col(r##"let v = 0 | to_markdown("| a | b |\n|---|---|\n| c | d |") | .[][v + 1] | compact() | first() | to_string()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
 #[case::module_inline_function("
     module math:
         def mysum(a, b): a + b;
@@ -2769,11 +2769,11 @@ fn engine() -> DefaultEngine {
 // partial: 2-param function can be partially applied — the scenario that triggered the redesign
 #[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
 // property selector: quoted form (."key") is the only way to access dict keys
-#[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("h1"), RuntimeValue::String("title".to_string())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
-#[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("url"), RuntimeValue::String("https://example.com".to_string())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("https://example.com".to_string())].into()))]
-#[case::property_selector_quoted_text(r#"."text""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("text"), RuntimeValue::String("hello".to_string())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("h1"), RuntimeValue::String(Shared::new("title".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
+#[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("url"), RuntimeValue::String(Shared::new("https://example.com".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("https://example.com".to_string()))].into()))]
+#[case::property_selector_quoted_text(r#"."text""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // property selector: quoted form with spaces in key
-#[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("my key"), RuntimeValue::String("val".to_string())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("val".to_string())].into()))]
+#[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("my key"), RuntimeValue::String(Shared::new("val".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("val".to_string()))].into()))]
 // property selector: missing key returns None
 #[case::property_selector_quoted_missing(r#"."h1""#, vec![{let d = std::collections::BTreeMap::new(); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
 // nested property selector: ."a"."b" accesses {"a": {"b": 1}}
@@ -2784,25 +2784,25 @@ fn engine() -> DefaultEngine {
 #[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
 // property selector on an array of dicts: maps over each element
 #[case::property_selector_array_of_dicts(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string())); RuntimeValue::Dict(Shared::new(d))},
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Bob".to_string())); RuntimeValue::Dict(Shared::new(d))},
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Charlie".to_string())); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Charlie".to_string()))); RuntimeValue::Dict(Shared::new(d))},
 ]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), "Bob".into(), "Charlie".into()]))].into()))]
 // property selector on an array of dicts: non-dict elements map to None
 #[case::property_selector_array_of_dicts_non_dict_element(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string())); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
     RuntimeValue::Number(1.into()),
 ]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), RuntimeValue::None]))].into()))]
 // property iterator: ."items"[] iterates all elements of the array stored at the key
-#[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))].into()))]
+#[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
 // property iterator with index: ."items"[0] accesses the first element of the array
-#[case::property_selector_iterator_index(r#"."items"[0]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
+#[case::property_selector_iterator_index(r#"."items"[0]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
 // property iterator with index: ."items"[1] accesses the second element
-#[case::property_selector_iterator_index_1(r#"."items"[1]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String("b".to_string())].into()))]
+#[case::property_selector_iterator_index_1(r#"."items"[1]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
 // chained property iterator: ."a"."b"[] iterates all elements of a nested array
 #[case::property_selector_nested_iterator(r#"."a"."b"[]"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 // paren-free calls: 0-arg user-defined function called without parentheses
-#[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Hello!".to_string())].into()))]
+#[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello!".to_string()))].into()))]
 // paren-free calls: 1-arg user-defined function called without parentheses uses current value
 #[case::paren_free_one_arg_user_fn("def double(x): x * 2; | double", vec![RuntimeValue::Number(5.into())], Ok(vec![RuntimeValue::Number(10.into())].into()))]
 // paren-free calls: 1-arg function with 1 default param — pipeline value bound to required param
@@ -2810,35 +2810,35 @@ fn engine() -> DefaultEngine {
 // paren-free calls: 1-arg builtin (len) called without parentheses uses the current pipeline value implicitly
 #[case::paren_free_zero_arg_builtin("compact([1, None, 2]) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // paren-free calls: 1-arg builtin (to_string) called without parentheses uses current value
-#[case::paren_free_one_arg_builtin_to_string("42 | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+#[case::paren_free_one_arg_builtin_to_string("42 | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42".to_string()))].into()))]
 // paren-free calls: upcase builtin
-#[case::paren_free_builtin_upcase("\"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("HELLO".to_string())].into()))]
+#[case::paren_free_builtin_upcase("\"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("HELLO".to_string()))].into()))]
 // paren-free calls: downcase builtin
-#[case::paren_free_builtin_downcase("\"HELLO\" | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::paren_free_builtin_downcase("\"HELLO\" | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // paren-free calls: trim builtin
-#[case::paren_free_builtin_trim("\"  hello  \" | trim", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::paren_free_builtin_trim("\"  hello  \" | trim", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // paren-free calls: to_number builtin
 #[case::paren_free_builtin_to_number("\"42\" | to_number", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // paren-free calls: chained builtin paren-free calls
-#[case::paren_free_builtin_chained("\"  HELLO  \" | trim | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::paren_free_builtin_chained("\"  HELLO  \" | trim | downcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // paren-free calls: chained pipeline with multiple paren-free user functions
 #[case::paren_free_chained_user_fns("def double(x): x * 2; | def inc(x): x + 1; | 5 | double | inc", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(11.into())].into()))]
 // paren-free calls: mix of paren-free user fn and builtin in one pipeline
-#[case::paren_free_mixed_user_and_builtin("def double(x): x * 2; | 21 | double | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+#[case::paren_free_mixed_user_and_builtin("def double(x): x * 2; | 21 | double | to_string", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42".to_string()))].into()))]
 // paren-free calls: variable access still works correctly (not auto-called)
 #[case::paren_free_variable_not_called("let x = 42 | x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // paren-free calls: passing function as value to map still works (no spurious auto-call)
-#[case::paren_free_fn_as_value_preserved("map([\"a\", \"b\"], upcase)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())]))].into()))]
+#[case::paren_free_fn_as_value_preserved("map([\"a\", \"b\"], upcase)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("A".to_string())), RuntimeValue::String(Shared::new("B".to_string()))]))].into()))]
 // paren-free calls: passing user-defined function as value to map (no spurious auto-call)
 #[case::paren_free_user_fn_as_value_preserved("def double(x): x * 2; | map([1, 2, 3], double)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())]))].into()))]
 // pipeline expressions inside function arguments are treated like implicit do...end blocks
-#[case::pipeline_expr_as_function_arg(r#"array("a" | upcase(), "b" | upcase())"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("A".to_string()), RuntimeValue::String("B".to_string())]))].into()))]
+#[case::pipeline_expr_as_function_arg(r#"array("a" | upcase(), "b" | upcase())"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("A".to_string())), RuntimeValue::String(Shared::new("B".to_string()))]))].into()))]
 // shadowing builtin: user-defined function with same name as builtin calls the native builtin inside its body
-#[case::shadow_builtin_upcase("def upcase: upcase() | ltrimstr(\"HELLO\"); | \"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::shadow_builtin_upcase("def upcase: upcase() | ltrimstr(\"HELLO\"); | \"hello\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 // shadowing builtin: user function wraps builtin and adds extra transformation
-#[case::shadow_builtin_with_extra("def upcase(x): upcase(x) | ltrimstr(\"HELLO\"); | upcase(\"hello\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::shadow_builtin_with_extra("def upcase(x): upcase(x) | ltrimstr(\"HELLO\"); | upcase(\"hello\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 // shadowing builtin: outer scope sees user-defined function
-#[case::shadow_builtin_outer_scope("def upcase: upcase(); | \"world\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("WORLD".to_string())].into()))]
+#[case::shadow_builtin_outer_scope("def upcase: upcase(); | \"world\" | upcase", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("WORLD".to_string()))].into()))]
 // gmtime: Unix epoch → UTC broken-down array [year, mon(0-11), mday, hour, min, sec, wday(0=Sun), yday(0-365)]
 #[case::gmtime_epoch("gmtime(0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
     RuntimeValue::Number(1970.into()), // year
@@ -2868,11 +2868,11 @@ fn engine() -> DefaultEngine {
 // localtime: returns array of 8 elements
 #[case::localtime_len("len(localtime(0))", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(8.into())].into()))]
 // localtime: year element is 1970 (UTC+0 to UTC+14 all land on 1970-01-01 for ts=0; UTC-12 still 1969 so we check >=1969)
-#[case::localtime_year_type("type(localtime(0))", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("array".to_string())].into()))]
+#[case::localtime_year_type("type(localtime(0))", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("array".to_string()))].into()))]
 // strftime: format timestamp as date string (UTC)
-#[case::strftime_date("strftime(1704067200, \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("2024-01-01".to_string())].into()))]
-#[case::strftime_datetime("strftime(0, \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("1970-01-01T00:00:00".to_string())].into()))]
-#[case::strftime_year("strftime(1704067200, \"%Y\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("2024".to_string())].into()))]
+#[case::strftime_date("strftime(1704067200, \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("2024-01-01".to_string()))].into()))]
+#[case::strftime_datetime("strftime(0, \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("1970-01-01T00:00:00".to_string()))].into()))]
+#[case::strftime_year("strftime(1704067200, \"%Y\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("2024".to_string()))].into()))]
 // strptime: parse date string with a given format (UTC)
 #[case::strptime_date("strptime(\"2024-01-01\", \"%Y-%m-%d\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1704067200_i64.into())].into()))]
 #[case::strptime_datetime("strptime(\"1970-01-01T00:00:00\", \"%Y-%m-%dT%H:%M:%S\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
@@ -2900,26 +2900,26 @@ fn engine() -> DefaultEngine {
 // date_diff: same → 0
 #[case::date_diff_zero("date_diff(gmtime(1704067200), gmtime(1704067200), \"seconds\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(0.into())].into()))]
 // byte string literals
-#[case::bytes_literal_basic(r#"b"abc""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![97, 98, 99])].into()))]
-#[case::bytes_literal_hex_escape(r#"b"\xf0\x9f\x99\x82""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0xf0, 0x9f, 0x99, 0x82])].into()))]
-#[case::bytes_literal_escape_sequences(r#"b"\n\r\t\\""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![b'\n', b'\r', b'\t', b'\\'])].into()))]
-#[case::bytes_literal_empty(r#"b"""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![])].into()))]
+#[case::bytes_literal_basic(r#"b"abc""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![97, 98, 99]))].into()))]
+#[case::bytes_literal_hex_escape(r#"b"\xf0\x9f\x99\x82""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xf0, 0x9f, 0x99, 0x82]))].into()))]
+#[case::bytes_literal_escape_sequences(r#"b"\n\r\t\\""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![b'\n', b'\r', b'\t', b'\\']))].into()))]
+#[case::bytes_literal_empty(r#"b"""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![]))].into()))]
 #[case::bytes_literal_len(r#"b"abc" | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::bytes_literal_len_hex(r#"b"\xf0\x9f\x99\x82" | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::bytes_literal_equality(r#"b"abc" == b"abc""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::bytes_literal_equality_false(r#"b"abc" == b"def""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::bytes_literal_inequality(r#"b"abc" != b"def""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
-#[case::bytes_literal_type_name(r#"type(b"abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bytes".to_string())].into()))]
+#[case::bytes_literal_type_name(r#"type(b"abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 #[case::bytes_literal_is_empty(r#"is_empty(b"")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::bytes_literal_not_empty(r#"is_empty(b"a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 // as binding: bind value to name and access it later
 #[case::as_binding_basic("42 as x | x", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // as binding: bind returns original pipeline value (not bound value)
-#[case::as_binding_passthrough("42 as x | \"hello\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::as_binding_passthrough("42 as x | \"hello\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // as binding: bind literal to name, use in expression
 #[case::as_binding_in_expression("1 as a | 2 as b | add(a, b)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // as binding: bind selector result to name
-#[case::as_binding_selector("let v = \"hello\" | v as s | upcase(s)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("HELLO".to_string())].into()))]
+#[case::as_binding_selector("let v = \"hello\" | v as s | upcase(s)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("HELLO".to_string()))].into()))]
 // as binding: multiple bindings in same pipeline
 #[case::as_binding_multiple("1 as a | 2 as b | add(a, b)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // as binding: bind in def body
@@ -2933,17 +2933,17 @@ fn engine() -> DefaultEngine {
 // try without catch: try expression fails → returns None
 #[case::try_no_catch_failure("try: undefined_func()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // try/catch: nested try blocks
-#[case::try_nested("try: (try: undefined_func() catch: \"inner\") catch: \"outer\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("inner".to_string())].into()))]
+#[case::try_nested("try: (try: undefined_func() catch: \"inner\") catch: \"outer\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("inner".to_string()))].into()))]
 // try/catch(e): error binder is bound to a dict with the failure message
-#[case::try_catch_binder(r#"try: error("boom") catch(e): e["message"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("boom".to_string())].into()))]
+#[case::try_catch_binder(r#"try: error("boom") catch(e): e["message"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("boom".to_string()))].into()))]
 // try/catch(e): the full error dict is accessible when bound directly
 #[case::try_catch_binder_dict(r#"try: error("boom") catch(e): e"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
-    (Ident::new("message"), RuntimeValue::String("boom".to_string())),
+    (Ident::new("message"), RuntimeValue::String(Shared::new("boom".to_string()))),
 ])))].into()))]
 // try/catch(e): the binder is unused when the try expression succeeds
 #[case::try_catch_binder_unused_on_success("try: 42 catch(e): 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // try/catch(e): binder name does not leak outside the catch expression
-#[case::try_catch_binder_scoped(r#"try: error("boom") catch(e): e["message"] | try: e catch: "e is undefined outside catch""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("e is undefined outside catch".to_string())].into()))]
+#[case::try_catch_binder_scoped(r#"try: error("boom") catch(e): e["message"] | try: e catch: "e is undefined outside catch""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("e is undefined outside catch".to_string()))].into()))]
 // error suppression (`?`): a call that fails becomes None instead of an error
 #[case::error_suppression_on_failing_call(r#"div(1, 0)?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::error_suppression_on_missing_dict_key(r#"get({"a": 1}, "b")?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
@@ -2952,13 +2952,13 @@ fn engine() -> DefaultEngine {
 // error suppression (`?`): works on a call in pipeline position
 #[case::error_suppression_in_pipeline(r#""x" | undefined_func()?"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // foreach over string: iterates each character
-#[case::foreach_string("foreach(c, \"abc\"): c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string()), RuntimeValue::String("c".to_string())]))].into()))]
+#[case::foreach_string("foreach(c, \"abc\"): c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
 // foreach over string with break
-#[case::foreach_string_break("foreach(c, \"abcde\"): if(c == \"c\"): break else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]))].into()))]
+#[case::foreach_string_break("foreach(c, \"abcde\"): if(c == \"c\"): break else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))].into()))]
 // foreach over string with continue
-#[case::foreach_string_continue("foreach(c, \"abc\"): if(c == \"b\"): continue else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("c".to_string())]))].into()))]
+#[case::foreach_string_continue("foreach(c, \"abc\"): if(c == \"b\"): continue else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
 // foreach over string: break with value
-#[case::foreach_string_break_value("foreach(c, \"abc\"): if(c == \"b\"): break: \"found\" else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("found".to_string())].into()))]
+#[case::foreach_string_break_value("foreach(c, \"abc\"): if(c == \"b\"): break: \"found\" else: c;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("found".to_string()))].into()))]
 // pattern destructuring in let: array pattern
 #[case::let_array_destruct("let [a, b] = [1, 2] | add(a, b)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // pattern destructuring in let: array with wildcard
@@ -2966,7 +2966,7 @@ fn engine() -> DefaultEngine {
 // pattern destructuring in let: array rest pattern
 #[case::let_array_rest("let [first, ..rest] = [1, 2, 3] | len(rest)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // pattern destructuring in let: dict pattern
-#[case::let_dict_destruct(r#"let {name: n} = {"name": "Alice"} | n"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Alice".to_string())].into()))]
+#[case::let_dict_destruct(r#"let {name: n} = {"name": "Alice"} | n"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Alice".to_string()))].into()))]
 // pattern destructuring in var: array pattern
 #[case::var_array_destruct("var [a, b] = [10, 20] | a + b", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(30.into())].into()))]
 // match: array pattern
@@ -2978,15 +2978,15 @@ fn engine() -> DefaultEngine {
 // match: no arm matches → None
 #[case::match_no_match("match(42) do | 0: \"zero\" end", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // match: wildcard in arm
-#[case::match_wildcard_arm(r#"match("anything") do | _: "matched" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("matched".to_string())].into()))]
+#[case::match_wildcard_arm(r#"match("anything") do | _: "matched" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("matched".to_string()))].into()))]
 // repeat: string repeated N times
-#[case::repeat_string("\"ab\" * 3", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ababab".to_string())].into()))]
+#[case::repeat_string("\"ab\" * 3", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ababab".to_string()))].into()))]
 // repeat: array repeated N times
 #[case::repeat_array("[1, 2] * 3", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 // repeat: array * 0 returns empty
 #[case::repeat_array_zero("[1, 2] * 0", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 // intern: non-string arg (number)
-#[case::intern_non_string("intern(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+#[case::intern_non_string("intern(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42".to_string()))].into()))]
 // is_nan: non-number returns false
 #[case::is_nan_non_number("is_nan(\"not a number\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 // to_markdown: returns array of markdown nodes
@@ -2994,39 +2994,39 @@ fn engine() -> DefaultEngine {
 // to_mdx: returns array
 #[case::to_mdx_call(r##"to_mdx("<div />") | len"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // all_symbols: returns array of symbols
-#[case::all_symbols_call("all_symbols() | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("array".to_string())].into()))]
+#[case::all_symbols_call("all_symbols() | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("array".to_string()))].into()))]
 // loop: breaks immediately
 #[case::loop_immediate_break("loop: break: 42", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // loop: increment counter until break
 #[case::loop_counter("var i = 0 | loop: i += 1 | if(i >= 3): break: i", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // base64 encode/decode roundtrip
-#[case::base64_encode(r#"base64("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("aGVsbG8=".to_string())].into()))]
-#[case::base64_decode(r#"base64d("aGVsbG8=")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
-#[case::base64_roundtrip(r#"base64d(base64("hello world"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
-#[case::base64url_encode(r#"base64url("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
-#[case::base64url_roundtrip(r#"base64urld(base64url("hello world"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello world".to_string())].into()))]
+#[case::base64_encode(r#"base64("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("aGVsbG8=".to_string()))].into()))]
+#[case::base64_decode(r#"base64d("aGVsbG8=")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
+#[case::base64_roundtrip(r#"base64d(base64("hello world"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
+#[case::base64url_encode(r#"base64url("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+#[case::base64url_roundtrip(r#"base64urld(base64url("hello world"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
 // base64 with bytes
-#[case::base64_bytes(r#"base64(b"\x48\x69") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::base64_bytes(r#"base64(b"\x48\x69") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // md5 hash
 #[case::md5_len(r#"md5("hello") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(32.into())].into()))]
-#[case::md5_type(r#"type(md5("hello"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::md5_type(r#"type(md5("hello"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // sha256 hash
 #[case::sha256_len(r#"sha256("hello") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(64.into())].into()))]
 // sha512 hash
 #[case::sha512_len(r#"sha512("hello") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(128.into())].into()))]
 // hex encoding
-#[case::to_hex_basic(r#"to_hex(b"\xde\xad")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dead".to_string())].into()))]
+#[case::to_hex_basic(r#"to_hex(b"\xde\xad")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dead".to_string()))].into()))]
 #[case::from_hex_len(r#"from_hex("deadbeef") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
-#[case::hex_roundtrip(r#"to_hex(from_hex("deadbeef"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("deadbeef".to_string())].into()))]
+#[case::hex_roundtrip(r#"to_hex(from_hex("deadbeef"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("deadbeef".to_string()))].into()))]
 // utf8: bytes to string
-#[case::utf8_basic(r#"utf8(b"hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::utf8_basic(r#"utf8(b"hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // bitwise byte operations
-#[case::xor_bytes(r#"xor(b"\xff", b"\xf0")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0x0f])].into()))]
-#[case::band_bytes(r#"band(b"\xff", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0x0f])].into()))]
-#[case::bor_bytes(r#"bor(b"\xf0", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0xff])].into()))]
-#[case::bnot_bytes(r#"bnot(b"\x00")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0xff])].into()))]
+#[case::xor_bytes(r#"xor(b"\xff", b"\xf0")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0x0f]))].into()))]
+#[case::band_bytes(r#"band(b"\xff", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0x0f]))].into()))]
+#[case::bor_bytes(r#"bor(b"\xf0", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
+#[case::bnot_bytes(r#"bnot(b"\x00")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
 // pack / unpack
-#[case::pack_u8(r#"pack("u8", 255)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![0xff])].into()))]
+#[case::pack_u8(r#"pack("u8", 255)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
 #[case::pack_unpack_roundtrip(r#"unpack("u8", pack("u8", 42))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 #[case::pack_u16be(r#"pack("u16be", 256) | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // min / max
@@ -3034,12 +3034,12 @@ fn engine() -> DefaultEngine {
 #[case::min_numbers_reverse("min(5, 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::max_numbers("max(3, 5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 #[case::max_numbers_reverse("max(5, 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
-#[case::min_strings(r#"min("apple", "banana")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("apple".to_string())].into()))]
-#[case::max_strings(r#"max("apple", "banana")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("banana".to_string())].into()))]
+#[case::min_strings(r#"min("apple", "banana")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("apple".to_string()))].into()))]
+#[case::max_strings(r#"max("apple", "banana")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("banana".to_string()))].into()))]
 #[case::min_with_none("min(None, 5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::max_with_none("max(None, 5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // to_array conversions
-#[case::to_array_string(r#"to_array("ab")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string()), RuntimeValue::String("b".to_string())]))].into()))]
+#[case::to_array_string(r#"to_array("ab")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))].into()))]
 #[case::to_array_number("to_array(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(42.into())]))].into()))]
 #[case::to_array_bytes(r#"to_array(b"ab")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(97.into()), RuntimeValue::Number(98.into())]))].into()))]
 #[case::to_array_none("to_array(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
@@ -3047,24 +3047,24 @@ fn engine() -> DefaultEngine {
 // to_bytes conversions
 #[case::to_bytes_string(r#"to_bytes("hi") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::to_bytes_bytes(r#"to_bytes(b"hi") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::to_bytes_array("to_bytes([72, 101, 108])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![72, 101, 108])].into()))]
+#[case::to_bytes_array("to_bytes([72, 101, 108])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![72, 101, 108]))].into()))]
 // url_encode
-#[case::url_encode_spaces(r#"url_encode("hello world")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello%20world".to_string())].into()))]
-#[case::url_encode_plain(r#"url_encode("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc".to_string())].into()))]
+#[case::url_encode_spaces(r#"url_encode("hello world")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello%20world".to_string()))].into()))]
+#[case::url_encode_plain(r#"url_encode("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc".to_string()))].into()))]
 // html_escape
-#[case::html_escape_tags(r#"html_escape("<b>hi</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("&lt;b&gt;hi&lt;/b&gt;".to_string())].into()))]
-#[case::html_escape_amp(r#"html_escape("a & b")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a &amp; b".to_string())].into()))]
-#[case::html_escape_markdown_type(r#"to_md_text("<b>hi</b>") | html_escape | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::html_escape_markdown_value(r#"to_md_text("<b>hi</b>") | html_escape | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("&lt;b&gt;hi&lt;/b&gt;".to_string())].into()))]
+#[case::html_escape_tags(r#"html_escape("<b>hi</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("&lt;b&gt;hi&lt;/b&gt;".to_string()))].into()))]
+#[case::html_escape_amp(r#"html_escape("a & b")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a &amp; b".to_string()))].into()))]
+#[case::html_escape_markdown_type(r#"to_md_text("<b>hi</b>") | html_escape | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::html_escape_markdown_value(r#"to_md_text("<b>hi</b>") | html_escape | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("&lt;b&gt;hi&lt;/b&gt;".to_string()))].into()))]
 // html_unescape
-#[case::html_unescape_tags(r#"html_unescape("&lt;b&gt;hi&lt;/b&gt;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<b>hi</b>".to_string())].into()))]
-#[case::html_unescape_numeric(r#"html_unescape("&#65;&#x42;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("AB".to_string())].into()))]
+#[case::html_unescape_tags(r#"html_unescape("&lt;b&gt;hi&lt;/b&gt;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<b>hi</b>".to_string()))].into()))]
+#[case::html_unescape_numeric(r#"html_unescape("&#65;&#x42;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("AB".to_string()))].into()))]
 // strip_tags
-#[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("Hello world!".to_string())].into()))]
-#[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("plain text".to_string())].into()))]
+#[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello world!".to_string()))].into()))]
+#[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
 // sanitize_html
-#[case::sanitize_html_script(r#"sanitize_html("<script>alert('xss')</script><p>hi</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<p>hi</p>".to_string())].into()))]
-#[case::sanitize_html_safe_tags(r#"sanitize_html("<b>bold</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("<b>bold</b>".to_string())].into()))]
+#[case::sanitize_html_script(r#"sanitize_html("<script>alert('xss')</script><p>hi</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<p>hi</p>".to_string()))].into()))]
+#[case::sanitize_html_safe_tags(r#"sanitize_html("<b>bold</b>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<b>bold</b>".to_string()))].into()))]
 // to_number conversion
 #[case::to_number_string(r#"to_number("42")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // to_boolean conversion
@@ -3072,20 +3072,20 @@ fn engine() -> DefaultEngine {
 #[case::to_boolean_false_string(r#"to_boolean("false")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::to_boolean_bool(r#"to_boolean(true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 // to_html conversion
-#[case::to_html_string(r#"to_html("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::to_html_string(r#"to_html("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // to_text conversion
-#[case::to_text_string(r#"to_text("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
-#[case::to_text_number(r#"to_text(42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("42".to_string())].into()))]
+#[case::to_text_string(r#"to_text("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
+#[case::to_text_number(r#"to_text(42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("42".to_string()))].into()))]
 // to_markdown_string
-#[case::to_markdown_string_call(r#"to_markdown_string("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::to_markdown_string_call(r#"to_markdown_string("hello") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // from_date
-#[case::from_date_rfc3339(r#"type(from_date("2024-01-01T00:00:00Z"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("number".to_string())].into()))]
+#[case::from_date_rfc3339(r#"type(from_date("2024-01-01T00:00:00Z"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 // while: continue on first iteration (first=true path)
 #[case::while_continue_first("var i = 0 | while(i < 3): i += 1 | if(i == 1): continue else: i;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // while: break with no previous value (first=true path)
 #[case::while_break_immediately("while(true): break;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // del: remove character from string
-#[case::del_string(r#"del("hello", 1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hllo".to_string())].into()))]
+#[case::del_string(r#"del("hello", 1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hllo".to_string()))].into()))]
 // del: None returns None
 #[case::del_none("del(None, 0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // del: remove key from dict by string
@@ -3111,11 +3111,11 @@ fn engine() -> DefaultEngine {
 // slice: array with out-of-bounds → empty
 #[case::slice_array_empty("slice([1, 2, 3], 5, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 // slice: string with negative indices
-#[case::slice_string_negative(r#"slice("hello", -3, -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ll".to_string())].into()))]
+#[case::slice_string_negative(r#"slice("hello", -3, -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ll".to_string()))].into()))]
 // slice: bytes
-#[case::slice_bytes(r#"slice(b"hello", 1, 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![b'e', b'l', b'l'])].into()))]
+#[case::slice_bytes(r#"slice(b"hello", 1, 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![b'e', b'l', b'l']))].into()))]
 // slice: bytes empty (out of bounds)
-#[case::slice_bytes_empty(r#"slice(b"hello", 10, 20)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(vec![])].into()))]
+#[case::slice_bytes_empty(r#"slice(b"hello", 10, 20)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![]))].into()))]
 // slice: None returns None
 #[case::slice_none("slice(None, 0, 1)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // update: update markdown value
@@ -3128,7 +3128,7 @@ fn engine() -> DefaultEngine {
 #[case::coalesce_first_none("coalesce(None, 42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 #[case::coalesce_first_value("coalesce(10, 42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(10.into())].into()))]
 // to_date: format unix timestamp as string
-#[case::to_date_basic("to_date(0, \"%Y\") | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::to_date_basic("to_date(0, \"%Y\") | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // math: ceil
 #[case::ceil_basic("ceil(2.3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.0f64.into())].into()))]
 #[case::ceil_negative("ceil(-2.7)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-2.0f64).into())].into()))]
@@ -3152,14 +3152,14 @@ fn engine() -> DefaultEngine {
 #[case::negate_positive("negate(5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number((-5).into())].into()))]
 #[case::negate_negative("negate(-5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // join: join array elements with separator
-#[case::join_basic(r#"join(["a", "b", "c"], ", ")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a, b, c".to_string())].into()))]
-#[case::join_empty(r#"join([], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
-#[case::join_single(r#"join(["only"], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("only".to_string())].into()))]
-#[case::join_empty_sep(r#"join(["a", "b"], "")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ab".to_string())].into()))]
+#[case::join_basic(r#"join(["a", "b", "c"], ", ")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a, b, c".to_string()))].into()))]
+#[case::join_empty(r#"join([], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
+#[case::join_single(r#"join(["only"], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("only".to_string()))].into()))]
+#[case::join_empty_sep(r#"join(["a", "b"], "")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ab".to_string()))].into()))]
 // reverse: reverse array, string, bytes
 #[case::reverse_array("reverse([1, 2, 3])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(1.into())]))].into()))]
-#[case::reverse_string(r#"reverse("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("cba".to_string())].into()))]
-#[case::reverse_string_empty(r#"reverse("")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::reverse_string(r#"reverse("abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("cba".to_string()))].into()))]
+#[case::reverse_string_empty(r#"reverse("")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 #[case::reverse_bytes(r#"reverse(b"\x01\x02\x03") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::reverse_array_empty("reverse([])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![]))].into()))]
 // flatten: flatten nested arrays
@@ -3170,26 +3170,26 @@ fn engine() -> DefaultEngine {
 // insert: insert into array, string, dict
 #[case::insert_array_middle("insert([1, 2, 3], 1, 99)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(99.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())]))].into()))]
 #[case::insert_array_begin("insert([1, 2], 0, 0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(0.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
-#[case::insert_string(r#"insert("hllo", 1, "e")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::insert_string(r#"insert("hllo", 1, "e")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 #[case::insert_dict(r#"insert({"a": 1}, "b", 2) | get("b")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // basename, dirname, extname, stem, path_join: path utilities
-#[case::basename_basic(r#"basename("/path/to/file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file.txt".to_string())].into()))]
-#[case::basename_no_dir(r#"basename("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file.txt".to_string())].into()))]
-#[case::dirname_basic(r#"dirname("/path/to/file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("/path/to".to_string())].into()))]
-#[case::dirname_no_dir(r#"dirname("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(".".to_string())].into()))]
-#[case::extname_basic(r#"extname("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(".txt".to_string())].into()))]
-#[case::extname_no_ext(r#"extname("file")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
-#[case::stem_basic(r#"stem("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file".to_string())].into()))]
-#[case::stem_no_ext(r#"stem("file")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("file".to_string())].into()))]
-#[case::path_join_basic(r#"path_join("/path", "file.txt") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::basename_basic(r#"basename("/path/to/file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("file.txt".to_string()))].into()))]
+#[case::basename_no_dir(r#"basename("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("file.txt".to_string()))].into()))]
+#[case::dirname_basic(r#"dirname("/path/to/file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("/path/to".to_string()))].into()))]
+#[case::dirname_no_dir(r#"dirname("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(".".to_string()))].into()))]
+#[case::extname_basic(r#"extname("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(".txt".to_string()))].into()))]
+#[case::extname_no_ext(r#"extname("file")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
+#[case::stem_basic(r#"stem("file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("file".to_string()))].into()))]
+#[case::stem_no_ext(r#"stem("file")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("file".to_string()))].into()))]
+#[case::path_join_basic(r#"path_join("/path", "file.txt") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // glob_match: glob pattern matching against a path
 #[case::glob_match_true(r#"glob_match("*.md", "file.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::glob_match_false(r#"glob_match("*.md", "file.txt")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::glob_match_star_no_cross_separator(r#"glob_match("*.md", "dir/file.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::glob_match_recursive(r#"glob_match("docs/**/*.md", "docs/sub/a.md")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 // add: various type combinations
-#[case::add_string_number(r#"add("hello", 42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello42".to_string())].into()))]
-#[case::add_number_string(r#"add(42, "!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("!42".to_string())].into()))]
+#[case::add_string_number(r#"add("hello", 42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello42".to_string()))].into()))]
+#[case::add_number_string(r#"add(42, "!")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("!42".to_string()))].into()))]
 #[case::add_array_value("add([1, 2], 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())]))].into()))]
 #[case::add_value_array("add(0, [1, 2])", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(0.into()), RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 #[case::add_none_number("add(None, 5)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
@@ -3197,38 +3197,38 @@ fn engine() -> DefaultEngine {
 #[case::add_bytes(r#"add(b"\x01", b"\x02") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 #[case::add_dict_dict(r#"add({"a": 1}, {"b": 2}) | get("a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // get: string index access
-#[case::get_string_index(r#"get("hello", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("h".to_string())].into()))]
-#[case::get_string_negative_index(r#"get("hello", -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("o".to_string())].into()))]
+#[case::get_string_index(r#"get("hello", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("h".to_string()))].into()))]
+#[case::get_string_negative_index(r#"get("hello", -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("o".to_string()))].into()))]
 #[case::get_string_out_of_bounds(r#"get("hi", 99)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::get_array_negative(r#"get([1, 2, 3], -1)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::get_none_key(r#"get(None, "x")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // set: array out-of-bounds extends
 #[case::set_array_extend("set([1, 2], 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // repeat: via builtin
-#[case::repeat_string_builtin(r#"repeat("ab", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ababab".to_string())].into()))]
+#[case::repeat_string_builtin(r#"repeat("ab", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ababab".to_string()))].into()))]
 // word_wrap: wraps ASCII text on word boundaries
-#[case::word_wrap_ascii(r#"word_wrap("the quick brown fox", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("the quick\nbrown fox".to_string())].into()))]
+#[case::word_wrap_ascii(r#"word_wrap("the quick brown fox", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("the quick\nbrown fox".to_string()))].into()))]
 // word_wrap: text shorter than width is unchanged
-#[case::word_wrap_short(r#"word_wrap("hi", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hi".to_string())].into()))]
+#[case::word_wrap_short(r#"word_wrap("hi", 10)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hi".to_string()))].into()))]
 // word_wrap: a single word longer than width is hard-broken
-#[case::word_wrap_hard_break(r#"word_wrap("abcdefgh", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("abc\ndef\ngh".to_string())].into()))]
+#[case::word_wrap_hard_break(r#"word_wrap("abcdefgh", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("abc\ndef\ngh".to_string()))].into()))]
 // word_wrap: CJK characters count as two display columns each
-#[case::word_wrap_cjk(r#"word_wrap("あいうえお", 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("あい\nうえ\nお".to_string())].into()))]
+#[case::word_wrap_cjk(r#"word_wrap("あいうえお", 4)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("あい\nうえ\nお".to_string()))].into()))]
 // word_wrap: width 0 returns the text unchanged
-#[case::word_wrap_zero_width(r#"word_wrap("ab cd", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ab cd".to_string())].into()))]
+#[case::word_wrap_zero_width(r#"word_wrap("ab cd", 0)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ab cd".to_string()))].into()))]
 #[case::word_wrap_none("word_wrap(None, 10)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // truncate: text shorter than the width is unchanged
-#[case::truncate_short(r#"truncate("hello", 10, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::truncate_short(r#"truncate("hello", 10, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // truncate: text longer than width is cut and ellipsis appended
-#[case::truncate_ascii(r#"truncate("hello world", 8, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello...".to_string())].into()))]
+#[case::truncate_ascii(r#"truncate("hello world", 8, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello...".to_string()))].into()))]
 // truncate: CJK characters count as two display columns each
-#[case::truncate_cjk(r#"truncate("あいうえお", 6, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("あ...".to_string())].into()))]
+#[case::truncate_cjk(r#"truncate("あいうえお", 6, "...")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("あ...".to_string()))].into()))]
 #[case::truncate_none("truncate(None, 10, \"...\")", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // update: non-None non-Markdown returns second value
 #[case::update_non_markdown_returns_value("update(42, 99)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(99.into())].into()))]
 // match expression
-#[case::match_basic(r#"match(1) do | 1: "one" | 2: "two" | _: "other" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("one".to_string())].into()))]
-#[case::match_wildcard(r#"match(99) do | 1: "one" | _: "other" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("other".to_string())].into()))]
+#[case::match_basic(r#"match(1) do | 1: "one" | 2: "two" | _: "other" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("one".to_string()))].into()))]
+#[case::match_wildcard(r#"match(99) do | 1: "one" | _: "other" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("other".to_string()))].into()))]
 #[case::match_string(r#"match("hello") do | "hello": 1 | _: 0 end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::match_no_arm_returns_none(r#"match(99) do | 1: "one" | 2: "two" end"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // foreach: iteration produces array of results
@@ -3238,7 +3238,7 @@ fn engine() -> DefaultEngine {
 // function passed as first-class value
 #[case::fn_as_value("def sq(x): x * x; | map([2, 3, 4], sq)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(4.into()), RuntimeValue::Number(9.into()), RuntimeValue::Number(16.into())]))].into()))]
 // try-catch: catches runtime errors
-#[case::try_catch_on_error("try: error(\"e\") catch: \"caught\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("caught".to_string())].into()))]
+#[case::try_catch_on_error("try: error(\"e\") catch: \"caught\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("caught".to_string()))].into()))]
 // optimizer: while loop variant with reassignment
 #[case::while_with_reassign("var n = 0 | while(n < 3): n += 1 | n", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::until_("
@@ -3270,7 +3270,7 @@ fn engine() -> DefaultEngine {
         x;
     ",
       vec![RuntimeValue::None],
-      Ok(vec![RuntimeValue::String("found".to_string())].into()))]
+      Ok(vec![RuntimeValue::String(Shared::new("found".to_string()))].into()))]
 #[case::until_continue("
     var x = 0 |
     until(x >= 4):
@@ -3287,7 +3287,7 @@ fn engine() -> DefaultEngine {
 // until: break with no previous value (first=true path)
 #[case::until_break_immediately("until(false): break;", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::unless_true("unless (true): \"ran\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
-#[case::unless_false("unless (false): \"ran\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ran".to_string())].into()))]
+#[case::unless_false("unless (false): \"ran\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ran".to_string()))].into()))]
 #[case::unless_short_circuits("
     var ran = false |
     unless (true):
@@ -3299,7 +3299,7 @@ fn engine() -> DefaultEngine {
 // len: on bytes
 #[case::len_bytes(r#"len(b"hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // to_string: None
-#[case::to_string_none("to_string(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("".to_string())].into()))]
+#[case::to_string_none("to_string(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("".to_string()))].into()))]
 // range: 3-arg numeric (start, end, step) - end is inclusive
 #[case::range_3_arg("range(1, 8, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(7.into())]))].into()))]
 #[case::range_3_arg_zero("range(0, 6, 3) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
@@ -3320,7 +3320,7 @@ fn engine() -> DefaultEngine {
 // .. operator: string (character) range
 #[case::range_operator_char(r#""a".."e""#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec!["a".into(), "b".into(), "c".into(), "d".into(), "e".into()]))].into()))]
 // compact: non-array returns the value unchanged
-#[case::compact_non_array_string(r#"compact("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("hello".to_string())].into()))]
+#[case::compact_non_array_string(r#"compact("hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 #[case::compact_non_array_number("compact(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // comparison ops: mixed types return false
 #[case::gt_mixed_types(r#"gt("a", 42)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
@@ -3334,15 +3334,15 @@ fn engine() -> DefaultEngine {
 // add: non-array + array prepends element
 #[case::add_element_array("add(1, array(2, 3)) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 // add: dict + dict merges
-#[case::add_dict_dict("add(dict(), dict()) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::add_dict_dict("add(dict(), dict()) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // md5/sha256/sha512: None input → None output
 #[case::md5_none("md5(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::sha256_none("sha256(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::sha512_none("sha512(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // md5/sha256: non-string coerced to string and hashed
-#[case::md5_number("md5(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
-#[case::sha256_number("sha256(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
-#[case::sha512_number("sha512(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::md5_number("md5(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+#[case::sha256_number("sha256(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+#[case::sha512_number("sha512(42) | type", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // min/max: symbol comparisons
 #[case::min_symbols(r#"min(:a, :b)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Symbol(mq_lang::Ident::new("a"))].into()))]
 #[case::max_symbols(r#"max(:a, :b)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Symbol(mq_lang::Ident::new("b"))].into()))]
@@ -3353,27 +3353,27 @@ fn engine() -> DefaultEngine {
 // split: None input → empty array
 #[case::split_none(r#"split(None, " ")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::empty_array()].into()))]
 // to_link: empty title → link with no title
-#[case::to_link_empty_title(r##"to_link("url", "text", "") | type"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::to_link_empty_title(r##"to_link("url", "text", "") | type"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // get_title: link with no title → None
 #[case::get_title_link_no_title(r##"to_link("url", "text", "") | get_title"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // get_title: image with title
-#[case::get_title_image(r##"to_image("url", "alt", "title") | get_title"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("title".to_string())].into()))]
+#[case::get_title_image(r##"to_image("url", "alt", "title") | get_title"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
 // get_title: non-markdown → None
 #[case::get_title_non_markdown("get_title(42)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // set_check: non-list → returns first arg
-#[case::set_check_non_list(r#"set_check("not_a_list", true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_a_list".to_string())].into()))]
+#[case::set_check_non_list(r#"set_check("not_a_list", true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_a_list".to_string()))].into()))]
 // set_list_ordered: non-list → returns first arg
-#[case::set_list_ordered_non_list(r#"set_list_ordered("not_a_list", true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_a_list".to_string())].into()))]
+#[case::set_list_ordered_non_list(r#"set_list_ordered("not_a_list", true)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_a_list".to_string()))].into()))]
 // set_code_block_lang: non-code-block → returns first arg
-#[case::set_code_block_lang_non_code(r#"set_code_block_lang("not_a_code", "rust")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_a_code".to_string())].into()))]
+#[case::set_code_block_lang_non_code(r#"set_code_block_lang("not_a_code", "rust")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_a_code".to_string()))].into()))]
 // set_attr: non-markdown → returns first arg
-#[case::set_attr_non_markdown(r#"set_attr("not_markdown", "key", "value")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
+#[case::set_attr_non_markdown(r#"set_attr("not_markdown", "key", "value")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_markdown".to_string()))].into()))]
 // set_children: non-markdown → returns first arg
-#[case::set_children_non_markdown(r#"set_children("not_markdown", ["x"])"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
+#[case::set_children_non_markdown(r#"set_children("not_markdown", ["x"])"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_markdown".to_string()))].into()))]
 // set_children: leaf node (no children) → unchanged
-#[case::set_children_leaf_node(r##"to_markdown("plain text") | first() | set_children(["ignored"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("plain text".to_string())].into()))]
+#[case::set_children_leaf_node(r##"to_markdown("plain text") | first() | set_children(["ignored"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
 // attr: non-markdown → returns first arg
-#[case::attr_non_markdown(r#"attr("not_markdown", "key")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("not_markdown".to_string())].into()))]
+#[case::attr_non_markdown(r#"attr("not_markdown", "key")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_markdown".to_string()))].into()))]
 // set_variable with symbol key
 #[case::set_variable_symbol(r#"set_variable(:myvar, 42) | get_variable(:myvar)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // _diff: two different strings → paired delete+insert = 2 dicts
@@ -3381,11 +3381,11 @@ fn engine() -> DefaultEngine {
 // _diff: two arrays - equal(1), paired(delete 2/insert 4), equal(3) = 4 dicts
 #[case::diff_arrays_len("_diff(array(1, 2, 3), array(1, 4, 3)) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 // sort: array of strings (triggers position-clearing path for non-markdown)
-#[case::sort_strings(r#"sort(["b", "a", "c"]) | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
+#[case::sort_strings(r#"sort(["b", "a", "c"]) | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
 // from_date: RFC3339 string → number
-#[case::from_date_rfc3339_type(r#"type(from_date("2024-06-01T00:00:00Z"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("number".to_string())].into()))]
+#[case::from_date_rfc3339_type(r#"type(from_date("2024-06-01T00:00:00Z"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 // url_encode: number fallback (non-string/non-markdown uses to_string fallback)
-#[case::url_encode_number(r#"url_encode(42) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::url_encode_number(r#"url_encode(42) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // upcase: None input → None
 #[case::upcase_none("upcase(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // downcase: None input → None
@@ -3409,7 +3409,7 @@ fn engine() -> DefaultEngine {
 // rtrim: None input → None
 #[case::rtrim_none("rtrim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // print: returns current value unchanged
-#[case::print_returns_current(r#"print("side effect")"#, vec![RuntimeValue::String("input_val".to_string())], Ok(vec![RuntimeValue::String("input_val".to_string())].into()))]
+#[case::print_returns_current(r#"print("side effect")"#, vec![RuntimeValue::String(Shared::new("input_val".to_string()))], Ok(vec![RuntimeValue::String(Shared::new("input_val".to_string()))].into()))]
 // ends_with: bytes vs bytes
 #[case::ends_with_bytes(r#"ends_with(b"hello", b"lo")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::ends_with_bytes_false(r#"ends_with(b"hello", b"he")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(false)].into()))]
@@ -3432,61 +3432,61 @@ fn engine() -> DefaultEngine {
 // rindex: array rindex
 #[case::rindex_array(r#"rindex(["a", "b", "a"], "a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // del: dict with symbol key
-#[case::del_dict_symbol(r#"del({a: 1, b: 2}, :a) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::del_dict_symbol(r#"del({a: 1, b: 2}, :a) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // join: error path is tested in error tests; happy path
-#[case::join_array(r#"join(["a", "b", "c"], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a-b-c".to_string())].into()))]
+#[case::join_array(r#"join(["a", "b", "c"], "-")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a-b-c".to_string()))].into()))]
 // set: extend array with gap
 #[case::set_array_extend("set(array(1, 2), 4, 99) | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 // set: dict with symbol key
-#[case::set_dict_symbol(r#"set({a: 1}, :b, 2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::set_dict_symbol(r#"set({a: 1}, :b, 2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // dict: with array of [key, value] pairs
-#[case::dict_from_array_pairs(r#"dict([[":a", 1], [":b", 2]]) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::dict_from_array_pairs(r#"dict([[":a", 1], [":b", 2]]) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // base64/base64d: with Markdown heading input
-#[case::base64_markdown(r#"to_h("test", 1) | base64 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::base64d_markdown(r#"to_h("dGVzdA==", 1) | base64d | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::base64_markdown(r#"to_h("test", 1) | base64 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::base64d_markdown(r#"to_h("dGVzdA==", 1) | base64d | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // base64url: with Markdown input
-#[case::base64url_markdown(r#"to_h("test", 1) | base64url | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::base64url_markdown(r#"to_h("test", 1) | base64url | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // base64urld: with Markdown input (decode base64url-encoded heading text)
-#[case::base64urld_markdown(r#"to_h("dGVzdA", 1) | base64urld | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::base64urld_markdown(r#"to_h("dGVzdA", 1) | base64urld | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // md5/sha256/sha512: with Bytes input (from_hex creates bytes)
-#[case::md5_bytes(r#"md5(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
-#[case::sha256_bytes(r#"sha256(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
-#[case::sha512_bytes(r#"sha512(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("string".to_string())].into()))]
+#[case::md5_bytes(r#"md5(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+#[case::sha256_bytes(r#"sha256(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+#[case::sha512_bytes(r#"sha512(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 // md5/sha256/sha512: with Markdown input
-#[case::md5_markdown(r#"to_h("test", 1) | md5 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::sha256_markdown(r#"to_h("test", 1) | sha256 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::sha512_markdown(r#"to_h("test", 1) | sha512 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::md5_markdown(r#"to_h("test", 1) | md5 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::sha256_markdown(r#"to_h("test", 1) | sha256 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::sha512_markdown(r#"to_h("test", 1) | sha512 | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // to_hex: None input → None
 #[case::to_hex_none("to_hex(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // utf8: None input → None
 #[case::utf8_none("utf8(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim/rtrim/upcase: with Markdown input
-#[case::ltrim_markdown(r#"to_h("  test  ", 1) | ltrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::rtrim_markdown(r#"to_h("  test  ", 1) | rtrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::upcase_markdown(r#"to_h("test", 1) | upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
-#[case::ascii_upcase_markdown(r#"to_h("test", 1) | ascii_upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::ltrim_markdown(r#"to_h("  test  ", 1) | ltrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::rtrim_markdown(r#"to_h("  test  ", 1) | rtrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::upcase_markdown(r#"to_h("test", 1) | upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::ascii_upcase_markdown(r#"to_h("test", 1) | ascii_upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // sub/div/mod: string arguments are converted to numbers
 #[case::sub_strings(r#"sub("10", "3")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(7.into())].into()))]
 #[case::div_strings(r#"div("10", "2")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(5.into())].into()))]
 #[case::mod_strings(r#"mod("10", "3")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // mul: string * number repeats string
-#[case::mul_string_repeat(r#"mul("ab", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("ababab".to_string())].into()))]
+#[case::mul_string_repeat(r#"mul("ab", 3)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ababab".to_string()))].into()))]
 // mul: array * number repeats array
 #[case::mul_array_number(r#"mul(array(1, 2), 3) | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(6.into())].into()))]
 // mul: None * number → None
 #[case::mul_none_number("mul(None, 3)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // mul: bytes * number repeats bytes
-#[case::mul_bytes_number(r#"mul(from_hex("ff"), 3) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bytes".to_string())].into()))]
+#[case::mul_bytes_number(r#"mul(from_hex("ff"), 3) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 // get: Markdown node at given character index
-#[case::get_markdown_index(r#"to_h("hello", 1) | get(0) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::get_markdown_index(r#"to_h("hello", 1) | get(0) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // insert: Dict + Symbol key
-#[case::insert_dict_symbol(r#"insert({a: 1}, :b, 2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::insert_dict_symbol(r#"insert({a: 1}, :b, 2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // _csv_parse: basic 1-row parse
 #[case::csv_parse_basic(r#"_csv_parse("a,b\n1,2") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // _csv_parse: with custom delimiter
-#[case::csv_parse_delimiter(r#"_csv_parse("a;b;c", ";") | first | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("a".to_string())].into()))]
+#[case::csv_parse_delimiter(r#"_csv_parse("a;b;c", ";") | first | first"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
 // _csv_parse: with header row
-#[case::csv_parse_header(r#"_csv_parse("name,age\nAlice,30", ",", true) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::csv_parse_header(r#"_csv_parse("name,age\nAlice,30", ",", true) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // _levenshtein_distance: edit distance between two strings
 #[case::levenshtein_distance(r#"_levenshtein_distance("flaw", "lawn")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // _levenshtein_distance: identical strings
@@ -3498,21 +3498,21 @@ fn engine() -> DefaultEngine {
 // _jaro_winkler_distance: identical strings
 #[case::jaro_winkler_distance_identical(r#"_jaro_winkler_distance("abc", "abc")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // _xml_parse: basic element with text
-#[case::xml_parse_basic(r#"_xml_parse("<root>hello</root>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::xml_parse_basic(r#"_xml_parse("<root>hello</root>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // _xml_parse: self-closing element
-#[case::xml_parse_empty_element(r#"_xml_parse("<br/>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::xml_parse_empty_element(r#"_xml_parse("<br/>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // set_variable: with string key
-#[case::set_variable_string_key(r#"set_variable("myvar", 42) | get_variable("myvar") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("number".to_string())].into()))]
+#[case::set_variable_string_key(r#"set_variable("myvar", 42) | get_variable("myvar") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 // _diff: array with string elements hits string inline-diff path
-#[case::diff_arrays_strings(r#"_diff(["old", "same"], ["new", "same"]) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("dict".to_string())].into()))]
+#[case::diff_arrays_strings(r#"_diff(["old", "same"], ["new", "same"]) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // from_hex: with Markdown input (heading with valid hex text)
-#[case::from_hex_markdown(r#"to_h("74657374", 1) | from_hex | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("bytes".to_string())].into()))]
+#[case::from_hex_markdown(r#"to_h("74657374", 1) | from_hex | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 // mul: Markdown * number repeats markdown value
-#[case::mul_markdown_number(r#"to_h("ab", 1) | mul(2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::mul_markdown_number(r#"to_h("ab", 1) | mul(2) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // downcase: with Markdown input
-#[case::downcase_markdown(r#"to_h("TEST", 1) | downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::downcase_markdown(r#"to_h("TEST", 1) | downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // ascii_downcase: with Markdown input
-#[case::ascii_downcase_markdown(r#"to_h("TEST", 1) | ascii_downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+#[case::ascii_downcase_markdown(r#"to_h("TEST", 1) | ascii_downcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // wikilink selector
 #[case::wikilink_select(
     r#"to_markdown("[[target]]") | first() | .wikilink"#,
@@ -3525,11 +3525,11 @@ fn engine() -> DefaultEngine {
 #[case::wikilink_url_attr(
     r#"to_markdown("[[My Notes]]") | first() | .wikilink | .url"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("My Notes".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("My Notes".to_string()))].into()))]
 #[case::wikilink_value_attr(
     r#"to_markdown("[[target|display]]") | first() | .wikilink | .value"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("display".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("display".to_string()))].into()))]
 #[case::link_includes_wikilink(
     r#"to_markdown("[[target]]") | first() | .link"#,
     vec![RuntimeValue::None],
@@ -3538,19 +3538,19 @@ fn engine() -> DefaultEngine {
 #[case::callout_select_type(
     r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | type"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::callout_kind_attr(
     r#"to_markdown("> [!WARNING]\n> body") | first() | .callout | .kind"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("WARNING".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("WARNING".to_string()))].into()))]
 #[case::callout_note_kind_attr(
     r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .kind"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("NOTE".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("NOTE".to_string()))].into()))]
 #[case::callout_title_attr(
     r#"to_markdown("> [!NOTE] My Title\n> body") | first() | .callout | .title"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("My Title".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("My Title".to_string()))].into()))]
 #[case::callout_no_title_attr(
     r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .title"#,
     vec![RuntimeValue::None],
@@ -3558,7 +3558,7 @@ fn engine() -> DefaultEngine {
 #[case::callout_value_attr(
     r#"to_markdown("> [!NOTE]\n> body") | first() | .callout | .value"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("body".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("body".to_string()))].into()))]
 #[case::callout_no_match_on_blockquote(
     r#"to_markdown("> plain quote") | first() | .callout"#,
     vec![RuntimeValue::None],
@@ -3566,24 +3566,24 @@ fn engine() -> DefaultEngine {
 #[case::callout_kind_lowercase_preserved(
     r#"to_markdown("> [!tip]\n> body") | first() | .callout | .kind"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("tip".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("tip".to_string()))].into()))]
 // embed selector
 #[case::embed_select_type(
     r#"to_markdown("![[image.png]]") | first() | .embed | type"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("markdown".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::embed_url_attr(
     r#"to_markdown("![[image.png]]") | first() | .embed | .url"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("image.png".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("image.png".to_string()))].into()))]
 #[case::embed_value_attr(
     r#"to_markdown("![[image.png|300]]") | first() | .embed | .value"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("300".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("300".to_string()))].into()))]
 #[case::embed_value_falls_back_to_target(
     r#"to_markdown("![[note.md]]") | first() | .embed | .value"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("note.md".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("note.md".to_string()))].into()))]
 #[case::embed_no_match_on_wikilink(
     r#"to_markdown("[[target]]") | first() | .embed"#,
     vec![RuntimeValue::None],
@@ -3592,7 +3592,7 @@ fn engine() -> DefaultEngine {
 #[case::descendant_chain_matches_nested_only(
     r#"to_markdown("> ```rust\n> fn a() {}\n> ```\n\n```python\nprint(1)\n```") | .blockquote .code | .lang | compact | first()"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("rust".to_string()))].into()))]
 #[case::descendant_chain_no_match_is_empty(
     r#"to_markdown("> plain quote") | .blockquote .code | compact | first()"#,
     vec![RuntimeValue::None],
@@ -3600,7 +3600,7 @@ fn engine() -> DefaultEngine {
 #[case::descendant_chain_three_levels(
     r#"to_markdown("> - item\n>\n>   ```rust\n>   fn a() {}\n>   ```\n\n- top\n\n  ```rust\n  fn b() {}\n  ```") | .blockquote .list .code | .value | compact | first()"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("fn a() {}".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("fn a() {}".to_string()))].into()))]
 #[case::descendant_chain_step_with_selector_call(
     r#"to_markdown("> ```rust\n> fn a() {}\n> ```") | .blockquote .code("python") | compact | first()"#,
     vec![RuntimeValue::None],
@@ -3608,7 +3608,7 @@ fn engine() -> DefaultEngine {
 #[case::descendant_chain_trailing_attribute(
     r#"to_markdown("> ```rust\n> fn a() {}\n> ```") | .blockquote .code.lang | compact | first()"#,
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::String("rust".to_string())].into()))]
+    Ok(vec![RuntimeValue::String(Shared::new("rust".to_string()))].into()))]
 fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>, #[case] expected: MqResult) {
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }

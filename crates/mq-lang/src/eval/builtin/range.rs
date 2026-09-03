@@ -1,3 +1,4 @@
+use crate::Shared;
 use crate::eval::runtime_value::RuntimeValue;
 
 use super::{Error, MAX_RANGE_SIZE};
@@ -73,14 +74,14 @@ pub(super) fn generate_char_range(
     if step > 0 {
         while current <= end {
             if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
+                result.push(RuntimeValue::String(Shared::new(ch.to_string())));
             }
             current += step;
         }
     } else {
         while current >= end {
             if let Some(ch) = char::from_u32(current as u32) {
-                result.push(RuntimeValue::String(ch.to_string()));
+                result.push(RuntimeValue::String(Shared::new(ch.to_string())));
             }
             current += step;
         }
@@ -119,7 +120,7 @@ pub(super) fn generate_multi_char_range(start: &str, end: &str) -> Result<Vec<Ru
 
     loop {
         if let Ok(s) = String::from_utf8(current.clone()) {
-            result.push(RuntimeValue::String(s));
+            result.push(RuntimeValue::String(s.into()));
         }
 
         if current.as_slice() == end_bytes {

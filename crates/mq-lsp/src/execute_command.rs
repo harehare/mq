@@ -64,27 +64,26 @@ pub(crate) fn response(params: ExecuteCommandParams) -> jsonrpc::Result<Option<s
 
 fn execute(code: &str, input: &str, input_format: Option<&str>) -> jsonrpc::Result<Option<serde_json::Value>> {
     let mut engine = mq_lang::DefaultEngine::default();
-    let input =
-        match input_format.unwrap_or("markdown") {
-            "markdown" => mq_lang::parse_markdown_input(input)
-                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-            "mdx" => mq_lang::parse_mdx_input(input)
-                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-            "html" => mq_lang::parse_html_input(input)
-                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-            "text" => mq_lang::parse_text_input(input)
-                .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string())]),
-            _ => {
-                return Err(jsonrpc::Error {
-                    code: jsonrpc::ErrorCode::InvalidParams,
-                    message: Cow::Owned(format!(
-                        "Unsupported input format: {}",
-                        input_format.unwrap_or("unknown")
-                    )),
-                    data: None,
-                });
-            }
-        };
+    let input = match input_format.unwrap_or("markdown") {
+        "markdown" => mq_lang::parse_markdown_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string().into())]),
+        "mdx" => mq_lang::parse_mdx_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string().into())]),
+        "html" => mq_lang::parse_html_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string().into())]),
+        "text" => mq_lang::parse_text_input(input)
+            .unwrap_or_else(|_| vec![mq_lang::RuntimeValue::String(input.to_string().into())]),
+        _ => {
+            return Err(jsonrpc::Error {
+                code: jsonrpc::ErrorCode::InvalidParams,
+                message: Cow::Owned(format!(
+                    "Unsupported input format: {}",
+                    input_format.unwrap_or("unknown")
+                )),
+                data: None,
+            });
+        }
+    };
 
     engine.load_builtin_module();
     let result = engine.eval(code, input.into_iter());
