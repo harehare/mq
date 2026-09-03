@@ -56,9 +56,60 @@ View it with syntax highlighting:
 bat example.mq
 ```
 
+## Helix
+
+[Helix](https://helix-editor.com/) discovers languages, tree-sitter grammars, and LSP servers through its `languages.toml` config file rather than a dedicated plugin. mq syntax highlighting is provided by [tree-sitter-mq](https://github.com/harehare/tree-sitter-mq), and language features (completion, hover, diagnostics) by [`mq-lsp`](install.md#mq-lsp-language-server).
+
+### Setting up mq support
+
+1. Add the following to `languages.toml` in your Helix config directory (`~/.config/helix/languages.toml`):
+
+```toml
+[[language]]
+name = "mq"
+scope = "source.mq"
+file-types = ["mq"]
+comment-token = "#"
+language-servers = ["mq-lsp"]
+indent = { tab-width = 2, unit = "  " }
+
+[language-server.mq-lsp]
+command = "mq-lsp"
+
+[[grammar]]
+name = "mq"
+source = { git = "https://github.com/harehare/tree-sitter-mq", rev = "main" }
+```
+
+2. Fetch and build the grammar:
+
+```sh
+hx --grammar fetch
+hx --grammar build
+```
+
+3. Copy the highlight queries from tree-sitter-mq into your Helix runtime directory, since Helix does not bundle queries for externally configured grammars:
+
+```sh
+mkdir -p ~/.config/helix/runtime/queries/mq
+curl -o ~/.config/helix/runtime/queries/mq/highlights.scm \
+  https://raw.githubusercontent.com/harehare/tree-sitter-mq/main/queries/highlights.scm
+```
+
+4. Make sure [`mq-lsp`](install.md#mq-lsp-language-server) is installed and on your `PATH`.
+
+5. Verify the setup:
+
+```sh
+hx --health mq
+```
+
+This should report the tree-sitter grammar as found and `mq-lsp` as configured.
+
 ## Editor Support
 
 In addition to bat, mq syntax highlighting is available for:
 
 - **Visual Studio Code**: Install the [mq extension](https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq)
 - **Obsidian**: Install the [mq plugin](https://community.obsidian.md/plugins/mq)
+- **Helix**: See the [Helix](#helix) section above for `languages.toml` setup
