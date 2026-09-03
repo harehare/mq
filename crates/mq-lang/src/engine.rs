@@ -321,7 +321,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// # Examples
     ///
     /// ```rust
-    /// use mq_lang::{DefaultEngine, HostFunctionError, RuntimeValue};
+    /// use mq_lang::{DefaultEngine, HostFunctionError, RuntimeValue, Shared};
     ///
     /// let mut engine = DefaultEngine::default();
     /// engine.load_builtin_module();
