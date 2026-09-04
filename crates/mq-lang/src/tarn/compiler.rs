@@ -120,6 +120,9 @@ struct Compiler<R: ModuleResolver> {
     module_dependencies: Vec<ModuleDependency>,
     /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
+    /// Canonical slots so every `Pattern::Or` alternative binds the same name to the same
+    /// slot; innermost `Or` is last.
+    or_pattern_slots: Vec<FxHashMap<crate::Ident, u16>>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -564,6 +567,7 @@ fn compile_program_impl<R: ModuleResolver>(
         #[cfg(not(feature = "debugger"))]
         module_dependencies: Vec::new(),
         try_depth: 0,
+        or_pattern_slots: Vec::new(),
     };
     if !matches!(builtin_prelude, BuiltinPrelude::None) {
         let builtin_module = compiler
@@ -984,13 +988,12 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let mut end_jumps = Vec::with_capacity(arms.len());
         for arm in arms {
+            // Pattern bindings stay local to this arm.
+            self.scope_mut().push_scope();
             let mut fail_jumps = Vec::new();
-            self.compile_pattern_test(&arm.pattern, subject_slot, &mut fail_jumps)?;
-            if let Some(guard) = &arm.guard {
-                self.compile_expr(guard)?;
-                fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
-            }
-            self.compile_expr(&arm.body)?;
+            let result = self.compile_match_arm(arm, subject_slot, &mut fail_jumps);
+            self.scope_mut().pop_scope();
+            result?;
             end_jumps.push(self.emit(OpCode::Jump(0)));
             for jump in fail_jumps {
                 self.chunk_mut().patch_jump(jump);
@@ -1003,6 +1006,20 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    fn compile_match_arm(
+        &mut self,
+        arm: &ast::MatchArm,
+        subject_slot: u16,
+        fail_jumps: &mut Vec<usize>,
+    ) -> CompileResult<()> {
+        self.compile_pattern_test(&arm.pattern, subject_slot, fail_jumps)?;
+        if let Some(guard) = &arm.guard {
+            self.compile_expr(guard)?;
+            fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
+        }
+        self.compile_expr(&arm.body)
+    }
+
     fn compile_pattern_test(
         &mut self,
         pattern: &Pattern,
@@ -1012,7 +1029,7 @@ impl<R: ModuleResolver> Compiler<R> {
         match pattern {
             Pattern::Wildcard => {}
             Pattern::Ident(ident) => {
-                let slot = self.scope_mut().declare(ident.name);
+                let slot = self.declare_or_take_or_slot(ident.name);
                 self.emit(OpCode::GetLocal(subject_slot));
                 self.emit(OpCode::SetLocal(slot));
             }
@@ -1040,7 +1057,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 for (i, sub) in elems.iter().enumerate() {
                     self.compile_array_elem_test(subject_slot, i, sub, fail_jumps)?;
                 }
-                let rest_slot = self.scope_mut().declare(rest_ident.name);
+                let rest_slot = self.declare_or_take_or_slot(rest_ident.name);
                 self.emit(OpCode::GetLocal(subject_slot));
                 let offset = self
                     .chunk_mut()
@@ -1050,6 +1067,20 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::SetLocal(rest_slot));
             }
             Pattern::Or(alts) => {
+                // Share one slot per name across alternatives so the arm body sees
+                // whichever branch actually matched.
+                let mut names = Vec::new();
+                for alt in alts {
+                    collect_pattern_idents(alt, &mut names);
+                }
+                names.sort();
+                names.dedup();
+                let slots = names
+                    .into_iter()
+                    .map(|name| (name, self.scope_mut().declare(name)))
+                    .collect();
+                self.or_pattern_slots.push(slots);
+
                 let mut success_jumps = Vec::with_capacity(alts.len().saturating_sub(1));
                 for (i, alt) in alts.iter().enumerate() {
                     let mut local_fails = Vec::new();
@@ -1066,6 +1097,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 for s in success_jumps {
                     self.chunk_mut().patch_jump(s);
                 }
+                self.or_pattern_slots.pop();
             }
             Pattern::Dict(entries) => {
                 self.emit(OpCode::GetLocal(subject_slot));
@@ -1073,6 +1105,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
 
                 for (key, sub_pattern) in entries {
+                    self.emit(OpCode::GetLocal(subject_slot));
+                    let key_idx = self.chunk_mut().push_const(RuntimeValue::Symbol(key.name));
+                    self.emit(OpCode::Const(key_idx));
+                    self.emit(OpCode::CallBuiltin(builtins::HAS.into(), 2));
+                    fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
+
                     let value_slot = self.scope_mut().declare_synthetic();
                     self.emit(OpCode::GetLocal(subject_slot));
                     let key_idx = self.chunk_mut().push_const(RuntimeValue::Symbol(key.name));
@@ -1080,17 +1118,20 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::CallBuiltin(builtins::GET.into(), 2));
                     self.emit(OpCode::SetLocal(value_slot));
 
-                    self.emit(OpCode::GetLocal(value_slot));
-                    self.emit(OpCode::TypeCheck("none".into()));
-                    let has_value = self.emit(OpCode::JumpIfFalse(0));
-                    fail_jumps.push(self.emit(OpCode::Jump(0)));
-                    self.chunk_mut().patch_jump(has_value);
-
                     self.compile_pattern_test(sub_pattern, value_slot, fail_jumps)?;
                 }
             }
         }
         Ok(())
+    }
+
+    /// Reuses the in-progress `Pattern::Or`'s slot for `name`, if any; else declares fresh.
+    fn declare_or_take_or_slot(&mut self, name: crate::Ident) -> u16 {
+        if let Some(&slot) = self.or_pattern_slots.last().and_then(|slots| slots.get(&name)) {
+            slot
+        } else {
+            self.scope_mut().declare(name)
+        }
     }
 
     fn emit_array_shape_check(&mut self, subject_slot: u16, min_len: usize, cmp: OpCode, fail_jumps: &mut Vec<usize>) {
@@ -2112,7 +2153,10 @@ impl<R: ModuleResolver> Compiler<R> {
         });
         self.emit(OpCode::GetLocal(acc_slot));
         self.emit(OpCode::SetLocal(SELF_SLOT));
-        self.compile_body(body)?;
+        self.scope_mut().push_scope();
+        let body_result = self.compile_body(body);
+        self.scope_mut().pop_scope();
+        body_result?;
         // Keep `self` in sync for the next loop condition.
         self.emit(OpCode::SetLocal(SELF_SLOT));
         self.emit(OpCode::GetLocal(SELF_SLOT));
@@ -2142,6 +2186,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::Const(zero));
         self.emit(OpCode::SetLocal(index_slot));
 
+        self.scope_mut().push_scope();
         let loop_var_slot = self.scope_mut().declare(ident);
 
         let loop_start = self.chunk_mut().code.len();
@@ -2161,7 +2206,9 @@ impl<R: ModuleResolver> Compiler<R> {
             chunk_index: self.current,
         });
 
-        self.compile_body(body)?;
+        let body_result = self.compile_body(body);
+        self.scope_mut().pop_scope();
+        body_result?;
         self.emit(OpCode::ForeachCollect(acc_slot));
 
         let finished = self.loops.pop().unwrap();
@@ -2295,6 +2342,20 @@ fn binary_op_opcode(op: BinaryOp) -> OpCode {
         BinaryOp::Le => OpCode::Le,
         BinaryOp::Gt => OpCode::Gt,
         BinaryOp::Ge => OpCode::Ge,
+    }
+}
+
+pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<crate::Ident>) {
+    match pattern {
+        Pattern::Ident(ident) => out.push(ident.name),
+        Pattern::ArrayRest(elems, rest) => {
+            elems.iter().for_each(|e| collect_pattern_idents(e, out));
+            out.push(rest.name);
+        }
+        Pattern::Array(elems) => elems.iter().for_each(|e| collect_pattern_idents(e, out)),
+        Pattern::Or(alts) => alts.iter().for_each(|a| collect_pattern_idents(a, out)),
+        Pattern::Dict(entries) => entries.iter().for_each(|(_, p)| collect_pattern_idents(p, out)),
+        Pattern::Wildcard | Pattern::Literal(_) | Pattern::Type(_) => {}
     }
 }
 

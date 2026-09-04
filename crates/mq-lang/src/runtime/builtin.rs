@@ -3425,6 +3425,22 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+/// Reports whether a dict key or array index is present, unlike `get` whose `None` result
+/// also means "no key". Native replacement for the old pure-mq `has`; same semantics
+/// (non-dict/array subjects, or an out-of-range/negative array index, are just `false`).
+#[mq_macros::mq_fn(name = "has", params = Fixed(2))]
+fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(&Ident::new(key)).into()),
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+            let idx = index.value();
+            Ok((idx >= 0.0 && (idx as usize) < array.len()).into())
+        }
+        _ => Ok(false.into()),
+    }
+}
+
 #[mq_macros::mq_fn(name = "set", params = Fixed(3))]
 fn set_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4100,83 +4116,6 @@ fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
         [RuntimeValue::String(html_str)] => Ok(css::parse_html(html_str)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_html_parse should always receive exactly one argument"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "set_variable", params = Fixed(2))]
-fn set_variable_impl(
-    ident: &Ident,
-    value: &RuntimeValue,
-    mut args: Args,
-    env: &SharedEnv,
-) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Symbol(var_ident), v] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow_mut().define(std::mem::take(var_ident), std::mem::take(v));
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.write()
-                    .unwrap()
-                    .define(std::mem::take(var_ident), std::mem::take(v));
-            }
-
-            Ok(value.clone())
-        }
-        [RuntimeValue::String(var_name), v] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow_mut().define(Ident::new(var_name), std::mem::take(v));
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.write().unwrap().define(Ident::new(var_name), std::mem::take(v));
-            }
-
-            Ok(value.clone())
-        }
-        [a, b] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b)],
-        )),
-        _ => unreachable!("set_variable should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "get_variable", params = Fixed(1))]
-fn get_variable_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Symbol(var_name)] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow().resolve(std::mem::take(var_name)).map_err(Into::into)
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.read()
-                    .unwrap()
-                    .resolve(std::mem::take(var_name))
-                    .map_err(Into::into)
-            }
-        }
-        [RuntimeValue::String(var_name)] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow().resolve(Ident::new(var_name)).map_err(Into::into)
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.read().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
-            }
-        }
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("get_variable should always receive exactly one argument"),
     }
 }
 
@@ -5316,6 +5255,7 @@ mq_macros::builtin_dispatch! {
     SET_CODE_BLOCK_LANG,
     DICT,
     GET,
+    HAS,
     SET,
     KEYS,
     VALUES,
@@ -5345,8 +5285,6 @@ mq_macros::builtin_dispatch! {
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
     _XML_PARSE,
-    SET_VARIABLE,
-    GET_VARIABLE,
     IS_DEBUG_MODE,
     SHIFT_LEFT,
     SHIFT_RIGHT,
@@ -8496,6 +8434,20 @@ x
         },
     );
     map.insert(
+        SmolStr::new("has"),
+        BuiltinFunctionDoc {
+            description: "Checks if a dict has the given key, or an array has an element at the given index.",
+            params: &["value", "key"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"has({"a": 1}, "a")"#,
+                expected: "true",
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("values"),
         BuiltinFunctionDoc {
             description: "Returns an array of values from the dict.",
@@ -8891,28 +8843,6 @@ x
             params: &["mdx_string"],
             param_types: &["string"],
             returns: "array",
-            examples: &[],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new("set_variable"),
-        BuiltinFunctionDoc {
-            description: "Sets a symbol or variable in the current environment with the given value.",
-            params: &["symbol_or_string", "value"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "dynamic",
-            examples: &[],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new("get_variable"),
-        BuiltinFunctionDoc {
-            description: "Retrieves the value of a symbol or variable from the current environment.",
-            params: &["symbol_or_string"],
-            param_types: &["dynamic"],
-            returns: "dynamic",
             examples: &[],
             capability: None,
         },
@@ -9765,6 +9695,13 @@ mod tests {
     #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
     #[case("eq", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("ne", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("different".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("c".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::None)]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(1.into())].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(5.into())].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number((-1).into())].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![RuntimeValue::String(Shared::new("not a container".into())), RuntimeValue::String(Shared::new("key".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
     fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new(func_name);
         assert_eq!(

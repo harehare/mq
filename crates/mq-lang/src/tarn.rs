@@ -19,7 +19,7 @@ use crate::Shared;
 use crate::SharedCell;
 use crate::TokenArena;
 use crate::ast::Program;
-use crate::ast::node::{Expr, Node, Pattern};
+use crate::ast::node::{Expr, Node};
 use crate::engine;
 use crate::error;
 use crate::eval::Options;
@@ -978,27 +978,29 @@ fn program_after_nodes(before: ProgramSlice<'_>, after: ProgramSlice<'_>) -> Pro
         .collect()
 }
 
-/// Top-level `let`/`var` names declared before a `nodes` split (last input's value wins).
+/// Top-level `let`/`var` names declared before a `nodes` split (last input's value wins),
+/// including every name bound by a destructuring pattern.
 fn let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<crate::Ident> {
-    before
-        .iter()
-        .filter_map(|node| match &*node.expr {
-            Expr::Let(Pattern::Ident(ident), _) | Expr::Var(Pattern::Ident(ident), _) => Some(ident.name),
-            _ => None,
-        })
-        .collect()
+    let mut names = Vec::new();
+    for node in before {
+        if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+            compiler::collect_pattern_idents(pattern, &mut names);
+        }
+    }
+    names
 }
 
 /// Like [`let_names_before_nodes`], but for the whole program and including `def`.
 fn top_level_binding_names(program: &Program) -> Vec<crate::Ident> {
-    program
-        .iter()
-        .filter_map(|node| match &*node.expr {
-            Expr::Let(Pattern::Ident(ident), _) | Expr::Var(Pattern::Ident(ident), _) => Some(ident.name),
-            Expr::Def(ident, ..) => Some(ident.name),
-            _ => None,
-        })
-        .collect()
+    let mut names = Vec::new();
+    for node in program {
+        match &*node.expr {
+            Expr::Let(pattern, _) | Expr::Var(pattern, _) => compiler::collect_pattern_idents(pattern, &mut names),
+            Expr::Def(ident, ..) => names.push(ident.name),
+            _ => {}
+        }
+    }
+    names
 }
 
 #[cfg(not(feature = "sync"))]
@@ -2146,6 +2148,16 @@ mod tests {
     #[case::match_or_pattern_miss("match(9) do | 1 || 2 || 3: 1 | _: 0 end", 0.0)]
     #[case::match_dict_pattern(r#"match({"x": 10}) do | {x: v}: v end"#, 10.0)]
     #[case::match_dict_pattern_missing_key(r#"match({"x": 10}) do | {y: v}: v | _: -1 end"#, -1.0)]
+    #[case::match_dict_pattern_key_present_but_none(r#"match({"x": None}) do | {x: v}: -1 | _: -2 end"#, -1.0)]
+    #[case::or_pattern_shares_binding_slot_alt1("match([1]) do | [a] || [a, _]: a end", 1.0)]
+    #[case::or_pattern_shares_binding_slot_alt2("match([9, 8]) do | [a] || [a, _]: a end", 9.0)]
+    #[case::or_pattern_shares_binding_slot_dict_variant(r#"match({"a": 1}) do | {a: v} || {b: v}: v end"#, 1.0)]
+    #[case::match_guard_sees_pattern_bound_var("match(5) do | x if (x > 3): x | _: -1 end", 5.0)]
+    #[case::or_pattern_guard_sees_the_matching_alternatives_binding(
+        "match([9, 8]) do | [a] || [a, _] if (a > 5): a | _: -1 end",
+        9.0
+    )]
+    #[case::foreach_loop_var_shadow_does_not_mutate_outer("let x = 100 | foreach(x, [1, 2, 3]): x; | x", 100.0)]
     #[case::default_param_used_when_supplied("def add(a, b = 10): a + b; | add(1, 2)", 3.0)]
     #[case::default_param_used_when_omitted("def add(a, b = 10): a + b; | add(1)", 11.0)]
     #[case::multiple_default_params_all_omitted("def msg(a, b = 2, c = 3): a + b + c; | msg(1)", 6.0)]
@@ -2380,6 +2392,37 @@ mod tests {
     #[case::until_first_iteration_self_is_the_incoming_value("until(. != 0): is_none(.);")]
     fn while_until_matches_tree_walker(#[case] code: &str) {
         assert_vm_matches_tree_walker(code, vec![RuntimeValue::Number(0.0.into())]);
+    }
+
+    /// A closure created inside a loop/match block captures the block's *slot*, not a
+    /// per-iteration snapshot — both engines agree a loop variable is one mutable binding
+    /// reused every iteration (closures built in different iterations observe the same,
+    /// final value), while a closure built before the loop keeps its own outer binding.
+    #[rstest]
+    #[case::foreach_loop_var_is_one_binding_shared_by_every_closure(
+        "let fns = foreach(x, [1, 2, 3]): fn(): x;; | foreach(f, fns): f();"
+    )]
+    #[case::foreach_body_local_is_one_binding_shared_by_every_closure(
+        "let fns = foreach(x, [1, 2, 3]): let z = x * 10 | fn(): z;; | foreach(f, fns): f();"
+    )]
+    #[case::while_body_local_is_one_binding_shared_by_every_closure(
+        "var i = 0 | var fns = [] | while (i < 3): let f = fn(): i; | fns = fns + [f] | i += 1; | foreach(f, fns): f();"
+    )]
+    #[case::until_body_local_is_one_binding_shared_by_every_closure(
+        "var i = 0 | var fns = [] | until (i >= 3): let f = fn(): i; | fns = fns + [f] | i += 1; | foreach(f, fns): f();"
+    )]
+    #[case::loop_body_local_closure_sees_the_value_at_capture_time("loop: let f = fn(): 42; | break: f();")]
+    #[case::match_arm_closure_captures_the_pattern_bound_var(
+        "match([1, 2]) do | [a, b]: do let f = fn(): a + b; | f() end end"
+    )]
+    #[case::or_pattern_closure_captures_whichever_alternative_matched(
+        "match([9, 8]) do | [a] || [a, _]: do let f = fn(): a; | f() end end"
+    )]
+    #[case::closure_built_before_a_loop_keeps_its_own_outer_binding(
+        "let x = 100 | let f = fn(): x; | foreach(x, [1, 2, 3]): x; | f()"
+    )]
+    fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
+        assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
     }
 
     // Deliberate divergence from the tree-walker (which returns None here) — not worth the
@@ -3213,6 +3256,31 @@ mod tests {
         ]));
         let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap_err();
         assert!(matches!(err, compiler::CompileError::UndefinedIdent(..)));
+    }
+
+    /// Match arms and loop bodies are their own lexical block: a name bound inside one must
+    /// not resolve in a later arm, after the match, or after the loop ends.
+    #[rstest]
+    #[case::match_arm_binding_does_not_leak_to_a_later_arm("match(1) do | 1: let y = 10 | 2: y end")]
+    #[case::match_arm_binding_does_not_leak_after_the_match("match(1) do | 1: let y = 10 end | y")]
+    #[case::foreach_loop_var_does_not_leak_after_the_loop("foreach(x, [1, 2, 3]): x; | x")]
+    #[case::foreach_body_binding_does_not_leak_after_the_loop("foreach(x, [1, 2, 3]): let z = x * 2; | z")]
+    #[case::while_body_binding_does_not_leak_after_the_loop("var i = 0 | while (i < 3): let z = i * 2 | i += 1; | z")]
+    #[case::until_body_binding_does_not_leak_after_the_loop("var i = 0 | until (i >= 3): let z = i * 2 | i += 1; | z")]
+    #[case::loop_body_binding_does_not_leak_after_the_loop("loop: let z = 42 | break: z; | z")]
+    #[case::nested_match_arm_binding_does_not_leak_to_an_outer_arm(
+        "match(1) do | 1: match(2) do | 2: let n = 99 | 3: n end | 2: n end"
+    )]
+    #[case::array_rest_binding_does_not_leak_after_the_match("match([1, 2, 3]) do | [first, ..rest]: rest end | rest")]
+    #[case::dict_pattern_binding_does_not_leak_after_the_match(r#"match({"x": 1}) do | {x: v}: v end | v"#)]
+    fn block_scoped_bindings_do_not_leak(#[case] code: &str) {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+        let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap_err();
+        assert!(
+            matches!(err, compiler::CompileError::UndefinedIdent(..)),
+            "{code:?}: {err:?}"
+        );
     }
 
     /// A module's vars never change `self`, whichever path binds them.

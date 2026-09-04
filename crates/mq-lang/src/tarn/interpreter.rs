@@ -19,8 +19,6 @@ use std::time::{Duration, Instant};
 /// Instructions between deadline checks.
 const TIMEOUT_CHECK_INTERVAL: u32 = 1024;
 
-static GET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("get_variable"));
-static SET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("set_variable"));
 static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
 
@@ -980,35 +978,6 @@ struct DebugBindings {
     upvalue_bindings: Vec<(Ident, RuntimeValue)>,
 }
 
-/// Exposes frame slots to legacy variable builtins without leaking lexical bindings.
-fn sync_dynamic_env(
-    chunk: &Chunk,
-    locals: &Locals,
-    upvalues: &[Cell],
-    chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
-) {
-    #[cfg(not(feature = "sync"))]
-    let mut env = env.borrow_mut();
-    #[cfg(feature = "sync")]
-    let mut env = env.write().unwrap();
-
-    for (slot, name) in chunk.local_names.iter().enumerate() {
-        if *name != Ident::default()
-            && let Some(value) = locals.get_checked(slot as u16)
-        {
-            env.define(*name, into_runtime_value(value, chunks));
-        }
-    }
-    for (slot, name) in chunk.upvalue_names.iter().enumerate() {
-        if *name != Ident::default()
-            && let Some(cell) = upvalues.get(slot)
-        {
-            env.define(*name, into_runtime_value(read_cell(cell), chunks));
-        }
-    }
-}
-
 fn run_chunk(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
@@ -1431,19 +1400,15 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     args.push(pop_value!());
                 }
                 args.reverse();
-                if *ident == *GET_VARIABLE_IDENT || *ident == *SET_VARIABLE_IDENT {
-                    sync_dynamic_env(chunk, locals, upvalues, chunks, execution.env);
-                }
-                stack.push(StackValue::Value(
-                    call_builtin_args(
-                        ident,
-                        args,
-                        &current_self(locals),
-                        execution.env,
-                        execution.host_functions,
-                    )
-                    .map_err(|e| locate(chunk, ip, e))?,
-                ));
+                let result = call_builtin_args(
+                    ident,
+                    args,
+                    &current_self(locals),
+                    execution.env,
+                    execution.host_functions,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
             }
             OpCode::CallLocal(slot, argc) => {
                 let callee = locals.get(*slot);
