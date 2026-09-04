@@ -165,6 +165,11 @@ impl Rem for Number {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self {
+        // `f64 %` lowers to a `fmod` libm call; integer-valued operands (by far the common
+        // case for `%`) give the same truncated-division result via a hardware `i64 %`.
+        if self.is_int() && other.is_int() && other.0 != 0.0 {
+            return Number((self.0 as i64 % other.0 as i64) as f64);
+        }
         Number(self.0 % other.0)
     }
 }
@@ -229,6 +234,19 @@ mod tests {
         assert_eq!(format!("{}", num_a * num_b), mul_result);
         assert_eq!(format!("{}", num_a / num_b), div_result);
         assert_eq!(format!("{}", num_a % num_b), rem_result);
+    }
+
+    #[rstest]
+    #[case(5.5, 2.0, 1.5)]
+    #[case(5.0, 2.5, 0.0)]
+    #[case(-5.5, 2.0, -1.5)]
+    fn test_rem_fractional_operands(#[case] a: f64, #[case] b: f64, #[case] expected: f64) {
+        assert_eq!((Number::new(a) % Number::new(b)).value(), expected);
+    }
+
+    #[test]
+    fn test_rem_by_zero_is_nan() {
+        assert!((Number::new(5.0) % Number::new(0.0)).value().is_nan());
     }
 
     #[rstest]
