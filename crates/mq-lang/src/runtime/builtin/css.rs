@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 use ego_tree::NodeRef;
 use scraper::{Html, Node, Selector};
 
-use crate::eval::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::RuntimeValue;
 use crate::{Ident, Shared};
 
 use super::Error;

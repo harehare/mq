@@ -1,7 +1,7 @@
 use super::interpreter::{DebugEvent, DebugHook};
 use super::{compiler, interpreter};
-use crate::eval::env::Env;
-use crate::eval::host::HostFunctions;
+use crate::runtime::env::Env;
+use crate::runtime::host::HostFunctions;
 use crate::{
     DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source, TokenArena,
     get_token,
@@ -115,7 +115,7 @@ impl VmDebuggerHook {
                         if expr == crate::ast::constants::identifiers::SELF {
                             output.push_str(&current_value.to_string());
                         } else if let Some(name) = expr.strip_prefix('$') {
-                            output.push_str(&crate::eval::builtin::io_context::current().env_var(name).ok()?);
+                            output.push_str(&crate::runtime::builtin::io_context::current().env_var(name).ok()?);
                         } else {
                             output.push_str(&self.eval_expression(expr, bindings)?.to_string());
                         }

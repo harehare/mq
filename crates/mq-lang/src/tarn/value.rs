@@ -1,6 +1,6 @@
 #[cfg(feature = "tarn")]
 use super::bytecode::Chunk;
-use crate::eval::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::RuntimeValue;
 use crate::{Shared, SharedCell};
 
 pub(crate) type Cell = Shared<SharedCell<StackValue>>;
@@ -206,7 +206,7 @@ impl Locals {
                 let StackValue::Value(RuntimeValue::Array(array)) = &mut *borrowed else {
                     return Err("ForeachCollect accumulator is not an array");
                 };
-                crate::eval::runtime_value::array_mut(array).push(value);
+                crate::runtime::runtime_value::array_mut(array).push(value);
                 Ok(())
             }
             Locals::Boxed(slots) => append_to_array_cell(&slots[slot as usize], value),
@@ -267,7 +267,7 @@ pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(
         let StackValue::Value(RuntimeValue::Array(array)) = &mut *stored else {
             return Err("ForeachCollect accumulator is not an array");
         };
-        crate::eval::runtime_value::array_mut(array).push(value);
+        crate::runtime::runtime_value::array_mut(array).push(value);
     }
     #[cfg(feature = "sync")]
     {
@@ -275,7 +275,7 @@ pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(
         let StackValue::Value(RuntimeValue::Array(array)) = &mut *stored else {
             return Err("ForeachCollect accumulator is not an array");
         };
-        crate::eval::runtime_value::array_mut(array).push(value);
+        crate::runtime::runtime_value::array_mut(array).push(value);
     }
     Ok(())
 }

@@ -23,13 +23,13 @@ use crate::ast::node::{Expr, Node, Pattern};
 use crate::engine;
 use crate::error;
 use crate::eval::Options;
-use crate::eval::host::HostFunctions;
-use crate::eval::runtime_value::RuntimeValue;
 #[cfg(feature = "debug-trace")]
 use crate::get_token;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 use crate::module::resolver::std_resolver::StdModuleResolver;
+use crate::runtime::host::HostFunctions;
+use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver};
 use rustc_hash::FxHashMap;
 use std::fmt;
@@ -743,7 +743,7 @@ impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
             debugger: Shared::new(crate::SharedCell::new(Debugger::new())),
             #[cfg(feature = "debugger")]
             debugger_handler: Shared::new(crate::SharedCell::new(Box::new(
-                crate::eval::debugger::DefaultDebuggerHandler,
+                crate::runtime::debugger::DefaultDebuggerHandler,
             ))),
         }
     }
@@ -793,7 +793,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             debugger: Shared::new(crate::SharedCell::new(Debugger::new())),
             #[cfg(feature = "debugger")]
             debugger_handler: Shared::new(crate::SharedCell::new(Box::new(
-                crate::eval::debugger::DefaultDebuggerHandler,
+                crate::runtime::debugger::DefaultDebuggerHandler,
             ))),
         }
     }
@@ -811,6 +811,14 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
         #[cfg(feature = "sync")]
         let bindings = self.global_bindings.read().unwrap();
         bindings.iter().map(|(ident, value)| (*ident, value.clone())).collect()
+    }
+
+    /// Warms this VM's own builtin.mq parse cache, independent of `Evaluator`.
+    pub(crate) fn load_builtin_module(&mut self, token_arena: TokenArena) {
+        match self.module_loader.load_builtin(token_arena) {
+            Ok(_) | Err(crate::module::error::ModuleError::AlreadyLoaded(_)) => {}
+            Err(e) => panic!("Failed to load builtin module: {e}"),
+        }
     }
 }
 
@@ -2458,8 +2466,9 @@ mod tests {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
         let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
         let debugger = Shared::new(SharedCell::new(crate::Debugger::new()));
-        let handler: Shared<SharedCell<Box<dyn DebuggerHandler>>> =
-            Shared::new(SharedCell::new(Box::new(crate::eval::debugger::DefaultDebuggerHandler)));
+        let handler: Shared<SharedCell<Box<dyn DebuggerHandler>>> = Shared::new(SharedCell::new(Box::new(
+            crate::runtime::debugger::DefaultDebuggerHandler,
+        )));
         let results = compile_and_run_debugged(
             &program,
             inputs.into_iter(),

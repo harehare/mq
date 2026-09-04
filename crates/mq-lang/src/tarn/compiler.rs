@@ -6,11 +6,11 @@ use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::ast::node::{AccessTarget, Expr, Literal, Node, Pattern, StringSegment};
 use crate::ast::{Program, node as ast};
-use crate::eval::builtin;
-use crate::eval::runtime_value::RuntimeValue;
 use crate::module::BUILTIN_FILE;
 #[cfg(all(feature = "tarn", not(feature = "debugger")))]
 use crate::module::ModuleDependency;
+use crate::runtime::builtin;
+use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleError, ModuleLoader, ModuleResolver, TokenArena};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
