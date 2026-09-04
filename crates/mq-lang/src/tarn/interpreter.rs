@@ -1,6 +1,5 @@
 use super::bytecode::{BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use super::compiler::CompiledProgram;
-#[cfg(feature = "tarn")]
 use super::value::VmClosureValue;
 use super::value::{Cell, Closure, Locals, StackValue, read_cell, write_cell};
 use crate::ast::TokenId;
@@ -17,8 +16,7 @@ use std::fmt;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
-/// Number of instructions between wall-clock deadline checks — matches
-/// `Evaluator::TIMEOUT_CHECK_INTERVAL`.
+/// Instructions between deadline checks.
 const TIMEOUT_CHECK_INTERVAL: u32 = 1024;
 
 static GET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("get_variable"));
@@ -26,9 +24,7 @@ static SET_VARIABLE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new("set_va
 static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
 
-/// Deadline and call-depth enforcement shared across every `run_chunk` invocation in one
-/// execution (top-level body, user function calls, `try`/`catch` closures, default-value
-/// thunks), mirroring `Evaluator::check_timeout`/`enter_scope`/`exit_scope`.
+/// Per-execution deadline and call-depth state.
 struct ExecutionLimits {
     deadline: Option<Instant>,
     timeout: Option<Duration>,
@@ -38,17 +34,13 @@ struct ExecutionLimits {
     pools: ExecutionPools,
 }
 
-/// Reusable frame storage retained between executions of cached bytecode. Only `Locals::Flat`
-/// frames are pooled: `Boxed` frames may outlive this call via a captured closure, so they're
-/// never recycled (see `run_chunk`'s `reusable_locals`).
+/// Reusable non-capturing frame storage.
 #[derive(Default)]
 pub(crate) struct ExecutionPools {
-    /// Pooled frames, indexed by local count (not hashed, to skip a per-call hash lookup).
     local_pool: Vec<Vec<Locals>>,
     stack_pool: Vec<Vec<StackValue>>,
 }
 
-/// Local counts at or above this skip pooling.
 const MAX_POOLED_LOCAL_COUNT: usize = 256;
 
 impl ExecutionLimits {
@@ -88,9 +80,6 @@ impl ExecutionLimits {
         self.deadline.is_some()
     }
 
-    /// Call before recursing into a closure's chunk; pair with `exit_call` once it returns
-    /// (on every path, including error). Bounds the VM's own recursion so runaway/deep
-    /// recursion raises `VmError::RecursionError` instead of overflowing the native stack.
     #[inline(always)]
     fn enter_call(&mut self) -> VmResult<()> {
         if self.call_depth >= self.max_call_stack_depth {
@@ -109,10 +98,6 @@ impl ExecutionLimits {
         self.take_locals_with_initialized_prefix(count, 0, captures)
     }
 
-    /// Takes a frame after resetting only slots that will not immediately be overwritten.
-    /// `captures` picks the representation for a freshly-allocated frame (see
-    /// `Chunk::captures_local_slots`); a pooled frame is always `Flat` already (or its
-    /// `sync`-build equivalent), since only those get recycled.
     fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize, captures: bool) -> Locals {
         let locals = if captures {
             None
@@ -179,6 +164,8 @@ pub(crate) struct DebugEvent {
 #[cfg(feature = "debugger")]
 pub(crate) trait DebugHook {
     fn on_boundary(&mut self, event: DebugEvent);
+
+    fn on_explicit_breakpoint(&mut self, event: DebugEvent);
 }
 
 #[cfg(feature = "debugger")]
@@ -298,6 +285,8 @@ struct FixedClosureCall<'a> {
     remove_callee: bool,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
+/// Runs a compiled program.
 pub(crate) fn run(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -308,6 +297,7 @@ pub(crate) fn run(
     run_with_globals(compiled, input, host_functions, timeout, max_call_stack_depth, &[])
 }
 
+/// Runs a compiled program with Engine-defined globals.
 pub(crate) fn run_with_globals(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -328,6 +318,7 @@ pub(crate) fn run_with_globals(
     .0
 }
 
+/// Runs a compiled program and returns reusable execution pools.
 pub(crate) fn run_with_globals_and_pools(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -358,7 +349,7 @@ pub(crate) fn run_with_globals_and_pools(
     )
 }
 
-/// Like [`run_with_globals_and_pools`], but predeclares `bindings` and captures `capture_names`.
+/// Runs with predeclared bindings and captures selected locals.
 pub(crate) fn run_with_globals_capturing_locals(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -386,6 +377,7 @@ pub(crate) fn run_with_globals_capturing_locals(
 }
 
 #[cfg(feature = "debugger")]
+/// Runs a program with debugger callbacks.
 pub(crate) fn run_with_debug_hook_and_globals(
     compiled: &CompiledProgram,
     input: RuntimeValue,
@@ -415,7 +407,7 @@ pub(crate) fn run_with_debug_hook_and_globals(
     .0
 }
 
-/// Debugger counterpart to [`run_with_globals_capturing_locals`].
+/// Captures locals while reporting debugger events.
 #[cfg(feature = "debugger")]
 pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
     compiled: &CompiledProgram,
@@ -461,8 +453,10 @@ fn run_impl(
 }
 
 #[cfg(feature = "debugger")]
+/// Evaluates a debugger expression.
 pub(crate) fn run_debug_expression(
     compiled: &CompiledProgram,
+    input: RuntimeValue,
     bindings: &[RuntimeValue],
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -473,7 +467,7 @@ pub(crate) fn run_debug_expression(
     };
     run_impl_with_bindings(
         compiled,
-        RuntimeValue::None,
+        input,
         bindings,
         RunOptions {
             host_functions,
@@ -615,9 +609,6 @@ fn fresh_locals(count: usize, captures: bool) -> Locals {
     }
 }
 
-/// Resolves a closure's declared upvalue sources against the currently-running frame,
-/// exactly like `MakeClosure`'s handler — shared with `bind_params`, which needs the same
-/// resolution to build a default-value thunk's captures.
 fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell]) -> Vec<Cell> {
     sources
         .iter()
@@ -628,30 +619,16 @@ fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell
         .collect()
 }
 
-/// Calls `callee` with `args`. Shared by `OpCode::CallValue` and `OpCode::MaybeAutoCall`.
 fn call_stack_value(
     callee: StackValue,
-    #[cfg_attr(not(feature = "tarn"), allow(unused_mut))] mut args: Vec<StackValue>,
+    mut args: Vec<StackValue>,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
-        #[cfg(feature = "tarn")]
         let arg_values: Vec<RuntimeValue> = args.into_iter().map(|a| into_runtime_value(a, chunks)).collect();
-        #[cfg(not(feature = "tarn"))]
-        let arg_values: Vec<RuntimeValue> = args
-            .into_iter()
-            .map(|a| match a {
-                StackValue::Value(v) => Ok(v),
-                StackValue::Closure(_) => Err(locate(
-                    call_site.chunk,
-                    call_site.ip,
-                    VmError::Corrupt("closures can't be passed to a native function value"),
-                )),
-            })
-            .collect::<VmResult<Vec<_>>>()?;
         let self_value = current_self(call_site.locals);
         let result = call_builtin(
             &ident,
@@ -664,7 +641,6 @@ fn call_stack_value(
         return Ok(StackValue::Value(result));
     }
 
-    #[cfg(feature = "tarn")]
     let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
         StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
         StackValue::Value(RuntimeValue::VmClosure(vc)) => {
@@ -677,17 +653,11 @@ fn call_stack_value(
         }
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
-    #[cfg(not(feature = "tarn"))]
-    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
-        _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
-    };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
     let callee_locals = execution
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    // Before `bind_params`, since a default value can recurse into this same function.
     execution
         .limits
         .enter_call()
@@ -739,8 +709,6 @@ fn call_stack_value(
     call_result
 }
 
-/// Calls a fixed-arity closure by moving arguments straight from the caller's operand stack
-/// into its parameter slots. This avoids the temporary argument vector used by dynamic calls.
 fn call_fixed_closure_from_stack(
     call: FixedClosureCall<'_>,
     stack: &mut Vec<StackValue>,
@@ -778,8 +746,6 @@ fn call_fixed_closure_from_stack(
         ));
     }
 
-    // Fixed-arity functions reserve contiguous slots for `self` and all required arguments.
-    // Those slots are overwritten below, so only the remaining local slots need clearing.
     let initialized_slots = SELF_SLOT as usize + 1 + arity;
     let callee_locals = execution.limits.take_locals_with_initialized_prefix(
         callee_chunk.local_count,
@@ -874,26 +840,10 @@ fn bind_params(
     for binding in bindings {
         match binding {
             ParamBinding::Variadic(slot) => {
-                #[cfg(feature = "tarn")]
                 let collected: Vec<RuntimeValue> = args
                     .by_ref()
                     .map(|arg| into_runtime_value(arg, context.chunks))
                     .collect();
-                #[cfg(not(feature = "tarn"))]
-                let collected: Vec<RuntimeValue> = {
-                    let mut collected = Vec::new();
-                    for arg in args.by_ref() {
-                        match arg {
-                            StackValue::Value(v) => collected.push(v),
-                            StackValue::Closure(_) => {
-                                return Err(VmError::Corrupt(
-                                    "closures can't be collected into a variadic parameter",
-                                ));
-                            }
-                        }
-                    }
-                    collected
-                };
                 callee_locals.set(*slot, StackValue::Value(RuntimeValue::Array(Shared::new(collected))));
             }
             ParamBinding::Required(slot) => {
@@ -939,8 +889,6 @@ fn bind_params(
     Ok(())
 }
 
-/// Binds the common all-required form without inspecting each `ParamBinding` at call time.
-/// Function compilation reserves slot 0 for `self` and then assigns parameter slots contiguously.
 fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals: &Locals) -> VmResult<()> {
     let arg_count = args.len();
     let first_arg_slot = if arg_count == arity {
@@ -961,10 +909,6 @@ fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals
     Ok(())
 }
 
-/// Decides whether a call binds the pipeline value as its first parameter.
-///
-/// This is the VM equivalent of the evaluator's one-argument-short implicit `.` rule.
-/// Keeping arity validation here makes the parameter-binding loop below purely mechanical.
 fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
     let parameter_count = shape.bindings.len();
     let accepts_explicit_args = arg_count >= shape.required && (shape.has_variadic || arg_count <= parameter_count);
@@ -987,21 +931,12 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
     })
 }
 
-#[cfg(feature = "tarn")]
 fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
     match v {
         StackValue::Value(rv) => rv,
         StackValue::Closure(closure) => {
             RuntimeValue::VmClosure(Shared::new(VmClosureValue::from_closure(chunks, &closure)))
         }
-    }
-}
-
-#[cfg(not(feature = "tarn"))]
-fn into_runtime_value(v: StackValue, _chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
-    match v {
-        StackValue::Value(rv) => rv,
-        StackValue::Closure(_) => RuntimeValue::None,
     }
 }
 
@@ -1012,9 +947,40 @@ fn current_self(locals: &Locals) -> RuntimeValue {
     }
 }
 
-/// Makes statically-resolved slots visible to the legacy variable builtins. This is deliberately
-/// limited to `get_variable`/`set_variable`: publishing every frame's locals to the shared
-/// compatibility environment would leak catch binders after their lexical scope ends.
+#[cfg(feature = "debugger")]
+fn debug_bindings(chunk: &Chunk, locals: &Locals, upvalues: &[Cell]) -> Option<DebugBindings> {
+    let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
+    let mut local_bindings = Vec::new();
+    let mut upvalue_bindings = Vec::new();
+    for (name, slot) in chunk.debug_symbols.bindings() {
+        let value = match slot {
+            DebugSlot::Local(slot) => locals.get_checked(*slot),
+            DebugSlot::Upvalue(slot) => upvalues.get(*slot as usize).map(read_cell),
+        }?;
+        if let StackValue::Value(value) = value {
+            let binding = (*name, value);
+            match slot {
+                DebugSlot::Local(_) => local_bindings.push(binding.clone()),
+                DebugSlot::Upvalue(_) => upvalue_bindings.push(binding.clone()),
+            }
+            bindings.push(binding);
+        }
+    }
+    Some(DebugBindings {
+        bindings,
+        local_bindings,
+        upvalue_bindings,
+    })
+}
+
+#[cfg(feature = "debugger")]
+struct DebugBindings {
+    bindings: Vec<(Ident, RuntimeValue)>,
+    local_bindings: Vec<(Ident, RuntimeValue)>,
+    upvalue_bindings: Vec<(Ident, RuntimeValue)>,
+}
+
+/// Exposes frame slots to legacy variable builtins without leaking lexical bindings.
 fn sync_dynamic_env(
     chunk: &Chunk,
     locals: &Locals,
@@ -1124,21 +1090,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
         };
     }
     macro_rules! pop_value {
-        () => {{
-            #[cfg(feature = "tarn")]
-            {
-                into_runtime_value(pop!(), chunks)
-            }
-            #[cfg(not(feature = "tarn"))]
-            {
-                match pop!() {
-                    StackValue::Value(v) => v,
-                    StackValue::Closure(_) => {
-                        return Err(locate(chunk, ip, VmError::Corrupt("expected a value, got a closure")));
-                    }
-                }
-            }
-        }};
+        () => {{ into_runtime_value(pop!(), chunks) }};
     }
     macro_rules! bail {
         ($e:expr) => {
@@ -1164,24 +1116,12 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
 
-                let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
-                let mut local_bindings = Vec::new();
-                let mut upvalue_bindings = Vec::new();
-                for (name, slot) in chunk.debug_symbols.bindings() {
-                    let value = match slot {
-                        DebugSlot::Local(slot) => locals.get_checked(*slot),
-                        DebugSlot::Upvalue(slot) => upvalues.get(*slot as usize).map(read_cell),
-                    }
+                let DebugBindings {
+                    bindings,
+                    local_bindings,
+                    upvalue_bindings,
+                } = debug_bindings(chunk, locals, upvalues)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
-                    if let StackValue::Value(value) = value {
-                        let binding = (*name, value);
-                        match slot {
-                            DebugSlot::Local(_) => local_bindings.push(binding.clone()),
-                            DebugSlot::Upvalue(_) => upvalue_bindings.push(binding.clone()),
-                        }
-                        bindings.push(binding);
-                    }
-                }
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_boundary(DebugEvent {
                         token_id: *token_id,
@@ -1200,12 +1140,44 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     });
                 }
             }
-            // SAFETY: verify_chunks bounds-checks Const/GetEnvVar/BinaryLocalConst constant indices.
+            #[cfg(feature = "debugger")]
+            OpCode::Breakpoint(token_id) => {
+                let node = chunk
+                    .debug_nodes
+                    .iter()
+                    .rfind(|(candidate, _)| *candidate == *token_id)
+                    .map(|(_, node)| Shared::clone(node))
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
+                debug.current_node = Some(Shared::clone(&node));
+
+                let DebugBindings {
+                    bindings,
+                    local_bindings,
+                    upvalue_bindings,
+                } = debug_bindings(chunk, locals, upvalues)
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
+                if let Some(hook) = debug.hook.as_deref_mut() {
+                    hook.on_explicit_breakpoint(DebugEvent {
+                        token_id: *token_id,
+                        node,
+                        current_value: current_self(locals),
+                        bindings,
+                        local_bindings,
+                        upvalue_bindings,
+                        call_stack: debug.call_stack.clone(),
+                        #[cfg(feature = "debug-trace")]
+                        operand_stack: stack
+                            .iter()
+                            .cloned()
+                            .map(|value| into_runtime_value(value, chunks))
+                            .collect(),
+                    });
+                }
+            }
             OpCode::Const(idx) => stack.push(StackValue::Value(
                 unsafe { chunk.constants.get_unchecked(*idx as usize) }.clone(),
             )),
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            // SAFETY: verify_chunks bounds-checks GetLocal/SetLocal/TeeLocal slots.
             OpCode::GetLocal(slot) => stack.push(unsafe { locals.get_unchecked(*slot) }),
             OpCode::SetLocal(slot) => {
                 let v = pop!();
@@ -1356,7 +1328,6 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         } else {
                             index as usize
                         };
-                        // Read-only: avoids `array_mut`'s `make_mut` deep clone.
                         array.get(index).cloned().unwrap_or(RuntimeValue::None)
                     }
                     (array, index) => call_builtin(
@@ -1565,7 +1536,6 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let value = pop!();
                 let eligible = match &value {
                     StackValue::Closure(closure) => chunks[closure.chunk_index as usize].param_shape.required <= 1,
-                    #[cfg(feature = "tarn")]
                     StackValue::Value(RuntimeValue::VmClosure(vc)) => {
                         vc.chunks[vc.chunk_index as usize].param_shape.required <= 1
                     }
@@ -1809,24 +1779,14 @@ fn type_check(v: &RuntimeValue, type_str: &str) -> bool {
 /// Standalone equivalent of the `pop_value!` macro, for the cold handlers below.
 fn pop_value_from(
     stack: &mut Vec<StackValue>,
-    #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
+    chunks: &Shared<Vec<Chunk>>,
     chunk: &Chunk,
     ip: usize,
 ) -> VmResult<RuntimeValue> {
     let v = stack
         .pop()
         .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow")))?;
-    #[cfg(feature = "tarn")]
-    {
-        Ok(into_runtime_value(v, chunks))
-    }
-    #[cfg(not(feature = "tarn"))]
-    {
-        match v {
-            StackValue::Value(rv) => Ok(rv),
-            StackValue::Closure(_) => Err(locate(chunk, ip, VmError::Corrupt("expected a value, got a closure"))),
-        }
-    }
+    Ok(into_runtime_value(v, chunks))
 }
 
 /// Rare array opcodes, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
@@ -1990,24 +1950,10 @@ fn binary_op_from_opcode(op: &OpCode) -> Option<BinaryOp> {
     }
 }
 
-fn local_runtime_value(
-    locals: &Locals,
-    slot: u16,
-    #[cfg_attr(not(feature = "tarn"), allow(unused_variables))] chunks: &Shared<Vec<Chunk>>,
-) -> VmResult<RuntimeValue> {
+fn local_runtime_value(locals: &Locals, slot: u16, chunks: &Shared<Vec<Chunk>>) -> VmResult<RuntimeValue> {
     // SAFETY: verify_chunks bounds-checks every caller's opcode slot.
     let value = unsafe { locals.get_unchecked(slot) };
-    #[cfg(feature = "tarn")]
-    {
-        Ok(into_runtime_value(value, chunks))
-    }
-    #[cfg(not(feature = "tarn"))]
-    {
-        match value {
-            StackValue::Value(value) => Ok(value),
-            StackValue::Closure(_) => Err(VmError::Corrupt("expected a value, got a closure")),
-        }
-    }
+    Ok(into_runtime_value(value, chunks))
 }
 
 fn eval_binary_op(
@@ -2104,9 +2050,6 @@ fn cmp_op(
     )
 }
 
-/// Calls a builtin by name, falling back to a registered host function — matching the
-/// tree-walker's `Env::resolve`-fails → `host_functions` → `eval_builtin` priority — when
-/// `ident` isn't a real builtin (`Error::NotDefined`).
 fn call_builtin(
     ident: &crate::Ident,
     args: &[RuntimeValue],
@@ -2117,7 +2060,6 @@ fn call_builtin(
     call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
 }
 
-/// Calls a builtin with its already-owned small argument buffer.
 fn call_builtin_args(
     ident: &crate::Ident,
     args: Args,
@@ -2125,14 +2067,10 @@ fn call_builtin_args(
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    // Builtins take ownership of `Args`; retain a copy only for the uncommon host-function
-    // fallback path, which needs the same values after an unknown-builtin result.
     let host_args = host_functions.get(ident).map(|_| args.clone());
     match builtin::eval_builtin(self_value, ident, args, env) {
         Ok(v) => Ok(v),
         Err(builtin::Error::NotDefined(_, _)) => match host_functions.get(ident) {
-            // Catches a panic at the boundary, matching the tree-walker's `eval_host_fn` —
-            // a misbehaving host closure can't unwind through the VM.
             Some(host_fn) => {
                 let Some(host_args) = host_args.as_deref() else {
                     return Err(VmError::Corrupt("host function arguments were not retained"));
@@ -2167,8 +2105,6 @@ fn type_ident() -> &'static crate::Ident {
     &TYPE
 }
 
-/// Applies `selector` to `value`, ported from `Evaluator::eval_selector_expr`: an `Array`
-/// maps per-element and flattens; a `Dict` recurses into every value except `type`.
 fn eval_selector_expr(value: &RuntimeValue, selector: &crate::selector::Selector) -> RuntimeValue {
     use crate::selector::Selector;
     if let Selector::Property(property_name) = selector {
@@ -2227,11 +2163,6 @@ fn eval_selector_expr(value: &RuntimeValue, selector: &crate::selector::Selector
     }
 }
 
-/// Evaluates a selector stored as a compact bytecode operand.
-///
-/// Markdown node semantics remain centralized in [`builtin::eval_selector`]. Arrays and
-/// dictionaries use the generic evaluator because their selector mapping behavior is shared by
-/// every selector kind.
 #[inline]
 fn eval_compact_selector_expr(value: &RuntimeValue, selector: Selector) -> RuntimeValue {
     match value {
@@ -2288,8 +2219,6 @@ fn eval_selector_expr_with_args(
     }
 }
 
-/// Property-selector counterpart to `eval_selector_expr` (`Selector::Property` routes here) —
-/// ported from `Evaluator::eval_property_selector_expr`.
 fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> RuntimeValue {
     match value {
         RuntimeValue::Array(values) => RuntimeValue::Array(Shared::new(
@@ -2306,8 +2235,6 @@ fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> R
     }
 }
 
-/// Collects `value` itself and all nested values recursively (depth-first) — ported from
-/// `Evaluator::collect_recursive`, backing `Selector::Recursive` on an Array/Dict.
 fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
     let mut result = vec![value.clone()];
     match value {

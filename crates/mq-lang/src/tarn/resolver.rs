@@ -55,11 +55,7 @@ impl FunctionScope {
         (self.upvalues.len() - 1) as u16
     }
 
-    /// Like `add_upvalue`, but for capturing a synthetic (name-hidden) slot — a qualified
-    /// `import`/`module` binding — from an ancestor scope. Dedups by `source` instead of by
-    /// name: every such capture shares the sentinel `Ident::default()` name, so name-based
-    /// dedup (`add_upvalue`) would wrongly treat two different qualified bindings captured
-    /// in the same scope as the same upvalue.
+    /// Captures a synthetic slot, deduplicated by source.
     pub(crate) fn add_upvalue_for_source(&mut self, source: UpvalueSource) -> u16 {
         if let Some(idx) = self.upvalues.iter().position(|(_, s)| *s == source) {
             return idx as u16;

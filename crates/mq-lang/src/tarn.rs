@@ -15,7 +15,7 @@ mod resolver;
 pub(crate) mod value;
 
 use crate::Shared;
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 use crate::SharedCell;
 use crate::TokenArena;
 use crate::ast::Program;
@@ -180,8 +180,6 @@ fn format_slot_names(names: &[crate::Ident]) -> String {
         .join(", ")
 }
 
-/// Renders a local/upvalue slot as `slot (name)`, or just `slot` if `names` has no entry
-/// for it (e.g. a slot beyond a debug-only build's tracked names).
 #[cfg(feature = "debug-trace")]
 fn slot_ref(names: &[crate::Ident], slot: u16) -> String {
     match names.get(slot as usize) {
@@ -213,6 +211,8 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
     match opcode {
         #[cfg(feature = "debugger")]
         bytecode::OpCode::StmtBoundary(_) => "StmtBoundary".to_string(),
+        #[cfg(feature = "debugger")]
+        bytecode::OpCode::Breakpoint(_) => "Breakpoint".to_string(),
         bytecode::OpCode::Const(index) => format!("Const {index}"),
         bytecode::OpCode::PushNone => "PushNone".to_string(),
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
@@ -326,10 +326,8 @@ fn format_value(value: &RuntimeValue) -> String {
     }
 }
 
-/// Bytecode retained by [`crate::CompiledProgram`] for repeated VM evaluation. `after` is the
-/// program compiled from the trailing half of a `nodes` split, run once against every input's
-/// aggregated `before` result rather than per input; `None` for a program with no `nodes`.
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+/// Bytecode retained for repeated VM evaluation.
+#[cfg(not(feature = "debugger"))]
 #[derive(Clone)]
 pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
@@ -339,7 +337,7 @@ pub(crate) struct CachedProgram {
     execution_pools: Shared<SharedCell<interpreter::ExecutionPools>>,
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 impl fmt::Debug for CachedProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CachedProgram")
@@ -350,9 +348,8 @@ impl fmt::Debug for CachedProgram {
     }
 }
 
-/// Compiles an Engine program for repeated evaluation, recording any external module sources
-/// that must remain unchanged before the bytecode is reused.
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+/// Compiles an Engine program for repeated evaluation.
+#[cfg(not(feature = "debugger"))]
 fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -395,7 +392,7 @@ fn compile_cached_program<R: ModuleResolver>(
 }
 
 /// Returns whether every external module compiled into this program still has identical source.
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 fn cached_program_is_current<R: ModuleResolver>(
     compiled: &CachedProgram,
     module_loader: &ModuleLoader<R>,
@@ -416,8 +413,7 @@ fn cached_program_is_current<R: ModuleResolver>(
     Ok(before_current && after_current)
 }
 
-/// Shared across every run in one `Engine::eval` call, so multi-input queries don't reset the
-/// deadline per input.
+/// A deadline shared by all inputs in one evaluation.
 fn shared_deadline(timeout: Option<Duration>) -> Option<Instant> {
     timeout.map(|timeout| Instant::now() + timeout)
 }
@@ -427,7 +423,7 @@ fn remaining_timeout(deadline: Option<Instant>) -> Option<Duration> {
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 fn run_cached<I>(
     compiled: &CachedProgram,
     inputs: I,
@@ -523,17 +519,17 @@ where
     }
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger"), not(feature = "sync")))]
+#[cfg(all(not(feature = "debugger"), not(feature = "sync")))]
 fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
     std::mem::take(&mut *pools.borrow_mut())
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger"), feature = "sync"))]
+#[cfg(all(not(feature = "debugger"), feature = "sync"))]
 fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
     std::mem::take(&mut *pools.write().expect("execution pool lock is poisoned"))
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger"), not(feature = "sync")))]
+#[cfg(all(not(feature = "debugger"), not(feature = "sync")))]
 fn restore_execution_pools(
     pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
     execution_pools: interpreter::ExecutionPools,
@@ -541,7 +537,7 @@ fn restore_execution_pools(
     *pools.borrow_mut() = execution_pools;
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger"), feature = "sync"))]
+#[cfg(all(not(feature = "debugger"), feature = "sync"))]
 fn restore_execution_pools(
     pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
     execution_pools: interpreter::ExecutionPools,
@@ -554,9 +550,7 @@ fn compile_error_to_runtime_error(
     token_arena: TokenArena,
 ) -> error::runtime::RuntimeError {
     use error::runtime::RuntimeError;
-    // `TokenId::new(0)` (the dummy EOF token every arena starts with) is a defensive
-    // fallback for `CompileError::Module`, which `into_inner_error` never actually routes
-    // here — every other variant always carries a real token.
+    // Fall back to the arena's dummy EOF token.
     let token_id = err.token_id().unwrap_or(crate::ast::TokenId::new(0));
     let token = (*crate::get_token(token_arena, token_id)).clone();
     match err {
@@ -594,8 +588,6 @@ pub(crate) fn vm_error_to_runtime_error(
                 VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
                 VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
                     token,
-                    // The callee's name isn't threaded through `CallValue` — see
-                    // `VmError::ArityMismatch`'s own doc comment.
                     name: String::new(),
                     expected: *expected,
                     actual: *actual,
@@ -614,7 +606,6 @@ pub(crate) fn vm_error_to_runtime_error(
                 nested @ VmError::Located(..) => vm_error_to_runtime_error(nested, token_arena),
             }
         }
-        // Shouldn't happen (see doc comment above) — fall back to the arena's dummy token.
         other => {
             let token = (*crate::get_token(token_arena, crate::ast::TokenId::new(0))).clone();
             RuntimeError::Runtime(token, other.to_string())
@@ -622,6 +613,7 @@ pub(crate) fn vm_error_to_runtime_error(
     }
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
     compile_and_run_full(
         program,
@@ -641,6 +633,7 @@ pub(crate) fn compile_and_run_with_input(
     compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn compile_and_run_full(
     program: &Program,
     input: RuntimeValue,
@@ -675,15 +668,12 @@ where
     }
 }
 
-/// Converts one child node's query result back into the markdown tree it came from —
-/// mirrors `eval::Evaluator::eval_markdown_node`'s conversion table exactly.
 fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) -> mq_markdown::Node {
     match value {
         RuntimeValue::None => child_node.to_fragment(),
         RuntimeValue::Function(..) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
             mq_markdown::Node::Empty
         }
-        #[cfg(feature = "tarn")]
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
             .iter()
@@ -712,7 +702,6 @@ pub(crate) struct SessionBinding {
 }
 
 /// VM-only state, held directly by `Engine` (independent of `Evaluator`).
-#[cfg_attr(not(feature = "tarn"), allow(dead_code))]
 #[derive(Debug)]
 pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     pub(crate) options: Options,
@@ -767,7 +756,6 @@ impl<T: ModuleResolver, IO: Io> Clone for VmState<T, IO> {
     }
 }
 
-#[cfg_attr(not(feature = "tarn"), allow(dead_code))]
 impl<T: ModuleResolver, IO: Io + Default> VmState<T, IO> {
     pub(crate) fn with_module_loader(module_loader: ModuleLoader<T>) -> Self {
         Self {
@@ -777,7 +765,6 @@ impl<T: ModuleResolver, IO: Io + Default> VmState<T, IO> {
     }
 }
 
-#[cfg_attr(not(feature = "tarn"), allow(dead_code))]
 impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     pub(crate) fn with_module_loader_and_io(module_loader: ModuleLoader<T>, io: Shared<IO>) -> Self {
         Self {
@@ -842,8 +829,6 @@ pub(crate) struct DebugRunContext<'a, R: ModuleResolver> {
     pub(crate) source: Source,
 }
 
-/// Replays Engine-loaded modules as directives ahead of `program`. `None` when there's nothing
-/// to replay, so the caller keeps using `program` unchanged.
 pub(crate) fn build_program(
     program: &Program,
     token_arena: TokenArena,
@@ -874,7 +859,7 @@ pub(crate) fn build_program(
 /// Everything `Engine::eval_compiled_vm` needs to run a compiled program on Tarn.
 pub(crate) struct TarnVm<'a, R: ModuleResolver> {
     pub(crate) engine: EngineRunContext<'a, R>,
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[cfg(not(feature = "debugger"))]
     pub(crate) module_prelude: &'a [engine::VmModulePrelude],
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<SharedCell<Debugger>>,
@@ -885,7 +870,7 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
 }
 
 impl<'a, R: ModuleResolver> TarnVm<'a, R> {
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[cfg(not(feature = "debugger"))]
     fn cache_configuration(&self) -> Vec<String> {
         self.module_prelude
             .iter()
@@ -899,15 +884,14 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
     pub(crate) fn run<I>(
         &self,
-        #[cfg_attr(any(not(feature = "tarn"), feature = "debugger"), allow(unused_variables))]
-        compiled: &engine::CompiledProgram,
+        #[cfg_attr(feature = "debugger", allow(unused_variables))] compiled: &engine::CompiledProgram,
         program: &Program,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        #[cfg(not(feature = "debugger"))]
         if self.engine.global_bindings.is_empty()
             && self.engine.session.is_none()
             && let Some(cached) = compiled.cached_vm_program()
@@ -980,8 +964,6 @@ fn split_at_nodes(program: &Program) -> Option<(ProgramSlice<'_>, ProgramSlice<'
     Some(program.split_at(index))
 }
 
-/// Prepends `def`/`import`/`include`/`module` from before a `nodes` split into the
-/// after-program, since Tarn compiles `before`/`after` separately.
 fn program_after_nodes(before: ProgramSlice<'_>, after: ProgramSlice<'_>) -> Program {
     before
         .iter()
@@ -1094,8 +1076,7 @@ fn session_bindings_from_captured(
         .collect()
 }
 
-/// Like [`compile_and_run_many`], but persists top-level bindings into `session`. Recompiles
-/// every call since a growing session invalidates the bytecode cache.
+/// Runs a program while preserving top-level bindings in `session`.
 fn run_with_session<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
@@ -1544,20 +1525,25 @@ where
     }
 }
 
-/// Compiles and runs `code` with `bindings` predeclared as top-level slots — the VM
-/// counterpart to `switch_env`, for a debug expression evaluated against a paused frame.
-#[cfg(all(feature = "debugger", feature = "tarn"))]
+/// Evaluates a debugger expression against paused-frame bindings.
+#[cfg(feature = "debugger")]
 pub(crate) fn eval_debug_expression<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
+    input: RuntimeValue,
     bindings: &[(crate::Ident, RuntimeValue)],
     host_functions: &HostFunctions,
 ) -> Result<RuntimeValue, Error> {
     let names: Vec<crate::Ident> = bindings.iter().map(|(name, _)| *name).collect();
     let values: Vec<RuntimeValue> = bindings.iter().map(|(_, value)| value.clone()).collect();
     let compiled = compiler::compile_debug_expression(program, token_arena, module_loader, &names)?;
-    Ok(interpreter::run_debug_expression(&compiled, &values, host_functions)?)
+    Ok(interpreter::run_debug_expression(
+        &compiled,
+        input,
+        &values,
+        host_functions,
+    )?)
 }
 
 #[cfg(test)]
@@ -1669,8 +1655,7 @@ mod tests {
         })
     }
 
-    // Keep the evaluator's AST table intact while executing every same case as a VM test.
-    // The shared macro prevents the two engines' case lists from drifting apart.
+    // The shared table keeps VM and evaluator cases aligned.
     crate::eval_table_cases!(
         evaluator_table_cases_run_on_vm,
         token_arena,
@@ -2069,14 +2054,12 @@ mod tests {
         assert_eq!(result, RuntimeValue::Number(2.0.into()));
     }
 
-    #[cfg(feature = "tarn")]
     #[test]
     fn vm_closure_stored_in_a_dict_is_callable_once_retrieved() {
         let result = run_with_prelude(r#"def f(): 1; | let d = {"name": "x", "func": f} | d["func"]()"#);
         assert_eq!(result, RuntimeValue::Number(1.0.into()));
     }
 
-    #[cfg(feature = "tarn")]
     #[test]
     fn partial_works_on_a_vm_closure() {
         let result = run_with_prelude("def add(x, y): x + y; | let add5 = partial(add, 5) | add5(3)");
@@ -2194,7 +2177,6 @@ mod tests {
         assert_eq!(run(code), RuntimeValue::Number(expected.into()));
     }
 
-    #[cfg(feature = "tarn")]
     #[rstest]
     #[case::arithmetic_and_assignment("var total = 1 | foreach(x, [2, 3, 4]): total += x; | total")]
     #[case::recursive_closure("let make = fn(x): fn(y): x + y;; | let add_two = make(2) | add_two(40)")]
@@ -2239,7 +2221,6 @@ mod tests {
     // Documents real (matching) behavior, not an aspirational "fresh cell per iteration"
     // semantics: both engines reuse the same captured binding for `foreach`'s loop variable
     // across iterations, so every closure created inside the loop sees the final value.
-    #[cfg(feature = "tarn")]
     #[test]
     fn foreach_closures_share_the_loop_variables_captured_cell_exact_values() {
         assert_eq!(
@@ -2255,7 +2236,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "tarn")]
     #[rstest]
     #[case::self_and_pipe(". + 1 | . * 2", RuntimeValue::Number(42.0.into()))]
     #[case::multiple_inputs(". * .", RuntimeValue::Number(7.0.into()))]
@@ -2264,7 +2244,6 @@ mod tests {
         assert_vm_matches_tree_walker(code, vec![input]);
     }
 
-    #[cfg(feature = "tarn")]
     #[test]
     fn compiled_engine_matches_tree_walker_for_nodes_aggregation() {
         assert_vm_matches_tree_walker(
@@ -2358,10 +2337,7 @@ mod tests {
         })
     }
 
-    /// Reference output from the tree-walker for the same code/input.
-    ///
-    /// Calling `Engine::eval` here would select the VM when the `tarn` feature is enabled,
-    /// so invoke the evaluator directly to keep this a genuine differential test.
+    /// Reference output from the tree-walking evaluator.
     fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
         tree_walk_eval_many(code, vec![input]).remove(0)
     }
@@ -2373,7 +2349,6 @@ mod tests {
         engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
     }
 
-    #[cfg(feature = "tarn")]
     fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
         let mut engine = crate::DefaultEngine::default();
         engine.load_builtin_module();
@@ -2385,7 +2360,6 @@ mod tests {
             .clone()
     }
 
-    #[cfg(feature = "tarn")]
     fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
         assert_eq!(
             vm_engine_eval_many(code, inputs.clone()),
@@ -2394,7 +2368,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "tarn")]
     #[rstest]
     #[case::first_iteration_self_is_the_incoming_value("while(. == 0): is_none(.);")]
     #[case::completes_normally("while(. < 5): . + 1;")]
@@ -2411,7 +2384,6 @@ mod tests {
 
     // Deliberate divergence from the tree-walker (which returns None here) — not worth the
     // per-iteration cost of matching it exactly.
-    #[cfg(feature = "tarn")]
     #[rstest]
     #[case::while_first_iteration_bare_break("while(true): break;", 7.0)]
     #[case::until_first_iteration_bare_break("until(false): break;", 7.0)]
@@ -2687,6 +2659,10 @@ mod tests {
             fn on_boundary(&mut self, event: DebugEvent) {
                 self.0.push(event);
             }
+
+            fn on_explicit_breakpoint(&mut self, event: DebugEvent) {
+                self.0.push(event);
+            }
         }
 
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
@@ -2815,6 +2791,67 @@ mod tests {
         assert!(inner_values.lock().unwrap().contains(&RuntimeValue::Number(2.0.into())));
         #[cfg(feature = "debug-trace")]
         assert!(!operand_stacks.lock().unwrap().is_empty());
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
+        use crate::{DebugContext, DebuggerAction, DebuggerHandler, Source};
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Debug)]
+        struct RecordingHandler(Arc<Mutex<Vec<RuntimeValue>>>);
+
+        impl DebuggerHandler for RecordingHandler {
+            fn on_breakpoint_hit(&self, _breakpoint: &crate::Breakpoint, context: &DebugContext) -> DebuggerAction {
+                self.0.lock().unwrap().push(context.current_value.clone());
+                DebuggerAction::Continue
+            }
+        }
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("1 | breakpoint() | . + 10", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(
+            &program,
+            Shared::clone(&token_arena),
+            ModuleLoader::new(StdModuleResolver),
+        )
+        .unwrap();
+
+        let debugger = Shared::new(SharedCell::new(crate::Debugger::new()));
+        debugger.write().unwrap().activate();
+        assert!(debugger.read().unwrap().list_breakpoints().is_empty());
+
+        let hit_values = Arc::new(Mutex::new(Vec::new()));
+        let handler: Shared<SharedCell<Box<dyn DebuggerHandler>>> =
+            Shared::new(SharedCell::new(Box::new(RecordingHandler(Arc::clone(&hit_values)))));
+        let mut hook = debugger::VmDebuggerHook::new(
+            debugger,
+            handler,
+            token_arena,
+            Source {
+                name: None,
+                code: String::new(),
+            },
+            Default::default(),
+        );
+
+        let result = interpreter::run_with_debug_hook_and_globals(
+            &compiled,
+            RuntimeValue::None,
+            &HostFunctions::default(),
+            None,
+            crate::eval::Options::default().max_call_stack_depth,
+            &[],
+            &mut hook,
+        )
+        .unwrap();
+
+        assert_eq!(result, RuntimeValue::Number(11.0.into()));
+        assert_eq!(
+            hit_values.lock().unwrap().as_slice(),
+            &[RuntimeValue::Number(1.0.into())]
+        );
     }
 
     #[cfg(feature = "debugger")]
@@ -2960,7 +2997,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "tarn")]
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(96))]
 
@@ -2980,7 +3016,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "tarn")]
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(64))]
 

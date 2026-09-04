@@ -7,7 +7,7 @@ use crate::ast::constants::builtins;
 use crate::ast::node::{AccessTarget, Expr, Literal, Node, Pattern, StringSegment};
 use crate::ast::{Program, node as ast};
 use crate::module::BUILTIN_FILE;
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 use crate::module::ModuleDependency;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
@@ -64,7 +64,7 @@ type CompileResult<T> = Result<T, CompileError>;
 pub(crate) struct CompiledProgram {
     pub(crate) chunks: Shared<Vec<Chunk>>,
     /// Source identities for every external module flattened into these chunks.
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[cfg(not(feature = "debugger"))]
     pub(crate) module_dependencies: Vec<ModuleDependency>,
     /// Source metadata captured from the same module loader that assigned every token's
     /// module ID. The debugger must not reconstruct this through a fresh loader instance.
@@ -110,21 +110,19 @@ struct Compiler<R: ModuleResolver> {
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<QualifiedName, QualifiedSlot>,
     external_globals: FxHashSet<crate::Ident>,
-    /// The names the top-level query references, used to prune unreached module functions.
-    /// Computed lazily: most compiles never load a module, so most compiles never pay for
-    /// the full-program name-collection walk that produces this.
+    /// Lazily collected roots for module-function pruning.
     top_level_program: Program,
     module_function_roots: std::cell::OnceCell<FxHashSet<crate::Ident>>,
     prune_module_functions: bool,
     /// Names called but not resolvable against the current `BuiltinPrelude`.
     unresolved_call_names: FxHashSet<crate::Ident>,
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[cfg(not(feature = "debugger"))]
     module_dependencies: Vec<ModuleDependency>,
-    /// Bare names in a `try`/`catch` must fail while running so the surrounding catch
-    /// expression can handle them, matching the tree-walker's dynamic lookup semantics.
+    /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn compile_program<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -173,13 +171,10 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], &[], external_globals)
 }
 
-/// A query calling into an imported module only sees that module's own soft-builtin calls
-/// after compiling it once, so this grows the reachable set by one failed compile's worth of
-/// missing names at a time, instead of jumping straight to the full ~150-function prelude.
+/// Expands reachable soft builtins until compilation converges.
 const MAX_PRELUDE_ATTEMPTS: usize = 16;
 
-/// Like [`compile_program_for_engine`], plus predeclared `seed_bindings` (`seed_immutable`
-/// marks which came from `let` rather than `var`).
+/// Compiles with predeclared top-level bindings.
 pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -258,8 +253,7 @@ static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| 
         .collect()
 });
 
-/// Per-function soft-builtin call graph for `builtin.mq`, cached per thread since walking every
-/// builtin function body on each compile is otherwise wasted work.
+/// Cached per-function soft-builtin call graph.
 struct BuiltinDependencyGraph {
     /// `module.functions[0]`, used to detect a reparsed (non-cached) `builtin.mq`.
     anchor: Shared<Node>,
@@ -297,10 +291,7 @@ fn builtin_dependency_graph(module: &crate::Module) -> Option<Shared<BuiltinDepe
     Some(graph)
 }
 
-/// Finds soft-builtin names referenced by a program.
-///
-/// This lets the Engine compile only the builtin definitions reachable from a query instead of
-/// compiling the whole standard-library prelude for every one-shot evaluation.
+/// Finds referenced soft builtins.
 fn soft_builtin_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
     soft_builtin_names_in_program_with_shadowed(program, &FxHashSet::default())
 }
@@ -427,8 +418,7 @@ fn collect_soft_builtin_names(
     }
 }
 
-/// Collects direct function names used by a program. Module bodies are side-effect free until
-/// called, so this provides a conservative root set for compiling their reachable exports.
+/// Collects direct function names used by a program.
 fn referenced_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
     let mut names = FxHashSet::default();
     for node in program {
@@ -571,7 +561,7 @@ fn compile_program_impl<R: ModuleResolver>(
         module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
         unresolved_call_names: FxHashSet::default(),
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        #[cfg(not(feature = "debugger"))]
         module_dependencies: Vec::new(),
         try_depth: 0,
     };
@@ -609,7 +599,7 @@ fn compile_program_impl<R: ModuleResolver>(
     Ok((
         CompiledProgram {
             chunks: Shared::new(compiler.chunks),
-            #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+            #[cfg(not(feature = "debugger"))]
             module_dependencies: compiler.module_dependencies,
             #[cfg(feature = "debugger")]
             debug_sources,
@@ -931,8 +921,6 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// Binds `pattern` without pushing `self` — `let`/`var` never change it, so a non-tail
-    /// statement can skip the round trip through `SetLocal(SELF_SLOT)`.
     fn compile_let_or_var_binding(
         &mut self,
         pattern: &Pattern,
@@ -1092,8 +1080,6 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::CallBuiltin(builtins::GET.into(), 2));
                     self.emit(OpCode::SetLocal(value_slot));
 
-                    // `get` on a missing key also returns `None`, so a key mapped to a
-                    // real `None` value is indistinguishable from an absent one here.
                     self.emit(OpCode::GetLocal(value_slot));
                     self.emit(OpCode::TypeCheck("none".into()));
                     let has_value = self.emit(OpCode::JumpIfFalse(0));
@@ -1176,7 +1162,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        #[cfg(not(feature = "debugger"))]
         self.record_module_dependency(path)?;
         self.compile_module_directives(&module.modules)?;
         self.predeclare_module_var_slots(&module.vars);
@@ -1199,7 +1185,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[cfg(not(feature = "debugger"))]
     fn record_module_dependency(&mut self, path: &str) -> CompileResult<()> {
         let dependency = self
             .module_loader
@@ -1225,9 +1211,6 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// Binds `module.vars`' values without pushing `self`. With `alias` (`import`, not
-    /// `include`), also qualifies each var as `alias::name` and hides its bare name, like
-    /// `compile_import_functions` already does for functions.
     fn compile_module_vars_binding(
         &mut self,
         module: &crate::Module,
@@ -1269,8 +1252,6 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_discarding(&mut self, nodes: &Program) -> CompileResult<()> {
         for node in nodes {
-            // Unlike `compile_top_level`/`compile_body`, the peephole pass can't clean this up:
-            // `GetLocal(SELF_SLOT)` followed by `Pop` isn't a pattern it recognizes.
             #[cfg(not(feature = "debugger"))]
             if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
                 self.current_token_id = node.token_id;
@@ -1294,8 +1275,6 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
-    /// Nested module directives may be used by any function in their parent module. Compile
-    /// their exports in full; root-based pruning is only sound for the user-selected module.
     fn compile_module_directives(&mut self, modules: &Program) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
         let result = self.compile_discarding(modules);
@@ -1303,7 +1282,6 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
-    /// Returns the exported functions needed by this query and their intra-module dependencies.
     fn reachable_module_functions(&self, module: &crate::Module) -> Program {
         if !self.prune_module_functions {
             return module.functions.clone();
@@ -1347,14 +1325,12 @@ impl<R: ModuleResolver> Compiler<R> {
             .collect()
     }
 
-    /// Compiles only the standard-library definitions reachable from the query's named uses.
     fn compile_reachable_builtin_prelude(
         &mut self,
         module: &crate::Module,
         roots: &FxHashSet<crate::Ident>,
     ) -> CompileResult<()> {
-        // A future prelude with initialization/module directives needs the whole module because
-        // those statements may establish dependencies outside its function definitions.
+        // Prelude initialization requires compiling the whole module.
         if !module.modules.is_empty() || !module.vars.is_empty() {
             return self.compile_flattened_module(module);
         }
@@ -1425,7 +1401,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+        #[cfg(not(feature = "debugger"))]
         self.record_module_dependency(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
 
@@ -1462,8 +1438,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 QualifiedSlot { depth, slot: *slot },
             );
         }
-        // Hide the real names now that every body referencing them has been compiled, so
-        // only `alias::name` — not the bare name — resolves to them from here on.
+        // Only qualified names remain visible after compilation.
         for slot in slots {
             self.scope_mut().set_local_name(slot, crate::Ident::default());
         }
@@ -1797,7 +1772,6 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    /// Emits the smallest selector instruction that preserves `selector`'s semantics.
     fn emit_selector(&mut self, selector: &crate::selector::Selector) {
         if let crate::selector::Selector::Heading(level) = selector {
             self.emit(OpCode::SelectorMatchHeading(level.unwrap_or(0)));
@@ -1837,6 +1811,14 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
+
+        #[cfg(feature = "debugger")]
+        if ident == builtins::BREAKPOINT.into() {
+            self.emit(OpCode::Breakpoint(call_token_id));
+            self.emit(OpCode::GetLocal(SELF_SLOT));
+            return Ok(());
+        }
+
         let shadowed = self.scope_mut().shadowed_builtin == Some(ident);
 
         if !shadowed && let Some(resolved) = self.resolve(ident) {
@@ -1921,8 +1903,6 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// Emits a compact binary operation when both operands are current-frame locals or a local
-    /// plus a literal. Upvalues stay on the general path because their lookup semantics differ.
     fn compile_local_binary(&mut self, op: BinaryOp, args: &ast::Args) -> bool {
         let Some(left_slot) = self.current_local_slot(&args[0]) else {
             return false;
@@ -2022,8 +2002,6 @@ impl<R: ModuleResolver> Compiler<R> {
             if i != last {
                 self.emit(OpCode::Pop);
             }
-            // On the last operand, a truthy result falls through with its own
-            // (undupped) copy left on the stack as the overall value.
         }
         let success_jump = self.emit(OpCode::Jump(0));
 
@@ -2135,10 +2113,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::GetLocal(acc_slot));
         self.emit(OpCode::SetLocal(SELF_SLOT));
         self.compile_body(body)?;
-        // compile_body no longer writes SELF_SLOT itself; the loop's condition re-reads it
-        // next iteration, so sync it here explicitly. Written as SetLocal+GetLocal (not Dup)
-        // so the peephole pass can still fold it away when the body's own last op already is
-        // `GetLocal(SELF_SLOT)` (e.g. `i -= 1`, whose value is self, unchanged).
+        // Keep `self` in sync for the next loop condition.
         self.emit(OpCode::SetLocal(SELF_SLOT));
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
@@ -2257,8 +2232,6 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_loop(&mut self, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
-        // `loop` keeps the incoming pipeline value when its first operation is a bare
-        // `break`, matching `Evaluator::eval_loop`.
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
 
