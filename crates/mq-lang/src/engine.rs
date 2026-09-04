@@ -967,6 +967,23 @@ mod tests {
 
     #[cfg(feature = "tarn")]
     #[test]
+    fn test_query_session_var_redeclaration_updates_value() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("var x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        engine
+            .eval("var x = 2", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+
+        assert_eq!(result.unwrap(), vec![2.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
     fn test_query_session_persists_def_across_eval_calls() {
         let mut engine = DefaultEngine::default();
         engine.enable_query_session();
