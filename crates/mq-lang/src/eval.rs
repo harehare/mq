@@ -1,4 +1,3 @@
-use rustc_hash::FxHashMap;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
@@ -8,8 +7,6 @@ use std::time::Instant;
 #[cfg(target_arch = "wasm32")]
 use web_time::Instant;
 
-#[cfg(feature = "debugger")]
-use crate::DebuggerHandler;
 use crate::Module;
 use crate::ast::constants;
 use crate::eval::builtin::io_context;
@@ -17,10 +14,13 @@ use crate::eval::builtin::io_context;
 use crate::eval::debugger::DefaultDebuggerHandler;
 #[cfg(feature = "debugger")]
 use crate::eval::debugger::Source;
+use crate::eval::host::HostFunctions;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 #[cfg(feature = "debugger")]
 use crate::parse;
+#[cfg(feature = "debugger")]
+use crate::{Debugger, DebuggerHandler};
 use crate::{
     Ident, Program, Shared, SharedCell, Token, TokenKind,
     arena::Arena,
@@ -40,7 +40,7 @@ use crate::{
 };
 
 #[cfg(feature = "debugger")]
-use debugger::{Breakpoint, DebugContext, Debugger};
+use debugger::{Breakpoint, DebugContext};
 
 pub mod builtin;
 #[cfg(feature = "debugger")]
@@ -50,7 +50,6 @@ pub mod host;
 pub mod runtime_value;
 
 use env::Env;
-use host::HostFunctions;
 use runtime_value::RuntimeValue;
 
 /// Number of loop iterations / function calls between wall-clock deadline checks.
@@ -160,6 +159,9 @@ impl Default for Options {
 ///
 /// Evaluates abstract syntax trees and manages the runtime environment,
 /// including variable bindings, function calls, and module loading.
+///
+/// Fully independent of Tarn (the bytecode VM) — no shared state with `Engine`'s VM side.
+/// Slated for removal once Tarn is the sole engine.
 #[derive(Debug)]
 pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     env: Shared<SharedCell<Env>>,
@@ -181,9 +183,6 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandbox
     /// identifier isn't a local binding, before falling back to the built-in table. Empty by
     /// default: a host must opt in via [`crate::Engine::register_fn`].
     pub(crate) host_functions: Shared<SharedCell<HostFunctions>>,
-    /// Values explicitly added through `define_value`/`define_string_value`. Tarn snapshots
-    /// this instead of cloning and filtering every legacy environment binding on each run.
-    vm_global_bindings: Shared<SharedCell<FxHashMap<Ident, RuntimeValue>>>,
 
     #[cfg(feature = "debugger")]
     debugger: Shared<SharedCell<Debugger>>,
@@ -203,7 +202,6 @@ impl<T: ModuleResolver, IO: Io + Default> Default for Evaluator<T, IO> {
             module_loader: module::ModuleLoader::new(T::default()),
             io: Shared::new(IO::default()),
             host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
-            vm_global_bindings: Shared::new(SharedCell::new(FxHashMap::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -225,7 +223,6 @@ impl<T: ModuleResolver, IO: Io> Clone for Evaluator<T, IO> {
             module_loader: self.module_loader.clone(),
             io: Shared::clone(&self.io),
             host_functions: Shared::clone(&self.host_functions),
-            vm_global_bindings: Shared::clone(&self.vm_global_bindings),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -279,7 +276,6 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             module_loader,
             io,
             host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
-            vm_global_bindings: Shared::new(SharedCell::new(FxHashMap::default())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -302,7 +298,6 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         #[cfg(feature = "sync")]
         self.host_functions.write().unwrap().insert_shared(name, f);
     }
-
     #[cfg_attr(feature = "tarn", allow(dead_code))]
     pub(crate) fn eval<I>(&mut self, program: &Program, input: I) -> Result<Vec<RuntimeValue>, InnerError>
     where
@@ -496,33 +491,9 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         .map(RuntimeValue::new_markdown)
     }
 
-    /// Defines a new string variable in the current environment.
-    pub fn define_string_value(&self, name: &str, value: &str) {
-        self.define_vm_global_value(Ident::new(name), RuntimeValue::String(Shared::new(value.to_string())));
-    }
-
-    /// Defines an arbitrary runtime value in the current environment.
+    /// Defines a runtime value in the current environment.
     pub fn define_value(&self, name: &str, value: RuntimeValue) {
-        self.define_vm_global_value(Ident::new(name), value);
-    }
-
-    fn define_vm_global_value(&self, name: Ident, value: RuntimeValue) {
-        define(&self.env, name, value.clone());
-        #[cfg(not(feature = "sync"))]
-        self.vm_global_bindings.borrow_mut().insert(name, value);
-        #[cfg(feature = "sync")]
-        self.vm_global_bindings.write().unwrap().insert(name, value);
-    }
-
-    /// Snapshot of names/values from `define_value`/`define_string_value`, for the VM (whose
-    /// static slots have no dynamic `Env` to see these in).
-    #[cfg_attr(not(feature = "tarn"), allow(dead_code))]
-    pub(crate) fn global_bindings(&self) -> Vec<(Ident, RuntimeValue)> {
-        #[cfg(not(feature = "sync"))]
-        let bindings = self.vm_global_bindings.borrow();
-        #[cfg(feature = "sync")]
-        let bindings = self.vm_global_bindings.read().unwrap();
-        bindings.iter().map(|(ident, value)| (*ident, value.clone())).collect()
+        define(&self.env, Ident::new(name), value);
     }
 
     #[cfg(not(feature = "tarn"))]

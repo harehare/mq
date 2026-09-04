@@ -76,6 +76,12 @@ impl FunctionScope {
         self.locals.clone()
     }
 
+    pub(crate) fn local_mutable(&self) -> Vec<bool> {
+        (0..self.locals.len() as u16)
+            .map(|slot| !self.is_immutable(slot))
+            .collect()
+    }
+
     pub(crate) fn upvalue_names(&self) -> Vec<Ident> {
         self.upvalues.iter().map(|(name, _)| *name).collect()
     }

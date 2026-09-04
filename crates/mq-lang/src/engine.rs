@@ -105,6 +105,9 @@ impl From<crate::ast::Program> for CompiledProgram {
 #[derive(Debug, Clone)]
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     pub(crate) evaluator: Evaluator<T, IO>,
+    /// VM-only state — see [`tarn::VmState`].
+    #[cfg(feature = "tarn")]
+    pub(crate) vm: tarn::VmState<T, IO>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     optimization_level: OptimizationLevel,
     vm_module_prelude: Vec<VmModulePrelude>,
@@ -148,8 +151,11 @@ impl<T: ModuleResolver> Default for Engine<T, SandboxedIo<NativeIo>> {
 impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
     pub fn new(module_resolver: T) -> Self {
         let token_arena = create_default_token_arena();
+        let module_loader = ModuleLoader::new(module_resolver);
         Self {
-            evaluator: Evaluator::new(ModuleLoader::new(module_resolver), Shared::clone(&token_arena)),
+            evaluator: Evaluator::new(module_loader.clone(), Shared::clone(&token_arena)),
+            #[cfg(feature = "tarn")]
+            vm: tarn::VmState::with_module_loader(module_loader),
             token_arena,
             optimization_level: OptimizationLevel::default(),
             vm_module_prelude: Vec::new(),
@@ -169,6 +175,8 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
 
         Self {
             evaluator: Evaluator::with_env(Shared::clone(&token_arena), Shared::clone(&env)),
+            #[cfg(feature = "tarn")]
+            vm: self.vm.clone(),
             token_arena: Shared::clone(&token_arena),
             optimization_level: self.optimization_level,
             vm_module_prelude: self.vm_module_prelude.clone(),
@@ -188,17 +196,17 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             #[cfg(feature = "sync")]
             let bindings = env.read().unwrap().raw_entries();
 
-            let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
+            let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
             let program = parse(code, Shared::clone(&self.token_arena))?;
             #[cfg(feature = "sync")]
-            let host_functions = self.evaluator.host_functions.read().unwrap().clone();
+            let host_functions = self.vm.host_functions.read().unwrap().clone();
             #[cfg(not(feature = "sync"))]
-            let host_functions = self.evaluator.host_functions.borrow().clone();
+            let host_functions = self.vm.host_functions.borrow().clone();
 
             tarn::eval_debug_expression(
                 &program,
                 Shared::clone(&self.token_arena),
-                self.evaluator.module_loader.with_same_resolver(),
+                self.vm.module_loader.with_same_resolver(),
                 &bindings,
                 &host_functions,
             )
@@ -207,7 +215,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
                 Box::new(error::Error::from_error(
                     code,
                     error.into_inner_error(Shared::clone(&self.token_arena)),
-                    self.evaluator.module_loader.clone(),
+                    self.vm.module_loader.clone(),
                 ))
             })
         }
@@ -230,8 +238,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// module resolution is gated consistently.
     pub fn with_io(module_resolver: T, io: Shared<IO>) -> Self {
         let token_arena = create_default_token_arena();
+        let module_loader = ModuleLoader::new(module_resolver);
         Self {
-            evaluator: Evaluator::with_io(ModuleLoader::new(module_resolver), Shared::clone(&token_arena), io),
+            evaluator: Evaluator::with_io(module_loader.clone(), Shared::clone(&token_arena), Shared::clone(&io)),
+            #[cfg(feature = "tarn")]
+            vm: tarn::VmState::with_module_loader_and_io(module_loader, io),
             token_arena,
             optimization_level: OptimizationLevel::default(),
             vm_module_prelude: Vec::new(),
@@ -249,6 +260,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// calls can be nested. Useful for controlling resource usage.
     pub fn set_max_call_stack_depth(&mut self, max_call_stack_depth: u32) {
         self.evaluator.options.max_call_stack_depth = max_call_stack_depth;
+        #[cfg(feature = "tarn")]
+        {
+            self.vm.options.max_call_stack_depth = max_call_stack_depth;
+        }
     }
 
     /// Set the maximum wall-clock duration allowed for a single `eval` call.
@@ -258,6 +273,18 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// function calls, so it may be exceeded slightly before evaluation actually stops.
     pub fn set_timeout(&mut self, timeout: std::time::Duration) {
         self.evaluator.options.timeout = Some(timeout);
+        #[cfg(feature = "tarn")]
+        {
+            self.vm.options.timeout = Some(timeout);
+        }
+    }
+
+    /// Makes top-level `let`/`var`/`def` bindings from one `eval()` call visible to the next
+    /// (e.g. a REPL). Opt-in since it costs a capture/reseed pass per call; the tree-walking
+    /// evaluator does this for free via its persistent `Env`.
+    #[cfg(feature = "tarn")]
+    pub fn enable_query_session(&mut self) {
+        self.vm.session_enabled = true;
     }
 
     /// Sets the [`Io`] this engine uses for file, environment-variable, and network
@@ -270,6 +297,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// [`DefaultModuleResolver::with_io`] when constructing the resolver so
     /// local-filesystem module resolution is gated consistently.
     pub fn set_io(&mut self, io: Shared<IO>) {
+        #[cfg(feature = "tarn")]
+        {
+            self.vm.io = Shared::clone(&io);
+        }
         self.evaluator.set_io(io);
     }
 
@@ -278,6 +309,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// These paths will be searched when loading external modules
     /// via the `include` statement in mq code.
     pub fn set_search_paths(&mut self, paths: Vec<PathBuf>) {
+        #[cfg(feature = "tarn")]
+        {
+            self.vm.module_loader.set_search_paths(paths.clone());
+        }
         self.evaluator.module_loader.set_search_paths(paths);
     }
 
@@ -286,11 +321,13 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// This allows you to inject values from the host environment
     /// into the mq execution context.
     pub fn define_string_value(&self, name: &str, value: &str) {
-        self.evaluator.define_string_value(name, value);
+        self.define_value(name, RuntimeValue::String(Shared::new(value.to_string())));
     }
 
     /// Defines an arbitrary runtime value in the current environment.
     pub fn define_value(&self, name: &str, value: RuntimeValue) {
+        #[cfg(feature = "tarn")]
+        self.vm.define(crate::Ident::new(name), value.clone());
         self.evaluator.define_value(name, value);
     }
 
@@ -343,7 +380,23 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     where
         F: crate::eval::host::IntoHostFunction<Marker>,
     {
-        self.evaluator.register_fn(name, f.into_host_fn());
+        let name = name.into();
+        let f = f.into_host_fn();
+        #[cfg(feature = "tarn")]
+        {
+            #[cfg(not(feature = "sync"))]
+            self.vm
+                .host_functions
+                .borrow_mut()
+                .insert_shared(name, Shared::clone(&f));
+            #[cfg(feature = "sync")]
+            self.vm
+                .host_functions
+                .write()
+                .unwrap()
+                .insert_shared(name, Shared::clone(&f));
+        }
+        self.evaluator.register_fn(name, f);
     }
 
     /// Load the built-in function modules.
@@ -427,12 +480,15 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
 
         // Scoped before `parse`, not just `evaluator.eval`, so bare `$VAR` resolution sees this engine's `Io`.
+        #[cfg(feature = "tarn")]
+        let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
+        #[cfg(not(feature = "tarn"))]
         let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
         let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
         #[cfg(feature = "debugger")]
-        self.evaluator.module_loader.set_source_code(code.to_string());
+        self.vm.module_loader.set_source_code(code.to_string());
 
         #[cfg(feature = "tarn")]
         {
@@ -465,6 +521,9 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 vm_cache: Some(Shared::new(SharedCell::new(None))),
             });
         }
+        #[cfg(feature = "tarn")]
+        let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
+        #[cfg(not(feature = "tarn"))]
         let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
         let program = Optimizer::with_level(self.optimization_level).optimize(program);
@@ -498,7 +557,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         input: I,
     ) -> MqResult {
         #[cfg(feature = "debugger")]
-        self.evaluator.module_loader.set_source_code(compiled.source.clone());
+        self.vm.module_loader.set_source_code(compiled.source.clone());
 
         #[cfg(feature = "tarn")]
         {
@@ -525,8 +584,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// tools such as `mq-dbg`; it does not execute the program.
     #[cfg(feature = "debug-trace")]
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
-        self.evaluator.module_loader.set_source_code(compiled.source.clone());
-        let global_bindings = self.evaluator.global_bindings();
+        self.vm.module_loader.set_source_code(compiled.source.clone());
+        let global_bindings = self.vm.global_bindings_snapshot();
         let vm_program = tarn::build_program(
             &compiled.program,
             Shared::clone(&self.token_arena),
@@ -537,14 +596,14 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         tarn::dump_bytecode(
             vm_program,
             Shared::clone(&self.token_arena),
-            self.evaluator.module_loader.with_same_resolver(),
+            self.vm.module_loader.with_same_resolver(),
             &global_bindings,
         )
         .map_err(|error| {
             Box::new(error::Error::from_error(
                 &compiled.source,
                 error.into_inner_error(Shared::clone(&self.token_arena)),
-                self.evaluator.module_loader.clone(),
+                self.vm.module_loader.clone(),
             ))
         })
     }
@@ -559,12 +618,24 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         // Scoped like `eval`/`eval_compiled`, so bare `$VAR` resolution (and anything else
         // reading the ambient `Io`) inside VM-executed builtins sees this engine's `Io`
         // rather than whatever the previous scope (or none) left in place.
+        #[cfg(feature = "tarn")]
+        let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
+        #[cfg(not(feature = "tarn"))]
         let _io_guard = io_context::scoped(Shared::clone(&self.evaluator.io) as Shared<dyn Io>);
-        #[cfg(feature = "sync")]
+
+        #[cfg(all(feature = "tarn", feature = "sync"))]
+        let host_functions = self.vm.host_functions.read().unwrap().clone();
+        #[cfg(all(feature = "tarn", not(feature = "sync")))]
+        let host_functions = self.vm.host_functions.borrow().clone();
+        #[cfg(all(not(feature = "tarn"), feature = "sync"))]
         let host_functions = self.evaluator.host_functions.read().unwrap().clone();
-        #[cfg(not(feature = "sync"))]
+        #[cfg(all(not(feature = "tarn"), not(feature = "sync")))]
         let host_functions = self.evaluator.host_functions.borrow().clone();
-        let global_bindings = self.evaluator.global_bindings();
+
+        #[cfg(feature = "tarn")]
+        let global_bindings = self.vm.global_bindings_snapshot();
+        #[cfg(not(feature = "tarn"))]
+        let global_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
 
         let vm_program = tarn::build_program(
             &compiled.program,
@@ -573,32 +644,52 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         )?;
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
+        #[cfg(feature = "tarn")]
+        let (timeout, max_call_stack_depth) = (self.vm.options.timeout, self.vm.options.max_call_stack_depth);
+        #[cfg(not(feature = "tarn"))]
+        let (timeout, max_call_stack_depth) = (
+            self.evaluator.options.timeout,
+            self.evaluator.options.max_call_stack_depth,
+        );
+        #[cfg(feature = "tarn")]
+        let module_loader = self.vm.module_loader.with_same_resolver();
+        #[cfg(not(feature = "tarn"))]
+        let module_loader = self.evaluator.module_loader.with_same_resolver();
+
         let vm = tarn::TarnVm {
             engine: tarn::EngineRunContext {
                 host_functions: &host_functions,
-                timeout: self.evaluator.options.timeout,
-                max_call_stack_depth: self.evaluator.options.max_call_stack_depth,
+                timeout,
+                max_call_stack_depth,
                 token_arena: Shared::clone(&self.token_arena),
-                module_loader: self.evaluator.module_loader.with_same_resolver(),
+                module_loader,
                 global_bindings: &global_bindings,
+                #[cfg(feature = "tarn")]
+                session: self.vm.session_enabled.then_some(&self.vm.session_bindings),
+                #[cfg(not(feature = "tarn"))]
+                session: None,
             },
             #[cfg(all(feature = "tarn", not(feature = "debugger")))]
             module_prelude: &self.vm_module_prelude,
             #[cfg(feature = "debugger")]
-            debugger: self.evaluator.debugger(),
+            debugger: Shared::clone(&self.vm.debugger),
             #[cfg(feature = "debugger")]
-            debugger_handler: Shared::clone(&self.evaluator.debugger_handler),
+            debugger_handler: Shared::clone(&self.vm.debugger_handler),
             #[cfg(feature = "debugger")]
             source: Source {
                 name: None,
                 code: compiled.source.clone(),
             },
         };
+        #[cfg(feature = "tarn")]
+        let module_loader_for_error = self.vm.module_loader.clone();
+        #[cfg(not(feature = "tarn"))]
+        let module_loader_for_error = self.evaluator.module_loader.clone();
         vm.run(compiled, vm_program, input).map(Into::into).map_err(|error| {
             Box::new(error::Error::from_error(
                 &compiled.source,
                 error.into_inner_error(Shared::clone(&self.token_arena)),
-                self.evaluator.module_loader.clone(),
+                module_loader_for_error,
             ))
         })
     }
@@ -610,12 +701,12 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// the execution state for advanced debugging scenarios.
     #[cfg(feature = "debugger")]
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
-        self.evaluator.debugger()
+        Shared::clone(&self.vm.debugger)
     }
 
     #[cfg(feature = "debugger")]
     pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
-        self.evaluator.set_debugger_handler(handler);
+        self.vm.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 
     #[cfg(feature = "debugger")]
@@ -625,31 +716,25 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     #[cfg(feature = "debugger")]
     pub fn get_module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
-        self.evaluator.module_loader.module_name(module_id)
+        self.vm.module_loader.module_name(module_id)
     }
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
-        let source_code = self.evaluator.module_loader.get_source_code_for_debug(module_id);
+        let source_code = self.vm.module_loader.get_source_code_for_debug(module_id);
 
-        source_code.map_err(|e| {
-            Box::new(error::Error::from_error(
-                "",
-                e.into(),
-                self.evaluator.module_loader.clone(),
-            ))
-        })
+        source_code.map_err(|e| Box::new(error::Error::from_error("", e.into(), self.vm.module_loader.clone())))
     }
 
     /// Resolves `module_name` to the path its resolver loaded it from.
     pub fn get_module_path(&self, module_name: &str) -> Result<String, Box<error::Error>> {
-        self.evaluator.module_loader.get_module_path(module_name).map_err(|e| {
-            Box::new(error::Error::from_error(
-                "",
-                e.into(),
-                self.evaluator.module_loader.clone(),
-            ))
-        })
+        #[cfg(feature = "tarn")]
+        let module_loader = &self.vm.module_loader;
+        #[cfg(not(feature = "tarn"))]
+        let module_loader = &self.evaluator.module_loader;
+        module_loader
+            .get_module_path(module_name)
+            .map_err(|e| Box::new(error::Error::from_error("", e.into(), module_loader.clone())))
     }
 
     pub const fn version() -> &'static str {
@@ -664,6 +749,8 @@ impl Engine<DefaultModuleResolver> {
     /// An empty list restricts access to the built-in default domain
     /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
     pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.set_http_allowed_domains(domains.clone());
         self.evaluator.module_loader.set_http_allowed_domains(domains);
     }
 
@@ -672,6 +759,8 @@ impl Engine<DefaultModuleResolver> {
     /// The `mq` CLI calls this with `false` unless `--allow-http-import` is passed, so
     /// imports are opt-in there; disabled regardless of `--allowed-domain`.
     pub fn set_http_import_enabled(&mut self, enabled: bool) {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.set_http_import_enabled(enabled);
         self.evaluator.module_loader.set_http_import_enabled(enabled);
     }
 
@@ -680,6 +769,8 @@ impl Engine<DefaultModuleResolver> {
     /// Call this once before processing to force a re-fetch of all cached modules
     /// on the next resolve (e.g. when `--refresh-modules` is passed on the CLI).
     pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.clear_http_cache()?;
         self.evaluator.module_loader.clear_http_cache()
     }
 
@@ -687,11 +778,15 @@ impl Engine<DefaultModuleResolver> {
     ///
     /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
     pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.clear_http_cache_all()?;
         self.evaluator.module_loader.clear_http_cache_all()
     }
 
     /// Enables or disables the `mq.lock` integrity check for HTTP imports (on by default).
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.set_lockfile_enabled(enabled);
         self.evaluator.module_loader.set_lockfile_enabled(enabled);
     }
 
@@ -700,11 +795,15 @@ impl Engine<DefaultModuleResolver> {
     /// pass `--frozen` on the CLI so trusting a module's content for the first time
     /// only ever happens in a reviewable local run, not silently in CI.
     pub fn set_lockfile_frozen(&mut self, frozen: bool) {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.set_lockfile_frozen(frozen);
         self.evaluator.module_loader.set_lockfile_frozen(frozen);
     }
 
     /// Sets the path used for `mq.lock`.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
+        #[cfg(feature = "tarn")]
+        self.vm.module_loader.set_lockfile_path(path.clone());
         self.evaluator.module_loader.set_lockfile_path(path);
     }
 }
@@ -713,6 +812,7 @@ impl Engine<DefaultModuleResolver> {
 mod tests {
     use super::CompiledProgram;
     use crate::DefaultEngine;
+    use crate::RuntimeValue;
     use crate::Shared;
     use crate::error;
     use rstest::rstest;
@@ -776,6 +876,120 @@ mod tests {
             error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
         ));
         assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// Yields `2000.0` (loop body never runs, so this input always "succeeds" instantly),
+    /// then blocks `delay` before yielding `0.0` (loop runs ~2000 steps).
+    struct DelayedSecondInput {
+        step: u8,
+        delay: std::time::Duration,
+    }
+
+    impl Iterator for DelayedSecondInput {
+        type Item = RuntimeValue;
+
+        fn next(&mut self) -> Option<RuntimeValue> {
+            match self.step {
+                0 => {
+                    self.step = 1;
+                    Some(2000.into())
+                }
+                1 => {
+                    self.step = 2;
+                    std::thread::sleep(self.delay);
+                    Some(0.into())
+                }
+                _ => None,
+            }
+        }
+    }
+
+    #[test]
+    fn test_timeout_is_shared_across_inputs_not_reset_per_input() {
+        let mut engine = DefaultEngine::default();
+        engine.set_timeout(std::time::Duration::from_millis(100));
+
+        let result = engine.eval(
+            "until(. >= 2000): . + 1;",
+            DelayedSecondInput {
+                step: 0,
+                delay: std::time::Duration::from_millis(500),
+            },
+        );
+
+        assert!(matches!(
+            result.unwrap_err().cause,
+            error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+        ));
+    }
+
+    #[test]
+    fn test_default_value_recursion_is_call_depth_limited() {
+        let mut engine = DefaultEngine::default();
+        engine.set_max_call_stack_depth(50);
+
+        let result = engine.eval("def f(x = f()): x; | f()", vec!["".to_string().into()].into_iter());
+
+        assert!(matches!(
+            result.unwrap_err().cause,
+            error::InnerError::Runtime(error::runtime::RuntimeError::RecursionError(_))
+        ));
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_persists_let_across_eval_calls() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("let x = 41", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("x + 1", vec!["".to_string().into()].into_iter());
+
+        assert_eq!(result.unwrap(), vec![42.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_persists_var_mutation_across_eval_calls() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("var x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        engine.eval("x += 1", vec!["".to_string().into()].into_iter()).unwrap();
+        let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+
+        assert_eq!(result.unwrap(), vec![2.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_persists_def_across_eval_calls() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("def add_one(x): x + 1;", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("add_one(5)", vec!["".to_string().into()].into_iter());
+
+        assert_eq!(result.unwrap(), vec![6.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_is_opt_in() {
+        let mut engine = DefaultEngine::default();
+
+        engine
+            .eval("let x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1345,15 +1559,16 @@ mod tests {
         assert_eq!(second.values(), first.values());
     }
 
+    // `eval_compiled_vm` reads `define_value`/`define_string_value` bindings from `self.vm`,
+    // which only exists under `tarn`.
+    #[cfg(feature = "tarn")]
     #[test]
     fn test_eval_compiled_vm_resolves_names_defined_via_define_value() {
         use crate::RuntimeValue;
 
-        // `Engine::define_value`/`define_string_value` write directly into the tree-walker's
-        // root `Env`, which the VM's static slot resolution has no other way to see —
-        // regression test for the gap `mq-ffi`'s `test_define_string_value_and_use_in_eval`/
+        // Regression test for the gap `mq-ffi`'s `test_define_string_value_and_use_in_eval`/
         // `test_define_string_value_overwrites_previous` caught under `--all-features`
-        // (`OpCode::GetExternalGlobal`, seeded from `Evaluator::global_bindings`).
+        // (`OpCode::GetExternalGlobal`, seeded from `VmState::global_bindings_snapshot`).
         let mut engine = DefaultEngine::default();
         engine.define_string_value("greeting", "hello");
         engine.define_value("answer", RuntimeValue::Number(42.0.into()));
@@ -1389,9 +1604,9 @@ mod tests {
 
         // Mirrors `test_eval_import_as_alias` (the tree-walker's own local-file import
         // test), but through `eval_compiled_vm` — this only works because `eval_compiled_vm`
-        // now threads `self.evaluator.module_loader.clone()` into the VM compiler instead of
+        // threads `self.vm.module_loader.clone()` into the VM compiler instead of
         // it hardcoding an in-memory-only `StdModuleResolver` (`STANDARD_MODULES` only, no
-        // filesystem access) as it did before this session's module-resolver-parity work.
+        // filesystem access).
         let (temp_dir, temp_file_path) = create_file(
             "greeter_vm_engine_test.mq",
             r#"def greet(name): "Hello, " + name + "!";"#,

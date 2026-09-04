@@ -130,7 +130,7 @@ pub(crate) fn compile_program<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, &[], &[])
+    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, &[], &[], &[])
         .map(|(compiled, _)| compiled)
 }
 
@@ -142,8 +142,16 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     bindings: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, bindings, &[])
-        .map(|(compiled, _)| compiled)
+    compile_program_impl(
+        program,
+        token_arena,
+        module_loader,
+        BuiltinPrelude::None,
+        bindings,
+        &[],
+        &[],
+    )
+    .map(|(compiled, _)| compiled)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -152,7 +160,7 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::All, &[], &[])
+    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::All, &[], &[], &[])
         .map(|(compiled, _)| compiled)
 }
 
@@ -162,7 +170,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
-    compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], external_globals)
+    compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], &[], external_globals)
 }
 
 /// A query calling into an imported module only sees that module's own soft-builtin calls
@@ -170,12 +178,14 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
 /// missing names at a time, instead of jumping straight to the full ~150-function prelude.
 const MAX_PRELUDE_ATTEMPTS: usize = 16;
 
-/// Like [`compile_program_for_engine`], plus predeclared `seed_bindings` top-level slots.
+/// Like [`compile_program_for_engine`], plus predeclared `seed_bindings` (`seed_immutable`
+/// marks which came from `let` rather than `var`).
 pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     seed_bindings: &[crate::Ident],
+    seed_immutable: &[crate::Ident],
     external_globals: &[crate::Ident],
 ) -> CompileResult<CompiledProgram> {
     let mut reachable = soft_builtin_names_in_program(program);
@@ -191,6 +201,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
             module_loader.clone(),
             prelude,
             seed_bindings,
+            seed_immutable,
             external_globals,
         ) {
             Ok((compiled, unresolved)) if unresolved.is_empty() => return Ok(compiled),
@@ -221,6 +232,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         module_loader,
         BuiltinPrelude::All,
         seed_bindings,
+        seed_immutable,
         external_globals,
     )
     .map(|(compiled, _)| compiled)
@@ -534,12 +546,16 @@ fn compile_program_impl<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     builtin_prelude: BuiltinPrelude<'_>,
     seed_bindings: &[crate::Ident],
+    seed_immutable: &[crate::Ident],
     external_globals: &[crate::Ident],
 ) -> CompileResult<(CompiledProgram, FxHashSet<crate::Ident>)> {
     let mut scope = FunctionScope::default();
     assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
     for name in seed_bindings {
-        scope.declare(*name);
+        let slot = scope.declare(*name);
+        if seed_immutable.contains(name) {
+            scope.mark_immutable(slot);
+        }
     }
     let mut compiler = Compiler {
         chunks: vec![Chunk::default()],
@@ -575,6 +591,7 @@ fn compile_program_impl<R: ModuleResolver>(
     compiler.emit(OpCode::Return);
     compiler.chunks[0].local_count = compiler.scopes[0].local_count();
     compiler.chunks[0].local_names = compiler.scopes[0].local_names();
+    compiler.chunks[0].local_mutable = compiler.scopes[0].local_mutable();
     compiler.chunks[0].upvalue_names = compiler.scopes[0].upvalue_names();
     bytecode::optimize_chunks(&mut compiler.chunks);
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
@@ -847,6 +864,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let finished = self.scopes.pop().expect("scope pushed above");
         self.chunks[new_index as usize].local_count = finished.local_count();
         self.chunks[new_index as usize].local_names = finished.local_names();
+        self.chunks[new_index as usize].local_mutable = finished.local_mutable();
         self.chunks[new_index as usize].upvalue_names = finished.upvalue_names();
         self.chunks[new_index as usize].param_shape = ParamShape {
             bindings,
@@ -2199,8 +2217,15 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_conditional_loop(&mut self, cond: &Shared<Node>, body: &Program, invert: bool) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
-        self.emit(OpCode::PushNone);
+        self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
+
+        // Peeled check: cond false before the loop ever runs means the result is None.
+        self.compile_expr(cond)?;
+        if invert {
+            self.emit(OpCode::Not);
+        }
+        let initial_exit = self.emit(OpCode::JumpIfFalse(0));
 
         let loop_start = self.chunk_mut().code.len();
         self.compile_expr(cond)?;
@@ -2208,11 +2233,11 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::Not);
         }
         let exit_jump = self.emit(OpCode::JumpIfFalse(0));
-        let (mut patch_sites, break_try_catches, continue_try_catches) =
+        let (break_jumps, break_try_catches, continue_try_catches) =
             self.compile_loop_body(loop_start, acc_slot, body)?;
-        patch_sites.push(exit_jump);
 
-        for jump in patch_sites {
+        self.chunk_mut().patch_jump(exit_jump);
+        for jump in break_jumps {
             self.chunk_mut().patch_jump(jump);
         }
         for try_catch in break_try_catches {
@@ -2222,14 +2247,18 @@ impl<R: ModuleResolver> Compiler<R> {
             self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
         self.emit(OpCode::GetLocal(acc_slot));
+        let done = self.emit(OpCode::Jump(0));
+
+        self.chunk_mut().patch_jump(initial_exit);
+        self.emit(OpCode::PushNone);
+        self.chunk_mut().patch_jump(done);
         Ok(())
     }
 
     fn compile_loop(&mut self, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
         // `loop` keeps the incoming pipeline value when its first operation is a bare
-        // `break`, matching `Evaluator::eval_loop`. Conditional loops intentionally start
-        // their accumulator at `None` instead.
+        // `break`, matching `Evaluator::eval_loop`.
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
 
