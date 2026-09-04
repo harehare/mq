@@ -1,6 +1,6 @@
 use crate::Ident;
 use crate::Shared;
-use crate::eval::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::RuntimeValue;
 use regex::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::BTreeMap;

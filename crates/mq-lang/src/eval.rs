@@ -9,16 +9,16 @@ use web_time::Instant;
 
 use crate::Module;
 use crate::ast::constants;
-use crate::eval::builtin::io_context;
-#[cfg(feature = "debugger")]
-use crate::eval::debugger::DefaultDebuggerHandler;
-#[cfg(feature = "debugger")]
-use crate::eval::debugger::Source;
-use crate::eval::host::HostFunctions;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 #[cfg(feature = "debugger")]
 use crate::parse;
+use crate::runtime::builtin::{self, io_context};
+#[cfg(feature = "debugger")]
+use crate::runtime::debugger::DefaultDebuggerHandler;
+#[cfg(feature = "debugger")]
+use crate::runtime::debugger::Source;
+use crate::runtime::host::{self, HostFunctions};
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
 use crate::{
@@ -34,23 +34,16 @@ use crate::{
 use crate::{
     IdentWithToken, ModuleResolver,
     error::runtime::RuntimeError,
-    eval::{env::EnvError, runtime_value::ModuleEnv},
     module::{self, error::ModuleError},
+    runtime::{env::EnvError, runtime_value::ModuleEnv},
     selector::Selector,
 };
 
 #[cfg(feature = "debugger")]
-use debugger::{Breakpoint, DebugContext};
+use crate::runtime::debugger::{Breakpoint, DebugContext};
 
-pub mod builtin;
-#[cfg(feature = "debugger")]
-pub mod debugger;
-pub mod env;
-pub mod host;
-pub mod runtime_value;
-
-use env::Env;
-use runtime_value::RuntimeValue;
+use crate::runtime::env::Env;
+use crate::runtime::runtime_value::{self, RuntimeValue};
 
 /// Number of loop iterations / function calls between wall-clock deadline checks.
 /// Must be a power of two so the check is a cheap bitmask instead of a modulo.
@@ -500,18 +493,6 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
     pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
         match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
             Ok(module) => self.load_module(module),
-            Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    // The VM compiles its own prelude independently, so populating `env` here is wasted
-    // work under `tarn`. Still parses builtin.mq (interning its identifiers, which
-    // `Ident`'s intern-order-based `Ord` depends on) rather than skipping entirely.
-    #[cfg(feature = "tarn")]
-    pub(crate) fn load_builtin_module(&mut self) -> Result<(), RuntimeError> {
-        match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
-            Ok(_) => Ok(()),
             Err(ModuleError::AlreadyLoaded(_)) => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -8278,7 +8259,7 @@ mod debugger_tests {
 
     use super::*;
     use crate::ast::node::Args;
-    use crate::eval::debugger::{DebugContext, DebuggerHandler};
+    use crate::runtime::debugger::{DebugContext, DebuggerHandler};
     use crate::{AstNode, DebuggerAction, IdentWithToken, ModuleLoader, Range, token_alloc};
 
     #[fixture]
@@ -8324,7 +8305,7 @@ mod debugger_tests {
     impl DebuggerHandler for TestDebuggerHandler {
         fn on_breakpoint_hit(
             &self,
-            _breakpoint: &crate::eval::debugger::Breakpoint,
+            _breakpoint: &crate::runtime::debugger::Breakpoint,
             context: &DebugContext,
         ) -> DebuggerAction {
             self.breakpoints_hit
@@ -8370,7 +8351,7 @@ mod debugger_tests {
     impl DebuggerHandler for RecordingDebuggerHandler {
         fn on_breakpoint_hit(
             &self,
-            _breakpoint: &crate::eval::debugger::Breakpoint,
+            _breakpoint: &crate::runtime::debugger::Breakpoint,
             context: &DebugContext,
         ) -> DebuggerAction {
             self.breakpoint_hits
@@ -8382,7 +8363,7 @@ mod debugger_tests {
 
         fn on_log_point(
             &self,
-            _breakpoint: &crate::eval::debugger::Breakpoint,
+            _breakpoint: &crate::runtime::debugger::Breakpoint,
             message: &str,
             _context: &DebugContext,
         ) {

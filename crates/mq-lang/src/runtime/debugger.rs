@@ -2,7 +2,7 @@ use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
 use crate::ast::node as ast;
-use crate::eval::env::Env;
+use crate::runtime::env::Env;
 use crate::{Shared, SharedCell, Token};
 
 use std::{collections::HashSet, fmt::Debug};
@@ -85,7 +85,7 @@ impl Default for DebugContext {
             token: Shared::new(Token {
                 kind: crate::TokenKind::Eof,
                 range: crate::Range::default(),
-                module_id: crate::eval::module::ModuleId::new(0),
+                module_id: crate::ModuleId::new(0),
             }),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
@@ -490,7 +490,7 @@ impl DebuggerHandler for DefaultDebuggerHandler {}
 mod tests {
     use rstest::rstest;
 
-    use crate::{Arena, Range, TokenKind, ast::TokenId, eval::module::ModuleId};
+    use crate::{Arena, ModuleId, Range, TokenKind, ast::TokenId};
 
     use super::*;
 

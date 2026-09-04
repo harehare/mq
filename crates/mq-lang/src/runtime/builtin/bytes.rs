@@ -1,5 +1,5 @@
 use super::Error;
-use crate::eval::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::RuntimeValue;
 
 /// Supported binary packing formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

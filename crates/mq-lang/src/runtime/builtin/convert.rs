@@ -1,7 +1,7 @@
 use crate::RuntimeValue;
 use crate::Shared;
-use crate::eval::builtin::Error;
 use crate::number::Number;
+use crate::runtime::builtin::Error;
 use base64::prelude::*;
 use encoding_rs::Encoding;
 use html_escape::decode_html_entities;

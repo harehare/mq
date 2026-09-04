@@ -2,11 +2,11 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-#[cfg(feature = "debugger")]
-use crate::eval::env::Env;
 use crate::io::{Io, NativeIo, SandboxedIo};
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
+#[cfg(feature = "debugger")]
+use crate::runtime::env::Env;
 use crate::{
     ArenaId, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
     module::resolver::DefaultModuleResolver, token_alloc,
@@ -19,9 +19,10 @@ use crate::{
     arena::Arena,
     error::{self},
     eval::Evaluator,
-    eval::builtin::io_context,
     optimizer::{OptimizationLevel, Optimizer},
-    parse, tarn,
+    parse,
+    runtime::builtin::io_context,
+    tarn,
 };
 
 /// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
@@ -378,7 +379,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// ```
     pub fn register_fn<F, Marker>(&self, name: impl Into<crate::Ident>, f: F)
     where
-        F: crate::eval::host::IntoHostFunction<Marker>,
+        F: crate::runtime::host::IntoHostFunction<Marker>,
     {
         let name = name.into();
         let f = f.into_host_fn();
@@ -404,6 +405,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// This must be called to enable access to standard functions
     /// like `add`, `sub`, `map`, `filter`, etc.
     pub fn load_builtin_module(&mut self) {
+        // The VM's module loader is independent of `Evaluator`'s.
+        #[cfg(feature = "tarn")]
+        self.vm.load_builtin_module(Shared::clone(&self.token_arena));
+        #[cfg(not(feature = "tarn"))]
         self.evaluator
             .load_builtin_module()
             .expect("Failed to load builtin module");
@@ -1351,7 +1356,7 @@ mod tests {
     #[cfg(all(feature = "debugger", not(feature = "tarn")))]
     #[test]
     fn test_switch_env() {
-        use crate::eval::env::Env;
+        use crate::runtime::env::Env;
         use crate::{RuntimeValue, Shared, SharedCell, null_input};
 
         let engine = DefaultEngine::default();
@@ -1370,7 +1375,7 @@ mod tests {
     #[cfg(all(feature = "debugger", not(feature = "tarn")))]
     #[test]
     fn test_eval_debug_expression_tree_walker() {
-        use crate::eval::env::Env;
+        use crate::runtime::env::Env;
         use crate::{RuntimeValue, Shared, SharedCell};
 
         let mut engine = DefaultEngine::default();
@@ -1386,7 +1391,7 @@ mod tests {
     #[cfg(all(feature = "debugger", feature = "tarn"))]
     #[test]
     fn test_eval_debug_expression_vm() {
-        use crate::eval::env::Env;
+        use crate::runtime::env::Env;
         use crate::{RuntimeValue, Shared, SharedCell};
 
         let mut engine = DefaultEngine::default();

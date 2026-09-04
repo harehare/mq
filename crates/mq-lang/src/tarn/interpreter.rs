@@ -5,11 +5,11 @@ use super::value::VmClosureValue;
 use super::value::{Cell, Closure, Locals, StackValue, read_cell, write_cell};
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
-use crate::eval::builtin::{self, Args};
-use crate::eval::env::Env;
-use crate::eval::host::HostFunctions;
-use crate::eval::runtime_value::{self, RuntimeValue};
 use crate::number::Number;
+use crate::runtime::builtin::{self, Args};
+use crate::runtime::env::Env;
+use crate::runtime::host::HostFunctions;
+use crate::runtime::runtime_value::{self, RuntimeValue};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell};
 use std::collections::BTreeMap;
@@ -2139,9 +2139,9 @@ fn call_builtin_args(
                 };
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(host_args)))
                     .unwrap_or_else(|payload| {
-                        Err(crate::eval::host::HostFunctionError::new(format!(
+                        Err(crate::runtime::host::HostFunctionError::new(format!(
                             "panic: {}",
-                            crate::eval::host::panic_message(&*payload)
+                            crate::runtime::host::panic_message(&*payload)
                         )))
                     })
                     .map_err(|e| VmError::Host(*ident, e.message().to_string()))
