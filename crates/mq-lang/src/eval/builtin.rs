@@ -3411,10 +3411,10 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             } else {
                 idx as usize
             };
-            Ok(RuntimeValue::Markdown(
-                std::mem::take(node),
-                Some(runtime_value::Selector::index(real_idx)),
-            ))
+            match runtime_value::Selector::index(real_idx) {
+                Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
+                None => Ok(RuntimeValue::NONE),
+            }
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
@@ -11212,6 +11212,43 @@ mod tests {
                 vec![map_val.clone(), RuntimeValue::Number(123.into())]
             ))
         );
+    }
+
+    #[test]
+    fn test_eval_builtin_get_markdown_index_beyond_selector_range() {
+        let ident_get = Ident::new("get");
+        let values: Vec<Node> = (0..300)
+            .map(|i| {
+                Node::Text(mq_markdown::Text {
+                    value: format!("child{i}"),
+                    position: None,
+                })
+            })
+            .collect();
+        let parent = RuntimeValue::Markdown(
+            Shared::new(Node::Strong(mq_markdown::Strong { values, position: None })),
+            None,
+        );
+
+        // In range for the u8-backed Selector: selects the child.
+        let in_range = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            vec![parent.clone(), RuntimeValue::Number(254.into())].into(),
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(in_range.markdown_node().unwrap().value(), "child254");
+
+        // Past the u8-backed Selector's range: no panic, degrades to None like any other
+        // out-of-range index rather than erroring or crashing.
+        let out_of_range = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            vec![parent, RuntimeValue::Number(255.into())].into(),
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(out_of_range, Ok(RuntimeValue::NONE));
     }
 
     #[test]

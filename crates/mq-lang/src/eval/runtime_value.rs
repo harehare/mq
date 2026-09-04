@@ -11,19 +11,24 @@ use std::{
 /// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Selector {
-    Index(std::num::NonZeroUsize),
+    Index(std::num::NonZeroU8),
 }
 
 impl Selector {
+    /// `None` if `i` doesn't fit (indices `>= 255`); callers treat that the same as any
+    /// other out-of-range index (e.g. `RuntimeValue::NONE`), not an error.
     #[inline(always)]
-    pub(crate) fn index(i: usize) -> Self {
-        Selector::Index(std::num::NonZeroUsize::new(i + 1).expect("index too large"))
+    pub(crate) fn index(i: usize) -> Option<Self> {
+        i.checked_add(1)
+            .and_then(|n| u8::try_from(n).ok())
+            .and_then(std::num::NonZeroU8::new)
+            .map(Selector::Index)
     }
 
     #[inline(always)]
     pub(crate) fn index_value(self) -> usize {
         let Selector::Index(n) = self;
-        n.get() - 1
+        (n.get() - 1) as usize
     }
 }
 
@@ -1058,7 +1063,7 @@ mod tests {
                     value: "".to_string(),
                     position: None
                 })),
-                Some(Selector::index(1))
+                Some(Selector::index(1).unwrap())
             )
             .is_truthy()
         );
@@ -1210,7 +1215,8 @@ mod tests {
             position: None,
         });
 
-        let markdown_with_selector = RuntimeValue::Markdown(Shared::new(parent.clone()), Some(Selector::index(1)));
+        let markdown_with_selector =
+            RuntimeValue::Markdown(Shared::new(parent.clone()), Some(Selector::index(1).unwrap()));
 
         let selected = markdown_with_selector.markdown_node();
         assert!(selected.is_some());
@@ -1219,11 +1225,19 @@ mod tests {
         let updated = markdown_with_selector.update_markdown_value("updated child");
         match &updated {
             RuntimeValue::Markdown(node, selector) => {
-                assert_eq!(selector, &Some(Selector::index(1)));
+                assert_eq!(selector, &Some(Selector::index(1).unwrap()));
                 assert_eq!(node.find_at_index(1).unwrap().value(), "updated child");
             }
             _ => panic!("Expected Markdown variant"),
         }
+    }
+
+    #[test]
+    fn test_selector_index_boundary() {
+        assert!(Selector::index(0).is_some());
+        assert!(Selector::index(254).is_some());
+        assert!(Selector::index(255).is_none());
+        assert!(Selector::index(usize::MAX).is_none());
     }
 
     #[test]
