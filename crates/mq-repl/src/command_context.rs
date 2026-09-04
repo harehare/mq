@@ -401,6 +401,8 @@ impl CommandContext {
                 hir.add_builtin();
                 let mut engine = mq_lang::DefaultEngine::default();
                 engine.load_builtin_module();
+                #[cfg(feature = "tarn")]
+                engine.enable_query_session();
                 self.hir = hir;
                 self.source_id = source_id;
                 self.scope_id = scope_id;
