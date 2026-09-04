@@ -61,7 +61,7 @@ build-target target:
 # Dumps Tarn bytecode for a query via mq-dbg, verifying debugger => debug-trace wiring.
 # Example: just dump-bytecode '1 + 2'
 dump-bytecode query:
-    cargo run -p mq-run --bin mq-dbg --features="debugger" -- --dump-bytecode -I null '{{query}}'
+    cargo run -p mq-run --bin mq-dbg --features="debugger" -- -C --dump-bytecode -I null '{{query}}'
 
 # Build benchmarks with codspeed. Runs against the tarn VM backend, not the tree-walker.
 [working-directory: 'crates/mq-lang']
