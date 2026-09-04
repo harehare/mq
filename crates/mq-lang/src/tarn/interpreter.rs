@@ -1955,6 +1955,9 @@ fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeVa
     let mut result = String::with_capacity(capacity);
     for part in parts.iter() {
         match part {
+            // Skips the Display/Formatter machinery for the most common part shape (a
+            // literal text fragment between `${...}`s).
+            StackValue::Value(RuntimeValue::String(s)) => result.push_str(s),
             StackValue::Value(value) => {
                 let _ = write!(result, "{value}");
             }
