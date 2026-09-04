@@ -680,7 +680,7 @@ impl<R: ModuleResolver> Compiler<R> {
             match &*node.expr {
                 Expr::Def(_, _, _) => defs.push(Shared::clone(node)),
                 Expr::Let(Pattern::Ident(ident), _) | Expr::Var(Pattern::Ident(ident), _) => {
-                    self.scope_mut().declare(ident.name);
+                    self.scope_mut().declare_or_reuse(ident.name);
                     deferred.push(Deferred::Statement(Shared::clone(node)));
                 }
                 Expr::Include(literal) => {
