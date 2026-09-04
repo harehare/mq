@@ -2,9 +2,8 @@ use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
 use crate::ast::node as ast;
-use crate::eval::Evaluator;
 use crate::eval::env::Env;
-use crate::{ModuleResolver, Shared, SharedCell, Token};
+use crate::{Shared, SharedCell, Token};
 
 use std::{collections::HashSet, fmt::Debug};
 
@@ -486,16 +485,6 @@ pub trait DebuggerHandler: std::fmt::Debug + Send + Sync {
 pub struct DefaultDebuggerHandler;
 
 impl DebuggerHandler for DefaultDebuggerHandler {}
-
-impl<T: ModuleResolver, IO: crate::io::Io> Evaluator<T, IO> {
-    pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
-        Shared::clone(&self.debugger)
-    }
-
-    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
-        self.debugger_handler = Shared::new(SharedCell::new(handler));
-    }
-}
 
 #[cfg(test)]
 mod tests {

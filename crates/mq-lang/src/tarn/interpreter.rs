@@ -687,7 +687,12 @@ fn call_stack_value(
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    bind_params(
+    // Before `bind_params`, since a default value can recurse into this same function.
+    execution
+        .limits
+        .enter_call()
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+    if let Err(e) = bind_params(
         &callee_chunk.param_shape,
         args,
         &callee_locals,
@@ -700,8 +705,10 @@ fn call_stack_value(
         },
         #[cfg(feature = "debugger")]
         debug,
-    )
-    .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+    ) {
+        execution.limits.exit_call();
+        return Err(locate(call_site.chunk, call_site.ip, e));
+    }
     #[cfg(feature = "debugger")]
     let caller_node = debug.current_node.clone();
     #[cfg(feature = "debugger")]
@@ -711,10 +718,6 @@ fn call_stack_value(
     } else {
         false
     };
-    execution
-        .limits
-        .enter_call()
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
     let call_result = run_chunk(
         callee_chunk_index,
         callee_chunks,

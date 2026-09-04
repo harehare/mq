@@ -393,6 +393,8 @@ pub(crate) struct Chunk {
     /// Source names for local slots. Kept in non-debug builds too because legacy dynamic
     /// builtins such as `get_variable` resolve names against the current lexical scope.
     pub(crate) local_names: Vec<Ident>,
+    /// `true` where the local slot came from a `var` rather than a `let`.
+    pub(crate) local_mutable: Vec<bool>,
     /// Source names for captured slots; see [`Self::local_names`].
     pub(crate) upvalue_names: Vec<Ident>,
     /// Run-length-encoded `pc -> TokenId` map, looked up via `token_at` to recover error spans.
