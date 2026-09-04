@@ -2056,32 +2056,6 @@ fn engine() -> DefaultEngine {
             RuntimeValue::Number(3.into()),
             RuntimeValue::Number(4.into())
         ]))].into()))]
-#[case::get_variable_simple("
-          let x = 42
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(42.into())].into()))]
-#[case::set_variable_simple("
-          set_variable(\"x\", 99)
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(99.into())].into()))]
-#[case::set_variable_overwrite("
-          set_variable(\"x\", 1)
-          | set_variable(\"x\", 2)
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::set_and_get_multiple_variables("
-          set_variable(\"a\", \"foo\")
-          | set_variable(\"b\", \"bar\")
-          | get_variable(\"a\") + get_variable(\"b\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String(Shared::new("foobar".to_string()))].into()))]
 #[case::to_mdx_single_text(
             r#""<Component />" | to_mdx() | first() | to_string()"#,
             vec![RuntimeValue::None],
@@ -3374,8 +3348,6 @@ fn engine() -> DefaultEngine {
 #[case::set_children_leaf_node(r##"to_markdown("plain text") | first() | set_children(["ignored"]) | to_text()"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
 // attr: non-markdown → returns first arg
 #[case::attr_non_markdown(r#"attr("not_markdown", "key")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("not_markdown".to_string()))].into()))]
-// set_variable with symbol key
-#[case::set_variable_symbol(r#"set_variable(:myvar, 42) | get_variable(:myvar)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // _diff: two different strings → paired delete+insert = 2 dicts
 #[case::diff_strings("_diff(\"abc\", \"axc\") | len", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // _diff: two arrays - equal(1), paired(delete 2/insert 4), equal(3) = 4 dicts
@@ -3501,8 +3473,6 @@ fn engine() -> DefaultEngine {
 #[case::xml_parse_basic(r#"_xml_parse("<root>hello</root>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // _xml_parse: self-closing element
 #[case::xml_parse_empty_element(r#"_xml_parse("<br/>") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
-// set_variable: with string key
-#[case::set_variable_string_key(r#"set_variable("myvar", 42) | get_variable("myvar") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
 // _diff: array with string elements hits string inline-diff path
 #[case::diff_arrays_strings(r#"_diff(["old", "same"], ["new", "same"]) | first | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dict".to_string()))].into()))]
 // from_hex: with Markdown input (heading with valid hex text)

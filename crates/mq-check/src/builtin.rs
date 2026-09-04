@@ -1317,8 +1317,6 @@ fn register_markdown(ctx: &mut InferenceContext) {
 /// Variable/symbol management functions
 fn register_variable(ctx: &mut InferenceContext) {
     register_nullary(ctx, "all_symbols", Type::array(Type::Symbol));
-    register_unary(ctx, "get_variable", Type::String, Type::String);
-    register_binary(ctx, "set_variable", Type::String, Type::String, Type::None);
     register_unary(ctx, "intern", Type::String, Type::Symbol);
 }
 
@@ -2341,8 +2339,6 @@ mod tests {
     #[case::error_func("error(\"message\")", true)]
     #[case::halt_func("halt(1)", true)]
     #[case::all_symbols("all_symbols()", true)]
-    #[case::get_variable("get_variable(\"key\")", true)]
-    #[case::set_variable("set_variable(\"key\", \"value\")", true)]
     #[case::intern("intern(\"symbol\")", true)]
     #[case::is_debug_mode("is_debug_mode()", true)]
     #[case::breakpoint("breakpoint()", true)]

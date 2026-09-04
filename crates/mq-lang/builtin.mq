@@ -2168,24 +2168,6 @@ def omit(d, keys):
     end
 end
 
-# Checks if a dict has the given key, or an array has an element at the given index.
-#
-# Example:
-# ```
-# has({"a": 1}, "a")
-# #=> true
-# ```
-#
-# Returns: bool
-def has(v, key):
-  if (is_dict(v)):
-    in(keys(v), key)
-  elif (is_array(v)):
-    is_number(key) && between(key, 0, len(v) - 1)
-  else:
-    false
-end
-
 # Retrieves a nested value by following an array of keys/indices, e.g. `get_path(d, ["a", "b", 0])`.
 # Returns None as soon as any intermediate step is missing.
 #

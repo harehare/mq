@@ -6,6 +6,7 @@ pub mod builtins {
 
     pub const CONVERT: &str = "convert";
     pub const GET: &str = "get";
+    pub const HAS: &str = "has";
     pub const SET: &str = "set";
     pub const SLICE: &str = "slice";
     pub const SHIFT_LEFT: &str = "shift_left";
