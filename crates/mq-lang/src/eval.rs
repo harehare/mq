@@ -500,7 +500,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
 
     /// Always the full population, regardless of feature config — for tests that use the
     /// tree-walker directly as an oracle even in a `tarn`-enabled build.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "tarn"))]
     pub(crate) fn load_builtin_module_full(&mut self) -> Result<(), RuntimeError> {
         match self.module_loader.load_builtin(Shared::clone(&self.token_arena)) {
             Ok(module) => self.load_module(module),

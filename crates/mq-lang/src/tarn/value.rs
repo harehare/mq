@@ -1,16 +1,18 @@
-#[cfg(feature = "tarn")]
 use super::bytecode::Chunk;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{Shared, SharedCell};
 
+/// A shared VM value cell.
 pub(crate) type Cell = Shared<SharedCell<StackValue>>;
 
 #[derive(Clone)]
+/// A value held on the VM operand stack.
 pub(crate) enum StackValue {
     Value(RuntimeValue),
     Closure(Shared<Closure>),
 }
 
+/// A closure on the VM operand stack.
 pub(crate) struct Closure {
     pub(crate) chunk_index: u16,
     pub(crate) upvalues: Vec<Cell>,
@@ -25,26 +27,17 @@ impl std::fmt::Debug for Closure {
     }
 }
 
-/// A VM closure that has crossed into plain-`RuntimeValue` territory — stored in an
-/// array/dict, passed to a native builtin like `partial`, or returned from `Engine::eval`.
-/// Unlike `StackValue::Closure` (only ever a transient value *on the VM stack*, scoped to
-/// one `run_chunk` call), this is `RuntimeValue::VmClosure`'s payload: it must be callable
-/// independent of any particular execution's borrow of the chunk table, so it holds its own
-/// `Shared` handle to it (see `CompiledProgram::chunks`) rather than a borrowed slice.
-#[cfg(feature = "tarn")]
+/// A VM closure stored as a runtime value.
 #[derive(Clone)]
 pub(crate) struct VmClosureValue {
     pub(crate) chunks: Shared<Vec<Chunk>>,
     pub(crate) chunk_index: u16,
     pub(crate) upvalues: Vec<Cell>,
-    /// Args already supplied via `partial` — prepended (positionally) to whatever args a
-    /// later call site supplies, then bound the same as any ordinary call. Empty for a
-    /// closure that hasn't been partially applied.
     pub(crate) bound_args: Vec<RuntimeValue>,
 }
 
-#[cfg(feature = "tarn")]
 impl VmClosureValue {
+    /// Converts a stack closure to a runtime closure.
     pub(crate) fn from_closure(chunks: &Shared<Vec<Chunk>>, closure: &Closure) -> Self {
         Self {
             chunks: Shared::clone(chunks),
@@ -55,17 +48,12 @@ impl VmClosureValue {
     }
 }
 
+/// Creates a shared VM cell.
 pub(crate) fn new_cell(value: StackValue) -> Cell {
     Shared::new(SharedCell::new(value))
 }
 
-/// One frame's local slots. `Boxed` cells support upvalue capture (a nested closure can hold
-/// a `Shared` handle to one past this frame's lifetime); `Flat` is for the common case where
-/// `Chunk::captures_local_slots()` is false — same `RefCell`-style borrow/clone access as
-/// `Boxed`, but inline in the `Vec` instead of behind a separate `Rc` allocation, so a
-/// read/write is one memory access instead of two. `Flat` is unavailable under `sync`: a
-/// cached program's pooled frames must stay `Send + Sync` there, and plain `RefCell` isn't
-/// `Sync` (matching why `Boxed` uses `RwLock` under `sync` via `SharedCell`).
+/// One frame's local slots. `Boxed` slots support captures.
 pub(crate) enum Locals {
     #[cfg(not(feature = "sync"))]
     Flat(Vec<std::cell::RefCell<StackValue>>),
@@ -73,6 +61,7 @@ pub(crate) enum Locals {
 }
 
 impl Locals {
+    /// Creates a non-capturing frame.
     pub(crate) fn flat(count: usize) -> Self {
         #[cfg(not(feature = "sync"))]
         {
@@ -88,6 +77,7 @@ impl Locals {
         }
     }
 
+    /// Creates a capture-capable frame.
     pub(crate) fn boxed(count: usize) -> Self {
         Locals::Boxed(
             (0..count)
@@ -96,6 +86,7 @@ impl Locals {
         )
     }
 
+    /// Returns the number of local slots.
     pub(crate) fn len(&self) -> usize {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -104,8 +95,7 @@ impl Locals {
         }
     }
 
-    /// Resets slots in `range` to `None`, leaving the rest untouched (for a pooled frame whose
-    /// leading slots a caller is about to overwrite anyway).
+    /// Clears slots from `from` onward.
     pub(crate) fn reset_from(&self, from: usize) {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -122,6 +112,7 @@ impl Locals {
         }
     }
 
+    /// Reads a local slot.
     pub(crate) fn get(&self, slot: u16) -> StackValue {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -130,13 +121,12 @@ impl Locals {
         }
     }
 
-    /// Bounds-checked read, for the debugger's slot-name lookups (which validate the slot
-    /// exists in `DebugSymbolTable` before trusting it — everywhere else, a compiled chunk's
-    /// slots are already in-bounds by construction).
+    /// Reads a local slot when it is in range.
     pub(crate) fn get_checked(&self, slot: u16) -> Option<StackValue> {
         ((slot as usize) < self.len()).then(|| self.get(slot))
     }
 
+    /// Writes a local slot.
     pub(crate) fn set(&self, slot: u16, value: StackValue) {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -170,8 +160,7 @@ impl Locals {
         }
     }
 
-    /// Only meaningful on `Boxed`: `Chunk::captures_local_slots()` guarantees a `Flat` frame's
-    /// slots are never captured by a nested closure, so this is never reached for `Flat`.
+    /// Returns a captured cell.
     pub(crate) fn cell(&self, slot: u16) -> &Cell {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -180,6 +169,7 @@ impl Locals {
         }
     }
 
+    /// Reads an array slot's length and element.
     pub(crate) fn array_len_and_element_at(
         &self,
         slot: u16,
@@ -198,6 +188,7 @@ impl Locals {
         }
     }
 
+    /// Appends to an array stored in a local slot.
     pub(crate) fn append_to_array_at(&self, slot: u16, value: RuntimeValue) -> Result<(), &'static str> {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -214,6 +205,7 @@ impl Locals {
     }
 }
 
+/// Reads a VM cell.
 pub(crate) fn read_cell(cell: &Cell) -> StackValue {
     #[cfg(not(feature = "sync"))]
     {
@@ -225,6 +217,7 @@ pub(crate) fn read_cell(cell: &Cell) -> StackValue {
     }
 }
 
+/// Writes a VM cell.
 pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     #[cfg(not(feature = "sync"))]
     {
@@ -236,7 +229,7 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     }
 }
 
-/// Reads an array's length and one element without cloning the enclosing array value.
+/// Reads an array cell's length and element.
 pub(crate) fn array_len_and_element_at_cell(
     cell: &Cell,
     index: usize,
@@ -259,7 +252,7 @@ pub(crate) fn array_len_and_element_at_cell(
     }
 }
 
-/// Appends to an array held in a VM cell without cloning the enclosing `RuntimeValue`.
+/// Appends to an array cell.
 pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(), &'static str> {
     #[cfg(not(feature = "sync"))]
     {

@@ -306,7 +306,7 @@ impl MqAdapter {
         };
 
         mq_lang::DefaultEngine::default()
-            .eval_debug_expression(code, &context.env)
+            .eval_debug_expression(code, context.current_value.clone(), &context.env)
             .map_err(|e| {
                 let error_msg = format!("Evaluation error: {}", e);
                 error!(error = %error_msg);

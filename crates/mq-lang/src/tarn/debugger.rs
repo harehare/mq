@@ -3,16 +3,11 @@ use super::{compiler, interpreter};
 use crate::runtime::env::Env;
 use crate::runtime::host::HostFunctions;
 use crate::{
-    DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source, TokenArena,
-    get_token,
+    Breakpoint, DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source,
+    TokenArena, get_token,
 };
 
-/// Adapts VM boundary events to the debugger API shared with the tree-walking evaluator.
-///
-/// Breakpoint condition/logpoint expressions (`eval_expression` below) deliberately always
-/// resolve modules through a fixed `StdModuleResolver` rather than the engine's own
-/// configured one — a breakpoint condition realistically never needs to `include`/`import` a
-/// module — so this type isn't generic over the caller's resolver.
+/// Adapts VM boundary events to the shared debugger API.
 pub(crate) struct VmDebuggerHook {
     debugger: Shared<SharedCell<Debugger>>,
     handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
@@ -65,7 +60,7 @@ impl VmDebuggerHook {
             &names,
         )
         .ok()?;
-        interpreter::run_debug_expression(&compiled, &values, &HostFunctions::default()).ok()
+        interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &HostFunctions::default()).ok()
     }
 
     fn breakpoint_matches(&self, breakpoint: &crate::Breakpoint, bindings: &[(Ident, RuntimeValue)]) -> bool {
@@ -126,16 +121,9 @@ impl VmDebuggerHook {
     }
 }
 
-impl DebugHook for VmDebuggerHook {
-    fn on_boundary(&mut self, event: DebugEvent) {
-        if !self.debugger.read().unwrap().is_active() {
-            return;
-        }
-
-        // The tree walker exposes a child environment for a function frame: parameters
-        // and frame locals are LOCAL, while captured names remain visible through the
-        // parent (GLOBAL) environment. Keep that distinction for DAP's scopes and
-        // variables requests instead of flattening every VM binding into one scope.
+impl VmDebuggerHook {
+    fn build_context(&mut self, event: DebugEvent) -> (DebugContext, Shared<crate::Token>, Vec<(Ident, RuntimeValue)>) {
+        // Keep captured bindings separate from frame locals for DAP scopes.
         let parent_env = Shared::new(SharedCell::new(Env::default()));
         for (name, value) in &event.upvalue_bindings {
             parent_env.write().unwrap().define(*name, value.clone());
@@ -169,6 +157,17 @@ impl DebugHook for VmDebuggerHook {
                 .unwrap_or_else(|| self.source.clone()),
         };
         self.last_context = Some(context.clone());
+        (context, token, event.bindings)
+    }
+}
+
+impl DebugHook for VmDebuggerHook {
+    fn on_boundary(&mut self, event: DebugEvent) {
+        if !self.debugger.read().unwrap().is_active() {
+            return;
+        }
+
+        let (context, token, bindings) = self.build_context(event);
 
         let breakpoint = self
             .debugger
@@ -176,12 +175,12 @@ impl DebugHook for VmDebuggerHook {
             .unwrap()
             .get_hit_breakpoint(&context, Shared::clone(&token));
         if let Some(breakpoint) = breakpoint {
-            if !self.breakpoint_matches(&breakpoint, &event.bindings) {
+            if !self.breakpoint_matches(&breakpoint, &bindings) {
                 return;
             }
             if let Some(message) = &breakpoint.log_message {
                 if let Some(message) =
-                    self.interpolate_log_message(message, &context.current_value, &event.bindings, token.module_id)
+                    self.interpolate_log_message(message, &context.current_value, &bindings, token.module_id)
                 {
                     self.handler
                         .read()
@@ -196,5 +195,22 @@ impl DebugHook for VmDebuggerHook {
             let action = self.handler.read().unwrap().on_step(&context);
             self.debugger.write().unwrap().next(action);
         }
+    }
+
+    fn on_explicit_breakpoint(&mut self, event: DebugEvent) {
+        if !self.debugger.read().unwrap().is_active() {
+            return;
+        }
+
+        let (context, token, _bindings) = self.build_context(event);
+        let breakpoint = Breakpoint {
+            id: 0,
+            line: token.range.start.line as usize,
+            column: Some(token.range.start.column),
+            enabled: true,
+            ..Default::default()
+        };
+        let action = self.handler.read().unwrap().on_breakpoint_hit(&breakpoint, &context);
+        self.debugger.write().unwrap().next(action);
     }
 }

@@ -10,18 +10,19 @@ use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
 use std::fmt;
 
-/// Every chunk reserves local slot 0 for the implicit pipeline value (`.` / `self`),
-/// declared before params/other locals so its index is stable across all chunks.
+/// The implicit pipeline value (`.` / `self`) slot.
 pub(crate) const SELF_SLOT: u16 = 0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A captured value's source slot.
 pub(crate) enum UpvalueSource {
     Local(u16),
     Upvalue(u16),
 }
 
-/// Numeric/comparison operation shared by regular and local-slot binary instructions.
+/// Binary operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A binary operation.
 pub(crate) enum BinaryOp {
     Add,
     Sub,
@@ -36,12 +37,7 @@ pub(crate) enum BinaryOp {
     Ge,
 }
 
-/// A selector with no runtime arguments, encoded directly in bytecode.
-///
-/// Unlike [`Selector`], this is a compact immediate operand: it has no heap allocation and
-/// lets the interpreter test a Markdown node without first dispatching through the generic
-/// selector evaluator. Selectors whose semantics require arguments or recursive traversal
-/// continue to use [`OpCode::SelectorMatch`].
+/// Compact argument-free node selector.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NodeSelectorKind {
@@ -81,9 +77,7 @@ pub(crate) enum NodeSelectorKind {
 }
 
 impl NodeSelectorKind {
-    /// Returns the compact representation when `selector` has node-local, argument-free
-    /// semantics. Heading selectors use [`OpCode::SelectorMatchHeading`] to carry their
-    /// level as an immediate operand instead.
+    /// Returns the compact form for an eligible selector.
     pub(crate) fn from_selector(selector: &Selector) -> Option<Self> {
         Some(match selector {
             Selector::Blockquote => Self::Blockquote,
@@ -123,7 +117,7 @@ impl NodeSelectorKind {
         })
     }
 
-    /// Reconstructs the generic selector for array/dict fallback semantics.
+    /// Converts the compact selector to its generic form.
     pub(crate) fn as_selector(self) -> Selector {
         match self {
             Self::Blockquote => Selector::Blockquote,
@@ -163,9 +157,9 @@ impl NodeSelectorKind {
     }
 }
 
-/// How one declared parameter binds an argument, mirroring `ast::Param`/the tree-walker's
-/// `call_fn` binding loop exactly (see `interpreter::bind_params`).
+/// Parameter binding.
 #[derive(Debug, Clone)]
+/// Parameter binding metadata.
 pub(crate) enum ParamBinding {
     Required(u16),
     Optional(u16, u16, Vec<UpvalueSource>),
@@ -173,6 +167,7 @@ pub(crate) enum ParamBinding {
 }
 
 impl ParamBinding {
+    /// Returns the binding's local slot.
     pub(crate) fn slot(&self) -> u16 {
         match self {
             ParamBinding::Required(slot) | ParamBinding::Optional(slot, ..) | ParamBinding::Variadic(slot) => *slot,
@@ -181,43 +176,40 @@ impl ParamBinding {
 }
 
 impl ParamShape {
-    /// Returns the arity when every parameter is required and occupies its declared slot.
+    /// Returns the arity for an all-required parameter list.
     pub(crate) fn fixed_required_arity(&self) -> Option<usize> {
         (!self.has_variadic && self.required == self.bindings.len()).then_some(self.required)
     }
 }
 
 #[derive(Debug, Clone, Default)]
+/// Parameter metadata for a compiled function.
 pub(crate) struct ParamShape {
     pub(crate) bindings: Vec<ParamBinding>,
-    /// Count of `bindings` that are `Required` (no default, not variadic) — `call_fn` needs
-    /// this precomputed to decide the implicit-`.`/arity outcome before binding anything.
     pub(crate) required: usize,
     pub(crate) has_variadic: bool,
 }
 
 #[derive(Debug, Clone)]
+/// A VM instruction.
 pub(crate) enum OpCode {
-    /// Marks an AST evaluation boundary at which the debugger may pause.
+    /// Debugger stop point.
     #[cfg(feature = "debugger")]
     StmtBoundary(TokenId),
+    /// Unconditional debugger stop for `breakpoint()`.
+    #[cfg(feature = "debugger")]
+    Breakpoint(TokenId),
     Const(u16),
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
-    /// Stores the top of stack into `slot` without popping it — fuses `SetLocal(slot)` then
-    /// `GetLocal(slot)`.
+    /// Stores the top stack value without popping it.
     TeeLocal(u16),
     GetUpvalue(u16),
     SetUpvalue(u16),
     MakeClosure(Box<(u16, Vec<UpvalueSource>)>),
-    /// Pushes a shared closure with no captured cells.
     MakeStaticClosure(u16),
-    /// Pops and discards the top value (used to drop a flattened module statement's
-    /// value, since only its side effect — defining a name — matters).
     Pop,
-    /// Duplicates the top stack value (used by `&&`/`||` to test an operand's
-    /// truthiness without losing the value it may short-circuit to).
     Dup,
     Jump(i32),
     JumpIfFalse(i32),
@@ -232,116 +224,66 @@ pub(crate) enum OpCode {
     Le,
     Gt,
     Ge,
-    /// Evaluates a binary operation directly from two local slots.
     BinaryLocalLocal {
         op: BinaryOp,
         left: u16,
         right: u16,
     },
-    /// Evaluates a binary operation directly from a local slot and a constant.
     BinaryLocalConst {
         op: BinaryOp,
         local: u16,
         constant: u16,
     },
     Neg,
-    /// Pops a value and pushes its truthiness negation.
     Not,
-    /// Pushes a fresh empty `Array`, for `array(...)` construction (incl. `...spread`).
     ArrayNew,
-    /// Pops a value and an `Array` beneath it, appends the value, pushes the array back.
     ArrayPush,
-    /// Pops a source and an `Array` accumulator beneath it, extends the accumulator with the
-    /// source's elements (`...spread` inside `array(...)`/`[...]`); `None` contributes
-    /// nothing. Pushes the accumulator back.
     ArraySpread,
-    /// Like `ArraySpread`, but for `dict{...}`/`{...}` build: pops a `Dict` source, extends
-    /// the `Array` accumulator with `[key, value]` pairs (matching the plain-entry encoding
-    /// `compile_dict_call` also uses); `None` contributes nothing.
     DictSpread,
-    /// Normalizes `foreach`'s operand into an `Array` (`String` -> per-char array; anything
-    /// else errors).
     ToForeachIterable,
-    /// Reads the length of an `Array` value directly, without going through the `len`
-    /// builtin's generic dispatch (`foreach`'s per-iteration hot path).
     ArrayLen,
-    /// Reads `array[index]` (or `None` if out of range) directly, without the `get`
-    /// builtin's clone-on-write mutation path.
     ArrayGetAt,
-    /// Computes `len(local)` directly for arrays, falling back to the builtin for other types.
     ArrayLenLocal(u16),
-    /// Reads `get(array_local, index_local)` directly for array/number values, preserving the
-    /// builtin fallback for every other value combination.
     ArrayGetLocalAt {
         array_slot: u16,
         index_slot: u16,
     },
-    /// Starts a `foreach` iteration: exits when the index reaches the array length;
-    /// otherwise binds the current element to both the loop variable and `self`, then
-    /// advances the synthetic index before the loop body runs.
+    /// Advances a `foreach` iteration or exits the loop.
     ForeachNext {
         array_slot: u16,
         index_slot: u16,
         value_slot: u16,
         exit_offset: i32,
     },
-    /// Appends the loop body's result directly to `foreach`'s synthetic accumulator.
     ForeachCollect(u16),
-    /// Pops an index and an `Array`, pushes a new `Array` of the elements from that index
-    /// onward (the `..rest` binding in an `ArrayRest` match pattern).
     ArraySliceFrom,
-    /// Pops a value, pushes whether its runtime type name matches (`match`'s `:type`
-    /// pattern); `none` is checked structurally rather than by `RuntimeValue::name()`
-    /// (which capitalizes it).
     TypeCheck(Ident),
-    /// Reads an OS environment variable named by the string constant at this index.
     GetEnvVar(u16),
-    /// Reads a name defined via `Engine::define_value`/`define_string_value`, which write
-    /// directly into the tree-walker's root `Env` rather than any compiled program — the one
-    /// case where the VM falls back to a real dynamic lookup instead of a static slot, against
-    /// the runtime `Env` the interpreter seeds from `global_bindings` before execution starts.
+    /// Looks up an Engine-defined global by name.
     GetExternalGlobal(Ident),
-    /// Pops `n` values, `Display`s each, concatenates, and pushes the resulting `String`
-    /// (mq string-interpolation semantics).
     InterpString(u16),
-    /// Pops a `Markdown` value and pushes the result of matching `selector` against it
-    /// (`None` for any other value shape).
     SelectorMatch(Box<Selector>),
-    /// Matches one argument-free Markdown node kind using a compact immediate operand.
     SelectorMatchKind(NodeSelectorKind),
-    /// Matches a Markdown heading. `0` means any heading level; `1..=6` selects that level.
     SelectorMatchHeading(u8),
-    /// Like `SelectorMatch`, but pops `argc` filter-argument values (pushed before the
-    /// subject) for selectors with runtime arguments (`.h(1..2)`, `.code("rust")`).
     SelectorMatchWithArgs(Box<(Selector, u8)>),
     CallBuiltin(Ident, u8),
-    /// Calls an immutable local binding without materializing the callee on the operand stack.
     CallLocal(u16, u8),
     CallValue(u8),
-    /// "Paren-free" call: calls the top-of-stack value with zero args if it's a
-    /// closure/native function needing at most one (the implicit `.`); otherwise leaves it
-    /// unchanged. Mirrors `Evaluator::maybe_auto_call_pipeline_ident`.
+    /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
-    /// Pops a catch closure then a try closure (both 0/1-arg, no-upvalue-restriction
-    /// closures compiled like any nested `fn`); runs the try closure, and on error runs
-    /// the catch closure instead (passing it a `{"message": ...}` dict if it takes a
-    /// parameter). Loop control raised by the nested try chunk bypasses the catch and
-    /// jumps to the enclosing loop's patched target.
+    /// Executes a `try` closure and invokes its catch closure on errors.
     TryCatch(Box<TryCatchInfo>),
-    /// Exits a loop outside this nested chunk. The enclosing `TryCatch` owns the actual
-    /// jump target and accumulator slot.
+    /// Propagates `break` from a nested `try` closure.
     FlowBreak(bool),
-    /// Continues a loop outside this nested chunk. The enclosing `TryCatch` owns the
-    /// actual jump target.
+    /// Propagates `continue` from a nested `try` closure.
     FlowContinue,
-    /// Raised when a `let`/`var` destructuring pattern doesn't match its value (e.g.
-    /// `let [a, b] = [1]`) — mirrors `RuntimeError::DestructuringFailed`.
     RaiseDestructuringFailed,
     Return,
 }
 
-/// Payload for [`OpCode::TryCatch`], boxed out of the enum to keep `size_of::<OpCode>()` small.
+/// Payload for [`OpCode::TryCatch`].
 #[derive(Debug, Clone)]
+/// `try`/`catch` instruction metadata.
 pub(crate) struct TryCatchInfo {
     pub(crate) has_binder: bool,
     pub(crate) break_acc_slot: Option<u16>,
@@ -349,8 +291,7 @@ pub(crate) struct TryCatchInfo {
     pub(crate) continue_offset: Option<i32>,
 }
 
-/// A memoized `bool`, `Cell`-backed outside the `sync` build to avoid `OnceLock`'s atomic
-/// check on every call; `OnceLock`-backed under `sync`, where `Chunk` must stay `Sync`.
+/// A build-dependent memoized boolean.
 #[derive(Debug, Default)]
 struct BoolCache(
     #[cfg(not(feature = "sync"))] std::cell::Cell<Option<bool>>,
@@ -375,8 +316,7 @@ impl BoolCache {
     }
 }
 
-/// One run of consecutive instructions attributed to the same source token, starting at
-/// `pc_start` — see [`Chunk::lines`].
+/// A run of instructions attributed to one source token.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LineEntry {
     pub(crate) pc_start: usize,
@@ -384,38 +324,26 @@ pub(crate) struct LineEntry {
 }
 
 #[derive(Debug, Default)]
+/// A compiled bytecode chunk.
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
     pub(crate) constants: Vec<RuntimeValue>,
-    /// Non-capturing closures allocated once when the program is compiled.
     pub(crate) static_closures: Vec<Shared<Closure>>,
     pub(crate) local_count: u16,
-    /// Source names for local slots. Kept in non-debug builds too because legacy dynamic
-    /// builtins such as `get_variable` resolve names against the current lexical scope.
     pub(crate) local_names: Vec<Ident>,
-    /// `true` where the local slot came from a `var` rather than a `let`.
     pub(crate) local_mutable: Vec<bool>,
-    /// Source names for captured slots; see [`Self::local_names`].
     pub(crate) upvalue_names: Vec<Ident>,
-    /// Run-length-encoded `pc -> TokenId` map, looked up via `token_at` to recover error spans.
     pub(crate) lines: Vec<LineEntry>,
-    /// AST nodes addressable by `StmtBoundary`, omitted from non-debugger builds.
     #[cfg(feature = "debugger")]
     pub(crate) debug_nodes: Vec<(TokenId, Shared<Node>)>,
-    /// Static source-name to local/upvalue resolution for paused-frame evaluation.
     #[cfg(feature = "debugger")]
     pub(crate) debug_symbols: DebugSymbolTable,
-    /// How this chunk's declared parameters bind call arguments — empty for chunks that
-    /// aren't a compiled `ast::Params` function body (the top-level program, `try`/`catch`
-    /// closures, ...), which `CallValue` never targets.
     pub(crate) param_shape: ParamShape,
-    /// Memoizes `captures_local_slots` — chunks never change after compilation, but every
-    /// call scans `code`, so a first-call cache turns an O(chunk size) check into O(1).
     captures_local_slots_cache: BoolCache,
 }
 
 impl Chunk {
-    /// Adds a non-capturing closure and returns its chunk-local index.
+    /// Adds a reusable non-capturing closure.
     pub(crate) fn push_static_closure(&mut self, target_chunk: u16) -> u16 {
         self.static_closures.push(Shared::new(Closure {
             chunk_index: target_chunk,
@@ -424,7 +352,7 @@ impl Chunk {
         (self.static_closures.len() - 1) as u16
     }
 
-    /// Whether a closure or parameter default can retain one of this frame's local cells.
+    /// Returns whether locals can outlive the current frame.
     pub(crate) fn captures_local_slots(&self) -> bool {
         self.captures_local_slots_cache.get_or_init(|| {
             self.code.iter().any(|op| {
@@ -443,13 +371,13 @@ impl Chunk {
         })
     }
 
+    /// Adds a constant and returns its index.
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
         self.constants.push(value);
         (self.constants.len() - 1) as u16
     }
 
-    /// Emits `op`, attributing it to `token_id` in the line table (only recorded when it
-    /// differs from the previous instruction's, keeping the table run-length-encoded).
+    /// Appends an instruction and its source token.
     pub(crate) fn emit(&mut self, op: OpCode, token_id: TokenId) -> usize {
         let pc = self.code.len();
         if self.lines.last().map(|entry| entry.token_id) != Some(token_id) {
@@ -459,7 +387,7 @@ impl Chunk {
         pc
     }
 
-    /// The `TokenId` attributed to the instruction at `pc`, for error reporting.
+    /// Returns the source token for an instruction.
     pub(crate) fn token_at(&self, pc: usize) -> Option<TokenId> {
         self.lines
             .partition_point(|entry| entry.pc_start <= pc)
@@ -467,8 +395,7 @@ impl Chunk {
             .map(|i| self.lines[i].token_id)
     }
 
-    /// Rewrites a previously-emitted control-flow instruction at `at` so its offset lands on
-    /// the instruction that will be emitted next.
+    /// Patches a jump to the current instruction.
     pub(crate) fn patch_jump(&mut self, at: usize) {
         let offset = (self.code.len() - at - 1) as i32;
         match &mut self.code[at] {
@@ -478,7 +405,7 @@ impl Chunk {
         }
     }
 
-    /// Patches a `TryCatch` control-flow break target to the next instruction.
+    /// Patches a `try` break target to the current instruction.
     pub(crate) fn patch_try_break(&mut self, at: usize) {
         let offset = (self.code.len() - at - 1) as i32;
         match &mut self.code[at] {
@@ -487,7 +414,7 @@ impl Chunk {
         }
     }
 
-    /// Patches a `TryCatch` control-flow continue target to `target`.
+    /// Patches a `try` continue target.
     pub(crate) fn patch_try_continue_to(&mut self, at: usize, target: usize) {
         let offset = target as i32 - at as i32 - 1;
         match &mut self.code[at] {
@@ -496,7 +423,7 @@ impl Chunk {
         }
     }
 
-    /// Offset for a backward jump from the next-emitted instruction to `target`.
+    /// Returns an offset from the next instruction to `target`.
     pub(crate) fn backward_offset(&self, target: usize) -> i32 {
         (target as i32) - (self.code.len() as i32) - 1
     }
@@ -504,6 +431,7 @@ impl Chunk {
 
 /// A structural bytecode error emitted by the compiler's post-generation verifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
+/// A bytecode verification failure.
 pub(crate) enum BytecodeError {
     EmptyChunk(usize),
     MissingReturn(usize),
@@ -543,11 +471,7 @@ impl fmt::Display for BytecodeError {
 
 impl std::error::Error for BytecodeError {}
 
-/// Applies semantics-preserving local rewrites after compilation.
-///
-/// This pass deliberately does not fold expressions: that belongs to the AST optimizer.
-/// It only removes compiler artifacts and retargets jumps without crossing source-debug
-/// boundaries or changing observable evaluation order.
+/// Applies local bytecode rewrites.
 pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
     for chunk in chunks {
         optimize_chunk(chunk);
@@ -592,7 +516,6 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
-            // Fuses SetLocal+GetLocal(same slot) into one TeeLocal dispatch.
             (OpCode::SetLocal(set_slot), Some(OpCode::GetLocal(get_slot)))
                 if set_slot == get_slot && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
             {
@@ -715,7 +638,7 @@ pub(crate) fn jump_target(pc: usize, offset: i32) -> Option<usize> {
     pc.checked_add(1)?.checked_add_signed(offset as isize)
 }
 
-/// Verifies generated bytecode before it becomes executable.
+/// Verifies generated bytecode.
 pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
     for (chunk_index, chunk) in chunks.iter().enumerate() {
         if chunk.code.is_empty() {

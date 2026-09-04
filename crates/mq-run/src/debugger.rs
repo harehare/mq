@@ -1,6 +1,6 @@
 use colored::*;
 use miette::IntoDiagnostic;
-use mq_lang::{DebugContext, Shared};
+use mq_lang::DebugContext;
 use rustyline::{
     At, Cmd, CompletionType, Config, EditMode, Editor, Helper, KeyCode, KeyEvent, Modifiers, Movement, Word,
     completion::Completer,
@@ -292,8 +292,8 @@ impl DebuggerHandler {
                     editor.add_history_entry(&expr).unwrap();
 
                     let value: mq_lang::RuntimeValue = context.current_value.clone();
-                    let mut engine = self.engine.switch_env(Shared::clone(&context.env));
-                    let values = match engine.eval(&expr, vec![value].into_iter()) {
+                    let mut engine = self.engine.clone();
+                    let values = match engine.eval_debug_expression(&expr, value, &context.env) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("Error evaluating expression: {}", e);
@@ -651,7 +651,7 @@ impl Validator for DebuggerLineHelper {
 #[cfg(test)]
 mod tests {
     use mq_lang::ModuleId;
-    use mq_lang::{self, DebugContext};
+    use mq_lang::{self, DebugContext, Shared};
 
     use super::*;
 
