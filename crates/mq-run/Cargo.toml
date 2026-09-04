@@ -14,7 +14,7 @@ default-run = "mq"
 
 [features]
 css-selector = ["mq-lang/css-selector"]
-debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap"]
+debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap", "debug-trace"]
 debug-trace = ["debugger", "tarn", "mq-lang/debug-trace"]
 default = ["std", "use_mimalloc", "http-import", "css-selector", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
