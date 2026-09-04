@@ -146,7 +146,7 @@ fn format_compiled_bytecode(
             let _ = writeln!(
                 output,
                 "    {pc:04}  {}{}",
-                format_opcode(opcode),
+                format_opcode(opcode, chunk, pc),
                 location.unwrap_or_default()
             );
         }
@@ -176,21 +176,135 @@ fn format_slot_names(names: &[crate::Ident]) -> String {
         .join(", ")
 }
 
+/// Renders a local/upvalue slot as `slot (name)`, or just `slot` if `names` has no entry
+/// for it (e.g. a slot beyond a debug-only build's tracked names).
 #[cfg(feature = "debug-trace")]
-fn format_opcode(opcode: &bytecode::OpCode) -> String {
+fn slot_ref(names: &[crate::Ident], slot: u16) -> String {
+    match names.get(slot as usize) {
+        Some(name) => {
+            let name = name.to_string();
+            if name.is_empty() {
+                format!("{slot} (self)")
+            } else {
+                format!("{slot} ({name})")
+            }
+        }
+        None => slot.to_string(),
+    }
+}
+
+/// Renders a relative jump offset alongside the absolute instruction it targets.
+#[cfg(feature = "debug-trace")]
+fn jump_ref(pc: usize, offset: i32) -> String {
+    match bytecode::jump_target(pc, offset) {
+        Some(target) => format!("{offset:+} -> {target:04}"),
+        None => format!("{offset:+} -> ??"),
+    }
+}
+
+#[cfg(feature = "debug-trace")]
+fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) -> String {
+    let local = |slot: u16| slot_ref(&chunk.local_names, slot);
+    let upvalue = |slot: u16| slot_ref(&chunk.upvalue_names, slot);
     match opcode {
         #[cfg(feature = "debugger")]
         bytecode::OpCode::StmtBoundary(_) => "StmtBoundary".to_string(),
         bytecode::OpCode::Const(index) => format!("Const {index}"),
-        bytecode::OpCode::GetLocal(slot) => format!("GetLocal {slot}"),
-        bytecode::OpCode::SetLocal(slot) => format!("SetLocal {slot}"),
-        bytecode::OpCode::GetUpvalue(slot) => format!("GetUpvalue {slot}"),
-        bytecode::OpCode::SetUpvalue(slot) => format!("SetUpvalue {slot}"),
+        bytecode::OpCode::PushNone => "PushNone".to_string(),
+        bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
+        bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
+        bytecode::OpCode::TeeLocal(slot) => format!("TeeLocal {}", local(*slot)),
+        bytecode::OpCode::GetUpvalue(slot) => format!("GetUpvalue {}", upvalue(*slot)),
+        bytecode::OpCode::SetUpvalue(slot) => format!("SetUpvalue {}", upvalue(*slot)),
+        bytecode::OpCode::MakeClosure(payload) => {
+            format!("MakeClosure chunk {}, upvalues {}", payload.0, payload.1.len())
+        }
         bytecode::OpCode::MakeStaticClosure(chunk) => format!("MakeStaticClosure chunk {chunk}"),
+        bytecode::OpCode::Pop => "Pop".to_string(),
+        bytecode::OpCode::Dup => "Dup".to_string(),
+        bytecode::OpCode::Jump(offset) => format!("Jump {}", jump_ref(pc, *offset)),
+        bytecode::OpCode::JumpIfFalse(offset) => format!("JumpIfFalse {}", jump_ref(pc, *offset)),
+        bytecode::OpCode::Add => "Add".to_string(),
+        bytecode::OpCode::Sub => "Sub".to_string(),
+        bytecode::OpCode::Mul => "Mul".to_string(),
+        bytecode::OpCode::Div => "Div".to_string(),
+        bytecode::OpCode::Mod => "Mod".to_string(),
+        bytecode::OpCode::Eq => "Eq".to_string(),
+        bytecode::OpCode::Ne => "Ne".to_string(),
+        bytecode::OpCode::Lt => "Lt".to_string(),
+        bytecode::OpCode::Le => "Le".to_string(),
+        bytecode::OpCode::Gt => "Gt".to_string(),
+        bytecode::OpCode::Ge => "Ge".to_string(),
+        bytecode::OpCode::BinaryLocalLocal { op, left, right } => {
+            format!("BinaryLocalLocal {op:?} {}, {}", local(*left), local(*right))
+        }
+        bytecode::OpCode::BinaryLocalConst {
+            op,
+            local: slot,
+            constant,
+        } => {
+            format!("BinaryLocalConst {op:?} {}, const {constant}", local(*slot))
+        }
+        bytecode::OpCode::Neg => "Neg".to_string(),
+        bytecode::OpCode::Not => "Not".to_string(),
+        bytecode::OpCode::ArrayNew => "ArrayNew".to_string(),
+        bytecode::OpCode::ArrayPush => "ArrayPush".to_string(),
+        bytecode::OpCode::ArraySpread => "ArraySpread".to_string(),
+        bytecode::OpCode::DictSpread => "DictSpread".to_string(),
+        bytecode::OpCode::ToForeachIterable => "ToForeachIterable".to_string(),
+        bytecode::OpCode::ArrayLen => "ArrayLen".to_string(),
+        bytecode::OpCode::ArrayGetAt => "ArrayGetAt".to_string(),
+        bytecode::OpCode::ArrayLenLocal(slot) => format!("ArrayLenLocal {}", local(*slot)),
+        bytecode::OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
+            format!("ArrayGetLocalAt {}, {}", local(*array_slot), local(*index_slot))
+        }
+        bytecode::OpCode::ForeachNext {
+            array_slot,
+            index_slot,
+            value_slot,
+            exit_offset,
+        } => format!(
+            "ForeachNext array {}, index {}, value {}, exit {}",
+            local(*array_slot),
+            local(*index_slot),
+            local(*value_slot),
+            jump_ref(pc, *exit_offset)
+        ),
+        bytecode::OpCode::ForeachCollect(slot) => format!("ForeachCollect {}", local(*slot)),
+        bytecode::OpCode::ArraySliceFrom => "ArraySliceFrom".to_string(),
+        bytecode::OpCode::TypeCheck(name) => format!("TypeCheck {name}"),
+        bytecode::OpCode::GetEnvVar(index) => format!("GetEnvVar const {index}"),
+        bytecode::OpCode::GetExternalGlobal(name) => format!("GetExternalGlobal {name}"),
+        bytecode::OpCode::InterpString(count) => format!("InterpString {count}"),
+        bytecode::OpCode::SelectorMatch(selector) => format!("SelectorMatch {selector:?}"),
+        bytecode::OpCode::SelectorMatchKind(kind) => format!("SelectorMatchKind {kind:?}"),
+        bytecode::OpCode::SelectorMatchHeading(level) => format!("SelectorMatchHeading {level}"),
+        bytecode::OpCode::SelectorMatchWithArgs(payload) => {
+            format!("SelectorMatchWithArgs {:?}, argc={}", payload.0, payload.1)
+        }
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
-        bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {slot}, argc={argc}"),
+        bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {}, argc={argc}", local(*slot)),
         bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
-        other => format!("{other:?}"),
+        bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),
+        bytecode::OpCode::TryCatch(info) => {
+            let break_acc = info.break_acc_slot.map(local).unwrap_or_else(|| "-".to_string());
+            let break_target = info
+                .break_offset
+                .map(|offset| jump_ref(pc, offset))
+                .unwrap_or_else(|| "-".to_string());
+            let continue_target = info
+                .continue_offset
+                .map(|offset| jump_ref(pc, offset))
+                .unwrap_or_else(|| "-".to_string());
+            format!(
+                "TryCatch has_binder={}, break_acc={break_acc}, break={break_target}, continue={continue_target}",
+                info.has_binder
+            )
+        }
+        bytecode::OpCode::FlowBreak(has_value) => format!("FlowBreak has_value={has_value}"),
+        bytecode::OpCode::FlowContinue => "FlowContinue".to_string(),
+        bytecode::OpCode::RaiseDestructuringFailed => "RaiseDestructuringFailed".to_string(),
+        bytecode::OpCode::Return => "Return".to_string(),
     }
 }
 

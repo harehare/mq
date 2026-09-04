@@ -709,7 +709,7 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
     }
 }
 
-fn jump_target(pc: usize, offset: i32) -> Option<usize> {
+pub(crate) fn jump_target(pc: usize, offset: i32) -> Option<usize> {
     pc.checked_add(1)?.checked_add_signed(offset as isize)
 }
 
