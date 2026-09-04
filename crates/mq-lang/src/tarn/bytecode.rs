@@ -257,6 +257,13 @@ pub(crate) enum OpCode {
     },
     ForeachCollect(u16),
     ArraySliceFrom,
+    /// Dict-pattern key test: if present, stores the value in `value_slot` and pushes `true`;
+    /// else pushes `false`. Fuses what used to be separate `has` + `get` builtin calls.
+    DictGetLocalOrFail {
+        subject_slot: u16,
+        key: Ident,
+        value_slot: u16,
+    },
     TypeCheck(Ident),
     GetEnvVar(u16),
     /// Looks up an Engine-defined global by name.
@@ -701,6 +708,21 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 }
                 OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
                     for slot in [array_slot, index_slot] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                }
+                OpCode::DictGetLocalOrFail {
+                    subject_slot,
+                    value_slot,
+                    ..
+                } => {
+                    for slot in [subject_slot, value_slot] {
                         if *slot >= chunk.local_count {
                             return Err(BytecodeError::LocalOutOfBounds {
                                 chunk: chunk_index,
