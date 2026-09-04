@@ -4,7 +4,7 @@ use super::bytecode::{
 use super::resolver::FunctionScope;
 use crate::Shared;
 use crate::ast::constants::builtins;
-use crate::ast::node::{AccessTarget, Expr, Literal, Node, Pattern, StringSegment};
+use crate::ast::node::{AccessTarget, Expr, IdentWithToken, Literal, Node, Pattern, StringSegment};
 use crate::ast::{Program, node as ast};
 use crate::module::BUILTIN_FILE;
 #[cfg(not(feature = "debugger"))]
@@ -1066,61 +1066,72 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::ArraySliceFrom);
                 self.emit(OpCode::SetLocal(rest_slot));
             }
-            Pattern::Or(alts) => {
-                // Share one slot per name across alternatives so the arm body sees
-                // whichever branch actually matched.
-                let mut names = Vec::new();
-                for alt in alts {
-                    collect_pattern_idents(alt, &mut names);
-                }
-                names.sort();
-                names.dedup();
-                let slots = names
-                    .into_iter()
-                    .map(|name| (name, self.scope_mut().declare(name)))
-                    .collect();
-                self.or_pattern_slots.push(slots);
+            Pattern::Or(alts) => self.compile_or_pattern(alts, subject_slot, fail_jumps)?,
+            Pattern::Dict(entries) => self.compile_dict_pattern(entries, subject_slot, fail_jumps)?,
+        }
+        Ok(())
+    }
 
-                let mut success_jumps = Vec::with_capacity(alts.len().saturating_sub(1));
-                for (i, alt) in alts.iter().enumerate() {
-                    let mut local_fails = Vec::new();
-                    self.compile_pattern_test(alt, subject_slot, &mut local_fails)?;
-                    if i + 1 < alts.len() {
-                        success_jumps.push(self.emit(OpCode::Jump(0)));
-                        for f in local_fails {
-                            self.chunk_mut().patch_jump(f);
-                        }
-                    } else {
-                        fail_jumps.extend(local_fails);
-                    }
+    /// Shares one slot per name across `alts` so the arm body sees whichever alternative matched.
+    fn compile_or_pattern(
+        &mut self,
+        alts: &[Pattern],
+        subject_slot: u16,
+        fail_jumps: &mut Vec<usize>,
+    ) -> CompileResult<()> {
+        let mut names = Vec::new();
+        for alt in alts {
+            collect_pattern_idents(alt, &mut names);
+        }
+        names.sort();
+        names.dedup();
+        let slots = names
+            .into_iter()
+            .map(|name| (name, self.scope_mut().declare(name)))
+            .collect();
+        self.or_pattern_slots.push(slots);
+
+        let mut success_jumps = Vec::with_capacity(alts.len().saturating_sub(1));
+        for (i, alt) in alts.iter().enumerate() {
+            let mut local_fails = Vec::new();
+            self.compile_pattern_test(alt, subject_slot, &mut local_fails)?;
+            if i + 1 < alts.len() {
+                success_jumps.push(self.emit(OpCode::Jump(0)));
+                for f in local_fails {
+                    self.chunk_mut().patch_jump(f);
                 }
-                for s in success_jumps {
-                    self.chunk_mut().patch_jump(s);
-                }
-                self.or_pattern_slots.pop();
+            } else {
+                fail_jumps.extend(local_fails);
             }
-            Pattern::Dict(entries) => {
-                self.emit(OpCode::GetLocal(subject_slot));
-                self.emit(OpCode::TypeCheck(builtins::DICT.into()));
-                fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
+        }
+        for s in success_jumps {
+            self.chunk_mut().patch_jump(s);
+        }
+        self.or_pattern_slots.pop();
+        Ok(())
+    }
 
-                for (key, sub_pattern) in entries {
-                    self.emit(OpCode::GetLocal(subject_slot));
-                    let key_idx = self.chunk_mut().push_const(RuntimeValue::Symbol(key.name));
-                    self.emit(OpCode::Const(key_idx));
-                    self.emit(OpCode::CallBuiltin(builtins::HAS.into(), 2));
-                    fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
+    /// Checks each `key` is present (a key mapped to `None` must still match) and matches its value.
+    fn compile_dict_pattern(
+        &mut self,
+        entries: &[(IdentWithToken, Pattern)],
+        subject_slot: u16,
+        fail_jumps: &mut Vec<usize>,
+    ) -> CompileResult<()> {
+        self.emit(OpCode::GetLocal(subject_slot));
+        self.emit(OpCode::TypeCheck(builtins::DICT.into()));
+        fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
 
-                    let value_slot = self.scope_mut().declare_synthetic();
-                    self.emit(OpCode::GetLocal(subject_slot));
-                    let key_idx = self.chunk_mut().push_const(RuntimeValue::Symbol(key.name));
-                    self.emit(OpCode::Const(key_idx));
-                    self.emit(OpCode::CallBuiltin(builtins::GET.into(), 2));
-                    self.emit(OpCode::SetLocal(value_slot));
+        for (key, sub_pattern) in entries {
+            let value_slot = self.scope_mut().declare_synthetic();
+            self.emit(OpCode::DictGetLocalOrFail {
+                subject_slot,
+                key: key.name,
+                value_slot,
+            });
+            fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
 
-                    self.compile_pattern_test(sub_pattern, value_slot, fail_jumps)?;
-                }
-            }
+            self.compile_pattern_test(sub_pattern, value_slot, fail_jumps)?;
         }
         Ok(())
     }

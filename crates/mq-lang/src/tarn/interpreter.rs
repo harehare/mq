@@ -1310,6 +1310,24 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 };
                 stack.push(StackValue::Value(result));
             }
+            OpCode::DictGetLocalOrFail {
+                subject_slot,
+                key,
+                value_slot,
+            } => {
+                let subject = local_runtime_value(locals, *subject_slot, chunks)?;
+                let found = match subject {
+                    RuntimeValue::Dict(map) => map.get(key).cloned(),
+                    _ => None,
+                };
+                match found {
+                    Some(value) => {
+                        unsafe { locals.set_unchecked(*value_slot, StackValue::Value(value)) };
+                        stack.push(StackValue::Value(RuntimeValue::Boolean(true)));
+                    }
+                    None => stack.push(StackValue::Value(RuntimeValue::Boolean(false))),
+                }
+            }
             OpCode::ForeachNext {
                 array_slot,
                 index_slot,

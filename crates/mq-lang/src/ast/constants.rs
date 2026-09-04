@@ -6,9 +6,6 @@ pub mod builtins {
 
     pub const CONVERT: &str = "convert";
     pub const GET: &str = "get";
-    /// Only referenced by the Tarn compiler; unused (and dead-code-denied) when the `tarn` feature is off.
-    #[cfg_attr(not(feature = "tarn"), allow(dead_code))]
-    pub const HAS: &str = "has";
     pub const SET: &str = "set";
     pub const SLICE: &str = "slice";
     pub const SHIFT_LEFT: &str = "shift_left";
