@@ -1212,7 +1212,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     ast::StringSegment::Text(s) => acc.push_str(s),
                     ast::StringSegment::Expr(expr_node) => {
                         let value = self.eval_expr(runtime_value, expr_node, env)?;
-                        acc.push_str(&value.to_string());
+                        match &value {
+                            RuntimeValue::String(s) => acc.push_str(s),
+                            _ => acc.push_str(&value.to_string()),
+                        }
                     }
                     ast::StringSegment::Env(env_var) => {
                         acc.push_str(&io_context::current().env_var(env_var).map_err(|e| {
@@ -1225,9 +1228,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                             }
                         })?);
                     }
-                    ast::StringSegment::Self_ => {
-                        acc.push_str(&runtime_value.to_string());
-                    }
+                    ast::StringSegment::Self_ => match runtime_value {
+                        RuntimeValue::String(s) => acc.push_str(s),
+                        _ => acc.push_str(&runtime_value.to_string()),
+                    },
                 }
 
                 Ok(acc)
