@@ -4119,6 +4119,95 @@ fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Sets a symbol or variable in the current environment with the given value.
+///
+/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
+/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
+/// scheduled for removal in the next release.
+#[cfg(not(feature = "tarn"))]
+#[mq_macros::mq_fn(name = "set_variable", params = Fixed(2))]
+fn set_variable_impl(
+    ident: &Ident,
+    value: &RuntimeValue,
+    mut args: Args,
+    env: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Symbol(var_ident), v] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().define(std::mem::take(var_ident), std::mem::take(v));
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write()
+                    .unwrap()
+                    .define(std::mem::take(var_ident), std::mem::take(v));
+            }
+
+            Ok(value.clone())
+        }
+        [RuntimeValue::String(var_name), v] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow_mut().define(Ident::new(var_name), std::mem::take(v));
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.write().unwrap().define(Ident::new(var_name), std::mem::take(v));
+            }
+
+            Ok(value.clone())
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("set_variable should always receive exactly two arguments"),
+    }
+}
+
+/// Retrieves the value of a symbol or variable from the current environment.
+///
+/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
+/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
+/// scheduled for removal in the next release.
+#[cfg(not(feature = "tarn"))]
+#[mq_macros::mq_fn(name = "get_variable", params = Fixed(1))]
+fn get_variable_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Symbol(var_name)] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow().resolve(std::mem::take(var_name)).map_err(Into::into)
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.read()
+                    .unwrap()
+                    .resolve(std::mem::take(var_name))
+                    .map_err(Into::into)
+            }
+        }
+        [RuntimeValue::String(var_name)] => {
+            #[cfg(not(feature = "sync"))]
+            {
+                env.borrow().resolve(Ident::new(var_name)).map_err(Into::into)
+            }
+
+            #[cfg(feature = "sync")]
+            {
+                env.read().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
+            }
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("get_variable should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "is_debug_mode", params = None)]
 fn is_debug_mode_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     #[cfg(feature = "debugger")]
@@ -5285,6 +5374,10 @@ mq_macros::builtin_dispatch! {
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
     _XML_PARSE,
+    #[cfg(not(feature = "tarn"))]
+    SET_VARIABLE,
+    #[cfg(not(feature = "tarn"))]
+    GET_VARIABLE,
     IS_DEBUG_MODE,
     SHIFT_LEFT,
     SHIFT_RIGHT,
@@ -8843,6 +8936,30 @@ x
             params: &["mdx_string"],
             param_types: &["string"],
             returns: "array",
+            examples: &[],
+            capability: None,
+        },
+    );
+    #[cfg(not(feature = "tarn"))]
+    map.insert(
+        SmolStr::new("set_variable"),
+        BuiltinFunctionDoc {
+            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Sets a symbol or variable in the current environment with the given value.",
+            params: &["symbol_or_string", "value"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dynamic",
+            examples: &[],
+            capability: None,
+        },
+    );
+    #[cfg(not(feature = "tarn"))]
+    map.insert(
+        SmolStr::new("get_variable"),
+        BuiltinFunctionDoc {
+            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Retrieves the value of a symbol or variable from the current environment.",
+            params: &["symbol_or_string"],
+            param_types: &["dynamic"],
+            returns: "dynamic",
             examples: &[],
             capability: None,
         },
