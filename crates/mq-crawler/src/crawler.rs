@@ -621,7 +621,7 @@ impl Crawler {
                 values
                     .into_iter()
                     .map(|value| match value {
-                        mq_lang::RuntimeValue::Markdown(node, _) => *node,
+                        mq_lang::RuntimeValue::Markdown(node, _) => mq_lang::Shared::unwrap_or_clone(node),
                         _ => value.to_string().into(),
                     })
                     .collect(),

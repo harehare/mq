@@ -12,6 +12,8 @@ use crate::{
 };
 use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+use std::hash::{Hash, Hasher};
 use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
 
 use crate::Token;
@@ -64,6 +66,8 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<SmolStr, String>,
+    /// Parsed builtin AST tied to the token arena it was created in.
+    builtin_module_cache: Option<(TokenArena, Module)>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -76,6 +80,22 @@ pub struct Module {
     pub functions: Program,
     pub modules: Program,
     pub vars: Program,
+}
+
+/// The source identity recorded for an external module compiled into VM bytecode.
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ModuleDependency {
+    path: String,
+    /// `None` means the module source is embedded in this binary and immutable.
+    source_hash: Option<u64>,
+}
+
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+fn source_hash(source: &str) -> u64 {
+    let mut hasher = std::hash::DefaultHasher::new();
+    source.hash(&mut hasher);
+    hasher.finish()
 }
 
 impl Module {
@@ -128,10 +148,18 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
+            builtin_module_cache: None,
             resolver,
             #[cfg(feature = "http-import")]
             http_depth: 0,
         }
+    }
+
+    #[cfg(feature = "tarn")]
+    pub(crate) fn with_same_resolver(&self) -> Self {
+        let mut loader = Self::new(self.resolver.clone());
+        loader.builtin_module_cache = self.builtin_module_cache.clone();
+        loader
     }
 
     #[inline(always)]
@@ -179,6 +207,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
+        let module = Self::classify_module(module_name, program)?;
+        self.loaded_modules.alloc(module_name.into());
+        Ok(module)
+    }
+
+    fn classify_module(module_name: &str, program: &Program) -> Result<Module, ModuleError> {
         let modules = program
             .iter()
             .filter(|node| {
@@ -208,13 +242,55 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::InvalidModule);
         }
 
-        self.loaded_modules.alloc(module_name.into());
-
         Ok(Module {
             name: module_name.to_string(),
             functions,
             modules,
             vars,
+        })
+    }
+
+    #[cfg(feature = "tarn")]
+    pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        let code = self
+            .source_cache
+            .get(name.as_str())
+            .cloned()
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
+        let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
+        let program = Self::parse_program(&code, module_id, token_arena)?;
+        Self::classify_module(&name, &program)
+    }
+
+    /// Captures the source identity of a module that has just been loaded by this loader.
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) fn module_dependency(&self, module_path: &str) -> Result<ModuleDependency, ModuleError> {
+        let name = self.resolver.canonical_name(module_path);
+        let source_hash = if self.resolver.is_immutable_module(module_path) {
+            None
+        } else {
+            let source = self
+                .source_cache
+                .get(name)
+                .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.to_string())))?;
+            Some(source_hash(source))
+        };
+        Ok(ModuleDependency {
+            path: module_path.to_string(),
+            source_hash,
+        })
+    }
+
+    /// Checks whether every source that was compiled into cached VM bytecode is unchanged.
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    pub(crate) fn dependencies_are_current(&self, dependencies: &[ModuleDependency]) -> Result<bool, ModuleError> {
+        dependencies.iter().try_fold(true, |current, dependency| {
+            let Some(expected_hash) = dependency.source_hash else {
+                return Ok(current);
+            };
+            let source = self.resolve(&dependency.path)?;
+            Ok(current && source_hash(&source) == expected_hash)
         })
     }
 
@@ -263,6 +339,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
 
+        if let Some((cached_arena, module)) = &self.builtin_module_cache
+            && Shared::ptr_eq(cached_arena, &token_arena)
+        {
+            self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+            return Ok(module.clone());
+        }
+
         // Cache is only valid when both arenas are in their initial state (builtin
         // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
         let pristine = self.loaded_modules.len() == 1 && {
@@ -288,11 +371,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     token_arena.write().unwrap().extend_from_slice(&tokens);
                 }
                 self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+                self.builtin_module_cache = Some((token_arena, module.clone()));
                 return Ok(module);
             }
         }
 
         let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
+        self.builtin_module_cache = Some((Shared::clone(&token_arena), module.clone()));
 
         if pristine {
             let tokens = {
@@ -576,6 +661,27 @@ mod tests {
             loader.load_builtin(Shared::clone(&token_arena)),
             Err(ModuleError::AlreadyLoaded(_))
         ));
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_load_builtin_reuses_ast_for_the_same_token_arena() {
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
+        let original = loader.load_builtin(Shared::clone(&token_arena)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let token_count = token_arena.borrow().len();
+        #[cfg(feature = "sync")]
+        let token_count = token_arena.read().unwrap().len();
+
+        let mut reused_loader = loader.with_same_resolver();
+        let reused = reused_loader.load_builtin(Shared::clone(&token_arena)).unwrap();
+
+        #[cfg(not(feature = "sync"))]
+        assert_eq!(token_arena.borrow().len(), token_count);
+        #[cfg(feature = "sync")]
+        assert_eq!(token_arena.read().unwrap().len(), token_count);
+        assert_eq!(reused, original);
     }
 
     #[test]

@@ -10,6 +10,10 @@ name = "mq-test"
 repository = "https://github.com/harehare/mq"
 version = "0.8.4"
 
+[features]
+# Runs the test runner's queries through mq-lang's Tarn bytecode VM.
+tarn = ["mq-lang/tarn"]
+
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}

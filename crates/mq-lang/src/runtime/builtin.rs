@@ -15,16 +15,16 @@ mod regex;
 pub(super) mod tokenizer;
 
 use crate::arena::Arena;
-use crate::ast::{constants, node as ast};
+use crate::ast::constants;
 use crate::error::runtime::RuntimeError;
-use crate::eval::builtin::convert::Convert;
-use crate::eval::env::{self, Env};
 use crate::ident::all_symbols;
 #[cfg(feature = "http")]
 use crate::io::HttpRequestSpec;
 #[cfg(feature = "file-io")]
 use crate::io::Io;
 use crate::number::{self};
+use crate::runtime::builtin::convert::Convert;
+use crate::runtime::env::{self, Env};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
@@ -119,17 +119,17 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     let provided = args;
 
     match fn_value {
-        RuntimeValue::Function(params, program, fn_env) => {
-            if provided.len() >= params.len() {
+        RuntimeValue::Function(f) => {
+            if provided.len() >= f.params.len() {
                 return Err(Error::InvalidNumberOfArguments(
                     ident.to_string(),
-                    params.len() as u8,
+                    f.params.len() as u8,
                     provided.len() as u8 + 1,
                 ));
             }
-            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&fn_env))));
+            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&f.env))));
             let mut remaining = crate::ast::node::Params::new();
-            for (i, param) in params.iter().enumerate() {
+            for (i, param) in f.params.iter().enumerate() {
                 if i < provided.len() {
                     #[cfg(not(feature = "sync"))]
                     partial_env.borrow_mut().define(param.ident.name, provided[i].clone());
@@ -142,7 +142,26 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
                     remaining.push(param.clone());
                 }
             }
-            Ok(RuntimeValue::Function(Shared::new(remaining), program, partial_env))
+            Ok(RuntimeValue::new_function(
+                Shared::new(remaining),
+                Shared::clone(&f.body),
+                partial_env,
+            ))
+        }
+        #[cfg(feature = "tarn")]
+        RuntimeValue::VmClosure(vc) => {
+            let total_params = vc.chunks[vc.chunk_index as usize].param_shape.bindings.len();
+            let already_bound = vc.bound_args.len();
+            if already_bound + provided.len() >= total_params {
+                return Err(Error::InvalidNumberOfArguments(
+                    ident.to_string(),
+                    total_params as u8,
+                    (already_bound + provided.len()) as u8 + 1,
+                ));
+            }
+            let mut vc = vc;
+            Shared::make_mut(&mut vc).bound_args.extend(provided);
+            Ok(RuntimeValue::VmClosure(vc))
         }
         other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
     }
@@ -350,7 +369,7 @@ fn strftime_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
         [RuntimeValue::Number(secs), RuntimeValue::String(fmt)] => {
             let secs_val = secs.value() as i64;
             DateTime::from_timestamp(secs_val, 0)
-                .map(|dt| RuntimeValue::String(dt.format(fmt.as_str()).to_string()))
+                .map(|dt| RuntimeValue::String(Shared::new(dt.format(fmt.as_str()).to_string())))
                 .ok_or_else(|| Error::Runtime(format!("strftime: invalid timestamp: {}", secs_val)))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -594,17 +613,17 @@ fn sha512_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 
 #[mq_macros::mq_fn(name = "uuid", params = None)]
 fn uuid_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
+    Ok(RuntimeValue::String(Shared::new(uuid::Uuid::new_v4().to_string())))
 }
 
 #[mq_macros::mq_fn(name = "uuid_v7", params = None)]
 fn uuid_v7_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(uuid::Uuid::now_v7().to_string()))
+    Ok(RuntimeValue::String(Shared::new(uuid::Uuid::now_v7().to_string())))
 }
 
 #[mq_macros::mq_fn(name = "uuid_v4", params = None)]
 fn uuid_v4_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::String(uuid::Uuid::new_v4().to_string()))
+    Ok(RuntimeValue::String(Shared::new(uuid::Uuid::new_v4().to_string())))
 }
 
 /// Generates a pseudo-random `f64` in `[0, 1)`. Not cryptographically secure. If `seed` is
@@ -735,7 +754,7 @@ fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             let len = len.to_int() as usize;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, None)
-                .map(RuntimeValue::String)
+                .map(|s| RuntimeValue::String(s.into()))
                 .ok_or_else(|| Error::Runtime("random_string: charset must not be empty".to_string()))
         }
         [
@@ -746,7 +765,7 @@ fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             let len = len.to_int() as usize;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, Some(seed.to_int() as u64))
-                .map(RuntimeValue::String)
+                .map(|s| RuntimeValue::String(s.into()))
                 .ok_or_else(|| Error::Runtime("random_string: charset must not be empty".to_string()))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -830,9 +849,9 @@ fn xor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                     b2.len()
                 )));
             }
-            Ok(RuntimeValue::Bytes(
+            Ok(RuntimeValue::Bytes(Shared::new(
                 b1.iter().zip(b2.iter()).map(|(a, b)| a ^ b).collect(),
-            ))
+            )))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -853,9 +872,9 @@ fn band_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                     b2.len()
                 )));
             }
-            Ok(RuntimeValue::Bytes(
+            Ok(RuntimeValue::Bytes(Shared::new(
                 b1.iter().zip(b2.iter()).map(|(a, b)| a & b).collect(),
-            ))
+            )))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -876,9 +895,9 @@ fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                     b2.len()
                 )));
             }
-            Ok(RuntimeValue::Bytes(
+            Ok(RuntimeValue::Bytes(Shared::new(
                 b1.iter().zip(b2.iter()).map(|(a, b)| a | b).collect(),
-            ))
+            )))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -891,7 +910,7 @@ fn bor_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "bnot", params = Fixed(1))]
 fn bnot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(b.iter().map(|x| !x).collect())),
+        [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(Shared::new(b.iter().map(|x| !x).collect()))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("bnot should always receive exactly one argument"),
     }
@@ -1084,7 +1103,9 @@ fn to_array_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 #[mq_macros::mq_fn(name = "to_bytes", params = Fixed(1))]
 fn to_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::Bytes(std::mem::take(s).into_bytes())),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Bytes(Shared::new(
+            Shared::unwrap_or_clone(std::mem::take(s)).into_bytes(),
+        ))),
         [RuntimeValue::Bytes(b)] => Ok(RuntimeValue::Bytes(std::mem::take(b))),
         [RuntimeValue::Array(arr)] => {
             let mut bytes = Vec::with_capacity(arr.len());
@@ -1100,7 +1121,7 @@ fn to_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
                     other => return Err(Error::InvalidTypes(ident.to_string(), vec![other.clone()])),
                 }
             }
-            Ok(RuntimeValue::Bytes(bytes))
+            Ok(RuntimeValue::Bytes(bytes.into()))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("to_bytes should always receive exactly one argument"),
@@ -1156,9 +1177,9 @@ fn ends_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedE
     match args.as_mut_slice() {
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
-            .map(|md| Ok(md.value().ends_with(&*s).into()))
+            .map(|md| Ok(md.value().ends_with(&**s).into()))
             .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.ends_with(&*s2).into()),
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.ends_with(&**s2).into()),
         [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok(b1.ends_with(b2).into()),
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .last()
@@ -1185,9 +1206,9 @@ fn starts_with_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &Share
     match args.as_mut_slice() {
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
-            .map(|md| Ok(md.value().starts_with(&*s).into()))
+            .map(|md| Ok(md.value().starts_with(&**s).into()))
             .unwrap_or_else(|| Ok(RuntimeValue::FALSE)),
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.starts_with(&*s2).into()),
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(s1.starts_with(&**s2).into()),
         [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok(b1.starts_with(b2).into()),
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array
             .first()
@@ -1344,14 +1365,14 @@ fn replace_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             RuntimeValue::String(s1),
             RuntimeValue::String(s2),
             RuntimeValue::String(s3),
-        ] => Ok(s1.replace(&*s2, &*s3).into()),
+        ] => Ok(s1.replace(&**s2, &*s3).into()),
         [
             node @ RuntimeValue::Markdown(_, _),
             RuntimeValue::String(s1),
             RuntimeValue::String(s2),
         ] => node
             .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.value().replace(&*s1, &*s2).as_str())))
+            .map(|md| Ok(node.update_markdown_value(md.value().replace(&**s1, &*s2).as_str())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::None, RuntimeValue::String(_), RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
@@ -1656,9 +1677,9 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
                 (end as usize).min(len)
             };
             if real_start >= len || real_end <= real_start {
-                return Ok(RuntimeValue::Bytes(vec![]));
+                return Ok(RuntimeValue::Bytes(Shared::new(vec![])));
             }
-            Ok(RuntimeValue::Bytes(b[real_start..real_end].to_vec()))
+            Ok(RuntimeValue::Bytes(Shared::new(b[real_start..real_end].to_vec())))
         }
         [RuntimeValue::None, RuntimeValue::Number(_), RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
@@ -1771,7 +1792,7 @@ fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| {
                 Ok(RuntimeValue::Number(
-                    (md.value().find(&*s).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
+                    (md.value().find(&**s).map(|v| v as isize).unwrap_or_else(|| -1) as i64).into(),
                 ))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
@@ -1929,7 +1950,7 @@ fn token_compress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shar
         Ok(RuntimeValue::Array(Shared::new(
             compressed
                 .into_iter()
-                .map(|node| RuntimeValue::Markdown(Box::new(node), None))
+                .map(|node| RuntimeValue::Markdown(Shared::new(node), None))
                 .collect(),
         )))
     }
@@ -1961,13 +1982,13 @@ fn token_compress_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shar
 fn rindex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok(RuntimeValue::Number(
-            s1.rfind(&*s2).map(|v| v as isize).unwrap_or_else(|| -1).into(),
+            s1.rfind(&**s2).map(|v| v as isize).unwrap_or_else(|| -1).into(),
         )),
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
             .markdown_node()
             .map(|md| {
                 Ok(RuntimeValue::Number(
-                    md.value().rfind(&*s).map(|v| v as isize).unwrap_or_else(|| -1).into(),
+                    md.value().rfind(&**s).map(|v| v as isize).unwrap_or_else(|| -1).into(),
                 ))
             })
             .unwrap_or_else(|| Ok(RuntimeValue::Number((-1_i64).into()))),
@@ -2112,7 +2133,7 @@ fn reverse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
         [RuntimeValue::String(s)] => Ok(s.chars().rev().collect::<String>().into()),
         [RuntimeValue::Bytes(b)] => {
             let mut v = std::mem::take(b);
-            v.reverse();
+            runtime_value::bytes_mut(&mut v).reverse();
             Ok(RuntimeValue::Bytes(v))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
@@ -2131,7 +2152,7 @@ fn sort_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                 .into_iter()
                 .map(|v| match v {
                     RuntimeValue::Markdown(mut node, s) => {
-                        node.set_position(None);
+                        runtime_value::markdown_mut(&mut node).set_position(None);
                         RuntimeValue::Markdown(node, s)
                     }
                     _ => v,
@@ -2163,9 +2184,9 @@ fn _sort_by_impl_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
                     RuntimeValue::Array(mut arr) if arr.len() >= 2 => {
                         if let RuntimeValue::Markdown(node, s) = &arr[1] {
                             let mut new_node = node.clone();
-                            new_node.set_position(None);
+                            runtime_value::markdown_mut(&mut new_node).set_position(None);
 
-                            runtime_value::array_mut(&mut arr)[1] = RuntimeValue::Markdown(new_node, s.clone());
+                            runtime_value::array_mut(&mut arr)[1] = RuntimeValue::Markdown(new_node, *s);
                             RuntimeValue::Array(arr)
                         } else {
                             RuntimeValue::Array(arr)
@@ -2380,11 +2401,11 @@ fn lte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
 fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s1), RuntimeValue::String(s2)] => {
-            s1.push_str(s2);
+            runtime_value::string_mut(s1).push_str(s2);
             Ok(std::mem::take(s1).into())
         }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] | [RuntimeValue::Number(n), RuntimeValue::String(s)] => {
-            s.push_str(n.to_string().as_str());
+            runtime_value::string_mut(s).push_str(n.to_string().as_str());
             Ok(std::mem::take(s).into())
         }
         [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
@@ -2409,7 +2430,7 @@ fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((*n1 + *n2).into()),
         [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => {
             let mut result = std::mem::take(b1);
-            result.extend_from_slice(b2);
+            runtime_value::bytes_mut(&mut result).extend_from_slice(b2);
             Ok(RuntimeValue::Bytes(result))
         }
         [RuntimeValue::Array(a1), RuntimeValue::Array(a2)] => {
@@ -2611,8 +2632,8 @@ fn attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resu
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(attr)] => {
             Ok(node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE))
         }
-        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(runtime_value::array_mut(nodes)
-            .iter_mut()
+        [RuntimeValue::Array(nodes), RuntimeValue::String(attr)] => Ok(nodes
+            .iter()
             .flat_map(|node| match node {
                 RuntimeValue::Markdown(node, _) => {
                     let value = node.attr(attr).map(Into::into).unwrap_or(RuntimeValue::NONE);
@@ -2623,7 +2644,7 @@ fn attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resu
                         v => vec![v],
                     }
                 }
-                a => vec![std::mem::take(a)],
+                a => vec![a.clone()],
             })
             .collect::<Vec<_>>()
             .into()),
@@ -2657,13 +2678,13 @@ fn set_attr_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
                         "set_attr".to_string(),
                         vec![
                             RuntimeValue::Markdown(new_node, selector.take()),
-                            RuntimeValue::String(attr.clone()),
+                            RuntimeValue::String(Shared::new(attr.to_string())),
                             std::mem::take(value),
                         ],
                     ));
                 }
             };
-            new_node.set_attr(attr, value);
+            runtime_value::markdown_mut(&mut new_node).set_attr(attr, value);
             Ok(RuntimeValue::Markdown(new_node, selector.take()))
         }
         [a, ..] => Ok(std::mem::take(a)),
@@ -2676,14 +2697,14 @@ fn set_children_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
     match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Array(children)] => {
             let mut new_node = std::mem::take(node);
-            let children = runtime_value::array_mut(children)
-                .iter_mut()
+            let children = children
+                .iter()
                 .map(|child| match child {
                     RuntimeValue::Markdown(node, _) => (**node).clone(),
-                    value => std::mem::take(value).to_string().into(),
+                    value => value.to_string().into(),
                 })
                 .collect();
-            new_node.set_children(children);
+            runtime_value::markdown_mut(&mut new_node).set_children(children);
             Ok(RuntimeValue::Markdown(new_node, selector.take()))
         }
         [a, ..] => Ok(std::mem::take(a)),
@@ -2765,7 +2786,7 @@ fn to_link_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             title: if title.is_empty() {
                 None
             } else {
-                Some(mq_markdown::Title::new((&*title).into()))
+                Some(mq_markdown::Title::new((&(**title)).into()))
             },
             position: None,
         })
@@ -2831,7 +2852,7 @@ fn set_list_ordered_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
             if matches!(**node, mq_markdown::Node::List(_)) =>
         {
             let ordered = *ordered;
-            if let mq_markdown::Node::List(list) = &mut **node {
+            if let mq_markdown::Node::List(list) = runtime_value::markdown_mut(node) {
                 Ok(mq_markdown::Node::List(mq_markdown::List {
                     ordered,
                     ..std::mem::take(list)
@@ -3097,7 +3118,7 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
         .collect::<Vec<_>>();
 
     Ok(RuntimeValue::Markdown(
-        Box::new(mq_markdown::Node::TableRow(mq_markdown::TableRow {
+        Shared::new(mq_markdown::Node::TableRow(mq_markdown::TableRow {
             values,
             position: None,
         })),
@@ -3109,7 +3130,7 @@ fn to_md_table_row_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) 
 fn to_md_table_cell_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [value, RuntimeValue::Number(row), RuntimeValue::Number(column)] => Ok(RuntimeValue::Markdown(
-            Box::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
+            Shared::new(mq_markdown::Node::TableCell(mq_markdown::TableCell {
                 row: row.value() as usize,
                 column: column.value() as usize,
                 values: vec![value.to_string().into()],
@@ -3176,18 +3197,18 @@ fn get_title_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
         [RuntimeValue::Markdown(node, _)]
             if matches!(**node, mq_markdown::Node::Definition(_) | mq_markdown::Node::Link(_)) =>
         {
-            match &mut **node {
+            match runtime_value::markdown_mut(node) {
                 mq_markdown::Node::Definition(mq_markdown::Definition { title, .. })
                 | mq_markdown::Node::Link(mq_markdown::Link { title, .. }) => std::mem::take(title)
-                    .map(|t| Ok(RuntimeValue::String(t.to_value())))
+                    .map(|t| Ok(RuntimeValue::String(Shared::new(t.to_value()))))
                     .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
                 _ => unreachable!(),
             }
         }
         [RuntimeValue::Markdown(node, _)] if matches!(**node, mq_markdown::Node::Image(_)) => {
-            if let mq_markdown::Node::Image(mq_markdown::Image { title, .. }) = &mut **node {
+            if let mq_markdown::Node::Image(mq_markdown::Image { title, .. }) = runtime_value::markdown_mut(node) {
                 std::mem::take(title)
-                    .map(|t| Ok(RuntimeValue::String(t)))
+                    .map(|t| Ok(RuntimeValue::String(t.into())))
                     .unwrap_or_else(|| Ok(RuntimeValue::NONE))
             } else {
                 unreachable!()
@@ -3218,7 +3239,7 @@ fn set_check_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             if matches!(**node, mq_markdown::Node::List(_)) =>
         {
             let checked = *checked;
-            if let mq_markdown::Node::List(list) = &mut **node {
+            if let mq_markdown::Node::List(list) = runtime_value::markdown_mut(node) {
                 Ok(mq_markdown::Node::List(mq_markdown::List {
                     checked: Some(checked),
                     ..std::mem::take(list)
@@ -3237,20 +3258,20 @@ fn set_check_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Markdown(node, selector), RuntimeValue::String(s)] => {
-            match &mut **node {
+            match runtime_value::markdown_mut(node) {
                 mq_markdown::Node::Definition(def) => {
                     return Ok(mq_markdown::Node::Definition(mq_markdown::Definition {
-                        label: Some(s.to_owned()),
+                        label: Some(s.to_owned().to_string()),
                         ..std::mem::take(def)
                     })
                     .into());
                 }
                 mq_markdown::Node::ImageRef(image_ref) => {
                     return Ok(mq_markdown::Node::ImageRef(mq_markdown::ImageRef {
-                        label: if s == &image_ref.ident {
+                        label: if **s == image_ref.ident {
                             None
                         } else {
-                            Some(s.to_owned())
+                            Some(s.to_owned().to_string())
                         },
                         ..std::mem::take(image_ref)
                     })
@@ -3258,21 +3279,25 @@ fn set_ref_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
                 }
                 mq_markdown::Node::LinkRef(link_ref) => {
                     return Ok(mq_markdown::Node::LinkRef(mq_markdown::LinkRef {
-                        label: if s == &link_ref.ident { None } else { Some(s.to_owned()) },
+                        label: if **s == link_ref.ident {
+                            None
+                        } else {
+                            Some(s.to_owned().to_string())
+                        },
                         ..std::mem::take(link_ref)
                     })
                     .into());
                 }
                 mq_markdown::Node::Footnote(footnote) => {
                     return Ok(mq_markdown::Node::Footnote(mq_markdown::Footnote {
-                        ident: s.to_owned(),
+                        ident: s.to_owned().to_string(),
                         ..std::mem::take(footnote)
                     })
                     .into());
                 }
                 mq_markdown::Node::FootnoteRef(footnote_ref) => {
                     return Ok(mq_markdown::Node::FootnoteRef(mq_markdown::FootnoteRef {
-                        label: Some(s.to_owned()),
+                        label: Some(s.to_owned().to_string()),
                         ..std::mem::take(footnote_ref)
                     })
                     .into());
@@ -3293,10 +3318,10 @@ fn set_code_block_lang_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
         [RuntimeValue::Markdown(node, _), RuntimeValue::String(lang)]
             if matches!(**node, mq_markdown::Node::Code(_)) =>
         {
-            if let mq_markdown::Node::Code(code) = &mut **node {
+            if let mq_markdown::Node::Code(code) = runtime_value::markdown_mut(node) {
                 let lang = std::mem::take(lang);
                 let mut new_code = std::mem::take(code);
-                new_code.lang = if lang.is_empty() { None } else { Some(lang) };
+                new_code.lang = if lang.is_empty() { None } else { Some(lang.to_string()) };
                 Ok(mq_markdown::Node::Code(new_code).into())
             } else {
                 unreachable!()
@@ -3350,14 +3375,11 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 #[mq_macros::mq_fn(name = "get", params = Fixed(2))]
 fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(runtime_value::dict_mut(map)
-            .get_mut(&Ident::new(key))
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
-        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(runtime_value::dict_mut(map)
-            .get_mut(key)
-            .map(std::mem::take)
-            .unwrap_or(RuntimeValue::NONE)),
+        // Read-only: avoid `dict_mut`/`array_mut`'s `make_mut` deep clone of a shared map.
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => {
+            Ok(map.get(&Ident::new(key)).cloned().unwrap_or(RuntimeValue::NONE))
+        }
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.get(key).cloned().unwrap_or(RuntimeValue::NONE)),
         [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
             let len = array.len();
             let idx = index.value() as isize;
@@ -3366,10 +3388,7 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             } else {
                 idx as usize
             };
-            Ok(runtime_value::array_mut(array)
-                .get_mut(real_idx)
-                .map(std::mem::take)
-                .unwrap_or(RuntimeValue::NONE))
+            Ok(array.get(real_idx).cloned().unwrap_or(RuntimeValue::NONE))
         }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
             let len = s.chars().count();
@@ -3392,10 +3411,10 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             } else {
                 idx as usize
             };
-            Ok(RuntimeValue::Markdown(
-                std::mem::take(node),
-                Some(runtime_value::Selector::Index(real_idx)),
-            ))
+            match runtime_value::Selector::index(real_idx) {
+                Some(sel) => Ok(RuntimeValue::Markdown(std::mem::take(node), Some(sel))),
+                None => Ok(RuntimeValue::NONE),
+            }
         }
         [RuntimeValue::None, _] | [_, RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a, b] => Err(Error::InvalidTypes(
@@ -3403,6 +3422,22 @@ fn get_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("get should always receive exactly two arguments"),
+    }
+}
+
+/// Reports whether a dict key or array index is present, unlike `get` whose `None` result
+/// also means "no key". Native replacement for the old pure-mq `has`; same semantics
+/// (non-dict/array subjects, or an out-of-range/negative array index, are just `false`).
+#[mq_macros::mq_fn(name = "has", params = Fixed(2))]
+fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Dict(map), RuntimeValue::String(key)] => Ok(map.contains_key(&Ident::new(key)).into()),
+        [RuntimeValue::Dict(map), RuntimeValue::Symbol(key)] => Ok(map.contains_key(key).into()),
+        [RuntimeValue::Array(array), RuntimeValue::Number(index)] => {
+            let idx = index.value();
+            Ok((idx >= 0.0 && (idx as usize) < array.len()).into())
+        }
+        _ => Ok(false.into()),
     }
 }
 
@@ -3456,7 +3491,7 @@ fn keys_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         [RuntimeValue::Dict(map)] => {
             let keys = map
                 .keys()
-                .map(|k| RuntimeValue::String(k.as_str()))
+                .map(|k| RuntimeValue::String(Shared::new(k.as_str())))
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(Shared::new(keys)))
         }
@@ -3485,7 +3520,12 @@ fn entries_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
         [RuntimeValue::Dict(map)] => {
             let entries = map
                 .iter()
-                .map(|(k, v)| RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(k.as_str()), v.to_owned()])))
+                .map(|(k, v)| {
+                    RuntimeValue::Array(Shared::new(vec![
+                        RuntimeValue::String(Shared::new(k.as_str())),
+                        v.to_owned(),
+                    ]))
+                })
                 .collect::<Vec<RuntimeValue>>();
             Ok(RuntimeValue::Array(Shared::new(entries)))
         }
@@ -3521,7 +3561,7 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
                 chars.insert(idx + i, c);
             }
             let result: String = chars.into_iter().collect();
-            Ok(RuntimeValue::String(result))
+            Ok(RuntimeValue::String(result.into()))
         }
         // Insert into dict (same as set, but error if key exists)
         [RuntimeValue::Dict(map_val), RuntimeValue::String(key_val), value_val] => {
@@ -3554,8 +3594,8 @@ fn negate_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 #[mq_macros::mq_fn(name = "intern", params = Fixed(1))]
 fn intern_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Ident::new(s).as_str())),
-        [a] => Ok(RuntimeValue::String(Ident::new(&a.to_string()).as_str())),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(Ident::new(s).as_str()))),
+        [a] => Ok(RuntimeValue::String(Shared::new(Ident::new(&a.to_string()).as_str()))),
         _ => unreachable!("intern should always receive exactly one argument"),
     }
 }
@@ -3601,7 +3641,7 @@ fn input_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<Run
         .map_err(|e| Error::Runtime(format!("Failed to read from stdin: {}", e)))?;
     input.truncate(input.trim_end_matches(&['\n', '\r'][..]).len());
 
-    Ok(RuntimeValue::String(input))
+    Ok(RuntimeValue::String(input.into()))
 }
 
 #[mq_macros::mq_fn(name = "all_symbols", params = None)]
@@ -3738,7 +3778,7 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                     .map(|(i, k)| {
                         (
                             Ident::new(k),
-                            RuntimeValue::String(record.get(i).unwrap_or("").to_string()),
+                            RuntimeValue::String(Shared::new(record.get(i).unwrap_or("").to_string())),
                         )
                     })
                     .collect();
@@ -3752,7 +3792,10 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             .records()
             .map(|record| {
                 let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
-                let arr: Vec<RuntimeValue> = record.iter().map(|v| RuntimeValue::String(v.to_string())).collect();
+                let arr: Vec<RuntimeValue> = record
+                    .iter()
+                    .map(|v| RuntimeValue::String(Shared::new(v.to_string())))
+                    .collect();
                 Ok(RuntimeValue::Array(Shared::new(arr)))
             })
             .collect();
@@ -3873,7 +3916,7 @@ fn _toon_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             let json_value = std::mem::take(value).to_json_value();
             let toon_str = toon_format::encode_default(&json_value)
                 .map_err(|e| Error::Runtime(format!("Failed to encode TOON: {}", e)))?;
-            Ok(RuntimeValue::String(toon_str))
+            Ok(RuntimeValue::String(toon_str.into()))
         }
         _ => unreachable!("_toon_stringify should always receive exactly one argument"),
     }
@@ -3933,7 +3976,7 @@ fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
             let mut buf = Vec::new();
             ciborium::into_writer(&cbor_value, &mut buf)
                 .map_err(|e| Error::Runtime(format!("Failed to serialize CBOR: {}", e)))?;
-            Ok(RuntimeValue::Bytes(buf))
+            Ok(RuntimeValue::Bytes(buf.into()))
         }
         _ => unreachable!("_cbor_stringify should always receive exactly one argument"),
     }
@@ -3959,7 +4002,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         .normalized_value(XmlVersion::default())
                         .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
                         .to_string();
-                    attrs.insert(Ident::new(&key), RuntimeValue::String(value));
+                    attrs.insert(Ident::new(&key), RuntimeValue::String(value.into()));
                 }
                 Ok::<_, Error>(attrs)
             };
@@ -3991,12 +4034,13 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         }
 
                         let mut dict = BTreeMap::new();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
+                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
                         dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
                         dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
                         dict.insert(
                             Ident::new("text"),
-                            text.map(RuntimeValue::String).unwrap_or(RuntimeValue::NONE),
+                            text.map(|s| RuntimeValue::String(s.into()))
+                                .unwrap_or(RuntimeValue::NONE),
                         );
                         let element = RuntimeValue::Dict(Shared::new(dict));
 
@@ -4011,7 +4055,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         let tag = e.name().as_ref().to_string();
                         let attrs = parse_attrs(&e)?;
                         let mut dict = BTreeMap::new();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag));
+                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
                         dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
                         dict.insert(Ident::new("children"), RuntimeValue::empty_array());
                         dict.insert(Ident::new("text"), RuntimeValue::NONE);
@@ -4075,6 +4119,12 @@ fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Sets a symbol or variable in the current environment with the given value.
+///
+/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
+/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
+/// scheduled for removal in the next release.
+#[cfg(not(feature = "tarn"))]
 #[mq_macros::mq_fn(name = "set_variable", params = Fixed(2))]
 fn set_variable_impl(
     ident: &Ident,
@@ -4119,6 +4169,12 @@ fn set_variable_impl(
     }
 }
 
+/// Retrieves the value of a symbol or variable from the current environment.
+///
+/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
+/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
+/// scheduled for removal in the next release.
+#[cfg(not(feature = "tarn"))]
 #[mq_macros::mq_fn(name = "get_variable", params = Fixed(1))]
 fn get_variable_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -4175,14 +4231,14 @@ fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         [RuntimeValue::String(v), RuntimeValue::Number(n)] => {
             let shift_amount = n.to_int().max(0) as usize;
             let shifted: String = v.chars().skip(shift_amount).collect();
-            Ok(RuntimeValue::String(shifted))
+            Ok(RuntimeValue::String(shifted.into()))
         }
         [RuntimeValue::Array(arr), v] => {
             runtime_value::array_mut(arr).push(std::mem::take(v));
             Ok(RuntimeValue::Array(std::mem::take(arr)))
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
-            if let mq_markdown::Node::Heading(heading) = &mut **node {
+            if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 heading.depth = heading.depth.saturating_sub(shift_amount).max(1);
@@ -4212,11 +4268,11 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             let shift_amount = n.value() as usize;
             let char_len = v.chars().count();
             if shift_amount >= char_len {
-                Ok(RuntimeValue::String(String::new()))
+                Ok(RuntimeValue::String(Shared::new(String::new())))
             } else {
                 let keep = char_len - shift_amount;
                 let result: String = v.chars().take(keep).collect();
-                Ok(RuntimeValue::String(result))
+                Ok(RuntimeValue::String(result.into()))
             }
         }
         [v, RuntimeValue::Array(arr)] => {
@@ -4224,7 +4280,7 @@ fn shift_right_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             Ok(RuntimeValue::Array(std::mem::take(arr)))
         }
         [RuntimeValue::Markdown(node, selector), RuntimeValue::Number(n)] => {
-            if let mq_markdown::Node::Heading(heading) = &mut **node {
+            if let mq_markdown::Node::Heading(heading) = runtime_value::markdown_mut(node) {
                 let shift_amount = n.to_int().max(0).min(u8::MAX as i64) as u8;
 
                 if heading.depth + shift_amount <= 6 {
@@ -4249,25 +4305,28 @@ fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<Runtime
     let mut del_inline: Vec<RuntimeValue> = Vec::new();
     let mut ins_inline: Vec<RuntimeValue> = Vec::new();
     for c in char_diff.iter_all_changes() {
-        let val = RuntimeValue::String(c.value().to_string());
+        let val = RuntimeValue::String(Shared::new(c.value().to_string()));
         match c.tag() {
             ChangeTag::Delete => {
                 let mut m = BTreeMap::new();
-                m.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                 m.insert(Ident::new("value"), val);
                 del_inline.push(RuntimeValue::Dict(Shared::new(m)));
             }
             ChangeTag::Insert => {
                 let mut m = BTreeMap::new();
-                m.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                 m.insert(Ident::new("value"), val);
                 ins_inline.push(RuntimeValue::Dict(Shared::new(m)));
             }
             ChangeTag::Equal => {
                 for inline in [&mut del_inline, &mut ins_inline] {
                     let mut m = BTreeMap::new();
-                    m.insert(Ident::new("tag"), RuntimeValue::String("equal".into()));
-                    m.insert(Ident::new("value"), RuntimeValue::String(c.value().to_string()));
+                    m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("equal".into())));
+                    m.insert(
+                        Ident::new("value"),
+                        RuntimeValue::String(Shared::new(c.value().to_string())),
+                    );
                     inline.push(RuntimeValue::Dict(Shared::new(m)));
                 }
             }
@@ -4300,22 +4359,22 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     if let (RuntimeValue::String(s1), RuntimeValue::String(s2)) = (old_val, new_val) {
                         let (del_inline, ins_inline) = build_char_inline_diff(s1.as_str(), s2.as_str());
                         let mut del_map = BTreeMap::new();
-                        del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                        del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                         del_map.insert(Ident::new("value"), old_val.clone());
                         del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
                         result.push(RuntimeValue::Dict(Shared::new(del_map)));
                         let mut ins_map = BTreeMap::new();
-                        ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                        ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                         ins_map.insert(Ident::new("value"), new_val.clone());
                         ins_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(ins_inline)));
                         result.push(RuntimeValue::Dict(Shared::new(ins_map)));
                     } else {
                         let mut del_map = BTreeMap::new();
-                        del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
+                        del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                         del_map.insert(Ident::new("value"), old_val.clone());
                         result.push(RuntimeValue::Dict(Shared::new(del_map)));
                         let mut ins_map = BTreeMap::new();
-                        ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
+                        ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                         ins_map.insert(Ident::new("value"), new_val.clone());
                         result.push(RuntimeValue::Dict(Shared::new(ins_map)));
                     }
@@ -4331,7 +4390,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                         ChangeTag::Insert => a2[changes[i].new_index().unwrap()].clone(),
                     };
                     let mut map = BTreeMap::new();
-                    map.insert(Ident::new("tag"), RuntimeValue::String(tag_str.into()));
+                    map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
                     map.insert(Ident::new("value"), value);
                     result.push(RuntimeValue::Dict(Shared::new(map)));
                     i += 1;
@@ -4355,13 +4414,19 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     let new_val = changes[i + 1].value().trim_end_matches('\n');
                     let (del_inline, ins_inline) = build_char_inline_diff(old_val, new_val);
                     let mut del_map = BTreeMap::new();
-                    del_map.insert(Ident::new("tag"), RuntimeValue::String("delete".into()));
-                    del_map.insert(Ident::new("value"), RuntimeValue::String(old_val.to_string()));
+                    del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
+                    del_map.insert(
+                        Ident::new("value"),
+                        RuntimeValue::String(Shared::new(old_val.to_string())),
+                    );
                     del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
                     result.push(RuntimeValue::Dict(Shared::new(del_map)));
                     let mut ins_map = BTreeMap::new();
-                    ins_map.insert(Ident::new("tag"), RuntimeValue::String("insert".into()));
-                    ins_map.insert(Ident::new("value"), RuntimeValue::String(new_val.to_string()));
+                    ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
+                    ins_map.insert(
+                        Ident::new("value"),
+                        RuntimeValue::String(Shared::new(new_val.to_string())),
+                    );
                     ins_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(ins_inline)));
                     result.push(RuntimeValue::Dict(Shared::new(ins_map)));
                     i += 2;
@@ -4373,8 +4438,8 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     };
                     let val = changes[i].value().trim_end_matches('\n').to_string();
                     let mut map = BTreeMap::new();
-                    map.insert(Ident::new("tag"), RuntimeValue::String(tag_str.into()));
-                    map.insert(Ident::new("value"), RuntimeValue::String(val));
+                    map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
+                    map.insert(Ident::new("value"), RuntimeValue::String(val.into()));
                     result.push(RuntimeValue::Dict(Shared::new(map)));
                     i += 1;
                 }
@@ -4388,7 +4453,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
 #[mq_macros::mq_fn(name = "basename", params = Fixed(1))]
 fn basename_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::basename(s))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(path::basename(s)))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("basename should always receive exactly one argument"),
     }
@@ -4397,7 +4462,7 @@ fn basename_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
 #[mq_macros::mq_fn(name = "dirname", params = Fixed(1))]
 fn dirname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::dirname(s))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(path::dirname(s)))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("dirname should always receive exactly one argument"),
     }
@@ -4406,7 +4471,7 @@ fn dirname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
 #[mq_macros::mq_fn(name = "extname", params = Fixed(1))]
 fn extname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::extname(s))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(path::extname(s)))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("extname should always receive exactly one argument"),
     }
@@ -4415,7 +4480,7 @@ fn extname_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
 #[mq_macros::mq_fn(name = "stem", params = Fixed(1))]
 fn stem_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(path::stem(s))),
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::String(Shared::new(path::stem(s)))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("stem should always receive exactly one argument"),
     }
@@ -4425,7 +4490,7 @@ fn stem_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 fn path_join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(base), RuntimeValue::String(component)] => {
-            path::path_join(base, component).map(RuntimeValue::String)
+            path::path_join(base, component).map(|s| RuntimeValue::String(s.into()))
         }
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -4458,7 +4523,7 @@ fn read_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => io_context::current()
             .read_to_string(std::path::Path::new(path.as_str()))
-            .map(RuntimeValue::String)
+            .map(|s| RuntimeValue::String(s.into()))
             .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path, e))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("read_file should always receive exactly one argument"),
@@ -4503,7 +4568,7 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     match args.as_mut_slice() {
         [RuntimeValue::String(path)] => io_context::current()
             .read_bytes(std::path::Path::new(path.as_str()))
-            .map(RuntimeValue::Bytes)
+            .map(|b| RuntimeValue::Bytes(b.into()))
             .map_err(|e| Error::Runtime(format!("Failed to read file {}: {}", path, e))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("read_file_bytes should always receive exactly one argument"),
@@ -4596,7 +4661,7 @@ fn embed_image(arg: &mut RuntimeValue, base_dir: &str) -> Result<RuntimeValue, E
     let RuntimeValue::Markdown(node, _) = arg else {
         unreachable!()
     };
-    let mq_markdown::Node::Image(image) = &mut **node else {
+    let mq_markdown::Node::Image(image) = runtime_value::markdown_mut(node) else {
         return Ok(std::mem::take(arg));
     };
 
@@ -4639,7 +4704,7 @@ fn extract_image(arg: &mut RuntimeValue, dir: &str) -> Result<RuntimeValue, Erro
     let RuntimeValue::Markdown(node, _) = arg else {
         unreachable!()
     };
-    let mq_markdown::Node::Image(image) = &mut **node else {
+    let mq_markdown::Node::Image(image) = runtime_value::markdown_mut(node) else {
         return Ok(std::mem::take(arg));
     };
 
@@ -4719,7 +4784,7 @@ fn http_all_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
                 .http_request_all(&specs)
                 .map_err(|e| Error::Runtime(format!("http_all: {e}")))?;
             Ok(RuntimeValue::Array(Shared::new(
-                bodies.into_iter().map(RuntimeValue::String).collect(),
+                bodies.into_iter().map(|s| RuntimeValue::String(s.into())).collect(),
             )))
         }
         args => Err(Error::InvalidTypes(
@@ -4740,12 +4805,12 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         .get(&Ident::from("url"))
         .ok_or_else(|| Error::Runtime("http_all: each request dict needs a `url` string".to_string()))
         .and_then(|value| match value {
-            RuntimeValue::String(url) => Ok(url.clone()),
+            RuntimeValue::String(url) => Ok(url.to_string()),
             other => Err(Error::Runtime(format!("http_all: `url` must be a string, got {other}"))),
         })?;
     let method = match fields.get(&Ident::from("method")) {
         Some(RuntimeValue::Symbol(method)) => method.as_str().to_string(),
-        Some(RuntimeValue::String(method)) => method.clone(),
+        Some(RuntimeValue::String(method)) => method.to_string(),
         Some(other) => {
             return Err(Error::Runtime(format!(
                 "http_all: `method` must be a string or symbol, got {other}"
@@ -4758,7 +4823,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         .map_err(|_| Error::Runtime(format!("http_all: invalid HTTP method {method:?}")))?
         .to_string();
     let body = match fields.get(&Ident::from("body")) {
-        Some(RuntimeValue::String(body)) => Some(body.clone()),
+        Some(RuntimeValue::String(body)) => Some(body.to_string()),
         Some(other) => {
             return Err(Error::Runtime(format!(
                 "http_all: `body` must be a string, got {other}"
@@ -4770,7 +4835,7 @@ fn parse_http_request(value: &RuntimeValue) -> Result<HttpRequestSpec, Error> {
         Some(RuntimeValue::Dict(headers)) => headers
             .iter()
             .map(|(name, value)| match value {
-                RuntimeValue::String(value) => Ok((name.as_str().to_string(), value.clone())),
+                RuntimeValue::String(value) => Ok((name.as_str().to_string(), value.to_string())),
                 other => Err(Error::Runtime(format!(
                     "http_all: header {name:?} must be a string, got {other}"
                 ))),
@@ -4811,7 +4876,7 @@ fn mock_fetch_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
 fn runtime_args_to_strings(command: &str, arr: &[RuntimeValue]) -> Result<Vec<String>, Error> {
     arr.iter()
         .map(|v| match v {
-            RuntimeValue::String(s) => Ok(s.clone()),
+            RuntimeValue::String(s) => Ok(s.to_string()),
             other => Err(Error::Runtime(format!(
                 "system: `{command}` arguments must be strings, got {other}"
             ))),
@@ -4825,13 +4890,13 @@ fn system_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     match args.as_mut_slice() {
         [RuntimeValue::String(command)] => io_context::current()
             .execute(command, &[])
-            .map(RuntimeValue::String)
+            .map(|s| RuntimeValue::String(s.into()))
             .map_err(|e| Error::Runtime(format!("Failed to execute {}: {}", command, e))),
         [RuntimeValue::String(command), RuntimeValue::Array(arr)] => {
             let cmd_args = runtime_args_to_strings(command, arr)?;
             io_context::current()
                 .execute(command, &cmd_args)
-                .map(RuntimeValue::String)
+                .map(|s| RuntimeValue::String(s.into()))
                 .map_err(|e| Error::Runtime(format!("Failed to execute {}: {}", command, e)))
         }
         args => Err(Error::InvalidTypes(
@@ -4927,7 +4992,7 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     let title = nodes
         .iter()
         .find(|node| matches!(node, mq_markdown::Node::Heading(_)))
-        .map(|node| RuntimeValue::String(node.value()))
+        .map(|node| RuntimeValue::String(Shared::new(node.value())))
         .unwrap_or(RuntimeValue::NONE);
 
     let content = RuntimeValue::Array(Shared::new(
@@ -4935,7 +5000,7 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
     ));
 
     let mut record = BTreeMap::new();
-    record.insert(Ident::new("path"), RuntimeValue::String(path));
+    record.insert(Ident::new("path"), RuntimeValue::String(path.into()));
     record.insert(Ident::new("title"), title);
     record.insert(Ident::new("frontmatter"), frontmatter);
     record.insert(Ident::new("content"), content);
@@ -5279,6 +5344,7 @@ mq_macros::builtin_dispatch! {
     SET_CODE_BLOCK_LANG,
     DICT,
     GET,
+    HAS,
     SET,
     KEYS,
     VALUES,
@@ -5308,7 +5374,9 @@ mq_macros::builtin_dispatch! {
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
     _XML_PARSE,
+    #[cfg(not(feature = "tarn"))]
     SET_VARIABLE,
+    #[cfg(not(feature = "tarn"))]
     GET_VARIABLE,
     IS_DEBUG_MODE,
     SHIFT_LEFT,
@@ -8459,6 +8527,20 @@ x
         },
     );
     map.insert(
+        SmolStr::new("has"),
+        BuiltinFunctionDoc {
+            description: "Checks if a dict has the given key, or an array has an element at the given index.",
+            params: &["value", "key"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "bool",
+            examples: &[BuiltinExample {
+                code: r#"has({"a": 1}, "a")"#,
+                expected: "true",
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("values"),
         BuiltinFunctionDoc {
             description: "Returns an array of values from the dict.",
@@ -8858,10 +8940,11 @@ x
             capability: None,
         },
     );
+    #[cfg(not(feature = "tarn"))]
     map.insert(
         SmolStr::new("set_variable"),
         BuiltinFunctionDoc {
-            description: "Sets a symbol or variable in the current environment with the given value.",
+            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Sets a symbol or variable in the current environment with the given value.",
             params: &["symbol_or_string", "value"],
             param_types: &["dynamic", "dynamic"],
             returns: "dynamic",
@@ -8869,10 +8952,11 @@ x
             capability: None,
         },
     );
+    #[cfg(not(feature = "tarn"))]
     map.insert(
         SmolStr::new("get_variable"),
         BuiltinFunctionDoc {
-            description: "Retrieves the value of a symbol or variable from the current environment.",
+            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Retrieves the value of a symbol or variable from the current environment.",
             params: &["symbol_or_string"],
             param_types: &["dynamic"],
             returns: "dynamic",
@@ -8986,54 +9070,54 @@ impl Error {
     #[cold]
     pub fn to_runtime_error(
         &self,
-        node: ast::Node,
+        token_id: crate::ast::TokenId,
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     ) -> RuntimeError {
         match self {
             Error::UserDefined(message) => RuntimeError::UserDefined {
                 message: message.to_owned(),
-                token: (*get_token(token_arena, node.token_id)).clone(),
+                token: (*get_token(token_arena, token_id)).clone(),
             },
             Error::InvalidBase64String(e) => {
-                RuntimeError::InvalidBase64String((*get_token(token_arena, node.token_id)).clone(), e.to_string())
+                RuntimeError::InvalidBase64String((*get_token(token_arena, token_id)).clone(), e.to_string())
             }
             Error::NotDefined(name, candidates) => RuntimeError::NotDefined(
-                (*get_token(token_arena, node.token_id)).clone(),
+                (*get_token(token_arena, token_id)).clone(),
                 name.clone(),
                 candidates.clone().into(),
             ),
             Error::UndefinedReference(a, candidates) => RuntimeError::UndefinedReference(
-                (*get_token(token_arena, node.token_id)).clone(),
+                (*get_token(token_arena, token_id)).clone(),
                 a.clone(),
                 candidates.clone().into(),
             ),
             Error::InvalidDateTimeFormat(msg) => {
-                RuntimeError::DateTimeFormatError((*get_token(token_arena, node.token_id)).clone(), msg.clone())
+                RuntimeError::DateTimeFormatError((*get_token(token_arena, token_id)).clone(), msg.clone())
             }
             Error::InvalidTypes(name, args) => RuntimeError::InvalidTypes {
-                token: (*get_token(token_arena, node.token_id)).clone(),
+                token: (*get_token(token_arena, token_id)).clone(),
                 name: name.clone(),
                 args: args.iter().map(|o| o.name().into()).collect::<Vec<_>>(),
             },
             Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
-                token: (*get_token(token_arena, node.token_id)).clone(),
+                token: (*get_token(token_arena, token_id)).clone(),
                 name: name.clone(),
                 expected: *expected,
                 actual: *got,
             },
             Error::InvalidRegularExpression(regex) => {
-                RuntimeError::InvalidRegularExpression((*get_token(token_arena, node.token_id)).clone(), regex.clone())
+                RuntimeError::InvalidRegularExpression((*get_token(token_arena, token_id)).clone(), regex.clone())
             }
-            Error::Runtime(msg) => RuntimeError::Runtime((*get_token(token_arena, node.token_id)).clone(), msg.clone()),
-            Error::ZeroDivision => RuntimeError::ZeroDivision((*get_token(token_arena, node.token_id)).clone()),
+            Error::Runtime(msg) => RuntimeError::Runtime((*get_token(token_arena, token_id)).clone(), msg.clone()),
+            Error::ZeroDivision => RuntimeError::ZeroDivision((*get_token(token_arena, token_id)).clone()),
             Error::AssignToImmutable(name) => {
-                RuntimeError::AssignToImmutable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::AssignToImmutable((*get_token(token_arena, token_id)).clone(), name.clone())
             }
             Error::UndefinedVariable(name) => {
-                RuntimeError::UndefinedVariable((*get_token(token_arena, node.token_id)).clone(), name.clone())
+                RuntimeError::UndefinedVariable((*get_token(token_arena, token_id)).clone(), name.clone())
             }
             Error::InvalidConvert(format) => {
-                RuntimeError::InvalidConvert((*get_token(token_arena, node.token_id)).clone(), format.clone())
+                RuntimeError::InvalidConvert((*get_token(token_arena, token_id)).clone(), format.clone())
             }
         }
     }
@@ -9115,12 +9199,12 @@ fn collect_runtime_values(args: &[RuntimeValue]) -> Vec<RuntimeValue> {
 fn collect_string_values(args: &[RuntimeValue]) -> Vec<String> {
     args.iter()
         .flat_map(|arg| match arg {
-            RuntimeValue::String(s) => vec![s.clone()],
+            RuntimeValue::String(s) => vec![(**s).clone()],
             RuntimeValue::Array(arr) => arr
                 .iter()
                 .filter_map(|v| {
                     if let RuntimeValue::String(s) = v {
-                        Some(s.clone())
+                        Some((**s).clone())
                     } else {
                         None
                     }
@@ -9643,7 +9727,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
         }
         RuntimeValue::Bytes(b) => {
             if n == 0 {
-                return Ok(RuntimeValue::Bytes(vec![]));
+                return Ok(RuntimeValue::Bytes(Shared::new(vec![])));
             }
             let total_size = b.len().saturating_mul(n);
             if total_size > MAX_RANGE_SIZE {
@@ -9656,7 +9740,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
             for _ in 0..n {
                 repeated.extend_from_slice(b);
             }
-            Ok(RuntimeValue::Bytes(repeated))
+            Ok(RuntimeValue::Bytes(repeated.into()))
         }
         RuntimeValue::None => Ok(RuntimeValue::NONE),
         _ => Err(Error::InvalidTypes(
@@ -9681,19 +9765,19 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("type", vec![RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::String("string".into())))]
-    #[case("len", vec![RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into()), RuntimeValue::String("gpt-4".into())].into(), Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("".into()), RuntimeValue::String("gpt-4".into())].into(), Ok(RuntimeValue::Number(0.into())))]
-    #[case("token_count", vec![RuntimeValue::String("Hello, world!".into())].into(), Ok(RuntimeValue::Number(4.into())))]
-    #[case("token_count", vec![RuntimeValue::String("".into())].into(), Ok(RuntimeValue::Number(0.into())))]
+    #[case("type", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::String(Shared::new("string".into()))))]
+    #[case("len", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String(Shared::new("Hello, world!".into())), RuntimeValue::String(Shared::new("gpt-4".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::String(Shared::new("gpt-4".into()))].into(), Ok(RuntimeValue::Number(0.into())))]
+    #[case("token_count", vec![RuntimeValue::String(Shared::new("Hello, world!".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
+    #[case("token_count", vec![RuntimeValue::String(Shared::new("".into()))].into(), Ok(RuntimeValue::Number(0.into())))]
     #[case(
         "token_compress",
         vec![
-            RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])),
+            RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Shared::new(Node::from("hi".to_string())), None)])),
             RuntimeValue::Number(1000.into()),
         ].into(),
-        Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])))
+        Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Shared::new(Node::from("hi".to_string())), None)])))
     )]
     #[case(
         "token_compress",
@@ -9703,15 +9787,15 @@ mod tests {
     #[case(
         "token_compress",
         vec![
-            RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])),
+            RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Shared::new(Node::from("hi".to_string())), None)])),
             RuntimeValue::Number(1000.into()),
-            RuntimeValue::String("gpt-4".into()),
+            RuntimeValue::String(Shared::new("gpt-4".into())),
         ].into(),
-        Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Box::new(Node::from("hi".to_string())), None)])))
+        Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Markdown(Shared::new(Node::from("hi".to_string())), None)])))
     )]
     #[case(
         "token_compress",
-        vec![RuntimeValue::None, RuntimeValue::Number(100.into()), RuntimeValue::String("gpt-4".into())].into(),
+        vec![RuntimeValue::None, RuntimeValue::Number(100.into()), RuntimeValue::String(Shared::new("gpt-4".into()))].into(),
         Ok(RuntimeValue::Array(Shared::new(vec![])))
     )]
     #[case("abs", vec![RuntimeValue::Number((-10).into())].into(), Ok(RuntimeValue::Number(10.into())))]
@@ -9726,8 +9810,15 @@ mod tests {
     #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.0.into())))]
     #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(8.0.into())))]
     #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", vec![RuntimeValue::String("test".into()), RuntimeValue::String("test".into())].into(), Ok(RuntimeValue::Boolean(true)))]
-    #[case("ne", vec![RuntimeValue::String("test".into()), RuntimeValue::String("different".into())].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("eq", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("ne", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("different".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("c".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::None)]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(1.into())].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(5.into())].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number((-1).into())].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![RuntimeValue::String(Shared::new("not a container".into())), RuntimeValue::String(Shared::new("key".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
     fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new(func_name);
         assert_eq!(
@@ -9984,7 +10075,11 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(12.into()), RuntimeValue::String("abc".into())].into(),
+            vec![
+                RuntimeValue::Number(12.into()),
+                RuntimeValue::String(Shared::new("abc".into())),
+            ]
+            .into(),
             &env,
         )
         .unwrap();
@@ -10003,11 +10098,15 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(0.into()), RuntimeValue::String("abc".into())].into(),
+            vec![
+                RuntimeValue::Number(0.into()),
+                RuntimeValue::String(Shared::new("abc".into())),
+            ]
+            .into(),
             &env,
         )
         .unwrap();
-        assert_eq!(result, RuntimeValue::String("".into()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("".into())));
     }
 
     #[test]
@@ -10016,7 +10115,11 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
-            vec![RuntimeValue::Number(5.into()), RuntimeValue::String("".into())].into(),
+            vec![
+                RuntimeValue::Number(5.into()),
+                RuntimeValue::String(Shared::new("".into())),
+            ]
+            .into(),
             &env,
         );
         assert!(
@@ -10033,7 +10136,7 @@ mod tests {
             &Ident::new("random_string"),
             vec![
                 RuntimeValue::Number(16.into()),
-                RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
+                RuntimeValue::String(Shared::new("abcdefghijklmnopqrstuvwxyz0123456789".into())),
                 RuntimeValue::Number(seed.into()),
             ]
             .into(),
@@ -10061,7 +10164,7 @@ mod tests {
                     &Ident::new("random_string"),
                     vec![
                         RuntimeValue::Number(16.into()),
-                        RuntimeValue::String("abcdefghijklmnopqrstuvwxyz0123456789".into()),
+                        RuntimeValue::String(Shared::new("abcdefghijklmnopqrstuvwxyz0123456789".into())),
                     ]
                     .into(),
                     &env,
@@ -10209,7 +10312,10 @@ mod tests {
     #[case(1704067200_i64, "%Y", "2024")]
     fn test_strftime(#[case] ts: i64, #[case] fmt: &str, #[case] expected: &str) {
         let ident = Ident::new("strftime");
-        let args = vec![RuntimeValue::Number(ts.into()), RuntimeValue::String(fmt.into())];
+        let args = vec![
+            RuntimeValue::Number(ts.into()),
+            RuntimeValue::String(Shared::new(fmt.into())),
+        ];
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
@@ -10217,7 +10323,7 @@ mod tests {
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
-        assert_eq!(result, RuntimeValue::String(expected.into()));
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.into())));
     }
 
     #[rstest]
@@ -10226,7 +10332,10 @@ mod tests {
     #[case("01/02/2024", "%m/%d/%Y", 1704153600_i64)]
     fn test_strptime(#[case] date_str: &str, #[case] fmt: &str, #[case] expected: i64) {
         let ident = Ident::new("strptime");
-        let args = vec![RuntimeValue::String(date_str.into()), RuntimeValue::String(fmt.into())];
+        let args = vec![
+            RuntimeValue::String(Shared::new(date_str.into())),
+            RuntimeValue::String(Shared::new(fmt.into())),
+        ];
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
@@ -10241,8 +10350,8 @@ mod tests {
     fn test_strptime_invalid_format() {
         let ident = Ident::new("strptime");
         let args = vec![
-            RuntimeValue::String("not-a-date".into()),
-            RuntimeValue::String("%Y-%m-%d".into()),
+            RuntimeValue::String(Shared::new("not-a-date".into())),
+            RuntimeValue::String(Shared::new("%Y-%m-%d".into())),
         ];
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10278,7 +10387,12 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_add"),
-            vec![arr, RuntimeValue::Number(n.into()), RuntimeValue::String(unit.into())].into(),
+            vec![
+                arr,
+                RuntimeValue::Number(n.into()),
+                RuntimeValue::String(Shared::new(unit.into())),
+            ]
+            .into(),
             &env,
         )
         .unwrap();
@@ -10299,7 +10413,7 @@ mod tests {
             vec![
                 arr,
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::String("months".into()),
+                RuntimeValue::String(Shared::new("months".into())),
             ]
             .into(),
             &env,
@@ -10321,7 +10435,7 @@ mod tests {
             vec![
                 arr,
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::String("years".into()),
+                RuntimeValue::String(Shared::new("years".into())),
             ]
             .into(),
             &env,
@@ -10342,7 +10456,7 @@ mod tests {
             vec![
                 arr,
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::String("centuries".into()),
+                RuntimeValue::String(Shared::new("centuries".into())),
             ]
             .into(),
             &env,
@@ -10365,7 +10479,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![arr1, arr2, RuntimeValue::String(unit.into())].into(),
+            vec![arr1, arr2, RuntimeValue::String(Shared::new(unit.into()))].into(),
             &env,
         )
         .unwrap();
@@ -10379,7 +10493,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![arr.clone(), arr, RuntimeValue::String("months".into())].into(),
+            vec![arr.clone(), arr, RuntimeValue::String(Shared::new("months".into()))].into(),
             &env,
         );
         assert!(matches!(result, Err(Error::Runtime(_))));
@@ -10388,7 +10502,7 @@ mod tests {
     #[test]
     fn test_gmtime_invalid_type() {
         let ident = Ident::new("gmtime");
-        let args = vec![RuntimeValue::String("not a number".into())];
+        let args = vec![RuntimeValue::String(Shared::new("not a number".into()))];
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
@@ -10401,7 +10515,7 @@ mod tests {
     #[test]
     fn test_mktime_invalid_input() {
         let ident = Ident::new("mktime");
-        let args = vec![RuntimeValue::String("not an array".into())];
+        let args = vec![RuntimeValue::String(Shared::new("not an array".into()))];
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
@@ -10414,14 +10528,14 @@ mod tests {
     #[test]
     fn test_date_add_malformed_array_error_prefix() {
         let env = Shared::new(SharedCell::new(Env::default()));
-        let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("x".into()); 8]));
+        let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("x".into())); 8]));
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_add"),
             vec![
                 bad_arr,
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::String("days".into()),
+                RuntimeValue::String(Shared::new("days".into())),
             ]
             .into(),
             &env,
@@ -10435,11 +10549,16 @@ mod tests {
     #[test]
     fn test_date_diff_malformed_array_error_prefix() {
         let env = Shared::new(SharedCell::new(Env::default()));
-        let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("x".into()); 8]));
+        let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("x".into())); 8]));
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_diff"),
-            vec![bad_arr.clone(), bad_arr, RuntimeValue::String("days".into())].into(),
+            vec![
+                bad_arr.clone(),
+                bad_arr,
+                RuntimeValue::String(Shared::new("days".into())),
+            ]
+            .into(),
             &env,
         );
         match result {
@@ -10465,7 +10584,7 @@ mod tests {
             &Ident::new("date_relative"),
             vec![
                 RuntimeValue::Number(1705276800_i64.into()),
-                RuntimeValue::String(input.into()),
+                RuntimeValue::String(Shared::new(input.into())),
             ]
             .into(),
             &env,
@@ -10482,7 +10601,7 @@ mod tests {
             &Ident::new("date_relative"),
             vec![
                 RuntimeValue::Number(1705276800_i64.into()),
-                RuntimeValue::String("not a relative date".into()),
+                RuntimeValue::String(Shared::new("not a relative date".into())),
             ]
             .into(),
             &env,
@@ -10511,8 +10630,8 @@ mod tests {
     #[test]
     fn test_implicit_first_arg() {
         let ident = Ident::new("starts_with");
-        let first_arg = RuntimeValue::String("hello world".into());
-        let args = vec![RuntimeValue::String("hello".into())];
+        let first_arg = RuntimeValue::String(Shared::new("hello world".into()));
+        let args = vec![RuntimeValue::String(Shared::new("hello".into()))];
 
         let result = eval_builtin(
             &first_arg,
@@ -10776,14 +10895,14 @@ mod tests {
             result,
             RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Markdown(
-                    Box::new(Node::Text(mq_markdown::Text {
+                    Shared::new(Node::Text(mq_markdown::Text {
                         value: "hello".into(),
                         position: None,
                     })),
                     None
                 ),
                 RuntimeValue::Markdown(
-                    Box::new(Node::Link(mq_markdown::Link {
+                    Shared::new(Node::Link(mq_markdown::Link {
                         url: mq_markdown::Url::new("url".into()),
                         title: None,
                         values: Vec::new(),
@@ -10877,13 +10996,13 @@ mod tests {
     )]
     #[case(
         BTreeMap::new(),
-        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
-        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     #[case(
-        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
         BTreeMap::new(),
-        BTreeMap::from([("x".into(), RuntimeValue::String("hello".into()))]),
+        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     fn test_eval_builtin_add_dict(
         #[case] d1: BTreeMap<Ident, RuntimeValue>,
@@ -10922,8 +11041,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("key".into()),
-                RuntimeValue::String("value".into()),
+                RuntimeValue::String(Shared::new("key".into())),
+                RuntimeValue::String(Shared::new("value".into())),
             ]))]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
@@ -10932,7 +11051,7 @@ mod tests {
             result,
             Ok(RuntimeValue::Dict(Shared::new(BTreeMap::from([(
                 "key".into(),
-                RuntimeValue::String("value".into())
+                RuntimeValue::String(Shared::new("value".into()))
             )]))))
         );
     }
@@ -10944,8 +11063,8 @@ mod tests {
 
         let args1 = vec![
             initial_map.clone(),
-            RuntimeValue::String("name".into()),
-            RuntimeValue::String("Jules".into()),
+            RuntimeValue::String(Shared::new("name".into())),
+            RuntimeValue::String(Shared::new("Jules".into())),
         ];
         let result1 = eval_builtin(
             &RuntimeValue::None,
@@ -10960,7 +11079,7 @@ mod tests {
                 assert_eq!(map.len(), 1);
                 assert_eq!(
                     map.get(&Ident::new("name")),
-                    Some(&RuntimeValue::String("Jules".into()))
+                    Some(&RuntimeValue::String(Shared::new("Jules".into())))
                 );
             }
             _ => panic!("Expected Dict, got {:?}", map_val1),
@@ -10968,7 +11087,7 @@ mod tests {
 
         let args2 = vec![
             map_val1.clone(),
-            RuntimeValue::String("age".into()),
+            RuntimeValue::String(Shared::new("age".into())),
             RuntimeValue::Number(30.into()),
         ];
         let result2 = eval_builtin(
@@ -10984,7 +11103,7 @@ mod tests {
                 assert_eq!(map.len(), 2);
                 assert_eq!(
                     map.get(&Ident::new("name")),
-                    Some(&RuntimeValue::String("Jules".into()))
+                    Some(&RuntimeValue::String(Shared::new("Jules".into())))
                 );
                 assert_eq!(map.get(&Ident::new("age")), Some(&RuntimeValue::Number(30.into())));
             }
@@ -10993,8 +11112,8 @@ mod tests {
 
         let args3 = vec![
             map_val2.clone(),
-            RuntimeValue::String("name".into()),
-            RuntimeValue::String("Vincent".into()),
+            RuntimeValue::String(Shared::new("name".into())),
+            RuntimeValue::String(Shared::new("Vincent".into())),
         ];
         let result3 = eval_builtin(
             &RuntimeValue::None,
@@ -11009,7 +11128,7 @@ mod tests {
                 assert_eq!(map.len(), 2);
                 assert_eq!(
                     map.get(&Ident::new("name")),
-                    Some(&RuntimeValue::String("Vincent".into()))
+                    Some(&RuntimeValue::String(Shared::new("Vincent".into())))
                 );
                 assert_eq!(map.get(&Ident::new("age")), Some(&RuntimeValue::Number(30.into())));
             }
@@ -11021,7 +11140,7 @@ mod tests {
         let nested_map: RuntimeValue = nested_map_data.into();
         let args4 = vec![
             map_val3.clone(),
-            RuntimeValue::String("nested".into()),
+            RuntimeValue::String(Shared::new("nested".into())),
             nested_map.clone(),
         ];
         let result4 = eval_builtin(
@@ -11040,9 +11159,9 @@ mod tests {
         }
 
         let args_err1 = vec![
-            RuntimeValue::String("not_a_map".into()),
-            RuntimeValue::String("key".into()),
-            RuntimeValue::String("value".into()),
+            RuntimeValue::String(Shared::new("not_a_map".into())),
+            RuntimeValue::String(Shared::new("key".into())),
+            RuntimeValue::String(Shared::new("value".into())),
         ];
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
@@ -11055,9 +11174,9 @@ mod tests {
             Err(Error::InvalidTypes(
                 "set".to_string(),
                 vec![
-                    RuntimeValue::String("not_a_map".into()),
-                    RuntimeValue::String("key".into()),
-                    RuntimeValue::String("value".into())
+                    RuntimeValue::String(Shared::new("not_a_map".into())),
+                    RuntimeValue::String(Shared::new("key".into())),
+                    RuntimeValue::String(Shared::new("value".into()))
                 ]
             ))
         );
@@ -11065,7 +11184,7 @@ mod tests {
         let args_err2 = vec![
             initial_map.clone(),
             RuntimeValue::Number(123.into()),
-            RuntimeValue::String("value".into()),
+            RuntimeValue::String(Shared::new("value".into())),
         ];
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
@@ -11080,7 +11199,7 @@ mod tests {
                 vec![
                     initial_map.clone(),
                     RuntimeValue::Number(123.into()),
-                    RuntimeValue::String("value".into())
+                    RuntimeValue::String(Shared::new("value".into()))
                 ]
             ))
         );
@@ -11090,20 +11209,20 @@ mod tests {
     fn test_eval_builtin_get_map() {
         let ident_get = Ident::new("get");
         let mut map_data = BTreeMap::default();
-        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
 
-        let args1 = vec![map_val.clone(), RuntimeValue::String("name".into())];
+        let args1 = vec![map_val.clone(), RuntimeValue::String(Shared::new("name".into()))];
         let result1 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
             args1.into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result1, Ok(RuntimeValue::String("Jules".into())));
+        assert_eq!(result1, Ok(RuntimeValue::String(Shared::new("Jules".into()))));
 
-        let args2 = vec![map_val.clone(), RuntimeValue::String("location".into())];
+        let args2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("location".into()))];
         let result2 = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
@@ -11113,8 +11232,8 @@ mod tests {
         assert_eq!(result2, Ok(RuntimeValue::None));
 
         let args_err1 = vec![
-            RuntimeValue::String("not_a_map".into()),
-            RuntimeValue::String("key".into()),
+            RuntimeValue::String(Shared::new("not_a_map".into())),
+            RuntimeValue::String(Shared::new("key".into())),
         ];
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
@@ -11127,8 +11246,8 @@ mod tests {
             Err(Error::InvalidTypes(
                 "get".to_string(),
                 vec![
-                    RuntimeValue::String("not_a_map".into()),
-                    RuntimeValue::String("key".into())
+                    RuntimeValue::String(Shared::new("not_a_map".into())),
+                    RuntimeValue::String(Shared::new("key".into()))
                 ]
             ))
         );
@@ -11150,6 +11269,43 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_builtin_get_markdown_index_beyond_selector_range() {
+        let ident_get = Ident::new("get");
+        let values: Vec<Node> = (0..300)
+            .map(|i| {
+                Node::Text(mq_markdown::Text {
+                    value: format!("child{i}"),
+                    position: None,
+                })
+            })
+            .collect();
+        let parent = RuntimeValue::Markdown(
+            Shared::new(Node::Strong(mq_markdown::Strong { values, position: None })),
+            None,
+        );
+
+        // In range for the u8-backed Selector: selects the child.
+        let in_range = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            vec![parent.clone(), RuntimeValue::Number(254.into())].into(),
+            &Shared::new(SharedCell::new(Env::default())),
+        )
+        .unwrap();
+        assert_eq!(in_range.markdown_node().unwrap().value(), "child254");
+
+        // Past the u8-backed Selector's range: no panic, degrades to None like any other
+        // out-of-range index rather than erroring or crashing.
+        let out_of_range = eval_builtin(
+            &RuntimeValue::None,
+            &ident_get,
+            vec![parent, RuntimeValue::Number(255.into())].into(),
+            &Shared::new(SharedCell::new(Env::default())),
+        );
+        assert_eq!(out_of_range, Ok(RuntimeValue::NONE));
+    }
+
+    #[test]
     fn test_eval_builtin_keys_dict() {
         let ident_keys = Ident::new("keys");
         let empty_map = RuntimeValue::new_dict();
@@ -11163,7 +11319,7 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = BTreeMap::default();
-        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
@@ -11180,7 +11336,7 @@ mod tests {
                 let keys_str: Vec<String> = Shared::unwrap_or_clone(keys_array)
                     .into_iter()
                     .map(|k| match k {
-                        RuntimeValue::String(s) => s,
+                        RuntimeValue::String(s) => Shared::unwrap_or_clone(s),
                         _ => panic!("Expected string key"),
                     })
                     .collect();
@@ -11189,7 +11345,7 @@ mod tests {
             _ => panic!("Expected Array of keys"),
         }
 
-        let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
+        let args_err1 = vec![RuntimeValue::String(Shared::new("not_a_map".into()))];
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
@@ -11200,11 +11356,11 @@ mod tests {
             result_err1,
             Err(Error::InvalidTypes(
                 "keys".to_string(),
-                vec![RuntimeValue::String("not_a_map".into())]
+                vec![RuntimeValue::String(Shared::new("not_a_map".into()))]
             ))
         );
 
-        let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let args_err2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("extra".into()))];
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_keys,
@@ -11231,7 +11387,7 @@ mod tests {
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = BTreeMap::default();
-        map_data.insert("name".into(), RuntimeValue::String("Jules".into()));
+        map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
@@ -11245,13 +11401,13 @@ mod tests {
         match result2.unwrap() {
             RuntimeValue::Array(values_array) => {
                 assert_eq!(values_array.len(), 2);
-                assert!(values_array.contains(&RuntimeValue::String("Jules".into())));
+                assert!(values_array.contains(&RuntimeValue::String(Shared::new("Jules".into()))));
                 assert!(values_array.contains(&RuntimeValue::Number(30.into())));
             }
             _ => panic!("Expected Array of values"),
         }
 
-        let args_err1 = vec![RuntimeValue::String("not_a_map".into())];
+        let args_err1 = vec![RuntimeValue::String(Shared::new("not_a_map".into()))];
         let result_err1 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
@@ -11262,11 +11418,11 @@ mod tests {
             result_err1,
             Err(Error::InvalidTypes(
                 "values".to_string(),
-                vec![RuntimeValue::String("not_a_map".into())]
+                vec![RuntimeValue::String(Shared::new("not_a_map".into()))]
             ))
         );
 
-        let args_err2 = vec![map_val.clone(), RuntimeValue::String("extra".into())];
+        let args_err2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("extra".into()))];
         let result_err2 = eval_builtin(
             &RuntimeValue::None,
             &ident_values,
@@ -11391,7 +11547,7 @@ mod tests {
     #[rstest]
     #[case::excessively_large_string_repeat("test", 300_000, "string repeat size")]
     fn test_repeat_string_size_limit_exceeds(#[case] string: &str, #[case] n: usize, #[case] expected_msg: &str) {
-        let mut value = RuntimeValue::String(string.to_string());
+        let mut value = RuntimeValue::String(Shared::new(string.to_string()));
         let result = repeat(&mut value, n);
         assert!(result.is_err());
         if let Err(Error::Runtime(msg)) = result {
@@ -11404,7 +11560,7 @@ mod tests {
     #[rstest]
     #[case::reasonable_string_repeat("test", 10, 40)]
     fn test_repeat_string_size_limit_success(#[case] string: &str, #[case] n: usize, #[case] expected_len: usize) {
-        let mut value = RuntimeValue::String(string.to_string());
+        let mut value = RuntimeValue::String(Shared::new(string.to_string()));
         let result = repeat(&mut value, n);
         assert!(result.is_ok());
         if let Ok(RuntimeValue::String(s)) = result {
@@ -11419,19 +11575,19 @@ mod tests {
         "a,b,c\n1,2,3\n4,5,6",
         Ok(RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String(Shared::new("a".to_string())),
+                RuntimeValue::String(Shared::new("b".to_string())),
+                RuntimeValue::String(Shared::new("c".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("1".to_string()),
-                RuntimeValue::String("2".to_string()),
-                RuntimeValue::String("3".to_string()),
+                RuntimeValue::String(Shared::new("1".to_string())),
+                RuntimeValue::String(Shared::new("2".to_string())),
+                RuntimeValue::String(Shared::new("3".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("4".to_string()),
-                RuntimeValue::String("5".to_string()),
-                RuntimeValue::String("6".to_string()),
+                RuntimeValue::String(Shared::new("4".to_string())),
+                RuntimeValue::String(Shared::new("5".to_string())),
+                RuntimeValue::String(Shared::new("6".to_string())),
             ])),
         ])))
     )]
@@ -11439,8 +11595,8 @@ mod tests {
         "x,y",
         Ok(RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("x".to_string()),
-                RuntimeValue::String("y".to_string()),
+                RuntimeValue::String(Shared::new("x".to_string())),
+                RuntimeValue::String(Shared::new("y".to_string())),
             ])),
         ])))
     )]
@@ -11452,19 +11608,19 @@ mod tests {
         "a,b,c\n1,2\n3,4,5,6",
         Ok(RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String(Shared::new("a".to_string())),
+                RuntimeValue::String(Shared::new("b".to_string())),
+                RuntimeValue::String(Shared::new("c".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("1".to_string()),
-                RuntimeValue::String("2".to_string()),
+                RuntimeValue::String(Shared::new("1".to_string())),
+                RuntimeValue::String(Shared::new("2".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("3".to_string()),
-                RuntimeValue::String("4".to_string()),
-                RuntimeValue::String("5".to_string()),
-                RuntimeValue::String("6".to_string()),
+                RuntimeValue::String(Shared::new("3".to_string())),
+                RuntimeValue::String(Shared::new("4".to_string())),
+                RuntimeValue::String(Shared::new("5".to_string())),
+                RuntimeValue::String(Shared::new("6".to_string())),
             ])),
         ])))
     )]
@@ -11473,7 +11629,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(csv.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(csv.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11484,11 +11640,11 @@ mod tests {
         "name,age\nAlice,30\nBob,25",
         {
             let mut alice = BTreeMap::new();
-            alice.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-            alice.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            alice.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
+            alice.insert(Ident::new("age"), RuntimeValue::String(Shared::new("30".to_string())));
             let mut bob = BTreeMap::new();
-            bob.insert(Ident::new("name"), RuntimeValue::String("Bob".to_string()));
-            bob.insert(Ident::new("age"), RuntimeValue::String("25".to_string()));
+            bob.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string())));
+            bob.insert(Ident::new("age"), RuntimeValue::String(Shared::new("25".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Dict(Shared::new(alice)),
                 RuntimeValue::Dict(Shared::new(bob)),
@@ -11499,8 +11655,8 @@ mod tests {
         "id,value\n1,hello",
         {
             let mut row = BTreeMap::new();
-            row.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
-            row.insert(Ident::new("value"), RuntimeValue::String("hello".to_string()));
+            row.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
+            row.insert(Ident::new("value"), RuntimeValue::String(Shared::new("hello".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
         }
     )]
@@ -11508,8 +11664,8 @@ mod tests {
         "name,note\n\"Doe, Jane\",\"says \"\"hi\"\"\"",
         {
             let mut row = BTreeMap::new();
-            row.insert(Ident::new("name"), RuntimeValue::String("Doe, Jane".to_string()));
-            row.insert(Ident::new("note"), RuntimeValue::String("says \"hi\"".to_string()));
+            row.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Doe, Jane".to_string())));
+            row.insert(Ident::new("note"), RuntimeValue::String(Shared::new("says \"hi\"".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
         }
     )]
@@ -11517,13 +11673,13 @@ mod tests {
         "a,b,c\n1,2\n3,4,5,6",
         {
             let mut short_row = BTreeMap::new();
-            short_row.insert(Ident::new("a"), RuntimeValue::String("1".to_string()));
-            short_row.insert(Ident::new("b"), RuntimeValue::String("2".to_string()));
-            short_row.insert(Ident::new("c"), RuntimeValue::String("".to_string()));
+            short_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string())));
+            short_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string())));
+            short_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("".to_string())));
             let mut long_row = BTreeMap::new();
-            long_row.insert(Ident::new("a"), RuntimeValue::String("3".to_string()));
-            long_row.insert(Ident::new("b"), RuntimeValue::String("4".to_string()));
-            long_row.insert(Ident::new("c"), RuntimeValue::String("5".to_string()));
+            long_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("3".to_string())));
+            long_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("4".to_string())));
+            long_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("5".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Dict(Shared::new(short_row)),
                 RuntimeValue::Dict(Shared::new(long_row)),
@@ -11536,8 +11692,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::String(csv.to_string()),
-                RuntimeValue::String(",".to_string()),
+                RuntimeValue::String(Shared::new(csv.to_string())),
+                RuntimeValue::String(Shared::new(",".to_string())),
                 RuntimeValue::Boolean(true),
             ]
             .into(),
@@ -11553,14 +11709,14 @@ mod tests {
         false,
         Ok(RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("a".to_string()),
-                RuntimeValue::String("b".to_string()),
-                RuntimeValue::String("c".to_string()),
+                RuntimeValue::String(Shared::new("a".to_string())),
+                RuntimeValue::String(Shared::new("b".to_string())),
+                RuntimeValue::String(Shared::new("c".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("1".to_string()),
-                RuntimeValue::String("2".to_string()),
-                RuntimeValue::String("3".to_string()),
+                RuntimeValue::String(Shared::new("1".to_string())),
+                RuntimeValue::String(Shared::new("2".to_string())),
+                RuntimeValue::String(Shared::new("3".to_string())),
             ])),
         ])))
     )]
@@ -11570,8 +11726,8 @@ mod tests {
         true,
         {
             let mut row = BTreeMap::new();
-            row.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-            row.insert(Ident::new("age"), RuntimeValue::String("30".to_string()));
+            row.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
+            row.insert(Ident::new("age"), RuntimeValue::String(Shared::new("30".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
         }
     )]
@@ -11586,8 +11742,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::String(csv.to_string()),
-                RuntimeValue::String(delimiter.to_string()),
+                RuntimeValue::String(Shared::new(csv.to_string())),
+                RuntimeValue::String(Shared::new(delimiter.to_string())),
                 RuntimeValue::Boolean(has_header),
             ]
             .into(),
@@ -11615,7 +11771,7 @@ mod tests {
         r#"{"key": "value"}"#,
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("key"), RuntimeValue::String("value".to_string()));
+            map.insert(Ident::new("key"), RuntimeValue::String(Shared::new("value".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
     )]
@@ -11641,7 +11797,7 @@ mod tests {
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
     )]
-    #[case::string(r#""hello""#, Ok(RuntimeValue::String("hello".to_string())))]
+    #[case::string(r#""hello""#, Ok(RuntimeValue::String(Shared::new("hello".to_string()))))]
     #[case::number(r#"42"#, Ok(RuntimeValue::Number(42.into())))]
     #[case::boolean(r#"false"#, Ok(RuntimeValue::Boolean(false)))]
     #[case::null(r#"null"#, Ok(RuntimeValue::NONE))]
@@ -11650,7 +11806,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(json.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(json.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11663,7 +11819,7 @@ mod tests {
         let ident = Ident::new("_json_parse");
         let arg: RuntimeValue = match input.into() {
             RuntimeValue::Number(n) => RuntimeValue::Number(n),
-            s => RuntimeValue::String(s.to_string()),
+            s => RuntimeValue::String(Shared::new(s.to_string())),
         };
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -11679,7 +11835,7 @@ mod tests {
         "key: value",
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("key"), RuntimeValue::String("value".to_string()));
+            map.insert(Ident::new("key"), RuntimeValue::String(Shared::new("value".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
     )]
@@ -11743,7 +11899,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(yaml.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(yaml.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11755,7 +11911,7 @@ mod tests {
         let ident = Ident::new("_yaml_parse");
         let arg: RuntimeValue = match input.into() {
             RuntimeValue::Number(n) => RuntimeValue::Number(n),
-            s => RuntimeValue::String(s.to_string()),
+            s => RuntimeValue::String(Shared::new(s.to_string())),
         };
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -11780,7 +11936,7 @@ mod tests {
         "parent:\n  child: value",
         {
             let mut child_map = BTreeMap::new();
-            child_map.insert(Ident::new("child"), RuntimeValue::String("value".to_string()));
+            child_map.insert(Ident::new("child"), RuntimeValue::String(Shared::new("value".to_string())));
             let mut parent_map = BTreeMap::new();
             parent_map.insert(Ident::new("parent"), RuntimeValue::Dict(Shared::new(child_map)));
             Ok(RuntimeValue::Dict(Shared::new(parent_map)))
@@ -11791,10 +11947,10 @@ mod tests {
         {
             let mut row1 = BTreeMap::new();
             row1.insert(Ident::new("id"), RuntimeValue::Number(1.into()));
-            row1.insert(Ident::new("name"), RuntimeValue::String("Blue Lake".to_string()));
+            row1.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Blue Lake".to_string())));
             let mut row2 = BTreeMap::new();
             row2.insert(Ident::new("id"), RuntimeValue::Number(2.into()));
-            row2.insert(Ident::new("name"), RuntimeValue::String("Ridge Trail".to_string()));
+            row2.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Ridge Trail".to_string())));
             let mut map = BTreeMap::new();
             map.insert(Ident::new("hikes"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row1)), RuntimeValue::Dict(Shared::new(row2))])));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -11827,7 +11983,7 @@ mod tests {
         "s: \"string\"\nb: true\nn: null\nf: false",
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("s"), RuntimeValue::String("string".to_string()));
+            map.insert(Ident::new("s"), RuntimeValue::String(Shared::new("string".to_string())));
             map.insert(Ident::new("b"), RuntimeValue::TRUE);
             map.insert(Ident::new("n"), RuntimeValue::NONE);
             map.insert(Ident::new("f"), RuntimeValue::FALSE);
@@ -11839,7 +11995,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(toon.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(toon.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11850,7 +12006,7 @@ mod tests {
     // `BTreeMap<Ident, _>`) orders keys by interned symbol id, which isn't stable across
     // a test binary run and would make an exact-string assertion on more than one key flaky.
     #[rstest]
-    #[case::string(RuntimeValue::String("hello".to_string()), "hello")]
+    #[case::string(RuntimeValue::String(Shared::new("hello".to_string())), "hello")]
     #[case::number(RuntimeValue::Number(42.into()), "42")]
     #[case::bool_true(RuntimeValue::TRUE, "true")]
     #[case::bool_false(RuntimeValue::FALSE, "false")]
@@ -11858,7 +12014,7 @@ mod tests {
     #[case::single_key_dict(
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             RuntimeValue::Dict(Shared::new(map))
         },
         "name: Alice"
@@ -11869,12 +12025,12 @@ mod tests {
     )]
     #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
     #[case::empty_dict(RuntimeValue::Dict(Shared::new(BTreeMap::new())), "")]
-    #[case::empty_string_needs_quoting(RuntimeValue::String("".to_string()), "\"\"")]
-    #[case::numeric_like_string_needs_quoting(RuntimeValue::String("123".to_string()), "\"123\"")]
-    #[case::keyword_like_string_needs_quoting(RuntimeValue::String("true".to_string()), "\"true\"")]
-    #[case::string_with_colon_needs_quoting(RuntimeValue::String("a:b".to_string()), "\"a:b\"")]
-    #[case::string_with_delimiter_needs_quoting(RuntimeValue::String("a,b".to_string()), "\"a,b\"")]
-    #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String("-x".to_string()), "\"-x\"")]
+    #[case::empty_string_needs_quoting(RuntimeValue::String(Shared::new("".to_string())), "\"\"")]
+    #[case::numeric_like_string_needs_quoting(RuntimeValue::String(Shared::new("123".to_string())), "\"123\"")]
+    #[case::keyword_like_string_needs_quoting(RuntimeValue::String(Shared::new("true".to_string())), "\"true\"")]
+    #[case::string_with_colon_needs_quoting(RuntimeValue::String(Shared::new("a:b".to_string())), "\"a:b\"")]
+    #[case::string_with_delimiter_needs_quoting(RuntimeValue::String(Shared::new("a,b".to_string())), "\"a,b\"")]
+    #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String(Shared::new("-x".to_string())), "\"-x\"")]
     fn test_toon_stringify(#[case] input: RuntimeValue, #[case] expected: &str) {
         let ident = Ident::new("_toon_stringify");
         let result = eval_builtin(
@@ -11883,13 +12039,13 @@ mod tests {
             vec![input].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::String(expected.to_string())));
+        assert_eq!(result, Ok(RuntimeValue::String(Shared::new(expected.to_string()))));
     }
 
     fn toon_tabular_row(id: i64, name: &str) -> RuntimeValue {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("id"), RuntimeValue::Number(id.into()));
-        map.insert(Ident::new("name"), RuntimeValue::String(name.to_string()));
+        map.insert(Ident::new("name"), RuntimeValue::String(Shared::new(name.to_string())));
         RuntimeValue::Dict(Shared::new(map))
     }
 
@@ -11911,7 +12067,7 @@ mod tests {
     #[case::non_uniform_array(RuntimeValue::Array(Shared::new(vec![
         RuntimeValue::Number(1.into()),
         toon_tabular_row(2, "Ridge Trail"),
-        RuntimeValue::String("text".to_string()),
+        RuntimeValue::String(Shared::new("text".to_string())),
     ])))]
     fn test_toon_stringify_round_trip(#[case] original: RuntimeValue) {
         let env = Shared::new(SharedCell::new(Env::default()));
@@ -11945,7 +12101,7 @@ mod tests {
         "name = \"Alice\"\nage = 30",
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11963,7 +12119,7 @@ mod tests {
         "[server]\nhost = \"localhost\"\nport = 8080",
         {
             let mut inner = BTreeMap::new();
-            inner.insert(Ident::new("host"), RuntimeValue::String("localhost".to_string()));
+            inner.insert(Ident::new("host"), RuntimeValue::String(Shared::new("localhost".to_string())));
             inner.insert(Ident::new("port"), RuntimeValue::Number(8080.into()));
             let mut map = BTreeMap::new();
             map.insert(Ident::new("server"), RuntimeValue::Dict(Shared::new(inner)));
@@ -11975,8 +12131,8 @@ mod tests {
         {
             let mut map = BTreeMap::new();
             map.insert(Ident::new("tags"), RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("rust".to_string()),
-                RuntimeValue::String("toml".to_string()),
+                RuntimeValue::String(Shared::new("rust".to_string())),
+                RuntimeValue::String(Shared::new("toml".to_string())),
             ])));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11986,7 +12142,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(toml.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(toml.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -11999,7 +12155,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12024,7 +12180,7 @@ mod tests {
         "omRuYW1lZUFsaWNlY2FnZRge",
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -12034,7 +12190,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12048,7 +12204,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12073,7 +12229,7 @@ mod tests {
         "omRuYW1lZUFsaWNlY2FnZRge",
         {
             let mut map = BTreeMap::new();
-            map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+            map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -12086,7 +12242,7 @@ mod tests {
         let parsed = eval_builtin(
             &RuntimeValue::None,
             &ident_parse,
-            vec![RuntimeValue::String(base64_input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(base64_input.to_string()))].into(),
             &env,
         );
         assert!(parsed.is_ok());
@@ -12114,12 +12270,15 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(cbor_bytes)].into(),
+            vec![RuntimeValue::Bytes(cbor_bytes.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_ok());
         let mut expected = BTreeMap::new();
-        expected.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        expected.insert(
+            Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         assert_eq!(result.unwrap(), RuntimeValue::Dict(Shared::new(expected)));
     }
 
@@ -12130,24 +12289,24 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(bytes)].into(),
+            vec![RuntimeValue::Bytes(bytes.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::String("SGVsbG8=".to_string())));
+        assert_eq!(result, Ok(RuntimeValue::String(Shared::new("SGVsbG8=".to_string()))));
     }
 
     #[rstest]
     #[case::string(
-        RuntimeValue::String("hello".to_string()),
-        Ok(RuntimeValue::Bytes(vec![0x68, 0x65, 0x6c, 0x6c, 0x6f]))
+        RuntimeValue::String(Shared::new("hello".to_string())),
+        Ok(RuntimeValue::Bytes(Shared::new(vec![0x68, 0x65, 0x6c, 0x6c, 0x6f])))
     )]
     #[case::empty_string(
-        RuntimeValue::String("".to_string()),
-        Ok(RuntimeValue::Bytes(vec![]))
+        RuntimeValue::String(Shared::new("".to_string())),
+        Ok(RuntimeValue::Bytes(Shared::new(vec![])))
     )]
     #[case::utf8_string(
-        RuntimeValue::String("あ".to_string()),
-        Ok(RuntimeValue::Bytes(vec![0xe3, 0x81, 0x82]))
+        RuntimeValue::String(Shared::new("あ".to_string())),
+        Ok(RuntimeValue::Bytes(Shared::new(vec![0xe3, 0x81, 0x82])))
     )]
     #[case::array_of_numbers(
         RuntimeValue::Array(Shared::new(vec![
@@ -12155,11 +12314,11 @@ mod tests {
             RuntimeValue::Number(255.into()),
             RuntimeValue::Number(128.into()),
         ])),
-        Ok(RuntimeValue::Bytes(vec![0, 255, 128]))
+        Ok(RuntimeValue::Bytes(Shared::new(vec![0, 255, 128])))
     )]
     #[case::bytes_identity(
-        RuntimeValue::Bytes(vec![1, 2, 3]),
-        Ok(RuntimeValue::Bytes(vec![1, 2, 3]))
+        RuntimeValue::Bytes(Shared::new(vec![1, 2, 3])),
+        Ok(RuntimeValue::Bytes(Shared::new(vec![1, 2, 3])))
     )]
     fn test_to_bytes(#[case] input: RuntimeValue, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("to_bytes");
@@ -12174,7 +12333,7 @@ mod tests {
 
     #[rstest]
     #[case::number(RuntimeValue::Number(42.into()))]
-    #[case::array_with_non_number(RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("x".to_string())])))]
+    #[case::array_with_non_number(RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("x".to_string()))])))]
     #[case::array_with_negative(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number((-1i64).into())])))]
     #[case::array_with_256(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(256i64.into())])))]
     #[case::array_with_fractional(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.5f64.into())])))]
@@ -12197,10 +12356,14 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![1, 2]), RuntimeValue::Bytes(vec![3, 4])].into(),
+            vec![
+                RuntimeValue::Bytes(Shared::new(vec![1, 2])),
+                RuntimeValue::Bytes(Shared::new(vec![3, 4])),
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![1, 2, 3, 4])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![1, 2, 3, 4]))));
     }
 
     #[test]
@@ -12209,10 +12372,10 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![1, 2, 3])].into(),
+            vec![RuntimeValue::Bytes(Shared::new(vec![1, 2, 3]))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![3, 2, 1])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![3, 2, 1]))));
     }
 
     #[test]
@@ -12222,14 +12385,14 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![10, 20, 30, 40, 50]),
+                RuntimeValue::Bytes(Shared::new(vec![10, 20, 30, 40, 50])),
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(4.into()),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![20, 30, 40])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![20, 30, 40]))));
     }
 
     #[test]
@@ -12238,12 +12401,14 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
+            vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::String("5d41402abc4b2a76b9719d911017c592".to_string()))
+            Ok(RuntimeValue::String(Shared::new(
+                "5d41402abc4b2a76b9719d911017c592".to_string()
+            )))
         );
     }
 
@@ -12253,14 +12418,14 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
+            vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::String(
+            Ok(RuntimeValue::String(Shared::new(
                 "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".to_string()
-            ))
+            )))
         );
     }
 
@@ -12270,14 +12435,14 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String("hello".to_string())].into(),
+            vec![RuntimeValue::String(Shared::new("hello".to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::String(
+            Ok(RuntimeValue::String(Shared::new(
                 "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043".to_string()
-            ))
+            )))
         );
     }
 
@@ -12287,27 +12452,27 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
+            vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::String(
+            Ok(RuntimeValue::String(Shared::new(
                 "9b71d224bd62f3785d96d46ad3ea3d73319bfbc2890caadae2dff72519673ca72323c3d99ba5c11d7c7acc6e14b8c5da0c4663475c2e5c3adef46f73bcdec043".to_string()
-            ))
+            )))
         );
     }
 
     #[rstest]
-    #[case::lowercase("deadbeef", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
-    #[case::uppercase("DEADBEEF", Ok(RuntimeValue::Bytes(vec![0xde, 0xad, 0xbe, 0xef])))]
-    #[case::empty("", Ok(RuntimeValue::Bytes(vec![])))]
+    #[case::lowercase("deadbeef", Ok(RuntimeValue::Bytes(Shared::new(vec![0xde, 0xad, 0xbe, 0xef]))))]
+    #[case::uppercase("DEADBEEF", Ok(RuntimeValue::Bytes(Shared::new(vec![0xde, 0xad, 0xbe, 0xef]))))]
+    #[case::empty("", Ok(RuntimeValue::Bytes(Shared::new(vec![]))))]
     fn test_from_hex(#[case] input: &str, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("from_hex");
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12321,23 +12486,23 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(input.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result.is_err(), is_err);
     }
 
     #[rstest]
-    #[case::basic(vec![0xde, 0xad, 0xbe, 0xef], Ok(RuntimeValue::String("deadbeef".to_string())))]
-    #[case::empty(vec![], Ok(RuntimeValue::String("".to_string())))]
-    #[case::zero_ff(vec![0x00, 0xff], Ok(RuntimeValue::String("00ff".to_string())))]
-    #[case::all_zeros(vec![0x00, 0x00], Ok(RuntimeValue::String("0000".to_string())))]
+    #[case::basic(vec![0xde, 0xad, 0xbe, 0xef], Ok(RuntimeValue::String(Shared::new("deadbeef".to_string()))))]
+    #[case::empty(vec![], Ok(RuntimeValue::String(Shared::new("".to_string()))))]
+    #[case::zero_ff(vec![0x00, 0xff], Ok(RuntimeValue::String(Shared::new("00ff".to_string()))))]
+    #[case::all_zeros(vec![0x00, 0x00], Ok(RuntimeValue::String(Shared::new("0000".to_string()))))]
     fn test_to_hex(#[case] input: Vec<u8>, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("to_hex");
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(input)].into(),
+            vec![RuntimeValue::Bytes(input.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12350,12 +12515,12 @@ mod tests {
         let hex = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("to_hex"),
-            vec![RuntimeValue::Bytes(original.clone())].into(),
+            vec![RuntimeValue::Bytes(Shared::new(original.clone()))].into(),
             &env,
         )
         .unwrap();
         let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex].into(), &env).unwrap();
-        assert_eq!(roundtripped, RuntimeValue::Bytes(original));
+        assert_eq!(roundtripped, RuntimeValue::Bytes(original.into()));
     }
 
     #[rstest]
@@ -12377,7 +12542,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(lhs), RuntimeValue::Bytes(rhs)].into(),
+            vec![RuntimeValue::Bytes(lhs.into()), RuntimeValue::Bytes(rhs.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, Ok(RuntimeValue::Boolean(expected)));
@@ -12389,10 +12554,10 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(b"hello".to_vec())].into(),
+            vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::String("hello".to_string())));
+        assert_eq!(result, Ok(RuntimeValue::String(Shared::new("hello".to_string()))));
     }
 
     #[test]
@@ -12401,7 +12566,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![0xff, 0xfe])].into(),
+            vec![RuntimeValue::Bytes(Shared::new(vec![0xff, 0xfe]))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12414,13 +12579,13 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![0x82, 0xa0]),
-                RuntimeValue::String("shift_jis".to_string()),
+                RuntimeValue::Bytes(Shared::new(vec![0x82, 0xa0])),
+                RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::String("あ".to_string())));
+        assert_eq!(result, Ok(RuntimeValue::String(Shared::new("あ".to_string()))));
     }
 
     #[test]
@@ -12430,8 +12595,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![0x00]),
-                RuntimeValue::String("not-a-real-encoding".to_string()),
+                RuntimeValue::Bytes(Shared::new(vec![0x00])),
+                RuntimeValue::String(Shared::new("not-a-real-encoding".to_string())),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
@@ -12446,8 +12611,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![0xff, 0xff]),
-                RuntimeValue::String("shift_jis".to_string()),
+                RuntimeValue::Bytes(Shared::new(vec![0xff, 0xff])),
+                RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
@@ -12462,13 +12627,13 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::String("あ".to_string()),
-                RuntimeValue::String("shift_jis".to_string()),
+                RuntimeValue::String(Shared::new("あ".to_string())),
+                RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x82, 0xa0])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0x82, 0xa0]))));
     }
 
     #[test]
@@ -12478,8 +12643,8 @@ mod tests {
             &RuntimeValue::None,
             &Ident::new("encode"),
             vec![
-                RuntimeValue::String("こんにちは".to_string()),
-                RuntimeValue::String("euc-jp".to_string()),
+                RuntimeValue::String(Shared::new("こんにちは".to_string())),
+                RuntimeValue::String(Shared::new("euc-jp".to_string())),
             ]
             .into(),
             &env,
@@ -12488,10 +12653,10 @@ mod tests {
         let decoded = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("decode"),
-            vec![encoded, RuntimeValue::String("euc-jp".to_string())].into(),
+            vec![encoded, RuntimeValue::String(Shared::new("euc-jp".to_string()))].into(),
             &env,
         );
-        assert_eq!(decoded, Ok(RuntimeValue::String("こんにちは".to_string())));
+        assert_eq!(decoded, Ok(RuntimeValue::String(Shared::new("こんにちは".to_string()))));
     }
 
     #[test]
@@ -12501,8 +12666,8 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::String("😀".to_string()),
-                RuntimeValue::String("shift_jis".to_string()),
+                RuntimeValue::String(Shared::new("😀".to_string())),
+                RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
@@ -12517,13 +12682,13 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![0xaa, 0xbb]),
-                RuntimeValue::Bytes(vec![0x55, 0x44]),
+                RuntimeValue::Bytes(Shared::new(vec![0xaa, 0xbb])),
+                RuntimeValue::Bytes(Shared::new(vec![0x55, 0x44])),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0xff, 0xff])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0xff, 0xff]))));
     }
 
     #[test]
@@ -12533,13 +12698,13 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![
-                RuntimeValue::Bytes(vec![0x01, 0x02, 0x03]),
-                RuntimeValue::Bytes(vec![0x00, 0x00, 0x00]),
+                RuntimeValue::Bytes(Shared::new(vec![0x01, 0x02, 0x03])),
+                RuntimeValue::Bytes(Shared::new(vec![0x00, 0x00, 0x00])),
             ]
             .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
-        assert_eq!(result, Ok(RuntimeValue::Bytes(vec![0x01, 0x02, 0x03])));
+        assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0x01, 0x02, 0x03]))));
     }
 
     #[test]
@@ -12548,7 +12713,11 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::Bytes(vec![0x01, 0x02]), RuntimeValue::Bytes(vec![0x01])].into(),
+            vec![
+                RuntimeValue::Bytes(Shared::new(vec![0x01, 0x02])),
+                RuntimeValue::Bytes(Shared::new(vec![0x01])),
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert!(result.is_err());
@@ -12559,10 +12728,10 @@ mod tests {
         "<root>hello</root>",
         {
             let mut root = BTreeMap::new();
-            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
             root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
             root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(root)))
         }
     )]
@@ -12571,12 +12740,12 @@ mod tests {
         {
             let mut root = BTreeMap::new();
             let mut attrs = BTreeMap::new();
-            attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
-            attrs.insert(Ident::new("class"), RuntimeValue::String("main".to_string()));
-            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
+            attrs.insert(Ident::new("class"), RuntimeValue::String(Shared::new("main".to_string())));
+            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
             root.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
             root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(root)))
         }
     )]
@@ -12586,21 +12755,21 @@ mod tests {
             let mut root = BTreeMap::new();
             let mut child1 = BTreeMap::new();
             let mut attrs1 = BTreeMap::new();
-            attrs1.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
-            child1.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            attrs1.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
+            child1.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child1.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs1)));
             child1.insert(Ident::new("children"), RuntimeValue::empty_array());
-            child1.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
+            child1.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
 
             let mut child2 = BTreeMap::new();
             let mut attrs2 = BTreeMap::new();
-            attrs2.insert(Ident::new("id"), RuntimeValue::String("2".to_string()));
-            child2.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            attrs2.insert(Ident::new("id"), RuntimeValue::String(Shared::new("2".to_string())));
+            child2.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child2.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs2)));
             child2.insert(Ident::new("children"), RuntimeValue::empty_array());
-            child2.insert(Ident::new("text"), RuntimeValue::String("world".to_string()));
+            child2.insert(Ident::new("text"), RuntimeValue::String(Shared::new("world".to_string())));
 
-            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
             root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
             root.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Dict(Shared::new(child1)),
@@ -12616,13 +12785,13 @@ mod tests {
             let mut root = BTreeMap::new();
             let mut child = BTreeMap::new();
             let mut attrs = BTreeMap::new();
-            attrs.insert(Ident::new("id"), RuntimeValue::String("1".to_string()));
-            child.insert(Ident::new("tag"), RuntimeValue::String("child".to_string()));
+            attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
+            child.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
             child.insert(Ident::new("children"), RuntimeValue::empty_array());
             child.insert(Ident::new("text"), RuntimeValue::NONE);
 
-            root.insert(Ident::new("tag"), RuntimeValue::String("root".to_string()));
+            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
             root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
             root.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Dict(Shared::new(child)),
@@ -12636,7 +12805,7 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String(xml.to_string())].into(),
+            vec![RuntimeValue::String(Shared::new(xml.to_string()))].into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
         assert_eq!(result, expected);
@@ -12648,7 +12817,11 @@ mod tests {
         let result = eval_builtin(
             &RuntimeValue::None,
             &ident,
-            vec![RuntimeValue::String("abc".into()), RuntimeValue::String("abc ".into())].into(),
+            vec![
+                RuntimeValue::String(Shared::new("abc".into())),
+                RuntimeValue::String(Shared::new("abc ".into())),
+            ]
+            .into(),
             &Shared::new(SharedCell::new(Env::default())),
         );
 
@@ -12657,21 +12830,39 @@ mod tests {
             // line-level diff: delete "abc" + insert "abc " (replace pair)
             assert_eq!(changes.len(), 2);
             if let RuntimeValue::Dict(ref m) = changes[0] {
-                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("delete".into())));
-                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::String("abc".into())));
+                assert_eq!(
+                    m.get(&Ident::new("tag")),
+                    Some(&RuntimeValue::String(Shared::new("delete".into())))
+                );
+                assert_eq!(
+                    m.get(&Ident::new("value")),
+                    Some(&RuntimeValue::String(Shared::new("abc".into())))
+                );
                 assert!(m.contains_key(&Ident::new("inline")));
             } else {
                 panic!("Expected Dict change");
             }
             if let RuntimeValue::Dict(ref m) = changes[1] {
-                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
-                assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::String("abc ".into())));
+                assert_eq!(
+                    m.get(&Ident::new("tag")),
+                    Some(&RuntimeValue::String(Shared::new("insert".into())))
+                );
+                assert_eq!(
+                    m.get(&Ident::new("value")),
+                    Some(&RuntimeValue::String(Shared::new("abc ".into())))
+                );
                 // inline should show the trailing space as "insert"
                 if let Some(RuntimeValue::Array(inline)) = m.get(&Ident::new("inline")) {
                     let last = inline.last().expect("inline should not be empty");
                     if let RuntimeValue::Dict(lm) = last {
-                        assert_eq!(lm.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
-                        assert_eq!(lm.get(&Ident::new("value")), Some(&RuntimeValue::String(" ".into())));
+                        assert_eq!(
+                            lm.get(&Ident::new("tag")),
+                            Some(&RuntimeValue::String(Shared::new("insert".into())))
+                        );
+                        assert_eq!(
+                            lm.get(&Ident::new("value")),
+                            Some(&RuntimeValue::String(Shared::new(" ".into())))
+                        );
                     } else {
                         panic!("Expected Dict in inline");
                     }
@@ -12704,7 +12895,10 @@ mod tests {
         if let Ok(RuntimeValue::Array(changes)) = result {
             assert_eq!(changes.len(), 2); // delete 1, insert 2
             if let RuntimeValue::Dict(ref m) = changes[0] {
-                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("delete".into())));
+                assert_eq!(
+                    m.get(&Ident::new("tag")),
+                    Some(&RuntimeValue::String(Shared::new("delete".into())))
+                );
                 assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::Number(1.into())));
                 // non-string elements have no inline field
                 assert!(!m.contains_key(&Ident::new("inline")));
@@ -12712,7 +12906,10 @@ mod tests {
                 panic!("Expected Dict change");
             }
             if let RuntimeValue::Dict(ref m) = changes[1] {
-                assert_eq!(m.get(&Ident::new("tag")), Some(&RuntimeValue::String("insert".into())));
+                assert_eq!(
+                    m.get(&Ident::new("tag")),
+                    Some(&RuntimeValue::String(Shared::new("insert".into())))
+                );
                 assert_eq!(m.get(&Ident::new("value")), Some(&RuntimeValue::Number(2.into())));
                 assert!(!m.contains_key(&Ident::new("inline")));
             } else {
@@ -12728,15 +12925,15 @@ mod tests {
     #[case::multiple_numbers(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())], vec![1u8, 2u8])]
     #[case::number_array(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))], vec![1u8, 2u8])]
     #[case::empty(vec![], vec![])]
-    #[case::ignores_strings(vec![RuntimeValue::String("x".into())], vec![])]
+    #[case::ignores_strings(vec![RuntimeValue::String(Shared::new("x".into()))], vec![])]
     fn test_collect_depth_values(#[case] args: Vec<RuntimeValue>, #[case] expected: Vec<u8>) {
         assert_eq!(collect_depth_values(&args), expected);
     }
 
     #[rstest]
-    #[case::single_string(vec![RuntimeValue::String("rust".into())], vec!["rust".to_string()])]
-    #[case::multiple_strings(vec![RuntimeValue::String("rust".into()), RuntimeValue::String("go".into())], vec!["rust".to_string(), "go".to_string()])]
-    #[case::string_array(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("rust".into()), RuntimeValue::String("go".into())]))], vec!["rust".to_string(), "go".to_string()])]
+    #[case::single_string(vec![RuntimeValue::String(Shared::new("rust".into()))], vec!["rust".to_string()])]
+    #[case::multiple_strings(vec![RuntimeValue::String(Shared::new("rust".into())), RuntimeValue::String(Shared::new("go".into()))], vec!["rust".to_string(), "go".to_string()])]
+    #[case::string_array(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("rust".into())), RuntimeValue::String(Shared::new("go".into()))]))], vec!["rust".to_string(), "go".to_string()])]
     #[case::empty(vec![], vec![])]
     #[case::ignores_numbers(vec![RuntimeValue::Number(1.into())], vec![])]
     fn test_collect_string_values(#[case] args: Vec<RuntimeValue>, #[case] expected: Vec<String>) {
@@ -12771,13 +12968,13 @@ mod tests {
     #[case::code_lang_match(
         Node::Code(mq_markdown::Code { lang: Some("rust".to_string()), meta: None, value: "fn main() {}".to_string(), fence: true, position: None }),
         Selector::Code,
-        vec![RuntimeValue::String("rust".into())],
+        vec![RuntimeValue::String(Shared::new("rust".into()))],
         true
     )]
     #[case::code_lang_no_match(
         Node::Code(mq_markdown::Code { lang: Some("python".to_string()), meta: None, value: "pass".to_string(), fence: true, position: None }),
         Selector::Code,
-        vec![RuntimeValue::String("rust".into())],
+        vec![RuntimeValue::String(Shared::new("rust".into()))],
         false
     )]
     #[case::code_no_args_fallback(
@@ -12789,19 +12986,19 @@ mod tests {
     #[case::callout_kind_match(
         Node::Callout(mq_markdown::Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
-        vec![RuntimeValue::String("NOTE".into())],
+        vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         true
     )]
     #[case::callout_kind_no_match(
         Node::Callout(mq_markdown::Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
-        vec![RuntimeValue::String("NOTE".into())],
+        vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         false
     )]
     #[case::callout_multi_kind_match(
         Node::Callout(mq_markdown::Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
-        vec![RuntimeValue::String("NOTE".into()), RuntimeValue::String("TIP".into())],
+        vec![RuntimeValue::String(Shared::new("NOTE".into())), RuntimeValue::String(Shared::new("TIP".into()))],
         true
     )]
     #[case::callout_no_args_fallback(
@@ -12813,25 +13010,25 @@ mod tests {
     #[case::callout_non_callout_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Callout,
-        vec![RuntimeValue::String("NOTE".into())],
+        vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         false
     )]
     #[case::wikilink_target_match(
         Node::WikiLink(mq_markdown::WikiLink { target: "Some Page".to_string(), text: None, position: None }),
         Selector::WikiLink,
-        vec![RuntimeValue::String("Some Page".into())],
+        vec![RuntimeValue::String(Shared::new("Some Page".into()))],
         true
     )]
     #[case::wikilink_target_no_match(
         Node::WikiLink(mq_markdown::WikiLink { target: "Other Page".to_string(), text: None, position: None }),
         Selector::WikiLink,
-        vec![RuntimeValue::String("Some Page".into())],
+        vec![RuntimeValue::String(Shared::new("Some Page".into()))],
         false
     )]
     #[case::wikilink_multi_target_match(
         Node::WikiLink(mq_markdown::WikiLink { target: "Other Page".to_string(), text: None, position: None }),
         Selector::WikiLink,
-        vec![RuntimeValue::String("Some Page".into()), RuntimeValue::String("Other Page".into())],
+        vec![RuntimeValue::String(Shared::new("Some Page".into())), RuntimeValue::String(Shared::new("Other Page".into()))],
         true
     )]
     #[case::wikilink_no_args_fallback(
@@ -12843,25 +13040,25 @@ mod tests {
     #[case::wikilink_non_wikilink_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::WikiLink,
-        vec![RuntimeValue::String("Some Page".into())],
+        vec![RuntimeValue::String(Shared::new("Some Page".into()))],
         false
     )]
     #[case::embed_target_match(
         Node::Embed(mq_markdown::Embed { target: "image.png".to_string(), display: None, position: None }),
         Selector::Embed,
-        vec![RuntimeValue::String("image.png".into())],
+        vec![RuntimeValue::String(Shared::new("image.png".into()))],
         true
     )]
     #[case::embed_target_no_match(
         Node::Embed(mq_markdown::Embed { target: "note.md".to_string(), display: None, position: None }),
         Selector::Embed,
-        vec![RuntimeValue::String("image.png".into())],
+        vec![RuntimeValue::String(Shared::new("image.png".into()))],
         false
     )]
     #[case::embed_multi_target_match(
         Node::Embed(mq_markdown::Embed { target: "note.md".to_string(), display: None, position: None }),
         Selector::Embed,
-        vec![RuntimeValue::String("image.png".into()), RuntimeValue::String("note.md".into())],
+        vec![RuntimeValue::String(Shared::new("image.png".into())), RuntimeValue::String(Shared::new("note.md".into()))],
         true
     )]
     #[case::embed_no_args_fallback(
@@ -12873,25 +13070,25 @@ mod tests {
     #[case::embed_non_embed_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Embed,
-        vec![RuntimeValue::String("image.png".into())],
+        vec![RuntimeValue::String(Shared::new("image.png".into()))],
         false
     )]
     #[case::link_ref_ident_match(
         Node::LinkRef(mq_markdown::LinkRef { ident: "ref".to_string(), label: None, values: vec![], position: None }),
         Selector::LinkRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         true
     )]
     #[case::link_ref_ident_no_match(
         Node::LinkRef(mq_markdown::LinkRef { ident: "other".to_string(), label: None, values: vec![], position: None }),
         Selector::LinkRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::link_ref_multi_ident_match(
         Node::LinkRef(mq_markdown::LinkRef { ident: "other".to_string(), label: None, values: vec![], position: None }),
         Selector::LinkRef,
-        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into())), RuntimeValue::String(Shared::new("other".into()))],
         true
     )]
     #[case::link_ref_no_args_fallback(
@@ -12903,25 +13100,25 @@ mod tests {
     #[case::link_ref_non_link_ref_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::LinkRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::image_ref_ident_match(
         Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "ref".to_string(), label: None, position: None }),
         Selector::ImageRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         true
     )]
     #[case::image_ref_ident_no_match(
         Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "other".to_string(), label: None, position: None }),
         Selector::ImageRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::image_ref_multi_ident_match(
         Node::ImageRef(mq_markdown::ImageRef { alt: "".to_string(), ident: "other".to_string(), label: None, position: None }),
         Selector::ImageRef,
-        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into())), RuntimeValue::String(Shared::new("other".into()))],
         true
     )]
     #[case::image_ref_no_args_fallback(
@@ -12933,25 +13130,25 @@ mod tests {
     #[case::image_ref_non_image_ref_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::ImageRef,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::footnote_ref_ident_match(
         Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "1".to_string(), label: None, position: None }),
         Selector::FootnoteRef,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         true
     )]
     #[case::footnote_ref_ident_no_match(
         Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "2".to_string(), label: None, position: None }),
         Selector::FootnoteRef,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         false
     )]
     #[case::footnote_ref_multi_ident_match(
         Node::FootnoteRef(mq_markdown::FootnoteRef { ident: "2".to_string(), label: None, position: None }),
         Selector::FootnoteRef,
-        vec![RuntimeValue::String("1".into()), RuntimeValue::String("2".into())],
+        vec![RuntimeValue::String(Shared::new("1".into())), RuntimeValue::String(Shared::new("2".into()))],
         true
     )]
     #[case::footnote_ref_no_args_fallback(
@@ -12963,25 +13160,25 @@ mod tests {
     #[case::footnote_ref_non_footnote_ref_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::FootnoteRef,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         false
     )]
     #[case::footnote_ident_match(
         Node::Footnote(mq_markdown::Footnote { ident: "1".to_string(), values: vec![], position: None }),
         Selector::Footnote,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         true
     )]
     #[case::footnote_ident_no_match(
         Node::Footnote(mq_markdown::Footnote { ident: "2".to_string(), values: vec![], position: None }),
         Selector::Footnote,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         false
     )]
     #[case::footnote_multi_ident_match(
         Node::Footnote(mq_markdown::Footnote { ident: "2".to_string(), values: vec![], position: None }),
         Selector::Footnote,
-        vec![RuntimeValue::String("1".into()), RuntimeValue::String("2".into())],
+        vec![RuntimeValue::String(Shared::new("1".into())), RuntimeValue::String(Shared::new("2".into()))],
         true
     )]
     #[case::footnote_no_args_fallback(
@@ -12993,25 +13190,25 @@ mod tests {
     #[case::footnote_non_footnote_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Footnote,
-        vec![RuntimeValue::String("1".into())],
+        vec![RuntimeValue::String(Shared::new("1".into()))],
         false
     )]
     #[case::definition_ident_match(
         Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "ref".to_string(), label: None }),
         Selector::Definition,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         true
     )]
     #[case::definition_ident_no_match(
         Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "other".to_string(), label: None }),
         Selector::Definition,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::definition_multi_ident_match(
         Node::Definition(mq_markdown::Definition { position: None, url: mq_markdown::Url::new("https://example.com".to_string()), title: None, ident: "other".to_string(), label: None }),
         Selector::Definition,
-        vec![RuntimeValue::String("ref".into()), RuntimeValue::String("other".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into())), RuntimeValue::String(Shared::new("other".into()))],
         true
     )]
     #[case::definition_no_args_fallback(
@@ -13023,25 +13220,25 @@ mod tests {
     #[case::definition_non_definition_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::Definition,
-        vec![RuntimeValue::String("ref".into())],
+        vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
     )]
     #[case::mdx_jsx_flow_element_name_match(
         Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("Alert".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxFlowElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         true
     )]
     #[case::mdx_jsx_flow_element_name_no_match(
         Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxFlowElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
     )]
     #[case::mdx_jsx_flow_element_multi_name_match(
         Node::MdxJsxFlowElement(mq_markdown::MdxJsxFlowElement { name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxFlowElement,
-        vec![RuntimeValue::String("Alert".into()), RuntimeValue::String("div".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into())), RuntimeValue::String(Shared::new("div".into()))],
         true
     )]
     #[case::mdx_jsx_flow_element_no_args_fallback(
@@ -13053,25 +13250,25 @@ mod tests {
     #[case::mdx_jsx_flow_element_non_matching_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::MdxJsxFlowElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
     )]
     #[case::mdx_jsx_text_element_name_match(
         Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("Alert")), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxTextElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         true
     )]
     #[case::mdx_jsx_text_element_name_no_match(
         Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("span")), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxTextElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
     )]
     #[case::mdx_jsx_text_element_multi_name_match(
         Node::MdxJsxTextElement(mq_markdown::MdxJsxTextElement { name: Some(SmolStr::new("span")), attributes: Vec::new(), children: Vec::new(), position: None }),
         Selector::MdxJsxTextElement,
-        vec![RuntimeValue::String("Alert".into()), RuntimeValue::String("span".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into())), RuntimeValue::String(Shared::new("span".into()))],
         true
     )]
     #[case::mdx_jsx_text_element_no_args_fallback(
@@ -13083,7 +13280,7 @@ mod tests {
     #[case::mdx_jsx_text_element_non_matching_node(
         Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
         Selector::MdxJsxTextElement,
-        vec![RuntimeValue::String("Alert".into())],
+        vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
     )]
     #[case::non_heading_node(
@@ -13188,8 +13385,11 @@ mod tests {
     #[case(vec![],           vec![],           vec![])]
     fn test_band(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>, #[case] expected: Vec<u8>) {
         assert_eq!(
-            call("band", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]),
-            Ok(RuntimeValue::Bytes(expected))
+            call(
+                "band",
+                vec![RuntimeValue::Bytes(b1.into()), RuntimeValue::Bytes(b2.into())]
+            ),
+            Ok(RuntimeValue::Bytes(expected.into()))
         );
     }
 
@@ -13197,7 +13397,13 @@ mod tests {
     #[case(vec![0x01, 0x02], vec![0x01])]
     #[case(vec![],           vec![0x00])]
     fn test_band_length_mismatch(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>) {
-        assert!(call("band", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]).is_err());
+        assert!(
+            call(
+                "band",
+                vec![RuntimeValue::Bytes(b1.into()), RuntimeValue::Bytes(b2.into())]
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -13205,7 +13411,10 @@ mod tests {
         assert!(
             call(
                 "band",
-                vec![RuntimeValue::String("a".into()), RuntimeValue::Bytes(vec![0x01])]
+                vec![
+                    RuntimeValue::String(Shared::new("a".into())),
+                    RuntimeValue::Bytes(Shared::new(vec![0x01]))
+                ]
             )
             .is_err()
         );
@@ -13223,8 +13432,11 @@ mod tests {
     #[case(vec![],           vec![],           vec![])]
     fn test_bor(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>, #[case] expected: Vec<u8>) {
         assert_eq!(
-            call("bor", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]),
-            Ok(RuntimeValue::Bytes(expected))
+            call(
+                "bor",
+                vec![RuntimeValue::Bytes(b1.into()), RuntimeValue::Bytes(b2.into())]
+            ),
+            Ok(RuntimeValue::Bytes(expected.into()))
         );
     }
 
@@ -13232,7 +13444,13 @@ mod tests {
     #[case(vec![0x01, 0x02], vec![0x01])]
     #[case(vec![],           vec![0x00])]
     fn test_bor_length_mismatch(#[case] b1: Vec<u8>, #[case] b2: Vec<u8>) {
-        assert!(call("bor", vec![RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)]).is_err());
+        assert!(
+            call(
+                "bor",
+                vec![RuntimeValue::Bytes(b1.into()), RuntimeValue::Bytes(b2.into())]
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -13240,7 +13458,10 @@ mod tests {
         assert!(
             call(
                 "bor",
-                vec![RuntimeValue::Number(1.into()), RuntimeValue::Bytes(vec![0x01])]
+                vec![
+                    RuntimeValue::Number(1.into()),
+                    RuntimeValue::Bytes(Shared::new(vec![0x01]))
+                ]
             )
             .is_err()
         );
@@ -13258,22 +13479,22 @@ mod tests {
     #[case(vec![],           vec![])]
     fn test_bnot(#[case] input: Vec<u8>, #[case] expected: Vec<u8>) {
         assert_eq!(
-            call("bnot", vec![RuntimeValue::Bytes(input)]),
-            Ok(RuntimeValue::Bytes(expected))
+            call("bnot", vec![RuntimeValue::Bytes(input.into())]),
+            Ok(RuntimeValue::Bytes(expected.into()))
         );
     }
 
     #[test]
     fn test_bnot_double_negation() {
         let original = vec![0xde, 0xad, 0xbe, 0xef];
-        let once = call("bnot", vec![RuntimeValue::Bytes(original.clone())]).unwrap();
+        let once = call("bnot", vec![RuntimeValue::Bytes(Shared::new(original.clone()))]).unwrap();
         let twice = call("bnot", vec![once]).unwrap();
-        assert_eq!(twice, RuntimeValue::Bytes(original));
+        assert_eq!(twice, RuntimeValue::Bytes(original.into()));
     }
 
     #[test]
     fn test_bnot_type_error() {
-        assert!(call("bnot", vec![RuntimeValue::String("a".into())]).is_err());
+        assert!(call("bnot", vec![RuntimeValue::String(Shared::new("a".into()))]).is_err());
     }
 
     // =========================================================================
@@ -13291,7 +13512,7 @@ mod tests {
         assert_eq!(
             call(
                 "starts_with",
-                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(prefix)]
+                vec![RuntimeValue::Bytes(haystack.into()), RuntimeValue::Bytes(prefix.into())]
             ),
             Ok(RuntimeValue::Boolean(expected))
         );
@@ -13308,7 +13529,7 @@ mod tests {
         assert_eq!(
             call(
                 "ends_with",
-                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(suffix)]
+                vec![RuntimeValue::Bytes(haystack.into()), RuntimeValue::Bytes(suffix.into())]
             ),
             Ok(RuntimeValue::Boolean(expected))
         );
@@ -13330,7 +13551,7 @@ mod tests {
         assert_eq!(
             call(
                 "index",
-                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+                vec![RuntimeValue::Bytes(haystack.into()), RuntimeValue::Bytes(needle.into())]
             ),
             Ok(RuntimeValue::Number(expected.into()))
         );
@@ -13346,7 +13567,7 @@ mod tests {
         assert_eq!(
             call(
                 "rindex",
-                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+                vec![RuntimeValue::Bytes(haystack.into()), RuntimeValue::Bytes(needle.into())]
             ),
             Ok(RuntimeValue::Number(expected.into()))
         );
@@ -13358,10 +13579,17 @@ mod tests {
         let n = vec![0xbb];
         let idx = call(
             "index",
-            vec![RuntimeValue::Bytes(h.clone()), RuntimeValue::Bytes(n.clone())],
+            vec![
+                RuntimeValue::Bytes(Shared::new(h.clone())),
+                RuntimeValue::Bytes(Shared::new(n.clone())),
+            ],
         )
         .unwrap();
-        let ridx = call("rindex", vec![RuntimeValue::Bytes(h), RuntimeValue::Bytes(n)]).unwrap();
+        let ridx = call(
+            "rindex",
+            vec![RuntimeValue::Bytes(h.into()), RuntimeValue::Bytes(n.into())],
+        )
+        .unwrap();
         assert_eq!(idx, ridx);
     }
 
@@ -13379,8 +13607,8 @@ mod tests {
             call(
                 "indices",
                 vec![
-                    RuntimeValue::String(haystack.to_string()),
-                    RuntimeValue::String(needle.to_string())
+                    RuntimeValue::String(Shared::new(haystack.to_string())),
+                    RuntimeValue::String(Shared::new(needle.to_string()))
                 ]
             ),
             Ok(RuntimeValue::Array(Shared::new(
@@ -13399,7 +13627,7 @@ mod tests {
         assert_eq!(
             call(
                 "indices",
-                vec![RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)]
+                vec![RuntimeValue::Bytes(haystack.into()), RuntimeValue::Bytes(needle.into())]
             ),
             Ok(RuntimeValue::Array(Shared::new(
                 expected.into_iter().map(|i| RuntimeValue::Number(i.into())).collect()
@@ -13410,12 +13638,15 @@ mod tests {
     #[test]
     fn test_array_indices() {
         let array = RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
-            RuntimeValue::String("a".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
+            RuntimeValue::String(Shared::new("a".to_string())),
         ]));
         assert_eq!(
-            call("indices", vec![array, RuntimeValue::String("a".to_string())]),
+            call(
+                "indices",
+                vec![array, RuntimeValue::String(Shared::new("a".to_string()))]
+            ),
             Ok(RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Number(0.into()),
                 RuntimeValue::Number(2.into()),
@@ -13425,9 +13656,12 @@ mod tests {
 
     #[test]
     fn test_array_indices_not_found() {
-        let array = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("a".to_string())]));
+        let array = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string()))]));
         assert_eq!(
-            call("indices", vec![array, RuntimeValue::String("z".to_string())]),
+            call(
+                "indices",
+                vec![array, RuntimeValue::String(Shared::new("z".to_string()))]
+            ),
             Ok(RuntimeValue::Array(Shared::new(Vec::new())))
         );
     }
@@ -13446,9 +13680,12 @@ mod tests {
         assert_eq!(
             call(
                 "repeat",
-                vec![RuntimeValue::Bytes(input), RuntimeValue::Number((n as f64).into())]
+                vec![
+                    RuntimeValue::Bytes(input.into()),
+                    RuntimeValue::Number((n as f64).into())
+                ]
             ),
-            Ok(RuntimeValue::Bytes(expected))
+            Ok(RuntimeValue::Bytes(expected.into()))
         );
     }
 
@@ -13481,9 +13718,12 @@ mod tests {
         assert_eq!(
             call(
                 "pack",
-                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(value.into())]
+                vec![
+                    RuntimeValue::String(Shared::new(fmt.into())),
+                    RuntimeValue::Number(value.into())
+                ]
             ),
-            Ok(RuntimeValue::Bytes(expected))
+            Ok(RuntimeValue::Bytes(expected.into()))
         );
     }
 
@@ -13495,7 +13735,10 @@ mod tests {
         assert!(
             call(
                 "pack",
-                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(0.0.into())]
+                vec![
+                    RuntimeValue::String(Shared::new(fmt.into())),
+                    RuntimeValue::Number(0.0.into())
+                ]
             )
             .is_err()
         );
@@ -13538,7 +13781,10 @@ mod tests {
         assert_eq!(
             call(
                 "unpack",
-                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(bytes)]
+                vec![
+                    RuntimeValue::String(Shared::new(fmt.into())),
+                    RuntimeValue::Bytes(bytes.into())
+                ]
             ),
             Ok(RuntimeValue::Number(expected.into()))
         );
@@ -13555,7 +13801,10 @@ mod tests {
         assert!(
             call(
                 "unpack",
-                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(bytes)]
+                vec![
+                    RuntimeValue::String(Shared::new(fmt.into())),
+                    RuntimeValue::Bytes(bytes.into())
+                ]
             )
             .is_err()
         );
@@ -13568,7 +13817,10 @@ mod tests {
         assert!(
             call(
                 "unpack",
-                vec![RuntimeValue::String(fmt.into()), RuntimeValue::Bytes(vec![0x00])]
+                vec![
+                    RuntimeValue::String(Shared::new(fmt.into())),
+                    RuntimeValue::Bytes(Shared::new(vec![0x00]))
+                ]
             )
             .is_err()
         );
@@ -13579,7 +13831,10 @@ mod tests {
         assert!(
             call(
                 "unpack",
-                vec![RuntimeValue::Number(1.into()), RuntimeValue::Bytes(vec![0x00])]
+                vec![
+                    RuntimeValue::Number(1.into()),
+                    RuntimeValue::Bytes(Shared::new(vec![0x00]))
+                ]
             )
             .is_err()
         );
@@ -13607,10 +13862,13 @@ mod tests {
     fn test_pack_unpack_roundtrip(#[case] fmt: &str, #[case] value: f64) {
         let packed = call(
             "pack",
-            vec![RuntimeValue::String(fmt.into()), RuntimeValue::Number(value.into())],
+            vec![
+                RuntimeValue::String(Shared::new(fmt.into())),
+                RuntimeValue::Number(value.into()),
+            ],
         )
         .unwrap();
-        let result = call("unpack", vec![RuntimeValue::String(fmt.into()), packed]).unwrap();
+        let result = call("unpack", vec![RuntimeValue::String(Shared::new(fmt.into())), packed]).unwrap();
         match result {
             RuntimeValue::Number(n) => assert!((n.value() - value).abs() < 1e-5),
             _ => panic!("expected Number"),
@@ -13644,75 +13902,97 @@ mod tests {
 
         // No ambient Io guard installed yet: the default is all-denied.
         assert!(
-            call("read_file", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            call("read_file", vec![RuntimeValue::String(Shared::new(text_path.clone()))]).is_err(),
             "read_file should be blocked when read access is not allowed"
         );
         assert!(
-            call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]).is_err(),
+            call(
+                "read_file_bytes",
+                vec![RuntimeValue::String(Shared::new(bytes_path.clone()))]
+            )
+            .is_err(),
             "read_file_bytes should be blocked when read access is not allowed"
         );
         assert!(
             call(
                 "collection",
-                vec![RuntimeValue::String(
+                vec![RuntimeValue::String(Shared::new(
                     collection_dir.path().to_string_lossy().into_owned()
-                )],
+                ))],
             )
             .is_err(),
             "collection should be blocked when read access is not allowed"
         );
         assert!(
-            call("file_exists", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            call(
+                "file_exists",
+                vec![RuntimeValue::String(Shared::new(text_path.clone()))]
+            )
+            .is_err(),
             "file_exists should be blocked when read access is not allowed"
         );
         assert!(
-            call("file_size", vec![RuntimeValue::String(text_path.clone())]).is_err(),
+            call("file_size", vec![RuntimeValue::String(Shared::new(text_path.clone()))]).is_err(),
             "file_size should be blocked when read access is not allowed"
         );
 
         let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
         assert_eq!(
-            call("read_file", vec![RuntimeValue::String(text_path.clone())]),
-            Ok(RuntimeValue::String("hello".to_string()))
+            call("read_file", vec![RuntimeValue::String(Shared::new(text_path.clone()))]),
+            Ok(RuntimeValue::String(Shared::new("hello".to_string())))
         );
         assert_eq!(
-            call("read_file_bytes", vec![RuntimeValue::String(bytes_path.clone())]),
-            Ok(RuntimeValue::Bytes(vec![0x89, 0x50, 0x4e, 0x47]))
+            call(
+                "read_file_bytes",
+                vec![RuntimeValue::String(Shared::new(bytes_path.clone()))]
+            ),
+            Ok(RuntimeValue::Bytes(Shared::new(vec![0x89, 0x50, 0x4e, 0x47])))
         );
 
         let result = call(
             "read_file_bytes",
-            vec![RuntimeValue::String("/nonexistent/path/no_such_file.png".into())],
+            vec![RuntimeValue::String(Shared::new(
+                "/nonexistent/path/no_such_file.png".into(),
+            ))],
         );
         assert!(result.is_err(), "read_file_bytes should error for a nonexistent file");
 
         let result = call(
             "read_file",
-            vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())],
+            vec![RuntimeValue::String(Shared::new(
+                "/nonexistent/path/no_such_file.md".into(),
+            ))],
         );
         assert!(result.is_err(), "read_file should error for a nonexistent file");
 
         assert_eq!(
-            call("file_exists", vec![RuntimeValue::String(text_path.clone())]),
+            call(
+                "file_exists",
+                vec![RuntimeValue::String(Shared::new(text_path.clone()))]
+            ),
             Ok(RuntimeValue::Boolean(true))
         );
         assert_eq!(
             call(
                 "file_exists",
-                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_file.md".into()
+                ))]
             ),
             Ok(RuntimeValue::Boolean(false))
         );
         assert!(call("file_exists", vec![RuntimeValue::Number(42.into())]).is_err());
 
         assert_eq!(
-            call("file_size", vec![RuntimeValue::String(text_path.clone())]),
+            call("file_size", vec![RuntimeValue::String(Shared::new(text_path.clone()))]),
             Ok(RuntimeValue::Number(5.into()))
         );
         assert!(
             call(
                 "file_size",
-                vec![RuntimeValue::String("/nonexistent/path/no_such_file.md".into())]
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_file.md".into()
+                ))]
             )
             .is_err(),
             "file_size should error for a nonexistent file"
@@ -13735,29 +14015,40 @@ mod tests {
             let entries = as_entries(
                 call(
                     "collection",
-                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    vec![RuntimeValue::String(Shared::new(
+                        dir.path().to_string_lossy().into_owned(),
+                    ))],
                 )
                 .expect("collection should succeed"),
             );
             assert_eq!(entries.len(), 3);
 
             // sorted by path: a.md, b.md, c.md
-            assert_eq!(get(&entries[0], "title"), RuntimeValue::String("World".into()));
+            assert_eq!(
+                get(&entries[0], "title"),
+                RuntimeValue::String(Shared::new("World".into()))
+            );
             let mut toml_frontmatter = BTreeMap::new();
-            toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String("World".into()));
+            toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String(Shared::new("World".into())));
             assert_eq!(
                 get(&entries[0], "frontmatter"),
                 RuntimeValue::Dict(Shared::new(toml_frontmatter))
             );
 
-            assert_eq!(get(&entries[1], "title"), RuntimeValue::String("Hello".into()));
+            assert_eq!(
+                get(&entries[1], "title"),
+                RuntimeValue::String(Shared::new("Hello".into()))
+            );
             match get(&entries[1], "frontmatter") {
                 RuntimeValue::Dict(d) => {
-                    assert_eq!(d.get(&Ident::new("title")), Some(&RuntimeValue::String("Hello".into())));
+                    assert_eq!(
+                        d.get(&Ident::new("title")),
+                        Some(&RuntimeValue::String(Shared::new("Hello".into())))
+                    );
                     assert_eq!(
                         d.get(&Ident::new("tags")),
                         Some(&RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(
-                            "rust".into()
+                            Shared::new("rust".into())
                         )])))
                     );
                 }
@@ -13778,7 +14069,10 @@ mod tests {
                 other => panic!("expected Array, got {other:?}"),
             }
 
-            assert_eq!(get(&entries[2], "title"), RuntimeValue::String("No frontmatter".into()));
+            assert_eq!(
+                get(&entries[2], "title"),
+                RuntimeValue::String(Shared::new("No frontmatter".into()))
+            );
             assert_eq!(get(&entries[2], "frontmatter"), RuntimeValue::NONE);
         }
 
@@ -13798,7 +14092,9 @@ mod tests {
             let entries = as_entries(
                 call(
                     "collection",
-                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    vec![RuntimeValue::String(Shared::new(
+                        dir.path().to_string_lossy().into_owned(),
+                    ))],
                 )
                 .expect("collection should succeed"),
             );
@@ -13811,9 +14107,9 @@ mod tests {
                     other => panic!("expected String, got {other:?}"),
                 })
                 .collect();
-            assert!(titles.contains(&"Root".to_string()));
-            assert!(titles.contains(&"Nested".to_string()));
-            assert!(titles.contains(&"Deepest".to_string()));
+            assert!(titles.iter().any(|t| **t == "Root"));
+            assert!(titles.iter().any(|t| **t == "Nested"));
+            assert!(titles.iter().any(|t| **t == "Deepest"));
         }
 
         #[cfg(unix)]
@@ -13838,7 +14134,9 @@ mod tests {
                 let entries = as_entries(
                     call(
                         "collection",
-                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                        vec![RuntimeValue::String(Shared::new(
+                            dir.path().to_string_lossy().into_owned(),
+                        ))],
                     )
                     .expect("collection should succeed"),
                 );
@@ -13852,8 +14150,8 @@ mod tests {
 
                 // real.md, linked.md (-> real.md), real_sub/inside.md, linked_dir/inside.md (-> real_sub/inside.md)
                 assert_eq!(entries.len(), 4);
-                assert_eq!(titles.iter().filter(|t| *t == "Real").count(), 2);
-                assert_eq!(titles.iter().filter(|t| *t == "Inside").count(), 2);
+                assert_eq!(titles.iter().filter(|t| ***t == "Real").count(), 2);
+                assert_eq!(titles.iter().filter(|t| ***t == "Inside").count(), 2);
             }
 
             // Detects and stops at symlink cycles.
@@ -13870,7 +14168,9 @@ mod tests {
                 let entries = as_entries(
                     call(
                         "collection",
-                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                        vec![RuntimeValue::String(Shared::new(
+                            dir.path().to_string_lossy().into_owned(),
+                        ))],
                     )
                     .expect("collection should succeed despite the symlink cycle"),
                 );
@@ -13888,7 +14188,9 @@ mod tests {
                 let entries = as_entries(
                     call(
                         "collection",
-                        vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                        vec![RuntimeValue::String(Shared::new(
+                            dir.path().to_string_lossy().into_owned(),
+                        ))],
                     )
                     .expect("collection should succeed despite the broken symlink"),
                 );
@@ -13905,7 +14207,9 @@ mod tests {
             let entries = as_entries(
                 call(
                     "collection",
-                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    vec![RuntimeValue::String(Shared::new(
+                        dir.path().to_string_lossy().into_owned(),
+                    ))],
                 )
                 .expect("collection should succeed with an empty subdirectory present"),
             );
@@ -13920,7 +14224,9 @@ mod tests {
 
             let result = call(
                 "collection",
-                vec![RuntimeValue::String(file_path.to_string_lossy().into_owned())],
+                vec![RuntimeValue::String(Shared::new(
+                    file_path.to_string_lossy().into_owned(),
+                ))],
             );
             assert!(result.is_err());
         }
@@ -13929,7 +14235,9 @@ mod tests {
         assert!(
             call(
                 "collection",
-                vec![RuntimeValue::String("/nonexistent/path/no_such_dir".into())],
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_dir".into()
+                ))],
             )
             .is_err()
         );
@@ -13951,7 +14259,9 @@ mod tests {
             let entries = as_entries(
                 call(
                     "collection",
-                    vec![RuntimeValue::String(dir.path().to_string_lossy().into_owned())],
+                    vec![RuntimeValue::String(Shared::new(
+                        dir.path().to_string_lossy().into_owned(),
+                    ))],
                 )
                 .expect("collection should succeed"),
             );
@@ -13987,7 +14297,7 @@ mod tests {
                 call(
                     "collection",
                     vec![
-                        RuntimeValue::String(dir.path().to_string_lossy().into_owned()),
+                        RuntimeValue::String(Shared::new(dir.path().to_string_lossy().into_owned())),
                         RuntimeValue::Boolean(true),
                     ],
                 )
@@ -14002,8 +14312,8 @@ mod tests {
                 .collect();
 
             assert_eq!(entries.len(), 2, "titles: {titles:?}");
-            assert!(titles.contains(&"Kept".to_string()));
-            assert!(titles.contains(&"Sub debug".to_string()));
+            assert!(titles.iter().any(|t| **t == "Kept"));
+            assert!(titles.iter().any(|t| **t == "Sub debug"));
         }
 
         // Errors for an invalid respect_gitignore argument type.
@@ -14011,7 +14321,7 @@ mod tests {
             call(
                 "collection",
                 vec![
-                    RuntimeValue::String("/nonexistent/path".into()),
+                    RuntimeValue::String(Shared::new("/nonexistent/path".into())),
                     RuntimeValue::Number(1.into())
                 ],
             )
@@ -14027,7 +14337,10 @@ mod tests {
         assert!(
             call(
                 "write_file",
-                vec![RuntimeValue::String(path.clone()), RuntimeValue::String("hello".into())]
+                vec![
+                    RuntimeValue::String(Shared::new(path.clone())),
+                    RuntimeValue::String(Shared::new("hello".into()))
+                ]
             )
             .is_err(),
             "write_file should be blocked when write access is not allowed"
@@ -14037,7 +14350,10 @@ mod tests {
         assert_eq!(
             call(
                 "write_file",
-                vec![RuntimeValue::String(path.clone()), RuntimeValue::String("hello".into())]
+                vec![
+                    RuntimeValue::String(Shared::new(path.clone())),
+                    RuntimeValue::String(Shared::new("hello".into()))
+                ]
             ),
             Ok(RuntimeValue::NONE)
         );
@@ -14046,7 +14362,10 @@ mod tests {
         assert_eq!(
             call(
                 "write_file",
-                vec![RuntimeValue::String(path.clone()), RuntimeValue::Bytes(vec![1, 2, 3])]
+                vec![
+                    RuntimeValue::String(Shared::new(path.clone())),
+                    RuntimeValue::Bytes(Shared::new(vec![1, 2, 3]))
+                ]
             ),
             Ok(RuntimeValue::NONE)
         );
@@ -14055,8 +14374,8 @@ mod tests {
         let result = call(
             "write_file",
             vec![
-                RuntimeValue::String("/nonexistent/dir/no_such_file.md".into()),
-                RuntimeValue::String("hello".into()),
+                RuntimeValue::String(Shared::new("/nonexistent/dir/no_such_file.md".into())),
+                RuntimeValue::String(Shared::new("hello".into())),
             ],
         );
         assert!(
@@ -14069,7 +14388,7 @@ mod tests {
     #[test]
     fn test_system_capability_gate_and_success() {
         assert!(
-            call("system", vec![RuntimeValue::String("echo".into())]).is_err(),
+            call("system", vec![RuntimeValue::String(Shared::new("echo".into()))]).is_err(),
             "system should be blocked when run access is not allowed"
         );
 
@@ -14078,17 +14397,19 @@ mod tests {
         let result = call(
             "system",
             vec![
-                RuntimeValue::String("echo".into()),
-                RuntimeValue::Array(Shared::new(vec![RuntimeValue::String("hello".into())])),
+                RuntimeValue::String(Shared::new("echo".into())),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("hello".into()))])),
             ],
         )
         .unwrap();
-        assert_eq!(result, RuntimeValue::String("hello\n".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("hello\n".to_string())));
 
         assert!(
             call(
                 "system",
-                vec![RuntimeValue::String("mq-this-command-should-not-exist".into())]
+                vec![RuntimeValue::String(Shared::new(
+                    "mq-this-command-should-not-exist".into()
+                ))]
             )
             .is_err(),
             "system should error for a missing command"
@@ -14098,7 +14419,7 @@ mod tests {
             call(
                 "system",
                 vec![
-                    RuntimeValue::String("echo".into()),
+                    RuntimeValue::String(Shared::new("echo".into())),
                     RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into())])),
                 ],
             )
@@ -14112,7 +14433,7 @@ mod tests {
     #[cfg(feature = "file-io")]
     fn image_value(url: &str) -> RuntimeValue {
         RuntimeValue::Markdown(
-            Box::new(mq_markdown::Node::Image(mq_markdown::Image {
+            Shared::new(mq_markdown::Node::Image(mq_markdown::Image {
                 alt: "alt".to_string(),
                 url: url.to_string(),
                 title: None,
@@ -14143,7 +14464,10 @@ mod tests {
         assert!(
             call(
                 "embed_images",
-                vec![image_value("img.png"), RuntimeValue::String(base_dir.clone())]
+                vec![
+                    image_value("img.png"),
+                    RuntimeValue::String(Shared::new(base_dir.clone()))
+                ]
             )
             .is_err(),
             "embed_images should be blocked when read access is not allowed"
@@ -14153,7 +14477,10 @@ mod tests {
 
         let result = call(
             "embed_images",
-            vec![image_value("img.png"), RuntimeValue::String(base_dir.clone())],
+            vec![
+                image_value("img.png"),
+                RuntimeValue::String(Shared::new(base_dir.clone())),
+            ],
         )
         .expect("embed_images should succeed");
         assert_eq!(image_url(&result), "data:image/png;base64,iVBORw==");
@@ -14168,7 +14495,10 @@ mod tests {
         assert_eq!(
             call(
                 "embed_images",
-                vec![image_value(already_embedded), RuntimeValue::String(base_dir.clone())]
+                vec![
+                    image_value(already_embedded),
+                    RuntimeValue::String(Shared::new(base_dir.clone()))
+                ]
             ),
             Ok(image_value(already_embedded))
         );
@@ -14177,13 +14507,13 @@ mod tests {
                 "embed_images",
                 vec![
                     image_value("https://example.com/img.png"),
-                    RuntimeValue::String(base_dir.clone())
+                    RuntimeValue::String(Shared::new(base_dir.clone()))
                 ]
             ),
             Ok(image_value("https://example.com/img.png"))
         );
         let text_node = RuntimeValue::Markdown(
-            Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+            Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                 value: "hello".to_string(),
                 position: None,
             })),
@@ -14192,20 +14522,23 @@ mod tests {
         assert_eq!(
             call(
                 "embed_images",
-                vec![text_node.clone(), RuntimeValue::String(base_dir.clone())]
+                vec![text_node.clone(), RuntimeValue::String(Shared::new(base_dir.clone()))]
             ),
             Ok(text_node)
         );
 
         let result = call(
             "embed_images",
-            vec![image_value("no_such_file.png"), RuntimeValue::String(base_dir.clone())],
+            vec![
+                image_value("no_such_file.png"),
+                RuntimeValue::String(Shared::new(base_dir.clone())),
+            ],
         );
         assert!(result.is_err(), "embed_images should error for a nonexistent file");
 
         let result = call(
             "embed_images",
-            vec![image_value("img.unsupported"), RuntimeValue::String(base_dir)],
+            vec![image_value("img.unsupported"), RuntimeValue::String(base_dir.into())],
         );
         assert!(
             result.is_err(),
@@ -14225,7 +14558,10 @@ mod tests {
         assert!(
             call(
                 "extract_images",
-                vec![image_value(&data_url), RuntimeValue::String(out_dir.clone())]
+                vec![
+                    image_value(&data_url),
+                    RuntimeValue::String(Shared::new(out_dir.clone()))
+                ]
             )
             .is_err(),
             "extract_images should be blocked when write access is not allowed"
@@ -14235,7 +14571,10 @@ mod tests {
 
         let result = call(
             "extract_images",
-            vec![image_value(&data_url), RuntimeValue::String(out_dir.clone())],
+            vec![
+                image_value(&data_url),
+                RuntimeValue::String(Shared::new(out_dir.clone())),
+            ],
         )
         .expect("extract_images should succeed");
         let hash = match convert::md5_bytes(&bytes).unwrap() {
@@ -14250,7 +14589,10 @@ mod tests {
         assert_eq!(
             call(
                 "extract_images",
-                vec![image_value("img.png"), RuntimeValue::String(out_dir.clone())]
+                vec![
+                    image_value("img.png"),
+                    RuntimeValue::String(Shared::new(out_dir.clone()))
+                ]
             ),
             Ok(image_value("img.png"))
         );
@@ -14259,7 +14601,7 @@ mod tests {
             "extract_images",
             vec![
                 image_value("data:image/png;base64"),
-                RuntimeValue::String(out_dir.clone()),
+                RuntimeValue::String(Shared::new(out_dir.clone())),
             ],
         );
         assert!(result.is_err(), "extract_images should error on a malformed data URI");
@@ -14268,7 +14610,7 @@ mod tests {
             "extract_images",
             vec![
                 image_value(&format!("data:image/png,{encoded}")),
-                RuntimeValue::String(out_dir.clone()),
+                RuntimeValue::String(Shared::new(out_dir.clone())),
             ],
         );
         assert!(result.is_err(), "extract_images should error on a non-base64 data URI");
@@ -14277,7 +14619,7 @@ mod tests {
             "extract_images",
             vec![
                 image_value(&format!("data:application/pdf;base64,{encoded}")),
-                RuntimeValue::String(out_dir),
+                RuntimeValue::String(out_dir.into()),
             ],
         );
         assert!(
@@ -14295,8 +14637,8 @@ mod tests {
             call(
                 "mock_fetch",
                 vec![
-                    RuntimeValue::String("https://example.invalid".into()),
-                    RuntimeValue::String("body".into()),
+                    RuntimeValue::String(Shared::new("https://example.invalid".into())),
+                    RuntimeValue::String(Shared::new("body".into())),
                 ]
             ),
             Ok(RuntimeValue::NONE)
@@ -14306,10 +14648,10 @@ mod tests {
                 "http",
                 vec![
                     RuntimeValue::Symbol(Ident::new("get")),
-                    RuntimeValue::String("https://example.invalid".into()),
+                    RuntimeValue::String(Shared::new("https://example.invalid".into())),
                 ]
             ),
-            Ok(RuntimeValue::String("body".into()))
+            Ok(RuntimeValue::String(Shared::new("body".into())))
         );
     }
 
@@ -14324,7 +14666,10 @@ mod tests {
         ] {
             call(
                 "mock_fetch",
-                vec![RuntimeValue::String(url.into()), RuntimeValue::String(body.into())],
+                vec![
+                    RuntimeValue::String(Shared::new(url.into())),
+                    RuntimeValue::String(Shared::new(body.into())),
+                ],
             )
             .unwrap();
         }
@@ -14332,28 +14677,28 @@ mod tests {
         let requests = RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
                 Ident::new("url"),
-                RuntimeValue::String("https://example.invalid/a".into()),
+                RuntimeValue::String(Shared::new("https://example.invalid/a".into())),
             )]))),
             RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
                 Ident::new("url"),
-                RuntimeValue::String("https://example.invalid/b".into()),
+                RuntimeValue::String(Shared::new("https://example.invalid/b".into())),
             )]))),
             RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([
                 (Ident::new("method"), RuntimeValue::Symbol(Ident::new("post"))),
                 (
                     Ident::new("url"),
-                    RuntimeValue::String("https://example.invalid/c".into()),
+                    RuntimeValue::String(Shared::new("https://example.invalid/c".into())),
                 ),
-                (Ident::new("body"), RuntimeValue::String("payload".into())),
+                (Ident::new("body"), RuntimeValue::String(Shared::new("payload".into()))),
             ]))),
         ]));
 
         assert_eq!(
             call("http_all", vec![requests]),
             Ok(RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("body-a".into()),
-                RuntimeValue::String("body-b".into()),
-                RuntimeValue::String("body-c".into()),
+                RuntimeValue::String(Shared::new("body-a".into())),
+                RuntimeValue::String(Shared::new("body-b".into())),
+                RuntimeValue::String(Shared::new("body-c".into())),
             ])))
         );
     }
@@ -14363,9 +14708,9 @@ mod tests {
     fn test_http_all_rejects_non_dict_request() {
         let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
 
-        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(
+        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new(
             "https://example.invalid".into(),
-        )]));
+        ))]));
 
         assert!(call("http_all", vec![requests]).is_err());
     }
@@ -14389,8 +14734,8 @@ mod tests {
             call(
                 "mock_fetch",
                 vec![
-                    RuntimeValue::String("https://example.invalid".into()),
-                    RuntimeValue::String("body".into()),
+                    RuntimeValue::String(Shared::new("https://example.invalid".into())),
+                    RuntimeValue::String(Shared::new("body".into())),
                 ]
             )
             .is_err(),
@@ -14402,8 +14747,8 @@ mod tests {
             call(
                 "mock_fetch",
                 vec![
-                    RuntimeValue::String("https://example.invalid".into()),
-                    RuntimeValue::String("body".into()),
+                    RuntimeValue::String(Shared::new("https://example.invalid".into())),
+                    RuntimeValue::String(Shared::new("body".into())),
                 ]
             )
             .is_err(),

@@ -54,8 +54,11 @@ mod module;
 mod number;
 mod optimizer;
 mod range;
+mod runtime;
 mod selector;
 pub mod suggest;
+#[cfg(feature = "tarn")]
+mod tarn;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -82,12 +85,6 @@ pub use diagnostic::Diagnostic;
 pub use engine::CompiledProgram;
 pub use engine::Engine;
 pub use error::Error;
-pub use eval::builtin::{
-    BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,
-    INTERNAL_FUNCTION_DOC,
-};
-pub use eval::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
-pub use eval::runtime_value::{RuntimeValue, RuntimeValues};
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]
 pub use io::MemIo;
@@ -108,6 +105,12 @@ pub use module::{
 };
 pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
+pub use runtime::builtin::{
+    BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,
+    INTERNAL_FUNCTION_DOC,
+};
+pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
+pub use runtime::runtime_value::{RuntimeValue, RuntimeValues};
 pub use selector::{AttrKind, Selector};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
@@ -132,7 +135,7 @@ pub use cst::parser::ErrorReporter as CstErrorReporter;
 pub use cst::parser::Parser as CstParser;
 
 #[cfg(feature = "debugger")]
-pub use eval::debugger::{
+pub use runtime::debugger::{
     Breakpoint, DebugContext, Debugger, DebuggerAction, DebuggerCommand, DebuggerHandler, Source,
 };
 
@@ -237,7 +240,7 @@ pub fn raw_input(input: &str) -> Vec<RuntimeValue> {
 
 /// Returns a vector containing a single `RuntimeValue::Bytes` for raw binary input.
 pub fn bytes_input(bytes: &[u8]) -> Vec<RuntimeValue> {
-    vec![RuntimeValue::Bytes(bytes.to_vec())]
+    vec![RuntimeValue::Bytes(Shared::new(bytes.to_vec()))]
 }
 
 #[inline(always)]
@@ -289,7 +292,7 @@ mod tests {
                 )
                 .unwrap(),
             vec![RuntimeValue::Markdown(
-                Box::new(mq_markdown::Node::Text(mq_markdown::Text {
+                Shared::new(mq_markdown::Node::Text(mq_markdown::Text {
                     value: "Hello,world!".to_string(),
                     position: None
                 },)),

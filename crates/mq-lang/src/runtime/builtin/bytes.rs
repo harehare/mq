@@ -1,5 +1,5 @@
 use super::Error;
-use crate::eval::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::RuntimeValue;
 
 /// Supported binary packing formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,7 +88,7 @@ impl PackFormat {
             Self::F64Be => value.to_be_bytes().to_vec(),
             Self::F64Le => value.to_le_bytes().to_vec(),
         };
-        RuntimeValue::Bytes(bytes)
+        RuntimeValue::Bytes(bytes.into())
     }
 
     /// Unpacks a number from `bytes` according to this format.
@@ -281,7 +281,7 @@ mod tests {
     #[case(PackFormat::F64Be, 1.0, vec![0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
     #[case(PackFormat::F64Le, 1.0, vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f])]
     fn test_pack(#[case] fmt: PackFormat, #[case] value: f64, #[case] expected: Vec<u8>) {
-        assert_eq!(fmt.pack(value), RuntimeValue::Bytes(expected));
+        assert_eq!(fmt.pack(value), RuntimeValue::Bytes(expected.into()));
     }
 
     // --- unpack: all formats ---
@@ -421,7 +421,7 @@ mod tests {
     #[case("f32be", 1.0,   vec![0x3f, 0x80, 0x00, 0x00])]
     #[case("f64be", 1.0,   vec![0x3f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])]
     fn test_pack_number_wrapper(#[case] fmt: &str, #[case] value: f64, #[case] expected: Vec<u8>) {
-        assert_eq!(pack_number(fmt, value).unwrap(), RuntimeValue::Bytes(expected));
+        assert_eq!(pack_number(fmt, value).unwrap(), RuntimeValue::Bytes(expected.into()));
     }
 
     #[rstest]

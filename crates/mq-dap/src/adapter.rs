@@ -5,7 +5,6 @@ use dap::responses::{
     SetExpressionResponse, SetVariableResponse, StackTraceResponse, ThreadsResponse, VariablesResponse,
 };
 use dap::types::Breakpoint;
-use mq_lang::Shared;
 use std::borrow::Cow;
 use std::io;
 use std::path::PathBuf;
@@ -300,19 +299,19 @@ impl MqAdapter {
 
     /// Evaluate code in the current debug context
     fn eval(&self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
-        let mut engine: mq_lang::DefaultEngine = if let Some(ref context) = self.current_debug_context {
-            mq_lang::DefaultEngine::default().switch_env(Shared::clone(&context.env))
-        } else {
+        let Some(context) = self.current_debug_context.as_ref() else {
             return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
                 "Current context not found",
             ))) as Box<dyn std::error::Error>);
         };
 
-        engine.eval(code, mq_lang::null_input().into_iter()).map_err(|e| {
-            let error_msg = format!("Evaluation error: {}", e);
-            error!(error = %error_msg);
-            Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
-        })
+        mq_lang::DefaultEngine::default()
+            .eval_debug_expression(code, context.current_value.clone(), &context.env)
+            .map_err(|e| {
+                let error_msg = format!("Evaluation error: {}", e);
+                error!(error = %error_msg);
+                Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
+            })
     }
 
     /// Handle DAP request and send appropriate response
@@ -662,6 +661,7 @@ impl MqAdapter {
 mod tests {
     use super::*;
     use dap::server::Server;
+    use mq_lang::Shared;
     use std::io::{BufReader, BufWriter, Cursor};
 
     #[test]
@@ -1039,6 +1039,141 @@ mod tests {
         let result = adapter.handle_request(req, &mut server);
         // The result might succeed or fail - just ensure it doesn't panic
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_eval_resolves_debug_context_bindings() {
+        let mut adapter = MqAdapter::new();
+        let context = mq_lang::DebugContext::default();
+        context
+            .env
+            .write()
+            .unwrap()
+            .define("x".into(), mq_lang::RuntimeValue::Number(41.into()));
+        adapter.current_debug_context = Some(context);
+
+        let result = adapter.eval("x + 1").unwrap();
+        assert_eq!(result[0], mq_lang::RuntimeValue::Number(42.into()));
+    }
+
+    /// A real stopped VM frame must expose its bindings to DAP variable and evaluate requests.
+    ///
+    /// This runs through the configured `DapHandlerWrapper`, rather than constructing a
+    /// `DebugContext` by hand, so it protects the VM debugger boundary → DAP adapter path.
+    /// The same test also runs without the `tarn` feature as the tree-walker reference.
+    #[test]
+    fn test_stopped_frame_exposes_live_bindings_to_dap() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter.engine.debugger().write().unwrap().add_breakpoint_with_options(
+            2,
+            None,
+            None,
+            Some("x == 41".to_string()),
+            None,
+            None,
+        );
+
+        // A source line can contain more than one statement boundary. Queue enough
+        // continue commands for those boundaries so this test stays synchronous and
+        // deterministic while still exercising the normal DAP handler.
+        for _ in 0..16 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+        let values = adapter
+            .engine
+            .eval("let x = 41 |\nx + 1", mq_lang::null_input().into_iter())
+            .unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(42.into()));
+
+        let context = adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .find_map(|message| match message {
+                DebuggerMessage::BreakpointHit { context, .. }
+                    if context.env.read().unwrap().resolve("x".into()).is_ok() =>
+                {
+                    Some(context)
+                }
+                _ => None,
+            })
+            .expect("the breakpoint should expose the live x binding to DAP");
+        assert_eq!(
+            context.env.read().unwrap().resolve("x".into()).unwrap(),
+            mq_lang::RuntimeValue::Number(41.into())
+        );
+
+        adapter.current_debug_context = Some(context);
+        assert_eq!(
+            adapter.eval("x + 1").unwrap()[0],
+            mq_lang::RuntimeValue::Number(42.into())
+        );
+        assert!(
+            adapter
+                .get_global_variables_from_context()
+                .iter()
+                .any(|variable| variable.name == "x" && variable.value == "41")
+        );
+    }
+
+    /// A stopped nested frame keeps parameters in LOCAL and captures in GLOBAL, matching
+    /// the scope split presented by the tree-walking debugger.
+    #[test]
+    fn test_stopped_nested_frame_preserves_dap_scope_split() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter.engine.debugger().write().unwrap().add_breakpoint_with_options(
+            3,
+            None,
+            None,
+            Some("inner == 2 && outer == 10".to_string()),
+            None,
+            None,
+        );
+
+        for _ in 0..16 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+        let values = adapter
+            .engine
+            .eval(
+                "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+                mq_lang::null_input().into_iter(),
+            )
+            .unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(12.into()));
+
+        let context = adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .find_map(|message| match message {
+                DebuggerMessage::BreakpointHit { context, .. }
+                    if context.env.read().unwrap().resolve("inner".into()).is_ok() =>
+                {
+                    Some(context)
+                }
+                _ => None,
+            })
+            .expect("the nested frame should produce a DAP breakpoint message");
+        adapter.current_debug_context = Some(context);
+
+        assert!(
+            adapter
+                .get_local_variables_from_context()
+                .iter()
+                .any(|variable| variable.name == "inner" && variable.value == "2")
+        );
+        let global_variables = adapter.get_global_variables_from_context();
+        assert!(
+            global_variables
+                .iter()
+                .any(|variable| variable.name == "outer" && variable.value == "10"),
+            "expected captured outer in GLOBAL scope, got {global_variables:?}"
+        );
     }
 
     #[test]

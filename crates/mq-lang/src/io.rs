@@ -9,7 +9,7 @@
 //! implementation, and [`SandboxedIo`] for a decorator that enforces
 //! per-instance read/write/net/run permissions. The ambient instance active
 //! during an [`Engine::eval`](crate::Engine::eval) call is reachable from
-//! builtins via [`crate::eval::builtin::io_context::current`].
+//! builtins via [`crate::runtime::builtin::io_context::current`].
 //!
 //! `LocalFsModuleResolver` (local module resolution) routes through this
 //! trait; `HttpModuleResolver`/`UreqFetcher` (HTTP module imports) do not yet

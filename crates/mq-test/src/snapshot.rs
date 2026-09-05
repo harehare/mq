@@ -54,7 +54,7 @@ pub(crate) fn check_snapshot(test_file: &Path, name: &str, actual: &str, update:
 
     if update {
         return match write_snapshot(&snapshot_file, actual) {
-            Ok(()) => RuntimeValue::String(actual.to_string()),
+            Ok(()) => RuntimeValue::String(Shared::new(actual.to_string())),
             Err(e) => fail(format!(
                 "failed to write snapshot \"{name}\" to {}: {e}",
                 snapshot_file.display()
@@ -77,7 +77,7 @@ pub(crate) fn check_snapshot(test_file: &Path, name: &str, actual: &str, update:
     };
 
     if expected == actual {
-        return RuntimeValue::String(actual.to_string());
+        return RuntimeValue::String(Shared::new(actual.to_string()));
     }
 
     let lines = diff_lines(&expected, actual);
@@ -96,7 +96,7 @@ pub(crate) fn check_snapshot(test_file: &Path, name: &str, actual: &str, update:
 fn fail(message: String) -> RuntimeValue {
     let mut map = BTreeMap::new();
     map.insert(Ident::new("error"), RuntimeValue::Boolean(true));
-    map.insert(Ident::new("message"), RuntimeValue::String(message));
+    map.insert(Ident::new("message"), RuntimeValue::String(message.into()));
     RuntimeValue::Dict(Shared::new(map))
 }
 
@@ -281,7 +281,7 @@ mod tests {
         let test_file = temp_test_file("create");
         let result = check_snapshot(&test_file, "greeting", "hello world", true);
 
-        assert_eq!(result, RuntimeValue::String("hello world".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("hello world".to_string())));
         let saved = fs::read_to_string(snapshot_dir(&test_file).join("greeting.snap")).unwrap();
         assert_eq!(saved, "hello world");
 
@@ -294,7 +294,7 @@ mod tests {
         check_snapshot(&test_file, "greeting", "hello world", true);
 
         let result = check_snapshot(&test_file, "greeting", "hello world", false);
-        assert_eq!(result, RuntimeValue::String("hello world".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("hello world".to_string())));
 
         fs::remove_dir_all(test_file.parent().unwrap()).ok();
     }
@@ -330,7 +330,7 @@ mod tests {
         check_snapshot(&test_file, "greeting", "goodbye world", true);
 
         let result = check_snapshot(&test_file, "greeting", "goodbye world", false);
-        assert_eq!(result, RuntimeValue::String("goodbye world".to_string()));
+        assert_eq!(result, RuntimeValue::String(Shared::new("goodbye world".to_string())));
 
         fs::remove_dir_all(test_file.parent().unwrap()).ok();
     }

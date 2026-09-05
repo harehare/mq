@@ -961,19 +961,6 @@ def test_omit(value, keys, expected):
 end
 
 # @parametrize([
-#   [{"a": 1, "b": 2}, "a", true],
-#   [{"a": 1, "b": 2}, "c", false],
-#   [[1, 2, 3], 1, true],
-#   [[1, 2, 3], 5, false],
-#   [[1, 2, 3], -1, false],
-#   ["not a container", "key", false],
-# ])
-def test_has(value, key, expected):
-  let result = has(value, key)
-  | assert_eq(result, expected)
-end
-
-# @parametrize([
 #   [{"a": {"b": [1, 2, 3]}}, ["a", "b", 1], 2],
 #   [{"a": {"b": 1}}, ["a", "x", "y"], None],
 #   [{"a": 1}, [], {"a": 1}],

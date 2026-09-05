@@ -26,6 +26,20 @@ bench: build-bench
 bench-local:
     cargo bench
 
+# Run the shared mq-lang benchmark suite on the tree-walking evaluator.
+bench-tree:
+    cargo bench -p mq-lang --bench benchmark
+
+# Run the same mq-lang benchmark suite on Tarn. `tarn` routes Engine::eval to the VM.
+bench-vm:
+    cargo bench -p mq-lang --bench benchmark --features tarn
+
+# Run the same shared benchmark on the tree-walker and VM in sequence.
+# Example: just bench-compare eval_compiled_fibonacci
+bench-compare filter:
+    cargo bench -p mq-lang --bench benchmark {{filter}}
+    cargo bench -p mq-lang --bench benchmark --features tarn {{filter}}
+
 # Build the project in release mode
 build:
     cargo build --release -p mq-run --bin mq
@@ -44,10 +58,15 @@ build-target target:
     cargo build --release --target {{target}} -p mq-lint --features="cli"
     cargo build --release --target {{target}} -p mq-formatter
 
-# Build benchmarks with codspeed
+# Dumps Tarn bytecode for a query via mq-dbg, verifying debugger => debug-trace wiring.
+# Example: just dump-bytecode '1 + 2'
+dump-bytecode query:
+    cargo run -p mq-run --bin mq-dbg --features="debugger" -- -C --dump-bytecode -I null '{{query}}'
+
+# Build benchmarks with codspeed. Runs against the tarn VM backend, not the tree-walker.
 [working-directory: 'crates/mq-lang']
 build-bench:
-    cargo codspeed build
+    cargo codspeed build --features tarn
 
 # Build WebAssembly package for web use
 [working-directory: 'crates/mq-wasm']
@@ -82,8 +101,16 @@ build-node: build-node-wasm
 fmt:
     cargo fmt --all -- --check
 
-test-mq:
+# Run bundled mq tests through the tree-walking evaluator.
+test-mq-tree:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+
+# Run the identical bundled mq tests through Tarn.
+test-mq-vm:
+    cargo run -p mq-test --features tarn -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
+
+# Keep both execution engines as a required validation gate until cutover.
+test-mq: test-mq-tree test-mq-vm
 
 # Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
 test-gfm-spec:
@@ -105,9 +132,13 @@ test-all: fmt lint test-mq test-doc test-all-features test
 test-cov:
     cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
-# Run fuzzing tests
+# Run fuzzing tests against the tree-walking evaluator
 test-fuzz:
     cargo +nightly fuzz run interpreter
+
+# Run fuzzing tests against the tarn bytecode VM
+test-fuzz-tarn:
+    cargo +nightly fuzz run tarn --features tarn
 
 # Run WebAssembly tests in Chrome
 [working-directory: 'crates/mq-wasm']

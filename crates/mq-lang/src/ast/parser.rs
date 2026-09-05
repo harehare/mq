@@ -1,10 +1,10 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
 use crate::error::syntax::SyntaxError;
-use crate::eval::builtin::io_context;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
+use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};

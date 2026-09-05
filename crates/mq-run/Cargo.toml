@@ -14,10 +14,12 @@ default-run = "mq"
 
 [features]
 css-selector = ["mq-lang/css-selector"]
-debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap"]
+debugger = ["mq-lang/debugger", "dep:rustyline", "dep:strum", "dep:regex", "mq-dap", "debug-trace"]
+debug-trace = ["debugger", "tarn", "mq-lang/debug-trace"]
 default = ["std", "use_mimalloc", "http-import", "css-selector", "watch"]
 http-import = ["mq-lang/http-import-ureq"]
 std = []
+tarn = ["mq-lang/tarn", "mq-repl/tarn"]
 tiktoken = ["mq-lang/tiktoken"]
 use_mimalloc = ["mimalloc"]
 watch = ["dep:notify"]
@@ -55,6 +57,7 @@ which = "8.0.2"
 
 [dev-dependencies]
 assert_cmd = {workspace = true}
+base64 = {workspace = true}
 rstest = {workspace = true}
 scopeguard = {workspace = true}
 tempfile = {workspace = true}

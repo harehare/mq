@@ -17,6 +17,11 @@ impl Ident {
     ///
     /// If the string already exists in the interner, returns the existing identifier.
     pub fn new(s: &str) -> Self {
+        // Read-lock fast path for the common repeat-lookup case, avoiding the write lock
+        // `get_or_intern` always takes.
+        if let Some(sym) = STRING_INTERNER.read().unwrap().get(s) {
+            return Self(sym);
+        }
         Self(STRING_INTERNER.write().unwrap().get_or_intern(s))
     }
 

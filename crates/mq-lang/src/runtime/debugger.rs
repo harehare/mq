@@ -2,9 +2,8 @@ use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
 use crate::ast::node as ast;
-use crate::eval::Evaluator;
-use crate::eval::env::Env;
-use crate::{ModuleResolver, Shared, SharedCell, Token};
+use crate::runtime::env::Env;
+use crate::{Shared, SharedCell, Token};
 
 use std::{collections::HashSet, fmt::Debug};
 
@@ -68,6 +67,9 @@ pub struct DebugContext {
     pub call_stack: Vec<Shared<ast::Node>>,
     /// Current evaluation environment info
     pub env: Shared<SharedCell<Env>>,
+    /// Snapshot of the VM operand stack at the current statement boundary.
+    #[cfg(feature = "debug-trace")]
+    pub operand_stack: Vec<RuntimeValue>,
     /// Optional source
     pub source: Source,
 }
@@ -83,10 +85,12 @@ impl Default for DebugContext {
             token: Shared::new(Token {
                 kind: crate::TokenKind::Eof,
                 range: crate::Range::default(),
-                module_id: crate::eval::module::ModuleId::new(0),
+                module_id: crate::ModuleId::new(0),
             }),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: Vec::new(),
             source: Source::default(),
         }
     }
@@ -482,21 +486,11 @@ pub struct DefaultDebuggerHandler;
 
 impl DebuggerHandler for DefaultDebuggerHandler {}
 
-impl<T: ModuleResolver, IO: crate::io::Io> Evaluator<T, IO> {
-    pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
-        Shared::clone(&self.debugger)
-    }
-
-    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
-        self.debugger_handler = Shared::new(SharedCell::new(handler));
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use crate::{Arena, Range, TokenKind, ast::TokenId, eval::module::ModuleId};
+    use crate::{Arena, ModuleId, Range, TokenKind, ast::TokenId};
 
     use super::*;
 
@@ -535,6 +529,8 @@ mod tests {
             token: Shared::clone(&token),
             call_stack: Vec::new(),
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(feature = "debug-trace")]
+            operand_stack: Vec::new(),
             source: Source::default(),
         }
     }

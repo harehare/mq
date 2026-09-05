@@ -26,6 +26,10 @@ impl ModuleResolver for StdModuleResolver {
     }
 
     fn set_search_paths(&mut self, _paths: Vec<PathBuf>) {}
+
+    fn is_immutable_module(&self, module_path: &str) -> bool {
+        STANDARD_MODULES.contains_key(module_path)
+    }
 }
 
 #[cfg(test)]

@@ -2,7 +2,7 @@ use super::builtin;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
 use crate::error::runtime::RuntimeError;
-use crate::{Ident, SharedCell, Token, TokenArena, get_token};
+use crate::{Ident, Shared, SharedCell, Token, TokenArena, get_token};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::error::Error;
@@ -165,6 +165,12 @@ pub struct Env {
     context: EnvContext,
     mutable_vars: Option<FxHashSet<Ident>>,
     parent: Option<Weak<SharedCell<Env>>>,
+    /// Strong parent ownership for debugger snapshots.
+    ///
+    /// Normal evaluator scopes are owned by their active call frames and use `parent`'s
+    /// weak link to avoid reference cycles. A VM debugger snapshot outlives its paused
+    /// frame, so it retains the parent here to keep captured variables inspectable.
+    _debug_parent: Option<Shared<SharedCell<Env>>>,
 }
 
 impl PartialEq for Env {
@@ -222,15 +228,21 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "markdown".to_string(),
             },
-            RuntimeValue::Function(params, _, _) => Variable {
+            RuntimeValue::Function(f) => Variable {
                 name: ident.to_string(),
-                value: format!("function/{}", params.len()),
+                value: format!("function/{}", f.params.len()),
                 type_field: "function".to_string(),
             },
             RuntimeValue::NativeFunction(_) => Variable {
                 name: ident.to_string(),
                 value: "native function".to_string(),
                 type_field: "native_function".to_string(),
+            },
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(_) => Variable {
+                name: ident.to_string(),
+                value: "function".to_string(),
+                type_field: "function".to_string(),
             },
             RuntimeValue::Module(m) => Variable {
                 name: m.name().to_string(),
@@ -292,7 +304,28 @@ impl Env {
             context: EnvContext::new_small(),
             mutable_vars: None,
             parent: Some(parent),
+            _debug_parent: None,
         }
+    }
+
+    /// Creates a debugger-only child scope that keeps its parent snapshot alive.
+    #[cfg(feature = "debugger")]
+    pub(crate) fn with_retained_parent(parent: Shared<SharedCell<Env>>) -> Self {
+        Self {
+            context: EnvContext::new_small(),
+            mutable_vars: None,
+            parent: Some(Shared::downgrade(&parent)),
+            _debug_parent: Some(parent),
+        }
+    }
+
+    /// This scope's own bindings, for the VM's debug-expression bridge.
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    pub(crate) fn raw_entries(&self) -> Vec<(Ident, RuntimeValue)> {
+        self.context
+            .iter_entries()
+            .map(|(ident, value)| (ident, value.clone()))
+            .collect()
     }
 
     /// Collects the names of every binding visible from this scope (this scope plus all
@@ -1162,7 +1195,7 @@ mod tests {
         ]
     )]
     #[case(
-        vec![("x", RuntimeValue::String("hello".into())), ("y", RuntimeValue::None)],
+        vec![("x", RuntimeValue::String(Shared::new("hello".into()))), ("y", RuntimeValue::None)],
         vec![
             Variable { name: "x".to_string(), value: "hello".to_string(), type_field: "string".to_string() },
             Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }

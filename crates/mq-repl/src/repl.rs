@@ -350,7 +350,11 @@ impl Repl {
     }
 
     /// Creates a REPL from a pre-configured engine (e.g. with capabilities already set).
-    pub fn with_engine(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
+    #[cfg_attr(not(feature = "tarn"), allow(unused_mut))]
+    pub fn with_engine(mut engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
+        #[cfg(feature = "tarn")]
+        engine.enable_query_session();
+
         Self {
             command_context: Rc::new(RefCell::new(CommandContext::new(engine, input))),
         }
@@ -558,7 +562,7 @@ mod tests {
 
     #[test]
     fn test_format_runtime_value_string() {
-        let v = mq_lang::RuntimeValue::String("hello".to_string());
+        let v = mq_lang::RuntimeValue::String("hello".to_string().into());
         let s = format_runtime_value(&v).unwrap();
         assert!(s.contains("hello"));
         assert!(s.contains('"'));

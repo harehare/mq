@@ -626,7 +626,7 @@ proptest! {
 
         prop_assert_eq!(result.len(), 1, "Should produce exactly one value");
         if let RuntimeValue::String(val) = &result[0] {
-            prop_assert_eq!(val, &s, "String value should match");
+            prop_assert_eq!(val.as_str(), s.as_str(), "String value should match");
         } else {
             return Err(TestCaseError::fail(format!("Expected string, got {:?}", result[0])));
         }

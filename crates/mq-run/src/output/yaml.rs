@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn test_string_value() {
-        let values = vec![RuntimeValue::String("hello".to_string())];
+        let values = vec![RuntimeValue::String(Shared::new("hello".to_string()))];
         let result = runtime_values_to_yaml(&values).unwrap();
         assert_eq!(result.trim(), "hello");
     }
@@ -62,7 +62,10 @@ mod tests {
     #[test]
     fn test_dict_value() {
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        map.insert(
+            mq_lang::Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_yaml(&values).unwrap();
         assert!(result.contains("name: Alice"));
@@ -71,8 +74,8 @@ mod tests {
     #[test]
     fn test_array_value() {
         let values = vec![RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
         ]))];
         let result = runtime_values_to_yaml(&values).unwrap();
         assert!(result.contains("- a"));
@@ -82,8 +85,8 @@ mod tests {
     #[test]
     fn test_multiple_values_becomes_sequence() {
         let values = vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
         ];
         let result = runtime_values_to_yaml(&values).unwrap();
         let parsed = yaml_rust2::YamlLoader::load_from_str(&result).unwrap();
