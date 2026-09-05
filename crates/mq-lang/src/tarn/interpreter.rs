@@ -522,10 +522,7 @@ fn run_impl_with_bindings(
         #[cfg(feature = "debugger")]
         debug,
     )
-    .and_then(|result| match result {
-        StackValue::Value(v) => Ok(v),
-        StackValue::Closure(_) => Err(VmError::Corrupt("top-level result is a closure")),
-    });
+    .map(|result| into_runtime_value(result, &compiled.chunks));
     (result, limits.into_pools())
 }
 
@@ -594,10 +591,7 @@ fn run_impl_capturing_locals(
     if reusable_locals {
         execution.limits.recycle_locals(locals);
     }
-    let result = raw_result.and_then(|result| match result {
-        StackValue::Value(v) => Ok(v),
-        StackValue::Closure(_) => Err(VmError::Corrupt("top-level result is a closure")),
-    });
+    let result = raw_result.map(|result| into_runtime_value(result, chunks));
     (result, captured, limits.into_pools())
 }
 
