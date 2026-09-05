@@ -12,7 +12,7 @@ fn json_quote(s: &str) -> String {
     serde_json::to_string(s).unwrap()
 }
 
-fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTheme<'_>) -> String {
+fn colorize_json_value(value: &serde_json::Value, indent: usize, indent_unit: &str, theme: &ColorTheme<'_>) -> String {
     let reset = &theme.code.1;
 
     match value {
@@ -24,11 +24,17 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
             if arr.is_empty() {
                 return "[]".to_string();
             }
-            let indent_str = "  ".repeat(indent);
-            let inner_indent = "  ".repeat(indent + 1);
+            let indent_str = indent_unit.repeat(indent);
+            let inner_indent = indent_unit.repeat(indent + 1);
             let items: Vec<String> = arr
                 .iter()
-                .map(|v| format!("{}{}", inner_indent, colorize_json_value(v, indent + 1, theme)))
+                .map(|v| {
+                    format!(
+                        "{}{}",
+                        inner_indent,
+                        colorize_json_value(v, indent + 1, indent_unit, theme)
+                    )
+                })
                 .collect();
             format!("[\n{}\n{}]", items.join(",\n"), indent_str)
         }
@@ -36,8 +42,8 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
             if map.is_empty() {
                 return "{}".to_string();
             }
-            let indent_str = "  ".repeat(indent);
-            let inner_indent = "  ".repeat(indent + 1);
+            let indent_str = indent_unit.repeat(indent);
+            let inner_indent = indent_unit.repeat(indent + 1);
             let items: Vec<String> = map
                 .iter()
                 .map(|(k, v)| {
@@ -47,7 +53,7 @@ fn colorize_json_value(value: &serde_json::Value, indent: usize, theme: &ColorTh
                         theme.link_url.0,
                         json_quote(k),
                         reset,
-                        colorize_json_value(v, indent + 1, theme)
+                        colorize_json_value(v, indent + 1, indent_unit, theme)
                     )
                 })
                 .collect();
@@ -119,21 +125,21 @@ fn colorize_json_value_compact(value: &serde_json::Value, theme: &ColorTheme<'_>
 }
 
 /// Converts a list of [`mq_lang::RuntimeValue`]s into a JSON string.
-/// `theme` enables ANSI color; `compact` renders a single line.
+/// `theme` enables ANSI color; `compact` renders a single line; `indent_unit`
+/// (e.g. `"  "` or `"\t"`) sets the per-level indent for pretty output.
 pub(crate) fn runtime_values_to_json(
     runtime_values: &[mq_lang::RuntimeValue],
     theme: Option<&ColorTheme<'_>>,
     compact: bool,
+    indent_unit: &str,
 ) -> miette::Result<String> {
     let result = runtime_values_to_json_value(runtime_values);
 
     match (theme, compact) {
         (Some(theme), true) => Ok(colorize_json_value_compact(&result, theme)),
-        (Some(theme), false) => Ok(colorize_json_value(&result, 0, theme)),
+        (Some(theme), false) => Ok(colorize_json_value(&result, 0, indent_unit, theme)),
         (None, true) => serde_json::to_string(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e)),
-        (None, false) => {
-            serde_json::to_string_pretty(&result).map_err(|e| miette!("Failed to serialize to JSON: {}", e))
-        }
+        (None, false) => Ok(colorize_json_value(&result, 0, indent_unit, &ColorTheme::PLAIN)),
     }
 }
 
@@ -153,7 +159,7 @@ mod tests {
     #[case(vec![RuntimeValue::Boolean(false)], "false")]
     #[case(vec![RuntimeValue::None], "null")]
     fn test_single_non_markdown_no_theme(#[case] values: Vec<RuntimeValue>, #[case] expected: &str) {
-        let result = runtime_values_to_json(&values, None, false).unwrap();
+        let result = runtime_values_to_json(&values, None, false, "  ").unwrap();
         assert_eq!(result, expected);
     }
 
@@ -163,7 +169,7 @@ mod tests {
             RuntimeValue::String("a".to_string()),
             RuntimeValue::String("b".to_string()),
         ];
-        let result = runtime_values_to_json(&values, None, false).unwrap();
+        let result = runtime_values_to_json(&values, None, false, "  ").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert!(parsed.is_array());
         assert_eq!(parsed.as_array().unwrap().len(), 2);
@@ -173,7 +179,7 @@ mod tests {
     fn test_empty_markdown_filtered_out() {
         let empty_node = mq_markdown::Node::Empty;
         let values = vec![RuntimeValue::Markdown(Box::new(empty_node), None)];
-        let result = runtime_values_to_json(&values, None, false).unwrap();
+        let result = runtime_values_to_json(&values, None, false, "  ").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert!(parsed.is_array());
         assert!(parsed.as_array().unwrap().is_empty());
@@ -183,7 +189,7 @@ mod tests {
     fn test_with_plain_theme_null() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::None];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("null"));
     }
 
@@ -191,7 +197,7 @@ mod tests {
     fn test_with_plain_theme_bool() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::Boolean(true)];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("true"));
     }
 
@@ -200,7 +206,7 @@ mod tests {
         let theme = plain_theme();
         // Build a Number RuntimeValue via From<usize>
         let values = vec![RuntimeValue::from(42usize)];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("42"));
     }
 
@@ -208,7 +214,7 @@ mod tests {
     fn test_with_plain_theme_string() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::String("hi".to_string())];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("hi"));
     }
 
@@ -216,7 +222,7 @@ mod tests {
     fn test_colorize_array_empty() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::Array(Shared::new(vec![]))];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert_eq!(result, "[]");
     }
 
@@ -227,7 +233,7 @@ mod tests {
             RuntimeValue::String("x".to_string()),
             RuntimeValue::String("y".to_string()),
         ]))];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains('[') && result.contains(']'));
         assert!(result.contains("\"x\"") && result.contains("\"y\""));
     }
@@ -236,7 +242,7 @@ mod tests {
     fn test_colorize_object_empty() {
         let theme = plain_theme();
         let values = vec![RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::new()))];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert_eq!(result, "{}");
     }
 
@@ -246,7 +252,7 @@ mod tests {
         let mut map = std::collections::BTreeMap::new();
         map.insert(mq_lang::Ident::new("key"), RuntimeValue::String("val".to_string()));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
-        let result = runtime_values_to_json(&values, Some(&theme), false).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert!(result.contains("key") && result.contains("val"));
     }
 
@@ -256,7 +262,7 @@ mod tests {
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
         map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
-        let result = runtime_values_to_json(&values, None, true).unwrap();
+        let result = runtime_values_to_json(&values, None, true, "  ").unwrap();
         assert_eq!(result, r#"{"a":1,"b":2}"#);
     }
 
@@ -267,7 +273,22 @@ mod tests {
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
         map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
-        let result = runtime_values_to_json(&values, Some(&theme), true).unwrap();
+        let result = runtime_values_to_json(&values, Some(&theme), true, "  ").unwrap();
         assert_eq!(result, r#"{"a":1,"b":2}"#);
+    }
+
+    #[test]
+    fn test_custom_indent_width_no_theme() {
+        let values = vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::from(1usize)]))];
+        let result = runtime_values_to_json(&values, None, false, "    ").unwrap();
+        assert_eq!(result, "[\n    1\n]");
+    }
+
+    #[test]
+    fn test_tab_indent_with_theme() {
+        let theme = plain_theme();
+        let values = vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::from(1usize)]))];
+        let result = runtime_values_to_json(&values, Some(&theme), false, "\t").unwrap();
+        assert_eq!(result, "[\n\t1\n]");
     }
 }
