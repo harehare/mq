@@ -3583,6 +3583,47 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
+// get_variable/set_variable are tree-walker-only (deprecated, scheduled for removal in the
+// next release) and are not registered as builtins when the `tarn` feature is enabled.
+#[cfg(not(feature = "tarn"))]
+#[rstest]
+#[case::get_variable_simple("
+          let x = 42
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::set_variable_simple("
+          set_variable(\"x\", 99)
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(99.into())].into()))]
+#[case::set_variable_overwrite("
+          set_variable(\"x\", 1)
+          | set_variable(\"x\", 2)
+          | get_variable(\"x\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::set_and_get_multiple_variables("
+          set_variable(\"a\", \"foo\")
+          | set_variable(\"b\", \"bar\")
+          | get_variable(\"a\") + get_variable(\"b\")
+          ",
+          vec![RuntimeValue::Number(0.into())],
+          Ok(vec![RuntimeValue::String(Shared::new("foobar".to_string()))].into()))]
+#[case::set_variable_symbol(r#"set_variable(:myvar, 42) | get_variable(:myvar)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::set_variable_string_key(r#"set_variable("myvar", 42) | get_variable("myvar") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
+fn test_get_set_variable_deprecated(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] input: Vec<RuntimeValue>,
+    #[case] expected: MqResult,
+) {
+    assert_eq!(engine.eval(program, input.into_iter()), expected);
+}
+
 #[rstest]
 #[case::invalid_function_syntax("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(): 1 | func1(); | func1()", vec![RuntimeValue::Number(0.into())])]
