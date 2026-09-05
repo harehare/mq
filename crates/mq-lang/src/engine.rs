@@ -2,6 +2,8 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+#[cfg(all(feature = "debugger", feature = "tarn"))]
+use crate::Source;
 use crate::io::{Io, NativeIo, SandboxedIo};
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
@@ -14,7 +16,7 @@ use crate::{
     module::resolver::DefaultModuleResolver, token_alloc,
 };
 #[cfg(feature = "debugger")]
-use crate::{Debugger, DebuggerHandler, Source};
+use crate::{Debugger, DebuggerHandler};
 use crate::{
     ModuleLoader, Token,
     arena::Arena,
@@ -188,53 +190,50 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
         }
     }
 
-    /// Evaluates `code` against a paused debug frame's live bindings in `env`, with `input` bound
-    /// to `.`/`self`.
-    ///
-    /// Unlike `switch_env(env).eval(...)`, this works under `tarn` too: the VM never reads a
-    /// dynamic [`Env`], so it compiles `code` with `env`'s bindings predeclared as slots instead.
-    #[cfg(feature = "debugger")]
+    /// Evaluates `code` against a paused Tarn VM frame's bindings, with `input` bound to
+    /// `.`/`self`.
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    pub fn eval_debug_expression(
+        &mut self,
+        code: &str,
+        input: RuntimeValue,
+        bindings: &[(crate::Ident, RuntimeValue)],
+    ) -> MqResult {
+        let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
+        let program = parse(code, Shared::clone(&self.token_arena))?;
+        #[cfg(feature = "sync")]
+        let host_functions = self.vm.host_functions.read().unwrap().clone();
+        #[cfg(not(feature = "sync"))]
+        let host_functions = self.vm.host_functions.borrow().clone();
+
+        tarn::eval_debug_expression(
+            &program,
+            Shared::clone(&self.token_arena),
+            self.vm.module_loader.with_same_resolver(),
+            input,
+            bindings,
+            &host_functions,
+        )
+        .map(|value| vec![value].into())
+        .map_err(|error| {
+            Box::new(error::Error::from_error(
+                code,
+                error.into_inner_error(Shared::clone(&self.token_arena)),
+                self.vm.module_loader.clone(),
+            ))
+        })
+    }
+
+    /// Evaluates `code` against a paused tree-walker environment, with `input` bound to
+    /// `.`/`self`.
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
     pub fn eval_debug_expression(
         &mut self,
         code: &str,
         input: RuntimeValue,
         env: &Shared<SharedCell<Env>>,
     ) -> MqResult {
-        #[cfg(feature = "tarn")]
-        {
-            #[cfg(not(feature = "sync"))]
-            let bindings = env.borrow().raw_entries();
-            #[cfg(feature = "sync")]
-            let bindings = env.read().unwrap().raw_entries();
-
-            let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
-            let program = parse(code, Shared::clone(&self.token_arena))?;
-            #[cfg(feature = "sync")]
-            let host_functions = self.vm.host_functions.read().unwrap().clone();
-            #[cfg(not(feature = "sync"))]
-            let host_functions = self.vm.host_functions.borrow().clone();
-
-            tarn::eval_debug_expression(
-                &program,
-                Shared::clone(&self.token_arena),
-                self.vm.module_loader.with_same_resolver(),
-                input,
-                &bindings,
-                &host_functions,
-            )
-            .map(|value| vec![value].into())
-            .map_err(|error| {
-                Box::new(error::Error::from_error(
-                    code,
-                    error.into_inner_error(Shared::clone(&self.token_arena)),
-                    self.vm.module_loader.clone(),
-                ))
-            })
-        }
-        #[cfg(not(feature = "tarn"))]
-        {
-            self.switch_env(Shared::clone(env)).eval(code, vec![input].into_iter())
-        }
+        self.switch_env(Shared::clone(env)).eval(code, vec![input].into_iter())
     }
 }
 
@@ -505,8 +504,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let program = parse(code, Shared::clone(&self.token_arena))?;
         let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
-        #[cfg(feature = "debugger")]
+        #[cfg(all(feature = "debugger", feature = "tarn"))]
         self.vm.module_loader.set_source_code(code.to_string());
+        #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+        self.evaluator.module_loader.set_source_code(code.to_string());
 
         #[cfg(feature = "tarn")]
         {
@@ -574,8 +575,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         compiled: &CompiledProgram,
         input: I,
     ) -> MqResult {
-        #[cfg(feature = "debugger")]
+        #[cfg(all(feature = "debugger", feature = "tarn"))]
         self.vm.module_loader.set_source_code(compiled.source.clone());
+        #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+        self.evaluator.module_loader.set_source_code(compiled.source.clone());
 
         #[cfg(feature = "tarn")]
         {
@@ -692,14 +695,24 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// This allows interactive debugging of mq code execution when the
     /// `debugger` feature is enabled. Use this to inspect or control
     /// the execution state for advanced debugging scenarios.
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
         Shared::clone(&self.vm.debugger)
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+    pub fn debugger(&self) -> Shared<SharedCell<Debugger>> {
+        Shared::clone(&self.evaluator.debugger)
+    }
+
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
         self.vm.debugger_handler = Shared::new(SharedCell::new(handler));
+    }
+
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+    pub fn set_debugger_handler(&mut self, handler: Box<dyn DebuggerHandler>) {
+        self.evaluator.debugger_handler = Shared::new(SharedCell::new(handler));
     }
 
     #[cfg(feature = "debugger")]
@@ -707,16 +720,25 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         Shared::clone(&self.token_arena)
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     pub fn get_module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
         self.vm.module_loader.module_name(module_id)
     }
 
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+    pub fn get_module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
+        self.evaluator.module_loader.module_name(module_id)
+    }
+
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
-        let source_code = self.vm.module_loader.get_source_code_for_debug(module_id);
+        #[cfg(feature = "tarn")]
+        let module_loader = &self.vm.module_loader;
+        #[cfg(not(feature = "tarn"))]
+        let module_loader = &self.evaluator.module_loader;
+        let source_code = module_loader.get_source_code_for_debug(module_id);
 
-        source_code.map_err(|e| Box::new(error::Error::from_error("", e.into(), self.vm.module_loader.clone())))
+        source_code.map_err(|e| Box::new(error::Error::from_error("", e.into(), module_loader.clone())))
     }
 
     /// Resolves `module_name` to the path its resolver loaded it from.
@@ -1378,34 +1400,32 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     #[test]
     fn test_eval_debug_expression_vm() {
-        use crate::runtime::env::Env;
-        use crate::{RuntimeValue, Shared, SharedCell};
+        use crate::RuntimeValue;
 
         let mut engine = DefaultEngine::default();
-        let env = Shared::new(SharedCell::new(Env::default()));
-        env.write().unwrap().define("x".into(), RuntimeValue::Number(41.into()));
+        let bindings = [(crate::Ident::new("x"), RuntimeValue::Number(41.into()))];
 
         assert_eq!(
-            engine.eval_debug_expression("x + 1", RuntimeValue::NONE, &env).unwrap()[0],
+            engine
+                .eval_debug_expression("x + 1", RuntimeValue::NONE, &bindings)
+                .unwrap()[0],
             RuntimeValue::Number(42.into())
         );
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     #[test]
     fn test_eval_debug_expression_vm_sees_current_value_as_self() {
-        use crate::runtime::env::Env;
-        use crate::{RuntimeValue, Shared, SharedCell};
+        use crate::RuntimeValue;
 
         let mut engine = DefaultEngine::default();
-        let env = Shared::new(SharedCell::new(Env::default()));
 
         assert_eq!(
             engine
-                .eval_debug_expression(". + 1", RuntimeValue::Number(41.into()), &env)
+                .eval_debug_expression(". + 1", RuntimeValue::Number(41.into()), &[])
                 .unwrap()[0],
             RuntimeValue::Number(42.into())
         );
@@ -1666,7 +1686,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
     #[test]
     fn test_eval_compiled_vm_notifies_debugger_of_uncaught_error() {
         use crate::{DebugContext, DebuggerHandler, RuntimeValue};

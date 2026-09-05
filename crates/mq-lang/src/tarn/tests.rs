@@ -1224,7 +1224,11 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
 
     impl DebuggerHandler for RecordingHandler {
         fn on_breakpoint_hit(&self, _breakpoint: &crate::Breakpoint, context: &DebugContext) -> DebuggerAction {
-            if let Ok(value) = context.env.read().unwrap().resolve(crate::Ident::new("inner")) {
+            if let Some((_, value)) = context
+                .vm_bindings()
+                .into_iter()
+                .find(|(name, _)| *name == crate::Ident::new("inner"))
+            {
                 self.inner_values.lock().unwrap().push(value);
             }
             #[cfg(feature = "debug-trace")]
@@ -1257,7 +1261,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         function_line,
         None,
         None,
-        Some("inner == 2 && outer == 10".to_string()),
+        Some("is_expected(inner) && outer == 10".to_string()),
         None,
         None,
     );
@@ -1270,6 +1274,13 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
             #[cfg(feature = "debug-trace")]
             operand_stacks: Arc::clone(&operand_stacks),
         })));
+    let mut host_functions = HostFunctions::default();
+    host_functions.insert("is_expected", |args: &[RuntimeValue]| {
+        Ok(RuntimeValue::Boolean(matches!(
+            args.first(),
+            Some(RuntimeValue::Number(number)) if number.value() == 2.0
+        )))
+    });
     let mut hook = debugger::VmDebuggerHook::new(
         debugger,
         handler,
@@ -1279,6 +1290,8 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
             code: String::new(),
         },
         Default::default(),
+        ModuleLoader::new(StdModuleResolver),
+        host_functions,
     );
 
     interpreter::run_with_debug_hook_and_globals(
@@ -1295,6 +1308,93 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
     assert!(inner_values.lock().unwrap().contains(&RuntimeValue::Number(2.0.into())));
     #[cfg(feature = "debug-trace")]
     assert!(!operand_stacks.lock().unwrap().is_empty());
+}
+
+#[cfg(feature = "debugger")]
+#[rstest]
+#[case::local_slot("let x = 1 |\nx + 1", 0, "x", false, true, 42)]
+#[case::captured_upvalue("let x = 1 |\nlet f = fn():\n  x + 1; |\nf()", 1, "x", true, true, 42)]
+#[case::top_level_global_scope("let x = 1 |\nx + 1", 0, "x", true, true, 42)]
+#[case::unknown_binding("let x = 1 |\nx + 1", 0, "missing", false, false, 2)]
+fn vm_debugger_hook_applies_live_frame_writes(
+    #[case] code: &str,
+    #[case] target_chunk: usize,
+    #[case] name: &str,
+    #[case] prefer_upvalue: bool,
+    #[case] write_expected: bool,
+    #[case] expected: i64,
+) {
+    use crate::{DebugContext, DebuggerAction, DebuggerHandler, Source, get_token};
+
+    #[derive(Debug)]
+    struct MutatingHandler {
+        name: String,
+        prefer_upvalue: bool,
+        write_expected: bool,
+    }
+
+    impl DebuggerHandler for MutatingHandler {
+        fn on_breakpoint_hit(&self, _breakpoint: &crate::Breakpoint, context: &DebugContext) -> DebuggerAction {
+            assert_eq!(
+                context.set_vm_variable(&self.name, RuntimeValue::Number(41.into()), self.prefer_upvalue),
+                self.write_expected
+            );
+            DebuggerAction::Continue
+        }
+    }
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(
+        &program,
+        Shared::clone(&token_arena),
+        ModuleLoader::new(StdModuleResolver),
+    )
+    .unwrap();
+    let line = compiled.chunks[target_chunk]
+        .debug_nodes
+        .iter()
+        .map(|(token_id, _)| get_token(Shared::clone(&token_arena), *token_id).range.start.line as usize)
+        .max()
+        .unwrap();
+
+    let debugger = Shared::new(SharedCell::new(crate::Debugger::new()));
+    debugger.write().unwrap().activate();
+    debugger
+        .write()
+        .unwrap()
+        .add_breakpoint_with_options(line, None, None, None, None, None);
+    let handler: Shared<SharedCell<Box<dyn DebuggerHandler>>> =
+        Shared::new(SharedCell::new(Box::new(MutatingHandler {
+            name: name.to_string(),
+            prefer_upvalue,
+            write_expected,
+        })));
+    let mut hook = debugger::VmDebuggerHook::new(
+        debugger,
+        handler,
+        token_arena,
+        Source {
+            name: None,
+            code: String::new(),
+        },
+        Default::default(),
+        ModuleLoader::new(StdModuleResolver),
+        HostFunctions::default(),
+    );
+
+    let result = interpreter::run_with_debug_hook_and_globals(
+        &compiled,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        crate::eval::Options::default().max_call_stack_depth,
+        &[],
+        &mut hook,
+    )
+    .unwrap();
+
+    assert_eq!(result, RuntimeValue::Number(expected.into()));
 }
 
 #[cfg(feature = "debugger")]
@@ -1338,6 +1438,8 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
             code: String::new(),
         },
         Default::default(),
+        ModuleLoader::new(StdModuleResolver),
+        HostFunctions::default(),
     );
 
     let result = interpreter::run_with_debug_hook_and_globals(
@@ -1413,6 +1515,8 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
             code: String::new(),
         },
         Default::default(),
+        ModuleLoader::new(StdModuleResolver),
+        HostFunctions::default(),
     );
 
     interpreter::run_with_debug_hook_and_globals(

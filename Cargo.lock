@@ -2611,6 +2611,7 @@ dependencies = [
  "dap",
  "miette",
  "mq-lang",
+ "rstest",
  "serde",
  "serde_json",
  "tempfile",

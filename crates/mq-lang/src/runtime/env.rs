@@ -2,7 +2,7 @@ use super::builtin;
 use super::runtime_value::RuntimeValue;
 use crate::ast::TokenId;
 use crate::error::runtime::RuntimeError;
-use crate::{Ident, Shared, SharedCell, Token, TokenArena, get_token};
+use crate::{Ident, SharedCell, Token, TokenArena, get_token};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 use std::error::Error;
@@ -165,12 +165,6 @@ pub struct Env {
     context: EnvContext,
     mutable_vars: Option<FxHashSet<Ident>>,
     parent: Option<Weak<SharedCell<Env>>>,
-    /// Strong parent ownership for debugger snapshots.
-    ///
-    /// Normal evaluator scopes are owned by their active call frames and use `parent`'s
-    /// weak link to avoid reference cycles. A VM debugger snapshot outlives its paused
-    /// frame, so it retains the parent here to keep captured variables inspectable.
-    _debug_parent: Option<Shared<SharedCell<Env>>>,
 }
 
 impl PartialEq for Env {
@@ -191,7 +185,8 @@ pub struct Variable {
 
 #[cfg(feature = "debugger")]
 impl Variable {
-    fn from(ident: Ident, value: &RuntimeValue) -> Self {
+    /// Creates debugger display metadata for a runtime binding.
+    pub fn from(ident: Ident, value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::Array(_) => Variable {
                 name: ident.to_string(),
@@ -304,28 +299,7 @@ impl Env {
             context: EnvContext::new_small(),
             mutable_vars: None,
             parent: Some(parent),
-            _debug_parent: None,
         }
-    }
-
-    /// Creates a debugger-only child scope that keeps its parent snapshot alive.
-    #[cfg(feature = "debugger")]
-    pub(crate) fn with_retained_parent(parent: Shared<SharedCell<Env>>) -> Self {
-        Self {
-            context: EnvContext::new_small(),
-            mutable_vars: None,
-            parent: Some(Shared::downgrade(&parent)),
-            _debug_parent: Some(parent),
-        }
-    }
-
-    /// This scope's own bindings, for the VM's debug-expression bridge.
-    #[cfg(all(feature = "tarn", feature = "debugger"))]
-    pub(crate) fn raw_entries(&self) -> Vec<(Ident, RuntimeValue)> {
-        self.context
-            .iter_entries()
-            .map(|(ident, value)| (ident, value.clone()))
-            .collect()
     }
 
     /// Collects the names of every binding visible from this scope (this scope plus all

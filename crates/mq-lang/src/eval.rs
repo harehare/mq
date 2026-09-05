@@ -178,7 +178,7 @@ pub struct Evaluator<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sandbox
     pub(crate) host_functions: Shared<SharedCell<HostFunctions>>,
 
     #[cfg(feature = "debugger")]
-    debugger: Shared<SharedCell<Debugger>>,
+    pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
@@ -326,6 +326,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
         let context = DebugContext {
             token: Shared::clone(&token),
             call_stack: self.debugger.read().unwrap().current_call_stack(),
+            #[cfg(not(feature = "tarn"))]
             env: Shared::clone(&self.env),
             source: Source {
                 name: if token.module_id == Module::TOP_LEVEL_MODULE_ID {
@@ -675,7 +676,7 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
 
     #[inline(never)]
     #[cfg(feature = "debugger")]
-    fn eval_debugger(&self, runtime_value: &RuntimeValue, node: Shared<ast::Node>, env: Shared<SharedCell<Env>>) {
+    fn eval_debugger(&self, runtime_value: &RuntimeValue, node: Shared<ast::Node>, _env: Shared<SharedCell<Env>>) {
         let current_call_stack = self.debugger.read().unwrap().current_call_stack();
         let token = get_token(Shared::clone(&self.token_arena), node.token_id);
 
@@ -684,7 +685,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
             current_node: Shared::clone(&node),
             token: Shared::clone(&token),
             call_stack: current_call_stack,
-            env: Shared::clone(&env),
+            #[cfg(not(feature = "tarn"))]
+            env: Shared::clone(&_env),
+            #[cfg(feature = "tarn")]
+            vm_frame: Default::default(),
             #[cfg(feature = "debug-trace")]
             operand_stack: Vec::new(),
             source: Source {
@@ -1350,7 +1354,10 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 current_node: Shared::clone(node),
                 token: Shared::clone(token),
                 call_stack,
+                #[cfg(not(feature = "tarn"))]
                 env: Shared::clone(env),
+                #[cfg(feature = "tarn")]
+                vm_frame: Default::default(),
                 #[cfg(feature = "debug-trace")]
                 operand_stack: Vec::new(),
                 source: Source {

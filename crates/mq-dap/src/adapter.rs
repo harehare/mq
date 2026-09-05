@@ -81,10 +81,7 @@ impl MqAdapter {
     fn get_local_variables_from_context(&self) -> Vec<types::Variable> {
         if let Some(ref context) = self.current_debug_context {
             context
-                .env
-                .read()
-                .unwrap()
-                .get_local_variables()
+                .local_variables()
                 .iter()
                 .map(|v| types::Variable {
                     name: v.name.to_string(),
@@ -107,10 +104,7 @@ impl MqAdapter {
     fn get_global_variables_from_context(&self) -> Vec<types::Variable> {
         if let Some(ref context) = self.current_debug_context {
             context
-                .env
-                .read()
-                .unwrap()
-                .get_global_variables()
+                .global_variables()
                 .iter()
                 .map(|v| types::Variable {
                     name: v.name.to_string(),
@@ -298,20 +292,36 @@ impl MqAdapter {
     }
 
     /// Evaluate code in the current debug context
-    fn eval(&self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
-        let Some(context) = self.current_debug_context.as_ref() else {
+    fn eval(&mut self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
+        let Some(context) = self.current_debug_context.clone() else {
             return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
                 "Current context not found",
             ))) as Box<dyn std::error::Error>);
         };
 
-        mq_lang::DefaultEngine::default()
-            .eval_debug_expression(code, context.current_value.clone(), &context.env)
-            .map_err(|e| {
-                let error_msg = format!("Evaluation error: {}", e);
-                error!(error = %error_msg);
-                Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
-            })
+        #[cfg(feature = "tarn")]
+        let result = self
+            .engine
+            .eval_debug_expression(code, context.current_value.clone(), &context.vm_bindings());
+        #[cfg(not(feature = "tarn"))]
+        let result = self
+            .engine
+            .eval_debug_expression(code, context.current_value.clone(), &context.env);
+
+        result.map_err(|e| {
+            let error_msg = format!("Evaluation error: {}", e);
+            error!(error = %error_msg);
+            Box::new(MqAdapterError::EvaluationError(Cow::Owned(error_msg))) as Box<dyn std::error::Error>
+        })
+    }
+
+    #[cfg(feature = "tarn")]
+    fn eval_single_value(&mut self, code: &str) -> DynResult<mq_lang::RuntimeValue> {
+        self.eval(code)?.values().first().cloned().ok_or_else(|| {
+            Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                "Expression produced no value",
+            ))) as Box<dyn std::error::Error>
+        })
     }
 
     /// Handle DAP request and send appropriate response
@@ -512,35 +522,94 @@ impl MqAdapter {
             }
             Command::SetVariable(args) => {
                 debug!(?args, "Received SetVariables request");
-                self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
+                #[cfg(feature = "tarn")]
+                {
+                    let name = args.name.clone();
+                    let response_value = args.value.clone();
+                    let value = self.eval_single_value(&response_value)?;
+                    let Some(context) = self.current_debug_context.as_ref() else {
+                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                            "Current context not found",
+                        ))));
+                    };
+                    let prefer_upvalue = args.variables_reference == 1;
+                    if !context.set_vm_variable(&name, value, prefer_upvalue) {
+                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
+                            "Variable `{}` is not visible in this VM scope",
+                            name
+                        )))));
+                    }
+                    let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
+                        value: response_value,
+                        indexed_variables: None,
+                        named_variables: None,
+                        type_field: None,
+                        variables_reference: None,
+                    }));
+                    server.respond(rsp)?;
+                }
+                #[cfg(not(feature = "tarn"))]
+                {
+                    self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
 
-                let value = args.value.clone();
-                let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
-                    value,
-                    indexed_variables: None,
-                    named_variables: None,
-                    type_field: None,
-                    variables_reference: None,
-                }));
-                server.respond(rsp)?;
+                    let value = args.value.clone();
+                    let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
+                        value,
+                        indexed_variables: None,
+                        named_variables: None,
+                        type_field: None,
+                        variables_reference: None,
+                    }));
+                    server.respond(rsp)?;
+                }
             }
             Command::SetExpression(args) => {
                 debug!(?args, "Received SetExpression request");
-                self.eval(format!("let {} = {}", args.expression, args.value).as_str())?;
+                #[cfg(feature = "tarn")]
+                {
+                    let expression = args.expression.clone();
+                    let response_value = args.value.clone();
+                    let value = self.eval_single_value(&response_value)?;
+                    let Some(context) = self.current_debug_context.as_ref() else {
+                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                            "Current context not found",
+                        ))));
+                    };
+                    if !context.set_vm_expression(&expression, value) {
+                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
+                            "Expression `{}` is not a visible VM variable",
+                            expression
+                        )))));
+                    }
+                    let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
+                        value: response_value,
+                        type_field: None,
+                        presentation_hint: None,
+                        variables_reference: None,
+                        named_variables: None,
+                        indexed_variables: None,
+                    }));
+                    server.respond(rsp)?;
+                }
+                #[cfg(not(feature = "tarn"))]
+                {
+                    self.eval(format!("let {} = {}", args.expression, args.value).as_str())?;
 
-                let value = args.value.clone();
-                let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
-                    value,
-                    type_field: None,
-                    presentation_hint: None,
-                    variables_reference: None,
-                    named_variables: None,
-                    indexed_variables: None,
-                }));
-                server.respond(rsp)?;
+                    let value = args.value.clone();
+                    let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
+                        value,
+                        type_field: None,
+                        presentation_hint: None,
+                        variables_reference: None,
+                        named_variables: None,
+                        indexed_variables: None,
+                    }));
+                    server.respond(rsp)?;
+                }
             }
             Command::Continue(_) => {
                 debug!("Received Continue request");
+                self.current_debug_context = None;
                 self.send_debugger_command(DapCommand::Continue)?;
                 let rsp = req.success(ResponseBody::Continue(ContinueResponse {
                     all_threads_continued: Some(true),
@@ -549,18 +618,21 @@ impl MqAdapter {
             }
             Command::Next(_) => {
                 debug!("Received Next request");
+                self.current_debug_context = None;
                 self.send_debugger_command(DapCommand::Next)?;
                 let rsp = req.success(ResponseBody::Next);
                 server.respond(rsp)?;
             }
             Command::StepIn(_) => {
                 debug!("Received StepIn request");
+                self.current_debug_context = None;
                 self.send_debugger_command(DapCommand::StepIn)?;
                 let rsp = req.success(ResponseBody::StepIn);
                 server.respond(rsp)?;
             }
             Command::StepOut(_) => {
                 debug!("Received StepOut request");
+                self.current_debug_context = None;
                 self.send_debugger_command(DapCommand::StepOut)?;
                 let rsp = req.success(ResponseBody::StepOut);
                 server.respond(rsp)?;
@@ -572,6 +644,7 @@ impl MqAdapter {
             }
             Command::Disconnect(_) => {
                 debug!("Received Disconnect request");
+                self.current_debug_context = None;
 
                 // Send terminate command to debugger handler
                 let _ = self.send_debugger_command(DapCommand::Terminate);
@@ -627,7 +700,7 @@ impl MqAdapter {
                     },
                     types::Scope {
                         name: "LOCAL".to_string(),
-                        variables_reference: args.frame_id + 1,
+                        variables_reference: args.frame_id + 2,
                         expensive: false,
                         named_variables: None,
                         indexed_variables: None,
@@ -663,6 +736,8 @@ mod tests {
     use dap::server::Server;
     use mq_lang::Shared;
     use std::io::{BufReader, BufWriter, Cursor};
+    #[cfg(feature = "tarn")]
+    use std::time::Duration;
 
     #[test]
     fn test_adapter_new_and_default() {
@@ -735,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_eval_without_context() {
-        let adapter = MqAdapter::new();
+        let mut adapter = MqAdapter::new();
         let result = adapter.eval("1 + 1");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Current context not found"));
@@ -1037,10 +1112,10 @@ mod tests {
         };
 
         let result = adapter.handle_request(req, &mut server);
-        // The result might succeed or fail - just ensure it doesn't panic
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_ok());
     }
 
+    #[cfg(not(feature = "tarn"))]
     #[test]
     fn test_eval_resolves_debug_context_bindings() {
         let mut adapter = MqAdapter::new();
@@ -1093,16 +1168,18 @@ mod tests {
             .try_iter()
             .find_map(|message| match message {
                 DebuggerMessage::BreakpointHit { context, .. }
-                    if context.env.read().unwrap().resolve("x".into()).is_ok() =>
+                    if context.global_variables().iter().any(|variable| variable.name == "x") =>
                 {
                     Some(context)
                 }
                 _ => None,
             })
             .expect("the breakpoint should expose the live x binding to DAP");
-        assert_eq!(
-            context.env.read().unwrap().resolve("x".into()).unwrap(),
-            mq_lang::RuntimeValue::Number(41.into())
+        assert!(
+            context
+                .global_variables()
+                .iter()
+                .any(|variable| variable.name == "x" && variable.value == "41")
         );
 
         adapter.current_debug_context = Some(context);
@@ -1115,6 +1192,121 @@ mod tests {
                 .get_global_variables_from_context()
                 .iter()
                 .any(|variable| variable.name == "x" && variable.value == "41")
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[rstest::rstest]
+    #[case::top_level_global_set_variable("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", false, 42)]
+    #[case::top_level_set_expression("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", true, 42)]
+    #[case::captured_global_set_variable(
+        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+        3,
+        1,
+        "outer",
+        "10",
+        "40",
+        false,
+        42
+    )]
+    #[case::local_set_variable(
+        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+        3,
+        2,
+        "inner",
+        "2",
+        "41",
+        false,
+        51
+    )]
+    #[case::captured_set_expression(
+        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+        3,
+        2,
+        "outer",
+        "10",
+        "40",
+        true,
+        42
+    )]
+    fn test_dap_mutation_updates_paused_tarn_vm_frame(
+        #[case] code: &'static str,
+        #[case] breakpoint_line: usize,
+        #[case] variables_reference: i64,
+        #[case] name: &str,
+        #[case] initial_value: &str,
+        #[case] updated_value: &str,
+        #[case] use_set_expression: bool,
+        #[case] expected: i64,
+    ) {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter.engine.debugger().write().unwrap().add_breakpoint_with_options(
+            breakpoint_line,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let mut engine = adapter.engine.clone();
+        let evaluation = thread::spawn(move || engine.eval(code, mq_lang::null_input().into_iter()));
+        let message = adapter
+            .debugger_message_rx()
+            .as_ref()
+            .expect("the DAP message receiver must be configured")
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the VM should stop at the configured breakpoint");
+
+        let input = BufReader::new(Cursor::new(Vec::new()));
+        let output = BufWriter::new(Cursor::new(Vec::new()));
+        let mut server = Server::new(input, output);
+        adapter.handle_debugger_message(message, &mut server).unwrap();
+        assert!(
+            adapter
+                .get_global_variables_from_context()
+                .iter()
+                .chain(adapter.get_local_variables_from_context().iter())
+                .any(|variable| variable.name == name && variable.value == initial_value)
+        );
+
+        let command = if use_set_expression {
+            Command::SetExpression(dap::requests::SetExpressionArguments {
+                expression: name.to_string(),
+                value: updated_value.to_string(),
+                frame_id: None,
+                format: None,
+            })
+        } else {
+            Command::SetVariable(dap::requests::SetVariableArguments {
+                variables_reference,
+                name: name.to_string(),
+                value: updated_value.to_string(),
+                format: None,
+            })
+        };
+        adapter
+            .handle_request(Request { seq: 1, command }, &mut server)
+            .unwrap();
+        // The compiler can emit multiple source boundaries for the function-body line. The
+        // first command resumes the frame whose binding we changed; the rest keep this focused
+        // integration test from blocking on a later boundary at the same breakpoint.
+        for _ in 0..16 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        assert_eq!(
+            evaluation.join().unwrap().unwrap()[0],
+            mq_lang::RuntimeValue::Number(expected.into())
+        );
+        assert!(
+            !adapter.current_debug_context.as_ref().unwrap().set_vm_variable(
+                name,
+                mq_lang::RuntimeValue::Number(99.into()),
+                false
+            ),
+            "a context from a resumed VM frame must reject stale writes"
         );
     }
 
@@ -1152,7 +1344,10 @@ mod tests {
             .try_iter()
             .find_map(|message| match message {
                 DebuggerMessage::BreakpointHit { context, .. }
-                    if context.env.read().unwrap().resolve("inner".into()).is_ok() =>
+                    if context
+                        .local_variables()
+                        .iter()
+                        .any(|variable| variable.name == "inner") =>
                 {
                     Some(context)
                 }
@@ -1194,8 +1389,7 @@ mod tests {
         };
 
         let result = adapter.handle_request(req, &mut server);
-        // The result might succeed or fail - just ensure it doesn't panic
-        assert!(result.is_ok() || result.is_err());
+        assert!(result.is_err());
     }
 
     #[test]
@@ -1380,8 +1574,8 @@ mod tests {
         };
 
         let result = adapter.handle_request(req, &mut server);
-        // No active debug context yet, so evaluation fails, but the command must be handled
-        // (not fall through to UnhandledCommand) now that supportsSetExpression is advertised.
+        // No active debug context exists, so either backend must reject this request rather
+        // than treating it as an unknown command.
         assert!(result.is_err());
         assert!(!matches!(
             result.unwrap_err().downcast_ref::<MqAdapterError>(),

@@ -26,4 +26,5 @@ tracing = {workspace = true}
 tracing-subscriber = {workspace = true, features = ["env-filter"]}
 
 [dev-dependencies]
+rstest = {workspace = true}
 tempfile = {workspace = true}

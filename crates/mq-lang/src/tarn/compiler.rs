@@ -820,6 +820,11 @@ impl<R: ModuleResolver> Compiler<R> {
         name_for_shadow: Option<crate::Ident>,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let outer = self.current;
+        if self.chunks.len() > usize::from(u16::MAX) {
+            return Err(CompileError::InvalidBytecode(
+                "too many functions/closures for the VM (maximum 65536)".to_string(),
+            ));
+        }
         self.chunks.push(Chunk::default());
         let new_index = (self.chunks.len() - 1) as u16;
         self.current = new_index as usize;
@@ -1197,7 +1202,10 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
             }
         }
-        self.emit(OpCode::InterpString(segments.len() as u16));
+        let count = u16::try_from(segments.len()).map_err(|_| {
+            CompileError::InvalidBytecode("too many interpolation segments for the VM (maximum 65535)".to_string())
+        })?;
+        self.emit(OpCode::InterpString(count));
         Ok(())
     }
 
