@@ -659,9 +659,11 @@ where
     let mut hook = debugger::VmDebuggerHook::new(
         context.debugger,
         context.handler,
-        context.engine.token_arena,
+        Shared::clone(&context.engine.token_arena),
         context.source,
         compiled.debug_sources.clone(),
+        context.engine.module_loader.with_same_resolver(),
+        context.engine.host_functions.clone(),
     );
 
     let mut values = Vec::new();
@@ -881,9 +883,11 @@ where
         let mut hook = debugger::VmDebuggerHook::new(
             context.debugger,
             context.handler,
-            context.engine.token_arena,
+            Shared::clone(&context.engine.token_arena),
             context.source,
             compiled.debug_sources.clone(),
+            context.engine.module_loader.with_same_resolver(),
+            context.engine.host_functions.clone(),
         );
         return inputs
             .map(|input| {
@@ -919,6 +923,8 @@ where
         Shared::clone(&context.engine.token_arena),
         context.source,
         compiled.debug_sources.clone(),
+        context.engine.module_loader.with_same_resolver(),
+        context.engine.host_functions.clone(),
     );
     let let_names = let_names_before_nodes(before);
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();

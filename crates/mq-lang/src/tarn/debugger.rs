@@ -1,23 +1,24 @@
 use super::interpreter::{DebugEvent, DebugHook};
 use super::{compiler, interpreter};
-use crate::runtime::env::Env;
 use crate::runtime::host::HostFunctions;
 use crate::{
-    Breakpoint, DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, RuntimeValue, Shared, SharedCell, Source,
-    TokenArena, get_token,
+    Breakpoint, DebugContext, Debugger, DebuggerHandler, Ident, ModuleLoader, ModuleResolver, RuntimeValue, Shared,
+    SharedCell, Source, TokenArena, get_token,
 };
 
 /// Adapts VM boundary events to the shared debugger API.
-pub(crate) struct VmDebuggerHook {
+pub(crate) struct VmDebuggerHook<R: ModuleResolver> {
     debugger: Shared<SharedCell<Debugger>>,
     handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
     token_arena: TokenArena,
     source: Source,
     sources: Vec<(crate::ModuleId, Source)>,
+    module_loader: ModuleLoader<R>,
+    host_functions: HostFunctions,
     last_context: Option<DebugContext>,
 }
 
-impl VmDebuggerHook {
+impl<R: ModuleResolver> VmDebuggerHook<R> {
     /// Creates a VM debugger adapter for one compiled source.
     pub(crate) fn new(
         debugger: Shared<SharedCell<Debugger>>,
@@ -25,6 +26,8 @@ impl VmDebuggerHook {
         token_arena: TokenArena,
         source: Source,
         sources: Vec<(crate::ModuleId, Source)>,
+        module_loader: ModuleLoader<R>,
+        host_functions: HostFunctions,
     ) -> Self {
         Self {
             debugger,
@@ -32,6 +35,8 @@ impl VmDebuggerHook {
             token_arena,
             source,
             sources,
+            module_loader,
+            host_functions,
             last_context: None,
         }
     }
@@ -56,11 +61,11 @@ impl VmDebuggerHook {
         let compiled = compiler::compile_debug_expression(
             &program,
             Shared::clone(&self.token_arena),
-            ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
+            self.module_loader.with_same_resolver(),
             &names,
         )
         .ok()?;
-        interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &HostFunctions::default()).ok()
+        interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &self.host_functions).ok()
     }
 
     fn breakpoint_matches(&self, breakpoint: &crate::Breakpoint, bindings: &[(Ident, RuntimeValue)]) -> bool {
@@ -121,34 +126,27 @@ impl VmDebuggerHook {
     }
 }
 
-impl VmDebuggerHook {
+impl<R: ModuleResolver> VmDebuggerHook<R> {
     fn build_context(&mut self, event: DebugEvent) -> (DebugContext, Shared<crate::Token>, Vec<(Ident, RuntimeValue)>) {
-        // Keep captured bindings separate from frame locals for DAP scopes.
-        let parent_env = Shared::new(SharedCell::new(Env::default()));
-        for (name, value) in &event.upvalue_bindings {
-            parent_env.write().unwrap().define(*name, value.clone());
-        }
-        let env = if event.call_stack.is_empty() {
-            for (name, value) in &event.local_bindings {
-                parent_env.write().unwrap().define(*name, value.clone());
-            }
-            Shared::clone(&parent_env)
-        } else {
-            let env = Shared::new(SharedCell::new(Env::with_retained_parent(Shared::clone(&parent_env))));
-            for (name, value) in &event.local_bindings {
-                env.write().unwrap().define(*name, value.clone());
-            }
-            env
-        };
-        let token = get_token(Shared::clone(&self.token_arena), event.token_id);
-        let context = DebugContext {
-            current_value: event.current_value,
-            current_node: event.node,
-            token: Shared::clone(&token),
-            call_stack: event.call_stack,
-            env,
+        let DebugEvent {
+            token_id,
+            node,
+            current_value,
+            bindings,
+            vm_frame,
+            call_stack,
             #[cfg(feature = "debug-trace")]
-            operand_stack: event.operand_stack,
+            operand_stack,
+        } = event;
+        let token = get_token(Shared::clone(&self.token_arena), token_id);
+        let context = DebugContext {
+            current_value,
+            current_node: node,
+            token: Shared::clone(&token),
+            call_stack,
+            vm_frame,
+            #[cfg(feature = "debug-trace")]
+            operand_stack,
             source: self
                 .sources
                 .iter()
@@ -157,11 +155,11 @@ impl VmDebuggerHook {
                 .unwrap_or_else(|| self.source.clone()),
         };
         self.last_context = Some(context.clone());
-        (context, token, event.bindings)
+        (context, token, bindings)
     }
 }
 
-impl DebugHook for VmDebuggerHook {
+impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
     fn on_boundary(&mut self, event: DebugEvent) {
         if !self.debugger.read().unwrap().is_active() {
             return;

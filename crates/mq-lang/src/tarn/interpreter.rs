@@ -142,8 +142,11 @@ impl ExecutionLimits {
 use super::debug_symbols::DebugSlot;
 #[cfg(feature = "debugger")]
 use crate::ast::node::Node;
+#[cfg(feature = "debugger")]
+use crate::runtime::debugger::{VmDebugBinding, VmDebugFrame};
 
-/// A read-only snapshot of a VM frame at a source evaluation boundary.
+/// A snapshot of a VM frame at a source evaluation boundary, with a shared queue for writes
+/// requested while execution is paused.
 #[cfg(feature = "debugger")]
 #[derive(Debug, Clone)]
 pub(crate) struct DebugEvent {
@@ -151,14 +154,13 @@ pub(crate) struct DebugEvent {
     pub(crate) node: Shared<Node>,
     pub(crate) current_value: RuntimeValue,
     pub(crate) bindings: Vec<(Ident, RuntimeValue)>,
-    pub(crate) local_bindings: Vec<(Ident, RuntimeValue)>,
-    pub(crate) upvalue_bindings: Vec<(Ident, RuntimeValue)>,
+    pub(crate) vm_frame: VmDebugFrame,
     pub(crate) call_stack: Vec<Shared<Node>>,
     #[cfg(feature = "debug-trace")]
     pub(crate) operand_stack: Vec<RuntimeValue>,
 }
 
-/// Receives VM debug boundaries. Implementations may inspect, but cannot mutate, frames.
+/// Receives VM debug boundaries. Implementations can queue frame writes while the VM is paused.
 #[cfg(feature = "debugger")]
 pub(crate) trait DebugHook {
     fn on_boundary(&mut self, event: DebugEvent);
@@ -950,8 +952,8 @@ fn current_self(locals: &Locals) -> RuntimeValue {
 #[cfg(feature = "debugger")]
 fn debug_bindings(chunk: &Chunk, locals: &Locals, upvalues: &[Cell]) -> Option<DebugBindings> {
     let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
-    let mut local_bindings = Vec::new();
-    let mut upvalue_bindings = Vec::new();
+    let mut local_slots = Vec::new();
+    let mut upvalue_slots = Vec::new();
     for (name, slot) in chunk.debug_symbols.bindings() {
         let value = match slot {
             DebugSlot::Local(slot) => locals.get_checked(*slot),
@@ -960,24 +962,39 @@ fn debug_bindings(chunk: &Chunk, locals: &Locals, upvalues: &[Cell]) -> Option<D
         if let StackValue::Value(value) = value {
             let binding = (*name, value);
             match slot {
-                DebugSlot::Local(_) => local_bindings.push(binding.clone()),
-                DebugSlot::Upvalue(_) => upvalue_bindings.push(binding.clone()),
+                DebugSlot::Local(slot) => {
+                    local_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
+                }
+                DebugSlot::Upvalue(slot) => {
+                    upvalue_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
+                }
             }
             bindings.push(binding);
         }
     }
     Some(DebugBindings {
         bindings,
-        local_bindings,
-        upvalue_bindings,
+        vm_frame: VmDebugFrame::new(local_slots, upvalue_slots),
     })
 }
 
 #[cfg(feature = "debugger")]
 struct DebugBindings {
     bindings: Vec<(Ident, RuntimeValue)>,
-    local_bindings: Vec<(Ident, RuntimeValue)>,
-    upvalue_bindings: Vec<(Ident, RuntimeValue)>,
+    vm_frame: VmDebugFrame,
+}
+
+#[cfg(feature = "debugger")]
+fn apply_debug_updates(frame: &VmDebugFrame, locals: &Locals, upvalues: &[Cell]) {
+    for update in frame.take_pending_updates() {
+        if update.is_upvalue {
+            if let Some(cell) = upvalues.get(update.slot as usize) {
+                write_cell(cell, StackValue::Value(update.value));
+            }
+        } else if (update.slot as usize) < locals.len() {
+            locals.set(update.slot, StackValue::Value(update.value));
+        }
+    }
 }
 
 fn run_chunk(
@@ -1087,11 +1104,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
 
-                let DebugBindings {
-                    bindings,
-                    local_bindings,
-                    upvalue_bindings,
-                } = debug_bindings(chunk, locals, upvalues)
+                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_boundary(DebugEvent {
@@ -1099,8 +1112,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         node,
                         current_value: current_self(locals),
                         bindings,
-                        local_bindings,
-                        upvalue_bindings,
+                        vm_frame: vm_frame.clone(),
                         call_stack: debug.call_stack.clone(),
                         #[cfg(feature = "debug-trace")]
                         operand_stack: stack
@@ -1110,6 +1122,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                             .collect(),
                     });
                 }
+                apply_debug_updates(&vm_frame, locals, upvalues);
             }
             #[cfg(feature = "debugger")]
             OpCode::Breakpoint(token_id) => {
@@ -1121,11 +1134,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
 
-                let DebugBindings {
-                    bindings,
-                    local_bindings,
-                    upvalue_bindings,
-                } = debug_bindings(chunk, locals, upvalues)
+                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_explicit_breakpoint(DebugEvent {
@@ -1133,8 +1142,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         node,
                         current_value: current_self(locals),
                         bindings,
-                        local_bindings,
-                        upvalue_bindings,
+                        vm_frame: vm_frame.clone(),
                         call_stack: debug.call_stack.clone(),
                         #[cfg(feature = "debug-trace")]
                         operand_stack: stack
@@ -1144,6 +1152,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                             .collect(),
                     });
                 }
+                apply_debug_updates(&vm_frame, locals, upvalues);
             }
             OpCode::Const(idx) => stack.push(StackValue::Value(
                 unsafe { chunk.constants.get_unchecked(*idx as usize) }.clone(),

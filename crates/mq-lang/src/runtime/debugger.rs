@@ -1,7 +1,10 @@
 use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
+#[cfg(feature = "tarn")]
+use crate::Ident;
 use crate::ast::node as ast;
+#[cfg(not(feature = "tarn"))]
 use crate::runtime::env::Env;
 use crate::{Shared, SharedCell, Token};
 
@@ -65,8 +68,12 @@ pub struct DebugContext {
     pub token: Shared<Token>,
     /// Call stack of AST nodes representing the current execution path
     pub call_stack: Vec<Shared<ast::Node>>,
-    /// Current evaluation environment info
+    /// Current evaluation environment info for the tree-walker backend.
+    #[cfg(not(feature = "tarn"))]
     pub env: Shared<SharedCell<Env>>,
+    /// Live VM bindings for the paused frame.
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    pub(crate) vm_frame: VmDebugFrame,
     /// Snapshot of the VM operand stack at the current statement boundary.
     #[cfg(feature = "debug-trace")]
     pub operand_stack: Vec<RuntimeValue>,
@@ -88,11 +95,175 @@ impl Default for DebugContext {
                 module_id: crate::ModuleId::new(0),
             }),
             call_stack: Vec::new(),
+            #[cfg(not(feature = "tarn"))]
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(all(feature = "tarn", feature = "debugger"))]
+            vm_frame: VmDebugFrame::default(),
             #[cfg(feature = "debug-trace")]
             operand_stack: Vec::new(),
             source: Source::default(),
         }
+    }
+}
+
+/// A variable visible in a paused Tarn VM frame.
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[derive(Debug, Clone)]
+pub(crate) struct VmDebugBinding {
+    name: Ident,
+    slot: u16,
+    value: RuntimeValue,
+}
+
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+impl VmDebugBinding {
+    pub(crate) fn new(name: Ident, slot: u16, value: RuntimeValue) -> Self {
+        Self { name, slot, value }
+    }
+}
+
+/// A pending write to a VM slot requested while execution is stopped.
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[derive(Debug, Clone)]
+pub(crate) struct VmDebugUpdate {
+    pub(crate) is_upvalue: bool,
+    pub(crate) slot: u16,
+    pub(crate) value: RuntimeValue,
+}
+
+/// Shared state for a paused Tarn VM frame.
+///
+/// The debugger handler blocks the VM while a DAP client inspects the frame, so updates queued
+/// here can safely be applied by the interpreter immediately before it resumes execution.
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[derive(Debug, Clone)]
+pub(crate) struct VmDebugFrame {
+    locals: Shared<SharedCell<Vec<VmDebugBinding>>>,
+    upvalues: Shared<SharedCell<Vec<VmDebugBinding>>>,
+    pending_updates: Shared<SharedCell<Vec<VmDebugUpdate>>>,
+    active: Shared<SharedCell<bool>>,
+}
+
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+impl Default for VmDebugFrame {
+    fn default() -> Self {
+        Self {
+            locals: Shared::new(SharedCell::new(Vec::new())),
+            upvalues: Shared::new(SharedCell::new(Vec::new())),
+            pending_updates: Shared::new(SharedCell::new(Vec::new())),
+            active: Shared::new(SharedCell::new(true)),
+        }
+    }
+}
+
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+impl VmDebugFrame {
+    pub(crate) fn new(locals: Vec<VmDebugBinding>, upvalues: Vec<VmDebugBinding>) -> Self {
+        Self {
+            locals: Shared::new(SharedCell::new(locals)),
+            upvalues: Shared::new(SharedCell::new(upvalues)),
+            pending_updates: Shared::new(SharedCell::new(Vec::new())),
+            active: Shared::new(SharedCell::new(true)),
+        }
+    }
+
+    fn variables(bindings: &Shared<SharedCell<Vec<VmDebugBinding>>>) -> Vec<super::env::Variable> {
+        bindings
+            .read()
+            .unwrap()
+            .iter()
+            .map(|binding| super::env::Variable::from(binding.name, &binding.value))
+            .collect()
+    }
+
+    fn bindings(&self) -> Vec<(Ident, RuntimeValue)> {
+        self.upvalues
+            .read()
+            .unwrap()
+            .iter()
+            .chain(self.locals.read().unwrap().iter())
+            .map(|binding| (binding.name, binding.value.clone()))
+            .collect()
+    }
+
+    fn set_variable(&self, name: Ident, value: RuntimeValue, prefer_upvalue: bool) -> bool {
+        if !*self.active.read().unwrap() {
+            return false;
+        }
+        let (bindings, is_upvalue) = if prefer_upvalue {
+            (&self.upvalues, true)
+        } else {
+            (&self.locals, false)
+        };
+        let mut bindings = bindings.write().unwrap();
+        let Some(binding) = bindings.iter_mut().rev().find(|binding| binding.name == name) else {
+            return false;
+        };
+        binding.value = value.clone();
+        self.pending_updates.write().unwrap().push(VmDebugUpdate {
+            is_upvalue,
+            slot: binding.slot,
+            value,
+        });
+        true
+    }
+
+    fn set_expression(&self, name: Ident, value: RuntimeValue) -> bool {
+        self.set_variable(name, value.clone(), false) || self.set_variable(name, value, true)
+    }
+
+    pub(crate) fn take_pending_updates(&self) -> Vec<VmDebugUpdate> {
+        *self.active.write().unwrap() = false;
+        std::mem::take(&mut *self.pending_updates.write().unwrap())
+    }
+}
+
+impl DebugContext {
+    /// Returns variables local to the currently paused frame.
+    #[cfg(feature = "debugger")]
+    pub fn local_variables(&self) -> Vec<super::env::Variable> {
+        #[cfg(feature = "tarn")]
+        {
+            VmDebugFrame::variables(&self.vm_frame.locals)
+        }
+        #[cfg(not(feature = "tarn"))]
+        self.env.read().unwrap().get_local_variables()
+    }
+
+    /// Returns variables captured from the enclosing frame or global scope.
+    #[cfg(feature = "debugger")]
+    pub fn global_variables(&self) -> Vec<super::env::Variable> {
+        #[cfg(feature = "tarn")]
+        {
+            if self.call_stack.is_empty() {
+                VmDebugFrame::variables(&self.vm_frame.locals)
+            } else {
+                VmDebugFrame::variables(&self.vm_frame.upvalues)
+            }
+        }
+        #[cfg(not(feature = "tarn"))]
+        self.env.read().unwrap().get_global_variables()
+    }
+
+    /// Returns the bindings visible to a paused Tarn VM frame.
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    pub fn vm_bindings(&self) -> Vec<(Ident, RuntimeValue)> {
+        self.vm_frame.bindings()
+    }
+
+    /// Queues an update to a local or captured Tarn VM binding.
+    ///
+    /// The update takes effect when the VM debugger hook returns to the interpreter.
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    pub fn set_vm_variable(&self, name: &str, value: RuntimeValue, prefer_upvalue: bool) -> bool {
+        self.vm_frame
+            .set_variable(Ident::new(name), value, prefer_upvalue && !self.call_stack.is_empty())
+    }
+
+    /// Queues an update to any visible Tarn VM binding, preferring a local binding over a capture.
+    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    pub fn set_vm_expression(&self, name: &str, value: RuntimeValue) -> bool {
+        self.vm_frame.set_expression(Ident::new(name), value)
     }
 }
 
@@ -528,7 +699,10 @@ mod tests {
             current_node: node,
             token: Shared::clone(&token),
             call_stack: Vec::new(),
+            #[cfg(not(feature = "tarn"))]
             env: Shared::new(SharedCell::new(Env::default())),
+            #[cfg(feature = "tarn")]
+            vm_frame: Default::default(),
             #[cfg(feature = "debug-trace")]
             operand_stack: Vec::new(),
             source: Source::default(),
