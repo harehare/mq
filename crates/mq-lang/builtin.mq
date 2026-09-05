@@ -1510,6 +1510,24 @@ def slugify(s, separator = "-"):
   | gsub("^-+|-+$", "")
 end
 
+# Quotes a string for safe use as a POSIX shell argument (like jq's `@sh` format).
+#
+# Example:
+# ```
+# shell_quote("it's a test")
+# #=> 'it'"'"'s a test'
+# ```
+#
+# Returns: string
+def shell_quote(s):
+  if (is_empty(s)):
+    ""
+  elif (test(s, "^[A-Za-z0-9_@%+=:,./-]+$")):
+    s
+  else:
+    "'" + replace(s, "'", "'\"'\"'") + "'"
+end
+
 # Calculates the p-th percentile of an array of numbers using linear interpolation between closest ranks.
 #
 # Example:
