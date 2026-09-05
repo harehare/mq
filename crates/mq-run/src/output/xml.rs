@@ -109,12 +109,16 @@ fn write_json_as_xml(writer: &mut Writer<&mut Vec<u8>>, tag: &str, value: &serde
     Ok(())
 }
 
-/// Converts a list of [`RuntimeValue`]s into an XML string.
-pub(crate) fn runtime_values_to_xml(runtime_values: &[RuntimeValue]) -> miette::Result<String> {
+/// Converts a list of [`RuntimeValue`]s into an XML string, indented with `indent_size` repetitions of `indent_char` per nesting level.
+pub(crate) fn runtime_values_to_xml(
+    runtime_values: &[RuntimeValue],
+    indent_char: u8,
+    indent_size: usize,
+) -> miette::Result<String> {
     let non_none: Vec<&RuntimeValue> = runtime_values.iter().filter(|v| !v.is_none()).collect();
 
     let mut buf = Vec::new();
-    let mut writer = Writer::new_with_indent(&mut buf, b' ', 2);
+    let mut writer = Writer::new_with_indent(&mut buf, indent_char, indent_size);
     writer
         .write_event(Event::Decl(BytesDecl::new("1.0", Some("UTF-8"), None)))
         .map_err(xml_err)?;
@@ -148,7 +152,7 @@ mod tests {
         map.insert(Ident::new("text"), RuntimeValue::String("hello".to_string()));
 
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
-        let result = runtime_values_to_xml(&values).unwrap();
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("<root id=\"1\">hello</root>"));
     }
 
@@ -157,7 +161,7 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
-        let result = runtime_values_to_xml(&values).unwrap();
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("<root>"));
         assert!(result.contains("<name>Alice</name>"));
     }
@@ -168,7 +172,7 @@ mod tests {
             RuntimeValue::String("a".to_string()),
             RuntimeValue::String("b".to_string()),
         ]))];
-        let result = runtime_values_to_xml(&values).unwrap();
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("<item>a</item>"));
         assert!(result.contains("<item>b</item>"));
     }
@@ -176,14 +180,32 @@ mod tests {
     #[test]
     fn test_text_escaping() {
         let values = vec![RuntimeValue::String("<tag> & \"quote\"".to_string())];
-        let result = runtime_values_to_xml(&values).unwrap();
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("&lt;tag&gt; &amp;"));
     }
 
     #[test]
     fn test_empty_dict() {
         let values = vec![RuntimeValue::Dict(Shared::new(BTreeMap::new()))];
-        let result = runtime_values_to_xml(&values).unwrap();
+        let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("<root/>"));
+    }
+
+    #[test]
+    fn test_custom_indent_width() {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
+        let result = runtime_values_to_xml(&values, b' ', 4).unwrap();
+        assert!(result.contains("\n    <name>Alice</name>"));
+    }
+
+    #[test]
+    fn test_tab_indent() {
+        let mut map = BTreeMap::new();
+        map.insert(Ident::new("name"), RuntimeValue::String("Alice".to_string()));
+        let values = vec![RuntimeValue::Dict(Shared::new(map))];
+        let result = runtime_values_to_xml(&values, b'\t', 1).unwrap();
+        assert!(result.contains("\n\t<name>Alice</name>"));
     }
 }

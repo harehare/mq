@@ -631,6 +631,21 @@ struct OutputArgs {
     /// Print JSON on a single line, without pretty-printing. Only valid with -F json.
     #[arg(long, default_value_t = false)]
     compact: bool,
+
+    /// Number of spaces per indent level in pretty-printed output (0-7), jq's
+    /// `--indent`. Only valid with -F json or -F xml; default is 2.
+    #[arg(
+        long,
+        value_name = "N",
+        value_parser = clap::value_parser!(u8).range(0..=7),
+        conflicts_with_all = ["tab", "compact"]
+    )]
+    indent: Option<u8>,
+
+    /// Indent pretty-printed output with tabs instead of spaces, jq's `--tab`.
+    /// Only valid with -F json or -F xml.
+    #[arg(long, default_value_t = false, conflicts_with_all = ["indent", "compact"])]
+    tab: bool,
 }
 
 impl OutputArgs {
@@ -653,6 +668,24 @@ impl OutputArgs {
             values.into_iter().take(limit).collect()
         } else {
             values
+        }
+    }
+
+    /// The per-level indent string for pretty-printed JSON output, honoring `--tab`/`--indent`.
+    fn json_indent_unit(&self) -> String {
+        if self.tab {
+            "\t".to_string()
+        } else {
+            " ".repeat(self.indent.unwrap_or(2) as usize)
+        }
+    }
+
+    /// The `(indent_char, indent_size)` pair for pretty-printed XML output, honoring `--tab`/`--indent`.
+    fn xml_indent(&self) -> (u8, usize) {
+        if self.tab {
+            (b'\t', 1)
+        } else {
+            (b' ', self.indent.unwrap_or(2) as usize)
         }
     }
 }
@@ -1425,6 +1458,12 @@ impl Cli {
 
         if self.output.compact && !matches!(self.resolved_output_format(), OutputFormat::Json) {
             return Err(miette!("--compact is only valid with -F json"));
+        }
+
+        if (self.output.indent.is_some() || self.output.tab)
+            && !matches!(self.resolved_output_format(), OutputFormat::Json | OutputFormat::Xml)
+        {
+            return Err(miette!("--indent/--tab are only valid with -F json or -F xml"));
         }
 
         if (self.input.csv_delimiter.is_some() || self.input.no_header)
@@ -2505,8 +2544,12 @@ impl Cli {
             }
             OutputFormat::Json => {
                 let theme = colorize.then(mq_markdown::ColorTheme::from_env);
-                let json_str =
-                    crate::output::json::runtime_values_to_json(runtime_values, theme.as_ref(), self.output.compact)?;
+                let json_str = crate::output::json::runtime_values_to_json(
+                    runtime_values,
+                    theme.as_ref(),
+                    self.output.compact,
+                    &self.output.json_indent_unit(),
+                )?;
                 buf.extend_from_slice(json_str.as_bytes());
             }
             OutputFormat::Html => {
@@ -2552,7 +2595,8 @@ impl Cli {
                 buf.extend_from_slice(toon_str.as_bytes());
             }
             OutputFormat::Xml => {
-                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values)?;
+                let (indent_char, indent_size) = self.output.xml_indent();
+                let xml_str = crate::output::xml::runtime_values_to_xml(runtime_values, indent_char, indent_size)?;
                 buf.extend_from_slice(xml_str.as_bytes());
             }
             OutputFormat::Yaml => {
