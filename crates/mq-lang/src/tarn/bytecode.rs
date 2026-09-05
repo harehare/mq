@@ -444,6 +444,7 @@ pub(crate) enum BytecodeError {
     MissingReturn(usize),
     ConstantOutOfBounds { chunk: usize, pc: usize, index: u16 },
     LocalOutOfBounds { chunk: usize, pc: usize, slot: u16 },
+    UpvalueOutOfBounds { chunk: usize, pc: usize, index: u16 },
     ChunkOutOfBounds { chunk: usize, pc: usize, target: u16 },
     StaticClosureOutOfBounds { chunk: usize, pc: usize, index: u16 },
     JumpOutOfBounds { chunk: usize, pc: usize, target: isize },
@@ -459,6 +460,9 @@ impl fmt::Display for BytecodeError {
             }
             Self::LocalOutOfBounds { chunk, pc, slot } => {
                 write!(f, "chunk {chunk} pc {pc} references local slot {slot} out of bounds")
+            }
+            Self::UpvalueOutOfBounds { chunk, pc, index } => {
+                write!(f, "chunk {chunk} pc {pc} references upvalue {index} out of bounds")
             }
             Self::ChunkOutOfBounds { chunk, pc, target } => {
                 write!(f, "chunk {chunk} pc {pc} references chunk {target} out of bounds")
@@ -748,6 +752,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                     verify_jump_target(chunk, chunk_index, pc, *exit_offset)?;
+                }
+                OpCode::GetUpvalue(index) | OpCode::SetUpvalue(index) => {
+                    if *index as usize >= chunk.upvalue_names.len() {
+                        return Err(BytecodeError::UpvalueOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
                 }
                 OpCode::MakeClosure(payload) => verify_chunk_target(chunks, chunk_index, pc, payload.0)?,
                 OpCode::MakeStaticClosure(index) => {

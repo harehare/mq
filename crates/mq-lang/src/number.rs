@@ -167,7 +167,15 @@ impl Rem for Number {
     fn rem(self, other: Self) -> Self {
         // `f64 %` lowers to a `fmod` libm call; integer-valued operands (by far the common
         // case for `%`) give the same truncated-division result via a hardware `i64 %`.
-        if self.is_int() && other.is_int() && other.0 != 0.0 {
+        // Only take this path when both operands actually fit in an `i64` — otherwise the
+        // `as i64` cast saturates and silently produces a wrong result.
+        const I64_RANGE: std::ops::RangeInclusive<f64> = (i64::MIN as f64)..=(i64::MAX as f64);
+        if self.is_int()
+            && other.is_int()
+            && other.0 != 0.0
+            && I64_RANGE.contains(&self.0)
+            && I64_RANGE.contains(&other.0)
+        {
             return Number((self.0 as i64 % other.0 as i64) as f64);
         }
         Number(self.0 % other.0)
@@ -247,6 +255,20 @@ mod tests {
     #[test]
     fn test_rem_by_zero_is_nan() {
         assert!((Number::new(5.0) % Number::new(0.0)).value().is_nan());
+    }
+
+    #[test]
+    fn test_rem_beyond_i64_range_matches_fmod() {
+        // Both operands are integer-valued but exceed i64::MAX, so the fast `as i64` path
+        // must not be taken; otherwise both saturate to i64::MAX and give the same wrong
+        // result instead of their true (and distinct) fmod remainders.
+        let a = Number::new(100_000_000_000_000_000_000.0);
+        let b = Number::new(200_000_000_000_000_000_000.0);
+        let c = Number::new(3.0);
+
+        assert_eq!((a % c).value(), 100_000_000_000_000_000_000.0f64 % 3.0);
+        assert_eq!((b % c).value(), 200_000_000_000_000_000_000.0f64 % 3.0);
+        assert_ne!((a % c).value(), (b % c).value());
     }
 
     #[rstest]

@@ -9,7 +9,6 @@ use std::fmt;
 use std::time::Duration;
 
 /// Bytecode retained for repeated VM evaluation.
-#[cfg(not(feature = "debugger"))]
 #[derive(Clone)]
 pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
@@ -19,7 +18,6 @@ pub(crate) struct CachedProgram {
     execution_pools: Shared<SharedCell<interpreter::ExecutionPools>>,
 }
 
-#[cfg(not(feature = "debugger"))]
 impl fmt::Debug for CachedProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CachedProgram")
@@ -31,7 +29,6 @@ impl fmt::Debug for CachedProgram {
 }
 
 /// Compiles an Engine program for repeated evaluation.
-#[cfg(not(feature = "debugger"))]
 pub(super) fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
@@ -74,7 +71,6 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
 }
 
 /// Returns whether every external module compiled into this program still has identical source.
-#[cfg(not(feature = "debugger"))]
 pub(super) fn cached_program_is_current<R: ModuleResolver>(
     compiled: &CachedProgram,
     module_loader: &ModuleLoader<R>,
@@ -96,7 +92,6 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.
-#[cfg(not(feature = "debugger"))]
 pub(super) fn run_cached<I>(
     compiled: &CachedProgram,
     inputs: I,
@@ -192,17 +187,17 @@ where
     }
 }
 
-#[cfg(all(not(feature = "debugger"), not(feature = "sync")))]
+#[cfg(not(feature = "sync"))]
 fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
     std::mem::take(&mut *pools.borrow_mut())
 }
 
-#[cfg(all(not(feature = "debugger"), feature = "sync"))]
+#[cfg(feature = "sync")]
 fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
     std::mem::take(&mut *pools.write().expect("execution pool lock is poisoned"))
 }
 
-#[cfg(all(not(feature = "debugger"), not(feature = "sync")))]
+#[cfg(not(feature = "sync"))]
 fn restore_execution_pools(
     pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
     execution_pools: interpreter::ExecutionPools,
@@ -210,7 +205,7 @@ fn restore_execution_pools(
     *pools.borrow_mut() = execution_pools;
 }
 
-#[cfg(all(not(feature = "debugger"), feature = "sync"))]
+#[cfg(feature = "sync")]
 fn restore_execution_pools(
     pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
     execution_pools: interpreter::ExecutionPools,

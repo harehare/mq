@@ -151,6 +151,35 @@ fn run_with_input(code: &str, input: RuntimeValue) -> RuntimeValue {
     compile_and_run_with_input(&program, input, token_arena).unwrap()
 }
 
+fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeValue, interpreter::VmError> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    interpreter::run(
+        &compiled,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        max_call_stack_depth,
+    )
+}
+
+#[test]
+fn try_catch_body_counts_toward_call_stack_depth() {
+    // Each recursive level wraps its call in `try`/`catch`, so entering the try body is an
+    // extra native call frame per level on top of the recursive call itself. With a call-stack
+    // limit of 5, recursion through this native frame reaches the limit after only 2 levels
+    // (it's caught by the nearest `catch`, producing `1 + (1 + (-1))` = 0) instead of behaving
+    // just like the untracked, plain-recursion case below (which reaches `f(4)` = 4 uncapped).
+    let code = "def f(n): if (n <= 0): 0 else: try: 1 + f(n - 1) catch(e): -1; | f(4)";
+    assert_eq!(run_with_max_depth(code, 5).unwrap(), RuntimeValue::Number(0.into()));
+
+    // Plain recursion (no try/catch) only costs one call-stack unit per level, so the same
+    // limit comfortably completes all 4 levels.
+    let no_try = "def f(n): if (n <= 0): 0 else: 1 + f(n - 1); | f(4)";
+    assert_eq!(run_with_max_depth(no_try, 5).unwrap(), RuntimeValue::Number(4.into()));
+}
+
 fn run_with_prelude(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
@@ -587,6 +616,8 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::or_pattern_shares_binding_slot_alt1("match([1]) do | [a] || [a, _]: a end", 1.0)]
 #[case::or_pattern_shares_binding_slot_alt2("match([9, 8]) do | [a] || [a, _]: a end", 9.0)]
 #[case::or_pattern_shares_binding_slot_dict_variant(r#"match({"a": 1}) do | {a: v} || {b: v}: v end"#, 1.0)]
+#[case::or_pattern_nested_or_reuses_outer_slot_first_alt("match([1]) do | [a] || [a || b]: a end", 1.0)]
+#[case::or_pattern_nested_or_reuses_outer_slot_second_alt("match([5]) do | [0] || [a || b]: a end", 5.0)]
 #[case::match_guard_sees_pattern_bound_var("match(5) do | x if (x > 3): x | _: -1 end", 5.0)]
 #[case::or_pattern_guard_sees_the_matching_alternatives_binding(
     "match([9, 8]) do | [a] || [a, _] if (a > 5): a | _: -1 end",

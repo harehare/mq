@@ -1087,7 +1087,7 @@ impl<R: ModuleResolver> Compiler<R> {
         names.dedup();
         let slots = names
             .into_iter()
-            .map(|name| (name, self.scope_mut().declare(name)))
+            .map(|name| (name, self.declare_or_take_or_slot(name)))
             .collect();
         self.or_pattern_slots.push(slots);
 
@@ -1593,6 +1593,13 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    /// Encodes an argument count as the `u8` the bytecode's call opcodes carry, erroring
+    /// instead of silently wrapping when a call has 256 or more arguments.
+    fn arg_count(&self, len: usize) -> CompileResult<u8> {
+        u8::try_from(len)
+            .map_err(|_| CompileError::Unsupported("call with 256 or more arguments", self.current_token_id))
+    }
+
     fn compile_qualified_access(&mut self, path: &[ast::IdentWithToken], target: &AccessTarget) -> CompileResult<()> {
         let [alias] = path else {
             return Err(CompileError::Unsupported(
@@ -1625,7 +1632,8 @@ impl<R: ModuleResolver> Compiler<R> {
             for arg in args {
                 self.compile_expr(arg)?;
             }
-            self.emit(OpCode::CallValue(args.len() as u8));
+            let argc = self.arg_count(args.len())?;
+            self.emit(OpCode::CallValue(argc));
         }
         Ok(())
     }
@@ -1739,7 +1747,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::CallValue(args.len() as u8));
+                let argc = self.arg_count(args.len())?;
+                self.emit(OpCode::CallValue(argc));
                 Ok(())
             }
             Expr::Block(body) => self.compile_body(body),
@@ -1812,10 +1821,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.emit(OpCode::SelectorMatchWithArgs(Box::new((
-                    selector.clone(),
-                    args.len() as u8,
-                ))));
+                let argc = self.arg_count(args.len())?;
+                self.emit(OpCode::SelectorMatchWithArgs(Box::new((selector.clone(), argc))));
                 Ok(())
             }
             Expr::Paren(inner) => self.compile_expr(inner),
@@ -1883,7 +1890,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_expr(arg)?;
                 }
                 self.current_token_id = call_token_id;
-                self.emit(OpCode::CallLocal(slot, args.len() as u8));
+                let argc = self.arg_count(args.len())?;
+                self.emit(OpCode::CallLocal(slot, argc));
                 return Ok(());
             }
             match resolved {
@@ -1898,7 +1906,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_expr(arg)?;
             }
             self.current_token_id = call_token_id;
-            self.emit(OpCode::CallValue(args.len() as u8));
+            let argc = self.arg_count(args.len())?;
+            self.emit(OpCode::CallValue(argc));
             return Ok(());
         }
 
@@ -1951,7 +1960,8 @@ impl<R: ModuleResolver> Compiler<R> {
             self.compile_expr(arg)?;
         }
         self.current_token_id = call_token_id;
-        self.emit(OpCode::CallBuiltin(ident, args.len() as u8));
+        let argc = self.arg_count(args.len())?;
+        self.emit(OpCode::CallBuiltin(ident, argc));
         Ok(())
     }
 
@@ -2018,7 +2028,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_expr(arg)?;
             }
             self.current_token_id = call_token_id;
-            self.emit(OpCode::CallBuiltin(builtins::DICT.into(), args.len() as u8));
+            let argc = self.arg_count(args.len())?;
+            self.emit(OpCode::CallBuiltin(builtins::DICT.into(), argc));
             return Ok(());
         }
         self.emit(OpCode::ArrayNew);

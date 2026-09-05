@@ -863,7 +863,8 @@ fn bind_params(
                         .limits
                         .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
                     default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
-                    let value = {
+                    context.limits.enter_call()?;
+                    let result = {
                         let mut execution = ExecutionContext {
                             env: context.env,
                             limits: context.limits,
@@ -877,9 +878,10 @@ fn bind_params(
                             &mut execution,
                             #[cfg(feature = "debugger")]
                             debug,
-                        )?
+                        )
                     };
-                    callee_locals.set(*slot, value);
+                    context.limits.exit_call();
+                    callee_locals.set(*slot, result?);
                 }
             }
         }
@@ -1630,7 +1632,8 @@ fn handle_try_catch(
         .limits
         .take_locals(try_chunk.local_count, try_chunk.captures_local_slots());
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
-    match run_chunk(
+    execution.limits.enter_call().map_err(|e| locate(chunk, ip, e))?;
+    let try_result = run_chunk(
         try_closure.chunk_index,
         chunks,
         try_locals,
@@ -1638,7 +1641,9 @@ fn handle_try_catch(
         execution,
         #[cfg(feature = "debugger")]
         debug,
-    ) {
+    );
+    execution.limits.exit_call();
+    match try_result {
         Ok(value) => Ok(TryCatchOutcome::Value(value)),
         Err(e) => {
             if let Some(value) = flow_break_value(&e) {
@@ -1664,7 +1669,8 @@ fn handle_try_catch(
             if args.has_binder {
                 catch_locals.set(1, StackValue::Value(error_dict(&e)));
             }
-            let value = run_chunk(
+            execution.limits.enter_call().map_err(|e| locate(chunk, ip, e))?;
+            let catch_result = run_chunk(
                 catch_closure.chunk_index,
                 chunks,
                 catch_locals,
@@ -1672,8 +1678,9 @@ fn handle_try_catch(
                 execution,
                 #[cfg(feature = "debugger")]
                 debug,
-            )?;
-            Ok(TryCatchOutcome::Value(value))
+            );
+            execution.limits.exit_call();
+            Ok(TryCatchOutcome::Value(catch_result?))
         }
     }
 }
