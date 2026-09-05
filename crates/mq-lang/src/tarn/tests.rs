@@ -239,6 +239,11 @@ fn local_binary_expressions_use_compact_bytecode() {
 }
 
 #[test]
+fn top_level_function_literal_produces_a_callable_value() {
+    assert!(matches!(run("fn(x): x;"), RuntimeValue::VmClosure(_)));
+}
+
+#[test]
 fn top_level_def_calls_use_call_local() {
     use super::bytecode::OpCode;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
