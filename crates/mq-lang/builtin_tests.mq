@@ -88,6 +88,17 @@ def test_rtrimstr(value, suffix, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["hello", "hello"],
+#   ["hello world", "'hello world'"],
+#   ["", ""],
+#   ["it's a test", "'it'\"'\"'s a test'"],
+# ])
+def test_shell_quote(value, expected):
+  let result = shell_quote(value)
+  | assert_eq(result, expected)
+end
+
 # Collection tests
 # @parametrize([
 #   [[], true],
