@@ -88,6 +88,18 @@ def test_rtrimstr(value, suffix, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["\x1b[31mred\x1b[0m", "red"],
+#   ["\x1b[1;32mgreen\x1b[0m plain", "green plain"],
+#   ["\x1b[2J\x1b[H", ""],
+#   ["no ansi here", "no ansi here"],
+#   ["", ""],
+# ])
+def test_strip_ansi(value, expected):
+  let result = strip_ansi(value)
+  | assert_eq(result, expected)
+end
+
 # Collection tests
 # @parametrize([
 #   [[], true],

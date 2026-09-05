@@ -168,6 +168,17 @@ end
 # Returns: bool
 def test(s, pattern): is_regex_match(s, pattern);
 
+# Removes ANSI escape sequences (e.g. color codes) from a string
+#
+# Example:
+# ```
+# strip_ansi("\x1b[31mred\x1b[0m")
+# #=> red
+# ```
+#
+# Returns: string
+def strip_ansi(s): gsub(s, "\x1b\\[[0-9;]*[a-zA-Z]", "");
+
 # Returns value if condition is true, None otherwise
 #
 # Example:
