@@ -1013,6 +1013,55 @@ mod tests {
 
     #[cfg(feature = "tarn")]
     #[test]
+    fn test_query_session_bindings_are_available_and_updated_across_nodes() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("let base = 41", vec![RuntimeValue::None].into_iter())
+            .unwrap();
+        let values = engine
+            .eval(
+                "nodes | let derived = base + 1 | derived",
+                vec![RuntimeValue::None].into_iter(),
+            )
+            .unwrap();
+        assert_eq!(values.values(), &[RuntimeValue::Number(42.into())]);
+
+        let persisted = engine.eval("derived", vec![RuntimeValue::None].into_iter()).unwrap();
+        assert_eq!(persisted.values(), &[RuntimeValue::Number(42.into())]);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_uncached_nodes_split_preserves_let_immutability() {
+        let mut engine = DefaultEngine::default();
+
+        let error = engine
+            .eval("let x = 1 | nodes | x = 2 | x", vec![RuntimeValue::None].into_iter())
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Cannot assign to immutable variable \"x\""),
+            "{error}"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_nodes_split_captures_as_bindings() {
+        let mut engine = DefaultEngine::default();
+        let values = engine
+            .eval(
+                ". as x | nodes | x",
+                vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(values.values(), &[RuntimeValue::Number(2.into())]);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
     fn test_query_session_is_opt_in() {
         let mut engine = DefaultEngine::default();
 

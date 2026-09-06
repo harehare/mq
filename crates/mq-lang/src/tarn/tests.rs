@@ -1197,12 +1197,14 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     struct Recorder(Vec<DebugEvent>);
 
     impl DebugHook for Recorder {
-        fn on_boundary(&mut self, event: DebugEvent) {
+        fn on_boundary(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
             self.0.push(event);
+            Ok(())
         }
 
-        fn on_explicit_breakpoint(&mut self, event: DebugEvent) {
+        fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
             self.0.push(event);
+            Ok(())
         }
     }
 
@@ -1244,6 +1246,49 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     assert_eq!(function_event.call_stack.len(), 1);
     assert_eq!(function_event.token_id, function_event.node.token_id);
     assert_eq!(function_event.current_value, RuntimeValue::None);
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn debugger_hook_exposes_closure_bindings() {
+    use super::interpreter::{DebugEvent, DebugHook};
+
+    #[derive(Default)]
+    struct Recorder(Vec<DebugEvent>);
+
+    impl DebugHook for Recorder {
+        fn on_boundary(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+
+        fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+    }
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("let f = fn(x): x; | breakpoint() | f(1)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let mut recorder = Recorder::default();
+    interpreter::run_with_debug_hook_and_globals(
+        &compiled,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        crate::eval::Options::default().max_call_stack_depth,
+        &[],
+        &mut recorder,
+    )
+    .unwrap();
+
+    assert!(recorder.0.iter().any(|event| {
+        event
+            .bindings
+            .iter()
+            .any(|(name, value)| *name == Ident::new("f") && matches!(value, RuntimeValue::VmClosure(_)))
+    }));
 }
 
 #[cfg(feature = "debugger")]
@@ -1715,6 +1760,32 @@ fn let_destructuring_mismatch_errors() {
 fn assigning_to_a_let_bound_name_is_a_compile_error() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse("let x = 1 | x = 2", Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Compile(compiler::CompileError::AssignToImmutable(..))
+    ));
+}
+
+#[test]
+fn assigning_to_an_immutable_captured_binding_is_a_compile_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "let x = 1 | let change = fn(): x = 2; | change()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    assert!(matches!(
+        err,
+        Error::Compile(compiler::CompileError::AssignToImmutable(..))
+    ));
+}
+
+#[test]
+fn assigning_to_an_as_binding_is_a_compile_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("1 as x | x = 2", Shared::clone(&token_arena)).unwrap();
     let err = compile_and_run(&program, token_arena).unwrap_err();
     assert!(matches!(
         err,

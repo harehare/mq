@@ -25,31 +25,42 @@ pub(super) fn program_after_nodes(before: ProgramSlice<'_>, after: ProgramSlice<
         .collect()
 }
 
-/// Top-level `let`/`var` names declared before a `nodes` split (last input's value wins),
-/// including every name bound by a destructuring pattern.
+/// Top-level bindings declared before a `nodes` split (the last input's value wins),
+/// including every name bound by a destructuring pattern and `as` bindings.
 pub(super) fn let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<crate::Ident> {
     let mut names = Vec::new();
     for node in before {
-        if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
-            compiler::collect_pattern_idents(pattern, &mut names);
+        match &*node.expr {
+            Expr::Let(pattern, _) | Expr::Var(pattern, _) => compiler::collect_pattern_idents(pattern, &mut names),
+            Expr::As(ident, _) => names.push(ident.name),
+            _ => {}
         }
     }
     names
 }
 
-/// Top-level immutable `let` names declared before a `nodes` split.
-#[cfg(not(feature = "debugger"))]
+/// Top-level immutable bindings declared before a `nodes` split.
 pub(super) fn immutable_let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<crate::Ident> {
     let mut names = Vec::new();
     let mut shadowed = std::collections::HashSet::new();
     for node in before.iter().rev() {
-        if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
-            let mut declared = Vec::new();
-            compiler::collect_pattern_idents(pattern, &mut declared);
-            for name in declared {
-                if shadowed.insert(name) && matches!(&*node.expr, Expr::Let(..)) {
-                    names.push(name);
-                }
+        let (mut declared, immutable) = match &*node.expr {
+            Expr::Let(pattern, _) => {
+                let mut declared = Vec::new();
+                compiler::collect_pattern_idents(pattern, &mut declared);
+                (declared, true)
+            }
+            Expr::Var(pattern, _) => {
+                let mut declared = Vec::new();
+                compiler::collect_pattern_idents(pattern, &mut declared);
+                (declared, false)
+            }
+            Expr::As(ident, _) => (vec![ident.name], true),
+            _ => continue,
+        };
+        for name in declared.drain(..) {
+            if shadowed.insert(name) && immutable {
+                names.push(name);
             }
         }
     }
@@ -63,6 +74,7 @@ pub(super) fn top_level_binding_names(program: &Program) -> Vec<crate::Ident> {
         match &*node.expr {
             Expr::Let(pattern, _) | Expr::Var(pattern, _) => compiler::collect_pattern_idents(pattern, &mut names),
             Expr::Def(ident, ..) => names.push(ident.name),
+            Expr::As(ident, _) => names.push(ident.name),
             _ => {}
         }
     }

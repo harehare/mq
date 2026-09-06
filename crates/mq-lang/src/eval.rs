@@ -8550,13 +8550,6 @@ mod debugger_tests {
         );
     }
 
-    // The tree-walker propagates a malformed breakpoint condition as a real error (`?` in
-    // `eval_debugger`'s condition check), aborting the whole `eval`. The VM's
-    // `VmDebuggerHook::eval_expression` currently swallows condition-evaluation errors
-    // (`.ok()?`, treating a bad condition as "doesn't match" rather than aborting) — the
-    // `DebugHook::on_boundary` trait has no way to propagate one back into `run_chunk`
-    // yet. Tracked as still-open "production debugger cutover" work; not attempted here.
-    #[cfg(not(feature = "tarn"))]
     #[test]
     fn test_invalid_breakpoint_condition_returns_error() {
         let mut engine = crate::DefaultEngine::default();

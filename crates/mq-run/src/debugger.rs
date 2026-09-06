@@ -276,10 +276,7 @@ impl DebuggerHandler {
                     println!(
                         "{}",
                         context
-                            .env
-                            .read()
-                            .unwrap()
-                            .get_local_variables()
+                            .local_variables()
                             .iter()
                             .map(|v| v.to_string())
                             .collect::<Vec<_>>()
@@ -293,6 +290,15 @@ impl DebuggerHandler {
 
                     let value: mq_lang::RuntimeValue = context.current_value.clone();
                     let mut engine = self.engine.clone();
+                    #[cfg(feature = "tarn")]
+                    let values = match engine.eval_debug_expression(&expr, value, &context.vm_bindings()) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            eprintln!("Error evaluating expression: {}", e);
+                            continue;
+                        }
+                    };
+                    #[cfg(not(feature = "tarn"))]
                     let values = match engine.eval_debug_expression(&expr, value, &context.env) {
                         Ok(v) => v,
                         Err(e) => {
@@ -757,21 +763,19 @@ mod tests {
 
     #[test]
     fn test_get_source_code_with_context_basic() {
-        let context = DebugContext {
-            source: mq_lang::Source {
-                name: None,
-                code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
-            },
-            token: Shared::new(mq_lang::Token {
-                range: mq_lang::Range {
-                    start: mq_lang::Position { line: 4, column: 0 },
-                    end: mq_lang::Position { line: 4, column: 1 },
-                },
-                kind: mq_lang::TokenKind::Eof,
-                module_id: ModuleId::new(0),
-            }),
-            ..Default::default()
+        let mut context = DebugContext::default();
+        context.source = mq_lang::Source {
+            name: None,
+            code: "a\nb\nc\nd\ne\nf\ng\nh\ni\nj".to_string(),
         };
+        context.token = Shared::new(mq_lang::Token {
+            range: mq_lang::Range {
+                start: mq_lang::Position { line: 4, column: 0 },
+                end: mq_lang::Position { line: 4, column: 1 },
+            },
+            kind: mq_lang::TokenKind::Eof,
+            module_id: ModuleId::new(0),
+        });
         let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
         let (start, snippet) = handler.get_source_code_with_context(&context, 4, 2);
         assert_eq!(start, 2);
@@ -792,36 +796,30 @@ mod tests {
         let handler = DebuggerHandler::new(mq_lang::DefaultEngine::default(), false);
 
         // Empty source code
-        let empty_context = DebugContext {
-            source: mq_lang::Source {
-                name: None,
-                code: "".to_string(),
-            },
-            ..Default::default()
+        let mut empty_context = DebugContext::default();
+        empty_context.source = mq_lang::Source {
+            name: None,
+            code: "".to_string(),
         };
         let (start, snippet) = handler.get_source_code_with_context(&empty_context, 0, 2);
         assert_eq!(start, 0);
         assert!(snippet.is_empty());
 
         // Single line
-        let single_line_context = DebugContext {
-            source: mq_lang::Source {
-                name: None,
-                code: "single line".to_string(),
-            },
-            ..Default::default()
+        let mut single_line_context = DebugContext::default();
+        single_line_context.source = mq_lang::Source {
+            name: None,
+            code: "single line".to_string(),
         };
         let (start, snippet) = handler.get_source_code_with_context(&single_line_context, 0, 2);
         assert_eq!(start, 0);
         assert_eq!(snippet, vec!["single line".to_string()]);
 
         // Line at beginning
-        let context = DebugContext {
-            source: mq_lang::Source {
-                name: None,
-                code: "a\nb\nc".to_string(),
-            },
-            ..Default::default()
+        let mut context = DebugContext::default();
+        context.source = mq_lang::Source {
+            name: None,
+            code: "a\nb\nc".to_string(),
         };
         let (start, snippet) = handler.get_source_code_with_context(&context, 0, 1);
         assert_eq!(start, 0);

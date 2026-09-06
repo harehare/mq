@@ -54,8 +54,14 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
         self.sources = sources;
     }
 
-    fn eval_expression(&self, code: &str, bindings: &[(Ident, RuntimeValue)]) -> Option<RuntimeValue> {
-        let program = crate::parse(code, Shared::clone(&self.token_arena)).ok()?;
+    fn eval_expression(
+        &self,
+        code: &str,
+        bindings: &[(Ident, RuntimeValue)],
+    ) -> Result<RuntimeValue, interpreter::VmError> {
+        let program = crate::parse(code, Shared::clone(&self.token_arena)).map_err(|error| {
+            interpreter::VmError::Debugger(format!("Invalid breakpoint expression \"{code}\": {error}"))
+        })?;
         let names = bindings.iter().map(|(name, _)| *name).collect::<Vec<_>>();
         let values = bindings.iter().map(|(_, value)| value.clone()).collect::<Vec<_>>();
         let compiled = compiler::compile_debug_expression(
@@ -64,17 +70,25 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             self.module_loader.with_same_resolver(),
             &names,
         )
-        .ok()?;
-        interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &self.host_functions).ok()
+        .map_err(|error| {
+            interpreter::VmError::Debugger(format!("Failed to compile breakpoint expression \"{code}\": {error}"))
+        })?;
+        interpreter::run_debug_expression(&compiled, RuntimeValue::None, &values, &self.host_functions).map_err(
+            |error| {
+                interpreter::VmError::Debugger(format!("Failed to evaluate breakpoint expression \"{code}\": {error}"))
+            },
+        )
     }
 
-    fn breakpoint_matches(&self, breakpoint: &crate::Breakpoint, bindings: &[(Ident, RuntimeValue)]) -> bool {
+    fn breakpoint_matches(
+        &self,
+        breakpoint: &crate::Breakpoint,
+        bindings: &[(Ident, RuntimeValue)],
+    ) -> Result<bool, interpreter::VmError> {
         if let Some(condition) = &breakpoint.condition
-            && !self
-                .eval_expression(condition, bindings)
-                .is_some_and(|value| value.is_truthy())
+            && !self.eval_expression(condition, bindings)?.is_truthy()
         {
-            return false;
+            return Ok(false);
         }
 
         if let Some(hit_condition) = &breakpoint.hit_condition {
@@ -86,15 +100,12 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
             };
             let mut hit_bindings = bindings.to_vec();
             hit_bindings.push((Ident::new("hit_count"), RuntimeValue::Number(count.into())));
-            if !self
-                .eval_expression(&code, &hit_bindings)
-                .is_some_and(|value| value.is_truthy())
-            {
-                return false;
+            if !self.eval_expression(&code, &hit_bindings)?.is_truthy() {
+                return Ok(false);
             }
         }
 
-        true
+        Ok(true)
     }
 
     fn interpolate_log_message(
@@ -117,7 +128,7 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
                         } else if let Some(name) = expr.strip_prefix('$') {
                             output.push_str(&crate::runtime::builtin::io_context::current().env_var(name).ok()?);
                         } else {
-                            output.push_str(&self.eval_expression(expr, bindings)?.to_string());
+                            output.push_str(&self.eval_expression(expr, bindings).ok()?.to_string());
                         }
                     }
                 }
@@ -160,9 +171,9 @@ impl<R: ModuleResolver> VmDebuggerHook<R> {
 }
 
 impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
-    fn on_boundary(&mut self, event: DebugEvent) {
+    fn on_boundary(&mut self, event: DebugEvent) -> Result<(), interpreter::VmError> {
         if !self.debugger.read().unwrap().is_active() {
-            return;
+            return Ok(());
         }
 
         let (context, token, bindings) = self.build_context(event);
@@ -173,8 +184,8 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
             .unwrap()
             .get_hit_breakpoint(&context, Shared::clone(&token));
         if let Some(breakpoint) = breakpoint {
-            if !self.breakpoint_matches(&breakpoint, &bindings) {
-                return;
+            if !self.breakpoint_matches(&breakpoint, &bindings)? {
+                return Ok(());
             }
             if let Some(message) = &breakpoint.log_message {
                 if let Some(message) =
@@ -185,7 +196,7 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
                         .unwrap()
                         .on_log_point(&breakpoint, &message, &context);
                 }
-                return;
+                return Ok(());
             }
             let action = self.handler.read().unwrap().on_breakpoint_hit(&breakpoint, &context);
             self.debugger.write().unwrap().next(action);
@@ -193,11 +204,12 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
             let action = self.handler.read().unwrap().on_step(&context);
             self.debugger.write().unwrap().next(action);
         }
+        Ok(())
     }
 
-    fn on_explicit_breakpoint(&mut self, event: DebugEvent) {
+    fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> Result<(), interpreter::VmError> {
         if !self.debugger.read().unwrap().is_active() {
-            return;
+            return Ok(());
         }
 
         let (context, token, _bindings) = self.build_context(event);
@@ -210,5 +222,6 @@ impl<R: ModuleResolver> DebugHook for VmDebuggerHook<R> {
         };
         let action = self.handler.read().unwrap().on_breakpoint_hit(&breakpoint, &context);
         self.debugger.write().unwrap().next(action);
+        Ok(())
     }
 }

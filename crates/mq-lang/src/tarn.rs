@@ -26,7 +26,10 @@ pub(crate) mod value;
 pub(crate) use cache::CachedProgram;
 #[cfg(feature = "debug-trace")]
 pub(crate) use disasm::dump_bytecode;
-use nodes_split::{ProgramSlice, let_names_before_nodes, program_after_nodes, split_at_nodes, top_level_binding_names};
+use nodes_split::{
+    ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
+    top_level_binding_names,
+};
 
 use crate::Shared;
 use crate::TokenArena;
@@ -549,6 +552,109 @@ fn session_bindings_from_captured(
         .collect()
 }
 
+fn extend_unique(names: &mut Vec<crate::Ident>, additional: impl IntoIterator<Item = crate::Ident>) {
+    for name in additional {
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+}
+
+fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -> Vec<crate::Ident> {
+    let declared_before = let_names_before_nodes(before);
+    let mut names: Vec<crate::Ident> = seed
+        .seed_immutable
+        .iter()
+        .copied()
+        .filter(|name| !declared_before.contains(name))
+        .collect();
+    extend_unique(&mut names, immutable_let_names_before_nodes(before));
+    names
+}
+
+/// Runs a `nodes` program while preserving bindings from a query session.
+fn run_nodes_with_session<I, R: ModuleResolver>(
+    before: ProgramSlice<'_>,
+    after: ProgramSlice<'_>,
+    inputs: I,
+    context: &EngineRunContext<'_, R>,
+    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
+    global_names: &[crate::Ident],
+    deadline: Option<Instant>,
+) -> Result<Vec<RuntimeValue>, Error>
+where
+    I: Iterator<Item = RuntimeValue>,
+{
+    let whole_program: Program = before.iter().chain(after.iter()).cloned().collect();
+    let seed = session_seed(session, &whole_program);
+    let mut before_names = seed.seed_names.clone();
+    extend_unique(&mut before_names, let_names_before_nodes(before));
+    let before_compiled = compiler::compile_program_for_engine_with_bindings(
+        &before.to_vec(),
+        Shared::clone(&context.token_arena),
+        context.module_loader.clone(),
+        &seed.seed_names,
+        &seed.seed_immutable,
+        global_names,
+    )?;
+
+    let mut values = Vec::new();
+    let mut before_bindings = Vec::new();
+    for input in inputs {
+        let result = run_for_input(input, |value| {
+            let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
+                &before_compiled,
+                value,
+                &seed.seed_values,
+                interpreter::RunOptions {
+                    host_functions: context.host_functions,
+                    timeout: remaining_timeout(deadline),
+                    max_call_stack_depth: context.max_call_stack_depth,
+                    global_bindings: context.global_bindings,
+                },
+                &before_names,
+                interpreter::ExecutionPools::default(),
+            );
+            if result.is_ok() {
+                before_bindings = captured;
+            }
+            result
+        })
+        .map_err(Error::from)?;
+        values.push(result);
+    }
+
+    let aggregate_program = program_after_nodes(before, after);
+    let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
+        &aggregate_program,
+        Shared::clone(&context.token_arena),
+        context.module_loader.clone(),
+        &before_names,
+        &session_nodes_immutable_names(&seed, before),
+        global_names,
+    )?;
+    let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
+    let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
+        &aggregate_compiled,
+        RuntimeValue::Array(Shared::new(values)),
+        &aggregate_values,
+        interpreter::RunOptions {
+            host_functions: context.host_functions,
+            timeout: remaining_timeout(deadline),
+            max_call_stack_depth: context.max_call_stack_depth,
+            global_bindings: context.global_bindings,
+        },
+        &seed.capture_names,
+        interpreter::ExecutionPools::default(),
+    );
+    let value = result?;
+    store_session(session, session_bindings_from_captured(&aggregate_compiled, captured));
+    match value {
+        RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
+        value => Ok(vec![value]),
+    }
+}
+
 /// Runs a program while preserving top-level bindings in `session`.
 fn run_with_session<I, R: ModuleResolver>(
     program: &Program,
@@ -561,6 +667,9 @@ fn run_with_session<I, R: ModuleResolver>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
+    if let Some((before, after)) = split_at_nodes(program) {
+        return run_nodes_with_session(before, after, inputs, context, session, global_names, deadline);
+    }
     let seed = session_seed(session, program);
     let compiled = compiler::compile_program_for_engine_with_bindings(
         program,
@@ -603,6 +712,119 @@ where
 
 /// Debugger counterpart to [`run_with_session`].
 #[cfg(feature = "debugger")]
+fn run_nodes_with_session_debugged<I, R: ModuleResolver>(
+    before: ProgramSlice<'_>,
+    after: ProgramSlice<'_>,
+    inputs: I,
+    context: DebugRunContext<'_, R>,
+    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
+    global_names: &[crate::Ident],
+    deadline: Option<Instant>,
+) -> Result<Vec<RuntimeValue>, Error>
+where
+    I: Iterator<Item = RuntimeValue>,
+{
+    let DebugRunContext {
+        engine,
+        debugger: debugger_state,
+        handler,
+        source,
+    } = context;
+    let whole_program: Program = before.iter().chain(after.iter()).cloned().collect();
+    let seed = session_seed(session, &whole_program);
+    let mut before_names = seed.seed_names.clone();
+    extend_unique(&mut before_names, let_names_before_nodes(before));
+    let before_compiled = compiler::compile_program_for_engine_with_bindings(
+        &before.to_vec(),
+        Shared::clone(&engine.token_arena),
+        engine.module_loader.clone(),
+        &seed.seed_names,
+        &seed.seed_immutable,
+        global_names,
+    )?;
+    let mut hook = debugger::VmDebuggerHook::new(
+        debugger_state,
+        handler,
+        Shared::clone(&engine.token_arena),
+        source,
+        before_compiled.debug_sources.clone(),
+        engine.module_loader.with_same_resolver(),
+        engine.host_functions.clone(),
+    );
+
+    let mut values = Vec::new();
+    let mut before_bindings = Vec::new();
+    for input in inputs {
+        let result = run_for_input(input, |value| {
+            let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+                &before_compiled,
+                value,
+                &seed.seed_values,
+                interpreter::RunOptions {
+                    host_functions: engine.host_functions,
+                    timeout: remaining_timeout(deadline),
+                    max_call_stack_depth: engine.max_call_stack_depth,
+                    global_bindings: engine.global_bindings,
+                },
+                &before_names,
+                &mut hook,
+            );
+            if result.is_ok() {
+                before_bindings = captured;
+            }
+            result
+        });
+        match result {
+            Ok(value) => values.push(value),
+            Err(error) => {
+                hook.notify_error(&error);
+                return Err(error.into());
+            }
+        }
+    }
+
+    let aggregate_program = program_after_nodes(before, after);
+    let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
+        &aggregate_program,
+        Shared::clone(&engine.token_arena),
+        engine.module_loader.clone(),
+        &before_names,
+        &session_nodes_immutable_names(&seed, before),
+        global_names,
+    )?;
+    hook.set_sources(aggregate_compiled.debug_sources.clone());
+    let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
+    let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+        &aggregate_compiled,
+        RuntimeValue::Array(Shared::new(values)),
+        &aggregate_values,
+        interpreter::RunOptions {
+            host_functions: engine.host_functions,
+            timeout: remaining_timeout(deadline),
+            max_call_stack_depth: engine.max_call_stack_depth,
+            global_bindings: engine.global_bindings,
+        },
+        &seed.capture_names,
+        &mut hook,
+    );
+    match result {
+        Ok(RuntimeValue::Array(values)) => {
+            store_session(session, session_bindings_from_captured(&aggregate_compiled, captured));
+            Ok(Shared::unwrap_or_clone(values))
+        }
+        Ok(value) => {
+            store_session(session, session_bindings_from_captured(&aggregate_compiled, captured));
+            Ok(vec![value])
+        }
+        Err(error) => {
+            hook.notify_error(&error);
+            Err(error.into())
+        }
+    }
+}
+
+/// Debugger counterpart to [`run_with_session`].
+#[cfg(feature = "debugger")]
 fn run_with_session_debugged<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
@@ -614,6 +836,9 @@ fn run_with_session_debugged<I, R: ModuleResolver>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
+    if let Some((before, after)) = split_at_nodes(program) {
+        return run_nodes_with_session_debugged(before, after, inputs, context, session, global_names, deadline);
+    }
     let seed = session_seed(session, program);
     let compiled = compiler::compile_program_for_engine_with_bindings(
         program,
@@ -678,6 +903,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
     timeout: Option<Duration>,
 ) -> Result<Vec<RuntimeValue>, Error> {
     let let_names: Vec<crate::Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
+    let immutable_let_names = immutable_let_names_before_nodes(before);
     let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
@@ -703,7 +929,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
             Shared::clone(&context.token_arena),
             context.module_loader.clone(),
             &let_names,
-            &[],
+            &immutable_let_names,
             &global_names,
         )?;
         interpreter::run_with_globals_capturing_locals(
@@ -740,9 +966,7 @@ where
 {
     let deadline = shared_deadline(context.timeout);
     let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    if let Some(session) = context.session
-        && !program.iter().any(|node| node.is_nodes())
-    {
+    if let Some(session) = context.session {
         return run_with_session(program, inputs, &context, session, &global_names, deadline);
     }
     let Some((before, after)) = split_at_nodes(program) else {
@@ -835,9 +1059,7 @@ where
 {
     let deadline = shared_deadline(context.engine.timeout);
     let global_names: Vec<crate::Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    if let Some(session) = context.engine.session
-        && !program.iter().any(|node| node.is_nodes())
-    {
+    if let Some(session) = context.engine.session {
         return run_with_session_debugged(program, inputs, context, session, &global_names, deadline);
     }
     let Some((before, after)) = split_at_nodes(program) else {
@@ -949,6 +1171,7 @@ where
             .collect::<Result<Vec<_>, Error>>()?
     };
     let let_names: Vec<crate::Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
+    let immutable_let_names = immutable_let_names_before_nodes(before);
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
     let result = if let_names.is_empty() {
@@ -975,7 +1198,7 @@ where
             context.engine.token_arena,
             context.engine.module_loader,
             &let_names,
-            &[],
+            &immutable_let_names,
             &global_names,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());

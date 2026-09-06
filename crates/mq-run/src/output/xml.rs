@@ -200,7 +200,10 @@ mod tests {
     #[test]
     fn test_custom_indent_width() {
         let mut map = BTreeMap::new();
-        map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
+        map.insert(
+            Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values, b' ', 4).unwrap();
         assert!(result.contains("\n    <name>Alice</name>"));
@@ -209,7 +212,10 @@ mod tests {
     #[test]
     fn test_tab_indent() {
         let mut map = BTreeMap::new();
-        map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
+        map.insert(
+            Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_xml(&values, b'\t', 1).unwrap();
         assert!(result.contains("\n\t<name>Alice</name>"));

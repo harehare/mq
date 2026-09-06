@@ -74,7 +74,7 @@ pub(crate) struct CompiledProgram {
 
 enum Resolved {
     Local(u16),
-    Upvalue(u16),
+    Upvalue { index: u16, immutable: bool },
 }
 
 struct LoopCtx {
@@ -1634,7 +1634,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         match self.resolve_qualified_slot(self.scopes.len() - 1, depth, slot) {
             Resolved::Local(slot) => self.emit(OpCode::GetLocal(slot)),
-            Resolved::Upvalue(idx) => self.emit(OpCode::GetUpvalue(idx)),
+            Resolved::Upvalue { index: idx, .. } => self.emit(OpCode::GetUpvalue(idx)),
         };
         if let AccessTarget::Call(_, args) = target {
             for arg in args {
@@ -1653,11 +1653,17 @@ impl<R: ModuleResolver> Compiler<R> {
         match self.resolve_qualified_slot(depth - 1, declared_depth, slot) {
             Resolved::Local(inner_slot) => {
                 let idx = self.scopes[depth].add_upvalue_for_source(UpvalueSource::Local(inner_slot));
-                Resolved::Upvalue(idx)
+                Resolved::Upvalue {
+                    index: idx,
+                    immutable: false,
+                }
             }
-            Resolved::Upvalue(inner_idx) => {
+            Resolved::Upvalue { index: inner_idx, .. } => {
                 let idx = self.scopes[depth].add_upvalue_for_source(UpvalueSource::Upvalue(inner_idx));
-                Resolved::Upvalue(idx)
+                Resolved::Upvalue {
+                    index: idx,
+                    immutable: false,
+                }
             }
         }
     }
@@ -1676,11 +1682,17 @@ impl<R: ModuleResolver> Compiler<R> {
         match self.resolve_at(depth - 1, name)? {
             Resolved::Local(slot) => {
                 let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::Local(slot));
-                Some(Resolved::Upvalue(idx))
+                Some(Resolved::Upvalue {
+                    index: idx,
+                    immutable: self.scopes[depth - 1].is_immutable(slot),
+                })
             }
-            Resolved::Upvalue(up_idx) => {
+            Resolved::Upvalue {
+                index: up_idx,
+                immutable,
+            } => {
                 let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::Upvalue(up_idx));
-                Some(Resolved::Upvalue(idx))
+                Some(Resolved::Upvalue { index: idx, immutable })
             }
         }
     }
@@ -1715,7 +1727,13 @@ impl<R: ModuleResolver> Compiler<R> {
                         self.emit(OpCode::SetLocal(slot));
                         self.emit(OpCode::GetLocal(SELF_SLOT));
                     }
-                    Some(Resolved::Upvalue(idx)) => {
+                    Some(Resolved::Upvalue { index: idx, immutable }) => {
+                        if immutable {
+                            return Err(CompileError::AssignToImmutable(
+                                ident.name.to_string(),
+                                self.current_token_id,
+                            ));
+                        }
                         self.emit(OpCode::SetUpvalue(idx));
                         self.emit(OpCode::GetLocal(SELF_SLOT));
                     }
@@ -1745,6 +1763,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::As(ident, value) => {
                 self.compile_expr(value)?;
                 let slot = self.scope_mut().declare(ident.name);
+                self.scope_mut().mark_immutable(slot);
                 self.emit(OpCode::SetLocal(slot));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
                 Ok(())
@@ -1855,7 +1874,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::GetLocal(slot));
                 Ok(())
             }
-            Some(Resolved::Upvalue(idx)) => {
+            Some(Resolved::Upvalue { index: idx, .. }) => {
                 self.emit(OpCode::GetUpvalue(idx));
                 Ok(())
             }
@@ -1915,7 +1934,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 Resolved::Local(slot) => {
                     self.emit(OpCode::GetLocal(slot));
                 }
-                Resolved::Upvalue(idx) => {
+                Resolved::Upvalue { index: idx, .. } => {
                     self.emit(OpCode::GetUpvalue(idx));
                 }
             }

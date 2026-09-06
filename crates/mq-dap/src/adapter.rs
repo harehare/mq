@@ -1197,48 +1197,39 @@ mod tests {
 
     #[cfg(feature = "tarn")]
     #[rstest::rstest]
-    #[case::top_level_global_set_variable("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", false, 42)]
-    #[case::top_level_set_expression("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", true, 42)]
+    #[case::top_level_global_set_variable(("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", false, 42))]
+    #[case::top_level_set_expression(("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", true, 42))]
     #[case::captured_global_set_variable(
-        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
-        3,
-        1,
-        "outer",
-        "10",
-        "40",
-        false,
-        42
+        (
+            "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+            3, 1, "outer", "10", "40", false, 42
+        )
     )]
     #[case::local_set_variable(
-        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
-        3,
-        2,
-        "inner",
-        "2",
-        "41",
-        false,
-        51
+        (
+            "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+            3, 2, "inner", "2", "41", false, 51
+        )
     )]
     #[case::captured_set_expression(
-        "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
-        3,
-        2,
-        "outer",
-        "10",
-        "40",
-        true,
-        42
+        (
+            "let outer = 10 |\nlet add_outer = fn(inner):\n  outer + inner; |\nadd_outer(2)",
+            3, 2, "outer", "10", "40", true, 42
+        )
     )]
     fn test_dap_mutation_updates_paused_tarn_vm_frame(
-        #[case] code: &'static str,
-        #[case] breakpoint_line: usize,
-        #[case] variables_reference: i64,
-        #[case] name: &str,
-        #[case] initial_value: &str,
-        #[case] updated_value: &str,
-        #[case] use_set_expression: bool,
-        #[case] expected: i64,
+        #[case] case: (&'static str, usize, i64, &str, &str, &str, bool, i64),
     ) {
+        let (
+            code,
+            breakpoint_line,
+            variables_reference,
+            name,
+            initial_value,
+            updated_value,
+            use_set_expression,
+            expected,
+        ) = case;
         let mut adapter = MqAdapter::new();
         adapter.engine.debugger().write().unwrap().activate();
         adapter.engine.debugger().write().unwrap().add_breakpoint_with_options(

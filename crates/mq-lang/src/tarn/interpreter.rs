@@ -163,9 +163,9 @@ pub(crate) struct DebugEvent {
 /// Receives VM debug boundaries. Implementations can queue frame writes while the VM is paused.
 #[cfg(feature = "debugger")]
 pub(crate) trait DebugHook {
-    fn on_boundary(&mut self, event: DebugEvent);
+    fn on_boundary(&mut self, event: DebugEvent) -> VmResult<()>;
 
-    fn on_explicit_breakpoint(&mut self, event: DebugEvent);
+    fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> VmResult<()>;
 }
 
 #[cfg(feature = "debugger")]
@@ -183,6 +183,7 @@ pub(crate) enum VmError {
     NotCallable,
     EnvNotFound(String),
     UndefinedGlobal(String),
+    Debugger(String),
     Corrupt(&'static str),
     ArityMismatch {
         expected: u8,
@@ -208,6 +209,7 @@ impl fmt::Display for VmError {
             VmError::NotCallable => write!(f, "value is not callable"),
             VmError::EnvNotFound(name) => write!(f, "environment variable not found: {name}"),
             VmError::UndefinedGlobal(name) => write!(f, "undefined identifier `{name}`"),
+            VmError::Debugger(message) => write!(f, "debugger expression failed: {message}"),
             VmError::Corrupt(what) => write!(f, "corrupt bytecode: {what}"),
             VmError::ArityMismatch { expected, actual } => {
                 write!(f, "expected {expected} argument(s), got {actual}")
@@ -250,6 +252,7 @@ impl VmError {
             VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
             VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
             VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
+            VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
             VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
                 token,
                 name: String::new(),
@@ -989,7 +992,12 @@ fn current_self(locals: &Locals, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
 }
 
 #[cfg(feature = "debugger")]
-fn debug_bindings(chunk: &Chunk, locals: &Locals, upvalues: &[Cell]) -> Option<DebugBindings> {
+fn debug_bindings(
+    chunk: &Chunk,
+    locals: &Locals,
+    upvalues: &[Cell],
+    chunks: &Shared<Vec<Chunk>>,
+) -> Option<DebugBindings> {
     let mut bindings = Vec::with_capacity(chunk.debug_symbols.bindings().len());
     let mut local_slots = Vec::new();
     let mut upvalue_slots = Vec::new();
@@ -998,18 +1006,16 @@ fn debug_bindings(chunk: &Chunk, locals: &Locals, upvalues: &[Cell]) -> Option<D
             DebugSlot::Local(slot) => locals.get_checked(*slot),
             DebugSlot::Upvalue(slot) => upvalues.get(*slot as usize).map(read_cell),
         }?;
-        if let StackValue::Value(value) = value {
-            let binding = (*name, value);
-            match slot {
-                DebugSlot::Local(slot) => {
-                    local_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
-                }
-                DebugSlot::Upvalue(slot) => {
-                    upvalue_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
-                }
+        let binding = (*name, into_runtime_value(value, chunks));
+        match slot {
+            DebugSlot::Local(slot) => {
+                local_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
             }
-            bindings.push(binding);
+            DebugSlot::Upvalue(slot) => {
+                upvalue_slots.push(VmDebugBinding::new(*name, *slot, binding.1.clone()));
+            }
         }
+        bindings.push(binding);
     }
     Some(DebugBindings {
         bindings,
@@ -1143,7 +1149,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
 
-                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues)
+                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_boundary(DebugEvent {
@@ -1159,7 +1165,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                             .cloned()
                             .map(|value| into_runtime_value(value, chunks))
                             .collect(),
-                    });
+                    })
+                    .map_err(|error| locate(chunk, ip, error))?;
                 }
                 apply_debug_updates(&vm_frame, locals, upvalues);
             }
@@ -1173,7 +1180,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
                 debug.current_node = Some(Shared::clone(&node));
 
-                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues)
+                let DebugBindings { bindings, vm_frame } = debug_bindings(chunk, locals, upvalues, chunks)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("debug slot out of bounds")))?;
                 if let Some(hook) = debug.hook.as_deref_mut() {
                     hook.on_explicit_breakpoint(DebugEvent {
@@ -1189,7 +1196,8 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                             .cloned()
                             .map(|value| into_runtime_value(value, chunks))
                             .collect(),
-                    });
+                    })
+                    .map_err(|error| locate(chunk, ip, error))?;
                 }
                 apply_debug_updates(&vm_frame, locals, upvalues);
             }
@@ -2490,6 +2498,7 @@ mod tests {
     #[case::not_callable(VmError::NotCallable, "Invalid definition for \"value is not callable\"")]
     #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
     #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
+    #[case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")]
     #[case::arity_mismatch(
         VmError::ArityMismatch { expected: 2, actual: 1 },
         "Invalid number of arguments in \"\", expected 2, got 1"
@@ -2522,6 +2531,7 @@ mod tests {
             | VmError::NotCallable
             | VmError::EnvNotFound(_)
             | VmError::UndefinedGlobal(_)
+            | VmError::Debugger(_)
             | VmError::Corrupt(_)
             | VmError::ArityMismatch { .. }
             | VmError::FlowBreak(_)
