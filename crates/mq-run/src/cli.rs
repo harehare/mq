@@ -1190,11 +1190,16 @@ impl Cli {
             "  mq -T json 'self' file.txt       # sets both -I and -F at once (-I/-F still override)"
         );
 
-        let _ = writeln!(out, "\n{}", "Updating markdown in place (-U):".bold().cyan());
+        let _ = writeln!(out, "\n{}", "Updating markdown (-U):".bold().cyan());
         let _ = writeln!(
             out,
-            "  mq -U '.h1 | update(\"New title\")' file.md  # rewrite the h1, leave everything else untouched"
+            "  mq -U '.h1 | update(\"New title\")' file.md         # whole document to stdout; the file is not touched"
         );
+        let _ = writeln!(
+            out,
+            "  mq -U --diff '.h1 | update(\"New title\")' file.md  # preview the change as a unified diff"
+        );
+        let _ = writeln!(out, "  (-U never edits in place; unmatched content is reformatted too)");
 
         let _ = writeln!(out, "\n{}", "Filtering with context (-F grep):".bold().cyan());
         let _ = writeln!(
@@ -1331,10 +1336,12 @@ impl Cli {
             mq -T json 'self' file.txt       # sets both -I and -F at once (-I/-F still override)\n```"
         );
 
-        let _ = writeln!(out, "\n## Updating markdown in place (-U)\n");
+        let _ = writeln!(out, "\n## Updating markdown (-U)\n");
         let _ = writeln!(
             out,
-            "```sh\nmq -U '.h1 | update(\"New title\")' file.md  # rewrite the h1, leave everything else untouched\n```"
+            "```sh\nmq -U '.h1 | update(\"New title\")' file.md         # whole document to stdout; the file is not touched\n\
+            mq -U --diff '.h1 | update(\"New title\")' file.md  # preview the change as a unified diff\n```\n\n\
+            `-U` never edits in place; unmatched content is reformatted too."
         );
 
         let _ = writeln!(out, "\n## Filtering with context (-F grep)\n");
