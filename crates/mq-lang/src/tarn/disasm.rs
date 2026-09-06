@@ -148,6 +148,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
         bytecode::OpCode::TeeLocal(slot) => format!("TeeLocal {}", local(*slot)),
+        bytecode::OpCode::CopyLocal { source, destination } => {
+            format!("CopyLocal {} -> {}", local(*source), local(*destination))
+        }
         bytecode::OpCode::GetUpvalue(slot) => format!("GetUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::SetUpvalue(slot) => format!("SetUpvalue {}", upvalue(*slot)),
         bytecode::OpCode::MakeClosure(payload) => {

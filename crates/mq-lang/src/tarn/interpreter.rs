@@ -639,6 +639,12 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, top) };
             }
+            OpCode::CopyLocal { source, destination } => {
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                let value = unsafe { locals.get_unchecked(*source) };
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                unsafe { locals.set_unchecked(*destination, value) };
+            }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
             OpCode::SetUpvalue(idx) => {
                 let v = pop!();

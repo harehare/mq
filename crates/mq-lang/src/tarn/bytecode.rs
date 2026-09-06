@@ -205,6 +205,11 @@ pub(crate) enum OpCode {
     SetLocal(u16),
     /// Stores the top stack value without popping it.
     TeeLocal(u16),
+    /// Copies one local slot to another without using the operand stack.
+    CopyLocal {
+        source: u16,
+        destination: u16,
+    },
     GetUpvalue(u16),
     SetUpvalue(u16),
     MakeClosure(Box<(u16, Vec<UpvalueSource>)>),
@@ -600,6 +605,16 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
+            (OpCode::GetLocal(source), Some(OpCode::SetLocal(destination)))
+                if !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::CopyLocal {
+                    source: *source,
+                    destination: *destination,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
             (OpCode::SetLocal(set_slot), Some(OpCode::GetLocal(get_slot)))
                 if set_slot == get_slot && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
             {
@@ -782,6 +797,17 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             pc,
                             slot: *slot,
                         });
+                    }
+                }
+                OpCode::CopyLocal { source, destination } => {
+                    for slot in [source, destination] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
                     }
                 }
                 OpCode::BinaryLocalLocal { left, right, .. } => {
@@ -1074,6 +1100,36 @@ mod tests {
     }
 
     #[test]
+    fn peephole_fuses_local_copy_without_changing_jump_targets() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Jump(2),
+                OpCode::GetLocal(0),
+                OpCode::SetLocal(1),
+                OpCode::GetLocal(1),
+                OpCode::Return,
+            ],
+            local_count: 2,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::Jump(1),
+                OpCode::CopyLocal {
+                    source: 0,
+                    destination: 1,
+                },
+                OpCode::GetLocal(1),
+                OpCode::Return,
+            ]
+        ));
+    }
+
+    #[test]
     fn peephole_rewrites_try_catch_offsets_past_removed_dead_code() {
         let mut chunk = Chunk {
             code: vec![
@@ -1145,6 +1201,13 @@ mod tests {
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
     #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::copy_local(vec![
+        OpCode::CopyLocal {
+            source: 0,
+            destination: 0,
+        },
+        OpCode::Return,
+    ])]
     #[case::call_local(vec![OpCode::CallLocal(0, 0), OpCode::Pop, OpCode::Return])]
     #[case::foreach_collect(vec![OpCode::ForeachCollect(0), OpCode::Return])]
     #[case::array_len_local(vec![OpCode::ArrayLenLocal(0), OpCode::Pop, OpCode::Return])]
