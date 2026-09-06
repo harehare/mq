@@ -926,6 +926,22 @@ def test_zip(value1, value2, expected):
 end
 
 # @parametrize([
+#   [[[1, "a"], [2, "b"], [3, "c"]], [[1, 2, 3], ["a", "b", "c"]]],
+#   [[[1, "x"], [2, "y"]], [[1, 2], ["x", "y"]]],
+#   [[], [[], []]],
+# ])
+def test_unzip(value, expected):
+  let result = unzip(value)
+  | assert_eq(result, expected)
+end
+
+def test_unzip_is_inverse_of_zip():
+  let a = [1, 2, 3]
+  | let b = ["a", "b", "c"]
+  | assert_eq(unzip(zip(a, b)), [a, b])
+end
+
+# @parametrize([
 #   [[{"value": 3}, {"value": 1}, {"value": 2}], fn(x): x["value"];, {"value": 1}],
 #   [[], fn(x): x;, None],
 #   [[{"score": 10}, {"score": 5}], fn(x): x["score"];, {"score": 5}],

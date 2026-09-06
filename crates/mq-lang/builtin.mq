@@ -2048,6 +2048,22 @@ def zip(arr1, arr2):
     end
 end
 
+# Splits an array of pairs into an array of two arrays: one with the first elements of each pair and one with the second elements. This is the inverse of `zip`.
+#
+# Example:
+# ```
+# unzip([[1, "a"], [2, "b"]])
+# #=> [[1, 2], ["a", "b"]]
+# ```
+#
+# Returns: array
+def unzip(pairs):
+  if (not(is_array(pairs))):
+    error("argument must be an array")
+  else:
+    fold(pairs, [[], []], fn(acc, pair): [acc[0] + [pair[0]], acc[1] + [pair[1]]];)
+end
+
 # Returns the minimum element in an array based on a provided function that extracts a comparable value from each element.
 #
 # Example:
