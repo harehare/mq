@@ -143,6 +143,13 @@ impl VmVariable {
     }
 }
 
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+impl std::fmt::Display for VmVariable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} = {}, type: {}", self.name, self.value, self.type_field)
+    }
+}
+
 /// A pending write to a VM slot requested while execution is stopped.
 #[cfg(all(feature = "tarn", feature = "debugger"))]
 #[derive(Debug, Clone)]
