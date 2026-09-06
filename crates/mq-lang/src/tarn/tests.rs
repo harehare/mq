@@ -727,6 +727,8 @@ fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
 #[case::shadowing_in_sibling_closures_does_not_leak_between_them(
     "let f = fn(): let x = 1 | x; | let g = fn(): let x = 2 | x; | f() + g()"
 )]
+#[case::unresolved_name_in_an_unreachable_branch("if(false): undefined_name else: 1")]
+#[case::unresolved_name_in_an_uncalled_function("def f(): undefined_name; | 1")]
 fn compiled_engine_matches_tree_walker(#[case] code: &str) {
     assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
 }

@@ -120,6 +120,9 @@ struct Compiler<R: ModuleResolver> {
     module_dependencies: Vec<ModuleDependency>,
     /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
+    /// Engine evaluation resolves unknown names at runtime, matching the tree walker. This
+    /// preserves lazy control-flow and function-body semantics for names that are never read.
+    defer_undefined_identifiers: bool,
     /// Canonical slots so every `Pattern::Or` alternative binds the same name to the same
     /// slot; innermost `Or` is last.
     or_pattern_slots: Vec<FxHashMap<crate::Ident, u16>>,
@@ -131,8 +134,16 @@ pub(crate) fn compile_program<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::None, &[], &[], &[])
-        .map(|(compiled, _)| compiled)
+    compile_program_impl(
+        program,
+        token_arena,
+        module_loader,
+        CompileOptions::new(BuiltinPrelude::None, false),
+        &[],
+        &[],
+        &[],
+    )
+    .map(|(compiled, _)| compiled)
 }
 
 /// Compiles a debugger expression with paused-frame names predeclared as top-level slots.
@@ -147,7 +158,7 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
         program,
         token_arena,
         module_loader,
-        BuiltinPrelude::None,
+        CompileOptions::new(BuiltinPrelude::None, false),
         bindings,
         &[],
         &[],
@@ -161,8 +172,16 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_impl(program, token_arena, module_loader, BuiltinPrelude::All, &[], &[], &[])
-        .map(|(compiled, _)| compiled)
+    compile_program_impl(
+        program,
+        token_arena,
+        module_loader,
+        CompileOptions::new(BuiltinPrelude::All, false),
+        &[],
+        &[],
+        &[],
+    )
+    .map(|(compiled, _)| compiled)
 }
 
 pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
@@ -197,7 +216,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
             program,
             Shared::clone(&token_arena),
             module_loader.clone(),
-            prelude,
+            CompileOptions::new(prelude, true),
             seed_bindings,
             seed_immutable,
             external_globals,
@@ -228,7 +247,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         program,
         token_arena,
         module_loader,
-        BuiltinPrelude::All,
+        CompileOptions::new(BuiltinPrelude::All, true),
         seed_bindings,
         seed_immutable,
         external_globals,
@@ -241,6 +260,21 @@ enum BuiltinPrelude<'a> {
     None,
     All,
     Reachable(&'a FxHashSet<crate::Ident>),
+}
+
+#[derive(Clone, Copy)]
+struct CompileOptions<'a> {
+    builtin_prelude: BuiltinPrelude<'a>,
+    defer_undefined_identifiers: bool,
+}
+
+impl<'a> CompileOptions<'a> {
+    const fn new(builtin_prelude: BuiltinPrelude<'a>, defer_undefined_identifiers: bool) -> Self {
+        Self {
+            builtin_prelude,
+            defer_undefined_identifiers,
+        }
+    }
 }
 
 /// Names implemented by `builtin.mq`, rather than native Rust builtins.
@@ -537,7 +571,7 @@ fn compile_program_impl<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    builtin_prelude: BuiltinPrelude<'_>,
+    options: CompileOptions<'_>,
     seed_bindings: &[crate::Ident],
     seed_immutable: &[crate::Ident],
     external_globals: &[crate::Ident],
@@ -567,14 +601,15 @@ fn compile_program_impl<R: ModuleResolver>(
         #[cfg(not(feature = "debugger"))]
         module_dependencies: Vec::new(),
         try_depth: 0,
+        defer_undefined_identifiers: options.defer_undefined_identifiers,
         or_pattern_slots: Vec::new(),
     };
-    if !matches!(builtin_prelude, BuiltinPrelude::None) {
+    if !matches!(options.builtin_prelude, BuiltinPrelude::None) {
         let builtin_module = compiler
             .module_loader
             .load_builtin(Shared::clone(&compiler.token_arena))
             .map_err(CompileError::Module)?;
-        match builtin_prelude {
+        match options.builtin_prelude {
             BuiltinPrelude::All => compiler.compile_flattened_module(&builtin_module)?,
             BuiltinPrelude::Reachable(names) => compiler.compile_reachable_builtin_prelude(&builtin_module, names)?,
             BuiltinPrelude::None => unreachable!("handled above"),
@@ -1887,7 +1922,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
-            None if self.try_depth > 0 => {
+            None if self.try_depth > 0 || self.defer_undefined_identifiers => {
                 self.emit(OpCode::GetExternalGlobal(name));
                 Ok(())
             }
