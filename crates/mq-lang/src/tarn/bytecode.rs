@@ -277,10 +277,10 @@ pub(crate) enum OpCode {
     SelectorMatch(Box<Selector>),
     SelectorMatchKind(NodeSelectorKind),
     SelectorMatchHeading(u8),
-    SelectorMatchWithArgs(Box<(Selector, u8)>),
-    CallBuiltin(Ident, u8),
-    CallLocal(u16, u8),
-    CallValue(u8),
+    SelectorMatchWithArgs(Box<(Selector, u16)>),
+    CallBuiltin(Ident, u16),
+    CallLocal(u16, u16),
+    CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
     /// Executes a `try` closure and invokes its catch closure on errors.
@@ -1444,5 +1444,13 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn widened_call_counts_keep_opcode_size() {
+        // `CallBuiltin(Ident, ..)` already determines the enum's 64-bit layout, so widening
+        // call counts from `u8` to `u16` must not inflate the instruction stream.
+        assert_eq!(std::mem::size_of::<OpCode>(), 16);
     }
 }

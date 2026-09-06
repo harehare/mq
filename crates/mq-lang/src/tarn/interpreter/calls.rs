@@ -26,7 +26,7 @@ pub(super) struct CallSite<'a> {
 /// Static properties of a direct fixed-arity closure call.
 pub(super) struct FixedClosureCall<'a> {
     pub(super) closure: &'a Closure,
-    pub(super) argc: u8,
+    pub(super) argc: u16,
     pub(super) remove_callee: bool,
 }
 

@@ -502,16 +502,18 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
 fn collect_inline_module_vars(
     module: &ast::IdentWithToken,
     body: &Program,
+    parent_path: &[ast::IdentWithToken],
     vars: &mut Vec<(Vec<ast::IdentWithToken>, Shared<Node>)>,
 ) {
     // Inline-module aliases are exported into the surrounding compiler scope, including when
     // the declaration itself is nested (the same rule used by `compile_module_rest`).
-    let path = vec![module.clone()];
+    let mut path = parent_path.to_vec();
+    path.push(module.clone());
     for node in body {
         match &*node.expr {
             Expr::Let(Pattern::Ident(_), _) => vars.push((path.clone(), Shared::clone(node))),
             Expr::Module(nested_module, nested_body) => {
-                collect_inline_module_vars(nested_module, nested_body, vars);
+                collect_inline_module_vars(nested_module, nested_body, &path, vars);
             }
             _ => {}
         }
@@ -555,7 +557,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
 
     for (ident, prefix, body) in inline_modules {
         let mut module_vars = Vec::new();
-        collect_inline_module_vars(&ident, &body, &mut module_vars);
+        collect_inline_module_vars(&ident, &body, &[], &mut module_vars);
         if module_vars.is_empty() {
             continue;
         }

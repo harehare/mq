@@ -86,11 +86,20 @@ struct LoopCtx {
     chunk_index: usize,
 }
 
-/// A `module`/`import`-qualified name reference (`alias::name`).
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// A `module`/`import`-qualified name reference (`alias::name` or `parent::child::name`).
+#[derive(Clone, PartialEq, Eq, Hash)]
 struct QualifiedName {
-    alias: crate::Ident,
+    path: Box<[crate::Ident]>,
     name: crate::Ident,
+}
+
+impl QualifiedName {
+    fn new(path: &[crate::Ident], name: crate::Ident) -> Self {
+        Self {
+            path: path.to_vec().into_boxed_slice(),
+            name,
+        }
+    }
 }
 
 /// Where a [`QualifiedName`] resolves: the scope depth it was declared at, and its slot there.
@@ -750,7 +759,7 @@ impl<R: ModuleResolver> Compiler<R> {
         enum Deferred {
             Statement(Shared<Node>),
             ModuleVars(String, crate::Module, Option<crate::Ident>),
-            InlineModuleRest(crate::Ident, usize, Program, FxHashMap<crate::Ident, u16>),
+            InlineModuleRest(Vec<crate::Ident>, usize, Program, FxHashMap<crate::Ident, u16>),
         }
         let mut deferred = Vec::with_capacity(program.len());
         let mut defs: Program = Vec::new();
@@ -803,10 +812,10 @@ impl<R: ModuleResolver> Compiler<R> {
                     deferred.push(Deferred::ModuleVars(path, module, Some(module_alias)));
                 }
                 Expr::Module(ident, inline_program) => {
-                    let module_alias = ident.name;
+                    let module_path = vec![ident.name];
                     let depth = self.scopes.len() - 1;
-                    let (rest, let_slots) = self.compile_module_functions(ident, inline_program)?;
-                    deferred.push(Deferred::InlineModuleRest(module_alias, depth, rest, let_slots));
+                    let (rest, let_slots) = self.compile_module_functions(&module_path, inline_program)?;
+                    deferred.push(Deferred::InlineModuleRest(module_path, depth, rest, let_slots));
                 }
                 _ => deferred.push(Deferred::Statement(Shared::clone(node))),
             }
@@ -843,8 +852,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_module_vars_binding(path, module, *alias)?;
                     continue;
                 }
-                Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
-                    self.compile_module_rest(*module_alias, *depth, rest, let_slots)?
+                Deferred::InlineModuleRest(module_path, depth, rest, let_slots) => {
+                    self.compile_module_rest(module_path, *depth, rest, let_slots)?
                 }
             }
             self.emit(OpCode::SetLocal(SELF_SLOT));
@@ -863,8 +872,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_module_vars_binding(path, module, *alias)?;
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
-            Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
-                self.compile_module_rest(*module_alias, *depth, rest, let_slots)?;
+            Deferred::InlineModuleRest(module_path, depth, rest, let_slots) => {
+                self.compile_module_rest(module_path, *depth, rest, let_slots)?;
                 self.emit(OpCode::SetLocal(SELF_SLOT));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
@@ -896,6 +905,10 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn scope_mut(&mut self) -> &mut FunctionScope {
         self.scopes.last_mut().expect("at least one scope")
+    }
+
+    fn insert_qualified_binding(&mut self, path: &[crate::Ident], name: crate::Ident, slot: QualifiedSlot) {
+        self.qualified_bindings.insert(QualifiedName::new(path, name), slot);
     }
 
     fn emit(&mut self, op: OpCode) -> usize {
@@ -1471,13 +1484,7 @@ impl<R: ModuleResolver> Compiler<R> {
         if let Some(module_alias) = alias {
             let depth = self.scopes.len() - 1;
             for (name, slot) in var_slots {
-                self.qualified_bindings.insert(
-                    QualifiedName {
-                        alias: module_alias,
-                        name,
-                    },
-                    QualifiedSlot { depth, slot },
-                );
+                self.insert_qualified_binding(&[module_alias], name, QualifiedSlot { depth, slot });
                 self.scope_mut().set_local_name(slot, crate::Ident::default());
             }
         }
@@ -1715,13 +1722,7 @@ impl<R: ModuleResolver> Compiler<R> {
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
             self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(*slot));
-            self.qualified_bindings.insert(
-                QualifiedName {
-                    alias: module_alias,
-                    name: ident.name,
-                },
-                QualifiedSlot { depth, slot: *slot },
-            );
+            self.insert_qualified_binding(&[module_alias], ident.name, QualifiedSlot { depth, slot: *slot });
         }
         // Only qualified names remain visible after compilation.
         for slot in slots {
@@ -1730,19 +1731,24 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(module)
     }
 
-    fn compile_module(&mut self, ident: &ast::IdentWithToken, program: &Program) -> CompileResult<()> {
-        let module_alias = ident.name;
+    fn compile_module(
+        &mut self,
+        ident: &ast::IdentWithToken,
+        program: &Program,
+        parent_path: &[crate::Ident],
+    ) -> CompileResult<()> {
+        let mut module_path = parent_path.to_vec();
+        module_path.push(ident.name);
         let depth = self.scopes.len() - 1;
-        let (rest, let_slots) = self.compile_module_functions(ident, program)?;
-        self.compile_module_rest(module_alias, depth, &rest, &let_slots)
+        let (rest, let_slots) = self.compile_module_functions(&module_path, program)?;
+        self.compile_module_rest(&module_path, depth, &rest, &let_slots)
     }
 
     fn compile_module_functions(
         &mut self,
-        ident: &ast::IdentWithToken,
+        module_path: &[crate::Ident],
         program: &Program,
     ) -> CompileResult<(Program, FxHashMap<crate::Ident, u16>)> {
-        let module_alias = ident.name;
         let depth = self.scopes.len() - 1;
 
         let mut def_slots = FxHashMap::default();
@@ -1754,9 +1760,14 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.scope_mut().mark_immutable(slot);
                     def_slots.insert(def_ident.name, slot);
                 }
-                Expr::Let(Pattern::Ident(let_ident), _) => {
-                    let slot = self.scope_mut().declare(let_ident.name);
-                    let_slots.insert(let_ident.name, slot);
+                Expr::Let(pattern, _) | Expr::Var(pattern, _) => {
+                    let mut names = Vec::new();
+                    collect_pattern_idents(pattern, &mut names);
+                    names.sort();
+                    names.dedup();
+                    for name in names {
+                        let_slots.entry(name).or_insert_with(|| self.scope_mut().declare(name));
+                    }
                 }
                 _ => {}
             }
@@ -1771,15 +1782,9 @@ impl<R: ModuleResolver> Compiler<R> {
                     let (chunk_idx, upvalues) = self.compile_function(params, body, Some(def_ident.name))?;
                     self.emit_closure(chunk_idx, upvalues);
                     self.emit(OpCode::SetLocal(slot));
-                    self.qualified_bindings.insert(
-                        QualifiedName {
-                            alias: module_alias,
-                            name: def_ident.name,
-                        },
-                        QualifiedSlot { depth, slot },
-                    );
+                    self.insert_qualified_binding(module_path, def_ident.name, QualifiedSlot { depth, slot });
                 }
-                Expr::Include(_) | Expr::Let(_, _) | Expr::Import(_, _) | Expr::Module(_, _) => {
+                Expr::Include(_) | Expr::Let(_, _) | Expr::Var(_, _) | Expr::Import(_, _) | Expr::Module(_, _) => {
                     rest.push(Shared::clone(node));
                 }
                 _ => {}
@@ -1797,7 +1802,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_module_rest(
         &mut self,
-        module_alias: crate::Ident,
+        module_path: &[crate::Ident],
         depth: usize,
         rest: &Program,
         let_slots: &FxHashMap<crate::Ident, u16>,
@@ -1817,29 +1822,49 @@ impl<R: ModuleResolver> Compiler<R> {
                     let module = self.compile_include_functions(literal)?;
                     self.compile_module_vars_binding(&path, &module, None)?;
                 }
-                Expr::Let(Pattern::Ident(let_ident), value) => {
-                    match self.preresolved_module_vars.by_token.get(&node.token_id).cloned() {
-                        Some(known) if !matches!(known, RuntimeValue::VmClosure(_)) => {
-                            let idx = self.chunk_mut().push_const(known);
-                            self.emit(OpCode::Const(idx));
+                Expr::Let(pattern, value) | Expr::Var(pattern, value) => {
+                    let mutable = matches!(&*node.expr, Expr::Var(..));
+                    let mut names = Vec::new();
+                    collect_pattern_idents(pattern, &mut names);
+                    names.sort();
+                    names.dedup();
+
+                    if let Pattern::Ident(ident) = pattern {
+                        match self.preresolved_module_vars.by_token.get(&node.token_id).cloned() {
+                            Some(known) if !mutable && !matches!(known, RuntimeValue::VmClosure(_)) => {
+                                let idx = self.chunk_mut().push_const(known);
+                                self.emit(OpCode::Const(idx));
+                            }
+                            _ => self.compile_expr(value)?,
                         }
-                        _ => self.compile_expr(value)?,
+                        let slot = let_slots[&ident.name];
+                        if mutable {
+                            self.scope_mut().unmark_immutable(slot);
+                        } else {
+                            self.scope_mut().mark_immutable(slot);
+                        }
+                        self.emit(OpCode::SetLocal(slot));
+                    } else {
+                        self.current_pattern_override =
+                            Some(names.iter().map(|name| (*name, let_slots[name])).collect());
+                        self.compile_let_or_var_binding(pattern, value, mutable)?;
+                        if !mutable {
+                            for name in &names {
+                                self.scope_mut().mark_immutable(let_slots[name]);
+                            }
+                        }
                     }
-                    let slot = let_slots[&let_ident.name];
-                    self.emit(OpCode::SetLocal(slot));
-                    self.qualified_bindings.insert(
-                        QualifiedName {
-                            alias: module_alias,
-                            name: let_ident.name,
-                        },
-                        QualifiedSlot { depth, slot },
-                    );
-                }
-                Expr::Let(_, _) => {
-                    return Err(CompileError::Unsupported(
-                        "destructuring let inside an inline `module` block",
-                        self.current_token_id,
-                    ));
+
+                    for name in names {
+                        self.insert_qualified_binding(
+                            module_path,
+                            name,
+                            QualifiedSlot {
+                                depth,
+                                slot: let_slots[&name],
+                            },
+                        );
+                    }
                 }
                 Expr::Import(literal, alias) => {
                     // This import's own alias, not the enclosing `module_alias`.
@@ -1858,7 +1883,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_module_vars_binding(&path, &module, Some(import_alias))?;
                 }
                 Expr::Module(nested_ident, nested_program) => {
-                    self.compile_module(nested_ident, nested_program)?;
+                    self.compile_module(nested_ident, nested_program, module_path)?;
                 }
                 _ => {}
             }
@@ -1867,31 +1892,40 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// Encodes an argument count as the `u8` the bytecode's call opcodes carry, erroring
-    /// instead of silently wrapping when a call has 256 or more arguments.
-    fn arg_count(&self, len: usize) -> CompileResult<u8> {
-        u8::try_from(len)
-            .map_err(|_| CompileError::Unsupported("call with 256 or more arguments", self.current_token_id))
+    /// Encodes an argument count as the `u16` the bytecode's call opcodes carry.
+    fn arg_count(&self, len: usize) -> CompileResult<u16> {
+        u16::try_from(len)
+            .map_err(|_| CompileError::Unsupported("call with 65536 or more arguments", self.current_token_id))
     }
 
     fn compile_qualified_access(&mut self, path: &[ast::IdentWithToken], target: &AccessTarget) -> CompileResult<()> {
-        let [alias] = path else {
+        if path.is_empty() {
             return Err(CompileError::Unsupported(
-                "qualified access deeper than one alias segment",
+                "qualified access requires a module path",
                 self.current_token_id,
             ));
-        };
+        }
         let member = match target {
             AccessTarget::Ident(id) => id.name,
             AccessTarget::Call(id, _) => id.name,
         };
+        let module_path: Vec<crate::Ident> = path.iter().map(|segment| segment.name).collect();
         let QualifiedSlot { depth, slot } = *self
             .qualified_bindings
-            .get(&QualifiedName {
-                alias: alias.name,
-                name: member,
-            })
-            .ok_or_else(|| CompileError::UndefinedIdent(format!("{}::{member}", alias.name), self.current_token_id))?;
+            .get(&QualifiedName::new(&module_path, member))
+            .ok_or_else(|| {
+                CompileError::UndefinedIdent(
+                    format!(
+                        "{}::{member}",
+                        module_path
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join("::")
+                    ),
+                    self.current_token_id,
+                )
+            })?;
         if depth >= self.scopes.len() {
             return Err(CompileError::Unsupported(
                 "qualified access from a shallower scope than its import",
@@ -2091,7 +2125,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::InterpolatedString(segments) => self.compile_interpolated_string(segments),
             Expr::Include(literal) => self.compile_include(literal),
             Expr::Import(literal, alias) => self.compile_import(literal, alias.as_ref()),
-            Expr::Module(ident, program) => self.compile_module(ident, program),
+            Expr::Module(ident, program) => self.compile_module(ident, program, &[]),
             Expr::QualifiedAccess(path, target) => self.compile_qualified_access(path, target),
             Expr::Self_ | Expr::Nodes => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));

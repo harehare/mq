@@ -752,6 +752,29 @@ fn compiled_engine_matches_tree_walker(#[case] code: &str) {
     assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
 }
 
+#[test]
+fn inline_module_destructuring_matches_tree_walker() {
+    assert_vm_matches_tree_walker(
+        r#"module constants: let [pi, ..digits] = [314, 1, 5, 9] | let {major: version} = {"major": 8} end | constants::pi + len(constants::digits) + constants::version"#,
+        vec![RuntimeValue::None],
+    );
+}
+
+#[test]
+fn nested_module_paths_match_tree_walker() {
+    assert_vm_matches_tree_walker(
+        "module parent: module child: let answer = 40 | def add_two(): answer + 2; end end | parent::child::answer + parent::child::add_two()",
+        vec![RuntimeValue::None],
+    );
+}
+
+#[test]
+fn calls_with_256_arguments_match_tree_walker() {
+    let arguments = (0..256).map(|_| "1").collect::<Vec<_>>().join(", ");
+    let code = format!("let count = fn(*args): len(args); | count({arguments})");
+    assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+}
+
 // Documents real (matching) behavior, not an aspirational "fresh cell per iteration"
 // semantics: both engines reuse the same captured binding for `foreach`'s loop variable
 // across iterations, so every closure created inside the loop sees the final value.
