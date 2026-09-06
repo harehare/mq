@@ -183,6 +183,7 @@ pub(crate) enum VmError {
     NotCallable,
     EnvNotFound(String),
     UndefinedGlobal(String),
+    #[cfg(feature = "debugger")]
     Debugger(String),
     Corrupt(&'static str),
     ArityMismatch {
@@ -209,6 +210,7 @@ impl fmt::Display for VmError {
             VmError::NotCallable => write!(f, "value is not callable"),
             VmError::EnvNotFound(name) => write!(f, "environment variable not found: {name}"),
             VmError::UndefinedGlobal(name) => write!(f, "undefined identifier `{name}`"),
+            #[cfg(feature = "debugger")]
             VmError::Debugger(message) => write!(f, "debugger expression failed: {message}"),
             VmError::Corrupt(what) => write!(f, "corrupt bytecode: {what}"),
             VmError::ArityMismatch { expected, actual } => {
@@ -252,6 +254,7 @@ impl VmError {
             VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
             VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
             VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
+            #[cfg(feature = "debugger")]
             VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
             VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
                 token,
@@ -2498,7 +2501,10 @@ mod tests {
     #[case::not_callable(VmError::NotCallable, "Invalid definition for \"value is not callable\"")]
     #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
     #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
-    #[case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")]
+    #[cfg_attr(
+        feature = "debugger",
+        case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")
+    )]
     #[case::arity_mismatch(
         VmError::ArityMismatch { expected: 2, actual: 1 },
         "Invalid number of arguments in \"\", expected 2, got 1"
@@ -2525,13 +2531,14 @@ mod tests {
     #[allow(dead_code)]
     fn all_vm_error_variants_are_covered(e: VmError) {
         match e {
+            #[cfg(feature = "debugger")]
+            VmError::Debugger(_) => {}
             VmError::Builtin(_)
             | VmError::Host(_, _)
             | VmError::ZeroDivision
             | VmError::NotCallable
             | VmError::EnvNotFound(_)
             | VmError::UndefinedGlobal(_)
-            | VmError::Debugger(_)
             | VmError::Corrupt(_)
             | VmError::ArityMismatch { .. }
             | VmError::FlowBreak(_)
