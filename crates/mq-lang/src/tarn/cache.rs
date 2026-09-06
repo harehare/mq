@@ -4,14 +4,13 @@ use super::nodes_split::{
 };
 use super::{
     EngineRunContext, Error, compiler, interpreter, remaining_timeout, resolve_module_prelude_globals, run_for_input,
-    shared_deadline,
 };
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver, Shared};
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Bytecode retained for repeated VM evaluation.
 #[derive(Clone)]
@@ -39,16 +38,18 @@ impl fmt::Debug for CachedProgram {
 /// hit reuses the bytecode (and its already-baked constants) without calling this again.
 pub(super) fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
-    context: &EngineRunContext<'_, R>,
+    context: &mut EngineRunContext<'_, R>,
     configuration: Vec<String>,
     deadline: Option<Instant>,
 ) -> Result<CachedProgram, Error> {
     let token_arena = Shared::clone(&context.token_arena);
-    let module_loader = context.module_loader.clone();
     let global_bindings = context.global_bindings;
     let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
     global_names.sort_unstable();
+    // Resolve on `context.module_loader` itself so the clone below inherits already-loaded
+    // (and AST-cached) modules instead of the real compile loading them again.
     let preresolved_module_vars = resolve_module_prelude_globals(program, context, deadline)?;
+    let module_loader = context.module_loader.clone();
     let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
         let let_names = let_names_before_nodes(before);
         let immutable_let_names = immutable_let_names_before_nodes(before);
@@ -118,18 +119,21 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.
+///
+/// `deadline` must be the same deadline used for compiling `compiled` (on a cache miss) so the
+/// whole `Engine::eval_compiled` call shares one wall-clock budget instead of each stage getting
+/// its own fresh `timeout` window.
 pub(super) fn run_cached<I>(
     compiled: &CachedProgram,
     inputs: I,
     host_functions: &HostFunctions,
-    timeout: Option<Duration>,
+    deadline: Option<Instant>,
     max_call_stack_depth: u32,
     global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    let deadline = shared_deadline(timeout);
     // Pools contain reusable frame storage and must remain exclusive to one evaluation.
     // Cached bytecode is immutable and safely shared; frame storage is intentionally local.
     let mut pools = interpreter::ExecutionPools::default();

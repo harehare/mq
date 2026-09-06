@@ -68,6 +68,10 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     source_cache: FxHashMap<SmolStr, String>,
     /// Parsed builtin AST tied to the token arena it was created in.
     builtin_module_cache: Option<(TokenArena, Module)>,
+    /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
+    /// parsed by this loader instead of reparsing its cached source.
+    #[cfg(feature = "tarn")]
+    module_ast_cache: FxHashMap<SmolStr, Module>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -149,6 +153,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             source_code: None,
             source_cache: FxHashMap::default(),
             builtin_module_cache: None,
+            #[cfg(feature = "tarn")]
+            module_ast_cache: FxHashMap::default(),
             resolver,
             #[cfg(feature = "http-import")]
             http_depth: 0,
@@ -209,6 +215,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let module = Self::classify_module(module_name, program)?;
         self.loaded_modules.alloc(module_name.into());
+        #[cfg(feature = "tarn")]
+        self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
         Ok(module)
     }
 
@@ -253,6 +261,11 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     #[cfg(feature = "tarn")]
     pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let name = self.resolver.canonical_name(module_path).to_owned();
+        // Already parsed by this same loader (e.g. a prelude pre-pass ran ahead of the real
+        // compile): reuse that AST instead of reparsing the cached source from scratch.
+        if let Some(module) = self.module_ast_cache.get(name.as_str()) {
+            return Ok(module.clone());
+        }
         let code = self
             .source_cache
             .get(name.as_str())
@@ -260,7 +273,9 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
         let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
         let program = Self::parse_program(&code, module_id, token_arena)?;
-        Self::classify_module(&name, &program)
+        let module = Self::classify_module(&name, &program)?;
+        self.module_ast_cache.insert(SmolStr::new(&name), module.clone());
+        Ok(module)
     }
 
     /// Captures the source identity of a module that has just been loaded by this loader.

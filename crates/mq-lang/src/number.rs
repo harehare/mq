@@ -165,16 +165,18 @@ impl Rem for Number {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self {
-        // `f64 %` lowers to a `fmod` libm call; integer-valued operands (by far the common
-        // case for `%`) give the same truncated-division result via a hardware `i64 %`.
-        // Only take this path when both operands actually fit in an `i64` — otherwise the
-        // `as i64` cast saturates and silently produces a wrong result.
-        const I64_RANGE: std::ops::RangeInclusive<f64> = (i64::MIN as f64)..=(i64::MAX as f64);
+        // `i64::MAX as f64` rounds up to 2^63, so use the exact 2^63 literal as an
+        // exclusive upper bound instead — otherwise 2^63 itself wrongly passes the check
+        // and then saturates to i64::MAX in the cast below.
+        const I64_MIN_F64: f64 = i64::MIN as f64;
+        const I64_MAX_BOUND_F64: f64 = 9223372036854775808.0;
         if self.is_int()
             && other.is_int()
             && other.0 != 0.0
-            && I64_RANGE.contains(&self.0)
-            && I64_RANGE.contains(&other.0)
+            && self.0 >= I64_MIN_F64
+            && self.0 < I64_MAX_BOUND_F64
+            && other.0 >= I64_MIN_F64
+            && other.0 < I64_MAX_BOUND_F64
         {
             return Number((self.0 as i64 % other.0 as i64) as f64);
         }
@@ -269,6 +271,14 @@ mod tests {
         assert_eq!((a % c).value(), 100_000_000_000_000_000_000.0f64 % 3.0);
         assert_eq!((b % c).value(), 200_000_000_000_000_000_000.0f64 % 3.0);
         assert_ne!((a % c).value(), (b % c).value());
+    }
+
+    #[test]
+    fn test_rem_at_i64_max_boundary() {
+        let a = Number::new(9_223_372_036_854_775_808.0); // 2^63
+        let b = Number::new(3.0);
+
+        assert_eq!((a % b).value(), 2.0);
     }
 
     #[rstest]

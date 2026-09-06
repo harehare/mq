@@ -2059,3 +2059,40 @@ fn module_vars_binding_does_not_push_and_discard_self(module_with_vars: tempfile
         "{code:?} should not push self just to discard it"
     );
 }
+
+/// A local module containing a remote `include`/`import` must still hit the top-level-only
+/// HTTP boundary when compiled through Tarn, not just the tree-walker.
+#[rstest]
+#[case::nested_include(
+    "nested_remote_include.mq",
+    r#"include "https://example.invalid/remote.mq""#,
+    r#"include "nested_remote_include""#
+)]
+#[case::nested_import(
+    "nested_remote_import.mq",
+    r#"import "https://example.invalid/remote.mq""#,
+    r#"import "nested_remote_import" as m"#
+)]
+#[cfg(feature = "http-import")]
+fn nested_remote_module_directive_is_blocked_under_tarn(
+    #[case] local_file: &str,
+    #[case] local_source: &str,
+    #[case] code: &str,
+) {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join(local_file), local_source).unwrap();
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let resolver =
+        crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
+    let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap_err();
+
+    assert!(
+        matches!(
+            err,
+            compiler::CompileError::Module(crate::ModuleError::HttpImportNotAllowed(_))
+        ),
+        "{code:?}: {err:?}"
+    );
+}

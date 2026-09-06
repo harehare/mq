@@ -377,9 +377,9 @@ pub(crate) fn build_program(
 fn collect_module_prelude_targets(
     program: &Program,
     paths: &mut Vec<String>,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
 ) {
-    for node in program {
+    for (index, node) in program.iter().enumerate() {
         match &*node.expr {
             Expr::Include(Literal::String(path)) => {
                 if !paths.iter().any(|existing| existing == path) {
@@ -392,7 +392,7 @@ fn collect_module_prelude_targets(
                 }
             }
             Expr::Module(ident, body) => {
-                inline_modules.push((ident.clone(), body.clone()));
+                inline_modules.push((ident.clone(), program[..index].to_vec(), body.clone()));
                 collect_module_paths(body, paths);
             }
             _ => {}
@@ -422,23 +422,27 @@ fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
 /// initializer probe reloads from that in-memory cache rather than resolving the module again.
 /// A parent module's compiler emits its module directives before its own vars, so resolving
 /// children first also prevents a parent probe from re-running them.
+#[allow(clippy::too_many_arguments)]
 fn resolve_external_module_prelude<R: ModuleResolver>(
     path: &str,
-    context: &EngineRunContext<'_, R>,
+    token_arena: &TokenArena,
+    host_functions: &HostFunctions,
+    max_call_stack_depth: u32,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
     module_loader: &mut ModuleLoader<R>,
     seen: &mut FxHashSet<String>,
     result: &mut compiler::ResolvedModuleVars,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
     deadline: Option<Instant>,
 ) -> Result<(), Error> {
     if !seen.insert(path.to_string()) {
         return Ok(());
     }
 
-    let module = match module_loader.load_from_file(path, Shared::clone(&context.token_arena)) {
+    let module = match module_loader.load_from_file(path, Shared::clone(token_arena)) {
         Ok(module) => module,
         Err(crate::ModuleError::AlreadyLoaded(_)) => module_loader
-            .reload_cached(path, Shared::clone(&context.token_arena))
+            .reload_cached(path, Shared::clone(token_arena))
             .map_err(compiler::CompileError::Module)?,
         Err(error) => return Err(compiler::CompileError::Module(error).into()),
     };
@@ -447,7 +451,10 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     for dependency in dependencies {
         resolve_external_module_prelude(
             &dependency,
-            context,
+            token_arena,
+            host_functions,
+            max_call_stack_depth,
+            global_bindings,
             module_loader,
             seen,
             result,
@@ -467,7 +474,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     })];
     let compiled = compiler::compile_program_for_engine(
         &directive_program,
-        Shared::clone(&context.token_arena),
+        Shared::clone(token_arena),
         module_loader.clone(),
         &[],
         result,
@@ -477,10 +484,10 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
         RuntimeValue::None,
         &[],
         interpreter::RunOptions {
-            host_functions: context.host_functions,
+            host_functions,
             timeout: remaining_timeout(deadline),
-            max_call_stack_depth: context.max_call_stack_depth,
-            global_bindings: context.global_bindings,
+            max_call_stack_depth,
+            global_bindings,
         },
         &var_names,
         interpreter::ExecutionPools::default(),
@@ -511,31 +518,34 @@ fn collect_inline_module_vars(
     }
 }
 
-/// Computes each module's `let` values once per eval, so a side-effecting initializer doesn't
-/// re-run once per input row or again for a `nodes` aggregate phase — baked into every real
-/// compile as constants instead of recompiling the initializer.
+/// Computes each module's `let` values once per eval, baked into every real compile as
+/// constants instead of recompiling the initializer per input.
 ///
 /// An inline module's vars are only reachable via qualified access, so they're probed by
-/// compiling+running a throwaway `[module { .. }, array(alias::a, ..)]` program once. A probe
-/// that fails to compile or run (e.g. it references the enclosing scope) is skipped silently,
-/// leaving that module to keep recompiling its vars as before.
+/// compiling+running a throwaway `[..enclosing prefix, module { .. }, array(alias::a, ..)]`
+/// program, prefixed with the preceding top-level nodes so it sees the same enclosing
+/// `let`/`def` bindings the real compile would. A name still out of scope after that falls
+/// back to recompiling the module inline; any other probe failure is a real initializer bug
+/// and is propagated rather than retried once per input.
 fn resolve_module_prelude_globals<R: ModuleResolver>(
     program: &Program,
-    context: &EngineRunContext<'_, R>,
+    context: &mut EngineRunContext<'_, R>,
     deadline: Option<Instant>,
 ) -> Result<compiler::ResolvedModuleVars, Error> {
     let mut paths: Vec<String> = Vec::new();
-    let mut inline_modules: Vec<(ast::IdentWithToken, Program)> = Vec::new();
+    let mut inline_modules: Vec<(ast::IdentWithToken, Program, Program)> = Vec::new();
     collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
 
     let mut result = compiler::ResolvedModuleVars::default();
-    let mut module_loader = context.module_loader.clone();
     let mut seen_paths = FxHashSet::default();
     for path in paths {
         resolve_external_module_prelude(
             &path,
-            context,
-            &mut module_loader,
+            &context.token_arena,
+            context.host_functions,
+            context.max_call_stack_depth,
+            context.global_bindings,
+            &mut context.module_loader,
             &mut seen_paths,
             &mut result,
             &mut inline_modules,
@@ -543,7 +553,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         )?;
     }
 
-    for (ident, body) in inline_modules {
+    for (ident, prefix, body) in inline_modules {
         let mut module_vars = Vec::new();
         collect_inline_module_vars(&ident, &body, &mut module_vars);
         if module_vars.is_empty() {
@@ -565,16 +575,15 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 })
             })
             .collect();
-        let probe_program: Program = vec![
-            Shared::new(Node {
-                token_id: crate::ast::TokenId::new(0),
-                expr: Shared::new(Expr::Module(ident.clone(), body)),
-            }),
-            Shared::new(Node {
-                token_id: crate::ast::TokenId::new(0),
-                expr: Shared::new(Expr::Call(ast::IdentWithToken::new("array"), probe_args)),
-            }),
-        ];
+        let mut probe_program = prefix;
+        probe_program.push(Shared::new(Node {
+            token_id: crate::ast::TokenId::new(0),
+            expr: Shared::new(Expr::Module(ident.clone(), body)),
+        }));
+        probe_program.push(Shared::new(Node {
+            token_id: crate::ast::TokenId::new(0),
+            expr: Shared::new(Expr::Call(ast::IdentWithToken::new("array"), probe_args)),
+        }));
 
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
             let compiled = compiler::compile_program_for_engine(
@@ -598,12 +607,14 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             })
         })();
 
-        if let Ok(values) = probed
-            && values.len() == module_vars.len()
-        {
-            for ((_, node), value) in module_vars.iter().zip(values) {
-                result.by_token.insert(node.token_id, value);
+        match probed {
+            Ok(values) if values.len() == module_vars.len() => {
+                for ((_, node), value) in module_vars.iter().zip(values) {
+                    result.by_token.insert(node.token_id, value);
+                }
             }
+            Ok(_) | Err(Error::Compile(compiler::CompileError::UndefinedIdent(..))) => {}
+            Err(error) => return Err(error),
         }
     }
 
@@ -649,6 +660,9 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
         if self.engine.session.is_none()
             && let Some(cached) = compiled.cached_vm_program()
         {
+            // One deadline for the whole call: a cache-miss compile must not spend its own
+            // budget separately from the run that follows it.
+            let deadline = shared_deadline(self.engine.timeout);
             let cache_configuration = self.cache_configuration();
             let cached = match cached {
                 Some(cached)
@@ -662,7 +676,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     cached
                 }
                 _ => {
-                    let cache_context = EngineRunContext {
+                    let mut cache_context = EngineRunContext {
                         host_functions: self.engine.host_functions,
                         timeout: self.engine.timeout,
                         max_call_stack_depth: self.engine.max_call_stack_depth,
@@ -672,12 +686,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         session: self.engine.session,
                         preresolved_module_vars: compiler::ResolvedModuleVars::default(),
                     };
-                    cache::compile_cached_program(
-                        program,
-                        &cache_context,
-                        cache_configuration,
-                        shared_deadline(self.engine.timeout),
-                    )?
+                    cache::compile_cached_program(program, &mut cache_context, cache_configuration, deadline)?
                 }
             };
             compiled.cache_vm_program(cached.clone());
@@ -685,7 +694,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 &cached,
                 input,
                 self.engine.host_functions,
-                self.engine.timeout,
+                deadline,
                 self.engine.max_call_stack_depth,
                 self.engine.global_bindings,
             );
@@ -856,12 +865,13 @@ where
 
     let mut values = Vec::new();
     let mut before_bindings = Vec::new();
+    let mut current_values = seed.seed_values.clone();
     for input in inputs {
         let result = run_for_input(input, |value| {
             let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
                 &before_compiled,
                 value,
-                &seed.seed_values,
+                &current_values,
                 interpreter::RunOptions {
                     host_functions: context.host_functions,
                     timeout: remaining_timeout(deadline),
@@ -872,6 +882,7 @@ where
                 interpreter::ExecutionPools::default(),
             );
             if result.is_ok() {
+                current_values = captured.iter().map(|(_, value)| value.clone()).collect();
                 before_bindings = captured;
             }
             result
@@ -939,13 +950,14 @@ where
     )?;
 
     let mut values = Vec::new();
-    let mut captured: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
+    let mut current_values = seed.seed_values.clone();
+    let mut captured: Option<Vec<(crate::Ident, RuntimeValue)>> = None;
     for input in inputs {
         let result = run_for_input(input, |v| {
             let (result, newly_captured, _) = interpreter::run_with_globals_capturing_locals(
                 &compiled,
                 v,
-                &seed.seed_values,
+                &current_values,
                 interpreter::RunOptions {
                     host_functions: context.host_functions,
                     timeout: remaining_timeout(deadline),
@@ -956,7 +968,8 @@ where
                 interpreter::ExecutionPools::default(),
             );
             if result.is_ok() {
-                captured = newly_captured;
+                current_values = newly_captured.iter().map(|(_, value)| value.clone()).collect();
+                captured = Some(newly_captured);
             }
             result
         })
@@ -964,7 +977,9 @@ where
         values.push(result);
     }
 
-    store_session(session, session_bindings_from_captured(&compiled, captured));
+    if let Some(captured) = captured {
+        store_session(session, session_bindings_from_captured(&compiled, captured));
+    }
     Ok(values)
 }
 
@@ -1013,12 +1028,13 @@ where
 
     let mut values = Vec::new();
     let mut before_bindings = Vec::new();
+    let mut current_values = seed.seed_values.clone();
     for input in inputs {
         let result = run_for_input(input, |value| {
             let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
                 &before_compiled,
                 value,
-                &seed.seed_values,
+                &current_values,
                 interpreter::RunOptions {
                     host_functions: engine.host_functions,
                     timeout: remaining_timeout(deadline),
@@ -1029,6 +1045,7 @@ where
                 &mut hook,
             );
             if result.is_ok() {
+                current_values = captured.iter().map(|(_, value)| value.clone()).collect();
                 before_bindings = captured;
             }
             result
@@ -1120,13 +1137,14 @@ where
     );
 
     let mut values = Vec::new();
-    let mut captured: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
+    let mut current_values = seed.seed_values.clone();
+    let mut captured: Option<Vec<(crate::Ident, RuntimeValue)>> = None;
     for input in inputs {
         let result = run_for_input(input, |v| {
             let (result, newly_captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
                 &compiled,
                 v,
-                &seed.seed_values,
+                &current_values,
                 interpreter::RunOptions {
                     host_functions: context.engine.host_functions,
                     timeout: remaining_timeout(deadline),
@@ -1137,7 +1155,8 @@ where
                 &mut hook,
             );
             if result.is_ok() {
-                captured = newly_captured;
+                current_values = newly_captured.iter().map(|(_, value)| value.clone()).collect();
+                captured = Some(newly_captured);
             }
             result
         });
@@ -1150,7 +1169,9 @@ where
         }
     }
 
-    store_session(session, session_bindings_from_captured(&compiled, captured));
+    if let Some(captured) = captured {
+        store_session(session, session_bindings_from_captured(&compiled, captured));
+    }
     Ok(values)
 }
 
@@ -1228,7 +1249,7 @@ where
     I: Iterator<Item = RuntimeValue>,
 {
     let deadline = shared_deadline(context.timeout);
-    context.preresolved_module_vars = resolve_module_prelude_globals(program, &context, deadline)?;
+    context.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context, deadline)?;
     let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.session {
         return run_with_session(program, inputs, &context, session, &global_names, deadline);
@@ -1328,7 +1349,7 @@ where
     I: Iterator<Item = RuntimeValue>,
 {
     let deadline = shared_deadline(context.engine.timeout);
-    context.engine.preresolved_module_vars = resolve_module_prelude_globals(program, &context.engine, deadline)?;
+    context.engine.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context.engine, deadline)?;
     let global_names: Vec<crate::Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.engine.session {
         return run_with_session_debugged(program, inputs, context, session, &global_names, deadline);

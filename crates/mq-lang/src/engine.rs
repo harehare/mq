@@ -1035,6 +1035,42 @@ mod tests {
 
     #[cfg(feature = "tarn")]
     #[test]
+    fn test_query_session_var_mutation_carries_forward_across_inputs_in_one_eval() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("var x = 0", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval(
+            "x += 1 | x",
+            vec!["".to_string().into(), "".to_string().into(), "".to_string().into()].into_iter(),
+        );
+
+        assert_eq!(result.unwrap(), vec![1.into(), 2.into(), 3.into()].into());
+
+        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        assert_eq!(persisted.unwrap(), vec![3.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_empty_input_iterator_preserves_bindings() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("let x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("x + 1", std::iter::empty());
+        assert_eq!(result.unwrap(), Vec::<RuntimeValue>::new().into());
+
+        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        assert_eq!(persisted.unwrap(), vec![1.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
     fn test_uncached_nodes_split_preserves_let_immutability() {
         let mut engine = DefaultEngine::default();
 
@@ -1570,6 +1606,42 @@ mod tests {
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     #[test]
+    fn test_eval_compiled_cache_miss_shares_deadline_between_compile_and_run() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("slow_init", |_args: &[RuntimeValue]| {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            Ok(RuntimeValue::NONE)
+        });
+        engine.set_timeout(std::time::Duration::from_millis(500));
+
+        // Cache miss: compiling this resolves `slow_init()` once (~300ms), then `loop: 1;`
+        // must run out the *remaining* budget, not a fresh 500ms.
+        let compiled = engine
+            .compile("module m: let x = slow_init() end | m::x | loop: 1;")
+            .unwrap();
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
+
+        let started = std::time::Instant::now();
+        let err = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+        let elapsed = started.elapsed();
+
+        assert!(matches!(
+            err.cause,
+            error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+        ));
+        assert!(
+            elapsed < std::time::Duration::from_millis(750),
+            "the compile-phase delay should count against the shared deadline instead of \
+             resetting it for the run phase: {elapsed:?}"
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
     fn test_eval_compiled_vm_cached_bytecode_preserves_markdown_input_handling() {
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile(".h1").unwrap();
@@ -1987,6 +2059,78 @@ mod tests {
             .unwrap_err();
 
         assert!(err.to_string().contains("something went wrong"), "{err}");
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_inline_module_var_initializer_referencing_enclosing_def_runs_once_per_eval() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let mut engine = DefaultEngine::default();
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        let compiled = engine
+            .compile("def helper(): bump_counter(); | module counters: let counter = helper() end | counters::counter")
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "a module var initializer referencing an enclosing `def` must still run once per eval"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_inline_module_var_initializer_runtime_error_is_not_silently_retried() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let mut engine = DefaultEngine::default();
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        // No enclosing-scope dependency: the probe compiles fine and fails at runtime, so a
+        // silent probe-failure fallback would additionally retry this during real execution.
+        engine.register_fn("boom", move |_args: &[RuntimeValue]| {
+            call_count_clone.fetch_add(1, Ordering::SeqCst);
+            Err(crate::HostFunctionError::new("something went wrong"))
+        });
+
+        let compiled = engine
+            .compile("module counters: let counter = boom() end | counters::counter")
+            .unwrap();
+        let err = engine
+            .eval_compiled(
+                &compiled,
+                [RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())].into_iter(),
+            )
+            .unwrap_err();
+
+        assert!(err.to_string().contains("something went wrong"), "{err}");
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "a genuine initializer error must be surfaced once, not swallowed and retried during real execution"
+        );
     }
 
     #[cfg(feature = "tarn")]

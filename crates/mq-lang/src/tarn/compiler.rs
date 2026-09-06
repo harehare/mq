@@ -1380,7 +1380,14 @@ impl<R: ModuleResolver> Compiler<R> {
         let module = self.load_module_or_reload(path)?;
         #[cfg(not(feature = "debugger"))]
         self.record_module_dependency(path)?;
-        self.compile_module_directives(&module.modules)?;
+        // Balanced with the pop below regardless of outcome: nested include/import must not
+        // reach the network once we're inside a loaded module (matches the tree-walker).
+        #[cfg(feature = "http-import")]
+        self.module_loader.push_http_boundary();
+        let directives_result = self.compile_module_directives(&module.modules);
+        #[cfg(feature = "http-import")]
+        self.module_loader.pop_http_boundary();
+        directives_result?;
         self.predeclare_module_var_slots(&module.vars);
         let functions = self.reachable_module_functions(&module);
         self.compile_functions_with_forward_refs(&functions)?;
@@ -1678,7 +1685,12 @@ impl<R: ModuleResolver> Compiler<R> {
         self.record_module_dependency(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
 
-        self.compile_module_directives(&module.modules)?;
+        #[cfg(feature = "http-import")]
+        self.module_loader.push_http_boundary();
+        let directives_result = self.compile_module_directives(&module.modules);
+        #[cfg(feature = "http-import")]
+        self.module_loader.pop_http_boundary();
+        directives_result?;
         self.predeclare_module_var_slots(&module.vars);
         let functions = self.reachable_module_functions(&module);
 
