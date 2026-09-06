@@ -37,6 +37,25 @@ pub(super) fn let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<crate::Ide
     names
 }
 
+/// Top-level immutable `let` names declared before a `nodes` split.
+#[cfg(not(feature = "debugger"))]
+pub(super) fn immutable_let_names_before_nodes(before: ProgramSlice<'_>) -> Vec<crate::Ident> {
+    let mut names = Vec::new();
+    let mut shadowed = std::collections::HashSet::new();
+    for node in before.iter().rev() {
+        if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+            let mut declared = Vec::new();
+            compiler::collect_pattern_idents(pattern, &mut declared);
+            for name in declared {
+                if shadowed.insert(name) && matches!(&*node.expr, Expr::Let(..)) {
+                    names.push(name);
+                }
+            }
+        }
+    }
+    names
+}
+
 /// Like [`let_names_before_nodes`], but for the whole program and including `def`.
 pub(super) fn top_level_binding_names(program: &Program) -> Vec<crate::Ident> {
     let mut names = Vec::new();

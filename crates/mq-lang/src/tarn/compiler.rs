@@ -1886,6 +1886,15 @@ impl<R: ModuleResolver> Compiler<R> {
             return Ok(());
         }
 
+        // `breakpoint()` is deliberately a no-op outside debugger builds. Keeping it
+        // callable lets scripts carry debugging probes without changing production
+        // feature sets.
+        #[cfg(not(feature = "debugger"))]
+        if ident == builtins::BREAKPOINT.into() {
+            self.emit(OpCode::GetLocal(SELF_SLOT));
+            return Ok(());
+        }
+
         let shadowed = self.scope_mut().shadowed_builtin == Some(ident);
 
         if !shadowed && let Some(resolved) = self.resolve(ident) {
@@ -2272,19 +2281,22 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::GetLocal(SELF_SLOT));
         self.emit(OpCode::SetLocal(acc_slot));
 
-        // Peeled check: cond false before the loop ever runs means the result is None.
-        self.compile_expr(cond)?;
-        if invert {
-            self.emit(OpCode::Not);
-        }
-        let initial_exit = self.emit(OpCode::JumpIfFalse(0));
-
+        // Keep the condition at the loop head so the first iteration does not evaluate it
+        // twice. A separate flag preserves the language rule that a loop which never runs
+        // evaluates to `None`, rather than its input value.
+        let ran_slot = self.scope_mut().declare_synthetic();
+        let false_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
+        self.emit(OpCode::Const(false_idx));
+        self.emit(OpCode::SetLocal(ran_slot));
         let loop_start = self.chunk_mut().code.len();
         self.compile_expr(cond)?;
         if invert {
             self.emit(OpCode::Not);
         }
         let exit_jump = self.emit(OpCode::JumpIfFalse(0));
+        let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+        self.emit(OpCode::Const(true_idx));
+        self.emit(OpCode::SetLocal(ran_slot));
         let (break_jumps, break_try_catches, continue_try_catches) =
             self.compile_loop_body(loop_start, acc_slot, body)?;
 
@@ -2298,10 +2310,11 @@ impl<R: ModuleResolver> Compiler<R> {
         for try_catch in continue_try_catches {
             self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
+        self.emit(OpCode::GetLocal(ran_slot));
+        let no_iterations = self.emit(OpCode::JumpIfFalse(0));
         self.emit(OpCode::GetLocal(acc_slot));
         let done = self.emit(OpCode::Jump(0));
-
-        self.chunk_mut().patch_jump(initial_exit);
+        self.chunk_mut().patch_jump(no_iterations);
         self.emit(OpCode::PushNone);
         self.chunk_mut().patch_jump(done);
         Ok(())

@@ -67,7 +67,7 @@ impl ExecutionLimits {
             return Ok(());
         }
         if Instant::now() >= deadline {
-            Err(VmError::Timeout(self.timeout.expect("deadline implies timeout is set")))
+            Err(VmError::Timeout(self.timeout.unwrap_or_default()))
         } else {
             Ok(())
         }
@@ -229,6 +229,49 @@ impl VmError {
         match self {
             VmError::Located(_, token_id) => Some(*token_id),
             _ => None,
+        }
+    }
+
+    /// Maps to the tree-walker's `RuntimeError`, reusing its `Display` text instead of
+    /// duplicating each variant's wording.
+    pub(crate) fn to_runtime_error(
+        &self,
+        token: crate::Token,
+        token_id: TokenId,
+        token_arena: crate::TokenArena,
+    ) -> crate::error::runtime::RuntimeError {
+        use crate::error::runtime::RuntimeError;
+        match self {
+            VmError::Builtin(e) => e.to_runtime_error(token_id, token_arena),
+            VmError::Host(name, msg) => {
+                RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone().into_boxed_str())
+            }
+            VmError::ZeroDivision => RuntimeError::ZeroDivision(token),
+            VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
+            VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
+            VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
+            VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
+                token,
+                name: String::new(),
+                expected: *expected,
+                actual: *actual,
+            },
+            VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
+            VmError::FlowContinue => RuntimeError::Runtime(token, "continue outside a loop".to_string()),
+            VmError::DestructuringFailed => RuntimeError::DestructuringFailed(token),
+            VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
+                token,
+                name: crate::TokenKind::Foreach.to_string(),
+                args: vec![repr.clone().into()],
+            },
+            VmError::Timeout(d) => RuntimeError::Timeout(*d),
+            VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
+            VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
+            VmError::Located(inner, token_id) => {
+                let token_id = *token_id;
+                let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
+                inner.to_runtime_error(token, token_id, token_arena)
+            }
         }
     }
 }
@@ -623,7 +666,7 @@ fn call_stack_value(
 ) -> VmResult<StackValue> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
         let arg_values: Vec<RuntimeValue> = args.into_iter().map(|a| into_runtime_value(a, chunks)).collect();
-        let self_value = current_self(call_site.locals);
+        let self_value = current_self(call_site.locals, chunks);
         let result = call_builtin(
             &ident,
             &arg_values,
@@ -816,7 +859,7 @@ fn bind_params(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<()> {
     if let Some(arity) = shape.fixed_required_arity() {
-        return bind_fixed_required_params(arity, args, callee_locals);
+        return bind_fixed_required_params(arity, args, callee_locals, context.chunks);
     }
 
     let arg_count = args.len();
@@ -827,7 +870,7 @@ fn bind_params(
     let mut args = args.into_iter();
 
     if use_self_param && let Some(binding) = bindings.next() {
-        let self_value = current_self(callee_locals);
+        let self_value = current_self(callee_locals, context.chunks);
         callee_locals.set(binding.slot(), StackValue::Value(self_value));
     }
 
@@ -885,12 +928,17 @@ fn bind_params(
     Ok(())
 }
 
-fn bind_fixed_required_params(arity: usize, args: Vec<StackValue>, callee_locals: &Locals) -> VmResult<()> {
+fn bind_fixed_required_params(
+    arity: usize,
+    args: Vec<StackValue>,
+    callee_locals: &Locals,
+    chunks: &Shared<Vec<Chunk>>,
+) -> VmResult<()> {
     let arg_count = args.len();
     let first_arg_slot = if arg_count == arity {
         SELF_SLOT as usize + 1
     } else if arity > 0 && arg_count + 1 == arity {
-        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals)));
+        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
         SELF_SLOT as usize + 2
     } else {
         return Err(VmError::ArityMismatch {
@@ -936,11 +984,8 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
     }
 }
 
-fn current_self(locals: &Locals) -> RuntimeValue {
-    match locals.get(SELF_SLOT) {
-        StackValue::Value(v) => v,
-        StackValue::Closure(_) => RuntimeValue::None,
-    }
+fn current_self(locals: &Locals, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
+    into_runtime_value(locals.get(SELF_SLOT), chunks)
 }
 
 #[cfg(feature = "debugger")]
@@ -1104,7 +1149,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     hook.on_boundary(DebugEvent {
                         token_id: *token_id,
                         node,
-                        current_value: current_self(locals),
+                        current_value: current_self(locals, chunks),
                         bindings,
                         vm_frame: vm_frame.clone(),
                         call_stack: debug.call_stack.clone(),
@@ -1134,7 +1179,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     hook.on_explicit_breakpoint(DebugEvent {
                         token_id: *token_id,
                         node,
-                        current_value: current_self(locals),
+                        current_value: current_self(locals, chunks),
                         bindings,
                         vm_frame: vm_frame.clone(),
                         call_stack: debug.call_stack.clone(),
@@ -1148,13 +1193,19 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 }
                 apply_debug_updates(&vm_frame, locals, upvalues);
             }
-            OpCode::Const(idx) => stack.push(StackValue::Value(
-                unsafe { chunk.constants.get_unchecked(*idx as usize) }.clone(),
-            )),
+            OpCode::Const(idx) => {
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let value = unsafe { chunk.constants.get_unchecked(*idx as usize) }.clone();
+                stack.push(StackValue::Value(value));
+            }
             OpCode::PushNone => stack.push(StackValue::Value(RuntimeValue::None)),
-            OpCode::GetLocal(slot) => stack.push(unsafe { locals.get_unchecked(*slot) }),
+            OpCode::GetLocal(slot) => {
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                stack.push(unsafe { locals.get_unchecked(*slot) });
+            }
             OpCode::SetLocal(slot) => {
                 let v = pop!();
+                // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, v) };
             }
             OpCode::TeeLocal(slot) => {
@@ -1162,6 +1213,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .last()
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in TeeLocal")))?
                     .clone();
+                // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, top) };
             }
             OpCode::GetUpvalue(idx) => stack.push(read_cell(&upvalues[*idx as usize])),
@@ -1210,7 +1262,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     bail!(VmError::Corrupt("missing arithmetic binary operation"));
                 };
                 stack.push(StackValue::Value(
-                    binop(operation, a, b, locals, execution.env, execution.host_functions)
+                    binop(operation, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
@@ -1221,7 +1273,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     bail!(VmError::Corrupt("missing comparison binary operation"));
                 };
                 stack.push(StackValue::Value(
-                    cmp_op(operation, a, b, locals, execution.env, execution.host_functions)
+                    cmp_op(operation, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
@@ -1229,15 +1281,16 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let a = local_runtime_value(locals, *left, chunks)?;
                 let b = local_runtime_value(locals, *right, chunks)?;
                 stack.push(StackValue::Value(
-                    eval_binary_op(*op, a, b, locals, execution.env, execution.host_functions)
+                    eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
             OpCode::BinaryLocalConst { op, local, constant } => {
                 let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
                 let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
                 stack.push(StackValue::Value(
-                    eval_binary_op(*op, a, b, locals, execution.env, execution.host_functions)
+                    eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
@@ -1248,7 +1301,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     other => call_builtin(
                         negate_ident(),
                         &[other],
-                        &current_self(locals),
+                        &current_self(locals, chunks),
                         execution.env,
                         execution.host_functions,
                     )
@@ -1282,7 +1335,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     value => call_builtin(
                         &LEN_IDENT,
                         &[value],
-                        &current_self(locals),
+                        &current_self(locals, chunks),
                         execution.env,
                         execution.host_functions,
                     )
@@ -1307,7 +1360,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     (array, index) => call_builtin(
                         &GET_IDENT,
                         &[array, index],
-                        &current_self(locals),
+                        &current_self(locals, chunks),
                         execution.env,
                         execution.host_functions,
                     )
@@ -1327,6 +1380,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 };
                 match found {
                     Some(value) => {
+                        // SAFETY: `verify_chunks` validates every local slot before execution.
                         unsafe { locals.set_unchecked(*value_slot, StackValue::Value(value)) };
                         stack.push(StackValue::Value(RuntimeValue::Boolean(true)));
                     }
@@ -1392,6 +1446,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 )));
             }
             OpCode::GetEnvVar(name_idx) => {
+                // SAFETY: `verify_chunks` validates every constant index before execution.
                 let RuntimeValue::String(name) = (unsafe { chunk.constants.get_unchecked(*name_idx as usize) }) else {
                     bail!(VmError::Corrupt("GetEnvVar constant is not a string"));
                 };
@@ -1426,7 +1481,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let result = call_builtin_args(
                     ident,
                     args,
-                    &current_self(locals),
+                    &current_self(locals, chunks),
                     execution.env,
                     execution.host_functions,
                 )
@@ -1525,7 +1580,11 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let eligible = match &value {
                     StackValue::Closure(closure) => chunks[closure.chunk_index as usize].param_shape.required <= 1,
                     StackValue::Value(RuntimeValue::VmClosure(vc)) => {
-                        vc.chunks[vc.chunk_index as usize].param_shape.required <= 1
+                        vc.chunks[vc.chunk_index as usize]
+                            .param_shape
+                            .required
+                            .saturating_sub(vc.bound_args.len())
+                            <= 1
                     }
                     StackValue::Value(RuntimeValue::NativeFunction(ident)) => builtin::get_builtin_functions(ident)
                         .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0)),
@@ -1954,6 +2013,7 @@ fn eval_binary_op(
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &Locals,
+    chunks: &Shared<Vec<Chunk>>,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -1961,9 +2021,9 @@ fn eval_binary_op(
         op,
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
     ) {
-        return cmp_op(op, a, b, locals, env, host_functions);
+        return cmp_op(op, a, b, locals, chunks, env, host_functions);
     }
-    binop(op, a, b, locals, env, host_functions)
+    binop(op, a, b, locals, chunks, env, host_functions)
 }
 
 fn binop(
@@ -1971,6 +2031,7 @@ fn binop(
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &Locals,
+    chunks: &Shared<Vec<Chunk>>,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -2000,7 +2061,7 @@ fn binop(
     call_builtin(
         &crate::Ident::new(ident),
         &[a, b],
-        &current_self(locals),
+        &current_self(locals, chunks),
         env,
         host_functions,
     )
@@ -2011,6 +2072,7 @@ fn cmp_op(
     a: RuntimeValue,
     b: RuntimeValue,
     locals: &Locals,
+    chunks: &Shared<Vec<Chunk>>,
     env: &Shared<SharedCell<Env>>,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
@@ -2037,7 +2099,7 @@ fn cmp_op(
     call_builtin(
         &crate::Ident::new(ident),
         &[a, b],
-        &current_self(locals),
+        &current_self(locals, chunks),
         env,
         host_functions,
     )
@@ -2255,11 +2317,28 @@ fn error_dict(e: &VmError) -> RuntimeValue {
     RuntimeValue::Dict(Shared::new(map))
 }
 
+// Throwaway token/arena for `VmError::to_runtime_error` where no real one is available.
+fn placeholder_token_context() -> (crate::Token, TokenId, crate::TokenArena) {
+    let mut arena = crate::Arena::new(1);
+    let token = crate::Token {
+        range: crate::Range::default(),
+        kind: crate::TokenKind::Eof,
+        module_id: crate::ArenaId::new(0),
+    };
+    let token_id = arena.alloc(Shared::new(token.clone()));
+    let token_arena: crate::TokenArena = Shared::new(SharedCell::new(arena));
+    (token, token_id, token_arena)
+}
+
 fn error_message(e: &VmError) -> String {
+    // Strip `Located`'s real token_id first: `to_runtime_error` would try to resolve it
+    // against the placeholder arena below, which only holds the placeholder token.
     match e {
         VmError::Located(inner, _) => error_message(inner),
-        VmError::Builtin(inner) => builtin_error_message(inner),
-        other => other.to_string(),
+        other => {
+            let (token, token_id, token_arena) = placeholder_token_context();
+            other.to_runtime_error(token, token_id, token_arena).to_string()
+        }
     }
 }
 
@@ -2276,30 +2355,6 @@ fn flow_continue(e: &VmError) -> bool {
         VmError::FlowContinue => true,
         VmError::Located(inner, _) => flow_continue(inner),
         _ => false,
-    }
-}
-
-fn builtin_error_message(e: &builtin::Error) -> String {
-    match e {
-        builtin::Error::UserDefined(message) => message.clone(),
-        builtin::Error::InvalidBase64String(_) => "Invalid base64 string".to_string(),
-        builtin::Error::NotDefined(name, _) | builtin::Error::UndefinedReference(name, _) => {
-            format!("\"{name}\" is not defined")
-        }
-        builtin::Error::InvalidDateTimeFormat(msg) => format!("Unable to format date time, {msg}"),
-        builtin::Error::InvalidTypes(name, args) => {
-            let args = args.iter().map(|o| o.name().to_string()).collect::<Vec<_>>().join(", ");
-            format!("Invalid types for \"{name}\", got {args}")
-        }
-        builtin::Error::InvalidNumberOfArguments(name, expected, actual) => {
-            format!("Invalid number of arguments in \"{name}\", expected {expected}, got {actual}")
-        }
-        builtin::Error::InvalidRegularExpression(regex) => format!("Invalid regular expression \"{regex}\""),
-        builtin::Error::Runtime(msg) => format!("Runtime error: {msg}"),
-        builtin::Error::ZeroDivision => "Division by zero".to_string(),
-        builtin::Error::AssignToImmutable(name) => format!("Cannot assign to immutable variable \"{name}\""),
-        builtin::Error::UndefinedVariable(name) => format!("Undefined variable \"{name}\""),
-        builtin::Error::InvalidConvert(format) => format!("Invalid convert: {format}"),
     }
 }
 
@@ -2320,24 +2375,176 @@ mod tests {
 
     #[test]
     fn fixed_required_binder_handles_explicit_and_implicit_self_arguments() {
+        let chunks = Shared::new(Vec::new());
         let explicit_locals = Locals::boxed(3);
-        bind_fixed_required_params(2, vec![number(3), number(4)], &explicit_locals).unwrap();
+        bind_fixed_required_params(2, vec![number(3), number(4)], &explicit_locals, &chunks).unwrap();
         assert_eq!(value_at(&explicit_locals, 1), RuntimeValue::Number(3.into()));
         assert_eq!(value_at(&explicit_locals, 2), RuntimeValue::Number(4.into()));
 
         let implicit_locals = Locals::boxed(3);
         implicit_locals.set(0, number(10));
-        bind_fixed_required_params(2, vec![number(4)], &implicit_locals).unwrap();
+        bind_fixed_required_params(2, vec![number(4)], &implicit_locals, &chunks).unwrap();
         assert_eq!(value_at(&implicit_locals, 1), RuntimeValue::Number(10.into()));
         assert_eq!(value_at(&implicit_locals, 2), RuntimeValue::Number(4.into()));
     }
 
     #[test]
     fn fixed_required_binder_rejects_invalid_arity() {
+        let chunks = Shared::new(Vec::new());
         let locals = Locals::boxed(1);
         assert!(matches!(
-            bind_fixed_required_params(0, vec![number(1)], &locals),
+            bind_fixed_required_params(0, vec![number(1)], &locals, &chunks),
             Err(VmError::ArityMismatch { expected: 0, actual: 1 })
         ));
+    }
+
+    // One case per `builtin::Error` variant; see `all_builtin_error_variants_are_covered`.
+    #[rstest::rstest]
+    #[case::user_defined(builtin::Error::UserDefined("boom".to_string()), "boom")]
+    #[case::invalid_base64_string(
+        builtin::Error::InvalidBase64String({
+            use base64::Engine;
+            base64::prelude::BASE64_STANDARD.decode("not valid base64!!!").unwrap_err()
+        }),
+        "Invalid base64 string"
+    )]
+    #[case::not_defined(
+        builtin::Error::NotDefined("f".to_string(), vec!["g".to_string()]),
+        "\"f\" is not defined"
+    )]
+    #[case::undefined_reference(
+        builtin::Error::UndefinedReference("r".to_string(), vec![]),
+        "\"r\" is not defined"
+    )]
+    #[case::invalid_date_time_format(
+        builtin::Error::InvalidDateTimeFormat("%Q".to_string()),
+        "Unable to format date time, %Q"
+    )]
+    #[case::invalid_types(
+        builtin::Error::InvalidTypes("f".to_string(), vec![RuntimeValue::Number(1.into())]),
+        "Invalid types for \"f\", got number"
+    )]
+    #[case::invalid_types_multiple_args(
+        builtin::Error::InvalidTypes(
+            "f".to_string(),
+            vec![RuntimeValue::Number(1.into()), RuntimeValue::Boolean(true)],
+        ),
+        "Invalid types for \"f\", got number, bool"
+    )]
+    #[case::invalid_number_of_arguments(
+        builtin::Error::InvalidNumberOfArguments("f".to_string(), 2, 1),
+        "Invalid number of arguments in \"f\", expected 2, got 1"
+    )]
+    #[case::invalid_regular_expression(
+        builtin::Error::InvalidRegularExpression("(".to_string()),
+        "Invalid regular expression \"(\""
+    )]
+    #[case::runtime(
+        builtin::Error::Runtime("something went wrong".to_string()),
+        "Runtime error: something went wrong"
+    )]
+    #[case::zero_division(builtin::Error::ZeroDivision, "Division by zero")]
+    #[case::assign_to_immutable(
+        builtin::Error::AssignToImmutable("x".to_string()),
+        "Cannot assign to immutable variable \"x\""
+    )]
+    #[case::undefined_variable(
+        builtin::Error::UndefinedVariable("x".to_string()),
+        "Undefined variable \"x\""
+    )]
+    #[case::invalid_convert(
+        builtin::Error::InvalidConvert("bogus".to_string()),
+        "Invalid convert: bogus"
+    )]
+    fn builtin_error_message_matches_the_tree_walkers_runtime_error_display(
+        #[case] error: builtin::Error,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(error_message(&VmError::Builtin(error)), expected);
+    }
+
+    /// Forces a compile error if a `builtin::Error` variant is missing a case above.
+    #[allow(dead_code)]
+    fn all_builtin_error_variants_are_covered(e: builtin::Error) {
+        match e {
+            builtin::Error::UserDefined(_)
+            | builtin::Error::InvalidBase64String(_)
+            | builtin::Error::NotDefined(_, _)
+            | builtin::Error::UndefinedReference(_, _)
+            | builtin::Error::InvalidDateTimeFormat(_)
+            | builtin::Error::InvalidTypes(_, _)
+            | builtin::Error::InvalidNumberOfArguments(_, _, _)
+            | builtin::Error::InvalidRegularExpression(_)
+            | builtin::Error::Runtime(_)
+            | builtin::Error::ZeroDivision
+            | builtin::Error::AssignToImmutable(_)
+            | builtin::Error::UndefinedVariable(_)
+            | builtin::Error::InvalidConvert(_) => {}
+        }
+    }
+
+    // One case per bare `VmError` variant; see `all_vm_error_variants_are_covered`.
+    #[rstest::rstest]
+    #[case::host(VmError::Host(Ident::new("f"), "boom".to_string()), "Error in host function \"f\": boom")]
+    #[case::zero_division(VmError::ZeroDivision, "Division by zero")]
+    #[case::not_callable(VmError::NotCallable, "Invalid definition for \"value is not callable\"")]
+    #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
+    #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
+    #[case::arity_mismatch(
+        VmError::ArityMismatch { expected: 2, actual: 1 },
+        "Invalid number of arguments in \"\", expected 2, got 1"
+    )]
+    #[case::flow_break(VmError::FlowBreak(None), "Runtime error: break outside a loop")]
+    #[case::flow_continue(VmError::FlowContinue, "Runtime error: continue outside a loop")]
+    #[case::destructuring_failed(VmError::DestructuringFailed, "Destructuring pattern did not match value")]
+    #[case::invalid_foreach_target(
+        VmError::InvalidForeachTarget("number".to_string()),
+        "Invalid types for \"foreach\", got number"
+    )]
+    #[case::timeout(VmError::Timeout(Duration::from_secs(1)), "Execution timed out after 1.000s")]
+    #[case::recursion_error(VmError::RecursionError(100), "Maximum recursion depth exceeded (100)")]
+    #[case::corrupt(VmError::Corrupt("bad opcode"), "Runtime error: corrupt bytecode: bad opcode")]
+    #[case::located_unwraps_to_the_inner_message(
+        VmError::Located(Box::new(VmError::ZeroDivision), TokenId::new(0)),
+        "Division by zero"
+    )]
+    fn vm_error_message_matches_the_tree_walkers_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
+        assert_eq!(error_message(&error), expected);
+    }
+
+    /// Forces a compile error if a `VmError` variant is missing a case above.
+    #[allow(dead_code)]
+    fn all_vm_error_variants_are_covered(e: VmError) {
+        match e {
+            VmError::Builtin(_)
+            | VmError::Host(_, _)
+            | VmError::ZeroDivision
+            | VmError::NotCallable
+            | VmError::EnvNotFound(_)
+            | VmError::UndefinedGlobal(_)
+            | VmError::Corrupt(_)
+            | VmError::ArityMismatch { .. }
+            | VmError::FlowBreak(_)
+            | VmError::FlowContinue
+            | VmError::DestructuringFailed
+            | VmError::InvalidForeachTarget(_)
+            | VmError::Timeout(_)
+            | VmError::RecursionError(_)
+            | VmError::Located(_, _) => {}
+        }
+    }
+
+    /// Guards against the two error-message paths drifting apart again: the VM's own
+    /// `1 / 0` fast path used to report "division by zero" (lowercase) via `VmError`'s own
+    /// `Display`, while the tree-walker reported "Division by zero" for the same script.
+    #[test]
+    fn zero_division_message_matches_through_a_real_try_catch() {
+        let token_arena = Shared::new(SharedCell::new(crate::arena::Arena::new(100)));
+        let program = crate::parse("try: 1 / 0 catch(e): get(e, \"message\");", Shared::clone(&token_arena)).unwrap();
+        let result = super::super::compile_and_run(&program, token_arena).unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::String(Shared::new("Division by zero".to_string()))
+        );
     }
 }

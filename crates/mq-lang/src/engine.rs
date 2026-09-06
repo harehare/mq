@@ -1503,6 +1503,7 @@ mod tests {
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
+        #[cfg(not(feature = "debugger"))]
         assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
 
         let second = engine
@@ -1610,6 +1611,33 @@ mod tests {
         assert_eq!(second.values(), first.values());
     }
 
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_nodes_split_preserves_let_immutability() {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile("let x = 1 | nodes | x = 2 | x").unwrap();
+
+        let error = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("Cannot assign to immutable variable \"x\""),
+            "{error}"
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_nodes_split_keeps_a_shadowing_var_mutable() {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile("let x = 1 | var x = 2 | nodes | x = 3 | x").unwrap();
+
+        let values = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(values.values(), &[RuntimeValue::Number(3.0.into())]);
+    }
+
     // `eval_compiled_vm` reads `define_value`/`define_string_value` bindings from `self.vm`,
     // which only exists under `tarn`.
     #[cfg(feature = "tarn")]
@@ -1636,17 +1664,21 @@ mod tests {
             ]))]
         );
 
-        // Re-defining before a second compile-and-run picks up the new value, not a stale
-        // one — `global_bindings` is re-snapshotted on every `eval_compiled_vm` call.
+        // Re-defining a value updates an existing cached program. The cache is keyed by
+        // global names, rather than values, so compiling once does not make later values stale.
         engine.define_string_value("greeting", "goodbye");
-        let compiled = engine.compile("greeting").unwrap();
         let values = engine
             .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
         assert_eq!(
             values.values(),
-            &vec![RuntimeValue::String(Shared::new("goodbye".to_string()))]
+            &vec![RuntimeValue::Array(crate::Shared::new(vec![
+                RuntimeValue::String(Shared::new("goodbye".to_string())),
+                RuntimeValue::Number(42.0.into()),
+            ]))]
         );
+        #[cfg(not(feature = "debugger"))]
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
     }
 
     #[cfg(feature = "tarn")]

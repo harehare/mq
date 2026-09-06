@@ -119,48 +119,9 @@ pub(crate) fn vm_error_to_runtime_error(
     err: &interpreter::VmError,
     token_arena: TokenArena,
 ) -> error::runtime::RuntimeError {
-    use error::runtime::RuntimeError;
-    use interpreter::VmError;
-    match err {
-        VmError::Located(inner, token_id) => {
-            let token_id = *token_id;
-            let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
-            match &**inner {
-                VmError::Builtin(e) => e.to_runtime_error(token_id, token_arena),
-                VmError::Host(name, msg) => RuntimeError::HostFunctionError(
-                    token,
-                    name.to_string().into_boxed_str(),
-                    msg.clone().into_boxed_str(),
-                ),
-                VmError::ZeroDivision => RuntimeError::ZeroDivision(token),
-                VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
-                VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
-                VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
-                VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
-                    token,
-                    name: String::new(),
-                    expected: *expected,
-                    actual: *actual,
-                },
-                VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
-                VmError::FlowContinue => RuntimeError::Runtime(token, "continue outside a loop".to_string()),
-                VmError::DestructuringFailed => RuntimeError::DestructuringFailed(token),
-                VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
-                    token,
-                    name: crate::TokenKind::Foreach.to_string(),
-                    args: vec![repr.clone().into()],
-                },
-                VmError::Timeout(d) => RuntimeError::Timeout(*d),
-                VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
-                VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
-                nested @ VmError::Located(..) => vm_error_to_runtime_error(nested, token_arena),
-            }
-        }
-        other => {
-            let token = (*crate::get_token(token_arena, crate::ast::TokenId::new(0))).clone();
-            RuntimeError::Runtime(token, other.to_string())
-        }
-    }
+    let token_id = err.token_id().unwrap_or(crate::ast::TokenId::new(0));
+    let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
+    err.to_runtime_error(token, token_id, token_arena)
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -440,14 +401,18 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
         I: Iterator<Item = RuntimeValue>,
     {
         #[cfg(not(feature = "debugger"))]
-        if self.engine.global_bindings.is_empty()
-            && self.engine.session.is_none()
+        if self.engine.session.is_none()
             && let Some(cached) = compiled.cached_vm_program()
         {
             let cache_configuration = self.cache_configuration();
             let cached = match cached {
                 Some(cached)
-                    if cache::cached_program_is_current(&cached, &self.engine.module_loader, &cache_configuration)? =>
+                    if cache::cached_program_is_current(
+                        &cached,
+                        &self.engine.module_loader,
+                        &cache_configuration,
+                        self.engine.global_bindings,
+                    )? =>
                 {
                     cached
                 }
@@ -456,6 +421,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     Shared::clone(&self.engine.token_arena),
                     self.engine.module_loader.with_same_resolver(),
                     cache_configuration,
+                    self.engine.global_bindings,
                 )?,
             };
             compiled.cache_vm_program(cached.clone());
@@ -465,6 +431,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 self.engine.host_functions,
                 self.engine.timeout,
                 self.engine.max_call_stack_depth,
+                self.engine.global_bindings,
             );
         }
         #[cfg(feature = "debugger")]

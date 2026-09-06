@@ -145,8 +145,14 @@ impl Locals {
     pub(crate) unsafe fn get_unchecked(&self, slot: u16) -> StackValue {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => unsafe { slots.get_unchecked(slot as usize) }.borrow().clone(),
-            Locals::Boxed(slots) => read_cell(unsafe { slots.get_unchecked(slot as usize) }),
+            Locals::Flat(slots) => {
+                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
+                unsafe { slots.get_unchecked(slot as usize) }.borrow().clone()
+            }
+            Locals::Boxed(slots) => {
+                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
+                read_cell(unsafe { slots.get_unchecked(slot as usize) })
+            }
         }
     }
 
@@ -155,8 +161,14 @@ impl Locals {
     pub(crate) unsafe fn set_unchecked(&self, slot: u16, value: StackValue) {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => *unsafe { slots.get_unchecked(slot as usize) }.borrow_mut() = value,
-            Locals::Boxed(slots) => write_cell(unsafe { slots.get_unchecked(slot as usize) }, value),
+            Locals::Flat(slots) => {
+                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
+                *unsafe { slots.get_unchecked(slot as usize) }.borrow_mut() = value;
+            }
+            Locals::Boxed(slots) => {
+                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
+                write_cell(unsafe { slots.get_unchecked(slot as usize) }, value);
+            }
         }
     }
 

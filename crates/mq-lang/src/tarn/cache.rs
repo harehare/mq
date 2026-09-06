@@ -1,10 +1,12 @@
 //! Caches compiled bytecode across repeated evaluations of the same program (non-debugger builds).
-use super::nodes_split::{let_names_before_nodes, program_after_nodes, split_at_nodes};
+use super::nodes_split::{
+    immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
+};
 use super::{Error, compiler, interpreter, remaining_timeout, run_for_input, shared_deadline};
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{ModuleLoader, ModuleResolver, Shared, SharedCell, TokenArena};
+use crate::{ModuleLoader, ModuleResolver, Shared, TokenArena};
 use std::fmt;
 use std::time::Duration;
 
@@ -14,8 +16,8 @@ pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
     after: Option<compiler::CompiledProgram>,
     let_names: Vec<crate::Ident>,
+    global_names: Vec<crate::Ident>,
     configuration: Vec<String>,
-    execution_pools: Shared<SharedCell<interpreter::ExecutionPools>>,
 }
 
 impl fmt::Debug for CachedProgram {
@@ -34,29 +36,33 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     configuration: Vec<String>,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<CachedProgram, Error> {
+    let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
+    global_names.sort_unstable();
     let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
         let let_names = let_names_before_nodes(before);
+        let immutable_let_names = immutable_let_names_before_nodes(before);
         (
             compiler::compile_program_for_engine(
                 &before.to_vec(),
                 Shared::clone(&token_arena),
                 module_loader.clone(),
-                &[],
+                &global_names,
             )?,
             Some(compiler::compile_program_for_engine_with_bindings(
                 &program_after_nodes(before, after),
                 token_arena,
                 module_loader,
                 &let_names,
-                &[],
-                &[],
+                &immutable_let_names,
+                &global_names,
             )?),
             let_names,
         )
     } else {
         (
-            compiler::compile_program_for_engine(program, token_arena, module_loader, &[])?,
+            compiler::compile_program_for_engine(program, token_arena, module_loader, &global_names)?,
             None,
             Vec::new(),
         )
@@ -65,8 +71,8 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         program,
         after,
         let_names,
+        global_names,
         configuration,
-        execution_pools: Shared::new(SharedCell::new(interpreter::ExecutionPools::default())),
     })
 }
 
@@ -75,8 +81,11 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
     compiled: &CachedProgram,
     module_loader: &ModuleLoader<R>,
     configuration: &[String],
+    global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<bool, Error> {
-    if compiled.configuration != configuration {
+    let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
+    global_names.sort_unstable();
+    if compiled.configuration != configuration || compiled.global_names != global_names {
         return Ok(false);
     }
     let before_current = module_loader
@@ -98,12 +107,15 @@ pub(super) fn run_cached<I>(
     host_functions: &HostFunctions,
     timeout: Option<Duration>,
     max_call_stack_depth: u32,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
     let deadline = shared_deadline(timeout);
-    let mut pools = take_execution_pools(&compiled.execution_pools);
+    // Pools contain reusable frame storage and must remain exclusive to one evaluation.
+    // Cached bytecode is immutable and safely shared; frame storage is intentionally local.
+    let mut pools = interpreter::ExecutionPools::default();
     let mut values = Vec::new();
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
     for input in inputs {
@@ -116,7 +128,7 @@ where
                     host_functions,
                     remaining_timeout(deadline),
                     max_call_stack_depth,
-                    &[],
+                    global_bindings,
                     execution_pools,
                 );
                 pools = next_pools;
@@ -130,7 +142,7 @@ where
                         host_functions,
                         timeout: remaining_timeout(deadline),
                         max_call_stack_depth,
-                        global_bindings: &[],
+                        global_bindings,
                     },
                     &compiled.let_names,
                     execution_pools,
@@ -145,12 +157,10 @@ where
         match result {
             Ok(value) => values.push(value),
             Err(error) => {
-                restore_execution_pools(&compiled.execution_pools, pools);
                 return Err(Error::from(error));
             }
         }
     }
-    restore_execution_pools(&compiled.execution_pools, pools);
     let Some(after) = &compiled.after else {
         return Ok(values);
     };
@@ -162,7 +172,7 @@ where
             host_functions,
             remaining_timeout(deadline),
             max_call_stack_depth,
-            &[],
+            global_bindings,
         )
     } else {
         let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
@@ -174,7 +184,7 @@ where
                 host_functions,
                 timeout: remaining_timeout(deadline),
                 max_call_stack_depth,
-                global_bindings: &[],
+                global_bindings,
             },
             &[],
             interpreter::ExecutionPools::default(),
@@ -185,30 +195,4 @@ where
         RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
         value => Ok(vec![value]),
     }
-}
-
-#[cfg(not(feature = "sync"))]
-fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
-    std::mem::take(&mut *pools.borrow_mut())
-}
-
-#[cfg(feature = "sync")]
-fn take_execution_pools(pools: &Shared<SharedCell<interpreter::ExecutionPools>>) -> interpreter::ExecutionPools {
-    std::mem::take(&mut *pools.write().expect("execution pool lock is poisoned"))
-}
-
-#[cfg(not(feature = "sync"))]
-fn restore_execution_pools(
-    pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
-    execution_pools: interpreter::ExecutionPools,
-) {
-    *pools.borrow_mut() = execution_pools;
-}
-
-#[cfg(feature = "sync")]
-fn restore_execution_pools(
-    pools: &Shared<SharedCell<interpreter::ExecutionPools>>,
-    execution_pools: interpreter::ExecutionPools,
-) {
-    *pools.write().expect("execution pool lock is poisoned") = execution_pools;
 }

@@ -244,6 +244,20 @@ fn top_level_function_literal_produces_a_callable_value() {
 }
 
 #[test]
+fn builtin_receives_a_top_level_closure_as_its_implicit_self() {
+    assert_eq!(
+        run("fn(x): x; | type()"),
+        RuntimeValue::String(Shared::new("function".to_string()))
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn breakpoint_is_a_no_op_when_the_debugger_feature_is_disabled() {
+    assert_eq!(run("1 | breakpoint() | . + 1"), RuntimeValue::Number(2.0.into()));
+}
+
+#[test]
 fn top_level_def_calls_use_call_local() {
     use super::bytecode::OpCode;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
@@ -538,6 +552,24 @@ fn vm_closure_stored_in_a_dict_is_callable_once_retrieved() {
 fn partial_works_on_a_vm_closure() {
     let result = run_with_prelude("def add(x, y): x + y; | let add5 = partial(add, 5) | add5(3)");
     assert_eq!(result, RuntimeValue::Number(8.0.into()));
+}
+
+#[test]
+fn auto_call_accounts_for_arguments_bound_by_partial() {
+    assert_eq!(
+        run_with_input(
+            "def add(x, y): x + y; | let add5 = partial(add, 5) | add5",
+            RuntimeValue::Number(3.0.into()),
+        ),
+        RuntimeValue::Number(8.0.into())
+    );
+}
+
+#[rstest]
+#[case::while_loop("var checks = 0 | def condition(): checks += 1 | checks < 3; | while(condition()): .; | checks")]
+#[case::until_loop("var checks = 0 | def condition(): checks += 1 | checks >= 3; | until(condition()): .; | checks")]
+fn conditional_loop_evaluates_its_condition_once_before_the_first_body(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::Number(3.0.into()));
 }
 
 #[rstest]
