@@ -5,14 +5,14 @@
 use super::errors::{VmError, VmResult, locate};
 use super::frame::{ExecutionContext, ExecutionLimits};
 use super::{current_self, into_runtime_value, run_chunk};
+use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
-use crate::runtime::env::Env;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
+use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
-use crate::{Shared, SharedCell};
 
 #[cfg(feature = "debugger")]
 use super::DebugRuntime;
@@ -33,7 +33,7 @@ pub(super) struct FixedClosureCall<'a> {
 /// Runtime services shared by parameter binding and default-value evaluation.
 struct ParameterContext<'chunks, 'execution> {
     chunks: &'chunks Shared<Vec<Chunk>>,
-    env: &'execution Shared<SharedCell<Env>>,
+    env: &'execution VmEnv,
     limits: &'execution mut ExecutionLimits,
     host_functions: &'execution HostFunctions,
 }
@@ -164,8 +164,8 @@ pub(super) fn call_fixed_closure_from_stack(
             call_site.chunk,
             call_site.ip,
             VmError::ArityMismatch {
-                expected: arity as u8,
-                actual: argc as u8,
+                expected: arity,
+                actual: argc,
             },
         ));
     }
@@ -281,8 +281,8 @@ fn bind_params(
             ParamBinding::Required(slot) => {
                 let Some(value) = args.next() else {
                     return Err(VmError::ArityMismatch {
-                        expected: param_count as u8,
-                        actual: arg_count as u8,
+                        expected: param_count,
+                        actual: arg_count,
                     });
                 };
                 callee_locals.set(*slot, value);
@@ -337,8 +337,8 @@ fn bind_fixed_required_params(
         SELF_SLOT as usize + 2
     } else {
         return Err(VmError::ArityMismatch {
-            expected: arity as u8,
-            actual: arg_count as u8,
+            expected: arity,
+            actual: arg_count,
         });
     };
 
@@ -363,11 +363,11 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
 
     Err(VmError::ArityMismatch {
         expected: if shape.has_variadic {
-            shape.required as u8
+            shape.required
         } else {
-            parameter_count as u8
+            parameter_count
         },
-        actual: arg_count as u8,
+        actual: arg_count,
     })
 }
 
@@ -375,7 +375,7 @@ pub(super) fn call_builtin(
     ident: &crate::Ident,
     args: &[RuntimeValue],
     self_value: &RuntimeValue,
-    env: &Shared<SharedCell<Env>>,
+    env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
     call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
@@ -385,7 +385,7 @@ pub(super) fn call_builtin_args(
     ident: &crate::Ident,
     args: Args,
     self_value: &RuntimeValue,
-    env: &Shared<SharedCell<Env>>,
+    env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
     let host_args = host_functions.get(ident).map(|_| args.clone());

@@ -2262,8 +2262,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     return Err(RuntimeError::InvalidNumberOfArguments {
                         token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                         name: ident.to_string(),
-                        expected: required_params as u8,
-                        actual: args.len() as u8,
+                        expected: required_params,
+                        actual: args.len(),
                     }
                     .into());
                 }
@@ -2276,8 +2276,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                 return Err(RuntimeError::InvalidNumberOfArguments {
                     token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                     name: ident.to_string(),
-                    expected: params.len() as u8,
-                    actual: args.len() as u8,
+                    expected: params.len(),
+                    actual: args.len(),
                 }
                 .into());
             };
@@ -2311,8 +2311,8 @@ impl<T: ModuleResolver, IO: Io> Evaluator<T, IO> {
                     return Err(RuntimeError::InvalidNumberOfArguments {
                         token: (*get_token(Shared::clone(&self.token_arena), node.token_id)).clone(),
                         name: ident.to_string(),
-                        expected: params.len() as u8,
-                        actual: args.len() as u8,
+                        expected: params.len(),
+                        actual: args.len(),
                     }
                     .into());
                 }

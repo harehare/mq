@@ -1,5 +1,8 @@
+#[cfg(not(feature = "tarn"))]
 use super::env::Env;
-use crate::{AstParams, Ident, Program, Shared, SharedCell, number::Number};
+#[cfg(not(feature = "tarn"))]
+use crate::{AstParams, Program, SharedCell};
+use crate::{Ident, Shared, number::Number};
 use mq_markdown::Node;
 use std::{
     borrow::Cow,
@@ -36,11 +39,13 @@ impl Selector {
 
 /// Represents a module's runtime environment with its exports.
 #[derive(Clone, Debug)]
+#[cfg(not(feature = "tarn"))]
 pub struct ModuleEnv {
     name: Ident,
     exports: Shared<SharedCell<Env>>,
 }
 
+#[cfg(not(feature = "tarn"))]
 impl ModuleEnv {
     /// Creates a new module environment with the given name and exports.
     pub fn new(name: &str, exports: Shared<SharedCell<Env>>) -> Self {
@@ -74,6 +79,7 @@ impl ModuleEnv {
     }
 }
 
+#[cfg(not(feature = "tarn"))]
 impl PartialEq for ModuleEnv {
     fn eq(&self, other: &Self) -> bool {
         #[cfg(not(feature = "sync"))]
@@ -95,6 +101,7 @@ impl PartialEq for ModuleEnv {
 /// Held behind a single [`Shared`] in [`RuntimeValue::Function`] so cloning a function
 /// value is one refcount bump rather than three.
 #[derive(Debug, Clone)]
+#[cfg(not(feature = "tarn"))]
 pub(crate) struct FunctionValue {
     pub(crate) params: Shared<AstParams>,
     pub(crate) body: Shared<Program>,
@@ -134,6 +141,7 @@ pub enum RuntimeValue {
     /// instead of three.
     ///
     /// [`VmClosure`]: RuntimeValue::VmClosure
+    #[cfg(not(feature = "tarn"))]
     #[allow(private_interfaces)]
     Function(Shared<FunctionValue>),
     /// A built-in native function identified by name.
@@ -153,6 +161,7 @@ pub enum RuntimeValue {
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
     Dict(Shared<BTreeMap<Ident, RuntimeValue>>),
     /// A module with its exports.
+    #[cfg(not(feature = "tarn"))]
     Module(Shared<ModuleEnv>),
     /// Raw binary data (e.g. CBOR byte strings).
     ///
@@ -173,9 +182,11 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
+            #[cfg(not(feature = "tarn"))]
             (RuntimeValue::Function(a), RuntimeValue::Function(b)) => a.params == b.params && a.body == b.body,
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
+            #[cfg(not(feature = "tarn"))]
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a == b,
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::None, RuntimeValue::None) => true,
@@ -390,6 +401,7 @@ impl PartialOrd for RuntimeValue {
                 let b = b.to_string();
                 a.to_string().partial_cmp(&b)
             }
+            #[cfg(not(feature = "tarn"))]
             (RuntimeValue::Function(a), RuntimeValue::Function(b)) => match a.params.partial_cmp(&b.params) {
                 Some(Ordering::Equal) => a.body.partial_cmp(&b.body),
                 Some(Ordering::Greater) => Some(Ordering::Greater),
@@ -399,6 +411,7 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a.partial_cmp(b),
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
+            #[cfg(not(feature = "tarn"))]
             (RuntimeValue::Module(a), RuntimeValue::Module(b)) => a.name.partial_cmp(&b.name),
             _ => None,
         }
@@ -415,11 +428,15 @@ impl std::fmt::Display for RuntimeValue {
             Self::Array(_) => self.string(),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
+            #[cfg(not(feature = "tarn"))]
+            #[cfg(not(feature = "tarn"))]
+            #[cfg(not(feature = "tarn"))]
             Self::Function(f) => Cow::Owned(format!("function/{}", f.params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             #[cfg(feature = "tarn")]
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Dict(_) => self.string(),
+            #[cfg(not(feature = "tarn"))]
             Self::Module(module_name) => Cow::Owned(format!(r#"module "{}""#, module_name.name)),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
         };
@@ -508,7 +525,8 @@ impl RuntimeValue {
         RuntimeValue::Markdown(Shared::new(node), None)
     }
 
-    /// Creates a new user-defined function value from its params, body, and environment.
+    /// Creates a new tree-walker function value from its params, body, and environment.
+    #[cfg(not(feature = "tarn"))]
     #[inline(always)]
     pub(crate) fn new_function(
         params: Shared<AstParams>,
@@ -529,11 +547,13 @@ impl RuntimeValue {
             RuntimeValue::Markdown(_, _) => "markdown",
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
+            #[cfg(not(feature = "tarn"))]
             RuntimeValue::Function(_) => "function",
             RuntimeValue::NativeFunction(_) => "native_function",
             #[cfg(feature = "tarn")]
             RuntimeValue::VmClosure(_) => "function",
             RuntimeValue::Dict(_) => "dict",
+            #[cfg(not(feature = "tarn"))]
             RuntimeValue::Module(_) => "module",
             RuntimeValue::Bytes(_) => "bytes",
         }
@@ -552,7 +572,14 @@ impl RuntimeValue {
         if matches!(self, RuntimeValue::VmClosure(_)) {
             return true;
         }
-        matches!(self, RuntimeValue::Function(_))
+        #[cfg(not(feature = "tarn"))]
+        {
+            matches!(self, RuntimeValue::Function(_))
+        }
+        #[cfg(feature = "tarn")]
+        {
+            false
+        }
     }
 
     /// Returns `true` if this value is a native (built-in) function.
@@ -606,12 +633,12 @@ impl RuntimeValue {
                 Some(sel) => node.find_at_index(sel.index_value()).is_some(),
                 None => true,
             },
-            RuntimeValue::Symbol(_)
-            | RuntimeValue::Function(_)
-            | RuntimeValue::NativeFunction(_)
-            | RuntimeValue::Dict(_) => true,
+            RuntimeValue::Symbol(_) | RuntimeValue::NativeFunction(_) | RuntimeValue::Dict(_) => true,
+            #[cfg(not(feature = "tarn"))]
+            RuntimeValue::Function(_) => true,
             #[cfg(feature = "tarn")]
             RuntimeValue::VmClosure(_) => true,
+            #[cfg(not(feature = "tarn"))]
             RuntimeValue::Module(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::None => false,
@@ -634,7 +661,9 @@ impl RuntimeValue {
             RuntimeValue::Dict(m) => m.len(),
             RuntimeValue::Bytes(b) => b.len(),
             RuntimeValue::None => 0,
+            #[cfg(not(feature = "tarn"))]
             RuntimeValue::Function(..) => 0,
+            #[cfg(not(feature = "tarn"))]
             RuntimeValue::Module(m) => m.len(),
             RuntimeValue::NativeFunction(..) => 0,
             #[cfg(feature = "tarn")]
@@ -710,10 +739,12 @@ impl RuntimeValue {
             )),
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
+            #[cfg(not(feature = "tarn"))]
             Self::Function(f) => Cow::Owned(format!("function/{}", f.params.len())),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             #[cfg(feature = "tarn")]
             Self::VmClosure(_) => Cow::Borrowed("function"),
+            #[cfg(not(feature = "tarn"))]
             Self::Module(m) => Cow::Owned(format!("module/{}", m.name())),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Dict(map) => {
@@ -872,10 +903,9 @@ impl RuntimeValues {
 
                 if let RuntimeValue::Markdown(node, _) = &current_value {
                     match &updated_value {
-                        RuntimeValue::None
-                        | RuntimeValue::Function(_)
-                        | RuntimeValue::Module(_)
-                        | RuntimeValue::NativeFunction(_) => current_value.clone(),
+                        RuntimeValue::None | RuntimeValue::NativeFunction(_) => current_value.clone(),
+                        #[cfg(not(feature = "tarn"))]
+                        RuntimeValue::Function(_) | RuntimeValue::Module(_) => current_value.clone(),
                         #[cfg(feature = "tarn")]
                         RuntimeValue::VmClosure(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
@@ -933,7 +963,7 @@ impl RuntimeValues {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "tarn")))]
 mod tests {
     use crate::ast::node::{IdentWithToken, Param};
     use rstest::rstest;

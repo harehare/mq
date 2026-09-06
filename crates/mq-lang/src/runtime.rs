@@ -3,6 +3,7 @@
 pub mod builtin;
 #[cfg(feature = "debugger")]
 pub mod debugger;
+#[cfg(not(feature = "tarn"))]
 pub mod env;
 pub mod host;
 pub mod runtime_value;

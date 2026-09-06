@@ -47,8 +47,8 @@ pub enum RuntimeError {
     InvalidNumberOfArguments {
         token: ErrorToken,
         name: FunctionName,
-        expected: u8,
-        actual: u8,
+        expected: usize,
+        actual: usize,
     },
     #[error("Invalid regular expression \"{1}\"")]
     InvalidRegularExpression(ErrorToken, String),

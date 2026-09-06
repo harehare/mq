@@ -1,17 +1,24 @@
 use super::*;
+#[cfg(not(feature = "tarn"))]
 use crate::Selector;
-use crate::ast::node::{self as ast, Args, MatchArm, Param, Pattern};
+#[cfg(not(feature = "tarn"))]
+use crate::ast::node::{self as ast, Args};
+#[cfg(not(feature = "tarn"))]
+use crate::ast::node::{MatchArm, Param, Pattern};
+#[cfg(not(feature = "tarn"))]
 use crate::error::runtime::RuntimeError;
+#[cfg(not(feature = "tarn"))]
 use crate::number::{INFINITE, NAN, Number};
 use crate::range::Range;
-use crate::{
-    AstExpr, AstNode, DefaultModuleLoader, Ident, IdentWithToken, Program, Token, TokenKind, arena::Arena,
-    error::InnerError, token_alloc,
-};
+#[cfg(not(feature = "tarn"))]
+use crate::{AstExpr, AstNode, DefaultModuleLoader, IdentWithToken, Program, error::InnerError};
 use crate::{Shared, SharedCell};
+use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
+#[cfg(not(feature = "tarn"))]
 use smallvec::{SmallVec, smallvec};
+#[cfg(not(feature = "tarn"))]
 use std::f64::consts::PI;
 
 #[rstest]
@@ -91,6 +98,7 @@ fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
+#[cfg(not(feature = "tarn"))]
 fn ast_node(expr: AstExpr) -> Shared<AstNode> {
     Shared::new(AstNode {
         token_id: 0.into(),
@@ -98,6 +106,7 @@ fn ast_node(expr: AstExpr) -> Shared<AstNode> {
     })
 }
 
+#[cfg(not(feature = "tarn"))]
 fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
     Shared::new(AstNode {
         token_id: 0.into(),
@@ -106,6 +115,7 @@ fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
 }
 
 // The shared table keeps VM and evaluator cases aligned.
+#[cfg(not(feature = "tarn"))]
 crate::eval_table_cases!(
     evaluator_table_cases_run_on_vm,
     token_arena,
@@ -775,6 +785,17 @@ fn calls_with_256_arguments_match_tree_walker() {
     assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
 }
 
+#[test]
+fn dynamic_fixed_arity_call_handles_256_arguments_without_shifting_them() {
+    let parameters = (1..=256)
+        .map(|index| format!("a{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let arguments = (0..256).map(|_| "1").collect::<Vec<_>>().join(", ");
+    let code = format!("var f = fn({parameters}): a256; | f({arguments})");
+    assert_eq!(run(&code), RuntimeValue::Number(1.into()));
+}
+
 // Documents real (matching) behavior, not an aspirational "fresh cell per iteration"
 // semantics: both engines reuse the same captured binding for `foreach`'s loop variable
 // across iterations, so every closure created inside the loop sees the final value.
@@ -892,15 +913,29 @@ fn text_node(value: &str) -> mq_markdown::Node {
 }
 
 /// Reference output from the tree-walking evaluator.
+#[cfg(not(feature = "tarn"))]
 fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
     tree_walk_eval_many(code, vec![input]).remove(0)
 }
 
+#[cfg(not(feature = "tarn"))]
 fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut engine = crate::DefaultEngine::default();
     engine.evaluator.load_builtin_module_full().unwrap();
     let compiled = engine.compile(code).unwrap();
     engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
+}
+
+// In a Tarn-only build the tree walker is intentionally absent. Keep the test helpers usable
+// for VM-only behavioural assertions without pulling the legacy evaluator into the binary.
+#[cfg(feature = "tarn")]
+fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
+    vm_engine_eval_many(code, vec![input]).remove(0)
+}
+
+#[cfg(feature = "tarn")]
+fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
+    vm_engine_eval_many(code, inputs)
 }
 
 fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
@@ -1378,7 +1413,7 @@ fn debugger_hook_exposes_closure_bindings() {
         event
             .bindings
             .iter()
-            .any(|(name, value)| *name == Ident::new("f") && matches!(value, RuntimeValue::VmClosure(_)))
+            .any(|(name, value)| *name == crate::Ident::new("f") && matches!(value, RuntimeValue::VmClosure(_)))
     }));
 }
 
@@ -1740,13 +1775,55 @@ fn undefined_call_with_no_matching_host_function_errors() {
 #[case::too_many_required("def add(a, b): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_optional("def add(a, b = 1): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_zero_arity("def constant(): 1; | constant(1)", 0, 1)]
-fn invalid_function_arity_reports_the_declared_bounds(#[case] code: &str, #[case] expected: u8, #[case] actual: u8) {
+fn invalid_function_arity_reports_the_declared_bounds(
+    #[case] code: &str,
+    #[case] expected: usize,
+    #[case] actual: usize,
+) {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let err = compile_and_run(&program, token_arena).unwrap_err();
     assert!(
         matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual))
     );
+}
+
+#[test]
+fn large_call_arity_error_reports_the_full_argument_count() {
+    let arguments = (0..256).map(|_| "1").collect::<Vec<_>>().join(", ");
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        &format!("var f = fn(value): value; | f({arguments})"),
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    assert!(
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: 1, actual: 256 }))
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn cached_program_restores_execution_pools_after_each_run() {
+    let mut engine = crate::DefaultEngine::default();
+    let compiled = engine.compile("let value = 1 | value + 1").unwrap();
+
+    for _ in 0..2 {
+        assert_eq!(
+            engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(2.into())]
+        );
+        assert!(
+            compiled
+                .cached_vm_program()
+                .flatten()
+                .is_some_and(|cached| cached.has_available_execution_pools())
+        );
+    }
 }
 
 proptest! {

@@ -24,8 +24,11 @@ use crate::io::HttpRequestSpec;
 use crate::io::Io;
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
+#[cfg(not(feature = "tarn"))]
 use crate::runtime::env::{self, Env};
 use crate::selector::Selector;
+#[cfg(feature = "tarn")]
+use crate::tarn::VmEnv;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
@@ -55,7 +58,10 @@ const MAX_REPEAT_COUNT: usize = 1_000;
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
+#[cfg(not(feature = "tarn"))]
 type SharedEnv = Shared<SharedCell<Env>>;
+#[cfg(feature = "tarn")]
+type SharedEnv = VmEnv;
 pub type Args = SmallVec<[RuntimeValue; 2]>;
 
 #[derive(Clone, Debug)]
@@ -119,6 +125,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     let provided = args;
 
     match fn_value {
+        #[cfg(not(feature = "tarn"))]
         RuntimeValue::Function(f) => {
             if provided.len() >= f.params.len() {
                 return Err(Error::InvalidNumberOfArguments(
@@ -9033,6 +9040,7 @@ pub enum Error {
     #[error("")]
     NotDefined(FunctionName, Vec<String>),
     #[error("")]
+    #[cfg_attr(feature = "tarn", allow(dead_code))]
     UndefinedReference(String, Vec<String>),
     #[error("")]
     InvalidDateTimeFormat(String),
@@ -9049,13 +9057,16 @@ pub enum Error {
     #[error("")]
     UserDefined(String),
     #[error("")]
+    #[cfg_attr(feature = "tarn", allow(dead_code))]
     AssignToImmutable(String),
     #[error("")]
+    #[cfg_attr(feature = "tarn", allow(dead_code))]
     UndefinedVariable(String),
     #[error("")]
     InvalidConvert(String),
 }
 
+#[cfg(not(feature = "tarn"))]
 impl From<env::EnvError> for Error {
     fn from(e: env::EnvError) -> Self {
         match e {
@@ -9102,8 +9113,8 @@ impl Error {
             Error::InvalidNumberOfArguments(name, expected, got) => RuntimeError::InvalidNumberOfArguments {
                 token: (*get_token(token_arena, token_id)).clone(),
                 name: name.clone(),
-                expected: *expected,
-                actual: *got,
+                expected: usize::from(*expected),
+                actual: usize::from(*got),
             },
             Error::InvalidRegularExpression(regex) => {
                 RuntimeError::InvalidRegularExpression((*get_token(token_arena, token_id)).clone(), regex.clone())
@@ -9127,14 +9138,16 @@ pub fn eval_builtin(
     runtime_value: &RuntimeValue,
     ident: &Ident,
     args: Args,
-    env: &Shared<SharedCell<Env>>,
+    env: &SharedEnv,
 ) -> Result<RuntimeValue, Error> {
     get_builtin_functions(ident).map_or_else(
         || {
-            #[cfg(not(feature = "sync"))]
+            #[cfg(all(not(feature = "tarn"), not(feature = "sync")))]
             let candidates = env.borrow().defined_names();
-            #[cfg(feature = "sync")]
+            #[cfg(all(not(feature = "tarn"), feature = "sync"))]
             let candidates = env.read().unwrap().defined_names();
+            #[cfg(feature = "tarn")]
+            let candidates = env.defined_names();
 
             Err(Error::NotDefined(ident.to_string(), candidates))
         },
@@ -9750,7 +9763,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "tarn")))]
 mod tests {
     use std::collections::BTreeMap;
 

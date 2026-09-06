@@ -37,7 +37,6 @@ use crate::ast::Program;
 use crate::ast::node::{self as ast, AccessTarget, Expr, Literal, Node, Pattern};
 use crate::engine;
 use crate::error;
-use crate::eval::Options;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 use crate::module::resolver::std_resolver::StdModuleResolver;
@@ -50,6 +49,48 @@ use std::time::{Duration, Instant};
 
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler, SharedCell, Source};
+
+/// VM execution limits, independent of the tree-walking evaluator.
+#[derive(Debug, Clone)]
+pub(crate) struct Options {
+    pub(crate) max_call_stack_depth: u32,
+    pub(crate) timeout: Option<Duration>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            max_call_stack_depth: if cfg!(debug_assertions) { 40 } else { 192 },
+            timeout: None,
+        }
+    }
+}
+
+/// Flat external bindings visible to VM bytecode and builtin error reporting.
+///
+/// VM lexical bindings are represented by slots and upvalue cells, so this deliberately has
+/// neither parent scopes nor mutability tracking from the tree-walker's `Env`.
+#[derive(Debug, Default)]
+pub(crate) struct VmEnv {
+    globals: FxHashMap<crate::Ident, RuntimeValue>,
+}
+
+impl VmEnv {
+    pub(crate) fn from_bindings(bindings: &[(crate::Ident, RuntimeValue)]) -> Self {
+        Self {
+            globals: bindings.iter().cloned().collect(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn get(&self, ident: crate::Ident) -> Option<RuntimeValue> {
+        self.globals.get(&ident).cloned()
+    }
+
+    pub(crate) fn defined_names(&self) -> Vec<String> {
+        self.globals.keys().map(ToString::to_string).collect()
+    }
+}
 
 #[derive(Debug)]
 pub(crate) enum Error {
@@ -162,7 +203,7 @@ pub(crate) fn compile_and_run_full(
         input,
         host_functions,
         timeout,
-        crate::eval::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
     )?)
 }
 
@@ -186,9 +227,7 @@ where
 fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) -> mq_markdown::Node {
     match value {
         RuntimeValue::None => child_node.to_fragment(),
-        RuntimeValue::Function(..) | RuntimeValue::NativeFunction(_) | RuntimeValue::Module(_) => {
-            mq_markdown::Node::Empty
-        }
+        RuntimeValue::NativeFunction(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
             .iter()

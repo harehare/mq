@@ -22,8 +22,8 @@ pub(crate) enum VmError {
     Debugger(String),
     Corrupt(&'static str),
     ArityMismatch {
-        expected: u8,
-        actual: u8,
+        expected: usize,
+        actual: usize,
     },
     /// Internal control flow emitted by a `break` inside a nested `try` chunk.
     FlowBreak(Option<RuntimeValue>),

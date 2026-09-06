@@ -8,7 +8,7 @@ use super::{
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{ModuleLoader, ModuleResolver, Shared};
+use crate::{ModuleLoader, ModuleResolver, Shared, SharedCell};
 use std::fmt;
 use std::time::Instant;
 
@@ -20,6 +20,11 @@ pub(crate) struct CachedProgram {
     let_names: Vec<crate::Ident>,
     global_names: Vec<crate::Ident>,
     configuration: Vec<String>,
+    /// Frame storage retained between non-overlapping `eval_compiled` calls.
+    ///
+    /// Clones of a cached program share this slot. A concurrent caller that finds it empty
+    /// simply allocates an independent pool, so bytecode remains safely reusable.
+    execution_pools: Shared<SharedCell<Option<interpreter::ExecutionPools>>>,
 }
 
 impl fmt::Debug for CachedProgram {
@@ -29,6 +34,20 @@ impl fmt::Debug for CachedProgram {
             .field("after", &self.after)
             .field("configuration", &self.configuration)
             .finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+impl CachedProgram {
+    pub(crate) fn has_available_execution_pools(&self) -> bool {
+        #[cfg(not(feature = "sync"))]
+        {
+            self.execution_pools.borrow().is_some()
+        }
+        #[cfg(feature = "sync")]
+        {
+            self.execution_pools.read().unwrap().is_some()
+        }
     }
 }
 
@@ -91,7 +110,36 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         let_names,
         global_names,
         configuration,
+        execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
     })
+}
+
+fn take_execution_pools(compiled: &CachedProgram) -> interpreter::ExecutionPools {
+    #[cfg(not(feature = "sync"))]
+    {
+        compiled.execution_pools.borrow_mut().take().unwrap_or_default()
+    }
+    #[cfg(feature = "sync")]
+    {
+        compiled.execution_pools.write().unwrap().take().unwrap_or_default()
+    }
+}
+
+fn restore_execution_pools(compiled: &CachedProgram, pools: interpreter::ExecutionPools) {
+    #[cfg(not(feature = "sync"))]
+    {
+        let mut slot = compiled.execution_pools.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(pools);
+        }
+    }
+    #[cfg(feature = "sync")]
+    {
+        let mut slot = compiled.execution_pools.write().unwrap();
+        if slot.is_none() {
+            *slot = Some(pools);
+        }
+    }
 }
 
 /// Returns whether every external module compiled into this program still has identical source.
@@ -134,86 +182,92 @@ pub(super) fn run_cached<I>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    // Pools contain reusable frame storage and must remain exclusive to one evaluation.
-    // Cached bytecode is immutable and safely shared; frame storage is intentionally local.
-    let mut pools = interpreter::ExecutionPools::default();
-    let mut values = Vec::new();
-    let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
-    for input in inputs {
-        let result = run_for_input(input, |value| {
-            let execution_pools = std::mem::take(&mut pools);
-            if compiled.let_names.is_empty() {
-                let (result, next_pools) = interpreter::run_with_globals_and_pools(
-                    &compiled.program,
-                    value,
-                    host_functions,
-                    remaining_timeout(deadline),
-                    max_call_stack_depth,
-                    global_bindings,
-                    execution_pools,
-                );
-                pools = next_pools;
-                result
-            } else {
-                let (result, captured, next_pools) = interpreter::run_with_globals_capturing_locals(
-                    &compiled.program,
-                    value,
-                    &[],
-                    interpreter::RunOptions {
+    // Pools contain mutable frame storage, so a caller takes exclusive ownership for the
+    // duration of its evaluation and restores it on every exit path.
+    let mut pools = take_execution_pools(compiled);
+    let result = (|| {
+        let mut values = Vec::new();
+        let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
+        for input in inputs {
+            let result = run_for_input(input, |value| {
+                let execution_pools = std::mem::take(&mut pools);
+                if compiled.let_names.is_empty() {
+                    let (result, next_pools) = interpreter::run_with_globals_and_pools(
+                        &compiled.program,
+                        value,
                         host_functions,
-                        timeout: remaining_timeout(deadline),
+                        remaining_timeout(deadline),
                         max_call_stack_depth,
                         global_bindings,
-                    },
-                    &compiled.let_names,
-                    execution_pools,
-                );
-                pools = next_pools;
-                if result.is_ok() {
-                    let_bindings = captured;
+                        execution_pools,
+                    );
+                    pools = next_pools;
+                    result
+                } else {
+                    let (result, captured, next_pools) = interpreter::run_with_globals_capturing_locals(
+                        &compiled.program,
+                        value,
+                        &[],
+                        interpreter::RunOptions {
+                            host_functions,
+                            timeout: remaining_timeout(deadline),
+                            max_call_stack_depth,
+                            global_bindings,
+                        },
+                        &compiled.let_names,
+                        execution_pools,
+                    );
+                    pools = next_pools;
+                    if result.is_ok() {
+                        let_bindings = captured;
+                    }
+                    result
                 }
-                result
-            }
-        });
-        match result {
-            Ok(value) => values.push(value),
-            Err(error) => {
-                return Err(Error::from(error));
+            });
+            match result {
+                Ok(value) => values.push(value),
+                Err(error) => return Err(Error::from(error)),
             }
         }
-    }
-    let Some(after) = &compiled.after else {
-        return Ok(values);
-    };
-    let input = RuntimeValue::Array(Shared::new(values));
-    let result = if compiled.let_names.is_empty() {
-        interpreter::run_with_globals(
-            after,
-            input,
-            host_functions,
-            remaining_timeout(deadline),
-            max_call_stack_depth,
-            global_bindings,
-        )
-    } else {
-        let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
-        interpreter::run_with_globals_capturing_locals(
-            after,
-            input,
-            &let_values,
-            interpreter::RunOptions {
+        let Some(after) = &compiled.after else {
+            return Ok(values);
+        };
+        let input = RuntimeValue::Array(Shared::new(values));
+        let result = if compiled.let_names.is_empty() {
+            let (result, next_pools) = interpreter::run_with_globals_and_pools(
+                after,
+                input,
                 host_functions,
-                timeout: remaining_timeout(deadline),
+                remaining_timeout(deadline),
                 max_call_stack_depth,
                 global_bindings,
-            },
-            &[],
-            interpreter::ExecutionPools::default(),
-        )
-        .0
-    };
-    match result? {
-        RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
-        value => Ok(vec![value]),
-    }
+                std::mem::take(&mut pools),
+            );
+            pools = next_pools;
+            result
+        } else {
+            let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
+            let (result, _, next_pools) = interpreter::run_with_globals_capturing_locals(
+                after,
+                input,
+                &let_values,
+                interpreter::RunOptions {
+                    host_functions,
+                    timeout: remaining_timeout(deadline),
+                    max_call_stack_depth,
+                    global_bindings,
+                },
+                &[],
+                std::mem::take(&mut pools),
+            );
+            pools = next_pools;
+            result
+        };
+        match result? {
+            RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
+            value => Ok(vec![value]),
+        }
+    })();
+    restore_execution_pools(compiled, pools);
+    result
 }

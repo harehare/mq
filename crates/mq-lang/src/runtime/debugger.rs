@@ -122,6 +122,27 @@ impl VmDebugBinding {
     }
 }
 
+/// Debugger display metadata for a VM slot. Kept separate from the tree-walker's
+/// environment representation so Tarn builds do not retain `runtime::env`.
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct VmVariable {
+    pub name: String,
+    pub value: String,
+    pub type_field: String,
+}
+
+#[cfg(all(feature = "tarn", feature = "debugger"))]
+impl VmVariable {
+    fn from_binding(binding: &VmDebugBinding) -> Self {
+        Self {
+            name: binding.name.to_string(),
+            value: binding.value.to_string(),
+            type_field: binding.value.name().to_string(),
+        }
+    }
+}
+
 /// A pending write to a VM slot requested while execution is stopped.
 #[cfg(all(feature = "tarn", feature = "debugger"))]
 #[derive(Debug, Clone)]
@@ -167,13 +188,8 @@ impl VmDebugFrame {
         }
     }
 
-    fn variables(bindings: &Shared<SharedCell<Vec<VmDebugBinding>>>) -> Vec<super::env::Variable> {
-        bindings
-            .read()
-            .unwrap()
-            .iter()
-            .map(|binding| super::env::Variable::from(binding.name, &binding.value))
-            .collect()
+    fn variables(bindings: &Shared<SharedCell<Vec<VmDebugBinding>>>) -> Vec<VmVariable> {
+        bindings.read().unwrap().iter().map(VmVariable::from_binding).collect()
     }
 
     fn bindings(&self) -> Vec<(Ident, RuntimeValue)> {
@@ -220,28 +236,30 @@ impl VmDebugFrame {
 
 impl DebugContext {
     /// Returns variables local to the currently paused frame.
-    #[cfg(feature = "debugger")]
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    pub fn local_variables(&self) -> Vec<VmVariable> {
+        VmDebugFrame::variables(&self.vm_frame.locals)
+    }
+
+    /// Returns variables local to the currently paused tree-walker frame.
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
     pub fn local_variables(&self) -> Vec<super::env::Variable> {
-        #[cfg(feature = "tarn")]
-        {
-            VmDebugFrame::variables(&self.vm_frame.locals)
-        }
-        #[cfg(not(feature = "tarn"))]
         self.env.read().unwrap().get_local_variables()
     }
 
     /// Returns variables captured from the enclosing frame or global scope.
-    #[cfg(feature = "debugger")]
-    pub fn global_variables(&self) -> Vec<super::env::Variable> {
-        #[cfg(feature = "tarn")]
-        {
-            if self.call_stack.is_empty() {
-                VmDebugFrame::variables(&self.vm_frame.locals)
-            } else {
-                VmDebugFrame::variables(&self.vm_frame.upvalues)
-            }
+    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    pub fn global_variables(&self) -> Vec<VmVariable> {
+        if self.call_stack.is_empty() {
+            VmDebugFrame::variables(&self.vm_frame.locals)
+        } else {
+            VmDebugFrame::variables(&self.vm_frame.upvalues)
         }
-        #[cfg(not(feature = "tarn"))]
+    }
+
+    /// Returns variables captured from the tree-walker's enclosing frame or global scope.
+    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
+    pub fn global_variables(&self) -> Vec<super::env::Variable> {
         self.env.read().unwrap().get_global_variables()
     }
 

@@ -23,11 +23,11 @@ use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::number::Number;
 use crate::runtime::builtin::{self, Args};
-use crate::runtime::env::Env;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, RuntimeValue};
 use crate::selector::Selector;
-use crate::{Ident, Shared, SharedCell};
+use crate::tarn::VmEnv;
+use crate::{Ident, Shared};
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
 pub(crate) use frame::ExecutionPools;
@@ -269,7 +269,7 @@ pub(crate) fn run_debug_expression(
         RunOptions {
             host_functions,
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             global_bindings: &[],
         },
         ExecutionPools::default(),
@@ -286,11 +286,7 @@ fn run_impl_with_bindings(
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let mut env = Env::default();
-    for (ident, value) in options.global_bindings {
-        env.define(*ident, value.clone());
-    }
-    let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
+    let env = VmEnv::from_bindings(options.global_bindings);
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let top_level_chunk = &compiled.chunks[0];
     let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
@@ -306,7 +302,7 @@ fn run_impl_with_bindings(
         locals.set(slot as u16 + 1, StackValue::Value(value));
     }
     let mut execution = ExecutionContext {
-        env: &placeholder_env,
+        env: &env,
         limits: &mut limits,
         host_functions: options.host_functions,
     };
@@ -334,11 +330,7 @@ fn run_impl_capturing_locals(
     capture_names: &[Ident],
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let mut env = Env::default();
-    for (ident, value) in options.global_bindings {
-        env.define(*ident, value.clone());
-    }
-    let placeholder_env: Shared<SharedCell<Env>> = Shared::new(SharedCell::new(env));
+    let env = VmEnv::from_bindings(options.global_bindings);
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let chunks = &compiled.chunks;
     let top_level_chunk = &chunks[0];
@@ -359,7 +351,7 @@ fn run_impl_capturing_locals(
 
     let mut stack = limits.take_stack();
     let mut execution = ExecutionContext {
-        env: &placeholder_env,
+        env: &env,
         limits: &mut limits,
         host_functions: options.host_functions,
     };
@@ -972,14 +964,15 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         .fixed_required_arity()
                         .is_some()
                 {
-                    let StackValue::Closure(closure) = stack.remove(callee_index) else {
-                        unreachable!("callee was checked as a closure above");
-                    };
+                    // Keep the callee below its arguments until the fixed-call binder has
+                    // popped them. This avoids `Vec::remove(callee_index)`, which shifts
+                    // every argument and is especially costly for large calls.
+                    let closure = Shared::clone(closure);
                     let result = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure: &closure,
                             argc: *argc,
-                            remove_callee: false,
+                            remove_callee: true,
                         },
                         stack,
                         CallSite { locals, chunk, ip },
@@ -1356,17 +1349,9 @@ fn selector_op(
 
 #[cold]
 #[inline(never)]
-fn get_external_global(
-    ident: Ident,
-    chunk: &Chunk,
-    ip: usize,
-    env: &Shared<SharedCell<Env>>,
-) -> VmResult<RuntimeValue> {
-    #[cfg(not(feature = "sync"))]
-    let resolved = env.borrow().resolve(ident);
-    #[cfg(feature = "sync")]
-    let resolved = env.read().unwrap().resolve(ident);
-    resolved.map_err(|_| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))
+fn get_external_global(ident: Ident, chunk: &Chunk, ip: usize, env: &VmEnv) -> VmResult<RuntimeValue> {
+    env.get(ident)
+        .ok_or_else(|| locate(chunk, ip, VmError::UndefinedGlobal(ident.to_string())))
 }
 
 fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
@@ -1425,7 +1410,7 @@ fn eval_binary_op(
     b: RuntimeValue,
     locals: &Locals,
     chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
+    env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
     if matches!(
@@ -1443,7 +1428,7 @@ fn binop(
     b: RuntimeValue,
     locals: &Locals,
     chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
+    env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
     if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {
@@ -1484,7 +1469,7 @@ fn cmp_op(
     b: RuntimeValue,
     locals: &Locals,
     chunks: &Shared<Vec<Chunk>>,
-    env: &Shared<SharedCell<Env>>,
+    env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
     if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {

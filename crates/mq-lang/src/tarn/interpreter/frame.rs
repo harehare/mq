@@ -1,10 +1,9 @@
 //! Per-execution frame state: deadline/call-depth tracking and the `Locals`/operand-stack
 //! pools that let repeated calls reuse allocations instead of hitting the allocator.
 use super::errors::{VmError, VmResult};
-use crate::runtime::env::Env;
 use crate::runtime::host::HostFunctions;
+use crate::tarn::VmEnv;
 use crate::tarn::value::{Locals, StackValue};
-use crate::{Shared, SharedCell};
 use std::time::{Duration, Instant};
 
 /// Instructions between deadline checks.
@@ -24,10 +23,13 @@ pub(super) struct ExecutionLimits {
 #[derive(Default)]
 pub(crate) struct ExecutionPools {
     local_pool: Vec<Vec<Locals>>,
+    pooled_local_slots: usize,
     stack_pool: Vec<Vec<StackValue>>,
 }
 
 const MAX_POOLED_LOCAL_COUNT: usize = 256;
+const MAX_POOLED_LOCAL_SLOTS: usize = 4096;
+const MAX_POOLED_STACK_CAPACITY: usize = 4096;
 
 impl ExecutionLimits {
     pub(super) fn new(timeout: Option<Duration>, max_call_stack_depth: u32, pools: ExecutionPools) -> Self {
@@ -98,6 +100,9 @@ impl ExecutionLimits {
                 .get_mut(count as usize)
                 .and_then(|bucket| bucket.pop())
         };
+        if locals.is_some() {
+            self.pools.pooled_local_slots = self.pools.pooled_local_slots.saturating_sub(count as usize);
+        }
         let locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captures));
         locals.reset_from(initialized.min(count as usize));
         locals
@@ -113,8 +118,11 @@ impl ExecutionLimits {
             self.pools.local_pool.resize_with(count + 1, Vec::new);
         }
         let bucket = &mut self.pools.local_pool[count];
-        if bucket.len() < MAX_RETAINED_PER_LENGTH {
+        if bucket.len() < MAX_RETAINED_PER_LENGTH
+            && self.pools.pooled_local_slots.saturating_add(count) <= MAX_POOLED_LOCAL_SLOTS
+        {
             bucket.push(locals);
+            self.pools.pooled_local_slots += count;
         }
     }
 
@@ -125,7 +133,7 @@ impl ExecutionLimits {
     pub(super) fn recycle_stack(&mut self, mut stack: Vec<StackValue>) {
         const MAX_RETAINED_FRAMES: usize = 32;
         stack.clear();
-        if self.pools.stack_pool.len() < MAX_RETAINED_FRAMES {
+        if stack.capacity() <= MAX_POOLED_STACK_CAPACITY && self.pools.stack_pool.len() < MAX_RETAINED_FRAMES {
             self.pools.stack_pool.push(stack);
         }
     }
@@ -141,7 +149,7 @@ fn fresh_locals(count: usize, captures: bool) -> Locals {
 
 /// Mutable services shared by all frames of one VM evaluation.
 pub(super) struct ExecutionContext<'a> {
-    pub(super) env: &'a Shared<SharedCell<Env>>,
+    pub(super) env: &'a VmEnv,
     pub(super) limits: &'a mut ExecutionLimits,
     pub(super) host_functions: &'a HostFunctions,
 }
