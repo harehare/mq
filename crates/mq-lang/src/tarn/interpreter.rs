@@ -1,7 +1,24 @@
-use super::bytecode::{BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
+//! Tarn's bytecode dispatch loop: `run_chunk_inner_impl` and its opcode handlers, plus the
+//! public `run_*` entry points that set up a top-level frame and call into it.
+//!
+//! `errors` (the `VmError` type), `frame` (deadline/call-depth tracking and the `Locals`/stack
+//! pools), `calls` (binding arguments and invoking a callee), and `selectors` (applying a
+//! `Selector` to a value) hold the parts that split out cleanly; this file is what remains.
+mod calls;
+mod errors;
+mod frame;
+mod selectors;
+
+use self::calls::{
+    CallSite, FixedClosureCall, call_builtin, call_builtin_args, call_fixed_closure_from_stack, call_stack_value,
+    capture_upvalues, negate_ident,
+};
+use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
+use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT};
 use super::compiler::CompiledProgram;
 use super::value::VmClosureValue;
 use super::value::{Cell, Closure, Locals, StackValue, read_cell, write_cell};
+#[cfg(feature = "debugger")]
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::number::Number;
@@ -11,132 +28,15 @@ use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, RuntimeValue};
 use crate::selector::Selector;
 use crate::{Ident, Shared, SharedCell};
-use std::collections::BTreeMap;
-use std::fmt;
+pub(crate) use errors::VmError;
+use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
+pub(crate) use frame::ExecutionPools;
+use frame::{ExecutionContext, ExecutionLimits};
 use std::sync::LazyLock;
-use std::time::{Duration, Instant};
-
-/// Instructions between deadline checks.
-const TIMEOUT_CHECK_INTERVAL: u32 = 1024;
+use std::time::Duration;
 
 static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
-
-/// Per-execution deadline and call-depth state.
-struct ExecutionLimits {
-    deadline: Option<Instant>,
-    timeout: Option<Duration>,
-    step: u32,
-    call_depth: u32,
-    max_call_stack_depth: u32,
-    pools: ExecutionPools,
-}
-
-/// Reusable non-capturing frame storage.
-#[derive(Default)]
-pub(crate) struct ExecutionPools {
-    local_pool: Vec<Vec<Locals>>,
-    stack_pool: Vec<Vec<StackValue>>,
-}
-
-const MAX_POOLED_LOCAL_COUNT: usize = 256;
-
-impl ExecutionLimits {
-    fn new(timeout: Option<Duration>, max_call_stack_depth: u32, pools: ExecutionPools) -> Self {
-        Self {
-            deadline: timeout.map(|t| Instant::now() + t),
-            timeout,
-            step: 0,
-            call_depth: 0,
-            max_call_stack_depth,
-            pools,
-        }
-    }
-
-    fn into_pools(self) -> ExecutionPools {
-        self.pools
-    }
-
-    #[inline(always)]
-    fn check(&mut self) -> VmResult<()> {
-        let Some(deadline) = self.deadline else {
-            return Ok(());
-        };
-        self.step = self.step.wrapping_add(1);
-        if self.step & (TIMEOUT_CHECK_INTERVAL - 1) != 0 {
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            Err(VmError::Timeout(self.timeout.unwrap_or_default()))
-        } else {
-            Ok(())
-        }
-    }
-
-    #[inline(always)]
-    fn has_deadline(&self) -> bool {
-        self.deadline.is_some()
-    }
-
-    #[inline(always)]
-    fn enter_call(&mut self) -> VmResult<()> {
-        if self.call_depth >= self.max_call_stack_depth {
-            return Err(VmError::RecursionError(self.max_call_stack_depth));
-        }
-        self.call_depth += 1;
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn exit_call(&mut self) {
-        self.call_depth = self.call_depth.saturating_sub(1);
-    }
-
-    fn take_locals(&mut self, count: u16, captures: bool) -> Locals {
-        self.take_locals_with_initialized_prefix(count, 0, captures)
-    }
-
-    fn take_locals_with_initialized_prefix(&mut self, count: u16, initialized: usize, captures: bool) -> Locals {
-        let locals = if captures {
-            None
-        } else {
-            self.pools
-                .local_pool
-                .get_mut(count as usize)
-                .and_then(|bucket| bucket.pop())
-        };
-        let locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captures));
-        locals.reset_from(initialized.min(count as usize));
-        locals
-    }
-
-    fn recycle_locals(&mut self, locals: Locals) {
-        const MAX_RETAINED_PER_LENGTH: usize = 8;
-        let count = locals.len();
-        if count >= MAX_POOLED_LOCAL_COUNT {
-            return;
-        }
-        if count >= self.pools.local_pool.len() {
-            self.pools.local_pool.resize_with(count + 1, Vec::new);
-        }
-        let bucket = &mut self.pools.local_pool[count];
-        if bucket.len() < MAX_RETAINED_PER_LENGTH {
-            bucket.push(locals);
-        }
-    }
-
-    fn take_stack(&mut self) -> Vec<StackValue> {
-        self.pools.stack_pool.pop().unwrap_or_else(|| Vec::with_capacity(8))
-    }
-
-    fn recycle_stack(&mut self, mut stack: Vec<StackValue>) {
-        const MAX_RETAINED_FRAMES: usize = 32;
-        stack.clear();
-        if self.pools.stack_pool.len() < MAX_RETAINED_FRAMES {
-            self.pools.stack_pool.push(stack);
-        }
-    }
-}
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSlot;
@@ -175,163 +75,11 @@ struct DebugRuntime<'a> {
     current_node: Option<Shared<Node>>,
 }
 
-#[derive(Debug)]
-pub(crate) enum VmError {
-    Builtin(builtin::Error),
-    Host(Ident, String),
-    ZeroDivision,
-    NotCallable,
-    EnvNotFound(String),
-    UndefinedGlobal(String),
-    #[cfg(feature = "debugger")]
-    Debugger(String),
-    Corrupt(&'static str),
-    ArityMismatch {
-        expected: u8,
-        actual: u8,
-    },
-    /// Internal control flow emitted by a `break` inside a nested `try` chunk.
-    FlowBreak(Option<RuntimeValue>),
-    /// Internal control flow emitted by a `continue` inside a nested `try` chunk.
-    FlowContinue,
-    DestructuringFailed,
-    InvalidForeachTarget(String),
-    Timeout(Duration),
-    RecursionError(u32),
-    Located(Box<VmError>, TokenId),
-}
-
-impl fmt::Display for VmError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            VmError::Builtin(e) => write!(f, "{e}"),
-            VmError::Host(name, msg) => write!(f, "error in host function \"{name}\": {msg}"),
-            VmError::ZeroDivision => write!(f, "division by zero"),
-            VmError::NotCallable => write!(f, "value is not callable"),
-            VmError::EnvNotFound(name) => write!(f, "environment variable not found: {name}"),
-            VmError::UndefinedGlobal(name) => write!(f, "undefined identifier `{name}`"),
-            #[cfg(feature = "debugger")]
-            VmError::Debugger(message) => write!(f, "debugger expression failed: {message}"),
-            VmError::Corrupt(what) => write!(f, "corrupt bytecode: {what}"),
-            VmError::ArityMismatch { expected, actual } => {
-                write!(f, "expected {expected} argument(s), got {actual}")
-            }
-            VmError::FlowBreak(_) => write!(f, "break outside a loop"),
-            VmError::FlowContinue => write!(f, "continue outside a loop"),
-            VmError::DestructuringFailed => write!(f, "destructuring pattern did not match value"),
-            VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
-            VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
-            VmError::RecursionError(max) => write!(f, "maximum recursion depth exceeded ({max})"),
-            VmError::Located(inner, _) => write!(f, "{inner}"),
-        }
-    }
-}
-
-impl VmError {
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn token_id(&self) -> Option<TokenId> {
-        match self {
-            VmError::Located(_, token_id) => Some(*token_id),
-            _ => None,
-        }
-    }
-
-    /// Maps to the tree-walker's `RuntimeError`, reusing its `Display` text instead of
-    /// duplicating each variant's wording.
-    pub(crate) fn to_runtime_error(
-        &self,
-        token: crate::Token,
-        token_id: TokenId,
-        token_arena: crate::TokenArena,
-    ) -> crate::error::runtime::RuntimeError {
-        use crate::error::runtime::RuntimeError;
-        match self {
-            VmError::Builtin(e) => e.to_runtime_error(token_id, token_arena),
-            VmError::Host(name, msg) => {
-                RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone().into_boxed_str())
-            }
-            VmError::ZeroDivision => RuntimeError::ZeroDivision(token),
-            VmError::NotCallable => RuntimeError::InvalidDefinition(token, "value is not callable".to_string()),
-            VmError::EnvNotFound(name) => RuntimeError::EnvNotFound(token, name.clone().into()),
-            VmError::UndefinedGlobal(name) => RuntimeError::UndefinedReference(token, name.clone(), Box::new([])),
-            #[cfg(feature = "debugger")]
-            VmError::Debugger(message) => RuntimeError::Runtime(token, message.clone()),
-            VmError::ArityMismatch { expected, actual } => RuntimeError::InvalidNumberOfArguments {
-                token,
-                name: String::new(),
-                expected: *expected,
-                actual: *actual,
-            },
-            VmError::FlowBreak(_) => RuntimeError::Runtime(token, "break outside a loop".to_string()),
-            VmError::FlowContinue => RuntimeError::Runtime(token, "continue outside a loop".to_string()),
-            VmError::DestructuringFailed => RuntimeError::DestructuringFailed(token),
-            VmError::InvalidForeachTarget(repr) => RuntimeError::InvalidTypes {
-                token,
-                name: crate::TokenKind::Foreach.to_string(),
-                args: vec![repr.clone().into()],
-            },
-            VmError::Timeout(d) => RuntimeError::Timeout(*d),
-            VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
-            VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
-            VmError::Located(inner, token_id) => {
-                let token_id = *token_id;
-                let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
-                inner.to_runtime_error(token, token_id, token_arena)
-            }
-        }
-    }
-}
-
-fn locate(chunk: &Chunk, ip: usize, e: VmError) -> VmError {
-    match chunk.token_at(ip.saturating_sub(1)) {
-        Some(token_id) => VmError::Located(Box::new(e), token_id),
-        None => e,
-    }
-}
-
-impl std::error::Error for VmError {}
-
-impl From<builtin::Error> for VmError {
-    fn from(e: builtin::Error) -> Self {
-        VmError::Builtin(e)
-    }
-}
-
-type VmResult<T> = Result<T, VmError>;
-
-/// Runtime services shared by parameter binding and default-value evaluation.
-struct ParameterContext<'chunks, 'execution> {
-    chunks: &'chunks Shared<Vec<Chunk>>,
-    env: &'execution Shared<SharedCell<Env>>,
-    limits: &'execution mut ExecutionLimits,
-    host_functions: &'execution HostFunctions,
-}
-
-/// Mutable services shared by all frames of one VM evaluation.
-struct ExecutionContext<'a> {
-    env: &'a Shared<SharedCell<Env>>,
-    limits: &'a mut ExecutionLimits,
-    host_functions: &'a HostFunctions,
-}
-
 pub(crate) struct RunOptions<'a> {
     pub(crate) host_functions: &'a HostFunctions,
     pub(crate) timeout: Option<Duration>,
     pub(crate) max_call_stack_depth: u32,
     pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
-}
-
-struct CallSite<'a> {
-    locals: &'a Locals,
-    chunk: &'a Chunk,
-    ip: usize,
-}
-
-/// Static properties of a direct fixed-arity closure call.
-struct FixedClosureCall<'a> {
-    closure: &'a Closure,
-    argc: u8,
-    remove_callee: bool,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -643,343 +391,6 @@ fn run_impl_capturing_locals(
     }
     let result = raw_result.map(|result| into_runtime_value(result, chunks));
     (result, captured, limits.into_pools())
-}
-
-fn fresh_locals(count: usize, captures: bool) -> Locals {
-    if captures {
-        Locals::boxed(count)
-    } else {
-        Locals::flat(count)
-    }
-}
-
-fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell]) -> Vec<Cell> {
-    sources
-        .iter()
-        .map(|source| match source {
-            UpvalueSource::Local(slot) => Shared::clone(locals.cell(*slot)),
-            UpvalueSource::Upvalue(idx) => Shared::clone(&upvalues[*idx as usize]),
-        })
-        .collect()
-}
-
-fn call_stack_value(
-    callee: StackValue,
-    mut args: Vec<StackValue>,
-    call_site: CallSite<'_>,
-    chunks: &Shared<Vec<Chunk>>,
-    execution: &mut ExecutionContext<'_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
-    if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
-        let arg_values: Vec<RuntimeValue> = args.into_iter().map(|a| into_runtime_value(a, chunks)).collect();
-        let self_value = current_self(call_site.locals, chunks);
-        let result = call_builtin(
-            &ident,
-            &arg_values,
-            &self_value,
-            execution.env,
-            execution.host_functions,
-        )
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-        return Ok(StackValue::Value(result));
-    }
-
-    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
-        StackValue::Value(RuntimeValue::VmClosure(vc)) => {
-            if !vc.bound_args.is_empty() {
-                let mut combined: Vec<StackValue> = vc.bound_args.iter().cloned().map(StackValue::Value).collect();
-                combined.append(&mut args);
-                args = combined;
-            }
-            (&vc.chunks, vc.chunk_index, &vc.upvalues)
-        }
-        _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
-    };
-    let callee_chunk = &callee_chunks[callee_chunk_index as usize];
-    let callee_locals = execution
-        .limits
-        .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
-    callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    execution
-        .limits
-        .enter_call()
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-    if let Err(e) = bind_params(
-        &callee_chunk.param_shape,
-        args,
-        &callee_locals,
-        callee_upvalues,
-        &mut ParameterContext {
-            chunks: callee_chunks,
-            env: execution.env,
-            limits: execution.limits,
-            host_functions: execution.host_functions,
-        },
-        #[cfg(feature = "debugger")]
-        debug,
-    ) {
-        execution.limits.exit_call();
-        return Err(locate(call_site.chunk, call_site.ip, e));
-    }
-    #[cfg(feature = "debugger")]
-    let caller_node = debug.current_node.clone();
-    #[cfg(feature = "debugger")]
-    let pushed_call = if let Some(node) = &caller_node {
-        debug.call_stack.push(Shared::clone(node));
-        true
-    } else {
-        false
-    };
-    let call_result = run_chunk(
-        callee_chunk_index,
-        callee_chunks,
-        callee_locals,
-        callee_upvalues,
-        execution,
-        #[cfg(feature = "debugger")]
-        debug,
-    );
-    execution.limits.exit_call();
-    #[cfg(feature = "debugger")]
-    if pushed_call {
-        debug.call_stack.pop();
-    }
-    #[cfg(feature = "debugger")]
-    {
-        debug.current_node = caller_node;
-    }
-    call_result
-}
-
-fn call_fixed_closure_from_stack(
-    call: FixedClosureCall<'_>,
-    stack: &mut Vec<StackValue>,
-    call_site: CallSite<'_>,
-    chunks: &Shared<Vec<Chunk>>,
-    execution: &mut ExecutionContext<'_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
-    let closure = call.closure;
-    let callee_chunk = &chunks[closure.chunk_index as usize];
-    let Some(arity) = callee_chunk.param_shape.fixed_required_arity() else {
-        return Err(locate(
-            call_site.chunk,
-            call_site.ip,
-            VmError::Corrupt("fixed call has non-fixed parameters"),
-        ));
-    };
-    let argc = call.argc as usize;
-    let uses_implicit_self = arity > 0 && argc + 1 == arity;
-    if argc != arity && !uses_implicit_self {
-        return Err(locate(
-            call_site.chunk,
-            call_site.ip,
-            VmError::ArityMismatch {
-                expected: arity as u8,
-                actual: argc as u8,
-            },
-        ));
-    }
-    if stack.len() < argc + usize::from(call.remove_callee) {
-        return Err(locate(
-            call_site.chunk,
-            call_site.ip,
-            VmError::Corrupt("stack underflow in fixed closure call"),
-        ));
-    }
-
-    let initialized_slots = SELF_SLOT as usize + 1 + arity;
-    let callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
-        initialized_slots,
-        callee_chunk.captures_local_slots(),
-    );
-    let self_value = call_site.locals.get(SELF_SLOT);
-    let first_arg_slot = if uses_implicit_self {
-        callee_locals.set(SELF_SLOT, self_value.clone());
-        callee_locals.set(SELF_SLOT + 1, self_value);
-        SELF_SLOT as usize + 2
-    } else {
-        callee_locals.set(SELF_SLOT, self_value);
-        SELF_SLOT as usize + 1
-    };
-    for offset in (0..argc).rev() {
-        let Some(value) = stack.pop() else {
-            return Err(locate(
-                call_site.chunk,
-                call_site.ip,
-                VmError::Corrupt("stack underflow while binding fixed-call arguments"),
-            ));
-        };
-        callee_locals.set((first_arg_slot + offset) as u16, value);
-    }
-    if call.remove_callee && stack.pop().is_none() {
-        return Err(locate(
-            call_site.chunk,
-            call_site.ip,
-            VmError::Corrupt("stack underflow while removing fixed-call callee"),
-        ));
-    }
-
-    #[cfg(feature = "debugger")]
-    let caller_node = debug.current_node.clone();
-    #[cfg(feature = "debugger")]
-    let pushed_call = if let Some(node) = &caller_node {
-        debug.call_stack.push(Shared::clone(node));
-        true
-    } else {
-        false
-    };
-    execution
-        .limits
-        .enter_call()
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-    let call_result = run_chunk(
-        closure.chunk_index,
-        chunks,
-        callee_locals,
-        &closure.upvalues,
-        execution,
-        #[cfg(feature = "debugger")]
-        debug,
-    );
-    execution.limits.exit_call();
-    #[cfg(feature = "debugger")]
-    if pushed_call {
-        debug.call_stack.pop();
-    }
-    #[cfg(feature = "debugger")]
-    {
-        debug.current_node = caller_node;
-    }
-    call_result
-}
-
-fn bind_params(
-    shape: &ParamShape,
-    args: Vec<StackValue>,
-    callee_locals: &Locals,
-    enclosing_upvalues: &[Cell],
-    context: &mut ParameterContext<'_, '_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<()> {
-    if let Some(arity) = shape.fixed_required_arity() {
-        return bind_fixed_required_params(arity, args, callee_locals, context.chunks);
-    }
-
-    let arg_count = args.len();
-    let param_count = shape.bindings.len();
-    let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
-
-    let mut bindings = shape.bindings.iter();
-    let mut args = args.into_iter();
-
-    if use_self_param && let Some(binding) = bindings.next() {
-        let self_value = current_self(callee_locals, context.chunks);
-        callee_locals.set(binding.slot(), StackValue::Value(self_value));
-    }
-
-    for binding in bindings {
-        match binding {
-            ParamBinding::Variadic(slot) => {
-                let collected: Vec<RuntimeValue> = args
-                    .by_ref()
-                    .map(|arg| into_runtime_value(arg, context.chunks))
-                    .collect();
-                callee_locals.set(*slot, StackValue::Value(RuntimeValue::Array(Shared::new(collected))));
-            }
-            ParamBinding::Required(slot) => {
-                let Some(value) = args.next() else {
-                    return Err(VmError::ArityMismatch {
-                        expected: param_count as u8,
-                        actual: arg_count as u8,
-                    });
-                };
-                callee_locals.set(*slot, value);
-            }
-            ParamBinding::Optional(slot, default_chunk, default_upvalues) => {
-                if let Some(value) = args.next() {
-                    callee_locals.set(*slot, value);
-                } else {
-                    let captured = capture_upvalues(default_upvalues, callee_locals, enclosing_upvalues);
-                    let default_chunk_ref = &context.chunks[*default_chunk as usize];
-                    let default_locals = context
-                        .limits
-                        .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
-                    default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
-                    context.limits.enter_call()?;
-                    let result = {
-                        let mut execution = ExecutionContext {
-                            env: context.env,
-                            limits: context.limits,
-                            host_functions: context.host_functions,
-                        };
-                        run_chunk(
-                            *default_chunk,
-                            context.chunks,
-                            default_locals,
-                            &captured,
-                            &mut execution,
-                            #[cfg(feature = "debugger")]
-                            debug,
-                        )
-                    };
-                    context.limits.exit_call();
-                    callee_locals.set(*slot, result?);
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn bind_fixed_required_params(
-    arity: usize,
-    args: Vec<StackValue>,
-    callee_locals: &Locals,
-    chunks: &Shared<Vec<Chunk>>,
-) -> VmResult<()> {
-    let arg_count = args.len();
-    let first_arg_slot = if arg_count == arity {
-        SELF_SLOT as usize + 1
-    } else if arity > 0 && arg_count + 1 == arity {
-        callee_locals.set(SELF_SLOT + 1, StackValue::Value(current_self(callee_locals, chunks)));
-        SELF_SLOT as usize + 2
-    } else {
-        return Err(VmError::ArityMismatch {
-            expected: arity as u8,
-            actual: arg_count as u8,
-        });
-    };
-
-    for (offset, value) in args.into_iter().enumerate() {
-        callee_locals.set((first_arg_slot + offset) as u16, value);
-    }
-    Ok(())
-}
-
-fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResult<bool> {
-    let parameter_count = shape.bindings.len();
-    let accepts_explicit_args = arg_count >= shape.required && (shape.has_variadic || arg_count <= parameter_count);
-    if accepts_explicit_args {
-        return Ok(false);
-    }
-
-    let accepts_implicit_self = arg_count.saturating_add(1) >= shape.required && arg_count < parameter_count;
-    if accepts_implicit_self {
-        return Ok(true);
-    }
-
-    Err(VmError::ArityMismatch {
-        expected: if shape.has_variadic {
-            shape.required as u8
-        } else {
-            parameter_count as u8
-        },
-        actual: arg_count as u8,
-    })
 }
 
 fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
@@ -1524,21 +935,25 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     stack.push(result);
                     continue;
                 }
-                let mut args = Vec::with_capacity(*argc as usize);
+                // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
+                // variadic/optional params, `partial`-bound closures) runs often enough in
+                // higher-order builtins that a fresh heap allocation per call is worth avoiding.
+                let mut args = execution.limits.take_stack();
                 for _ in 0..*argc {
                     args.push(pop!());
                 }
                 args.reverse();
-                let result = call_stack_value(
+                let call_result = call_stack_value(
                     callee,
-                    args,
+                    &mut args,
                     CallSite { locals, chunk, ip },
                     chunks,
                     execution,
                     #[cfg(feature = "debugger")]
                     debug,
-                )?;
-                stack.push(result);
+                );
+                execution.limits.recycle_stack(args);
+                stack.push(call_result?);
             }
             OpCode::CallValue(argc) => {
                 let callee_index = stack
@@ -1570,22 +985,24 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     stack.push(result);
                     continue;
                 }
-                let mut args = Vec::with_capacity(*argc as usize);
+                // See the `CallLocal` non-fixed-arity path above for why this is pooled.
+                let mut args = execution.limits.take_stack();
                 for _ in 0..*argc {
                     args.push(pop!());
                 }
                 args.reverse();
                 let callee = pop!();
-                let result = call_stack_value(
+                let call_result = call_stack_value(
                     callee,
-                    args,
+                    &mut args,
                     CallSite { locals, chunk, ip },
                     chunks,
                     execution,
                     #[cfg(feature = "debugger")]
                     debug,
-                )?;
-                stack.push(result);
+                );
+                execution.limits.recycle_stack(args);
+                stack.push(call_result?);
             }
             OpCode::MaybeAutoCall => {
                 let value = pop!();
@@ -1605,7 +1022,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 if eligible {
                     let result = call_stack_value(
                         value,
-                        Vec::new(),
+                        &mut Vec::new(),
                         CallSite { locals, chunk, ip },
                         chunks,
                         execution,
@@ -1814,30 +1231,6 @@ fn dict_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: u
         }
     }
     Ok(arr)
-}
-
-/// Rare `:type` matching, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
-#[cold]
-#[inline(never)]
-fn type_check(v: &RuntimeValue, type_str: &str) -> bool {
-    match type_str {
-        "string" => matches!(v, RuntimeValue::String(_)),
-        "number" => matches!(v, RuntimeValue::Number(_)),
-        "bool" => matches!(v, RuntimeValue::Boolean(_)),
-        "array" => matches!(v, RuntimeValue::Array(_)),
-        "dict" => matches!(v, RuntimeValue::Dict(_)),
-        "bytes" => matches!(v, RuntimeValue::Bytes(_)),
-        "markdown" => matches!(v, RuntimeValue::Markdown(_, _)),
-        "function" => matches!(v, RuntimeValue::Function(_)),
-        "symbol" => matches!(v, RuntimeValue::Symbol(_)),
-        "none" => matches!(v, RuntimeValue::None),
-        _ => match v {
-            RuntimeValue::Markdown(node, _) => crate::selector::Selector::from_selector_str(&format!(".{type_str}"))
-                .filter(|selector| !selector.is_attribute_selector())
-                .is_some_and(|selector| builtin::eval_selector(node, &selector) != RuntimeValue::NONE),
-            _ => false,
-        },
-    }
 }
 
 /// Standalone equivalent of the `pop_value!` macro, for the cold handlers below.
@@ -2115,454 +1508,4 @@ fn cmp_op(
         env,
         host_functions,
     )
-}
-
-fn call_builtin(
-    ident: &crate::Ident,
-    args: &[RuntimeValue],
-    self_value: &RuntimeValue,
-    env: &Shared<SharedCell<Env>>,
-    host_functions: &HostFunctions,
-) -> VmResult<RuntimeValue> {
-    call_builtin_args(ident, args.iter().cloned().collect(), self_value, env, host_functions)
-}
-
-fn call_builtin_args(
-    ident: &crate::Ident,
-    args: Args,
-    self_value: &RuntimeValue,
-    env: &Shared<SharedCell<Env>>,
-    host_functions: &HostFunctions,
-) -> VmResult<RuntimeValue> {
-    let host_args = host_functions.get(ident).map(|_| args.clone());
-    match builtin::eval_builtin(self_value, ident, args, env) {
-        Ok(v) => Ok(v),
-        Err(builtin::Error::NotDefined(_, _)) => match host_functions.get(ident) {
-            Some(host_fn) => {
-                let Some(host_args) = host_args.as_deref() else {
-                    return Err(VmError::Corrupt("host function arguments were not retained"));
-                };
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(host_args)))
-                    .unwrap_or_else(|payload| {
-                        Err(crate::runtime::host::HostFunctionError::new(format!(
-                            "panic: {}",
-                            crate::runtime::host::panic_message(&*payload)
-                        )))
-                    })
-                    .map_err(|e| VmError::Host(*ident, e.message().to_string()))
-            }
-            None => Err(VmError::Builtin(builtin::Error::NotDefined(
-                ident.to_string(),
-                Vec::new(),
-            ))),
-        },
-        Err(e) => Err(VmError::Builtin(e)),
-    }
-}
-
-fn negate_ident() -> &'static crate::Ident {
-    use std::sync::LazyLock;
-    static NEGATE: LazyLock<crate::Ident> = LazyLock::new(|| crate::Ident::new(builtins::NEGATE));
-    &NEGATE
-}
-
-fn type_ident() -> &'static crate::Ident {
-    use std::sync::LazyLock;
-    static TYPE: LazyLock<crate::Ident> = LazyLock::new(|| crate::Ident::new("type"));
-    &TYPE
-}
-
-fn eval_selector_expr(value: &RuntimeValue, selector: &crate::selector::Selector) -> RuntimeValue {
-    use crate::selector::Selector;
-    if let Selector::Property(property_name) = selector {
-        return eval_property_selector_expr(value, property_name);
-    }
-    match value {
-        RuntimeValue::Markdown(node, _) => builtin::eval_selector(node, selector),
-        RuntimeValue::Array(values) => {
-            if let Selector::List(Some(idx), None) = selector {
-                return values.get(*idx).cloned().unwrap_or(RuntimeValue::None);
-            }
-            let values = values
-                .iter()
-                .flat_map(|v| match v {
-                    RuntimeValue::Markdown(node, _) => match builtin::eval_selector(node, selector) {
-                        RuntimeValue::Array(arr) => Shared::unwrap_or_clone(arr),
-                        other => vec![other],
-                    },
-                    _ if matches!(selector, Selector::List(None, None)) => vec![v.clone()],
-                    RuntimeValue::Dict(_) => match eval_selector_expr(v, selector) {
-                        RuntimeValue::Array(arr) if matches!(selector, Selector::Recursive) => {
-                            Shared::unwrap_or_clone(arr)
-                        }
-                        other => vec![other],
-                    },
-                    _ => vec![RuntimeValue::None],
-                })
-                .collect::<Vec<_>>();
-            RuntimeValue::Array(Shared::new(values))
-        }
-        RuntimeValue::Dict(map) => {
-            if matches!(selector, Selector::List(None, None)) {
-                return RuntimeValue::Array(Shared::new(map.values().cloned().collect()));
-            }
-            if matches!(selector, Selector::Recursive) {
-                return RuntimeValue::Array(Shared::new(collect_recursive(value)));
-            }
-            let new_map: BTreeMap<_, _> = map
-                .iter()
-                .map(|(k, v)| {
-                    let new_v = if k == type_ident() {
-                        v.clone()
-                    } else {
-                        eval_selector_expr(v, selector)
-                    };
-                    (*k, new_v)
-                })
-                .collect();
-            if new_map.is_empty() {
-                RuntimeValue::None
-            } else {
-                RuntimeValue::Dict(Shared::new(new_map))
-            }
-        }
-        _ => RuntimeValue::None,
-    }
-}
-
-#[inline]
-fn eval_compact_selector_expr(value: &RuntimeValue, selector: Selector) -> RuntimeValue {
-    match value {
-        RuntimeValue::Markdown(node, _) => builtin::eval_selector(node, &selector),
-        _ => eval_selector_expr(value, &selector),
-    }
-}
-
-fn eval_selector_expr_with_args(
-    value: &RuntimeValue,
-    selector: &crate::selector::Selector,
-    args: &[RuntimeValue],
-) -> RuntimeValue {
-    use crate::selector::Selector;
-    match value {
-        RuntimeValue::Markdown(node, _) => builtin::eval_selector_with_args(node, selector, args),
-        RuntimeValue::Array(values) => {
-            if let Selector::List(Some(idx), None) = selector {
-                return values.get(*idx).cloned().unwrap_or(RuntimeValue::None);
-            }
-            let values = values
-                .iter()
-                .flat_map(|v| match v {
-                    RuntimeValue::Markdown(node, _) => match builtin::eval_selector_with_args(node, selector, args) {
-                        RuntimeValue::Array(arr) => Shared::unwrap_or_clone(arr),
-                        other => vec![other],
-                    },
-                    _ if matches!(selector, Selector::List(None, None)) && args.is_empty() => vec![v.clone()],
-                    RuntimeValue::Dict(_) => vec![eval_selector_expr_with_args(v, selector, args)],
-                    _ => vec![RuntimeValue::None],
-                })
-                .collect::<Vec<_>>();
-            RuntimeValue::Array(Shared::new(values))
-        }
-        RuntimeValue::Dict(map) => {
-            let new_map: BTreeMap<_, _> = map
-                .iter()
-                .map(|(k, v)| {
-                    let new_v = if k == type_ident() {
-                        v.clone()
-                    } else {
-                        eval_selector_expr_with_args(v, selector, args)
-                    };
-                    (*k, new_v)
-                })
-                .collect();
-            if new_map.is_empty() {
-                RuntimeValue::None
-            } else {
-                RuntimeValue::Dict(Shared::new(new_map))
-            }
-        }
-        _ => RuntimeValue::None,
-    }
-}
-
-fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> RuntimeValue {
-    match value {
-        RuntimeValue::Array(values) => RuntimeValue::Array(Shared::new(
-            values
-                .iter()
-                .map(|v| match v {
-                    RuntimeValue::Dict(_) => eval_property_selector_expr(v, property_name),
-                    _ => RuntimeValue::None,
-                })
-                .collect(),
-        )),
-        RuntimeValue::Dict(map) => map.get(property_name).cloned().unwrap_or(RuntimeValue::None),
-        _ => RuntimeValue::None,
-    }
-}
-
-fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
-    let mut result = vec![value.clone()];
-    match value {
-        RuntimeValue::Array(items) => {
-            for item in items.iter() {
-                result.extend(collect_recursive(item));
-            }
-        }
-        RuntimeValue::Dict(map) => {
-            for v in map.values() {
-                result.extend(collect_recursive(v));
-            }
-        }
-        _ => {}
-    }
-    result
-}
-
-fn error_dict(e: &VmError) -> RuntimeValue {
-    let mut map = BTreeMap::new();
-    map.insert(
-        Ident::new("message"),
-        RuntimeValue::String(Shared::new(error_message(e))),
-    );
-    RuntimeValue::Dict(Shared::new(map))
-}
-
-// Throwaway token/arena for `VmError::to_runtime_error` where no real one is available.
-fn placeholder_token_context() -> (crate::Token, TokenId, crate::TokenArena) {
-    let mut arena = crate::Arena::new(1);
-    let token = crate::Token {
-        range: crate::Range::default(),
-        kind: crate::TokenKind::Eof,
-        module_id: crate::ArenaId::new(0),
-    };
-    let token_id = arena.alloc(Shared::new(token.clone()));
-    let token_arena: crate::TokenArena = Shared::new(SharedCell::new(arena));
-    (token, token_id, token_arena)
-}
-
-fn error_message(e: &VmError) -> String {
-    // Strip `Located`'s real token_id first: `to_runtime_error` would try to resolve it
-    // against the placeholder arena below, which only holds the placeholder token.
-    match e {
-        VmError::Located(inner, _) => error_message(inner),
-        other => {
-            let (token, token_id, token_arena) = placeholder_token_context();
-            other.to_runtime_error(token, token_id, token_arena).to_string()
-        }
-    }
-}
-
-fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
-    match e {
-        VmError::FlowBreak(value) => Some(value.clone()),
-        VmError::Located(inner, _) => flow_break_value(inner),
-        _ => None,
-    }
-}
-
-fn flow_continue(e: &VmError) -> bool {
-    match e {
-        VmError::FlowContinue => true,
-        VmError::Located(inner, _) => flow_continue(inner),
-        _ => false,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn number(value: i64) -> StackValue {
-        StackValue::Value(RuntimeValue::Number(value.into()))
-    }
-
-    fn value_at(locals: &Locals, slot: u16) -> RuntimeValue {
-        match locals.get(slot) {
-            StackValue::Value(value) => value,
-            StackValue::Closure(_) => panic!("expected a runtime value"),
-        }
-    }
-
-    #[test]
-    fn fixed_required_binder_handles_explicit_and_implicit_self_arguments() {
-        let chunks = Shared::new(Vec::new());
-        let explicit_locals = Locals::boxed(3);
-        bind_fixed_required_params(2, vec![number(3), number(4)], &explicit_locals, &chunks).unwrap();
-        assert_eq!(value_at(&explicit_locals, 1), RuntimeValue::Number(3.into()));
-        assert_eq!(value_at(&explicit_locals, 2), RuntimeValue::Number(4.into()));
-
-        let implicit_locals = Locals::boxed(3);
-        implicit_locals.set(0, number(10));
-        bind_fixed_required_params(2, vec![number(4)], &implicit_locals, &chunks).unwrap();
-        assert_eq!(value_at(&implicit_locals, 1), RuntimeValue::Number(10.into()));
-        assert_eq!(value_at(&implicit_locals, 2), RuntimeValue::Number(4.into()));
-    }
-
-    #[test]
-    fn fixed_required_binder_rejects_invalid_arity() {
-        let chunks = Shared::new(Vec::new());
-        let locals = Locals::boxed(1);
-        assert!(matches!(
-            bind_fixed_required_params(0, vec![number(1)], &locals, &chunks),
-            Err(VmError::ArityMismatch { expected: 0, actual: 1 })
-        ));
-    }
-
-    // One case per `builtin::Error` variant; see `all_builtin_error_variants_are_covered`.
-    #[rstest::rstest]
-    #[case::user_defined(builtin::Error::UserDefined("boom".to_string()), "boom")]
-    #[case::invalid_base64_string(
-        builtin::Error::InvalidBase64String({
-            use base64::Engine;
-            base64::prelude::BASE64_STANDARD.decode("not valid base64!!!").unwrap_err()
-        }),
-        "Invalid base64 string"
-    )]
-    #[case::not_defined(
-        builtin::Error::NotDefined("f".to_string(), vec!["g".to_string()]),
-        "\"f\" is not defined"
-    )]
-    #[case::undefined_reference(
-        builtin::Error::UndefinedReference("r".to_string(), vec![]),
-        "\"r\" is not defined"
-    )]
-    #[case::invalid_date_time_format(
-        builtin::Error::InvalidDateTimeFormat("%Q".to_string()),
-        "Unable to format date time, %Q"
-    )]
-    #[case::invalid_types(
-        builtin::Error::InvalidTypes("f".to_string(), vec![RuntimeValue::Number(1.into())]),
-        "Invalid types for \"f\", got number"
-    )]
-    #[case::invalid_types_multiple_args(
-        builtin::Error::InvalidTypes(
-            "f".to_string(),
-            vec![RuntimeValue::Number(1.into()), RuntimeValue::Boolean(true)],
-        ),
-        "Invalid types for \"f\", got number, bool"
-    )]
-    #[case::invalid_number_of_arguments(
-        builtin::Error::InvalidNumberOfArguments("f".to_string(), 2, 1),
-        "Invalid number of arguments in \"f\", expected 2, got 1"
-    )]
-    #[case::invalid_regular_expression(
-        builtin::Error::InvalidRegularExpression("(".to_string()),
-        "Invalid regular expression \"(\""
-    )]
-    #[case::runtime(
-        builtin::Error::Runtime("something went wrong".to_string()),
-        "Runtime error: something went wrong"
-    )]
-    #[case::zero_division(builtin::Error::ZeroDivision, "Division by zero")]
-    #[case::assign_to_immutable(
-        builtin::Error::AssignToImmutable("x".to_string()),
-        "Cannot assign to immutable variable \"x\""
-    )]
-    #[case::undefined_variable(
-        builtin::Error::UndefinedVariable("x".to_string()),
-        "Undefined variable \"x\""
-    )]
-    #[case::invalid_convert(
-        builtin::Error::InvalidConvert("bogus".to_string()),
-        "Invalid convert: bogus"
-    )]
-    fn builtin_error_message_matches_the_tree_walkers_runtime_error_display(
-        #[case] error: builtin::Error,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(error_message(&VmError::Builtin(error)), expected);
-    }
-
-    /// Forces a compile error if a `builtin::Error` variant is missing a case above.
-    #[allow(dead_code)]
-    fn all_builtin_error_variants_are_covered(e: builtin::Error) {
-        match e {
-            builtin::Error::UserDefined(_)
-            | builtin::Error::InvalidBase64String(_)
-            | builtin::Error::NotDefined(_, _)
-            | builtin::Error::UndefinedReference(_, _)
-            | builtin::Error::InvalidDateTimeFormat(_)
-            | builtin::Error::InvalidTypes(_, _)
-            | builtin::Error::InvalidNumberOfArguments(_, _, _)
-            | builtin::Error::InvalidRegularExpression(_)
-            | builtin::Error::Runtime(_)
-            | builtin::Error::ZeroDivision
-            | builtin::Error::AssignToImmutable(_)
-            | builtin::Error::UndefinedVariable(_)
-            | builtin::Error::InvalidConvert(_) => {}
-        }
-    }
-
-    // One case per bare `VmError` variant; see `all_vm_error_variants_are_covered`.
-    #[rstest::rstest]
-    #[case::host(VmError::Host(Ident::new("f"), "boom".to_string()), "Error in host function \"f\": boom")]
-    #[case::zero_division(VmError::ZeroDivision, "Division by zero")]
-    #[case::not_callable(VmError::NotCallable, "Invalid definition for \"value is not callable\"")]
-    #[case::env_not_found(VmError::EnvNotFound("HOME".to_string()), "Environment variable `HOME` not found")]
-    #[case::undefined_global(VmError::UndefinedGlobal("x".to_string()), "\"x\" is not defined")]
-    #[cfg_attr(
-        feature = "debugger",
-        case::debugger(VmError::Debugger("bad condition".to_string()), "Runtime error: bad condition")
-    )]
-    #[case::arity_mismatch(
-        VmError::ArityMismatch { expected: 2, actual: 1 },
-        "Invalid number of arguments in \"\", expected 2, got 1"
-    )]
-    #[case::flow_break(VmError::FlowBreak(None), "Runtime error: break outside a loop")]
-    #[case::flow_continue(VmError::FlowContinue, "Runtime error: continue outside a loop")]
-    #[case::destructuring_failed(VmError::DestructuringFailed, "Destructuring pattern did not match value")]
-    #[case::invalid_foreach_target(
-        VmError::InvalidForeachTarget("number".to_string()),
-        "Invalid types for \"foreach\", got number"
-    )]
-    #[case::timeout(VmError::Timeout(Duration::from_secs(1)), "Execution timed out after 1.000s")]
-    #[case::recursion_error(VmError::RecursionError(100), "Maximum recursion depth exceeded (100)")]
-    #[case::corrupt(VmError::Corrupt("bad opcode"), "Runtime error: corrupt bytecode: bad opcode")]
-    #[case::located_unwraps_to_the_inner_message(
-        VmError::Located(Box::new(VmError::ZeroDivision), TokenId::new(0)),
-        "Division by zero"
-    )]
-    fn vm_error_message_matches_the_tree_walkers_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
-        assert_eq!(error_message(&error), expected);
-    }
-
-    /// Forces a compile error if a `VmError` variant is missing a case above.
-    #[allow(dead_code)]
-    fn all_vm_error_variants_are_covered(e: VmError) {
-        match e {
-            #[cfg(feature = "debugger")]
-            VmError::Debugger(_) => {}
-            VmError::Builtin(_)
-            | VmError::Host(_, _)
-            | VmError::ZeroDivision
-            | VmError::NotCallable
-            | VmError::EnvNotFound(_)
-            | VmError::UndefinedGlobal(_)
-            | VmError::Corrupt(_)
-            | VmError::ArityMismatch { .. }
-            | VmError::FlowBreak(_)
-            | VmError::FlowContinue
-            | VmError::DestructuringFailed
-            | VmError::InvalidForeachTarget(_)
-            | VmError::Timeout(_)
-            | VmError::RecursionError(_)
-            | VmError::Located(_, _) => {}
-        }
-    }
-
-    /// Guards against the two error-message paths drifting apart again: the VM's own
-    /// `1 / 0` fast path used to report "division by zero" (lowercase) via `VmError`'s own
-    /// `Display`, while the tree-walker reported "Division by zero" for the same script.
-    #[test]
-    fn zero_division_message_matches_through_a_real_try_catch() {
-        let token_arena = Shared::new(SharedCell::new(crate::arena::Arena::new(100)));
-        let program = crate::parse("try: 1 / 0 catch(e): get(e, \"message\");", Shared::clone(&token_arena)).unwrap();
-        let result = super::super::compile_and_run(&program, token_arena).unwrap();
-        assert_eq!(
-            result,
-            RuntimeValue::String(Shared::new("Division by zero".to_string()))
-        );
-    }
 }
