@@ -11,17 +11,19 @@ use std::{
 /// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Selector {
-    Index(std::num::NonZeroU8),
+    Index(std::num::NonZeroU32),
 }
 
 impl Selector {
-    /// `None` if `i` doesn't fit (indices `>= 255`); callers treat that the same as any
-    /// other out-of-range index (e.g. `RuntimeValue::NONE`), not an error.
+    /// `None` if `i` doesn't fit (indices `>= u32::MAX`); callers treat that the same as any
+    /// other out-of-range index (e.g. `RuntimeValue::NONE`), not an error. `NonZeroU32` was
+    /// chosen over a plain `usize` because `Option<Selector>` still fits in the padding
+    /// alongside `Shared<Node>`, so `RuntimeValue` stays 16 bytes instead of growing to 24.
     #[inline(always)]
     pub(crate) fn index(i: usize) -> Option<Self> {
         i.checked_add(1)
-            .and_then(|n| u8::try_from(n).ok())
-            .and_then(std::num::NonZeroU8::new)
+            .and_then(|n| u32::try_from(n).ok())
+            .and_then(std::num::NonZeroU32::new)
             .map(Selector::Index)
     }
 
@@ -1236,8 +1238,38 @@ mod tests {
     fn test_selector_index_boundary() {
         assert!(Selector::index(0).is_some());
         assert!(Selector::index(254).is_some());
-        assert!(Selector::index(255).is_none());
+        assert!(Selector::index(255).is_some());
+        assert!(Selector::index((u32::MAX - 1) as usize).is_some());
+        assert!(Selector::index(u32::MAX as usize).is_none());
         assert!(Selector::index(usize::MAX).is_none());
+    }
+
+    #[test]
+    fn test_markdown_node_with_many_children() {
+        let children: Vec<Node> = (0..300)
+            .map(|i| {
+                Node::Text(mq_markdown::Text {
+                    value: format!("child-{i}"),
+                    position: None,
+                })
+            })
+            .collect();
+        let parent = Node::Strong(mq_markdown::Strong {
+            values: children,
+            position: None,
+        });
+
+        let markdown = RuntimeValue::Markdown(Shared::new(parent), Some(Selector::index(255).unwrap()));
+        assert_eq!(markdown.markdown_node().unwrap().value(), "child-255");
+
+        let updated = markdown.update_markdown_value("updated-255");
+        match &updated {
+            RuntimeValue::Markdown(node, selector) => {
+                assert_eq!(selector, &Some(Selector::index(255).unwrap()));
+                assert_eq!(node.find_at_index(255).unwrap().value(), "updated-255");
+            }
+            _ => panic!("Expected Markdown variant"),
+        }
     }
 
     #[test]

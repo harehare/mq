@@ -11284,25 +11284,28 @@ mod tests {
             None,
         );
 
-        // In range for the u8-backed Selector: selects the child.
+        // Selects a child past the old u8-backed Selector's 254 cap; the u32-backed
+        // Selector has no trouble representing it.
         let in_range = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            vec![parent.clone(), RuntimeValue::Number(254.into())].into(),
+            vec![parent.clone(), RuntimeValue::Number(255.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
         )
         .unwrap();
-        assert_eq!(in_range.markdown_node().unwrap().value(), "child254");
+        assert_eq!(in_range.markdown_node().unwrap().value(), "child255");
 
-        // Past the u8-backed Selector's range: no panic, degrades to None like any other
-        // out-of-range index rather than erroring or crashing.
+        // Still degrades to None for an index that's actually out of range for the node
+        // (only 300 children, so 300 itself is out of bounds), rather than erroring or
+        // crashing.
         let out_of_range = eval_builtin(
             &RuntimeValue::None,
             &ident_get,
-            vec![parent, RuntimeValue::Number(255.into())].into(),
+            vec![parent, RuntimeValue::Number(300.into())].into(),
             &Shared::new(SharedCell::new(Env::default())),
-        );
-        assert_eq!(out_of_range, Ok(RuntimeValue::NONE));
+        )
+        .unwrap();
+        assert_eq!(out_of_range.markdown_node(), None);
     }
 
     #[test]
