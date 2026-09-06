@@ -1974,6 +1974,18 @@ fn module_with_vars() -> tempfile::TempDir {
     dir
 }
 
+/// External modules can contain inline modules, which remain qualified beneath the import alias.
+#[rstest::fixture]
+fn module_with_nested_inline_module() -> tempfile::TempDir {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("parent.mq"),
+        "module child: let answer = 40 | def add_two(): answer + 2; end",
+    )
+    .unwrap();
+    dir
+}
+
 fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
@@ -2000,6 +2012,17 @@ fn module_vars_binding_is_correct(module_with_vars: tempfile::TempDir, #[case] c
     assert_eq!(
         run_with_local_module(&module_with_vars, code),
         RuntimeValue::Number(11.into())
+    );
+}
+
+#[rstest]
+fn import_alias_prefixes_nested_inline_module_access(module_with_nested_inline_module: tempfile::TempDir) {
+    assert_eq!(
+        run_with_local_module(
+            &module_with_nested_inline_module,
+            r#"import "parent" as parent | parent::child::answer + parent::child::add_two()"#,
+        ),
+        RuntimeValue::Number(82.into())
     );
 }
 

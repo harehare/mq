@@ -1397,7 +1397,7 @@ impl<R: ModuleResolver> Compiler<R> {
         // reach the network once we're inside a loaded module (matches the tree-walker).
         #[cfg(feature = "http-import")]
         self.module_loader.push_http_boundary();
-        let directives_result = self.compile_module_directives(&module.modules);
+        let directives_result = self.compile_module_directives(&module.modules, &[]);
         #[cfg(feature = "http-import")]
         self.module_loader.pop_http_boundary();
         directives_result?;
@@ -1532,7 +1532,23 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_discarding(&mut self, nodes: &Program) -> CompileResult<()> {
+        self.compile_discarding_in_module_path(nodes, &[])
+    }
+
+    /// Compiles discarded module directives, retaining a parent qualified path for nested
+    /// inline modules imported under an alias.
+    fn compile_discarding_in_module_path(
+        &mut self,
+        nodes: &Program,
+        parent_module_path: &[crate::Ident],
+    ) -> CompileResult<()> {
         for node in nodes {
+            if let Expr::Module(ident, program) = &*node.expr {
+                self.current_token_id = node.token_id;
+                self.compile_module(ident, program, parent_module_path)?;
+                self.emit(OpCode::Pop);
+                continue;
+            }
             #[cfg(not(feature = "debugger"))]
             if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
                 self.current_token_id = node.token_id;
@@ -1556,9 +1572,13 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
-    fn compile_module_directives(&mut self, modules: &Program) -> CompileResult<()> {
+    fn compile_module_directives(
+        &mut self,
+        modules: &Program,
+        parent_module_path: &[crate::Ident],
+    ) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
-        let result = self.compile_discarding(modules);
+        let result = self.compile_discarding_in_module_path(modules, parent_module_path);
         self.prune_module_functions = previously_pruning;
         result
     }
@@ -1694,7 +1714,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
         #[cfg(feature = "http-import")]
         self.module_loader.push_http_boundary();
-        let directives_result = self.compile_module_directives(&module.modules);
+        let directives_result = self.compile_module_directives(&module.modules, &[module_alias]);
         #[cfg(feature = "http-import")]
         self.module_loader.pop_http_boundary();
         directives_result?;
