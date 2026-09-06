@@ -925,6 +925,46 @@ fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
     assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
 }
 
+#[rstest]
+#[case::top_level_destructuring_let_visible_to_a_sibling_def("let [x] = [1] | def f(): x; | f()")]
+#[case::top_level_array_rest_let_visible_to_a_sibling_def("let [x, ..rest] = [1, 2, 3] | def f(): rest; | f()")]
+#[case::top_level_as_binding_visible_to_a_sibling_def("1 as x | def f(): x; | f()")]
+#[case::top_level_destructuring_var_visible_to_a_sibling_def("var [x] = [1] | def f(): x; | f()")]
+#[case::inline_module_let_visible_to_a_sibling_function("module m: let x = 1 | def f(): x; end | m::f()")]
+fn forward_declared_top_level_bindings_are_visible_to_a_sibling_def(#[case] code: &str) {
+    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+}
+
+#[test]
+fn bare_soft_builtin_reference_inside_an_imported_module_becomes_reachable() {
+    let code = r#"import "table" | table::tables(to_markdown("| id | v |\n| - | - |\n| 1 | 2 |\n| 1 | 3 |\n")) | first(self) | table::pivot_wider(self, 1, 2)"#;
+    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+}
+
+#[test]
+fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuring() {
+    let code = "let [x] = [1] | let [x] = [2] | nodes | x";
+    let inputs = vec![RuntimeValue::Number(1.0.into())];
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let results = compile_and_run_many(
+        &program,
+        inputs.clone().into_iter(),
+        EngineRunContext {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            token_arena,
+            module_loader: ModuleLoader::new(StdModuleResolver),
+            global_bindings: &[],
+            session: None,
+        },
+    )
+    .unwrap();
+    assert_eq!(results, tree_walk_eval_many(code, inputs));
+    assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
+}
+
 // Deliberate divergence from the tree-walker (which returns None here) — not worth the
 // per-iteration cost of matching it exactly.
 #[rstest]

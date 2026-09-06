@@ -628,10 +628,11 @@ fn run_impl_capturing_locals(
     let captured = capture_names
         .iter()
         .filter_map(|name| {
+            // Last-declared slot wins, matching the compiler's reverse name resolution.
             top_level_chunk
                 .local_names
                 .iter()
-                .position(|local| local == name)
+                .rposition(|local| local == name)
                 .and_then(|slot| locals.get_checked(slot as u16))
                 .map(|value| (*name, into_runtime_value(value, chunks)))
         })

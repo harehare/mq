@@ -443,16 +443,59 @@ pub(crate) enum BytecodeError {
     EmptyChunk(usize),
     MissingReturn(usize),
     TooManyChunks(usize),
-    TooManyConstants { chunk: usize, count: usize },
-    TooManyLocals { chunk: usize, count: usize },
-    TooManyUpvalues { chunk: usize, count: usize },
-    TooManyStaticClosures { chunk: usize, count: usize },
-    ConstantOutOfBounds { chunk: usize, pc: usize, index: u16 },
-    LocalOutOfBounds { chunk: usize, pc: usize, slot: u16 },
-    UpvalueOutOfBounds { chunk: usize, pc: usize, index: u16 },
-    ChunkOutOfBounds { chunk: usize, pc: usize, target: u16 },
-    StaticClosureOutOfBounds { chunk: usize, pc: usize, index: u16 },
-    JumpOutOfBounds { chunk: usize, pc: usize, target: isize },
+    TooManyConstants {
+        chunk: usize,
+        count: usize,
+    },
+    TooManyLocals {
+        chunk: usize,
+        count: usize,
+    },
+    TooManyUpvalues {
+        chunk: usize,
+        count: usize,
+    },
+    TooManyStaticClosures {
+        chunk: usize,
+        count: usize,
+    },
+    ConstantOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        index: u16,
+    },
+    LocalOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        slot: u16,
+    },
+    UpvalueOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        index: u16,
+    },
+    ChunkOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        target: u16,
+    },
+    StaticClosureOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        index: u16,
+    },
+    JumpOutOfBounds {
+        chunk: usize,
+        pc: usize,
+        target: isize,
+    },
+    ClosureCaptureMismatch {
+        chunk: usize,
+        pc: usize,
+        target: u16,
+        expected: usize,
+        actual: usize,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -493,6 +536,18 @@ impl fmt::Display for BytecodeError {
             }
             Self::JumpOutOfBounds { chunk, pc, target } => {
                 write!(f, "chunk {chunk} pc {pc} jumps to {target} out of bounds")
+            }
+            Self::ClosureCaptureMismatch {
+                chunk,
+                pc,
+                target,
+                expected,
+                actual,
+            } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} makes a closure over chunk {target} with {actual} captures, but it expects {expected}"
+                )
             }
         }
     }
@@ -809,8 +864,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                 }
                 OpCode::MakeClosure(payload) => {
-                    verify_chunk_target(chunks, chunk_index, pc, payload.0)?;
-                    verify_upvalue_sources(chunk, chunk_index, pc, &payload.1)?;
+                    let (target, sources) = payload.as_ref();
+                    verify_chunk_target(chunks, chunk_index, pc, *target)?;
+                    verify_upvalue_sources(chunk, chunk_index, pc, sources)?;
+                    verify_closure_capture_count(chunks, chunk_index, pc, *target, sources.len())?;
                 }
                 OpCode::MakeStaticClosure(index) => {
                     let Some(closure) = chunk.static_closures.get(*index as usize) else {
@@ -821,6 +878,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     };
                     verify_chunk_target(chunks, chunk_index, pc, closure.chunk_index)?;
+                    verify_closure_capture_count(chunks, chunk_index, pc, closure.chunk_index, closure.upvalues.len())?;
                 }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
@@ -854,8 +912,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 });
             }
             if let ParamBinding::Optional(_, default_chunk, sources) = binding {
-                verify_chunk_target(chunks, chunk_index, chunk.code.len() - 1, *default_chunk)?;
-                verify_upvalue_sources(chunk, chunk_index, chunk.code.len() - 1, sources)?;
+                let pc = chunk.code.len() - 1;
+                verify_chunk_target(chunks, chunk_index, pc, *default_chunk)?;
+                verify_upvalue_sources(chunk, chunk_index, pc, sources)?;
+                verify_closure_capture_count(chunks, chunk_index, pc, *default_chunk, sources.len())?;
             }
         }
     }
@@ -886,6 +946,29 @@ fn verify_upvalue_sources(
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+/// Ensures a closure's capture count matches the target chunk's upvalue count, since
+/// `GetUpvalue`/`SetUpvalue` index the runtime `upvalues` array unchecked. Call only after
+/// `verify_chunk_target` confirms `target` is in bounds.
+fn verify_closure_capture_count(
+    chunks: &[Chunk],
+    chunk_index: usize,
+    pc: usize,
+    target: u16,
+    capture_count: usize,
+) -> Result<(), BytecodeError> {
+    let expected = chunks[target as usize].upvalue_names.len();
+    if capture_count != expected {
+        return Err(BytecodeError::ClosureCaptureMismatch {
+            chunk: chunk_index,
+            pc,
+            target,
+            expected,
+            actual: capture_count,
+        });
     }
     Ok(())
 }
@@ -1220,6 +1303,83 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[invalid_target]),
             Err(BytecodeError::ChunkOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_rejects_closure_capture_count_mismatches() {
+        fn target_wants_one_upvalue() -> Chunk {
+            Chunk {
+                code: vec![OpCode::GetUpvalue(0), OpCode::Return],
+                upvalue_names: vec![Ident::default()],
+                ..Default::default()
+            }
+        }
+
+        let no_captures = Chunk {
+            code: vec![OpCode::MakeClosure(Box::new((1, Vec::new()))), OpCode::Return],
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[no_captures, target_wants_one_upvalue()]),
+            Err(BytecodeError::ClosureCaptureMismatch {
+                expected: 1,
+                actual: 0,
+                ..
+            })
+        ));
+
+        let too_many_captures = Chunk {
+            code: vec![
+                OpCode::MakeClosure(Box::new((1, vec![UpvalueSource::Local(0), UpvalueSource::Local(1)]))),
+                OpCode::Return,
+            ],
+            local_count: 2,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[too_many_captures, target_wants_one_upvalue()]),
+            Err(BytecodeError::ClosureCaptureMismatch {
+                expected: 1,
+                actual: 2,
+                ..
+            })
+        ));
+
+        let static_closure_target_expects_upvalues = Chunk {
+            code: vec![OpCode::MakeStaticClosure(0), OpCode::Return],
+            static_closures: vec![Shared::new(Closure {
+                chunk_index: 1,
+                upvalues: Vec::new(),
+            })],
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[static_closure_target_expects_upvalues, target_wants_one_upvalue()]),
+            Err(BytecodeError::ClosureCaptureMismatch {
+                expected: 1,
+                actual: 0,
+                ..
+            })
+        ));
+
+        let optional_default_mismatch = Chunk {
+            code: vec![OpCode::Return],
+            local_count: 1,
+            param_shape: ParamShape {
+                bindings: vec![ParamBinding::Optional(0, 1, Vec::new())],
+                required: 0,
+                has_variadic: false,
+            },
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[optional_default_mismatch, target_wants_one_upvalue()]),
+            Err(BytecodeError::ClosureCaptureMismatch {
+                expected: 1,
+                actual: 0,
+                ..
+            })
         ));
     }
 }

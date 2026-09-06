@@ -124,8 +124,14 @@ struct Compiler<R: ModuleResolver> {
     /// preserves lazy control-flow and function-body semantics for names that are never read.
     defer_undefined_identifiers: bool,
     /// Canonical slots so every `Pattern::Or` alternative binds the same name to the same
-    /// slot; innermost `Or` is last.
+    /// slot; innermost `Or` is last. Also doubles as the override stack for
+    /// `pending_pattern_overrides`.
     or_pattern_slots: Vec<FxHashMap<crate::Ident, u16>>,
+    /// Predeclared slots for top-level destructuring `let`/`var`s, one entry per statement
+    /// in program order.
+    pending_pattern_overrides: std::collections::VecDeque<FxHashMap<crate::Ident, u16>>,
+    /// Popped from `pending_pattern_overrides` for `compile_let_or_var_binding` to reuse.
+    current_pattern_override: Option<FxHashMap<crate::Ident, u16>>,
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -603,6 +609,8 @@ fn compile_program_impl<R: ModuleResolver>(
         try_depth: 0,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         or_pattern_slots: Vec::new(),
+        pending_pattern_overrides: std::collections::VecDeque::new(),
+        current_pattern_override: None,
     };
     if !matches!(options.builtin_prelude, BuiltinPrelude::None) {
         let builtin_module = compiler
@@ -700,7 +708,7 @@ impl<R: ModuleResolver> Compiler<R> {
         enum Deferred {
             Statement(Shared<Node>),
             ModuleVars(crate::Module, Option<crate::Ident>),
-            InlineModuleRest(crate::Ident, usize, Program),
+            InlineModuleRest(crate::Ident, usize, Program, FxHashMap<crate::Ident, u16>),
         }
         let mut deferred = Vec::with_capacity(program.len());
         let mut defs: Program = Vec::new();
@@ -709,6 +717,20 @@ impl<R: ModuleResolver> Compiler<R> {
             match &*node.expr {
                 Expr::Def(_, _, _) => defs.push(Shared::clone(node)),
                 Expr::Let(Pattern::Ident(ident), _) | Expr::Var(Pattern::Ident(ident), _) => {
+                    self.scope_mut().declare_or_reuse(ident.name);
+                    deferred.push(Deferred::Statement(Shared::clone(node)));
+                }
+                Expr::Let(pattern, _) => {
+                    let overrides = self.predeclare_pattern_slots(pattern);
+                    self.pending_pattern_overrides.push_back(overrides);
+                    deferred.push(Deferred::Statement(Shared::clone(node)));
+                }
+                Expr::Var(pattern, _) => {
+                    let overrides = self.predeclare_pattern_slots(pattern);
+                    self.pending_pattern_overrides.push_back(overrides);
+                    deferred.push(Deferred::Statement(Shared::clone(node)));
+                }
+                Expr::As(ident, _) => {
                     self.scope_mut().declare_or_reuse(ident.name);
                     deferred.push(Deferred::Statement(Shared::clone(node)));
                 }
@@ -727,8 +749,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 Expr::Module(ident, inline_program) => {
                     let module_alias = ident.name;
                     let depth = self.scopes.len() - 1;
-                    let rest = self.compile_module_functions(ident, inline_program)?;
-                    deferred.push(Deferred::InlineModuleRest(module_alias, depth, rest));
+                    let (rest, let_slots) = self.compile_module_functions(ident, inline_program)?;
+                    deferred.push(Deferred::InlineModuleRest(module_alias, depth, rest, let_slots));
                 }
                 _ => deferred.push(Deferred::Statement(Shared::clone(node))),
             }
@@ -747,10 +769,14 @@ impl<R: ModuleResolver> Compiler<R> {
                         unreachable!("guarded above");
                     };
                     self.current_token_id = node.token_id;
+                    self.take_pending_pattern_override(pattern);
                     self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
                     continue;
                 }
                 Deferred::Statement(node) => {
+                    if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+                        self.take_pending_pattern_override(pattern);
+                    }
                     self.compile_expr(node)?;
                     if Self::is_auto_call_candidate(node) {
                         self.emit(OpCode::MaybeAutoCall);
@@ -761,14 +787,17 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_module_vars_binding(module, *alias)?;
                     continue;
                 }
-                Deferred::InlineModuleRest(module_alias, depth, rest) => {
-                    self.compile_module_rest(*module_alias, *depth, rest)?
+                Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
+                    self.compile_module_rest(*module_alias, *depth, rest, let_slots)?
                 }
             }
             self.emit(OpCode::SetLocal(SELF_SLOT));
         }
         match last {
             Deferred::Statement(node) => {
+                if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+                    self.take_pending_pattern_override(pattern);
+                }
                 self.compile_expr(node)?;
                 if Self::is_auto_call_candidate(node) {
                     self.emit(OpCode::MaybeAutoCall);
@@ -778,13 +807,31 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_module_vars_binding(module, *alias)?;
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
-            Deferred::InlineModuleRest(module_alias, depth, rest) => {
-                self.compile_module_rest(*module_alias, *depth, rest)?;
+            Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
+                self.compile_module_rest(*module_alias, *depth, rest, let_slots)?;
                 self.emit(OpCode::SetLocal(SELF_SLOT));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
         }
         Ok(())
+    }
+
+    /// No-op for `Pattern::Ident`, which never gets a `pending_pattern_overrides` entry.
+    fn take_pending_pattern_override(&mut self, pattern: &Pattern) {
+        if !matches!(pattern, Pattern::Ident(_)) {
+            self.current_pattern_override = self.pending_pattern_overrides.pop_front();
+        }
+    }
+
+    /// Declares a fresh slot per name bound by `pattern`, without compiling any
+    /// pattern-match bytecode.
+    fn predeclare_pattern_slots(&mut self, pattern: &Pattern) -> FxHashMap<crate::Ident, u16> {
+        let mut names = Vec::new();
+        collect_pattern_idents(pattern, &mut names);
+        names
+            .into_iter()
+            .map(|name| (name, self.scope_mut().declare(name)))
+            .collect()
     }
 
     fn chunk_mut(&mut self) -> &mut Chunk {
@@ -997,16 +1044,28 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::SetLocal(slot));
             }
             _ => {
+                let overrides = self.current_pattern_override.take();
+                let has_overrides = overrides.is_some();
+
                 let subject_slot = self.scope_mut().declare_synthetic();
                 self.compile_expr(value)?;
                 self.emit(OpCode::SetLocal(subject_slot));
 
-                let locals_before = self.scope_mut().local_count();
+                if let Some(map) = overrides {
+                    self.or_pattern_slots.push(map);
+                }
                 let mut fail_jumps = Vec::new();
                 self.compile_pattern_test(pattern, subject_slot, &mut fail_jumps)?;
+                if has_overrides {
+                    self.or_pattern_slots.pop();
+                }
                 if !mutable {
-                    for slot in locals_before..self.scope_mut().local_count() {
-                        self.scope_mut().mark_immutable(slot);
+                    let mut names = Vec::new();
+                    collect_pattern_idents(pattern, &mut names);
+                    for name in names {
+                        if let Some(slot) = self.scope_mut().resolve_local(name) {
+                            self.scope_mut().mark_immutable(slot);
+                        }
                     }
                 }
 
@@ -1543,20 +1602,32 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_module(&mut self, ident: &ast::IdentWithToken, program: &Program) -> CompileResult<()> {
         let module_alias = ident.name;
         let depth = self.scopes.len() - 1;
-        let rest = self.compile_module_functions(ident, program)?;
-        self.compile_module_rest(module_alias, depth, &rest)
+        let (rest, let_slots) = self.compile_module_functions(ident, program)?;
+        self.compile_module_rest(module_alias, depth, &rest, &let_slots)
     }
 
-    fn compile_module_functions(&mut self, ident: &ast::IdentWithToken, program: &Program) -> CompileResult<Program> {
+    fn compile_module_functions(
+        &mut self,
+        ident: &ast::IdentWithToken,
+        program: &Program,
+    ) -> CompileResult<(Program, FxHashMap<crate::Ident, u16>)> {
         let module_alias = ident.name;
         let depth = self.scopes.len() - 1;
 
         let mut def_slots = FxHashMap::default();
+        let mut let_slots = FxHashMap::default();
         for node in program {
-            if let Expr::Def(def_ident, _, _) = &*node.expr {
-                let slot = self.scope_mut().declare(def_ident.name);
-                self.scope_mut().mark_immutable(slot);
-                def_slots.insert(def_ident.name, slot);
+            match &*node.expr {
+                Expr::Def(def_ident, _, _) => {
+                    let slot = self.scope_mut().declare(def_ident.name);
+                    self.scope_mut().mark_immutable(slot);
+                    def_slots.insert(def_ident.name, slot);
+                }
+                Expr::Let(Pattern::Ident(let_ident), _) => {
+                    let slot = self.scope_mut().declare(let_ident.name);
+                    let_slots.insert(let_ident.name, slot);
+                }
+                _ => {}
             }
         }
 
@@ -1587,10 +1658,19 @@ impl<R: ModuleResolver> Compiler<R> {
         for slot in def_slots.values() {
             self.scope_mut().set_local_name(*slot, crate::Ident::default());
         }
-        Ok(rest)
+        for slot in let_slots.values() {
+            self.scope_mut().set_local_name(*slot, crate::Ident::default());
+        }
+        Ok((rest, let_slots))
     }
 
-    fn compile_module_rest(&mut self, module_alias: crate::Ident, depth: usize, rest: &Program) -> CompileResult<()> {
+    fn compile_module_rest(
+        &mut self,
+        module_alias: crate::Ident,
+        depth: usize,
+        rest: &Program,
+        let_slots: &FxHashMap<crate::Ident, u16>,
+    ) -> CompileResult<()> {
         for node in rest {
             self.current_token_id = node.token_id;
             match &*node.expr {
@@ -1601,7 +1681,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 Expr::Let(Pattern::Ident(let_ident), value) => {
                     self.compile_expr(value)?;
-                    let slot = self.scope_mut().declare_synthetic();
+                    let slot = let_slots[&let_ident.name];
                     self.emit(OpCode::SetLocal(slot));
                     self.qualified_bindings.insert(
                         QualifiedName {
@@ -1797,7 +1877,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::As(ident, value) => {
                 self.compile_expr(value)?;
-                let slot = self.scope_mut().declare(ident.name);
+                let slot = self.scope_mut().declare_or_reuse(ident.name);
                 self.scope_mut().mark_immutable(slot);
                 self.emit(OpCode::SetLocal(slot));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
@@ -1923,6 +2003,11 @@ impl<R: ModuleResolver> Compiler<R> {
                 Ok(())
             }
             None if self.try_depth > 0 || self.defer_undefined_identifiers => {
+                // Bare soft-builtin references need the same reachable-prelude tracking
+                // `compile_call` does for direct calls.
+                if SOFT_BUILTIN_NAMES.contains(&name) {
+                    self.unresolved_call_names.insert(name);
+                }
                 self.emit(OpCode::GetExternalGlobal(name));
                 Ok(())
             }
