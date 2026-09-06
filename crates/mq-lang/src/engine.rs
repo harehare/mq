@@ -2071,6 +2071,88 @@ mod tests {
         assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_nested_external_module_var_initializer_runs_once_per_eval() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, inner_path) = create_file(
+            "side_effect_counter_external_inner.mq",
+            "let counter = bump_counter()\n| def current_counter(): counter;\n",
+        );
+        let outer_path = temp_dir.join("side_effect_counter_external_outer.mq");
+        std::fs::write(
+            &outer_path,
+            "include \"side_effect_counter_external_inner\"\n| let outer_counter = bump_counter()\n| def get_counter(): current_counter() + outer_counter;\n",
+        )
+        .expect("Failed to write outer module");
+        defer! {
+            for path in [&inner_path, &outer_path] {
+                if path.exists() {
+                    std::fs::remove_file(path).expect("Failed to delete temp module");
+                }
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        let call_count = Arc::new(AtomicI64::new(0));
+        let counter = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        engine.load_module("side_effect_counter_external_outer").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+        let compiled = engine.compile("get_counter()").unwrap();
+        let result = engine
+            .eval_compiled(
+                &compiled,
+                [RuntimeValue::None, RuntimeValue::None, RuntimeValue::None].into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 2);
+        assert_eq!(result.values().len(), 3);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_nested_inline_module_var_initializers_run_once_each_per_eval() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let mut engine = DefaultEngine::default();
+        let call_count = Arc::new(AtomicI64::new(0));
+        let counter = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = counter.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        let compiled = engine
+            .compile(
+                "module outer: let outer_counter = bump_counter() | \
+                 module inner: let inner_counter = bump_counter() end end | \
+                 nodes | outer::outer_counter",
+            )
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [RuntimeValue::None, RuntimeValue::None, RuntimeValue::None].into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            2,
+            "each initializer in a nested inline module tree must run exactly once"
+        );
+    }
+
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     #[test]
     fn test_cached_nodes_split_preserves_let_immutability() {

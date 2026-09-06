@@ -44,7 +44,7 @@ use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 use std::time::{Duration, Instant};
 
@@ -371,8 +371,9 @@ pub(crate) fn build_program(
     Ok(Some(result))
 }
 
-/// Recursively collects `include`/`import` paths and inline `module { .. }` blocks reachable
-/// from `program`, including ones nested inside another module's own body.
+/// Collects external module paths and root inline `module { .. }` blocks reachable from
+/// `program`. Nested inline modules remain part of their root's probe so their initializers
+/// execute in source order exactly once.
 fn collect_module_prelude_targets(
     program: &Program,
     paths: &mut Vec<String>,
@@ -392,7 +393,118 @@ fn collect_module_prelude_targets(
             }
             Expr::Module(ident, body) => {
                 inline_modules.push((ident.clone(), body.clone()));
-                collect_module_prelude_targets(body, paths, inline_modules);
+                collect_module_paths(body, paths);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collects external module paths below an inline module without adding nested inline modules
+/// as separate probes.
+fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
+    for node in program {
+        match &*node.expr {
+            Expr::Include(Literal::String(path)) | Expr::Import(Literal::String(path), _) => {
+                if !paths.iter().any(|existing| existing == path) {
+                    paths.push(path.clone());
+                }
+            }
+            Expr::Module(_, body) => collect_module_paths(body, paths),
+            _ => {}
+        }
+    }
+}
+
+/// Resolves an external module and its transitive dependencies in post-order.
+///
+/// The shared loader retains source text while discovering the graph, so the subsequent
+/// initializer probe reloads from that in-memory cache rather than resolving the module again.
+/// A parent module's compiler emits its module directives before its own vars, so resolving
+/// children first also prevents a parent probe from re-running them.
+fn resolve_external_module_prelude<R: ModuleResolver>(
+    path: &str,
+    context: &EngineRunContext<'_, R>,
+    module_loader: &mut ModuleLoader<R>,
+    seen: &mut FxHashSet<String>,
+    result: &mut compiler::ResolvedModuleVars,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
+    deadline: Option<Instant>,
+) -> Result<(), Error> {
+    if !seen.insert(path.to_string()) {
+        return Ok(());
+    }
+
+    let module = match module_loader.load_from_file(path, Shared::clone(&context.token_arena)) {
+        Ok(module) => module,
+        Err(crate::ModuleError::AlreadyLoaded(_)) => module_loader
+            .reload_cached(path, Shared::clone(&context.token_arena))
+            .map_err(compiler::CompileError::Module)?,
+        Err(error) => return Err(compiler::CompileError::Module(error).into()),
+    };
+    let mut dependencies = Vec::new();
+    collect_module_prelude_targets(&module.modules, &mut dependencies, inline_modules);
+    for dependency in dependencies {
+        resolve_external_module_prelude(
+            &dependency,
+            context,
+            module_loader,
+            seen,
+            result,
+            inline_modules,
+            deadline,
+        )?;
+    }
+
+    let var_names = compiler::module_var_names(&module.vars);
+    if var_names.is_empty() {
+        return Ok(());
+    }
+
+    let directive_program: Program = vec![Shared::new(Node {
+        token_id: crate::ast::TokenId::new(0),
+        expr: Shared::new(Expr::Include(Literal::String(path.to_string()))),
+    })];
+    let compiled = compiler::compile_program_for_engine(
+        &directive_program,
+        Shared::clone(&context.token_arena),
+        module_loader.clone(),
+        &[],
+        result,
+    )?;
+    let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
+        &compiled,
+        RuntimeValue::None,
+        &[],
+        interpreter::RunOptions {
+            host_functions: context.host_functions,
+            timeout: remaining_timeout(deadline),
+            max_call_stack_depth: context.max_call_stack_depth,
+            global_bindings: context.global_bindings,
+        },
+        &var_names,
+        interpreter::ExecutionPools::default(),
+    );
+    run_result?;
+    result.by_path.insert(path.to_string(), captured);
+    Ok(())
+}
+
+/// Collects every simple `let` declared by an inline module tree, retaining the qualified path
+/// needed to read it from one root-module probe.
+fn collect_inline_module_vars(
+    module: &ast::IdentWithToken,
+    body: &Program,
+    vars: &mut Vec<(Vec<ast::IdentWithToken>, Shared<Node>)>,
+) {
+    // Inline-module aliases are exported into the surrounding compiler scope, including when
+    // the declaration itself is nested (the same rule used by `compile_module_rest`).
+    let path = vec![module.clone()];
+    for node in body {
+        match &*node.expr {
+            Expr::Let(Pattern::Ident(_), _) => vars.push((path.clone(), Shared::clone(node))),
+            Expr::Module(nested_module, nested_body) => {
+                collect_inline_module_vars(nested_module, nested_body, vars);
             }
             _ => {}
         }
@@ -417,69 +529,37 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
     collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
 
     let mut result = compiler::ResolvedModuleVars::default();
-
+    let mut module_loader = context.module_loader.clone();
+    let mut seen_paths = FxHashSet::default();
     for path in paths {
-        let mut module_loader = context.module_loader.clone();
-        let module = match module_loader.load_from_file(&path, Shared::clone(&context.token_arena)) {
-            Ok(module) => module,
-            Err(crate::ModuleError::AlreadyLoaded(_)) => module_loader
-                .reload_cached(&path, Shared::clone(&context.token_arena))
-                .map_err(compiler::CompileError::Module)?,
-            Err(e) => return Err(compiler::CompileError::Module(e).into()),
-        };
-        let var_names = compiler::module_var_names(&module.vars);
-        if var_names.is_empty() {
-            continue;
-        }
-
-        let directive_program: Program = vec![Shared::new(Node {
-            token_id: crate::ast::TokenId::new(0),
-            expr: Shared::new(Expr::Include(Literal::String(path.clone()))),
-        })];
-        let compiled = compiler::compile_program_for_engine(
-            &directive_program,
-            Shared::clone(&context.token_arena),
-            module_loader,
-            &[],
-            &compiler::ResolvedModuleVars::default(),
+        resolve_external_module_prelude(
+            &path,
+            context,
+            &mut module_loader,
+            &mut seen_paths,
+            &mut result,
+            &mut inline_modules,
+            deadline,
         )?;
-        let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
-            &compiled,
-            RuntimeValue::None,
-            &[],
-            interpreter::RunOptions {
-                host_functions: context.host_functions,
-                timeout: remaining_timeout(deadline),
-                max_call_stack_depth: context.max_call_stack_depth,
-                global_bindings: context.global_bindings,
-            },
-            &var_names,
-            interpreter::ExecutionPools::default(),
-        );
-        run_result?;
-        result.by_path.insert(path, captured);
     }
 
     for (ident, body) in inline_modules {
-        let let_nodes: Vec<Shared<Node>> = body
-            .iter()
-            .filter(|node| matches!(&*node.expr, Expr::Let(Pattern::Ident(_), _)))
-            .cloned()
-            .collect();
-        if let_nodes.is_empty() {
+        let mut module_vars = Vec::new();
+        collect_inline_module_vars(&ident, &body, &mut module_vars);
+        if module_vars.is_empty() {
             continue;
         }
 
-        let probe_args: ast::Args = let_nodes
+        let probe_args: ast::Args = module_vars
             .iter()
-            .map(|node| {
+            .map(|(path, node)| {
                 let Expr::Let(Pattern::Ident(let_ident), _) = &*node.expr else {
                     unreachable!("filtered above");
                 };
                 Shared::new(Node {
                     token_id: crate::ast::TokenId::new(0),
                     expr: Shared::new(Expr::QualifiedAccess(
-                        vec![ident.clone()],
+                        path.clone(),
                         AccessTarget::Ident(let_ident.clone()),
                     )),
                 })
@@ -502,7 +582,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 Shared::clone(&context.token_arena),
                 context.module_loader.clone(),
                 &[],
-                &compiler::ResolvedModuleVars::default(),
+                &result,
             )?;
             let value = interpreter::run_with_globals(
                 &compiled,
@@ -519,9 +599,9 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         })();
 
         if let Ok(values) = probed
-            && values.len() == let_nodes.len()
+            && values.len() == module_vars.len()
         {
-            for (node, value) in let_nodes.iter().zip(values) {
+            for ((_, node), value) in module_vars.iter().zip(values) {
                 result.by_token.insert(node.token_id, value);
             }
         }
