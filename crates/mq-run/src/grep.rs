@@ -5,12 +5,12 @@
 //! `--context`). Groups of context nodes are separated by `--`, matching the
 //! behaviour of `grep -A/-B/-C`.
 
-use miette::IntoDiagnostic;
+use crate::atomic_output::OutputSink;
 use miette::miette;
 #[cfg(test)]
 use mq_lang::Shared;
 use std::collections::HashSet;
-use std::io::{self, BufWriter, Write};
+use std::io::Write;
 use std::path::PathBuf;
 
 /// Prints query results in grep-like format.
@@ -18,21 +18,10 @@ pub(crate) fn print_grep(
     runtime_values: mq_lang::RuntimeValues,
     original_input: &[mq_lang::RuntimeValue],
     file: &Option<PathBuf>,
-    output_file: &Option<PathBuf>,
-    unbuffered: bool,
+    mut handle: OutputSink,
     before: usize,
     after: usize,
 ) -> miette::Result<()> {
-    let stdout = io::stdout();
-    let mut handle: Box<dyn Write> = if let Some(path) = output_file {
-        let f = std::fs::File::create(path).into_diagnostic()?;
-        Box::new(BufWriter::new(f))
-    } else if unbuffered {
-        Box::new(stdout.lock())
-    } else {
-        Box::new(BufWriter::new(stdout.lock()))
-    };
-
     let filename = file.as_ref().map(|p| p.to_string_lossy().into_owned());
 
     // Collect start lines of matched nodes for quick lookup.
@@ -113,14 +102,7 @@ pub(crate) fn print_grep(
         }
     }
 
-    if !unbuffered
-        && let Err(e) = handle.flush()
-        && e.kind() != std::io::ErrorKind::BrokenPipe
-    {
-        return Err(miette!(e));
-    }
-
-    Ok(())
+    handle.finish()
 }
 
 fn format_line(filename: &Option<String>, line_num: Option<usize>, content: &str, sep: &str) -> String {

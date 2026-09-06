@@ -42,6 +42,7 @@
 //! mq --repl
 //! ```
 
+pub(crate) mod atomic_output;
 pub mod cli;
 pub(crate) mod grep;
 pub(crate) mod output;
