@@ -34,6 +34,7 @@ use nodes_split::{
 use crate::Shared;
 use crate::TokenArena;
 use crate::ast::Program;
+use crate::ast::node::{self as ast, AccessTarget, Expr, Literal, Node, Pattern};
 use crate::engine;
 use crate::error;
 use crate::eval::Options;
@@ -331,6 +332,8 @@ pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
     pub(crate) global_bindings: &'a [(crate::Ident, RuntimeValue)],
     /// `Some` when [`engine::Engine::enable_query_session`] is on.
     pub(crate) session: Option<&'a Shared<crate::SharedCell<Vec<SessionBinding>>>>,
+    /// Module var values computed once per eval — see [`resolve_module_prelude_globals`].
+    pub(crate) preresolved_module_vars: compiler::ResolvedModuleVars,
 }
 
 #[cfg(feature = "debugger")]
@@ -366,6 +369,165 @@ pub(crate) fn build_program(
         result.extend(program.iter().cloned());
     }
     Ok(Some(result))
+}
+
+/// Recursively collects `include`/`import` paths and inline `module { .. }` blocks reachable
+/// from `program`, including ones nested inside another module's own body.
+fn collect_module_prelude_targets(
+    program: &Program,
+    paths: &mut Vec<String>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
+) {
+    for node in program {
+        match &*node.expr {
+            Expr::Include(Literal::String(path)) => {
+                if !paths.iter().any(|existing| existing == path) {
+                    paths.push(path.clone());
+                }
+            }
+            Expr::Import(Literal::String(path), _) => {
+                if !paths.iter().any(|existing| existing == path) {
+                    paths.push(path.clone());
+                }
+            }
+            Expr::Module(ident, body) => {
+                inline_modules.push((ident.clone(), body.clone()));
+                collect_module_prelude_targets(body, paths, inline_modules);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Computes each module's `let` values once per eval, so a side-effecting initializer doesn't
+/// re-run once per input row or again for a `nodes` aggregate phase — baked into every real
+/// compile as constants instead of recompiling the initializer.
+///
+/// An inline module's vars are only reachable via qualified access, so they're probed by
+/// compiling+running a throwaway `[module { .. }, array(alias::a, ..)]` program once. A probe
+/// that fails to compile or run (e.g. it references the enclosing scope) is skipped silently,
+/// leaving that module to keep recompiling its vars as before.
+fn resolve_module_prelude_globals<R: ModuleResolver>(
+    program: &Program,
+    context: &EngineRunContext<'_, R>,
+    deadline: Option<Instant>,
+) -> Result<compiler::ResolvedModuleVars, Error> {
+    let mut paths: Vec<String> = Vec::new();
+    let mut inline_modules: Vec<(ast::IdentWithToken, Program)> = Vec::new();
+    collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
+
+    let mut result = compiler::ResolvedModuleVars::default();
+
+    for path in paths {
+        let mut module_loader = context.module_loader.clone();
+        let module = match module_loader.load_from_file(&path, Shared::clone(&context.token_arena)) {
+            Ok(module) => module,
+            Err(crate::ModuleError::AlreadyLoaded(_)) => module_loader
+                .reload_cached(&path, Shared::clone(&context.token_arena))
+                .map_err(compiler::CompileError::Module)?,
+            Err(e) => return Err(compiler::CompileError::Module(e).into()),
+        };
+        let var_names = compiler::module_var_names(&module.vars);
+        if var_names.is_empty() {
+            continue;
+        }
+
+        let directive_program: Program = vec![Shared::new(Node {
+            token_id: crate::ast::TokenId::new(0),
+            expr: Shared::new(Expr::Include(Literal::String(path.clone()))),
+        })];
+        let compiled = compiler::compile_program_for_engine(
+            &directive_program,
+            Shared::clone(&context.token_arena),
+            module_loader,
+            &[],
+            &compiler::ResolvedModuleVars::default(),
+        )?;
+        let (run_result, captured, _) = interpreter::run_with_globals_capturing_locals(
+            &compiled,
+            RuntimeValue::None,
+            &[],
+            interpreter::RunOptions {
+                host_functions: context.host_functions,
+                timeout: remaining_timeout(deadline),
+                max_call_stack_depth: context.max_call_stack_depth,
+                global_bindings: context.global_bindings,
+            },
+            &var_names,
+            interpreter::ExecutionPools::default(),
+        );
+        run_result?;
+        result.by_path.insert(path, captured);
+    }
+
+    for (ident, body) in inline_modules {
+        let let_nodes: Vec<Shared<Node>> = body
+            .iter()
+            .filter(|node| matches!(&*node.expr, Expr::Let(Pattern::Ident(_), _)))
+            .cloned()
+            .collect();
+        if let_nodes.is_empty() {
+            continue;
+        }
+
+        let probe_args: ast::Args = let_nodes
+            .iter()
+            .map(|node| {
+                let Expr::Let(Pattern::Ident(let_ident), _) = &*node.expr else {
+                    unreachable!("filtered above");
+                };
+                Shared::new(Node {
+                    token_id: crate::ast::TokenId::new(0),
+                    expr: Shared::new(Expr::QualifiedAccess(
+                        vec![ident.clone()],
+                        AccessTarget::Ident(let_ident.clone()),
+                    )),
+                })
+            })
+            .collect();
+        let probe_program: Program = vec![
+            Shared::new(Node {
+                token_id: crate::ast::TokenId::new(0),
+                expr: Shared::new(Expr::Module(ident.clone(), body)),
+            }),
+            Shared::new(Node {
+                token_id: crate::ast::TokenId::new(0),
+                expr: Shared::new(Expr::Call(ast::IdentWithToken::new("array"), probe_args)),
+            }),
+        ];
+
+        let probed: Result<Vec<RuntimeValue>, Error> = (|| {
+            let compiled = compiler::compile_program_for_engine(
+                &probe_program,
+                Shared::clone(&context.token_arena),
+                context.module_loader.clone(),
+                &[],
+                &compiler::ResolvedModuleVars::default(),
+            )?;
+            let value = interpreter::run_with_globals(
+                &compiled,
+                RuntimeValue::None,
+                context.host_functions,
+                remaining_timeout(deadline),
+                context.max_call_stack_depth,
+                context.global_bindings,
+            )?;
+            Ok(match value {
+                RuntimeValue::Array(values) => Shared::unwrap_or_clone(values),
+                other => vec![other],
+            })
+        })();
+
+        if let Ok(values) = probed
+            && values.len() == let_nodes.len()
+        {
+            for (node, value) in let_nodes.iter().zip(values) {
+                result.by_token.insert(node.token_id, value);
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 /// Everything `Engine::eval_compiled_vm` needs to run a compiled program on Tarn.
@@ -419,13 +581,24 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 {
                     cached
                 }
-                _ => cache::compile_cached_program(
-                    program,
-                    Shared::clone(&self.engine.token_arena),
-                    self.engine.module_loader.with_same_resolver(),
-                    cache_configuration,
-                    self.engine.global_bindings,
-                )?,
+                _ => {
+                    let cache_context = EngineRunContext {
+                        host_functions: self.engine.host_functions,
+                        timeout: self.engine.timeout,
+                        max_call_stack_depth: self.engine.max_call_stack_depth,
+                        token_arena: Shared::clone(&self.engine.token_arena),
+                        module_loader: self.engine.module_loader.with_same_resolver(),
+                        global_bindings: self.engine.global_bindings,
+                        session: self.engine.session,
+                        preresolved_module_vars: compiler::ResolvedModuleVars::default(),
+                    };
+                    cache::compile_cached_program(
+                        program,
+                        &cache_context,
+                        cache_configuration,
+                        shared_deadline(self.engine.timeout),
+                    )?
+                }
             };
             compiled.cache_vm_program(cached.clone());
             return cache::run_cached(
@@ -451,6 +624,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         module_loader: self.engine.module_loader.with_same_resolver(),
                         global_bindings: self.engine.global_bindings,
                         session: self.engine.session,
+                        preresolved_module_vars: compiler::ResolvedModuleVars::default(),
                     },
                     debugger: Shared::clone(&self.debugger),
                     handler: Shared::clone(&self.debugger_handler),
@@ -471,6 +645,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     module_loader: self.engine.module_loader.with_same_resolver(),
                     global_bindings: self.engine.global_bindings,
                     session: self.engine.session,
+                    preresolved_module_vars: compiler::ResolvedModuleVars::default(),
                 },
             )
         }
@@ -596,6 +771,7 @@ where
         &seed.seed_names,
         &seed.seed_immutable,
         global_names,
+        &context.preresolved_module_vars,
     )?;
 
     let mut values = Vec::new();
@@ -632,6 +808,7 @@ where
         &before_names,
         &session_nodes_immutable_names(&seed, before),
         global_names,
+        &context.preresolved_module_vars,
     )?;
     let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
     let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
@@ -678,6 +855,7 @@ where
         &seed.seed_names,
         &seed.seed_immutable,
         global_names,
+        &context.preresolved_module_vars,
     )?;
 
     let mut values = Vec::new();
@@ -741,6 +919,7 @@ where
         &seed.seed_names,
         &seed.seed_immutable,
         global_names,
+        &engine.preresolved_module_vars,
     )?;
     let mut hook = debugger::VmDebuggerHook::new(
         debugger_state,
@@ -791,6 +970,7 @@ where
         &before_names,
         &session_nodes_immutable_names(&seed, before),
         global_names,
+        &engine.preresolved_module_vars,
     )?;
     hook.set_sources(aggregate_compiled.debug_sources.clone());
     let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
@@ -847,6 +1027,7 @@ where
         &seed.seed_names,
         &seed.seed_immutable,
         global_names,
+        &context.engine.preresolved_module_vars,
     )?;
     let mut hook = debugger::VmDebuggerHook::new(
         context.debugger,
@@ -913,6 +1094,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
             Shared::clone(&context.token_arena),
             context.module_loader.clone(),
             &global_names,
+            &context.preresolved_module_vars,
         )?;
         interpreter::run_with_globals(
             &compiled,
@@ -931,6 +1113,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
             &let_names,
             &immutable_let_names,
             &global_names,
+            &context.preresolved_module_vars,
         )?;
         interpreter::run_with_globals_capturing_locals(
             &compiled,
@@ -959,19 +1142,25 @@ fn run_nodes_aggregate<R: ModuleResolver>(
 fn compile_and_run_many<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
-    context: EngineRunContext<'_, R>,
+    mut context: EngineRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
     let deadline = shared_deadline(context.timeout);
+    context.preresolved_module_vars = resolve_module_prelude_globals(program, &context, deadline)?;
     let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.session {
         return run_with_session(program, inputs, &context, session, &global_names, deadline);
     }
     let Some((before, after)) = split_at_nodes(program) else {
-        let compiled =
-            compiler::compile_program_for_engine(program, context.token_arena, context.module_loader, &global_names)?;
+        let compiled = compiler::compile_program_for_engine(
+            program,
+            context.token_arena,
+            context.module_loader,
+            &global_names,
+            &context.preresolved_module_vars,
+        )?;
         return inputs
             .map(|input| {
                 run_for_input(input, |v| {
@@ -993,6 +1182,7 @@ where
         Shared::clone(&context.token_arena),
         context.module_loader.clone(),
         &global_names,
+        &context.preresolved_module_vars,
     )?;
     let let_names = let_names_before_nodes(before);
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
@@ -1052,12 +1242,13 @@ where
 fn compile_and_run_debugged<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
-    context: DebugRunContext<'_, R>,
+    mut context: DebugRunContext<'_, R>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
 {
     let deadline = shared_deadline(context.engine.timeout);
+    context.engine.preresolved_module_vars = resolve_module_prelude_globals(program, &context.engine, deadline)?;
     let global_names: Vec<crate::Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.engine.session {
         return run_with_session_debugged(program, inputs, context, session, &global_names, deadline);
@@ -1068,6 +1259,7 @@ where
             Shared::clone(&context.engine.token_arena),
             context.engine.module_loader.clone(),
             &global_names,
+            &context.engine.preresolved_module_vars,
         )?;
         let mut hook = debugger::VmDebuggerHook::new(
             context.debugger,
@@ -1105,6 +1297,7 @@ where
         Shared::clone(&context.engine.token_arena),
         context.engine.module_loader.clone(),
         &global_names,
+        &context.engine.preresolved_module_vars,
     )?;
     let mut hook = debugger::VmDebuggerHook::new(
         context.debugger,
@@ -1180,6 +1373,7 @@ where
             context.engine.token_arena,
             context.engine.module_loader,
             &global_names,
+            &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
         interpreter::run_with_debug_hook_and_globals(
@@ -1200,6 +1394,7 @@ where
             &let_names,
             &immutable_let_names,
             &global_names,
+            &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
         interpreter::run_with_debug_hook_and_globals_capturing_locals(

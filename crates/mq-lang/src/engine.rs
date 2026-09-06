@@ -667,6 +667,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 module_loader,
                 global_bindings: &global_bindings,
                 session: self.vm.session_enabled.then_some(&self.vm.session_bindings),
+                preresolved_module_vars: Default::default(),
             },
             #[cfg(not(feature = "debugger"))]
             module_prelude: &self.vm_module_prelude,
@@ -1658,6 +1659,416 @@ mod tests {
 
         let second = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(second.values(), first.values());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_across_nodes_split() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_module.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        engine.load_module("side_effect_counter_module").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+
+        let compiled = engine.compile(". | nodes | get_counter()").unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst) - baseline,
+            1,
+            "a module-level initializer with a side effect must run exactly once per eval, \
+             not once per input and not again in the nodes aggregate phase"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_without_nodes() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_plain.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        engine.load_module("side_effect_counter_plain").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+
+        let compiled = engine.compile("get_counter()").unwrap();
+        let result = engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst) - baseline,
+            1,
+            "the initializer must run once for the whole eval, not once per input row"
+        );
+        let expected = RuntimeValue::Number((baseline + 1).into());
+        assert_eq!(result.values(), &[expected.clone(), expected.clone(), expected]);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_for_import() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_import.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        // `import` always addresses its vars through the qualified (aliased) compile path,
+        // unlike `include`'s plain named locals — a separate code path this fix must also cover.
+        engine.import_module("side_effect_counter_import").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+
+        let compiled = engine
+            .compile(". | nodes | side_effect_counter_import::get_counter()")
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 1);
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_module_var_initializer_value_is_pinned_across_cached_eval_calls() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_cache.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        engine.load_module("side_effect_counter_cache").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+        let compiled = engine.compile("get_counter()").unwrap();
+
+        let first = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        let second = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+
+        assert_eq!(
+            second.values(),
+            first.values(),
+            "a cache hit must reuse the value baked in on first compile, not recompute it"
+        );
+        assert_eq!(
+            call_count.load(Ordering::SeqCst) - baseline,
+            1,
+            "the initializer must run only on the compile that populates the cache"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_with_query_session() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_session.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        engine.enable_query_session();
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        engine.load_module("side_effect_counter_session").unwrap();
+        let baseline = call_count.load(Ordering::SeqCst);
+
+        engine
+            .eval(
+                ". | nodes | get_counter()",
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 1);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_for_aliased_import() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_aliased_import.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        // An explicit `as` alias, unlike `import_module`'s default (module-name) alias.
+        let compiled = engine
+            .compile(r#"import "side_effect_counter_aliased_import" as counters | . | nodes | counters::get_counter()"#)
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_error_propagates() {
+        let (temp_dir, temp_file_path) = create_file(
+            "erroring_var_module.mq",
+            "let value = boom()\n| def get_value(): value;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        engine.register_fn("boom", |_args: &[RuntimeValue]| {
+            Err(crate::HostFunctionError::new("something went wrong"))
+        });
+
+        // Reference the module inline (not via `Engine::load_module`, which would eagerly
+        // prepare it through the tree-walker and fail before Tarn's own resolution runs).
+        let compiled = engine
+            .compile(r#"include "erroring_var_module" | get_value()"#)
+            .unwrap();
+        let err = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+
+        assert!(err.to_string().contains("something went wrong"), "{err}");
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_inline_module_var_initializer_runs_once_per_eval_across_nodes_split() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let mut engine = DefaultEngine::default();
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        let compiled = engine
+            .compile("module counters: let counter = bump_counter() end | nodes | counters::counter")
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            call_count.load(Ordering::SeqCst),
+            1,
+            "an inline module's initializer must run exactly once per eval too"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_module_var_initializer_runs_once_per_eval_when_imported_inside_an_inline_module() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicI64, Ordering};
+
+        let (temp_dir, temp_file_path) = create_file(
+            "side_effect_counter_nested.mq",
+            "let counter = bump_counter()\n| def get_counter(): counter;\n",
+        );
+        let temp_file_path_cleanup = temp_file_path.clone();
+        defer! {
+            if temp_file_path_cleanup.exists() {
+                std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+
+        let call_count = Arc::new(AtomicI64::new(0));
+        let call_count_clone = Arc::clone(&call_count);
+        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+        let compiled = engine
+            .compile(r#"module outer: import "side_effect_counter_nested" as m end | nodes | m::get_counter()"#)
+            .unwrap();
+        engine
+            .eval_compiled(
+                &compiled,
+                [
+                    RuntimeValue::Number(1.0.into()),
+                    RuntimeValue::Number(2.0.into()),
+                    RuntimeValue::Number(3.0.into()),
+                ]
+                .into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]

@@ -126,6 +126,7 @@ crate::eval_table_cases!(
                 module_loader: DefaultModuleLoader::default(),
                 global_bindings: &[],
                 session: None,
+                preresolved_module_vars: compiler::ResolvedModuleVars::default(),
             },
         );
 
@@ -389,6 +390,7 @@ fn engine_compiler_loads_only_reachable_soft_builtins() {
         selected_arena,
         ModuleLoader::new(StdModuleResolver),
         &[],
+        &compiler::ResolvedModuleVars::default(),
     )
     .unwrap();
 
@@ -414,6 +416,7 @@ fn engine_compiler_skips_soft_builtins_shadowed_by_user_definitions() {
         shadowed_arena,
         ModuleLoader::new(StdModuleResolver),
         &[],
+        &compiler::ResolvedModuleVars::default(),
     )
     .unwrap();
 
@@ -423,9 +426,14 @@ fn engine_compiler_skips_soft_builtins_shadowed_by_user_definitions() {
         Shared::clone(&plain_arena),
     )
     .unwrap();
-    let plain =
-        compiler::compile_program_for_engine(&plain_program, plain_arena, ModuleLoader::new(StdModuleResolver), &[])
-            .unwrap();
+    let plain = compiler::compile_program_for_engine(
+        &plain_program,
+        plain_arena,
+        ModuleLoader::new(StdModuleResolver),
+        &[],
+        &compiler::ResolvedModuleVars::default(),
+    )
+    .unwrap();
 
     // The soft builtin with the same name must not be compiled just because it exists
     // in `builtin.mq`; both equivalent user functions should yield the same chunks.
@@ -436,8 +444,14 @@ fn engine_compiler_skips_soft_builtins_shadowed_by_user_definitions() {
 fn engine_compiler_loads_only_reachable_module_exports() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse("include \"csv\" | csv_parse(true)", Shared::clone(&token_arena)).unwrap();
-    let compiled =
-        compiler::compile_program_for_engine(&program, token_arena, ModuleLoader::new(StdModuleResolver), &[]).unwrap();
+    let compiled = compiler::compile_program_for_engine(
+        &program,
+        token_arena,
+        ModuleLoader::new(StdModuleResolver),
+        &[],
+        &compiler::ResolvedModuleVars::default(),
+    )
+    .unwrap();
 
     // The top-level chunk and `csv_parse`; the remaining CSV exports are not reachable.
     assert_eq!(compiled.chunks.len(), 2);
@@ -448,9 +462,14 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
     fn compile_and_run_for_engine(code: &str) -> RuntimeValue {
         let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
         let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-        let compiled =
-            compiler::compile_program_for_engine(&program, token_arena, ModuleLoader::new(StdModuleResolver), &[])
-                .unwrap();
+        let compiled = compiler::compile_program_for_engine(
+            &program,
+            token_arena,
+            ModuleLoader::new(StdModuleResolver),
+            &[],
+            &compiler::ResolvedModuleVars::default(),
+        )
+        .unwrap();
         interpreter::run(
             &compiled,
             RuntimeValue::None,
@@ -958,6 +977,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();
@@ -1002,6 +1022,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();
@@ -1036,6 +1057,7 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
                 session: None,
+                preresolved_module_vars: compiler::ResolvedModuleVars::default(),
             },
             debugger,
             handler,
@@ -1066,6 +1088,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();
@@ -1092,6 +1115,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();
@@ -1126,6 +1150,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();
@@ -1147,6 +1172,7 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
             session: None,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
         },
     )
     .unwrap();

@@ -19,8 +19,13 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
     let mut output = String::new();
 
     let Some((before, after)) = split_at_nodes(program) else {
-        let compiled =
-            compiler::compile_program_for_engine(program, token_arena.clone(), module_loader, &global_names)?;
+        let compiled = compiler::compile_program_for_engine(
+            program,
+            token_arena.clone(),
+            module_loader,
+            &global_names,
+            &compiler::ResolvedModuleVars::default(),
+        )?;
         format_compiled_bytecode(&mut output, "main", &compiled, &token_arena);
         return Ok(output);
     };
@@ -30,6 +35,7 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
         token_arena.clone(),
         module_loader.clone(),
         &global_names,
+        &compiler::ResolvedModuleVars::default(),
     )?;
     format_compiled_bytecode(&mut output, "per-input", &input_compiled, &token_arena);
 
@@ -38,6 +44,7 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
         token_arena.clone(),
         module_loader,
         &global_names,
+        &compiler::ResolvedModuleVars::default(),
     )?;
     output.push('\n');
     format_compiled_bytecode(&mut output, "nodes aggregate", &aggregate_compiled, &token_arena);

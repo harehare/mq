@@ -22,6 +22,12 @@ impl<T> Clone for ArenaId<T> {
     }
 }
 
+impl<T> std::hash::Hash for ArenaId<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl<T> From<u32> for ArenaId<T> {
     fn from(id: u32) -> Self {
         Self::new(id)

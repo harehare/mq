@@ -2,13 +2,16 @@
 use super::nodes_split::{
     immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
-use super::{Error, compiler, interpreter, remaining_timeout, run_for_input, shared_deadline};
+use super::{
+    EngineRunContext, Error, compiler, interpreter, remaining_timeout, resolve_module_prelude_globals, run_for_input,
+    shared_deadline,
+};
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{ModuleLoader, ModuleResolver, Shared, TokenArena};
+use crate::{ModuleLoader, ModuleResolver, Shared};
 use std::fmt;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Bytecode retained for repeated VM evaluation.
 #[derive(Clone)]
@@ -31,15 +34,21 @@ impl fmt::Debug for CachedProgram {
 }
 
 /// Compiles an Engine program for repeated evaluation.
+///
+/// Only runs on a cache miss, so module var initializers resolve here exactly once; a cache
+/// hit reuses the bytecode (and its already-baked constants) without calling this again.
 pub(super) fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
-    token_arena: TokenArena,
-    module_loader: ModuleLoader<R>,
+    context: &EngineRunContext<'_, R>,
     configuration: Vec<String>,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
+    deadline: Option<Instant>,
 ) -> Result<CachedProgram, Error> {
+    let token_arena = Shared::clone(&context.token_arena);
+    let module_loader = context.module_loader.clone();
+    let global_bindings = context.global_bindings;
     let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
     global_names.sort_unstable();
+    let preresolved_module_vars = resolve_module_prelude_globals(program, context, deadline)?;
     let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
         let let_names = let_names_before_nodes(before);
         let immutable_let_names = immutable_let_names_before_nodes(before);
@@ -49,6 +58,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
                 Shared::clone(&token_arena),
                 module_loader.clone(),
                 &global_names,
+                &preresolved_module_vars,
             )?,
             Some(compiler::compile_program_for_engine_with_bindings(
                 &program_after_nodes(before, after),
@@ -57,12 +67,19 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
                 &let_names,
                 &immutable_let_names,
                 &global_names,
+                &preresolved_module_vars,
             )?),
             let_names,
         )
     } else {
         (
-            compiler::compile_program_for_engine(program, token_arena, module_loader, &global_names)?,
+            compiler::compile_program_for_engine(
+                program,
+                token_arena,
+                module_loader,
+                &global_names,
+                &preresolved_module_vars,
+            )?,
             None,
             Vec::new(),
         )

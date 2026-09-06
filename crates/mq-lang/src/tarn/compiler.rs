@@ -110,6 +110,8 @@ struct Compiler<R: ModuleResolver> {
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<QualifiedName, QualifiedSlot>,
     external_globals: FxHashSet<crate::Ident>,
+    /// Module var values the caller already computed once — see [`ResolvedModuleVars`].
+    preresolved_module_vars: ResolvedModuleVars,
     /// Lazily collected roots for module-function pruning.
     top_level_program: Program,
     module_function_roots: std::cell::OnceCell<FxHashSet<crate::Ident>>,
@@ -145,9 +147,12 @@ pub(crate) fn compile_program<R: ModuleResolver>(
         token_arena,
         module_loader,
         CompileOptions::new(BuiltinPrelude::None, false),
-        &[],
-        &[],
-        &[],
+        CompileSeeds {
+            seed_bindings: &[],
+            seed_immutable: &[],
+            external_globals: &[],
+            preresolved_module_vars: &ResolvedModuleVars::default(),
+        },
     )
     .map(|(compiled, _)| compiled)
 }
@@ -165,9 +170,12 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
         token_arena,
         module_loader,
         CompileOptions::new(BuiltinPrelude::None, false),
-        bindings,
-        &[],
-        &[],
+        CompileSeeds {
+            seed_bindings: bindings,
+            seed_immutable: &[],
+            external_globals: &[],
+            preresolved_module_vars: &ResolvedModuleVars::default(),
+        },
     )
     .map(|(compiled, _)| compiled)
 }
@@ -183,9 +191,12 @@ pub(crate) fn compile_program_with_builtin_prelude<R: ModuleResolver>(
         token_arena,
         module_loader,
         CompileOptions::new(BuiltinPrelude::All, false),
-        &[],
-        &[],
-        &[],
+        CompileSeeds {
+            seed_bindings: &[],
+            seed_immutable: &[],
+            external_globals: &[],
+            preresolved_module_vars: &ResolvedModuleVars::default(),
+        },
     )
     .map(|(compiled, _)| compiled)
 }
@@ -195,8 +206,17 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     external_globals: &[crate::Ident],
+    preresolved_module_vars: &ResolvedModuleVars,
 ) -> CompileResult<CompiledProgram> {
-    compile_program_for_engine_with_bindings(program, token_arena, module_loader, &[], &[], external_globals)
+    compile_program_for_engine_with_bindings(
+        program,
+        token_arena,
+        module_loader,
+        &[],
+        &[],
+        external_globals,
+        preresolved_module_vars,
+    )
 }
 
 /// Expands reachable soft builtins until compilation converges.
@@ -210,7 +230,14 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     seed_bindings: &[crate::Ident],
     seed_immutable: &[crate::Ident],
     external_globals: &[crate::Ident],
+    preresolved_module_vars: &ResolvedModuleVars,
 ) -> CompileResult<CompiledProgram> {
+    let seeds = CompileSeeds {
+        seed_bindings,
+        seed_immutable,
+        external_globals,
+        preresolved_module_vars,
+    };
     let mut reachable = soft_builtin_names_in_program(program);
     for _ in 0..MAX_PRELUDE_ATTEMPTS {
         let prelude = if reachable.is_empty() {
@@ -223,9 +250,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
             Shared::clone(&token_arena),
             module_loader.clone(),
             CompileOptions::new(prelude, true),
-            seed_bindings,
-            seed_immutable,
-            external_globals,
+            seeds,
         ) {
             Ok((compiled, unresolved)) if unresolved.is_empty() => return Ok(compiled),
             Ok((_, unresolved)) => {
@@ -254,11 +279,29 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         token_arena,
         module_loader,
         CompileOptions::new(BuiltinPrelude::All, true),
-        seed_bindings,
-        seed_immutable,
-        external_globals,
+        seeds,
     )
     .map(|(compiled, _)| compiled)
+}
+
+/// Module var values the caller already computed once — see
+/// `super::resolve_module_prelude_globals`. `by_path` covers `include`/`import`; `by_token`
+/// covers inline `module { .. }` blocks' own `let`s, keyed by each `let`'s token id since an
+/// inline block has no path.
+#[derive(Clone, Default)]
+pub(crate) struct ResolvedModuleVars {
+    pub(super) by_path: FxHashMap<String, Vec<(crate::Ident, RuntimeValue)>>,
+    pub(super) by_token: FxHashMap<crate::ast::TokenId, RuntimeValue>,
+}
+
+/// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument
+/// instead of four.
+#[derive(Clone, Copy)]
+struct CompileSeeds<'a> {
+    seed_bindings: &'a [crate::Ident],
+    seed_immutable: &'a [crate::Ident],
+    external_globals: &'a [crate::Ident],
+    preresolved_module_vars: &'a ResolvedModuleVars,
 }
 
 #[derive(Clone, Copy)]
@@ -578,15 +621,13 @@ fn compile_program_impl<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     options: CompileOptions<'_>,
-    seed_bindings: &[crate::Ident],
-    seed_immutable: &[crate::Ident],
-    external_globals: &[crate::Ident],
+    seeds: CompileSeeds<'_>,
 ) -> CompileResult<(CompiledProgram, FxHashSet<crate::Ident>)> {
     let mut scope = FunctionScope::default();
     assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
-    for name in seed_bindings {
+    for name in seeds.seed_bindings {
         let slot = scope.declare(*name);
-        if seed_immutable.contains(name) {
+        if seeds.seed_immutable.contains(name) {
             scope.mark_immutable(slot);
         }
     }
@@ -599,7 +640,8 @@ fn compile_program_impl<R: ModuleResolver>(
         token_arena,
         module_loader,
         qualified_bindings: FxHashMap::default(),
-        external_globals: external_globals.iter().copied().collect(),
+        external_globals: seeds.external_globals.iter().copied().collect(),
+        preresolved_module_vars: seeds.preresolved_module_vars.clone(),
         top_level_program: program.clone(),
         module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
@@ -707,7 +749,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_top_level(&mut self, program: &Program) -> CompileResult<()> {
         enum Deferred {
             Statement(Shared<Node>),
-            ModuleVars(crate::Module, Option<crate::Ident>),
+            ModuleVars(String, crate::Module, Option<crate::Ident>),
             InlineModuleRest(crate::Ident, usize, Program, FxHashMap<crate::Ident, u16>),
         }
         let mut deferred = Vec::with_capacity(program.len());
@@ -735,16 +777,30 @@ impl<R: ModuleResolver> Compiler<R> {
                     deferred.push(Deferred::Statement(Shared::clone(node)));
                 }
                 Expr::Include(literal) => {
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "include target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
                     let module = self.compile_include_functions(literal)?;
-                    deferred.push(Deferred::ModuleVars(module, None));
+                    deferred.push(Deferred::ModuleVars(path, module, None));
                 }
                 Expr::Import(literal, alias) => {
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "import target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
                     let module = self.compile_import_functions(literal, alias.as_ref())?;
                     let module_alias = alias
                         .as_ref()
                         .map(|a| a.name)
                         .unwrap_or_else(|| crate::Ident::new(&module.name));
-                    deferred.push(Deferred::ModuleVars(module, Some(module_alias)));
+                    deferred.push(Deferred::ModuleVars(path, module, Some(module_alias)));
                 }
                 Expr::Module(ident, inline_program) => {
                     let module_alias = ident.name;
@@ -783,8 +839,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     }
                 }
                 // Same idea as the `Let`/`Var` fast path above.
-                Deferred::ModuleVars(module, alias) => {
-                    self.compile_module_vars_binding(module, *alias)?;
+                Deferred::ModuleVars(path, module, alias) => {
+                    self.compile_module_vars_binding(path, module, *alias)?;
                     continue;
                 }
                 Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
@@ -803,8 +859,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::MaybeAutoCall);
                 }
             }
-            Deferred::ModuleVars(module, alias) => {
-                self.compile_module_vars_binding(module, *alias)?;
+            Deferred::ModuleVars(path, module, alias) => {
+                self.compile_module_vars_binding(path, module, *alias)?;
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
             Deferred::InlineModuleRest(module_alias, depth, rest, let_slots) => {
@@ -1304,8 +1360,14 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_include(&mut self, literal: &Literal) -> CompileResult<()> {
+        let Literal::String(path) = literal else {
+            return Err(CompileError::Unsupported(
+                "include target must be a string literal",
+                self.current_token_id,
+            ));
+        };
         let module = self.compile_include_functions(literal)?;
-        self.compile_module_vars(&module, None)
+        self.compile_module_vars(path, &module, None)
     }
 
     fn compile_include_functions(&mut self, literal: &Literal) -> CompileResult<crate::Module> {
@@ -1359,14 +1421,22 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_module_vars(&mut self, module: &crate::Module, alias: Option<crate::Ident>) -> CompileResult<()> {
-        self.compile_module_vars_binding(module, alias)?;
+    fn compile_module_vars(
+        &mut self,
+        path: &str,
+        module: &crate::Module,
+        alias: Option<crate::Ident>,
+    ) -> CompileResult<()> {
+        self.compile_module_vars_binding(path, module, alias)?;
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
     }
 
+    /// Compiles a module's top-level `let`s — live, or baked in as constants when
+    /// `preresolved_module_vars` already has their values.
     fn compile_module_vars_binding(
         &mut self,
+        path: &str,
         module: &crate::Module,
         alias: Option<crate::Ident>,
     ) -> CompileResult<()> {
@@ -1386,7 +1456,10 @@ impl<R: ModuleResolver> Compiler<R> {
             Vec::new()
         };
 
-        self.compile_discarding(&module.vars)?;
+        match self.preresolved_module_vars.by_path.get(path).cloned() {
+            Some(known) => self.compile_module_vars_from_known(&module.vars, &known)?,
+            None => self.compile_discarding(&module.vars)?,
+        }
 
         if let Some(module_alias) = alias {
             let depth = self.scopes.len() - 1;
@@ -1399,6 +1472,46 @@ impl<R: ModuleResolver> Compiler<R> {
                     QualifiedSlot { depth, slot },
                 );
                 self.scope_mut().set_local_name(slot, crate::Ident::default());
+            }
+        }
+        Ok(())
+    }
+
+    /// Like `compile_discarding` for a module's `vars`, but bakes each known value in as a
+    /// constant instead of recompiling its initializer. Falls back to a live compile when a var
+    /// isn't in `known`, or its value is a `VmClosure` (closures capture chunk indices from
+    /// their original compile, so can't be baked into a different program's constant pool).
+    fn compile_module_vars_from_known(
+        &mut self,
+        vars: &Program,
+        known: &[(crate::Ident, RuntimeValue)],
+    ) -> CompileResult<()> {
+        for node in vars {
+            self.current_token_id = node.token_id;
+            let Expr::Let(pattern, value) = &*node.expr else {
+                self.compile_expr(node)?;
+                self.emit(OpCode::Pop);
+                continue;
+            };
+            let precomputed = match pattern {
+                Pattern::Ident(ident) => known
+                    .iter()
+                    .find(|(name, value)| *name == ident.name && !matches!(value, RuntimeValue::VmClosure(_)))
+                    .map(|(_, value)| value.clone()),
+                _ => None,
+            };
+            match precomputed {
+                Some(value) => {
+                    let Pattern::Ident(ident) = pattern else {
+                        unreachable!("guarded above");
+                    };
+                    let idx = self.chunk_mut().push_const(value);
+                    self.emit(OpCode::Const(idx));
+                    let slot = self.scope_mut().declare_or_reuse(ident.name);
+                    self.scope_mut().mark_immutable(slot);
+                    self.emit(OpCode::SetLocal(slot));
+                }
+                None => self.compile_let_or_var_binding(pattern, value, false)?,
             }
         }
         Ok(())
@@ -1538,9 +1651,15 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn compile_import(&mut self, literal: &Literal, alias: Option<&ast::IdentWithToken>) -> CompileResult<()> {
+        let Literal::String(path) = literal else {
+            return Err(CompileError::Unsupported(
+                "import target must be a string literal",
+                self.current_token_id,
+            ));
+        };
         let module = self.compile_import_functions(literal, alias)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
-        self.compile_module_vars(&module, Some(module_alias))
+        self.compile_module_vars(path, &module, Some(module_alias))
     }
 
     fn compile_import_functions(
@@ -1676,11 +1795,24 @@ impl<R: ModuleResolver> Compiler<R> {
             match &*node.expr {
                 Expr::Include(literal) => {
                     // See `compile_discarding`: skip the discarded trailing self-value.
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "include target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
                     let module = self.compile_include_functions(literal)?;
-                    self.compile_module_vars_binding(&module, None)?;
+                    self.compile_module_vars_binding(&path, &module, None)?;
                 }
                 Expr::Let(Pattern::Ident(let_ident), value) => {
-                    self.compile_expr(value)?;
+                    match self.preresolved_module_vars.by_token.get(&node.token_id).cloned() {
+                        Some(known) if !matches!(known, RuntimeValue::VmClosure(_)) => {
+                            let idx = self.chunk_mut().push_const(known);
+                            self.emit(OpCode::Const(idx));
+                        }
+                        _ => self.compile_expr(value)?,
+                    }
                     let slot = let_slots[&let_ident.name];
                     self.emit(OpCode::SetLocal(slot));
                     self.qualified_bindings.insert(
@@ -1699,12 +1831,19 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 Expr::Import(literal, alias) => {
                     // This import's own alias, not the enclosing `module_alias`.
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "import target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
                     let module = self.compile_import_functions(literal, alias.as_ref())?;
                     let import_alias = alias
                         .as_ref()
                         .map(|a| a.name)
                         .unwrap_or_else(|| crate::Ident::new(&module.name));
-                    self.compile_module_vars_binding(&module, Some(import_alias))?;
+                    self.compile_module_vars_binding(&path, &module, Some(import_alias))?;
                 }
                 Expr::Module(nested_ident, nested_program) => {
                     self.compile_module(nested_ident, nested_program)?;
@@ -2539,6 +2678,16 @@ pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<crate::Ide
         Pattern::Dict(entries) => entries.iter().for_each(|(_, p)| collect_pattern_idents(p, out)),
         Pattern::Wildcard | Pattern::Literal(_) | Pattern::Type(_) => {}
     }
+}
+
+/// Names bound by a module's top-level `let`s, in declaration order.
+pub(super) fn module_var_names(vars: &Program) -> Vec<crate::Ident> {
+    vars.iter()
+        .filter_map(|node| match &*node.expr {
+            Expr::Let(Pattern::Ident(ident), _) => Some(ident.name),
+            _ => None,
+        })
+        .collect()
 }
 
 fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
