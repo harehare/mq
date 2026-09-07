@@ -121,6 +121,12 @@
           "default": "",
           "description": "Path to the LSP server executable"
         },
+        "mq.dbgPath": {
+          "title": "Debugger Path",
+          "type": "string",
+          "default": "",
+          "description": "Path to the mq-dbg executable"
+        },
         "mq.showExamplesInNewFile": {
           "title": "Show examples in new file",
           "type": "boolean",
