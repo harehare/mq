@@ -1015,9 +1015,9 @@ impl Cli {
         handle.flush().into_diagnostic()
     }
 
-    /// Sorted, deduped selector and top-level function names for the `mq help` index.
-    /// Cheap: uses `top_level_entries`, which never parses standard-module sources.
-    fn help_index_names() -> (Vec<String>, Vec<String>) {
+    /// Sorted, deduped selector, top-level function, and keyword names for the `mq help`
+    /// index. Cheap: uses `top_level_entries`, which never parses standard-module sources.
+    fn help_index_names() -> (Vec<String>, Vec<String>, Vec<String>) {
         let entries = help::top_level_entries();
 
         let mut selectors: Vec<String> = entries
@@ -1036,13 +1036,21 @@ impl Cli {
         functions.sort_unstable();
         functions.dedup();
 
-        (selectors, functions)
+        let mut keywords: Vec<String> = entries
+            .iter()
+            .filter(|e| e.kind == "keyword")
+            .map(|e| e.name.clone())
+            .collect();
+        keywords.sort_unstable();
+        keywords.dedup();
+
+        (selectors, functions, keywords)
     }
 
     /// Builds the grouped `mq help` index text: selectors, top-level functions, and modules
     /// (each with a one-line summary), for a name-less human-readable lookup.
     fn help_index_text() -> String {
-        let (selectors, functions) = Self::help_index_names();
+        let (selectors, functions, keywords) = Self::help_index_names();
         let mut out = String::new();
 
         let _ = writeln!(out, "{}", "Selectors:".bold().cyan());
@@ -1053,6 +1061,11 @@ impl Cli {
         let _ = writeln!(out, "\n{}", "Functions:".bold().cyan());
         for f in functions {
             let _ = writeln!(out, "  {f}");
+        }
+
+        let _ = writeln!(out, "\n{}", "Keywords:".bold().cyan());
+        for k in keywords {
+            let _ = writeln!(out, "  {k}");
         }
 
         let _ = writeln!(out, "\n{}", "Modules:".bold().cyan());
@@ -1073,7 +1086,7 @@ impl Cli {
 
     /// Same content as [`Self::help_index_text`], as Markdown — queryable with mq itself.
     fn help_index_markdown() -> String {
-        let (selectors, functions) = Self::help_index_names();
+        let (selectors, functions, keywords) = Self::help_index_names();
         let mut out = String::new();
 
         let _ = writeln!(out, "# mq help");
@@ -1086,6 +1099,11 @@ impl Cli {
         let _ = writeln!(out, "\n## Functions\n");
         for f in functions {
             let _ = writeln!(out, "- `{f}`");
+        }
+
+        let _ = writeln!(out, "\n## Keywords\n");
+        for k in keywords {
+            let _ = writeln!(out, "- `{k}`");
         }
 
         let _ = writeln!(out, "\n## Modules\n");

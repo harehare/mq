@@ -71,9 +71,10 @@ pub fn all_entries() -> Vec<HelpEntry> {
     results
 }
 
-/// Native builtin functions, selectors, and `builtin.mq` functions — everything in
-/// [`all_entries`] except standard-module functions. Cheap: unlike `all_entries`/`all_modules`,
-/// it never parses a standard module's source.
+/// Native builtin functions, selectors, `builtin.mq` functions, and language keywords with
+/// their own help topic (currently just `nodes`) — everything in [`all_entries`] except
+/// standard-module functions. Cheap: unlike `all_entries`/`all_modules`, it never parses a
+/// standard module's source.
 pub fn top_level_entries() -> Vec<HelpEntry> {
     let mut results = Vec::new();
 
@@ -126,6 +127,24 @@ pub fn top_level_entries() -> Vec<HelpEntry> {
     for fdoc in reference::extract_functions_from_cst(BUILTIN_MODULE_FILE, true) {
         results.push(from_mq_fn_doc(fdoc, None));
     }
+
+    results.push(HelpEntry {
+        name: "nodes".to_string(),
+        kind: "keyword",
+        params: Vec::new(),
+        returns: "array".to_string(),
+        description: "Collects every input node into a single array assigned to `self`, so the \
+            rest of the pipeline runs once over the whole input instead of once per node. \
+            Equivalent to prefixing a query with the `-A`/`--aggregate` CLI flag. Only valid at \
+            the top level of a program, not inside a `def`/`fn` body."
+            .to_string(),
+        examples: vec![HelpExample {
+            code: "nodes | type(self)".to_string(),
+            expected: "array".to_string(),
+        }],
+        capability: None,
+        related_module: None,
+    });
 
     results
 }
