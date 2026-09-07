@@ -1050,7 +1050,11 @@ mod tests {
     #[test]
     fn test_default_value_recursion_is_call_depth_limited() {
         let mut engine = DefaultEngine::default();
+        // Tree-walker uses more native stack per depth than Tarn.
+        #[cfg(feature = "tarn")]
         engine.set_max_call_stack_depth(50);
+        #[cfg(not(feature = "tarn"))]
+        engine.set_max_call_stack_depth(32);
 
         let result = engine.eval("def f(x = f()): x; | f()", vec!["".to_string().into()].into_iter());
 
