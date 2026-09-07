@@ -1805,6 +1805,127 @@ fn test_output_format_auto_detected_from_output_file_extension() {
 }
 
 #[test]
+fn test_atomic_output_requires_output_file() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--atomic-output")
+        .arg("always")
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[rstest]
+#[case::auto("auto")]
+#[case::always("always")]
+#[case::never("never")]
+fn test_atomic_output_modes_overwrite_existing_file(#[case] mode: &str) {
+    let (_, output_file) = create_file(&format!("cli_atomic_output_{mode}.md"), "old content");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--atomic-output")
+        .arg(mode)
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert!(content.contains("hello"));
+
+    // Scope the check to this target's own temp file; the OS temp dir is shared.
+    let target_name = output_file.file_name().unwrap().to_string_lossy().into_owned();
+    let dir = output_file.parent().unwrap();
+    let stray_temp_files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            name.contains("mq-tmp") && name.contains(&target_name)
+        })
+        .collect();
+    assert!(
+        stray_temp_files.is_empty(),
+        "expected no leftover temp files, found {stray_temp_files:?}"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_atomic_output_preserves_existing_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_, output_file) = create_file("cli_atomic_output_perms.md", "old content");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+    std::fs::set_permissions(&output_file, std::fs::Permissions::from_mode(0o640)).expect("failed to set permissions");
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .success();
+
+    let mode = std::fs::metadata(&output_file).unwrap().permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o640,
+        "atomic write should preserve the target's existing permissions"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn test_atomic_output_failure_leaves_existing_file_untouched() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("mq-atomic-output-failure-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("failed to create test directory");
+    defer! {
+        // Restore write access before cleanup, or remove_dir_all fails.
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    let output_file = dir.join("out.md");
+    std::fs::write(&output_file, "ORIGINAL").expect("failed to write original file");
+
+    // Read-only dir: the temp file can't be created, so the write must fail.
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).expect("failed to set permissions");
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--atomic-output")
+        .arg("always")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).expect("failed to restore permissions");
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert_eq!(
+        content, "ORIGINAL",
+        "a failed atomic write must not modify the existing file"
+    );
+}
+
+#[test]
 fn test_format_flag_sets_input_and_output() {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let result = cmd

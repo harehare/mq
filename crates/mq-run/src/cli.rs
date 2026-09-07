@@ -29,6 +29,7 @@ static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 // Tracks whether --diff found any changed input, for the exit-code-1 CI check below.
 static HAD_DIFF: AtomicBool = AtomicBool::new(false);
 
+use crate::atomic_output::{AtomicOutput, OutputSink};
 use crate::grep;
 use mq_help as help;
 
@@ -587,6 +588,11 @@ struct OutputArgs {
     /// Output to the specified file
     #[clap(short = 'o', long = "output", value_name = "FILE")]
     output_file: Option<PathBuf>,
+
+    /// Write `-o`/`--output` atomically via a same-directory temp file + fsync
+    /// + rename, so a crash or full disk mid-write can't truncate the target.
+    #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_file")]
+    atomic_output: AtomicOutput,
 
     /// Colorize markdown output
     #[arg(short = 'C', long = "color-output", default_value_t = false)]
@@ -1848,15 +1854,12 @@ impl Cli {
 
         if let Some(input) = grep_input {
             let (before, after) = self.output.context_counts();
-            grep::print_grep(
-                runtime_values,
-                &input,
-                file,
+            let handle = OutputSink::open(
                 &self.output.output_file,
+                self.output.atomic_output,
                 self.output.unbuffered,
-                before,
-                after,
-            )
+            )?;
+            grep::print_grep(runtime_values, &input, file, handle, before, after)
         } else {
             self.print(runtime_values)
         }
@@ -2197,15 +2200,11 @@ impl Cli {
         let mut total = 0usize;
         let mut engine = self.create_engine()?;
 
-        let stdout = io::stdout();
-        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
-            let file = fs::File::create(output_file).into_diagnostic()?;
-            Box::new(BufWriter::new(file))
-        } else if self.output.unbuffered {
-            Box::new(stdout.lock())
-        } else {
-            Box::new(BufWriter::new(stdout.lock()))
-        };
+        let mut handle = OutputSink::open(
+            &self.output.output_file,
+            self.output.atomic_output,
+            self.output.unbuffered,
+        )?;
 
         for (file, content) in files {
             let count = self.count_file(&mut engine, query, file, content)?;
@@ -2225,12 +2224,7 @@ impl Cli {
             Self::write_ignore_pipe(&mut handle, format!("{}\n", total).as_bytes())?;
         }
 
-        if !self.output.unbuffered
-            && let Err(e) = handle.flush()
-            && e.kind() != std::io::ErrorKind::BrokenPipe
-        {
-            return Err(miette!(e));
-        }
+        handle.finish()?;
 
         Ok(())
     }
@@ -2621,15 +2615,11 @@ impl Cli {
     }
 
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
-        let stdout = io::stdout();
-        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
-            let file = fs::File::create(output_file).into_diagnostic()?;
-            Box::new(BufWriter::new(file))
-        } else if self.output.unbuffered {
-            Box::new(stdout.lock())
-        } else {
-            Box::new(BufWriter::new(stdout.lock()))
-        };
+        let mut handle = OutputSink::open(
+            &self.output.output_file,
+            self.output.atomic_output,
+            self.output.unbuffered,
+        )?;
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
                 .values()
@@ -2648,13 +2638,7 @@ impl Cli {
         let colorize = self.output.color_output && !Self::is_no_color();
         let buf = self.render(runtime_values, colorize)?;
         Self::write_ignore_pipe(&mut handle, &buf)?;
-
-        if !self.output.unbuffered
-            && let Err(e) = handle.flush()
-            && e.kind() != std::io::ErrorKind::BrokenPipe
-        {
-            return Err(miette!(e));
-        }
+        handle.finish()?;
 
         Ok(())
     }
@@ -2682,15 +2666,11 @@ impl Cli {
     /// by the file path (or `<stdin>` when there is none). Colorizes `+`/`-`/`@@`
     /// lines when `-C`/`--color-output` is set and `NO_COLOR` isn't.
     fn print_unified_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<()> {
-        let stdout = io::stdout();
-        let mut handle: Box<dyn Write> = if let Some(output_file) = &self.output.output_file {
-            let file = fs::File::create(output_file).into_diagnostic()?;
-            Box::new(BufWriter::new(file))
-        } else if self.output.unbuffered {
-            Box::new(stdout.lock())
-        } else {
-            Box::new(BufWriter::new(stdout.lock()))
-        };
+        let mut handle = OutputSink::open(
+            &self.output.output_file,
+            self.output.atomic_output,
+            self.output.unbuffered,
+        )?;
 
         let label = file
             .as_ref()
@@ -2725,13 +2705,7 @@ impl Cli {
         }
 
         Self::write_ignore_pipe(&mut handle, out.as_bytes())?;
-
-        if !self.output.unbuffered
-            && let Err(e) = handle.flush()
-            && e.kind() != std::io::ErrorKind::BrokenPipe
-        {
-            return Err(miette!(e));
-        }
+        handle.finish()?;
 
         Ok(())
     }
