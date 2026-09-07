@@ -21,6 +21,9 @@ pub(crate) struct CachedProgram {
     let_names: Vec<crate::Ident>,
     global_names: Vec<crate::Ident>,
     configuration: Vec<engine::VmModulePrelude>,
+    /// Global snapshot used to bake module `let` initializers into constants; must still match
+    /// for the cache to stay valid, since a global's value can change under the same name.
+    baked_globals_key: VmEnvCacheKey,
     /// Frame storage retained between non-overlapping `eval_compiled` calls.
     ///
     /// References to a cached program share this slot. A concurrent caller that finds it empty
@@ -69,6 +72,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     context: &mut EngineRunContext<'_, R>,
     configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,
+    baked_globals_key: VmEnvCacheKey,
 ) -> Result<CachedProgram, Error> {
     let token_arena = Shared::clone(&context.token_arena);
     let global_bindings = context.global_bindings;
@@ -119,6 +123,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         let_names,
         global_names,
         configuration,
+        baked_globals_key,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
         environment: Shared::new(SharedCell::new(None)),
     })
@@ -195,16 +200,15 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
     module_loader: &ModuleLoader<R>,
     configuration: &[engine::VmModulePrelude],
     global_bindings: &[(crate::Ident, RuntimeValue)],
+    environment_key: VmEnvCacheKey,
 ) -> Result<bool, Error> {
-    // `run_cached` reaches this check for every `eval_compiled` call. The compiled names are
-    // already sorted, so avoid allocating and sorting another list just to compare a set of
-    // names. Values intentionally do not participate: `GetExternalGlobal` reads the current
-    // value from the per-evaluation environment.
+    // Names only: `GetExternalGlobal` re-reads values from the per-evaluation environment, so a
+    // plain global reference stays correct. `baked_globals_key` covers baked module-var constants.
     let globals_match = compiled.global_names.len() == global_bindings.len()
         && global_bindings
             .iter()
             .all(|(name, _)| compiled.global_names.binary_search(name).is_ok());
-    if compiled.configuration != configuration || !globals_match {
+    if compiled.configuration != configuration || !globals_match || compiled.baked_globals_key != environment_key {
         return Ok(false);
     }
     let before_current = module_loader

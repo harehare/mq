@@ -255,6 +255,55 @@ fn top_level_function_literal_produces_a_callable_value() {
 }
 
 #[test]
+fn vm_closure_equals_itself() {
+    if let RuntimeValue::Array(arr) = run("let f = fn(x): x + 1; | [f, f]") {
+        assert_eq!(arr[0], arr[1]);
+    } else {
+        panic!("expected an array");
+    }
+}
+
+#[test]
+fn vm_closure_alias_equals_original() {
+    if let RuntimeValue::Array(arr) = run("let f = fn(x): x + 1; | let g = f | [f, g]") {
+        assert_eq!(arr[0], arr[1]);
+    } else {
+        panic!("expected an array");
+    }
+}
+
+#[test]
+fn vm_closure_distinct_equivalent_closures_are_equal() {
+    // Same compiled body, distinct `Shared` allocations, ignoring captured upvalue content.
+    if let RuntimeValue::Array(arr) = run("let fns = foreach(i, [1, 2, 3]): fn(): i;; | fns") {
+        assert_eq!(arr[0], arr[1]);
+        assert_eq!(arr[1], arr[2]);
+    } else {
+        panic!("expected an array");
+    }
+
+    // Same compiled body, distinct allocations, equal bound arguments.
+    let partials =
+        run_with_prelude("def add(x, y): x + y; | let g = partial(add, 1) | let h = partial(add, 1) | [g, h]");
+    if let RuntimeValue::Array(arr) = partials {
+        assert_eq!(arr[0], arr[1]);
+    } else {
+        panic!("expected an array");
+    }
+}
+
+#[test]
+fn vm_closures_compare_correctly_inside_collections() {
+    let value = run("let f = fn(x): x + 1; | let g = fn(x): x + 2; | [[f], [f], [g]]");
+    if let RuntimeValue::Array(arr) = value {
+        assert_eq!(arr[0], arr[1]);
+        assert_ne!(arr[0], arr[2]);
+    } else {
+        panic!("expected an array");
+    }
+}
+
+#[test]
 fn builtin_receives_a_top_level_closure_as_its_implicit_self() {
     assert_eq!(
         run("fn(x): x; | type()"),
@@ -1824,6 +1873,34 @@ fn cached_program_restores_execution_pools_after_each_run() {
                 .is_some_and(|cached| cached.has_available_execution_pools())
         );
     }
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn cached_program_reflects_updated_global_in_module_var_initializer() {
+    let mut engine = crate::DefaultEngine::default();
+    engine.define_value("g", RuntimeValue::Number(1.into()));
+    let compiled = engine.compile("module m: let x = g end | m::x").unwrap();
+
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(1.into())]
+    );
+
+    // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
+    // must invalidate that cache, not just the plain-global lookup environment.
+    engine.define_value("g", RuntimeValue::Number(2.into()));
+
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(2.into())]
+    );
 }
 
 proptest! {

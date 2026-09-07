@@ -184,6 +184,11 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
             #[cfg(not(feature = "tarn"))]
             (RuntimeValue::Function(a), RuntimeValue::Function(b)) => a.params == b.params && a.body == b.body,
+            // Mirrors `Function` above: same compiled body, same bound args, upvalues ignored.
+            #[cfg(feature = "tarn")]
+            (RuntimeValue::VmClosure(a), RuntimeValue::VmClosure(b)) => {
+                Shared::ptr_eq(&a.chunks, &b.chunks) && a.chunk_index == b.chunk_index && a.bound_args == b.bound_args
+            }
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             #[cfg(not(feature = "tarn"))]

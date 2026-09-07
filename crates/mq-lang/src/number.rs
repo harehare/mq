@@ -178,7 +178,8 @@ impl Rem for Number {
             && other.0 >= I64_MIN_F64
             && other.0 < I64_MAX_BOUND_F64
         {
-            return Number((self.0 as i64 % other.0 as i64) as f64);
+            // `i64::MIN % -1` overflows and panics in debug builds; the true remainder is 0.
+            return Number((self.0 as i64).checked_rem(other.0 as i64).unwrap_or(0) as f64);
         }
         Number(self.0 % other.0)
     }
@@ -279,6 +280,14 @@ mod tests {
         let b = Number::new(3.0);
 
         assert_eq!((a % b).value(), 2.0);
+    }
+
+    #[test]
+    fn test_rem_min_integer_by_negative_one_does_not_panic() {
+        let a = Number::new(i64::MIN as f64);
+        let b = Number::new(-1.0);
+
+        assert_eq!((a % b).value(), 0.0);
     }
 
     #[rstest]

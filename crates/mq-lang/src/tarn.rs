@@ -772,6 +772,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         &self.engine.module_loader,
                         self.module_prelude,
                         self.engine.global_bindings,
+                        self.environment_key,
                     )? =>
                 {
                     cached
@@ -796,6 +797,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         &mut cache_context,
                         self.module_prelude.to_vec(),
                         deadline,
+                        self.environment_key,
                     )?);
                     compiled.cache_vm_program(Shared::clone(&cached));
                     cached
