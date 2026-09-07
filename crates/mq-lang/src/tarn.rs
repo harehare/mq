@@ -45,6 +45,8 @@ use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
+#[cfg(not(feature = "debugger"))]
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "debugger")]
@@ -262,13 +264,48 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
     pub(crate) module_loader: ModuleLoader<T>,
     pub(crate) io: Shared<IO>,
     pub(crate) host_functions: Shared<crate::SharedCell<HostFunctions>>,
-    global_bindings: Shared<crate::SharedCell<FxHashMap<crate::Ident, RuntimeValue>>>,
+    global_bindings: Shared<crate::SharedCell<GlobalBindings>>,
     pub(crate) session_enabled: bool,
     pub(crate) session_bindings: Shared<crate::SharedCell<Vec<SessionBinding>>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<crate::SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger_handler: Shared<crate::SharedCell<Box<dyn DebuggerHandler>>>,
+}
+
+/// Engine-owned globals and a revision used to invalidate a cached VM lookup environment.
+#[derive(Debug)]
+#[cfg_attr(feature = "debugger", derive(Default))]
+struct GlobalBindings {
+    values: FxHashMap<crate::Ident, RuntimeValue>,
+    #[cfg(not(feature = "debugger"))]
+    source: u64,
+    revision: u64,
+}
+
+#[cfg(not(feature = "debugger"))]
+static NEXT_GLOBAL_BINDINGS_SOURCE: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(not(feature = "debugger"))]
+impl Default for GlobalBindings {
+    fn default() -> Self {
+        Self {
+            values: FxHashMap::default(),
+            source: NEXT_GLOBAL_BINDINGS_SOURCE.fetch_add(1, Ordering::Relaxed),
+            revision: 0,
+        }
+    }
+}
+
+/// Identifies one immutable snapshot of an engine's external globals.
+///
+/// A compiled program may be used by several engines, so a process-unique globals ID is part of
+/// the key in addition to the revision.
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VmEnvCacheKey {
+    source: u64,
+    revision: u64,
 }
 
 impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
@@ -278,7 +315,7 @@ impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
             module_loader: ModuleLoader::new(T::default()),
             io: Shared::new(IO::default()),
             host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
-            global_bindings: Shared::new(crate::SharedCell::new(FxHashMap::default())),
+            global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
             session_enabled: false,
             session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
@@ -326,7 +363,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             module_loader,
             io,
             host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
-            global_bindings: Shared::new(crate::SharedCell::new(FxHashMap::default())),
+            global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
             session_enabled: false,
             session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
@@ -341,17 +378,48 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
 
     pub(crate) fn define(&self, name: crate::Ident, value: RuntimeValue) {
         #[cfg(not(feature = "sync"))]
-        self.global_bindings.borrow_mut().insert(name, value);
+        {
+            let mut bindings = self.global_bindings.borrow_mut();
+            bindings.values.insert(name, value);
+            bindings.revision = bindings.revision.wrapping_add(1);
+        }
         #[cfg(feature = "sync")]
-        self.global_bindings.write().unwrap().insert(name, value);
+        {
+            let mut bindings = self.global_bindings.write().unwrap();
+            bindings.values.insert(name, value);
+            bindings.revision = bindings.revision.wrapping_add(1);
+        }
     }
 
+    #[cfg(any(feature = "debugger", feature = "debug-trace"))]
     pub(crate) fn global_bindings_snapshot(&self) -> Vec<(crate::Ident, RuntimeValue)> {
         #[cfg(not(feature = "sync"))]
         let bindings = self.global_bindings.borrow();
         #[cfg(feature = "sync")]
         let bindings = self.global_bindings.read().unwrap();
-        bindings.iter().map(|(ident, value)| (*ident, value.clone())).collect()
+        bindings
+            .values
+            .iter()
+            .map(|(ident, value)| (*ident, value.clone()))
+            .collect()
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) fn global_bindings_snapshot_with_key(&self) -> (Vec<(crate::Ident, RuntimeValue)>, VmEnvCacheKey) {
+        #[cfg(not(feature = "sync"))]
+        let bindings = self.global_bindings.borrow();
+        #[cfg(feature = "sync")]
+        let bindings = self.global_bindings.read().unwrap();
+        let key = VmEnvCacheKey {
+            source: bindings.source,
+            revision: bindings.revision,
+        };
+        let values = bindings
+            .values
+            .iter()
+            .map(|(ident, value)| (*ident, value.clone()))
+            .collect();
+        (values, key)
     }
 
     /// Warms this VM's own builtin.mq parse cache, independent of `Evaluator`.
@@ -669,6 +737,8 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
     pub(crate) engine: EngineRunContext<'a, R>,
     #[cfg(not(feature = "debugger"))]
     pub(crate) module_prelude: &'a [engine::VmModulePrelude],
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) environment_key: VmEnvCacheKey,
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
@@ -738,6 +808,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 deadline,
                 self.engine.max_call_stack_depth,
                 self.engine.global_bindings,
+                self.environment_key,
             );
         }
         #[cfg(feature = "debugger")]

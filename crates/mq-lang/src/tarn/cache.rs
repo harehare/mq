@@ -9,7 +9,7 @@ use super::{
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::tarn::VmEnv;
+use crate::tarn::{VmEnv, VmEnvCacheKey};
 use crate::{ModuleLoader, ModuleResolver, Shared, SharedCell};
 use std::fmt;
 use std::time::Instant;
@@ -26,6 +26,14 @@ pub(crate) struct CachedProgram {
     /// References to a cached program share this slot. A concurrent caller that finds it empty
     /// simply allocates an independent pool, so bytecode remains safely reusable.
     execution_pools: Shared<SharedCell<Option<interpreter::ExecutionPools>>>,
+    /// Lookup table for the most recently used engine-global snapshot. This is independent of
+    /// frame pools: concurrent callers can safely retain different environments.
+    environment: Shared<SharedCell<Option<CachedEnvironment>>>,
+}
+
+struct CachedEnvironment {
+    key: VmEnvCacheKey,
+    env: Shared<VmEnv>,
 }
 
 impl fmt::Debug for CachedProgram {
@@ -112,7 +120,45 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         global_names,
         configuration,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
+        environment: Shared::new(SharedCell::new(None)),
     })
+}
+
+fn cached_environment(
+    compiled: &CachedProgram,
+    key: VmEnvCacheKey,
+    global_bindings: &[(crate::Ident, RuntimeValue)],
+) -> Shared<VmEnv> {
+    #[cfg(not(feature = "sync"))]
+    {
+        let mut slot = compiled.environment.borrow_mut();
+        if let Some(environment) = slot.as_ref()
+            && environment.key == key
+        {
+            return Shared::clone(&environment.env);
+        }
+        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        *slot = Some(CachedEnvironment {
+            key,
+            env: Shared::clone(&env),
+        });
+        env
+    }
+    #[cfg(feature = "sync")]
+    {
+        let mut slot = compiled.environment.write().unwrap();
+        if let Some(environment) = slot.as_ref()
+            && environment.key == key
+        {
+            return Shared::clone(&environment.env);
+        }
+        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        *slot = Some(CachedEnvironment {
+            key,
+            env: Shared::clone(&env),
+        });
+        env
+    }
 }
 
 fn take_execution_pools(compiled: &CachedProgram) -> interpreter::ExecutionPools {
@@ -185,6 +231,7 @@ pub(super) fn run_cached<I>(
     deadline: Option<Instant>,
     max_call_stack_depth: u32,
     global_bindings: &[(crate::Ident, RuntimeValue)],
+    environment_key: VmEnvCacheKey,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
@@ -193,9 +240,9 @@ where
     // duration of its evaluation and restores it on every exit path.
     let mut pools = take_execution_pools(compiled);
     let result = (|| {
-        // Globals do not change within one `eval_compiled` invocation. Reusing this map across
-        // inputs avoids rebuilding and rehashing it for every row in line-oriented callers.
-        let env = VmEnv::from_bindings(global_bindings);
+        // Reuse the map until this engine changes its globals. This also covers line-oriented
+        // callers, which invoke `eval_compiled` once per row.
+        let env = cached_environment(compiled, environment_key, global_bindings);
         let mut values = Vec::new();
         let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
         for input in inputs {

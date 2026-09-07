@@ -2258,6 +2258,17 @@ impl Cli {
             self.set_file_vars(engine, f);
         }
 
+        self.execute_compiled_prepared(engine, program, file, content)
+    }
+
+    /// Executes with any file-scoped globals already installed by the caller.
+    fn execute_compiled_prepared(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        program: &mq_lang::CompiledProgram,
+        file: &Option<PathBuf>,
+        content: &ContentData,
+    ) -> miette::Result<()> {
         let input = self.resolve_input(file, content)?;
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
@@ -2361,27 +2372,43 @@ impl Cli {
         }
         let query = self.get_query()?;
         let mut engine = self.create_engine()?;
-        // A stream contains many independent inputs but normally only one effective query per
-        // file. Keep the most recent program so the hot per-line path skips parsing,
-        // optimization, and (for Tarn) bytecode compilation. The effective query includes an
-        // auto-format prefix, so switching files can safely replace the cached program.
+        // A stream contains many independent inputs but normally only one effective query and
+        // one set of file globals per file. Keep both pieces of state outside the per-line hot
+        // path so short queries do not spend their time allocating query strings or recreating
+        // `__FILE__` values.
         let mut compiled_query: Option<(String, mq_lang::CompiledProgram)> = None;
+        let mut active_file: Option<Option<PathBuf>> = None;
 
         self.process_lines(|file, line| {
-            let file = file.cloned();
-            let effective_query = self.effective_query(&query, &file);
-            if compiled_query
+            let file_changed = active_file
                 .as_ref()
-                .is_none_or(|(cached_query, _)| cached_query != &effective_query)
-            {
-                let program = engine.compile(&effective_query).map_err(|error| *error)?;
-                self.dump_compiled_bytecode(&mut engine, &program)?;
-                compiled_query = Some((effective_query, program));
+                .is_none_or(|current_file| current_file.as_ref() != file);
+            if file_changed {
+                active_file = Some(file.cloned());
+                let current_file = active_file
+                    .as_ref()
+                    .ok_or_else(|| miette!("streaming input did not retain its active file"))?;
+                if let Some(file) = current_file {
+                    self.set_file_vars(&mut engine, file);
+                }
+
+                let effective_query = self.effective_query(&query, current_file);
+                if compiled_query
+                    .as_ref()
+                    .is_none_or(|(cached_query, _)| cached_query != &effective_query)
+                {
+                    let program = engine.compile(&effective_query).map_err(|error| *error)?;
+                    self.dump_compiled_bytecode(&mut engine, &program)?;
+                    compiled_query = Some((effective_query, program));
+                }
             }
+            let current_file = active_file
+                .as_ref()
+                .ok_or_else(|| miette!("streaming input did not select an active file"))?;
             let (_, program) = compiled_query
                 .as_ref()
                 .ok_or_else(|| miette!("streaming query compilation did not produce a program"))?;
-            self.execute_compiled(&mut engine, program, &file, &line.into())
+            self.execute_compiled_prepared(&mut engine, program, current_file, &line.into())
         })
     }
 

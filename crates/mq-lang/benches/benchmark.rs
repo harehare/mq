@@ -134,6 +134,25 @@ fn eval_compiled_reused_single_input(bencher: divan::Bencher) {
     });
 }
 
+/// Mirrors line-oriented CLI calls whose per-file globals remain unchanged across rows.
+#[divan::bench]
+fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.define_string_value("__FILE__", "input.md");
+    engine.define_string_value("__FILE_NAME__", "input.md");
+    engine.define_string_value("__FILE_STEM__", "input");
+    let compiled = engine.compile("__FILE__").unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+        .unwrap();
+
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+            .unwrap()
+    });
+}
+
 /// See `eval_compiled_select_h`.
 #[divan::bench]
 fn eval_compiled_string_interpolation(bencher: divan::Bencher) {

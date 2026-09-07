@@ -682,6 +682,9 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(not(feature = "sync"))]
         let host_functions = self.vm.host_functions.borrow().clone();
 
+        #[cfg(not(feature = "debugger"))]
+        let (global_bindings, environment_key) = self.vm.global_bindings_snapshot_with_key();
+        #[cfg(feature = "debugger")]
         let global_bindings = self.vm.global_bindings_snapshot();
 
         #[cfg(feature = "debugger")]
@@ -709,6 +712,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             },
             #[cfg(not(feature = "debugger"))]
             module_prelude: &self.vm_module_prelude,
+            #[cfg(not(feature = "debugger"))]
+            environment_key,
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.vm.debugger),
             #[cfg(feature = "debugger")]
@@ -2467,6 +2472,73 @@ mod tests {
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::Number(1.into())))
             .unwrap();
         assert_eq!(values.values(), &[RuntimeValue::Number(101.into())]);
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_vm_keeps_global_environments_separate_between_engines() {
+        use crate::RuntimeValue;
+
+        let mut first_engine = DefaultEngine::default();
+        first_engine.define_value("offset", RuntimeValue::Number(1.into()));
+        let compiled = first_engine.compile("offset").unwrap();
+        assert_eq!(
+            first_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(1.into())]
+        );
+
+        let mut second_engine = DefaultEngine::default();
+        second_engine.define_value("offset", RuntimeValue::Number(2.into()));
+        assert_eq!(
+            second_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(2.into())]
+        );
+
+        // Switching back must use the first engine's cached environment, not the last engine
+        // that happened to evaluate this shared CompiledProgram.
+        assert_eq!(
+            first_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(1.into())]
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_vm_does_not_reuse_an_environment_after_its_engine_drops() {
+        use crate::RuntimeValue;
+
+        let compiled = {
+            let mut engine = DefaultEngine::default();
+            engine.define_value("offset", RuntimeValue::Number(1.into()));
+            let compiled = engine.compile("offset").unwrap();
+            assert_eq!(
+                engine
+                    .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                    .unwrap()
+                    .values(),
+                &[RuntimeValue::Number(1.into())]
+            );
+            compiled
+        };
+
+        let mut next_engine = DefaultEngine::default();
+        next_engine.define_value("offset", RuntimeValue::Number(2.into()));
+        assert_eq!(
+            next_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(2.into())]
+        );
     }
 
     #[cfg(feature = "tarn")]
