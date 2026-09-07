@@ -335,6 +335,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "tarn")]
         {
             self.vm.module_loader.set_search_paths(paths.clone());
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
         }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_search_paths(paths);
@@ -820,7 +822,11 @@ impl Engine<DefaultModuleResolver> {
     /// (`raw.githubusercontent.com/harehare`) only; it does not open up all URLs.
     pub fn set_http_allowed_domains(&mut self, domains: Vec<String>) {
         #[cfg(feature = "tarn")]
-        self.vm.module_loader.set_http_allowed_domains(domains.clone());
+        {
+            self.vm.module_loader.set_http_allowed_domains(domains.clone());
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+        }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_http_allowed_domains(domains);
     }
@@ -831,7 +837,11 @@ impl Engine<DefaultModuleResolver> {
     /// imports are opt-in there; disabled regardless of `--allowed-domain`.
     pub fn set_http_import_enabled(&mut self, enabled: bool) {
         #[cfg(feature = "tarn")]
-        self.vm.module_loader.set_http_import_enabled(enabled);
+        {
+            self.vm.module_loader.set_http_import_enabled(enabled);
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+        }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_http_import_enabled(enabled);
     }
@@ -840,10 +850,13 @@ impl Engine<DefaultModuleResolver> {
     ///
     /// Call this once before processing to force a re-fetch of all cached modules
     /// on the next resolve (e.g. when `--refresh-modules` is passed on the CLI).
-    pub fn clear_http_cache(&self) -> Result<(), crate::module::error::ModuleError> {
+    pub fn clear_http_cache(&mut self) -> Result<(), crate::module::error::ModuleError> {
         #[cfg(feature = "tarn")]
         {
-            self.vm.module_loader.clear_http_cache()
+            let result = self.vm.module_loader.clear_http_cache();
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+            result
         }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.clear_http_cache()
@@ -852,10 +865,13 @@ impl Engine<DefaultModuleResolver> {
     /// Clears all HTTP module cache including versioned modules and lock files.
     ///
     /// Use this when `--clear-cache` is passed on the CLI to wipe everything.
-    pub fn clear_http_cache_all(&self) -> Result<(), crate::module::error::ModuleError> {
+    pub fn clear_http_cache_all(&mut self) -> Result<(), crate::module::error::ModuleError> {
         #[cfg(feature = "tarn")]
         {
-            self.vm.module_loader.clear_http_cache_all()
+            let result = self.vm.module_loader.clear_http_cache_all();
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+            result
         }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.clear_http_cache_all()
@@ -864,7 +880,11 @@ impl Engine<DefaultModuleResolver> {
     /// Enables or disables the `mq.lock` integrity check for HTTP imports (on by default).
     pub fn set_lockfile_enabled(&mut self, enabled: bool) {
         #[cfg(feature = "tarn")]
-        self.vm.module_loader.set_lockfile_enabled(enabled);
+        {
+            self.vm.module_loader.set_lockfile_enabled(enabled);
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+        }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_lockfile_enabled(enabled);
     }
@@ -875,7 +895,11 @@ impl Engine<DefaultModuleResolver> {
     /// only ever happens in a reviewable local run, not silently in CI.
     pub fn set_lockfile_frozen(&mut self, frozen: bool) {
         #[cfg(feature = "tarn")]
-        self.vm.module_loader.set_lockfile_frozen(frozen);
+        {
+            self.vm.module_loader.set_lockfile_frozen(frozen);
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+        }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_lockfile_frozen(frozen);
     }
@@ -883,7 +907,11 @@ impl Engine<DefaultModuleResolver> {
     /// Sets the path used for `mq.lock`.
     pub fn set_lockfile_path(&mut self, path: std::path::PathBuf) {
         #[cfg(feature = "tarn")]
-        self.vm.module_loader.set_lockfile_path(path.clone());
+        {
+            self.vm.module_loader.set_lockfile_path(path.clone());
+            #[cfg(not(feature = "debugger"))]
+            self.vm.invalidate_module_cache();
+        }
         #[cfg(not(feature = "tarn"))]
         self.evaluator.module_loader.set_lockfile_path(path);
     }
@@ -1147,6 +1175,47 @@ mod tests {
 
         let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
         assert_eq!(persisted.unwrap(), vec![1.into()].into());
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_nodes_over_empty_input_preserves_let_binding() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("let x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        // Aggregate runs once regardless of input count; must see seeded x == 1, not None.
+        let result = engine.eval("nodes | x + 1", std::iter::empty());
+        assert_eq!(result.unwrap(), vec![2.into()].into());
+
+        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        assert_eq!(
+            persisted.unwrap(),
+            vec![1.into()].into(),
+            "a `nodes` query over an empty input iterator must not wipe a previously saved `let`"
+        );
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_query_session_nodes_over_empty_input_preserves_var_binding() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+
+        engine
+            .eval("var x = 1", vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval("nodes | x + 1", std::iter::empty());
+        assert_eq!(result.unwrap(), vec![2.into()].into());
+
+        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        assert_eq!(
+            persisted.unwrap(),
+            vec![1.into()].into(),
+            "a `nodes` query over an empty input iterator must not wipe a previously saved `var`"
+        );
     }
 
     #[cfg(feature = "tarn")]
@@ -1844,6 +1913,104 @@ mod tests {
 
         let second = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(second.values(), first.values());
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_eval_compiled_vm_recompiles_after_search_paths_change_on_same_engine() {
+        use crate::RuntimeValue;
+
+        let first_dir = tempfile::tempdir().unwrap();
+        let second_dir = tempfile::tempdir().unwrap();
+        std::fs::write(first_dir.path().join("greeting.mq"), r#"def greeting(): "first";"#).unwrap();
+        std::fs::write(second_dir.path().join("greeting.mq"), r#"def greeting(): "second";"#).unwrap();
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![first_dir.path().to_owned()]);
+        let compiled = engine.compile(r#"include "greeting" | greeting()"#).unwrap();
+        assert_eq!(
+            engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::String(Shared::new("first".to_string()))]
+        );
+
+        // Same CompiledProgram, same engine — only search paths changed.
+        engine.set_search_paths(vec![second_dir.path().to_owned()]);
+        assert_eq!(
+            engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::String(Shared::new("second".to_string()))],
+            "changing search paths on the same engine must invalidate cached VM bytecode"
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_module_resolution_setters_invalidate_module_cache_key() {
+        let mut engine = DefaultEngine::default();
+
+        let key = engine.vm.module_cache_key;
+        engine.set_search_paths(vec![]);
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_search_paths must bump the module cache key"
+        );
+
+        #[cfg(feature = "http-import-ureq")]
+        {
+            let key = engine.vm.module_cache_key;
+            engine.set_http_import_enabled(true);
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "set_http_import_enabled must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.set_http_allowed_domains(vec!["example.invalid".to_string()]);
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "set_http_allowed_domains must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.set_lockfile_enabled(false);
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "set_lockfile_enabled must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.set_lockfile_frozen(true);
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "set_lockfile_frozen must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.set_lockfile_path(std::path::PathBuf::from("custom/mq.lock"));
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "set_lockfile_path must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.clear_http_cache().unwrap();
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "clear_http_cache must bump the module cache key"
+            );
+
+            let key = engine.vm.module_cache_key;
+            engine.clear_http_cache_all().unwrap();
+            assert_ne!(
+                engine.vm.module_cache_key, key,
+                "clear_http_cache_all must bump the module cache key"
+            );
+        }
     }
 
     #[cfg(feature = "tarn")]

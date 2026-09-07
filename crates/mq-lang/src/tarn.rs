@@ -464,6 +464,12 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             Err(e) => panic!("Failed to load builtin module: {e}"),
         }
     }
+
+    /// Call after any change to module resolution/trust config, so stale `CachedProgram`s aren't reused.
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) fn invalidate_module_cache(&mut self) {
+        self.module_cache_key = next_vm_module_cache_key();
+    }
 }
 
 /// Engine-provided services needed to compile and execute a VM program.
@@ -990,6 +996,21 @@ fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -
     names
 }
 
+/// Fallback locals for the aggregate program when no pre-`nodes` run captured any bindings,
+/// so an empty input iterator doesn't wipe saved session values.
+fn aggregate_seed_values(seed: &SessionSeed, before_names: &[crate::Ident]) -> Vec<RuntimeValue> {
+    before_names
+        .iter()
+        .map(|name| {
+            seed.seed_names
+                .iter()
+                .position(|seed_name| seed_name == name)
+                .map(|slot| seed.seed_values[slot].clone())
+                .unwrap_or(RuntimeValue::None)
+        })
+        .collect()
+}
+
 /// Runs a `nodes` program while preserving bindings from a query session.
 fn run_nodes_with_session<I, R: ModuleResolver>(
     before: ProgramSlice<'_>,
@@ -1055,7 +1076,11 @@ where
         global_names,
         &context.preresolved_module_vars,
     )?;
-    let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
+    let aggregate_values = if before_bindings.is_empty() {
+        aggregate_seed_values(&seed, &before_names)
+    } else {
+        before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>()
+    };
     let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
@@ -1224,7 +1249,11 @@ where
         &engine.preresolved_module_vars,
     )?;
     hook.set_sources(aggregate_compiled.debug_sources.clone());
-    let aggregate_values = before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>();
+    let aggregate_values = if before_bindings.is_empty() {
+        aggregate_seed_values(&seed, &before_names)
+    } else {
+        before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>()
+    };
     let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
