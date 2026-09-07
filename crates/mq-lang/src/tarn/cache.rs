@@ -9,6 +9,7 @@ use super::{
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
+use crate::tarn::VmEnv;
 use crate::{ModuleLoader, ModuleResolver, Shared, SharedCell};
 use std::fmt;
 use std::time::Instant;
@@ -149,9 +150,15 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
     configuration: &[engine::VmModulePrelude],
     global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<bool, Error> {
-    let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
-    global_names.sort_unstable();
-    if compiled.configuration != configuration || compiled.global_names != global_names {
+    // `run_cached` reaches this check for every `eval_compiled` call. The compiled names are
+    // already sorted, so avoid allocating and sorting another list just to compare a set of
+    // names. Values intentionally do not participate: `GetExternalGlobal` reads the current
+    // value from the per-evaluation environment.
+    let globals_match = compiled.global_names.len() == global_bindings.len()
+        && global_bindings
+            .iter()
+            .all(|(name, _)| compiled.global_names.binary_search(name).is_ok());
+    if compiled.configuration != configuration || !globals_match {
         return Ok(false);
     }
     let before_current = module_loader
@@ -186,25 +193,28 @@ where
     // duration of its evaluation and restores it on every exit path.
     let mut pools = take_execution_pools(compiled);
     let result = (|| {
+        // Globals do not change within one `eval_compiled` invocation. Reusing this map across
+        // inputs avoids rebuilding and rehashing it for every row in line-oriented callers.
+        let env = VmEnv::from_bindings(global_bindings);
         let mut values = Vec::new();
         let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
         for input in inputs {
             let result = run_for_input(input, |value| {
                 let execution_pools = std::mem::take(&mut pools);
                 if compiled.let_names.is_empty() {
-                    let (result, next_pools) = interpreter::run_with_globals_and_pools(
+                    let (result, next_pools) = interpreter::run_with_env_and_pools(
                         &compiled.program,
                         value,
                         host_functions,
                         remaining_timeout(deadline),
                         max_call_stack_depth,
-                        global_bindings,
+                        &env,
                         execution_pools,
                     );
                     pools = next_pools;
                     result
                 } else {
-                    let (result, captured, next_pools) = interpreter::run_with_globals_capturing_locals(
+                    let (result, captured, next_pools) = interpreter::run_with_env_capturing_locals(
                         &compiled.program,
                         value,
                         &[],
@@ -214,6 +224,7 @@ where
                             max_call_stack_depth,
                             global_bindings,
                         },
+                        &env,
                         &compiled.let_names,
                         execution_pools,
                     );
@@ -234,20 +245,20 @@ where
         };
         let input = RuntimeValue::Array(Shared::new(values));
         let result = if compiled.let_names.is_empty() {
-            let (result, next_pools) = interpreter::run_with_globals_and_pools(
+            let (result, next_pools) = interpreter::run_with_env_and_pools(
                 after,
                 input,
                 host_functions,
                 remaining_timeout(deadline),
                 max_call_stack_depth,
-                global_bindings,
+                &env,
                 std::mem::take(&mut pools),
             );
             pools = next_pools;
             result
         } else {
             let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
-            let (result, _, next_pools) = interpreter::run_with_globals_capturing_locals(
+            let (result, _, next_pools) = interpreter::run_with_env_capturing_locals(
                 after,
                 input,
                 &let_values,
@@ -257,6 +268,7 @@ where
                     max_call_stack_depth,
                     global_bindings,
                 },
+                &env,
                 &[],
                 std::mem::take(&mut pools),
             );

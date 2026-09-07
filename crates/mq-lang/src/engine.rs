@@ -2440,6 +2440,35 @@ mod tests {
         assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
     }
 
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_vm_reuses_current_globals_for_every_input() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.define_value("offset", RuntimeValue::Number(40.into()));
+        let compiled = engine.compile(". + offset").unwrap();
+
+        let values = engine
+            .eval_compiled(
+                &compiled,
+                [RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+            )
+            .unwrap();
+        assert_eq!(
+            values.values(),
+            &[RuntimeValue::Number(41.into()), RuntimeValue::Number(42.into())]
+        );
+
+        // Values are deliberately not part of the bytecode-cache key. Each batch must instead
+        // read a single, current global environment for all of its inputs.
+        engine.define_value("offset", RuntimeValue::Number(100.into()));
+        let values = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::Number(1.into())))
+            .unwrap();
+        assert_eq!(values.values(), &[RuntimeValue::Number(101.into())]);
+    }
+
     #[cfg(feature = "tarn")]
     #[test]
     fn test_eval_compiled_vm_resolves_a_local_file_import() {

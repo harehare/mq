@@ -212,8 +212,10 @@ where
     F: FnMut(RuntimeValue) -> Result<RuntimeValue, interpreter::VmError>,
 {
     match input {
-        RuntimeValue::Markdown(node, _) => node
-            .map_values(
+        // `input` owns its shared node. In the common case it is uniquely held, so move the
+        // Markdown tree into the transform instead of cloning it before walking every value.
+        RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node)
+            .map_values_into(
                 &mut |child_node: &mq_markdown::Node| -> Result<mq_markdown::Node, interpreter::VmError> {
                     let value = run_one(RuntimeValue::new_markdown(child_node.clone()))?;
                     Ok(markdown_child_result(value, child_node))

@@ -59,7 +59,8 @@ pub(super) fn call_stack_value(
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
         // `drain` (rather than `into_iter`) leaves `args`'s allocation intact for the
         // caller to recycle, same as every other exit path below.
-        let arg_values: Vec<RuntimeValue> = args.drain(..).map(|a| into_runtime_value(a, chunks)).collect();
+        // `Args` stores the common one- and two-argument cases inline, unlike `Vec`.
+        let arg_values: Args = args.drain(..).map(|a| into_runtime_value(a, chunks)).collect();
         let self_value = current_self(call_site.locals, chunks);
         let result = call_builtin(
             &ident,
@@ -76,9 +77,14 @@ pub(super) fn call_stack_value(
         StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
         StackValue::Value(RuntimeValue::VmClosure(vc)) => {
             if !vc.bound_args.is_empty() {
-                let mut combined: Vec<StackValue> = vc.bound_args.iter().cloned().map(StackValue::Value).collect();
+                // `args` is a caller-owned pooled buffer. Prepend into a second pooled buffer,
+                // then immediately return the emptied original one instead of dropping its
+                // allocation on every `partial` call.
+                let mut combined = execution.limits.take_stack();
+                combined.extend(vc.bound_args.iter().cloned().map(StackValue::Value));
                 combined.append(args);
-                *args = combined;
+                std::mem::swap(args, &mut combined);
+                execution.limits.recycle_stack(combined);
             }
             (&vc.chunks, vc.chunk_index, &vc.upvalues)
         }
@@ -89,10 +95,10 @@ pub(super) fn call_stack_value(
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    execution
-        .limits
-        .enter_call()
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+    if let Err(e) = execution.limits.enter_call() {
+        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
+        return Err(locate(call_site.chunk, call_site.ip, e));
+    }
     if let Err(e) = bind_params(
         &callee_chunk.param_shape,
         args,
@@ -108,6 +114,7 @@ pub(super) fn call_stack_value(
         debug,
     ) {
         execution.limits.exit_call();
+        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
         return Err(locate(call_site.chunk, call_site.ip, e));
     }
     #[cfg(feature = "debugger")]
@@ -194,6 +201,7 @@ pub(super) fn call_fixed_closure_from_stack(
     };
     for offset in (0..argc).rev() {
         let Some(value) = stack.pop() else {
+            recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
             return Err(locate(
                 call_site.chunk,
                 call_site.ip,
@@ -203,6 +211,7 @@ pub(super) fn call_fixed_closure_from_stack(
         callee_locals.set((first_arg_slot + offset) as u16, value);
     }
     if call.remove_callee && stack.pop().is_none() {
+        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
         return Err(locate(
             call_site.chunk,
             call_site.ip,
@@ -210,6 +219,10 @@ pub(super) fn call_fixed_closure_from_stack(
         ));
     }
 
+    if let Err(e) = execution.limits.enter_call() {
+        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
+        return Err(locate(call_site.chunk, call_site.ip, e));
+    }
     #[cfg(feature = "debugger")]
     let caller_node = debug.current_node.clone();
     #[cfg(feature = "debugger")]
@@ -219,10 +232,6 @@ pub(super) fn call_fixed_closure_from_stack(
     } else {
         false
     };
-    execution
-        .limits
-        .enter_call()
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
     let call_result = run_chunk(
         closure.chunk_index,
         chunks,
@@ -297,7 +306,14 @@ fn bind_params(
                         .limits
                         .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
                     default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
-                    context.limits.enter_call()?;
+                    if let Err(error) = context.limits.enter_call() {
+                        recycle_locals_if_possible(
+                            context.limits,
+                            default_locals,
+                            default_chunk_ref.captures_local_slots(),
+                        );
+                        return Err(error);
+                    }
                     let result = {
                         let mut execution = ExecutionContext {
                             env: context.env,
@@ -321,6 +337,13 @@ fn bind_params(
         }
     }
     Ok(())
+}
+
+/// Returns a frame to the allocation pool when no closure can retain its local cells.
+fn recycle_locals_if_possible(limits: &mut ExecutionLimits, locals: Locals, captures_local_slots: bool) {
+    if !captures_local_slots {
+        limits.recycle_locals(locals);
+    }
 }
 
 fn bind_fixed_required_params(

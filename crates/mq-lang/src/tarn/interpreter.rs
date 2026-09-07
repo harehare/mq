@@ -125,21 +125,47 @@ pub(crate) fn run_with_globals_and_pools(
     global_bindings: &[(Ident, RuntimeValue)],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
+    let env = VmEnv::from_bindings(global_bindings);
+    run_with_env_and_pools(
+        compiled,
+        input,
+        host_functions,
+        timeout,
+        max_call_stack_depth,
+        &env,
+        pools,
+    )
+}
+
+/// Runs a compiled program with a prebuilt external environment and reusable execution pools.
+///
+/// Callers that evaluate multiple inputs with the same globals should construct the environment
+/// once and use this entry point to avoid rebuilding its lookup table per input.
+pub(crate) fn run_with_env_and_pools(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    max_call_stack_depth: u32,
+    env: &VmEnv,
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
         hook: None,
         call_stack: Vec::new(),
         current_node: None,
     };
-    run_impl(
+    run_impl_with_env(
         compiled,
         input,
         RunOptions {
             host_functions,
             timeout,
             max_call_stack_depth,
-            global_bindings,
+            global_bindings: &[],
         },
+        env,
         pools,
         #[cfg(feature = "debugger")]
         &mut debug,
@@ -155,17 +181,32 @@ pub(crate) fn run_with_globals_capturing_locals(
     capture_names: &[Ident],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
+    let env = VmEnv::from_bindings(options.global_bindings);
+    run_with_env_capturing_locals(compiled, input, bindings, options, &env, capture_names, pools)
+}
+
+/// Runs with a prebuilt external environment and captures selected locals.
+pub(crate) fn run_with_env_capturing_locals(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    bindings: &[RuntimeValue],
+    options: RunOptions<'_>,
+    env: &VmEnv,
+    capture_names: &[Ident],
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
         hook: None,
         call_stack: Vec::new(),
         current_node: None,
     };
-    run_impl_capturing_locals(
+    run_impl_capturing_locals_with_env(
         compiled,
         input,
         bindings,
         options,
+        env,
         pools,
         capture_names,
         #[cfg(feature = "debugger")]
@@ -219,11 +260,13 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
         call_stack: Vec::new(),
         current_node: None,
     };
-    let (result, captured, _) = run_impl_capturing_locals(
+    let env = VmEnv::from_bindings(options.global_bindings);
+    let (result, captured, _) = run_impl_capturing_locals_with_env(
         compiled,
         input,
         bindings,
         options,
+        &env,
         ExecutionPools::default(),
         capture_names,
         &mut debug,
@@ -231,10 +274,31 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
     (result, captured)
 }
 
+#[cfg(feature = "debugger")]
 fn run_impl(
     compiled: &CompiledProgram,
     input: RuntimeValue,
     options: RunOptions<'_>,
+    pools: ExecutionPools,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> (VmResult<RuntimeValue>, ExecutionPools) {
+    let env = VmEnv::from_bindings(options.global_bindings);
+    run_impl_with_env(
+        compiled,
+        input,
+        options,
+        &env,
+        pools,
+        #[cfg(feature = "debugger")]
+        debug,
+    )
+}
+
+fn run_impl_with_env(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    options: RunOptions<'_>,
+    env: &VmEnv,
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
@@ -243,6 +307,7 @@ fn run_impl(
         input,
         &[],
         options,
+        env,
         pools,
         #[cfg(feature = "debugger")]
         debug,
@@ -262,6 +327,7 @@ pub(crate) fn run_debug_expression(
         call_stack: Vec::new(),
         current_node: None,
     };
+    let env = VmEnv::from_bindings(&[]);
     run_impl_with_bindings(
         compiled,
         input,
@@ -272,6 +338,7 @@ pub(crate) fn run_debug_expression(
             max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             global_bindings: &[],
         },
+        &env,
         ExecutionPools::default(),
         &mut debug,
     )
@@ -283,10 +350,10 @@ fn run_impl_with_bindings(
     input: RuntimeValue,
     initial_bindings: &[RuntimeValue],
     options: RunOptions<'_>,
+    env: &VmEnv,
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let top_level_chunk = &compiled.chunks[0];
     let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
@@ -302,7 +369,7 @@ fn run_impl_with_bindings(
         locals.set(slot as u16 + 1, StackValue::Value(value));
     }
     let mut execution = ExecutionContext {
-        env: &env,
+        env,
         limits: &mut limits,
         host_functions: options.host_functions,
     };
@@ -321,16 +388,17 @@ fn run_impl_with_bindings(
 
 /// Like [`run_impl_with_bindings`], but captures `capture_names`' final slot values. Bypasses
 /// `run_chunk`'s pooling wrapper to keep `locals` readable; not for use on a hot path.
-fn run_impl_capturing_locals(
+#[allow(clippy::too_many_arguments)] // The separate pools, capture list, and debugger are independent services.
+fn run_impl_capturing_locals_with_env(
     compiled: &CompiledProgram,
     input: RuntimeValue,
     bindings: &[RuntimeValue],
     options: RunOptions<'_>,
+    env: &VmEnv,
     pools: ExecutionPools,
     capture_names: &[Ident],
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let chunks = &compiled.chunks;
     let top_level_chunk = &chunks[0];
@@ -351,7 +419,7 @@ fn run_impl_capturing_locals(
 
     let mut stack = limits.take_stack();
     let mut execution = ExecutionContext {
-        env: &env,
+        env,
         limits: &mut limits,
         host_functions: options.host_functions,
     };

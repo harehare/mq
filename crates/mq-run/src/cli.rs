@@ -2361,8 +2361,28 @@ impl Cli {
         }
         let query = self.get_query()?;
         let mut engine = self.create_engine()?;
+        // A stream contains many independent inputs but normally only one effective query per
+        // file. Keep the most recent program so the hot per-line path skips parsing,
+        // optimization, and (for Tarn) bytecode compilation. The effective query includes an
+        // auto-format prefix, so switching files can safely replace the cached program.
+        let mut compiled_query: Option<(String, mq_lang::CompiledProgram)> = None;
 
-        self.process_lines(|file, line| self.execute(&mut engine, &query, &file.cloned(), &line.into()))
+        self.process_lines(|file, line| {
+            let file = file.cloned();
+            let effective_query = self.effective_query(&query, &file);
+            if compiled_query
+                .as_ref()
+                .is_none_or(|(cached_query, _)| cached_query != &effective_query)
+            {
+                let program = engine.compile(&effective_query).map_err(|error| *error)?;
+                self.dump_compiled_bytecode(&mut engine, &program)?;
+                compiled_query = Some((effective_query, program));
+            }
+            let (_, program) = compiled_query
+                .as_ref()
+                .ok_or_else(|| miette!("streaming query compilation did not produce a program"))?;
+            self.execute_compiled(&mut engine, program, &file, &line.into())
+        })
     }
 
     fn process_lines<F>(&self, mut process: F) -> miette::Result<()>

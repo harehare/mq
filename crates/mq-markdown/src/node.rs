@@ -917,12 +917,25 @@ impl Display for Node {
 }
 
 impl Node {
+    /// Maps this node and its fragment descendants, cloning the input tree first.
     pub fn map_values<E, F>(&self, f: &mut F) -> Result<Node, E>
     where
         E: std::error::Error,
         F: FnMut(&Node) -> Result<Node, E>,
     {
-        Self::_map_values(self.clone(), f)
+        self.clone().map_values_into(f)
+    }
+
+    /// Maps this node and its fragment descendants, consuming the input tree.
+    ///
+    /// Prefer this over [`Self::map_values`] when the caller owns the node and does not need to
+    /// retain an unchanged copy.
+    pub fn map_values_into<E, F>(self, f: &mut F) -> Result<Node, E>
+    where
+        E: std::error::Error,
+        F: FnMut(&Node) -> Result<Node, E>,
+    {
+        Self::_map_values(self, f)
     }
 
     fn _map_values<E, F>(node: Node, f: &mut F) -> Result<Node, E>
@@ -3876,6 +3889,30 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use rstest::rstest;
+
+    #[test]
+    fn map_values_into_transforms_owned_fragments() {
+        let node = Node::Fragment(Fragment {
+            values: vec![Node::Text(Text {
+                value: "before".to_string(),
+                position: None,
+            })],
+        });
+
+        let mapped = node
+            .map_values_into(&mut |node| -> Result<Node, std::io::Error> {
+                Ok(match node {
+                    Node::Text(text) => Node::Text(Text {
+                        value: text.value.to_uppercase(),
+                        position: text.position.clone(),
+                    }),
+                    node => node.clone(),
+                })
+            })
+            .unwrap();
+
+        assert_eq!(mapped.to_string(), "BEFORE");
+    }
 
     #[rstest]
     #[case::text(Node::Text(Text{value: "".to_string(), position: None}),

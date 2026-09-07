@@ -93,6 +93,30 @@ fn eval_compiled_select_h(bencher: divan::Bencher) {
     bench_compiled(bencher, &mut engine, ".h1", || input.clone());
 }
 
+/// Measures a fresh Markdown input, as supplied by line-oriented callers. The node is uniquely
+/// owned at VM entry, so this catches unnecessary whole-tree clones during tree walking.
+#[divan::bench]
+fn eval_compiled_owned_markdown_tree(bencher: divan::Bencher) {
+    fn input() -> mq_lang::RuntimeValue {
+        mq_lang::RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment {
+            values: (0..1_000)
+                .map(|index| {
+                    mq_markdown::Node::Text(mq_markdown::Text {
+                        value: index.to_string(),
+                        position: None,
+                    })
+                })
+                .collect(),
+        }))
+    }
+
+    let mut engine = mq_lang::DefaultEngine::default();
+    let compiled = engine.compile(".").unwrap();
+    engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
+
+    bencher.bench_local(|| engine.eval_compiled(&compiled, std::iter::once(input())).unwrap());
+}
+
 /// Measures the API pattern used by line-oriented callers: one compiled query evaluated once
 /// per input value, rather than one call over a batch of inputs.
 #[divan::bench]
