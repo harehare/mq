@@ -360,10 +360,33 @@ impl Repl {
         }
     }
 
+    /// Label for the currently compiled execution engine, shown next to the
+    /// version so it's clear at a glance which binary is running. `None` for
+    /// the default tree-walking interpreter; the VM is opt-in behind the
+    /// `tarn` feature and slated for removal, so it's called out explicitly.
+    fn engine_label() -> Option<&'static str> {
+        #[cfg(feature = "tarn")]
+        {
+            Some("tarn")
+        }
+        #[cfg(not(feature = "tarn"))]
+        {
+            None
+        }
+    }
+
     fn print_welcome() {
         let version = mq_lang::DefaultEngine::version();
+        let engine_suffix = Self::engine_label()
+            .map(|label| format!(" ({label})"))
+            .unwrap_or_default();
         let lines = [
-            format!("{} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}"))),
+            format!(
+                "{} {}{}",
+                logo_primary("mq").bold(),
+                text_muted(&format!("v{version}")),
+                text_muted(&engine_suffix)
+            ),
             text_muted("Query. Filter. Transform Markdown.").to_string(),
             format!("Type {} to see available commands.", logo_primary("/help")),
         ];
