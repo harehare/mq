@@ -1320,6 +1320,26 @@ fn timeout_enabled_execution_still_checks_the_deadline() {
     ));
 }
 
+#[test]
+fn expired_timeout_rejects_a_short_query_before_it_runs() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("1", Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run_full(
+        &program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        Some(std::time::Duration::ZERO),
+        token_arena,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        Error::Vm(interpreter::VmError::Located(inner, _))
+            if matches!(*inner, interpreter::VmError::Timeout(_))
+    ));
+}
+
 #[cfg(feature = "debugger")]
 #[test]
 fn debugger_metadata_tracks_boundaries_and_static_slots() {
@@ -1873,6 +1893,24 @@ fn cached_program_restores_execution_pools_after_each_run() {
                 .is_some_and(|cached| cached.has_available_execution_pools())
         );
     }
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn unchanged_engine_globals_reuse_their_vm_snapshot() {
+    let state = VmState::<DefaultModuleResolver>::default();
+    state.define("answer".into(), RuntimeValue::Number(42.into()));
+
+    let (first, first_key) = state.global_bindings_snapshot_with_key();
+    let (second, second_key) = state.global_bindings_snapshot_with_key();
+    assert!(Shared::ptr_eq(&first, &second));
+    assert_eq!(first_key, second_key);
+
+    state.define("answer".into(), RuntimeValue::Number(43.into()));
+    let (updated, updated_key) = state.global_bindings_snapshot_with_key();
+    assert!(!Shared::ptr_eq(&first, &updated));
+    assert_ne!(first_key, updated_key);
+    assert_eq!(updated.as_ref(), &[("answer".into(), RuntimeValue::Number(43.into()))]);
 }
 
 #[cfg(not(feature = "debugger"))]

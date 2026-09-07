@@ -36,7 +36,10 @@ impl ExecutionLimits {
         Self {
             deadline: timeout.map(|t| Instant::now() + t),
             timeout,
-            step: 0,
+            // Check before the first instruction as well as at the regular interval. Without
+            // this, a zero or already-expired timeout could still run a short query to
+            // completion because it never reached `TIMEOUT_CHECK_INTERVAL` instructions.
+            step: TIMEOUT_CHECK_INTERVAL - 1,
             call_depth: 0,
             max_call_stack_depth,
             pools,

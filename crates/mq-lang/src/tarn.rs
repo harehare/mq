@@ -278,6 +278,9 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
 #[cfg_attr(feature = "debugger", derive(Default))]
 struct GlobalBindings {
     values: FxHashMap<crate::Ident, RuntimeValue>,
+    /// Immutable view handed to one VM evaluation. Rebuilding this only when a binding changes
+    /// avoids cloning every global value for each one-input `eval_compiled` call.
+    snapshot: Shared<Vec<(crate::Ident, RuntimeValue)>>,
     #[cfg(not(feature = "debugger"))]
     source: u64,
     revision: u64,
@@ -291,9 +294,19 @@ impl Default for GlobalBindings {
     fn default() -> Self {
         Self {
             values: FxHashMap::default(),
+            snapshot: Shared::new(Vec::new()),
             source: NEXT_GLOBAL_BINDINGS_SOURCE.fetch_add(1, Ordering::Relaxed),
             revision: 0,
         }
+    }
+}
+
+impl GlobalBindings {
+    /// Replaces one binding and publishes the immutable view used by VM evaluations.
+    fn insert(&mut self, name: crate::Ident, value: RuntimeValue) {
+        self.values.insert(name, value);
+        self.snapshot = Shared::new(self.values.iter().map(|(name, value)| (*name, value.clone())).collect());
+        self.revision = self.revision.wrapping_add(1);
     }
 }
 
@@ -380,14 +393,12 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
         #[cfg(not(feature = "sync"))]
         {
             let mut bindings = self.global_bindings.borrow_mut();
-            bindings.values.insert(name, value);
-            bindings.revision = bindings.revision.wrapping_add(1);
+            bindings.insert(name, value);
         }
         #[cfg(feature = "sync")]
         {
             let mut bindings = self.global_bindings.write().unwrap();
-            bindings.values.insert(name, value);
-            bindings.revision = bindings.revision.wrapping_add(1);
+            bindings.insert(name, value);
         }
     }
 
@@ -405,7 +416,9 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     }
 
     #[cfg(not(feature = "debugger"))]
-    pub(crate) fn global_bindings_snapshot_with_key(&self) -> (Vec<(crate::Ident, RuntimeValue)>, VmEnvCacheKey) {
+    pub(crate) fn global_bindings_snapshot_with_key(
+        &self,
+    ) -> (Shared<Vec<(crate::Ident, RuntimeValue)>>, VmEnvCacheKey) {
         #[cfg(not(feature = "sync"))]
         let bindings = self.global_bindings.borrow();
         #[cfg(feature = "sync")]
@@ -414,12 +427,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             source: bindings.source,
             revision: bindings.revision,
         };
-        let values = bindings
-            .values
-            .iter()
-            .map(|(ident, value)| (*ident, value.clone()))
-            .collect();
-        (values, key)
+        (Shared::clone(&bindings.snapshot), key)
     }
 
     /// Warms this VM's own builtin.mq parse cache, independent of `Evaluator`.
