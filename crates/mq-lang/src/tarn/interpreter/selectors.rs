@@ -60,26 +60,29 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
             if let Selector::List(Some(idx), None) = selector {
                 return values.get(*idx).cloned().unwrap_or(RuntimeValue::None);
             }
-            let values = values
-                .iter()
-                .flat_map(|v| match v {
+            // The previous `flat_map` implementation created a one-element `Vec` for every
+            // non-array result. Large input arrays therefore performed one allocation per
+            // element. Append each mapped result directly to the final buffer instead.
+            let mut mapped = Vec::with_capacity(values.len());
+            for value in values.iter() {
+                match value {
                     RuntimeValue::Markdown(node, _) => match eval_markdown_selector(node, selector, args) {
-                        RuntimeValue::Array(arr) => Shared::unwrap_or_clone(arr),
-                        other => vec![other],
+                        RuntimeValue::Array(array) => mapped.extend(Shared::unwrap_or_clone(array)),
+                        other => mapped.push(other),
                     },
                     _ if matches!(selector, Selector::List(None, None)) && args.is_none_or(<[_]>::is_empty) => {
-                        vec![v.clone()]
+                        mapped.push(value.clone());
                     }
-                    RuntimeValue::Dict(_) => match eval_selector_expr_impl(v, selector, args) {
-                        RuntimeValue::Array(arr) if args.is_none() && matches!(selector, Selector::Recursive) => {
-                            Shared::unwrap_or_clone(arr)
+                    RuntimeValue::Dict(_) => match eval_selector_expr_impl(value, selector, args) {
+                        RuntimeValue::Array(array) if args.is_none() && matches!(selector, Selector::Recursive) => {
+                            mapped.extend(Shared::unwrap_or_clone(array));
                         }
-                        other => vec![other],
+                        other => mapped.push(other),
                     },
-                    _ => vec![RuntimeValue::None],
-                })
-                .collect::<Vec<_>>();
-            RuntimeValue::Array(Shared::new(values))
+                    _ => mapped.push(RuntimeValue::None),
+                }
+            }
+            RuntimeValue::Array(Shared::new(mapped))
         }
         RuntimeValue::Dict(map) => {
             if args.is_none() && matches!(selector, Selector::List(None, None)) {
@@ -161,4 +164,44 @@ fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
         _ => {}
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn list_selector_maps_an_array_without_changing_element_order() {
+        let input = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::String(Shared::new("two".to_string())),
+            RuntimeValue::None,
+        ]));
+
+        assert_eq!(
+            eval_selector_expr(&input, &Selector::List(None, None)),
+            input,
+            "an array list selector must preserve every element in order"
+        );
+    }
+
+    #[test]
+    fn recursive_selector_flattens_dict_results_inside_an_array() {
+        let dict = RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+            Ident::new("key"),
+            RuntimeValue::Number(1.into()),
+        )])));
+        let input = RuntimeValue::Array(Shared::new(vec![dict.clone(), RuntimeValue::Number(2.into())]));
+
+        assert_eq!(
+            eval_selector_expr(&input, &Selector::Recursive),
+            RuntimeValue::Array(Shared::new(vec![
+                dict,
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::None
+            ])),
+            "recursive dict results must remain flattened when selected through an array"
+        );
+    }
 }
