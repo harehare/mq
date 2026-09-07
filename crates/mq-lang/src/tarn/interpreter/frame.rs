@@ -142,6 +142,14 @@ impl ExecutionLimits {
     }
 }
 
+#[cfg(test)]
+impl ExecutionPools {
+    /// Returns the number of reusable local frames retained by this pool.
+    pub(crate) fn pooled_local_frame_count(&self) -> usize {
+        self.local_pool.iter().map(Vec::len).sum()
+    }
+}
+
 fn fresh_locals(count: usize, captures: bool) -> Locals {
     if captures {
         Locals::boxed(count)

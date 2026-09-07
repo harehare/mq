@@ -779,7 +779,6 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         &cached,
                         &self.engine.module_loader,
                         self.module_prelude,
-                        self.engine.global_bindings,
                         self.environment_key,
                     )? =>
                 {

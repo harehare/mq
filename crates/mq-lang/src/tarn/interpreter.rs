@@ -356,10 +356,13 @@ fn run_impl_with_bindings(
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let top_level_chunk = &compiled.chunks[0];
-    let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
+    let captures_local_slots = top_level_chunk.captures_local_slots();
+    let locals = limits.take_locals(top_level_chunk.local_count, captures_local_slots);
     locals.set(SELF_SLOT, StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
-        limits.recycle_locals(locals);
+        if !captures_local_slots {
+            limits.recycle_locals(locals);
+        }
         return (
             Err(VmError::Corrupt("too many initial debug bindings")),
             limits.into_pools(),
@@ -406,7 +409,9 @@ fn run_impl_capturing_locals_with_env(
     let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
     locals.set(SELF_SLOT, StackValue::Value(input));
     if bindings.len() + 1 > locals.len() {
-        limits.recycle_locals(locals);
+        if reusable_locals {
+            limits.recycle_locals(locals);
+        }
         return (
             Err(VmError::Corrupt("too many initial bindings")),
             Vec::new(),
@@ -1190,7 +1195,12 @@ fn handle_try_catch(
         .limits
         .take_locals(try_chunk.local_count, try_chunk.captures_local_slots());
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
-    execution.limits.enter_call().map_err(|e| locate(chunk, ip, e))?;
+    if let Err(error) = execution.limits.enter_call() {
+        if !try_chunk.captures_local_slots() {
+            execution.limits.recycle_locals(try_locals);
+        }
+        return Err(locate(chunk, ip, error));
+    }
     let try_result = run_chunk(
         try_closure.chunk_index,
         chunks,
@@ -1227,7 +1237,12 @@ fn handle_try_catch(
             if args.has_binder {
                 catch_locals.set(1, StackValue::Value(error_dict(&e)));
             }
-            execution.limits.enter_call().map_err(|e| locate(chunk, ip, e))?;
+            if let Err(error) = execution.limits.enter_call() {
+                if !catch_chunk.captures_local_slots() {
+                    execution.limits.recycle_locals(catch_locals);
+                }
+                return Err(locate(chunk, ip, error));
+            }
             let catch_result = run_chunk(
                 catch_closure.chunk_index,
                 chunks,

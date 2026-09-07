@@ -1,3 +1,4 @@
+use super::interpreter::ExecutionPools;
 use super::*;
 #[cfg(not(feature = "tarn"))]
 use crate::Selector;
@@ -1338,6 +1339,29 @@ fn expired_timeout_rejects_a_short_query_before_it_runs() {
         Error::Vm(interpreter::VmError::Located(inner, _))
             if matches!(*inner, interpreter::VmError::Timeout(_))
     ));
+}
+
+#[test]
+fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("try: 1 catch(e): 2;", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    let (result, pools) = interpreter::run_with_globals_and_pools(
+        &compiled,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        0,
+        &[],
+        ExecutionPools::default(),
+    );
+
+    assert!(
+        matches!(result, Err(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::RecursionError(0)))
+    );
+    // The top-level frame and the try frame both have no captures and are reusable.
+    assert_eq!(pools.pooled_local_frame_count(), 2);
 }
 
 #[cfg(feature = "debugger")]

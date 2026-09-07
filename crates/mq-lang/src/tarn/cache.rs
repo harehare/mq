@@ -19,7 +19,6 @@ pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
     after: Option<compiler::CompiledProgram>,
     let_names: Vec<crate::Ident>,
-    global_names: Vec<crate::Ident>,
     configuration: Vec<engine::VmModulePrelude>,
     /// Global snapshot used to bake module `let` initializers into constants; must still match
     /// for the cache to stay valid, since a global's value can change under the same name.
@@ -121,7 +120,6 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         program,
         after,
         let_names,
-        global_names,
         configuration,
         baked_globals_key,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
@@ -199,16 +197,11 @@ pub(super) fn cached_program_is_current<R: ModuleResolver>(
     compiled: &CachedProgram,
     module_loader: &ModuleLoader<R>,
     configuration: &[engine::VmModulePrelude],
-    global_bindings: &[(crate::Ident, RuntimeValue)],
     environment_key: VmEnvCacheKey,
 ) -> Result<bool, Error> {
-    // Names only: `GetExternalGlobal` re-reads values from the per-evaluation environment, so a
-    // plain global reference stays correct. `baked_globals_key` covers baked module-var constants.
-    let globals_match = compiled.global_names.len() == global_bindings.len()
-        && global_bindings
-            .iter()
-            .all(|(name, _)| compiled.global_names.binary_search(name).is_ok());
-    if compiled.configuration != configuration || !globals_match || compiled.baked_globals_key != environment_key {
+    // `VmEnvCacheKey` combines a process-unique bindings source with its revision. It therefore
+    // identifies both names and values without rescanning globals on every cache hit.
+    if compiled.configuration != configuration || compiled.baked_globals_key != environment_key {
         return Ok(false);
     }
     let before_current = module_loader
