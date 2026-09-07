@@ -268,8 +268,9 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
     /// Distinguishes frozen module bytecode when a `CompiledProgram` is shared by Engines.
     #[cfg(not(feature = "debugger"))]
     pub(crate) module_cache_key: VmModuleCacheKey,
-    pub(crate) session_enabled: bool,
-    pub(crate) session_bindings: Shared<crate::SharedCell<Vec<SessionBinding>>>,
+    /// `Some` once [`engine::Engine::enable_query_session`] is on; holds the captured top-level
+    /// bindings carried from one `eval()` call to the next.
+    pub(crate) session: Option<Shared<crate::SharedCell<Vec<SessionBinding>>>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<crate::SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
@@ -351,8 +352,7 @@ impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
             global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
-            session_enabled: false,
-            session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
+            session: None,
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(crate::SharedCell::new(Debugger::new())),
@@ -375,8 +375,7 @@ impl<T: ModuleResolver, IO: Io> Clone for VmState<T, IO> {
             // The loader is cloned rather than shared, so its frozen modules need a fresh key.
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
-            session_enabled: self.session_enabled,
-            session_bindings: Shared::clone(&self.session_bindings),
+            session: self.session.clone(),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -404,8 +403,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
-            session_enabled: false,
-            session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
+            session: None,
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(crate::SharedCell::new(Debugger::new())),

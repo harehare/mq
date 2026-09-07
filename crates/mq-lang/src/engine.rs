@@ -306,7 +306,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// evaluator does this for free via its persistent `Env`.
     #[cfg(feature = "tarn")]
     pub fn enable_query_session(&mut self) {
-        self.vm.session_enabled = true;
+        self.vm.session = Some(Shared::new(SharedCell::new(Vec::new())));
     }
 
     /// Sets the [`Io`] this engine uses for file, environment-variable, and network
@@ -709,7 +709,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 token_arena: Shared::clone(&self.token_arena),
                 module_loader,
                 global_bindings: &global_bindings,
-                session: self.vm.session_enabled.then_some(&self.vm.session_bindings),
+                session: self.vm.session.as_ref(),
                 preresolved_module_vars: Default::default(),
             },
             #[cfg(not(feature = "debugger"))]
