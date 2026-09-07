@@ -153,6 +153,28 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
     });
 }
 
+/// Covers a repeated query that includes an external module. Cached Tarn bytecode freezes the
+/// module source for its Engine, so this measures the cache-hit path without a file read/hash.
+#[cfg(feature = "tarn")]
+#[divan::bench]
+fn eval_compiled_reused_single_input_with_external_module(bencher: divan::Bencher) {
+    let directory = tempfile::tempdir().unwrap();
+    std::fs::write(directory.path().join("constant.mq"), "def constant(): 42;").unwrap();
+
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.set_search_paths(vec![directory.path().to_owned()]);
+    let compiled = engine.compile(r#"include "constant" | constant()"#).unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+        .unwrap();
+
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+            .unwrap()
+    });
+}
+
 /// See `eval_compiled_select_h`.
 #[divan::bench]
 fn eval_compiled_string_interpolation(bencher: divan::Bencher) {

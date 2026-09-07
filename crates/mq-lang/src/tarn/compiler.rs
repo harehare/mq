@@ -7,8 +7,6 @@ use crate::ast::constants::builtins;
 use crate::ast::node::{AccessTarget, Expr, IdentWithToken, Literal, Node, Pattern, StringSegment};
 use crate::ast::{Program, node as ast};
 use crate::module::BUILTIN_FILE;
-#[cfg(not(feature = "debugger"))]
-use crate::module::ModuleDependency;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleError, ModuleLoader, ModuleResolver, TokenArena};
@@ -63,9 +61,6 @@ type CompileResult<T> = Result<T, CompileError>;
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledProgram {
     pub(crate) chunks: Shared<Vec<Chunk>>,
-    /// Source identities for every external module flattened into these chunks.
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) module_dependencies: Vec<ModuleDependency>,
     /// Source metadata captured from the same module loader that assigned every token's
     /// module ID. The debugger must not reconstruct this through a fresh loader instance.
     #[cfg(feature = "debugger")]
@@ -127,8 +122,6 @@ struct Compiler<R: ModuleResolver> {
     prune_module_functions: bool,
     /// Names called but not resolvable against the current `BuiltinPrelude`.
     unresolved_call_names: FxHashSet<crate::Ident>,
-    #[cfg(not(feature = "debugger"))]
-    module_dependencies: Vec<ModuleDependency>,
     /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
     /// Engine evaluation resolves unknown names at runtime, matching the tree walker. This
@@ -655,8 +648,6 @@ fn compile_program_impl<R: ModuleResolver>(
         module_function_roots: std::cell::OnceCell::new(),
         prune_module_functions: true,
         unresolved_call_names: FxHashSet::default(),
-        #[cfg(not(feature = "debugger"))]
-        module_dependencies: Vec::new(),
         try_depth: 0,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         or_pattern_slots: Vec::new(),
@@ -697,8 +688,6 @@ fn compile_program_impl<R: ModuleResolver>(
     Ok((
         CompiledProgram {
             chunks: Shared::new(compiler.chunks),
-            #[cfg(not(feature = "debugger"))]
-            module_dependencies: compiler.module_dependencies,
             #[cfg(feature = "debugger")]
             debug_sources,
         },
@@ -1391,8 +1380,6 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        #[cfg(not(feature = "debugger"))]
-        self.record_module_dependency(path)?;
         // Balanced with the pop below regardless of outcome: nested include/import must not
         // reach the network once we're inside a loaded module (matches the tree-walker).
         #[cfg(feature = "http-import")]
@@ -1419,18 +1406,6 @@ impl<R: ModuleResolver> Compiler<R> {
                 .map_err(CompileError::Module),
             Err(e) => Err(CompileError::Module(e)),
         }
-    }
-
-    #[cfg(not(feature = "debugger"))]
-    fn record_module_dependency(&mut self, path: &str) -> CompileResult<()> {
-        let dependency = self
-            .module_loader
-            .module_dependency(path)
-            .map_err(CompileError::Module)?;
-        if !self.module_dependencies.iter().any(|existing| existing == &dependency) {
-            self.module_dependencies.push(dependency);
-        }
-        Ok(())
     }
 
     fn predeclare_module_var_slots(&mut self, vars: &Program) {
@@ -1708,8 +1683,6 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        #[cfg(not(feature = "debugger"))]
-        self.record_module_dependency(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
 
         #[cfg(feature = "http-import")]

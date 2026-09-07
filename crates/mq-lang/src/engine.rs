@@ -714,6 +714,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             module_prelude: &self.vm_module_prelude,
             #[cfg(not(feature = "debugger"))]
             environment_key,
+            #[cfg(not(feature = "debugger"))]
+            module_cache_key: self.vm.module_cache_key,
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.vm.debugger),
             #[cfg(feature = "debugger")]
@@ -1733,7 +1735,7 @@ mod tests {
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
     #[test]
-    fn test_eval_compiled_vm_caches_external_module_bytecode_until_source_changes() {
+    fn test_eval_compiled_vm_keeps_external_module_bytecode_frozen() {
         use crate::RuntimeValue;
 
         let (temp_dir, temp_file_path) = create_file("cached_vm_module_test.mq", r#"def greeting(): "first";"#);
@@ -1765,6 +1767,39 @@ mod tests {
             .unwrap();
         assert_eq!(
             second.values(),
+            &[RuntimeValue::String(Shared::new("first".to_string()))],
+            "a cached query keeps the module source it compiled, matching the tree-walker"
+        );
+    }
+
+    #[cfg(all(feature = "tarn", not(feature = "debugger")))]
+    #[test]
+    fn test_cached_vm_does_not_share_frozen_modules_between_engines() {
+        use crate::RuntimeValue;
+
+        let first_dir = tempfile::tempdir().unwrap();
+        let second_dir = tempfile::tempdir().unwrap();
+        std::fs::write(first_dir.path().join("greeting.mq"), r#"def greeting(): "first";"#).unwrap();
+        std::fs::write(second_dir.path().join("greeting.mq"), r#"def greeting(): "second";"#).unwrap();
+
+        let mut first_engine = DefaultEngine::default();
+        first_engine.set_search_paths(vec![first_dir.path().to_owned()]);
+        let compiled = first_engine.compile(r#"include "greeting" | greeting()"#).unwrap();
+        assert_eq!(
+            first_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::String(Shared::new("first".to_string()))]
+        );
+
+        let mut second_engine = DefaultEngine::default();
+        second_engine.set_search_paths(vec![second_dir.path().to_owned()]);
+        assert_eq!(
+            second_engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
             &[RuntimeValue::String(Shared::new("second".to_string()))]
         );
     }

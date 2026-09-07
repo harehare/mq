@@ -9,8 +9,8 @@ use super::{
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::tarn::{VmEnv, VmEnvCacheKey};
-use crate::{ModuleLoader, ModuleResolver, Shared, SharedCell};
+use crate::tarn::{VmEnv, VmEnvCacheKey, VmModuleCacheKey};
+use crate::{ModuleResolver, Shared, SharedCell};
 use std::fmt;
 use std::time::Instant;
 
@@ -23,6 +23,8 @@ pub(crate) struct CachedProgram {
     /// Global snapshot used to bake module `let` initializers into constants; must still match
     /// for the cache to stay valid, since a global's value can change under the same name.
     baked_globals_key: VmEnvCacheKey,
+    /// Cached bytecode includes module definitions, which are frozen per Engine.
+    module_cache_key: VmModuleCacheKey,
     /// Frame storage retained between non-overlapping `eval_compiled` calls.
     ///
     /// References to a cached program share this slot. A concurrent caller that finds it empty
@@ -72,6 +74,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,
     baked_globals_key: VmEnvCacheKey,
+    module_cache_key: VmModuleCacheKey,
 ) -> Result<CachedProgram, Error> {
     let token_arena = Shared::clone(&context.token_arena);
     let global_bindings = context.global_bindings;
@@ -122,6 +125,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         let_names,
         configuration,
         baked_globals_key,
+        module_cache_key,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
         environment: Shared::new(SharedCell::new(None)),
     })
@@ -192,28 +196,22 @@ fn restore_execution_pools(compiled: &CachedProgram, pools: interpreter::Executi
     }
 }
 
-/// Returns whether every external module compiled into this program still has identical source.
-pub(super) fn cached_program_is_current<R: ModuleResolver>(
+/// Returns whether bytecode was compiled with the same Engine configuration and frozen modules.
+pub(super) fn cached_program_is_current(
     compiled: &CachedProgram,
-    module_loader: &ModuleLoader<R>,
     configuration: &[engine::VmModulePrelude],
     environment_key: VmEnvCacheKey,
-) -> Result<bool, Error> {
+    module_cache_key: VmModuleCacheKey,
+) -> bool {
     // `VmEnvCacheKey` combines a process-unique bindings source with its revision. It therefore
     // identifies both names and values without rescanning globals on every cache hit.
-    if compiled.configuration != configuration || compiled.baked_globals_key != environment_key {
-        return Ok(false);
+    if compiled.configuration != configuration
+        || compiled.baked_globals_key != environment_key
+        || compiled.module_cache_key != module_cache_key
+    {
+        return false;
     }
-    let before_current = module_loader
-        .dependencies_are_current(&compiled.program.module_dependencies)
-        .map_err(compiler::CompileError::Module)?;
-    let after_current = match &compiled.after {
-        Some(after) => module_loader
-            .dependencies_are_current(&after.module_dependencies)
-            .map_err(compiler::CompileError::Module)?,
-        None => true,
-    };
-    Ok(before_current && after_current)
+    true
 }
 
 /// Runs a bytecode program cached by [`compile_cached_program`] for every input.

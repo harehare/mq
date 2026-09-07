@@ -265,6 +265,9 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
     pub(crate) io: Shared<IO>,
     pub(crate) host_functions: Shared<crate::SharedCell<HostFunctions>>,
     global_bindings: Shared<crate::SharedCell<GlobalBindings>>,
+    /// Distinguishes frozen module bytecode when a `CompiledProgram` is shared by Engines.
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) module_cache_key: VmModuleCacheKey,
     pub(crate) session_enabled: bool,
     pub(crate) session_bindings: Shared<crate::SharedCell<Vec<SessionBinding>>>,
     #[cfg(feature = "debugger")]
@@ -288,6 +291,23 @@ struct GlobalBindings {
 
 #[cfg(not(feature = "debugger"))]
 static NEXT_GLOBAL_BINDINGS_SOURCE: AtomicU64 = AtomicU64::new(1);
+
+/// Process-unique identity of one Engine's frozen module environment.
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VmModuleCacheKey {
+    source: u64,
+}
+
+#[cfg(not(feature = "debugger"))]
+static NEXT_VM_MODULE_CACHE_SOURCE: AtomicU64 = AtomicU64::new(1);
+
+#[cfg(not(feature = "debugger"))]
+fn next_vm_module_cache_key() -> VmModuleCacheKey {
+    VmModuleCacheKey {
+        source: NEXT_VM_MODULE_CACHE_SOURCE.fetch_add(1, Ordering::Relaxed),
+    }
+}
 
 #[cfg(not(feature = "debugger"))]
 impl Default for GlobalBindings {
@@ -329,6 +349,8 @@ impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
             io: Shared::new(IO::default()),
             host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
             global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
+            #[cfg(not(feature = "debugger"))]
+            module_cache_key: next_vm_module_cache_key(),
             session_enabled: false,
             session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
@@ -350,6 +372,9 @@ impl<T: ModuleResolver, IO: Io> Clone for VmState<T, IO> {
             io: Shared::clone(&self.io),
             host_functions: Shared::clone(&self.host_functions),
             global_bindings: Shared::clone(&self.global_bindings),
+            // The loader is cloned rather than shared, so its frozen modules need a fresh key.
+            #[cfg(not(feature = "debugger"))]
+            module_cache_key: next_vm_module_cache_key(),
             session_enabled: self.session_enabled,
             session_bindings: Shared::clone(&self.session_bindings),
             #[cfg(feature = "debugger")]
@@ -377,6 +402,8 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             io,
             host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
             global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
+            #[cfg(not(feature = "debugger"))]
+            module_cache_key: next_vm_module_cache_key(),
             session_enabled: false,
             session_bindings: Shared::new(crate::SharedCell::new(Vec::new())),
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
@@ -747,6 +774,8 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
     pub(crate) module_prelude: &'a [engine::VmModulePrelude],
     #[cfg(not(feature = "debugger"))]
     pub(crate) environment_key: VmEnvCacheKey,
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) module_cache_key: VmModuleCacheKey,
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
@@ -777,10 +806,10 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 Some(cached)
                     if cache::cached_program_is_current(
                         &cached,
-                        &self.engine.module_loader,
                         self.module_prelude,
                         self.environment_key,
-                    )? =>
+                        self.module_cache_key,
+                    ) =>
                 {
                     cached
                 }
@@ -805,6 +834,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         self.module_prelude.to_vec(),
                         deadline,
                         self.environment_key,
+                        self.module_cache_key,
                     )?);
                     compiled.cache_vm_program(Shared::clone(&cached));
                     cached
