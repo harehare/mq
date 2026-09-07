@@ -93,6 +93,23 @@ fn eval_compiled_select_h(bencher: divan::Bencher) {
     bench_compiled(bencher, &mut engine, ".h1", || input.clone());
 }
 
+/// Measures the API pattern used by line-oriented callers: one compiled query evaluated once
+/// per input value, rather than one call over a batch of inputs.
+#[divan::bench]
+fn eval_compiled_reused_single_input(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let compiled = engine.compile(". * 10").unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::Number(1.into())))
+        .unwrap();
+
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::Number(1.into())))
+            .unwrap()
+    });
+}
+
 /// See `eval_compiled_select_h`.
 #[divan::bench]
 fn eval_compiled_string_interpolation(bencher: divan::Bencher) {

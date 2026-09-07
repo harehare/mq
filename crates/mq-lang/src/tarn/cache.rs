@@ -3,7 +3,8 @@ use super::nodes_split::{
     immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
 use super::{
-    EngineRunContext, Error, compiler, interpreter, remaining_timeout, resolve_module_prelude_globals, run_for_input,
+    EngineRunContext, Error, compiler, engine, interpreter, remaining_timeout, resolve_module_prelude_globals,
+    run_for_input,
 };
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
@@ -13,16 +14,15 @@ use std::fmt;
 use std::time::Instant;
 
 /// Bytecode retained for repeated VM evaluation.
-#[derive(Clone)]
 pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
     after: Option<compiler::CompiledProgram>,
     let_names: Vec<crate::Ident>,
     global_names: Vec<crate::Ident>,
-    configuration: Vec<String>,
+    configuration: Vec<engine::VmModulePrelude>,
     /// Frame storage retained between non-overlapping `eval_compiled` calls.
     ///
-    /// Clones of a cached program share this slot. A concurrent caller that finds it empty
+    /// References to a cached program share this slot. A concurrent caller that finds it empty
     /// simply allocates an independent pool, so bytecode remains safely reusable.
     execution_pools: Shared<SharedCell<Option<interpreter::ExecutionPools>>>,
 }
@@ -58,7 +58,7 @@ impl CachedProgram {
 pub(super) fn compile_cached_program<R: ModuleResolver>(
     program: &Program,
     context: &mut EngineRunContext<'_, R>,
-    configuration: Vec<String>,
+    configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,
 ) -> Result<CachedProgram, Error> {
     let token_arena = Shared::clone(&context.token_arena);
@@ -146,7 +146,7 @@ fn restore_execution_pools(compiled: &CachedProgram, pools: interpreter::Executi
 pub(super) fn cached_program_is_current<R: ModuleResolver>(
     compiled: &CachedProgram,
     module_loader: &ModuleLoader<R>,
-    configuration: &[String],
+    configuration: &[engine::VmModulePrelude],
     global_bindings: &[(crate::Ident, RuntimeValue)],
 ) -> Result<bool, Error> {
     let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();

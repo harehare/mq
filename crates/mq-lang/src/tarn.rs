@@ -676,17 +676,6 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
 }
 
 impl<'a, R: ModuleResolver> TarnVm<'a, R> {
-    #[cfg(not(feature = "debugger"))]
-    fn cache_configuration(&self) -> Vec<String> {
-        self.module_prelude
-            .iter()
-            .map(|module| match module {
-                engine::VmModulePrelude::Include(name) => format!("include:{name}"),
-                engine::VmModulePrelude::Import(name) => format!("import:{name}"),
-            })
-            .collect()
-    }
-
     /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
     pub(crate) fn run<I>(
         &self,
@@ -704,13 +693,12 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
             // One deadline for the whole call: a cache-miss compile must not spend its own
             // budget separately from the run that follows it.
             let deadline = shared_deadline(self.engine.timeout);
-            let cache_configuration = self.cache_configuration();
             let cached = match cached {
                 Some(cached)
                     if cache::cached_program_is_current(
                         &cached,
                         &self.engine.module_loader,
-                        &cache_configuration,
+                        self.module_prelude,
                         self.engine.global_bindings,
                     )? =>
                 {
@@ -727,10 +715,20 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                         session: self.engine.session,
                         preresolved_module_vars: compiler::ResolvedModuleVars::default(),
                     };
-                    cache::compile_cached_program(program, &mut cache_context, cache_configuration, deadline)?
+                    let prepared_program =
+                        build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                            .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+                    let prepared_program = prepared_program.as_ref().unwrap_or(program);
+                    let cached = Shared::new(cache::compile_cached_program(
+                        prepared_program,
+                        &mut cache_context,
+                        self.module_prelude.to_vec(),
+                        deadline,
+                    )?);
+                    compiled.cache_vm_program(Shared::clone(&cached));
+                    cached
                 }
             };
-            compiled.cache_vm_program(cached.clone());
             return cache::run_cached(
                 &cached,
                 input,
@@ -764,8 +762,11 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
         }
         #[cfg(not(feature = "debugger"))]
         {
+            let prepared_program = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+            let prepared_program = prepared_program.as_ref().unwrap_or(program);
             compile_and_run_many(
-                program,
+                prepared_program,
                 input,
                 EngineRunContext {
                     host_functions: self.engine.host_functions,

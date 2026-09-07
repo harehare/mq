@@ -34,7 +34,7 @@ pub struct CompiledProgram {
     pub(crate) source: String,
     pub(crate) program: crate::ast::Program,
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    vm_cache: Option<Shared<SharedCell<Option<tarn::CachedProgram>>>>,
+    vm_cache: Option<Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>>,
 }
 
 impl CompiledProgram {
@@ -49,7 +49,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    pub(crate) fn cached_vm_program(&self) -> Option<Option<tarn::CachedProgram>> {
+    pub(crate) fn cached_vm_program(&self) -> Option<Option<Shared<tarn::CachedProgram>>> {
         let cache = self.vm_cache.as_ref()?;
         #[cfg(feature = "sync")]
         {
@@ -62,7 +62,7 @@ impl CompiledProgram {
     }
 
     #[cfg(all(feature = "tarn", not(feature = "debugger")))]
-    pub(crate) fn cache_vm_program(&self, program: tarn::CachedProgram) {
+    pub(crate) fn cache_vm_program(&self, program: Shared<tarn::CachedProgram>) {
         let Some(cache) = &self.vm_cache else {
             return;
         };
@@ -123,7 +123,7 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
 /// The tree walker stores these in its dynamic environment; the VM instead needs their AST
 /// declarations present while it statically resolves the user's query.
 #[cfg(feature = "tarn")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum VmModulePrelude {
     Include(String),
     Import(String),
@@ -684,11 +684,13 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
         let global_bindings = self.vm.global_bindings_snapshot();
 
+        #[cfg(feature = "debugger")]
         let vm_program = tarn::build_program(
             &compiled.program,
             Shared::clone(&self.token_arena),
             &self.vm_module_prelude,
         )?;
+        #[cfg(feature = "debugger")]
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
         let (timeout, max_call_stack_depth) = (self.vm.options.timeout, self.vm.options.max_call_stack_depth);
@@ -718,7 +720,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             },
         };
         let module_loader_for_error = self.vm.module_loader.clone();
-        vm.run(compiled, vm_program, input).map(Into::into).map_err(|error| {
+        vm.run(
+            compiled,
+            #[cfg(feature = "debugger")]
+            vm_program,
+            #[cfg(not(feature = "debugger"))]
+            &compiled.program,
+            input,
+        )
+        .map(Into::into)
+        .map_err(|error| {
             Box::new(error::Error::from_error(
                 &compiled.source,
                 error.into_inner_error(Shared::clone(&self.token_arena)),
