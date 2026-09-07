@@ -123,7 +123,7 @@ test-all-features:
     cargo nextest run --workspace --all-features
 
 test:
-    cargo nextest run --workspace --all-features
+    cargo nextest run --workspace
 
 # Run formatting, linting and all tests
 test-all: fmt lint test-mq test-doc test-all-features test
