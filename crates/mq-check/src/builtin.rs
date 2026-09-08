@@ -802,6 +802,24 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::dict(Type::Var(k), Type::Var(v)),
     );
 
+    // has: ({k: v}, k) -> bool
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "has",
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::Var(k),
+        Type::Bool,
+    );
+
+    // has: ([a], a) -> bool
+    let a = ctx.fresh_var();
+    register_binary(ctx, "has", Type::array(Type::Var(a)), Type::Var(a), Type::Bool);
+
+    // has: (a, b) -> bool (generic fallback for dynamically typed containers)
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(ctx, "has", Type::Var(a), Type::Var(b), Type::Bool);
+
     // None propagation for dict functions
     register_none_propagation_unary(ctx, &["keys", "values", "entries"]);
 }
@@ -1317,6 +1335,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
 /// Variable/symbol management functions
 fn register_variable(ctx: &mut InferenceContext) {
     register_nullary(ctx, "all_symbols", Type::array(Type::Symbol));
+    // Deprecated: tree-walker only (see `mq-lang`'s `runtime::builtin`), scheduled for
+    // removal in the next release.
     register_unary(ctx, "get_variable", Type::String, Type::String);
     register_binary(ctx, "set_variable", Type::String, Type::String, Type::None);
     register_unary(ctx, "intern", Type::String, Type::Symbol);

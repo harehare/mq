@@ -90,11 +90,23 @@ mod tests {
     #[test]
     fn test_array_of_dicts() {
         let mut m1 = std::collections::BTreeMap::new();
-        m1.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Alice".to_string()));
-        m1.insert(mq_lang::Ident::new("age"), RuntimeValue::String("30".to_string()));
+        m1.insert(
+            mq_lang::Ident::new("name"),
+            RuntimeValue::String(Shared::new("Alice".to_string())),
+        );
+        m1.insert(
+            mq_lang::Ident::new("age"),
+            RuntimeValue::String(Shared::new("30".to_string())),
+        );
         let mut m2 = std::collections::BTreeMap::new();
-        m2.insert(mq_lang::Ident::new("name"), RuntimeValue::String("Bob".to_string()));
-        m2.insert(mq_lang::Ident::new("age"), RuntimeValue::String("25".to_string()));
+        m2.insert(
+            mq_lang::Ident::new("name"),
+            RuntimeValue::String(Shared::new("Bob".to_string())),
+        );
+        m2.insert(
+            mq_lang::Ident::new("age"),
+            RuntimeValue::String(Shared::new("25".to_string())),
+        );
         let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Dict(Shared::new(m1)),
             RuntimeValue::Dict(Shared::new(m2)),
@@ -106,7 +118,10 @@ mod tests {
     #[test]
     fn test_single_dict() {
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("a"), RuntimeValue::String("1".to_string()));
+        map.insert(
+            mq_lang::Ident::new("a"),
+            RuntimeValue::String(Shared::new("1".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "a\n1\n");
@@ -115,7 +130,10 @@ mod tests {
     #[test]
     fn test_needs_quoting() {
         let mut map = std::collections::BTreeMap::new();
-        map.insert(mq_lang::Ident::new("a"), RuntimeValue::String("has,comma".to_string()));
+        map.insert(
+            mq_lang::Ident::new("a"),
+            RuntimeValue::String(Shared::new("has,comma".to_string())),
+        );
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "a\n\"has,comma\"\n");
@@ -124,8 +142,8 @@ mod tests {
     #[test]
     fn test_scalars_single_column() {
         let values = vec![
-            RuntimeValue::String("x".to_string()),
-            RuntimeValue::String("y".to_string()),
+            RuntimeValue::String(Shared::new("x".to_string())),
+            RuntimeValue::String(Shared::new("y".to_string())),
         ];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "value\nx\ny\n");
@@ -134,10 +152,19 @@ mod tests {
     #[test]
     fn test_missing_key_is_empty() {
         let mut m1 = std::collections::BTreeMap::new();
-        m1.insert(mq_lang::Ident::new("a"), RuntimeValue::String("1".to_string()));
-        m1.insert(mq_lang::Ident::new("b"), RuntimeValue::String("2".to_string()));
+        m1.insert(
+            mq_lang::Ident::new("a"),
+            RuntimeValue::String(Shared::new("1".to_string())),
+        );
+        m1.insert(
+            mq_lang::Ident::new("b"),
+            RuntimeValue::String(Shared::new("2".to_string())),
+        );
         let mut m2 = std::collections::BTreeMap::new();
-        m2.insert(mq_lang::Ident::new("a"), RuntimeValue::String("3".to_string()));
+        m2.insert(
+            mq_lang::Ident::new("a"),
+            RuntimeValue::String(Shared::new("3".to_string())),
+        );
         let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Dict(Shared::new(m1)),
             RuntimeValue::Dict(Shared::new(m2)),
@@ -150,12 +177,12 @@ mod tests {
     fn test_array_of_arrays() {
         let values = vec![RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("h1".to_string()),
-                RuntimeValue::String("h2".to_string()),
+                RuntimeValue::String(Shared::new("h1".to_string())),
+                RuntimeValue::String(Shared::new("h2".to_string())),
             ])),
             RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::String("v1".to_string()),
-                RuntimeValue::String("v2".to_string()),
+                RuntimeValue::String(Shared::new("v1".to_string())),
+                RuntimeValue::String(Shared::new("v2".to_string())),
             ])),
         ]))];
         let result = runtime_values_to_csv(&values).unwrap();
@@ -164,7 +191,10 @@ mod tests {
 
     #[test]
     fn test_none_filtered_out() {
-        let values = vec![RuntimeValue::None, RuntimeValue::String("visible".to_string())];
+        let values = vec![
+            RuntimeValue::None,
+            RuntimeValue::String(Shared::new("visible".to_string())),
+        ];
         let result = runtime_values_to_csv(&values).unwrap();
         assert_eq!(result, "value\nvisible\n");
     }

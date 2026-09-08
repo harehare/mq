@@ -75,13 +75,13 @@ impl ValueAdapter for bool {
 impl ValueAdapter for String {
     fn from_runtime_value(value: &RuntimeValue) -> Result<Self, HostFunctionError> {
         match value {
-            RuntimeValue::String(s) => Ok(s.clone()),
+            RuntimeValue::String(s) => Ok(s.to_string()),
             other => Err(type_mismatch("a string", other)),
         }
     }
 
     fn into_runtime_value(self) -> RuntimeValue {
-        RuntimeValue::String(self)
+        RuntimeValue::String(self.into())
     }
 }
 
@@ -192,7 +192,7 @@ mod tests {
     #[case::i64(round_trip::<i64> as RoundTripFn, RuntimeValue::from(Number::from(7_i64)))]
     #[case::f64(round_trip::<f64> as RoundTripFn, RuntimeValue::from(Number::from(1.5)))]
     #[case::bool(round_trip::<bool> as RoundTripFn, RuntimeValue::Boolean(true))]
-    #[case::string(round_trip::<String> as RoundTripFn, RuntimeValue::String("hi".to_string()))]
+    #[case::string(round_trip::<String> as RoundTripFn, RuntimeValue::String(Shared::new("hi".to_string())))]
     #[case::vec(
         round_trip::<Vec<i64>> as RoundTripFn,
         RuntimeValue::Array(Shared::new(vec![RuntimeValue::from(Number::from(1_i64)), RuntimeValue::from(Number::from(2_i64))]))
@@ -205,7 +205,7 @@ mod tests {
 
     #[rstest]
     #[case::i64_wrong_type(round_trip::<i64> as RoundTripFn, RuntimeValue::Boolean(true))]
-    #[case::f64_wrong_type(round_trip::<f64> as RoundTripFn, RuntimeValue::String("x".to_string()))]
+    #[case::f64_wrong_type(round_trip::<f64> as RoundTripFn, RuntimeValue::String(Shared::new("x".to_string())))]
     #[case::bool_wrong_type(round_trip::<bool> as RoundTripFn, RuntimeValue::NONE)]
     #[case::string_wrong_type(round_trip::<String> as RoundTripFn, RuntimeValue::Boolean(false))]
     #[case::vec_wrong_type(round_trip::<Vec<i64>> as RoundTripFn, RuntimeValue::Boolean(true))]

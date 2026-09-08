@@ -185,7 +185,8 @@ pub struct Variable {
 
 #[cfg(feature = "debugger")]
 impl Variable {
-    fn from(ident: Ident, value: &RuntimeValue) -> Self {
+    /// Creates debugger display metadata for a runtime binding.
+    pub fn from(ident: Ident, value: &RuntimeValue) -> Self {
         match value {
             RuntimeValue::Array(_) => Variable {
                 name: ident.to_string(),
@@ -222,15 +223,21 @@ impl Variable {
                 value: value.to_string(),
                 type_field: "markdown".to_string(),
             },
-            RuntimeValue::Function(params, _, _) => Variable {
+            RuntimeValue::Function(f) => Variable {
                 name: ident.to_string(),
-                value: format!("function/{}", params.len()),
+                value: format!("function/{}", f.params.len()),
                 type_field: "function".to_string(),
             },
             RuntimeValue::NativeFunction(_) => Variable {
                 name: ident.to_string(),
                 value: "native function".to_string(),
                 type_field: "native_function".to_string(),
+            },
+            #[cfg(feature = "tarn")]
+            RuntimeValue::VmClosure(_) => Variable {
+                name: ident.to_string(),
+                value: "function".to_string(),
+                type_field: "function".to_string(),
             },
             RuntimeValue::Module(m) => Variable {
                 name: m.name().to_string(),
@@ -1162,7 +1169,7 @@ mod tests {
         ]
     )]
     #[case(
-        vec![("x", RuntimeValue::String("hello".into())), ("y", RuntimeValue::None)],
+        vec![("x", RuntimeValue::String(Shared::new("hello".into()))), ("y", RuntimeValue::None)],
         vec![
             Variable { name: "x".to_string(), value: "hello".to_string(), type_field: "string".to_string() },
             Variable { name: "y".to_string(), value: "None".to_string(), type_field: "none".to_string() }

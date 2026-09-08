@@ -25,7 +25,7 @@ fn err(msg: impl std::fmt::Display) -> Error {
 fn parse_method(value: &RuntimeValue) -> Result<String, Error> {
     let name = match value {
         RuntimeValue::Symbol(name) => name.as_str().to_string(),
-        RuntimeValue::String(name) => name.clone(),
+        RuntimeValue::String(name) => name.to_string(),
         other => return Err(err(format!("method must be a string or symbol, got {other}"))),
     };
     let upper = name.to_ascii_uppercase();
@@ -43,7 +43,7 @@ fn extract_headers(headers: Option<&BTreeMap<Ident, RuntimeValue>>) -> Result<Ve
     headers
         .iter()
         .map(|(name, value)| match value {
-            RuntimeValue::String(value) => Ok((name.as_str(), value.clone())),
+            RuntimeValue::String(value) => Ok((name.as_str(), value.to_string())),
             other => Err(err(format!("header {name:?} must be a string, got {other}"))),
         })
         .collect()
@@ -62,12 +62,13 @@ pub(super) fn request(
     let headers = extract_headers(headers)?;
     io_context::current()
         .http_request(&method, url, body, &headers)
-        .map(RuntimeValue::String)
+        .map(|s| RuntimeValue::String(s.into()))
         .map_err(err)
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::Shared;
     use rstest::rstest;
 
     use super::*;
@@ -97,7 +98,10 @@ mod tests {
     #[case::webdav_extension_token("propfind", "PROPFIND")]
     fn test_parse_method_accepts_symbol_and_string(#[case] input: &str, #[case] expected: &str) {
         assert_eq!(parse_method(&symbol(input)).unwrap(), expected);
-        assert_eq!(parse_method(&RuntimeValue::String(input.into())).unwrap(), expected);
+        assert_eq!(
+            parse_method(&RuntimeValue::String(Shared::new(input.into()))).unwrap(),
+            expected
+        );
     }
 
     #[rstest]
@@ -106,7 +110,7 @@ mod tests {
     #[case::control_char("get\n")]
     fn test_parse_method_rejects_invalid_method_strings(#[case] input: &str) {
         assert!(parse_method(&symbol(input)).is_err());
-        assert!(parse_method(&RuntimeValue::String(input.into())).is_err());
+        assert!(parse_method(&RuntimeValue::String(Shared::new(input.into()))).is_err());
     }
 
     #[rstest]
@@ -143,7 +147,7 @@ mod tests {
         }
         assert!(
             request(
-                &RuntimeValue::String("bogus method".into()),
+                &RuntimeValue::String(Shared::new("bogus method".into())),
                 "https://example.invalid",
                 None,
                 None
@@ -178,7 +182,7 @@ mod tests {
                 None,
                 Some(&BTreeMap::from([(
                     Ident::new("Authorization"),
-                    RuntimeValue::String("Bearer token".into())
+                    RuntimeValue::String(Shared::new("Bearer token".into()))
                 )]))
             )
             .is_err(),
@@ -193,17 +197,17 @@ mod tests {
         ));
         assert_eq!(
             request(&symbol("get"), "https://example.invalid", None, None).unwrap(),
-            RuntimeValue::String("body".to_string())
+            RuntimeValue::String(Shared::new("body".to_string()))
         );
     }
 
     #[test]
     fn test_extract_headers_accepts_string_values() {
         let headers = BTreeMap::from([
-            (Ident::new("X-Test"), RuntimeValue::String("value".into())),
+            (Ident::new("X-Test"), RuntimeValue::String(Shared::new("value".into()))),
             (
                 Ident::new("Content-Type"),
-                RuntimeValue::String("application/json".into()),
+                RuntimeValue::String(Shared::new("application/json".into())),
             ),
         ]);
         let extracted = extract_headers(Some(&headers)).unwrap();

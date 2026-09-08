@@ -9,8 +9,9 @@
 //!
 //! ```rust
 //! use mq_repl::Repl;
+//! use mq_lang::Shared;
 //!
-//! let repl = mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String("".to_string())]);
+//! let repl = mq_repl::Repl::new(vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))]);
 //! repl.run().unwrap();
 //! ```
 mod command_context;

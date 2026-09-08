@@ -64,6 +64,12 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<SmolStr, String>,
+    /// Parsed builtin AST tied to the token arena it was created in.
+    builtin_module_cache: Option<(TokenArena, Module)>,
+    /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
+    /// parsed by this loader instead of reparsing its cached source.
+    #[cfg(feature = "tarn")]
+    module_ast_cache: FxHashMap<SmolStr, Module>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -128,10 +134,20 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
+            builtin_module_cache: None,
+            #[cfg(feature = "tarn")]
+            module_ast_cache: FxHashMap::default(),
             resolver,
             #[cfg(feature = "http-import")]
             http_depth: 0,
         }
+    }
+
+    #[cfg(feature = "tarn")]
+    pub(crate) fn with_same_resolver(&self) -> Self {
+        let mut loader = Self::new(self.resolver.clone());
+        loader.builtin_module_cache = self.builtin_module_cache.clone();
+        loader
     }
 
     #[inline(always)]
@@ -179,6 +195,14 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
+        let module = Self::classify_module(module_name, program)?;
+        self.loaded_modules.alloc(module_name.into());
+        #[cfg(feature = "tarn")]
+        self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
+        Ok(module)
+    }
+
+    fn classify_module(module_name: &str, program: &Program) -> Result<Module, ModuleError> {
         let modules = program
             .iter()
             .filter(|node| {
@@ -208,14 +232,32 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::InvalidModule);
         }
 
-        self.loaded_modules.alloc(module_name.into());
-
         Ok(Module {
             name: module_name.to_string(),
             functions,
             modules,
             vars,
         })
+    }
+
+    #[cfg(feature = "tarn")]
+    pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        // Already parsed by this same loader (e.g. a prelude pre-pass ran ahead of the real
+        // compile): reuse that AST instead of reparsing the cached source from scratch.
+        if let Some(module) = self.module_ast_cache.get(name.as_str()) {
+            return Ok(module.clone());
+        }
+        let code = self
+            .source_cache
+            .get(name.as_str())
+            .cloned()
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
+        let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
+        let program = Self::parse_program(&code, module_id, token_arena)?;
+        let module = Self::classify_module(&name, &program)?;
+        self.module_ast_cache.insert(SmolStr::new(&name), module.clone());
+        Ok(module)
     }
 
     pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
@@ -263,6 +305,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
 
+        if let Some((cached_arena, module)) = &self.builtin_module_cache
+            && Shared::ptr_eq(cached_arena, &token_arena)
+        {
+            self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+            return Ok(module.clone());
+        }
+
         // Cache is only valid when both arenas are in their initial state (builtin
         // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
         let pristine = self.loaded_modules.len() == 1 && {
@@ -288,11 +337,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     token_arena.write().unwrap().extend_from_slice(&tokens);
                 }
                 self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+                self.builtin_module_cache = Some((token_arena, module.clone()));
                 return Ok(module);
             }
         }
 
         let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
+        self.builtin_module_cache = Some((Shared::clone(&token_arena), module.clone()));
 
         if pristine {
             let tokens = {
@@ -576,6 +627,27 @@ mod tests {
             loader.load_builtin(Shared::clone(&token_arena)),
             Err(ModuleError::AlreadyLoaded(_))
         ));
+    }
+
+    #[cfg(feature = "tarn")]
+    #[test]
+    fn test_load_builtin_reuses_ast_for_the_same_token_arena() {
+        let token_arena = token_arena();
+        let mut loader = ModuleLoader::new(DefaultModuleResolver::default());
+        let original = loader.load_builtin(Shared::clone(&token_arena)).unwrap();
+        #[cfg(not(feature = "sync"))]
+        let token_count = token_arena.borrow().len();
+        #[cfg(feature = "sync")]
+        let token_count = token_arena.read().unwrap().len();
+
+        let mut reused_loader = loader.with_same_resolver();
+        let reused = reused_loader.load_builtin(Shared::clone(&token_arena)).unwrap();
+
+        #[cfg(not(feature = "sync"))]
+        assert_eq!(token_arena.borrow().len(), token_count);
+        #[cfg(feature = "sync")]
+        assert_eq!(token_arena.read().unwrap().len(), token_count);
+        assert_eq!(reused, original);
     }
 
     #[test]

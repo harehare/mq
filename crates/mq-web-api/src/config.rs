@@ -197,6 +197,28 @@ impl Config {
             }
         }
 
+        if let Ok(max_entry_bytes_str) = env::var("QUERY_CACHE_MAX_ENTRY_BYTES") {
+            if let Ok(max_entry_bytes) = max_entry_bytes_str.parse::<usize>() {
+                config.query_cache.max_entry_bytes = max_entry_bytes;
+            } else {
+                eprintln!(
+                    "Warning: Invalid QUERY_CACHE_MAX_ENTRY_BYTES value '{}', using default {}",
+                    max_entry_bytes_str, config.query_cache.max_entry_bytes
+                );
+            }
+        }
+
+        if let Ok(max_total_bytes_str) = env::var("QUERY_CACHE_MAX_TOTAL_BYTES") {
+            if let Ok(max_total_bytes) = max_total_bytes_str.parse::<usize>() {
+                config.query_cache.max_total_bytes = max_total_bytes;
+            } else {
+                eprintln!(
+                    "Warning: Invalid QUERY_CACHE_MAX_TOTAL_BYTES value '{}', using default {}",
+                    max_total_bytes_str, config.query_cache.max_total_bytes
+                );
+            }
+        }
+
         if let Ok(enabled_str) = env::var("AUTH_ENABLED") {
             match enabled_str.parse::<bool>() {
                 Ok(enabled) => config.auth.enabled = enabled,

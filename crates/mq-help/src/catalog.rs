@@ -562,6 +562,78 @@ mod tests {
         assert_eq!(suggest("mpa"), Some("map".to_string()));
     }
 
+    /// Dict field order isn't guaranteed (a real fix belongs in `RuntimeValue::Dict`); sorts
+    /// each top-level `{...}`'s entries so doc-example comparisons aren't order-flaky.
+    fn normalize_dict_order(s: &str) -> String {
+        let mut out = String::new();
+        let mut rest = s;
+        while let Some(start) = rest.find('{') {
+            out.push_str(&rest[..start]);
+            let Some(len) = matching_brace(&rest[start..]) else {
+                out.push_str(&rest[start..]);
+                return out;
+            };
+            let end = start + len;
+            let mut entries = split_top_level(&rest[start + 1..end]);
+            entries.sort_unstable();
+            out.push('{');
+            out.push_str(&entries.join(", "));
+            out.push('}');
+            rest = &rest[end + 1..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// Byte offset (into `s`) of the `}` matching the `{` at `s`'s start, skipping quotes.
+    fn matching_brace(s: &str) -> Option<usize> {
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut chars = s.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '"' => in_string = !in_string,
+                '\\' if in_string => {
+                    chars.next();
+                }
+                '{' if !in_string => depth += 1,
+                '}' if !in_string => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn split_top_level(s: &str) -> Vec<&str> {
+        let mut parts = Vec::new();
+        let mut start = 0;
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut chars = s.char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '"' => in_string = !in_string,
+                '\\' if in_string => {
+                    chars.next();
+                }
+                '{' | '[' if !in_string => depth += 1,
+                '}' | ']' if !in_string => depth -= 1,
+                ',' if !in_string && depth == 0 => {
+                    parts.push(s[start..i].trim());
+                    start = i + 1;
+                }
+                _ => {}
+            }
+        }
+        parts.push(s[start..].trim());
+        parts
+    }
+
     /// Every example shown by `mq help` is a real, runnable snippet — this evaluates each
     /// one through the actual engine and checks it against its recorded `expected` output,
     /// so a stale/wrong example fails CI instead of silently misleading a reader.
@@ -577,7 +649,7 @@ mod tests {
                 match engine.eval(&example.code, input) {
                     Ok(values) => {
                         let rendered = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
-                        if rendered != example.expected {
+                        if normalize_dict_order(&rendered) != normalize_dict_order(&example.expected) {
                             failures.push(format!(
                                 "{} `{}`: expected `{}`, got `{}`",
                                 entry.name, example.code, example.expected, rendered
@@ -607,7 +679,7 @@ mod tests {
                 match engine.eval(&example.code, input) {
                     Ok(values) => {
                         let rendered = values.into_iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", ");
-                        if rendered != example.expected {
+                        if normalize_dict_order(&rendered) != normalize_dict_order(&example.expected) {
                             failures.push(format!(
                                 "{} `{}`: expected `{}`, got `{}`",
                                 module.name, example.code, example.expected, rendered

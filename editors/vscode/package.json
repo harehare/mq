@@ -9,7 +9,7 @@
   "private": true,
   "version": "0.8.4",
   "engines": {
-    "vscode": "^1.107.0"
+    "vscode": "^1.134.0"
   },
   "repository": {
     "type": "git",
@@ -120,6 +120,12 @@
           "type": "string",
           "default": "",
           "description": "Path to the LSP server executable"
+        },
+        "mq.dbgPath": {
+          "title": "Debugger Path",
+          "type": "string",
+          "default": "",
+          "description": "Path to the mq-dbg executable"
         },
         "mq.showExamplesInNewFile": {
           "title": "Show examples in new file",

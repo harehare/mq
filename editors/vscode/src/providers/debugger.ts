@@ -44,6 +44,13 @@ export class MqDebugConfigurationProvider
   }
 
   private async ensureMqDapAvailable(): Promise<string | undefined> {
+    const configDbgPath = vscode.workspace
+      .getConfiguration("mq")
+      .get<string>("dbgPath");
+    if (configDbgPath) {
+      return configDbgPath;
+    }
+
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (workspaceFolder) {
       const localMqDapPath = path.join(

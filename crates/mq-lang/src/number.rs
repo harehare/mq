@@ -1,4 +1,3 @@
-use core::f64;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
@@ -166,6 +165,22 @@ impl Rem for Number {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self {
+        // `i64::MAX as f64` rounds up to 2^63, so use the exact 2^63 literal as an
+        // exclusive upper bound instead — otherwise 2^63 itself wrongly passes the check
+        // and then saturates to i64::MAX in the cast below.
+        const I64_MIN_F64: f64 = i64::MIN as f64;
+        const I64_MAX_BOUND_F64: f64 = 9223372036854775808.0;
+        if self.is_int()
+            && other.is_int()
+            && other.0 != 0.0
+            && self.0 >= I64_MIN_F64
+            && self.0 < I64_MAX_BOUND_F64
+            && other.0 >= I64_MIN_F64
+            && other.0 < I64_MAX_BOUND_F64
+        {
+            // `i64::MIN % -1` overflows and panics in debug builds; the true remainder is 0.
+            return Number((self.0 as i64).checked_rem(other.0 as i64).unwrap_or(0) as f64);
+        }
         Number(self.0 % other.0)
     }
 }
@@ -230,6 +245,49 @@ mod tests {
         assert_eq!(format!("{}", num_a * num_b), mul_result);
         assert_eq!(format!("{}", num_a / num_b), div_result);
         assert_eq!(format!("{}", num_a % num_b), rem_result);
+    }
+
+    #[rstest]
+    #[case(5.5, 2.0, 1.5)]
+    #[case(5.0, 2.5, 0.0)]
+    #[case(-5.5, 2.0, -1.5)]
+    fn test_rem_fractional_operands(#[case] a: f64, #[case] b: f64, #[case] expected: f64) {
+        assert_eq!((Number::new(a) % Number::new(b)).value(), expected);
+    }
+
+    #[test]
+    fn test_rem_by_zero_is_nan() {
+        assert!((Number::new(5.0) % Number::new(0.0)).value().is_nan());
+    }
+
+    #[test]
+    fn test_rem_beyond_i64_range_matches_fmod() {
+        // Both operands are integer-valued but exceed i64::MAX, so the fast `as i64` path
+        // must not be taken; otherwise both saturate to i64::MAX and give the same wrong
+        // result instead of their true (and distinct) fmod remainders.
+        let a = Number::new(100_000_000_000_000_000_000.0);
+        let b = Number::new(200_000_000_000_000_000_000.0);
+        let c = Number::new(3.0);
+
+        assert_eq!((a % c).value(), 100_000_000_000_000_000_000.0f64 % 3.0);
+        assert_eq!((b % c).value(), 200_000_000_000_000_000_000.0f64 % 3.0);
+        assert_ne!((a % c).value(), (b % c).value());
+    }
+
+    #[test]
+    fn test_rem_at_i64_max_boundary() {
+        let a = Number::new(9_223_372_036_854_775_808.0); // 2^63
+        let b = Number::new(3.0);
+
+        assert_eq!((a % b).value(), 2.0);
+    }
+
+    #[test]
+    fn test_rem_min_integer_by_negative_one_does_not_panic() {
+        let a = Number::new(i64::MIN as f64);
+        let b = Number::new(-1.0);
+
+        assert_eq!((a % b).value(), 0.0);
     }
 
     #[rstest]

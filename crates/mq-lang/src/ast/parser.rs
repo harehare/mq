@@ -1,10 +1,10 @@
 use crate::arena::Arena;
 use crate::ast::node::{IdentWithToken, MatchArm, Pattern};
 use crate::error::syntax::SyntaxError;
-use crate::eval::builtin::io_context;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
+use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
 use smallvec::{SmallVec, smallvec};
@@ -269,32 +269,38 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             lhs = match kind {
                 TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id, operator_token)?,
                 TokenKind::And => {
-                    let operands = match &*lhs.expr {
-                        Expr::And(existing) => {
-                            let mut ops = existing.clone();
-                            ops.push(rhs);
-                            ops
-                        }
-                        _ => vec![lhs, rhs],
-                    };
-                    Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Shared::new(Expr::And(operands)),
-                    })
+                    if matches!(&*lhs.expr, Expr::And(_)) {
+                        let mut lhs = lhs;
+                        let node = Shared::make_mut(&mut lhs);
+                        node.token_id = operator_token_id;
+                        let Expr::And(operands) = Shared::make_mut(&mut node.expr) else {
+                            unreachable!("checked the expression before making it mutable");
+                        };
+                        operands.push(rhs);
+                        lhs
+                    } else {
+                        Shared::new(Node {
+                            token_id: operator_token_id,
+                            expr: Shared::new(Expr::And(vec![lhs, rhs])),
+                        })
+                    }
                 }
                 TokenKind::Or => {
-                    let operands = match &*lhs.expr {
-                        Expr::Or(existing) => {
-                            let mut ops = existing.clone();
-                            ops.push(rhs);
-                            ops
-                        }
-                        _ => vec![lhs, rhs],
-                    };
-                    Shared::new(Node {
-                        token_id: operator_token_id,
-                        expr: Shared::new(Expr::Or(operands)),
-                    })
+                    if matches!(&*lhs.expr, Expr::Or(_)) {
+                        let mut lhs = lhs;
+                        let node = Shared::make_mut(&mut lhs);
+                        node.token_id = operator_token_id;
+                        let Expr::Or(operands) = Shared::make_mut(&mut node.expr) else {
+                            unreachable!("checked the expression before making it mutable");
+                        };
+                        operands.push(rhs);
+                        lhs
+                    } else {
+                        Shared::new(Node {
+                            token_id: operator_token_id,
+                            expr: Shared::new(Expr::Or(vec![lhs, rhs])),
+                        })
+                    }
                 }
                 TokenKind::PlusEqual => parser.create_compound_assign(
                     &lhs,
@@ -479,7 +485,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 },
                                 Some(Shared::clone(ident_token)),
                             ),
-                            program.iter().map(Shared::clone).collect(),
+                            program,
                         )),
                     }))
                 }
@@ -1560,10 +1566,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::While(
-                        Shared::clone(cond),
-                        body_program.iter().map(Shared::clone).collect(),
-                    )),
+                    expr: Shared::new(Expr::While(Shared::clone(cond), body_program)),
                 }))
             }
             None => Err(SyntaxError::UnexpectedToken((**while_token).clone())),
@@ -1581,7 +1584,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Loop(body_program.iter().map(Shared::clone).collect())),
+                    expr: Shared::new(Expr::Loop(body_program)),
                 }))
             }
             None => Err(SyntaxError::UnexpectedToken((**loop_token).clone())),
@@ -1605,10 +1608,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Until(
-                        Shared::clone(cond),
-                        body_program.iter().map(Shared::clone).collect(),
-                    )),
+                    expr: Shared::new(Expr::Until(Shared::clone(cond), body_program)),
                 }))
             }
             None => Err(SyntaxError::UnexpectedToken((**until_token).clone())),
@@ -1724,7 +1724,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             token: ident_token.clone(),
                         },
                         Shared::clone(&each_values),
-                        body_program.iter().map(Shared::clone).collect(),
+                        body_program,
                     )),
                 }))
             }

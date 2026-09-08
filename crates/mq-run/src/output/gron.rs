@@ -80,7 +80,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(vec![mq_lang::RuntimeValue::String("hello".to_string())], "json = \"hello\";\n")]
+    #[case(vec![mq_lang::RuntimeValue::String(Shared::new("hello".to_string()))], "json = \"hello\";\n")]
     #[case(vec![mq_lang::RuntimeValue::Boolean(true)], "json = true;\n")]
     #[case(vec![mq_lang::RuntimeValue::Boolean(false)], "json = false;\n")]
     #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "json = 3;\n")]
@@ -88,8 +88,8 @@ mod tests {
     #[case(vec![mq_lang::RuntimeValue::Array(Shared::new(vec![]))], "json = [];\n")]
     #[case(
         vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
-            mq_lang::RuntimeValue::String("x".to_string()),
-            mq_lang::RuntimeValue::String("y".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
+            mq_lang::RuntimeValue::String(Shared::new("y".to_string())),
         ]))],
         "json = [];\njson[0] = \"x\";\njson[1] = \"y\";\n"
     )]
@@ -102,7 +102,7 @@ mod tests {
         let mut inner = BTreeMap::new();
         inner.insert(
             mq_lang::Ident::new("b"),
-            mq_lang::RuntimeValue::String("deep".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("deep".to_string())),
         );
         let mut outer = BTreeMap::new();
         outer.insert(
@@ -121,7 +121,7 @@ mod tests {
         let mut m = BTreeMap::new();
         m.insert(
             mq_lang::Ident::new("weird key"),
-            mq_lang::RuntimeValue::String("v".to_string()),
+            mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
         );
         let values = vec![mq_lang::RuntimeValue::Dict(Shared::new(m))];
         assert_eq!(

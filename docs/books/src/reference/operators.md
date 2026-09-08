@@ -205,7 +205,7 @@ The range operator generates arrays of values from a starting point to an ending
 # => [1, 2, 3, 4, 5]
 
 # Character ranges
-'a'..'e'
+"a".."e"
 # => ["a", "b", "c", "d", "e"]
 
 # Using ranges with other operations

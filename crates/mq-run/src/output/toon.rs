@@ -31,28 +31,28 @@ mod tests {
     // orders keys by interned symbol id, which isn't stable across a test binary run and
     // would make an exact-string assertion on more than one key flaky.
     #[rstest]
-    #[case::string_no_quoting(RuntimeValue::String("hello".to_string()), "hello")]
+    #[case::string_no_quoting(RuntimeValue::String(Shared::new("hello".to_string())), "hello")]
     #[case::number(RuntimeValue::from(42usize), "42")]
     #[case::bool_true(RuntimeValue::Boolean(true), "true")]
     #[case::bool_false(RuntimeValue::Boolean(false), "false")]
     #[case::none(RuntimeValue::None, "null")]
-    #[case::single_key_dict(single_key_dict("name", RuntimeValue::String("Alice".to_string())), "name: Alice")]
+    #[case::single_key_dict(single_key_dict("name", RuntimeValue::String(Shared::new("Alice".to_string()))), "name: Alice")]
     #[case::array_of_primitives(
         RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::String("a".to_string()),
-            RuntimeValue::String("b".to_string()),
+            RuntimeValue::String(Shared::new("a".to_string())),
+            RuntimeValue::String(Shared::new("b".to_string())),
         ])),
         "[2]: a,b"
     )]
     #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
     #[case::empty_dict(RuntimeValue::Dict(Shared::new(BTreeMap::new())), "")]
-    #[case::empty_string_needs_quoting(RuntimeValue::String("".to_string()), "\"\"")]
-    #[case::numeric_like_string_needs_quoting(RuntimeValue::String("123".to_string()), "\"123\"")]
-    #[case::keyword_like_string_needs_quoting(RuntimeValue::String("true".to_string()), "\"true\"")]
-    #[case::string_with_colon_needs_quoting(RuntimeValue::String("a:b".to_string()), "\"a:b\"")]
-    #[case::string_with_delimiter_needs_quoting(RuntimeValue::String("a,b".to_string()), "\"a,b\"")]
-    #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String("-x".to_string()), "\"-x\"")]
-    #[case::string_with_leading_space_needs_quoting(RuntimeValue::String(" x".to_string()), "\" x\"")]
+    #[case::empty_string_needs_quoting(RuntimeValue::String(Shared::new("".to_string())), "\"\"")]
+    #[case::numeric_like_string_needs_quoting(RuntimeValue::String(Shared::new("123".to_string())), "\"123\"")]
+    #[case::keyword_like_string_needs_quoting(RuntimeValue::String(Shared::new("true".to_string())), "\"true\"")]
+    #[case::string_with_colon_needs_quoting(RuntimeValue::String(Shared::new("a:b".to_string())), "\"a:b\"")]
+    #[case::string_with_delimiter_needs_quoting(RuntimeValue::String(Shared::new("a,b".to_string())), "\"a,b\"")]
+    #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String(Shared::new("-x".to_string())), "\"-x\"")]
+    #[case::string_with_leading_space_needs_quoting(RuntimeValue::String(Shared::new(" x".to_string())), "\" x\"")]
     fn test_runtime_values_to_toon(#[case] value: RuntimeValue, #[case] expected: &str) {
         assert_eq!(runtime_values_to_toon(&[value]).unwrap(), expected);
     }
@@ -60,7 +60,7 @@ mod tests {
     fn tabular_row(id: usize, name: &str) -> RuntimeValue {
         let mut map = BTreeMap::new();
         map.insert(Ident::new("id"), RuntimeValue::from(id));
-        map.insert(Ident::new("name"), RuntimeValue::String(name.to_string()));
+        map.insert(Ident::new("name"), RuntimeValue::String(Shared::new(name.to_string())));
         RuntimeValue::Dict(Shared::new(map))
     }
 
@@ -76,7 +76,7 @@ mod tests {
     #[case::non_uniform_array(RuntimeValue::Array(Shared::new(vec![
         RuntimeValue::from(1usize),
         tabular_row(2, "Ridge Trail"),
-        RuntimeValue::String("text".to_string()),
+        RuntimeValue::String(Shared::new("text".to_string())),
     ])))]
     fn test_round_trip(#[case] original: RuntimeValue) {
         let expected = super::super::json::runtime_values_to_json_value(std::slice::from_ref(&original));
