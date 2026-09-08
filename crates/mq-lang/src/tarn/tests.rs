@@ -176,6 +176,35 @@ fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeVa
     )
 }
 
+#[rstest]
+#[case::random_string(r#"random_string(1000001, "x")"#)]
+#[case::set_array("set([], 1000000, 1)")]
+#[case::insert_array("insert([], 1000000, 1)")]
+#[case::insert_string(r#"insert("", 1000000, "x")"#)]
+#[case::del_array("del([], 1000000)")]
+#[case::del_string(r#"del("", 1000000)"#)]
+fn vm_rejects_unbounded_builtin_allocations(#[case] code: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+
+    assert!(
+        compile_and_run(&program, token_arena).is_err(),
+        "{code} should return a VM error"
+    );
+}
+
+#[test]
+fn vm_mutating_negative_indices_saturate_to_zero() {
+    assert_eq!(
+        run(r#"set(["a", "b"], -1, "z")"#),
+        RuntimeValue::Array(Shared::new(vec!["z".into(), "b".into()]))
+    );
+    assert_eq!(
+        run(r#"insert(["a", "b"], -1, "z")"#),
+        RuntimeValue::Array(Shared::new(vec!["z".into(), "a".into(), "b".into()]))
+    );
+}
+
 #[test]
 fn try_catch_body_counts_toward_call_stack_depth() {
     // Each recursive level wraps its call in `try`/`catch`, so entering the try body is an

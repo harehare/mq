@@ -56,6 +56,49 @@ use mq_markdown;
 pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
 const MAX_REPEAT_COUNT: usize = 1_000;
 
+/// Converts a user-supplied number into a bounded allocation size.
+///
+/// Keeping this check at the builtin boundary ensures a query cannot turn a
+/// floating-point value into an unbounded `usize` and trigger an allocator
+/// abort before the VM has an opportunity to enforce its deadline.
+fn bounded_size(value: &number::Number, maximum: usize, parameter: &str) -> Result<usize, Error> {
+    let raw = value.value();
+    if !raw.is_finite() || !value.is_int() || raw < 0.0 || raw > maximum as f64 {
+        return Err(Error::Runtime(format!(
+            "{parameter} must be a finite, non-negative integer no greater than {maximum}"
+        )));
+    }
+    Ok(raw as usize)
+}
+
+/// Validates an array or string index which may grow its target collection.
+///
+/// Negative indices have historically been cast to `usize` by these mutators, which saturates
+/// them to zero. Preserve that public behavior while still rejecting non-finite, fractional,
+/// and excessively large positive values before they can cause an oversized allocation.
+fn bounded_growth_index(value: &number::Number, operation: &str) -> Result<usize, Error> {
+    let raw = value.value();
+    if !raw.is_finite() || !value.is_int() || raw > (MAX_RANGE_SIZE - 1) as f64 {
+        return Err(Error::Runtime(format!(
+            "{operation} index must be a finite integer no greater than {}",
+            MAX_RANGE_SIZE - 1
+        )));
+    }
+    Ok(raw.max(0.0) as usize)
+}
+
+/// Converts a user-supplied number into an index without permitting lossy or
+/// overflowing conversion to `usize`.
+fn checked_index(value: &number::Number, operation: &str) -> Result<usize, Error> {
+    let raw = value.value();
+    if !raw.is_finite() || !value.is_int() || raw < 0.0 || raw > usize::MAX as f64 {
+        return Err(Error::Runtime(format!(
+            "{operation} index must be a finite, non-negative integer"
+        )));
+    }
+    Ok(raw as usize)
+}
+
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
 #[cfg(not(feature = "tarn"))]
@@ -758,7 +801,7 @@ fn sample_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
 fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(len), RuntimeValue::String(charset)] if len.is_int() && len.value() >= 0.0 => {
-            let len = len.to_int() as usize;
+            let len = bounded_size(len, MAX_RANGE_SIZE, "random_string length")?;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, None)
                 .map(|s| RuntimeValue::String(s.into()))
@@ -769,7 +812,7 @@ fn random_string_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             RuntimeValue::String(charset),
             RuntimeValue::Number(seed),
         ] if len.is_int() && len.value() >= 0.0 && seed.is_int() => {
-            let len = len.to_int() as usize;
+            let len = bounded_size(len, MAX_RANGE_SIZE, "random_string length")?;
             let charset: Vec<char> = charset.chars().collect();
             random::next_string(len, &charset, Some(seed.to_int() as u64))
                 .map(|s| RuntimeValue::String(s.into()))
@@ -2089,13 +2132,28 @@ fn range_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Array(array), RuntimeValue::Number(n)] => {
+            let index = checked_index(n, "del")?;
             let mut array = std::mem::take(array);
-            runtime_value::array_mut(&mut array).remove(n.value() as usize);
+            let values = runtime_value::array_mut(&mut array);
+            if index >= values.len() {
+                return Err(Error::Runtime(format!(
+                    "del index {index} is out of bounds for array of length {}",
+                    values.len()
+                )));
+            }
+            values.remove(index);
             Ok(RuntimeValue::Array(array))
         }
         [RuntimeValue::String(s), RuntimeValue::Number(n)] => {
+            let index = checked_index(n, "del")?;
             let mut s = std::mem::take(s).chars().collect::<Vec<_>>();
-            s.remove(n.value() as usize);
+            if index >= s.len() {
+                return Err(Error::Runtime(format!(
+                    "del index {index} is out of bounds for string of length {}",
+                    s.len()
+                )));
+            }
+            s.remove(index);
             Ok(s.into_iter().collect::<String>().into())
         }
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
@@ -3466,14 +3524,15 @@ fn set_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
             RuntimeValue::Number(index_val),
             value_val,
         ] => {
-            let index = index_val.value() as usize;
+            let index = bounded_growth_index(index_val, "set")?;
 
             // Extend array size if necessary
             let mut new_array = if index >= array_val.len() {
                 // If index is out of bounds, extend array and fill with None
-                let mut resized_array = Vec::with_capacity(index + 1);
+                let new_len = index + 1;
+                let mut resized_array = Vec::with_capacity(new_len);
                 resized_array.extend_from_slice(array_val);
-                resized_array.resize(index + 1, RuntimeValue::NONE);
+                resized_array.resize(new_len, RuntimeValue::NONE);
                 resized_array
             } else {
                 // If index is within bounds, clone existing array
@@ -3548,8 +3607,13 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         // Insert into array at index
         [RuntimeValue::Array(array), RuntimeValue::Number(index), value] => {
             let mut new_array = std::mem::take(array);
-            let idx = index.value() as usize;
+            let idx = bounded_growth_index(index, "insert")?;
             let array_mut = runtime_value::array_mut(&mut new_array);
+            if array_mut.len() >= MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "insert would exceed maximum array size of {MAX_RANGE_SIZE}"
+                )));
+            }
             if idx > array_mut.len() {
                 array_mut.resize(idx, RuntimeValue::NONE);
             }
@@ -3559,7 +3623,7 @@ fn insert_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
         // Insert into string at index
         [RuntimeValue::String(s), RuntimeValue::Number(index), value] => {
             let mut chars: Vec<char> = s.chars().collect();
-            let idx = index.value() as usize;
+            let idx = bounded_growth_index(index, "insert")?;
             let insert_str = value.to_string();
             if idx > chars.len() {
                 chars.resize(idx, ' ');
@@ -10123,6 +10187,22 @@ mod tests {
     }
 
     #[test]
+    fn test_random_string_rejects_lengths_above_the_allocation_limit() {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("random_string"),
+            vec![
+                RuntimeValue::Number((MAX_RANGE_SIZE as i64 + 1).into()),
+                RuntimeValue::String(Shared::new("abc".into())),
+            ]
+            .into(),
+            &env,
+        );
+        assert!(matches!(result, Err(Error::Runtime(message)) if message.contains("random_string length")));
+    }
+
+    #[test]
     fn test_random_string_empty_charset_errors() {
         let env = Shared::new(SharedCell::new(Env::default()));
         let result = eval_builtin(
@@ -11584,6 +11664,18 @@ mod tests {
         } else {
             panic!("Expected successful string repeat");
         }
+    }
+
+    #[rstest]
+    #[case::set_array("set", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
+    #[case::insert_array("insert", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::Number(1.into())])]
+    #[case::insert_string("insert", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into()), RuntimeValue::String(Shared::new("x".into()))])]
+    #[case::del_array("del", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
+    #[case::del_string("del", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
+    fn collection_mutators_reject_oversized_indices(#[case] name: &str, #[case] args: Vec<RuntimeValue>) {
+        let env = Shared::new(SharedCell::new(Env::default()));
+        let result = eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env);
+        assert!(matches!(result, Err(Error::Runtime(message)) if message.contains("index")));
     }
 
     #[rstest]

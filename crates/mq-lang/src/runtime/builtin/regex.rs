@@ -11,6 +11,34 @@ use super::Error;
 pub(super) static REGEX_CACHE: LazyLock<RwLock<FxHashMap<String, Regex>>> =
     LazyLock::new(|| RwLock::new(FxHashMap::with_hasher(FxBuildHasher)));
 
+/// Maximum user-supplied regex source retained in the process-wide cache.
+const MAX_REGEX_PATTERN_BYTES: usize = 16 * 1024;
+/// Bounds memory retained by unique patterns from untrusted queries.
+const MAX_REGEX_CACHE_ENTRIES: usize = 128;
+
+fn compile_regex(pattern: &str) -> Result<Regex, Error> {
+    if pattern.len() > MAX_REGEX_PATTERN_BYTES {
+        return Err(Error::Runtime(format!(
+            "regular expression pattern exceeds the maximum size of {MAX_REGEX_PATTERN_BYTES} bytes"
+        )));
+    }
+    RegexBuilder::new(pattern)
+        .size_limit(1 << 20)
+        .build()
+        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))
+}
+
+fn cache_regex(pattern: &str, regex: Regex) {
+    let mut cache = REGEX_CACHE.write().unwrap();
+    if !cache.contains_key(pattern)
+        && cache.len() >= MAX_REGEX_CACHE_ENTRIES
+        && let Some(evicted) = cache.keys().next().cloned()
+    {
+        cache.remove(&evicted);
+    }
+    cache.insert(pattern.to_string(), regex);
+}
+
 pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         let matches: Vec<RuntimeValue> = re
@@ -19,11 +47,8 @@ pub(super) fn match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
             .collect();
         return Ok(RuntimeValue::Array(Shared::new(matches)));
     }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     let matches: Vec<RuntimeValue> = re
         .find_iter(input)
         .map(|m| RuntimeValue::String(Shared::new(m.as_str().to_string())))
@@ -35,11 +60,8 @@ pub(super) fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Er
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         return Ok(re.is_match(input).into());
     }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     Ok(re.is_match(input).into())
 }
 
@@ -65,11 +87,8 @@ pub(super) fn capture_re(input: &str, pattern: &str) -> Result<RuntimeValue, Err
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         return capture_re_inner(&re, input);
     }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     capture_re_inner(&re, input)
 }
 
@@ -77,11 +96,8 @@ pub(super) fn replace_re(input: &str, pattern: &str, replacement: &str) -> Resul
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         return Ok(re.replace_all(input, replacement).to_string().into());
     }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     Ok(re.replace_all(input, replacement).to_string().into())
 }
 
@@ -114,11 +130,8 @@ pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error>
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
         return Ok(scan_re_inner(&re, input));
     }
-    let re = RegexBuilder::new(pattern)
-        .size_limit(1 << 20)
-        .build()
-        .map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     Ok(scan_re_inner(&re, input))
 }
 
@@ -129,8 +142,8 @@ pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
             re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
         )));
     }
-    let re = Regex::new(pattern).map_err(|_| Error::InvalidRegularExpression(pattern.to_string()))?;
-    REGEX_CACHE.write().unwrap().insert(pattern.to_string(), re.clone());
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
     Ok(RuntimeValue::Array(Shared::new(
         re.split(input).map(|s| s.to_owned().into()).collect::<Vec<_>>(),
     )))
@@ -174,6 +187,18 @@ mod tests {
     #[test]
     fn test_match_re_invalid_pattern() {
         assert!(match_re("text", "[invalid").is_err());
+    }
+
+    #[test]
+    fn regex_cache_rejects_oversized_patterns_and_evicts_old_entries() {
+        assert!(match_re("text", &"a".repeat(MAX_REGEX_PATTERN_BYTES + 1)).is_err());
+
+        for index in 0..=MAX_REGEX_CACHE_ENTRIES {
+            let pattern = format!("regex_cache_bound_{index}");
+            assert!(is_match_re("text", &pattern).is_ok());
+        }
+
+        assert!(REGEX_CACHE.read().unwrap().len() <= MAX_REGEX_CACHE_ENTRIES);
     }
 
     #[rstest]
