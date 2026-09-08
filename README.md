@@ -65,11 +65,11 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ### Package Managers
 
-| Method                 | Command                                     |
-| ---------------------- | ------------------------------------------- |
-| Homebrew (macOS/Linux) | `brew install mq`                           |
-| Arch (yay)             | `yay -S mq-bin`                             |
-| Cargo (crates.io)      | `cargo install mq-run`                      |
+| Method                 | Command                                      |
+| ---------------------- | -------------------------------------------- |
+| Homebrew (macOS/Linux) | `brew install mq`                            |
+| Arch (yay)             | `yay -S mq-bin`                              |
+| Cargo (crates.io)      | `cargo install mq-run`                       |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:latest` |
 
 
@@ -78,13 +78,13 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 
 ```sh
 # Install from Github
-cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.4
+cargo install --git https://github.com/harehare/mq.git mq-run --tag v0.8.5
 # Latest Development Version
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq
 # Install the debugger
 cargo install --git https://github.com/harehare/mq.git mq-run --bin mq-dbg --features="debugger"
 # Install using binstall
-cargo binstall mq-run@0.8.4
+cargo binstall mq-run@0.8.5
 ```
 
 Pre-built binaries for macOS, Linux, and Windows are also available on the [GitHub releases page](https://github.com/harehare/mq/releases).
@@ -101,7 +101,7 @@ Pre-built binaries for macOS, Linux, and Windows are also available on the [GitH
 | Zed            | [![Zed README](https://img.shields.io/badge/zed-README-084CCF?style=flat-square&logo=zed&logoColor=white)](https://github.com/harehare/mq/blob/main/editors/zed/README.md)                                                                                                                                                                                                              |
 | JetBrains IDEs | [![JetBrains README](https://img.shields.io/badge/jetbrains-README-000000?style=flat-square&logo=jetbrains&logoColor=white)](https://plugins.jetbrains.com/plugin/33547-mq--jq-like-tool-for-markdown-processing)                                                                                                                                                                       |
 | Obsidian       | [![Obsidian Plugin](https://img.shields.io/badge/obsidian-plugin-7C3AED?style=flat-square&logo=obsidian&logoColor=white)](https://community.obsidian.md/plugins/mq)                                                                                                                                                                                                                     |
-| Helix          | [![Helix Setup](https://img.shields.io/badge/helix-languages.toml-000000?style=flat-square&logo=helix&logoColor=white)](https://mqlang.org/book/start/syntax-highlighting.html#helix)                                                                                                                                                                                                       |
+| Helix          | [![Helix Setup](https://img.shields.io/badge/helix-languages.toml-000000?style=flat-square&logo=helix&logoColor=white)](https://mqlang.org/book/start/syntax-highlighting.html#helix)                                                                                                                                                                                                   |
 | GitHub Actions | [![Setup mq](https://img.shields.io/badge/marketplace-Setup%20mq-2088FF?style=flat-square&logo=githubactions&logoColor=white)](https://github.com/marketplace/actions/setup-mq)                                                                                                                                                                                                         |
 
 

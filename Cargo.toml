@@ -27,20 +27,20 @@ authors = ["Takahiro Sato <harehare1110@gmail.com>"]
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/harehare/mq"
-version = "0.8.4"
+version = "0.8.5"
 
 [workspace.dependencies]
 # Internal crates
-mq-check = {path = "crates/mq-check", version = "0.8.4"}
-mq-dap = {path = "crates/mq-dap", version = "0.8.4"}
-mq-formatter = {path = "crates/mq-formatter", version = "0.8.4"}
-mq-help = {path = "crates/mq-help", version = "0.8.4"}
-mq-hir = {path = "crates/mq-hir", version = "0.8.4"}
-mq-lang = {path = "crates/mq-lang", version = "0.8.4"}
-mq-lint = {path = "crates/mq-lint", version = "0.8.4"}
-mq-macros = {path = "crates/mq-macros", version = "0.8.4"}
-mq-markdown = {path = "crates/mq-markdown", version = "0.8.4"}
-mq-repl = {path = "crates/mq-repl", version = "0.8.4"}
+mq-check = {path = "crates/mq-check", version = "0.8.5"}
+mq-dap = {path = "crates/mq-dap", version = "0.8.5"}
+mq-formatter = {path = "crates/mq-formatter", version = "0.8.5"}
+mq-help = {path = "crates/mq-help", version = "0.8.5"}
+mq-hir = {path = "crates/mq-hir", version = "0.8.5"}
+mq-lang = {path = "crates/mq-lang", version = "0.8.5"}
+mq-lint = {path = "crates/mq-lint", version = "0.8.5"}
+mq-macros = {path = "crates/mq-macros", version = "0.8.5"}
+mq-markdown = {path = "crates/mq-markdown", version = "0.8.5"}
+mq-repl = {path = "crates/mq-repl", version = "0.8.5"}
 # External dependencies
 ammonia = "4.1.3"
 arbitrary = {version = "1.4.2", features = ["derive"]}
