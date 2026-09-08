@@ -9,7 +9,7 @@ use crate::node::{
 use markdown::{CompileOptions, Constructs, Options, ParseOptions};
 use miette::miette;
 use std::{fmt, str::FromStr};
-use table_layout::{TableLayout, pad_cell};
+use table_layout::{TableLayout, write_padded_cell};
 
 mod table_layout;
 
@@ -84,7 +84,6 @@ impl Markdown {
 
                 let value = render_values(values, &self.options, theme);
                 let plain_width = table.plain_width_at(*row, *column);
-                let padded = pad_cell(&value, plain_width, width, &align);
 
                 let is_new_row = current_table_row != Some(*row);
 
@@ -114,7 +113,7 @@ impl Markdown {
                     buffer.push_str(" | ");
                 }
 
-                buffer.push_str(&padded);
+                write_padded_cell(&mut buffer, &value, plain_width, width, &align);
 
                 let next_node = self.nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(

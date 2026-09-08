@@ -3430,85 +3430,30 @@ impl Node {
     }
 
     fn mdast_list_items(list: &mdast::List, level: Level) -> Vec<Node> {
-        list.children
-            .iter()
-            .flat_map(|n| {
-                if let mdast::Node::ListItem(list_item) = n {
-                    let values = Self::from_mdast_node(n.clone())
-                        .into_iter()
-                        .filter(|value| !matches!(value, Self::List(_)))
-                        .collect::<Vec<_>>();
-                    let position = if values.is_empty() {
-                        n.position().map(|p| p.clone().into())
-                    } else {
-                        let first_pos = values.first().and_then(|v| v.position());
-                        let last_pos = values.last().and_then(|v| v.position());
-                        match (first_pos, last_pos) {
-                            (Some(start), Some(end)) => Some(Position {
-                                start: start.start.clone(),
-                                end: end.end.clone(),
-                            }),
-                            _ => n.position().map(|p| p.clone().into()),
+        let mut result = Vec::new();
+        for node in &list.children {
+            match node {
+                mdast::Node::ListItem(list_item) => {
+                    result.push(Self::mdast_list_item_node(list_item, list, level));
+                    for child in &list_item.children {
+                        match child {
+                            mdast::Node::List(sub_list) => {
+                                result.extend(Self::mdast_list_items(sub_list, level + 1));
+                            }
+                            mdast::Node::ListItem(child_item) => {
+                                result.push(Self::mdast_list_item_node(child_item, list, level + 1));
+                            }
+                            _ => {}
                         }
-                    };
-
-                    itertools::concat(vec![
-                        vec![Self::List(List {
-                            level,
-                            index: 0,
-                            ordered: list.ordered,
-                            checked: list_item.checked,
-                            start: list.start,
-                            spread: list.spread,
-                            values,
-                            position,
-                        })],
-                        list_item
-                            .children
-                            .iter()
-                            .flat_map(|node| {
-                                if let mdast::Node::List(sub_list) = node {
-                                    Self::mdast_list_items(sub_list, level + 1)
-                                } else if let mdast::Node::ListItem(list_item) = node {
-                                    let values = Self::from_mdast_node(n.clone())
-                                        .into_iter()
-                                        .filter(|value| !matches!(value, Self::List(_)))
-                                        .collect::<Vec<_>>();
-                                    let position = if values.is_empty() {
-                                        n.position().map(|p| p.clone().into())
-                                    } else {
-                                        let first_pos = values.first().and_then(|v| v.position());
-                                        let last_pos = values.last().and_then(|v| v.position());
-                                        match (first_pos, last_pos) {
-                                            (Some(start), Some(end)) => Some(Position {
-                                                start: start.start.clone(),
-                                                end: end.end.clone(),
-                                            }),
-                                            _ => n.position().map(|p| p.clone().into()),
-                                        }
-                                    };
-                                    vec![Self::List(List {
-                                        level: level + 1,
-                                        index: 0,
-                                        ordered: list.ordered,
-                                        checked: list_item.checked,
-                                        start: list.start,
-                                        spread: list.spread,
-                                        values,
-                                        position,
-                                    })]
-                                } else {
-                                    Vec::new()
-                                }
-                            })
-                            .collect(),
-                    ])
-                } else if let mdast::Node::List(sub_list) = n {
-                    Self::mdast_list_items(sub_list, level + 1)
-                } else {
-                    Vec::new()
+                    }
                 }
-            })
+                mdast::Node::List(sub_list) => result.extend(Self::mdast_list_items(sub_list, level + 1)),
+                _ => {}
+            }
+        }
+
+        result
+            .into_iter()
             .scan(0usize, |next_index, node| {
                 // Only renumber this call's own level; deeper items flattened in from a
                 // recursive call already have their own, independently-numbered index.
@@ -3522,6 +3467,43 @@ impl Node {
                 })
             })
             .collect()
+    }
+
+    /// Converts one list item without recursively converting its nested list children.
+    ///
+    /// The enclosing [`Self::mdast_list_items`] call emits those children at their own level,
+    /// so skipping them here prevents constructing and discarding the same subtree first.
+    fn mdast_list_item_node(list_item: &mdast::ListItem, list: &mdast::List, level: Level) -> Node {
+        let values = list_item
+            .children
+            .iter()
+            .filter(|node| !matches!(node, mdast::Node::List(_)))
+            .flat_map(|node| Self::from_mdast_node(node.clone()))
+            .collect::<Vec<_>>();
+        let position = if values.is_empty() {
+            list_item.position.as_ref().map(|position| position.clone().into())
+        } else {
+            let first_pos = values.first().and_then(Node::position);
+            let last_pos = values.last().and_then(Node::position);
+            match (first_pos, last_pos) {
+                (Some(start), Some(end)) => Some(Position {
+                    start: start.start.clone(),
+                    end: end.end.clone(),
+                }),
+                _ => list_item.position.as_ref().map(|position| position.clone().into()),
+            }
+        };
+
+        Self::List(List {
+            level,
+            index: 0,
+            ordered: list.ordered,
+            checked: list_item.checked,
+            start: list.start,
+            spread: list.spread,
+            values,
+            position,
+        })
     }
 
     fn mdx_attribute_content_to_string(attr: MdxAttributeContent) -> SmolStr {

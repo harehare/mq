@@ -119,19 +119,42 @@ fn cell_display_width(values: &[Node], options: &RenderOptions) -> usize {
     UnicodeWidthStr::width(render_values(values, options, &ColorTheme::PLAIN).as_str())
 }
 
-/// Pads an already-rendered (possibly colored) cell value to `width`
-/// columns, using `plain_width` — the color-free display width — to compute
-/// how much padding is needed.
-pub(super) fn pad_cell(content: &str, plain_width: usize, width: usize, align: &TableAlignKind) -> String {
+/// Writes an already-rendered (possibly colored) cell value padded to `width` columns.
+///
+/// `plain_width` is the color-free display width. Writing directly into the document output
+/// avoids a short-lived allocation for every rendered table cell.
+pub(super) fn write_padded_cell(
+    output: &mut String,
+    content: &str,
+    plain_width: usize,
+    width: usize,
+    align: &TableAlignKind,
+) {
     let pad = width.saturating_sub(plain_width);
 
     match align {
-        TableAlignKind::Right => format!("{}{}", " ".repeat(pad), content),
+        TableAlignKind::Right => {
+            for _ in 0..pad {
+                output.push(' ');
+            }
+            output.push_str(content);
+        }
         TableAlignKind::Center => {
             let left = pad / 2;
             let right = pad - left;
-            format!("{}{}{}", " ".repeat(left), content, " ".repeat(right))
+            for _ in 0..left {
+                output.push(' ');
+            }
+            output.push_str(content);
+            for _ in 0..right {
+                output.push(' ');
+            }
         }
-        TableAlignKind::Left | TableAlignKind::None => format!("{}{}", content, " ".repeat(pad)),
+        TableAlignKind::Left | TableAlignKind::None => {
+            output.push_str(content);
+            for _ in 0..pad {
+                output.push(' ');
+            }
+        }
     }
 }

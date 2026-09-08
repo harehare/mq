@@ -40,6 +40,21 @@ fn embed_doc() -> String {
         .collect()
 }
 
+fn table_doc() -> String {
+    let rows = (0..100)
+        .map(|i| format!("| Item {i} | {} | テーブル {i} |\n", i * 10))
+        .collect::<String>();
+    format!("| Name | Count | Label |\n| :--- | ---: | :-: |\n{rows}")
+}
+
+/// Measures Markdown table rendering separately from parsing. The renderer first scans cells
+/// for display widths, then writes the aligned table into its final output buffer.
+#[divan::bench(name = "render/table_100x3")]
+fn render_table(bencher: divan::Bencher) {
+    let markdown = mq_markdown::Markdown::from_markdown_str(&table_doc()).unwrap();
+    bencher.bench(|| markdown.to_string());
+}
+
 // Full end-to-end: mdast parse + expand_wikilinks (wikilinks present, early-exit skipped).
 #[cfg(feature = "wikilink")]
 #[divan::bench(name = "from_markdown_str/with_wikilinks")]
