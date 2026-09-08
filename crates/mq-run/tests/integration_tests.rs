@@ -1926,6 +1926,189 @@ fn test_atomic_output_failure_leaves_existing_file_untouched() {
 }
 
 #[test]
+fn test_no_clobber_requires_output_file() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--no-clobber")
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_append_requires_output_file() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--append")
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_no_clobber_and_append_conflict() {
+    let (_, output_file) = create_file("cli_no_clobber_append_conflict.md", "");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--no-clobber")
+        .arg("--append")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+}
+
+#[rstest]
+#[case::auto("auto")]
+#[case::always("always")]
+#[case::never("never")]
+fn test_no_clobber_rejects_an_existing_output_file(#[case] mode: &str) {
+    let (_, output_file) = create_file(&format!("cli_no_clobber_exists_{mode}.md"), "original content");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--atomic-output")
+        .arg(mode)
+        .arg("--no-clobber")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .failure();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert_eq!(
+        content, "original content",
+        "--no-clobber must not touch an existing file"
+    );
+}
+
+#[test]
+fn test_no_clobber_writes_when_output_file_is_missing() {
+    let output_file = std::env::temp_dir().join("cli_no_clobber_missing.md");
+    let _ = std::fs::remove_file(&output_file);
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--no-clobber")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("# hello")
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert!(content.contains("hello"));
+}
+
+#[rstest]
+#[case::auto("auto")]
+#[case::always("always")]
+#[case::never("never")]
+fn test_append_adds_after_existing_output_content(#[case] mode: &str) {
+    let (_, output_file) = create_file(&format!("cli_append_existing_{mode}.md"), "# existing\n");
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--atomic-output")
+        .arg(mode)
+        .arg("--append")
+        .arg("-F")
+        .arg("text")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("appended")
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert_eq!(content, "# existing\nappended\n");
+}
+
+#[test]
+fn test_append_creates_output_file_when_missing() {
+    let output_file = std::env::temp_dir().join("cli_append_missing.md");
+    let _ = std::fs::remove_file(&output_file);
+    let output_file_clone = output_file.clone();
+    defer! {
+        if output_file_clone.exists() {
+            std::fs::remove_file(&output_file_clone).ok();
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--append")
+        .arg("-F")
+        .arg("text")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .write_stdin("first")
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert_eq!(content, "first\n");
+}
+
+#[test]
+fn test_append_keeps_multiple_input_files_in_order() {
+    let (_, file_a) = create_file("cli_append_order_a.md", "alpha");
+    let (_, file_b) = create_file("cli_append_order_b.md", "beta");
+    let output_file = std::env::temp_dir().join("cli_append_order_out.md");
+    let _ = std::fs::remove_file(&output_file);
+    let file_a_clone = file_a.clone();
+    let file_b_clone = file_b.clone();
+    let output_file_clone = output_file.clone();
+    defer! {
+        if file_a_clone.exists() { std::fs::remove_file(&file_a_clone).ok(); }
+        if file_b_clone.exists() { std::fs::remove_file(&file_b_clone).ok(); }
+        if output_file_clone.exists() { std::fs::remove_file(&output_file_clone).ok(); }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    cmd.arg("--append")
+        .arg("-F")
+        .arg("text")
+        .arg("-o")
+        .arg(&output_file)
+        .arg("self")
+        .arg(&file_a)
+        .arg(&file_b)
+        .assert()
+        .success();
+
+    let content = std::fs::read_to_string(&output_file).expect("Failed to read output");
+    assert_eq!(content, "alpha\nbeta\n");
+}
+
+#[test]
 fn test_format_flag_sets_input_and_output() {
     let mut cmd = cargo::cargo_bin_cmd!("mq");
     let result = cmd

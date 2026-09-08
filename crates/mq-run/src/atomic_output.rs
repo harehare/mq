@@ -1,13 +1,18 @@
 //! Atomic writes for `-o`/`--output`: write to a temp file next to the
 //! target, then `fsync` + `rename` in [`OutputSink::finish`], so a crash or
 //! full disk mid-write can't leave a truncated file at the destination.
+//!
+//! [`ClobberMode`] adds `--no-clobber` (fail if the target already existed)
+//! and `--append`. Atomic append is crash-safe but not concurrency-safe
+//! (read-modify-rename can race); use `--atomic-output never` for
+//! concurrent-safe appends across processes.
 
 use miette::IntoDiagnostic;
 use miette::miette;
 use std::fs;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum AtomicOutput {
@@ -18,6 +23,18 @@ pub(crate) enum AtomicOutput {
     Always,
     /// Always write directly to the target path, truncating it up front.
     Never,
+}
+
+/// How `-o`/`--output` treats a pre-existing target, for the current process.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum ClobberMode {
+    /// Truncate (direct) or replace (atomic) the target, as today.
+    #[default]
+    Overwrite,
+    /// Fail if the target already existed the first time this process opened it.
+    NoClobber,
+    /// Add to whatever is already at the target instead of replacing it.
+    Append,
 }
 
 /// Call [`OutputSink::finish`] once done writing.
@@ -62,15 +79,34 @@ impl Write for OutputSink {
 }
 
 impl OutputSink {
-    pub(crate) fn open(output_file: &Option<PathBuf>, atomic: AtomicOutput, unbuffered: bool) -> miette::Result<Self> {
+    /// `claimed` marks whether this process already opened `output_file`, so
+    /// `--no-clobber` only checks existence once per run.
+    pub(crate) fn open(
+        output_file: &Option<PathBuf>,
+        atomic: AtomicOutput,
+        unbuffered: bool,
+        clobber: ClobberMode,
+        claimed: &AtomicBool,
+    ) -> miette::Result<Self> {
         match output_file {
-            Some(path) => Self::open_file(path, atomic),
+            Some(path) => Self::open_file(path, atomic, clobber, claimed),
             None if unbuffered => Ok(OutputSink::Stdout(io::stdout().lock())),
             None => Ok(OutputSink::BufferedStdout(BufWriter::new(io::stdout().lock()))),
         }
     }
 
-    fn open_file(path: &Path, atomic: AtomicOutput) -> miette::Result<Self> {
+    fn open_file(
+        path: &Path,
+        atomic: AtomicOutput,
+        clobber: ClobberMode,
+        claimed: &AtomicBool,
+    ) -> miette::Result<Self> {
+        let is_first_open = !claimed.swap(true, Ordering::SeqCst);
+
+        if clobber == ClobberMode::NoClobber && is_first_open && Self::target_exists(path)? {
+            return Err(Self::no_clobber_error(path));
+        }
+
         let use_atomic = match atomic {
             AtomicOutput::Never => false,
             AtomicOutput::Always => true,
@@ -78,16 +114,55 @@ impl OutputSink {
         };
 
         if !use_atomic {
-            let file = fs::File::create(path).into_diagnostic()?;
+            let file = if clobber == ClobberMode::Append {
+                fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .into_diagnostic()?
+            } else if clobber == ClobberMode::NoClobber && is_first_open {
+                // create_new closes the TOCTOU gap left by the check above.
+                fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(path)
+                    .map_err(|e| match e.kind() {
+                        io::ErrorKind::AlreadyExists => Self::no_clobber_error(path),
+                        _ => miette!(e),
+                    })?
+            } else {
+                fs::File::create(path).into_diagnostic()?
+            };
             return Ok(OutputSink::Direct(BufWriter::new(file)));
         }
 
         let (file, temp_path) = Self::create_temp_file(path)?;
+        let mut writer = BufWriter::new(file);
+        if clobber == ClobberMode::Append
+            && let Ok(existing) = fs::read(path)
+        {
+            writer.write_all(&existing).into_diagnostic()?;
+        }
         Ok(OutputSink::Atomic {
-            writer: BufWriter::new(file),
+            writer,
             temp_path,
             target_path: path.to_path_buf(),
         })
+    }
+
+    fn no_clobber_error(path: &Path) -> miette::Report {
+        miette!(
+            "output file already exists: {} (use --append to add to it, or drop --no-clobber to overwrite)",
+            path.display()
+        )
+    }
+
+    fn target_exists(path: &Path) -> miette::Result<bool> {
+        match fs::symlink_metadata(path) {
+            Ok(_) => Ok(true),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(miette!(e)),
+        }
     }
 
     /// FIFOs, sockets, and device files can't safely be replaced via `rename`.
@@ -192,6 +267,18 @@ mod tests {
     use rstest::rstest;
     use scopeguard::defer;
 
+    /// Overwrite-mode open with a fresh `claimed` flag, for tests that don't
+    /// care about no-clobber/append.
+    fn open_overwrite(target: &Option<PathBuf>, atomic: AtomicOutput, unbuffered: bool) -> miette::Result<OutputSink> {
+        OutputSink::open(
+            target,
+            atomic,
+            unbuffered,
+            ClobberMode::Overwrite,
+            &AtomicBool::new(false),
+        )
+    }
+
     fn temp_dir(name: &str) -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
         let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -212,7 +299,7 @@ mod tests {
         defer! { let _ = fs::remove_dir_all(&dir); }
         let target = dir.join("out.md");
 
-        let mut sink = OutputSink::open(&Some(target.clone()), mode, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), mode, false).unwrap();
         sink.write_all(b"hello").unwrap();
         sink.finish().unwrap();
 
@@ -228,7 +315,7 @@ mod tests {
         let target = dir.join("out.md");
         fs::write(&target, "old content that is longer than new").unwrap();
 
-        let mut sink = OutputSink::open(&Some(target.clone()), AtomicOutput::Auto, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Auto, false).unwrap();
         sink.write_all(b"new").unwrap();
         sink.finish().unwrap();
 
@@ -241,7 +328,7 @@ mod tests {
         defer! { let _ = fs::remove_dir_all(&dir); }
         let target = dir.join("out.md");
 
-        let mut sink = OutputSink::open(&Some(target.clone()), AtomicOutput::Never, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Never, false).unwrap();
         sink.write_all(b"direct").unwrap();
         sink.finish().unwrap();
 
@@ -258,7 +345,7 @@ mod tests {
         let target = dir.join("out_dir");
         fs::create_dir(&target).unwrap();
 
-        let mut sink = OutputSink::open(&Some(target.clone()), AtomicOutput::Always, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Always, false).unwrap();
         sink.write_all(b"data").unwrap();
         assert!(sink.finish().is_err());
 
@@ -280,7 +367,7 @@ mod tests {
         fs::write(&target, "old").unwrap();
         fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
 
-        let mut sink = OutputSink::open(&Some(target.clone()), AtomicOutput::Auto, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Auto, false).unwrap();
         sink.write_all(b"new").unwrap();
         sink.finish().unwrap();
 
@@ -315,11 +402,158 @@ mod tests {
         let _listener = UnixListener::bind(&target).expect("failed to bind unix socket");
 
         // `always` skips the special-file check.
-        let mut sink = OutputSink::open(&Some(target.clone()), AtomicOutput::Always, false).unwrap();
+        let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Always, false).unwrap();
         sink.write_all(b"data").unwrap();
         sink.finish().unwrap();
 
         assert!(!fs::symlink_metadata(&target).unwrap().file_type().is_socket());
         assert_eq!(fs::read_to_string(&target).unwrap(), "data");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto)]
+    #[case::always(AtomicOutput::Always)]
+    #[case::never(AtomicOutput::Never)]
+    fn test_no_clobber_fails_when_target_exists(#[case] mode: AtomicOutput) {
+        let dir = temp_dir("no-clobber-exists");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+        fs::write(&target, "original").unwrap();
+
+        let claimed = AtomicBool::new(false);
+        let result = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::NoClobber, &claimed);
+        let err = match result {
+            Err(e) => e,
+            Ok(_) => panic!("expected --no-clobber to reject an existing target"),
+        };
+
+        assert!(err.to_string().contains("already exists"));
+        assert_eq!(fs::read_to_string(&target).unwrap(), "original");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto)]
+    #[case::always(AtomicOutput::Always)]
+    #[case::never(AtomicOutput::Never)]
+    fn test_no_clobber_succeeds_when_target_missing(#[case] mode: AtomicOutput) {
+        let dir = temp_dir("no-clobber-missing");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+
+        let claimed = AtomicBool::new(false);
+        let mut sink = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::NoClobber, &claimed).unwrap();
+        sink.write_all(b"fresh").unwrap();
+        sink.finish().unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn test_no_clobber_allows_a_second_open_in_the_same_run() {
+        let dir = temp_dir("no-clobber-second-open");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.md");
+        let claimed = AtomicBool::new(false);
+
+        let mut first = OutputSink::open(
+            &Some(target.clone()),
+            AtomicOutput::Auto,
+            false,
+            ClobberMode::NoClobber,
+            &claimed,
+        )
+        .unwrap();
+        first.write_all(b"first").unwrap();
+        first.finish().unwrap();
+
+        let mut second = OutputSink::open(
+            &Some(target.clone()),
+            AtomicOutput::Auto,
+            false,
+            ClobberMode::NoClobber,
+            &claimed,
+        )
+        .unwrap();
+        second.write_all(b"second").unwrap();
+        second.finish().unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "second");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto)]
+    #[case::always(AtomicOutput::Always)]
+    #[case::never(AtomicOutput::Never)]
+    fn test_append_creates_target_when_missing(#[case] mode: AtomicOutput) {
+        let dir = temp_dir("append-missing");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.ndjson");
+
+        let claimed = AtomicBool::new(false);
+        let mut sink = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::Append, &claimed).unwrap();
+        sink.write_all(b"{\"a\":1}\n").unwrap();
+        sink.finish().unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "{\"a\":1}\n");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto)]
+    #[case::always(AtomicOutput::Always)]
+    #[case::never(AtomicOutput::Never)]
+    fn test_append_preserves_existing_content(#[case] mode: AtomicOutput) {
+        let dir = temp_dir("append-existing");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.ndjson");
+        fs::write(&target, "{\"a\":1}\n").unwrap();
+
+        let claimed = AtomicBool::new(false);
+        let mut sink = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::Append, &claimed).unwrap();
+        sink.write_all(b"{\"a\":2}\n").unwrap();
+        sink.finish().unwrap();
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "{\"a\":1}\n{\"a\":2}\n");
+    }
+
+    #[rstest]
+    #[case::auto(AtomicOutput::Auto)]
+    #[case::always(AtomicOutput::Always)]
+    #[case::never(AtomicOutput::Never)]
+    fn test_append_accumulates_across_multiple_opens_in_one_run(#[case] mode: AtomicOutput) {
+        let dir = temp_dir("append-multi-open");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.ndjson");
+        let claimed = AtomicBool::new(false);
+
+        for line in ["one\n", "two\n", "three\n"] {
+            let mut sink = OutputSink::open(&Some(target.clone()), mode, false, ClobberMode::Append, &claimed).unwrap();
+            sink.write_all(line.as_bytes()).unwrap();
+            sink.finish().unwrap();
+        }
+
+        assert_eq!(fs::read_to_string(&target).unwrap(), "one\ntwo\nthree\n");
+    }
+
+    #[test]
+    fn test_append_atomic_leaves_no_stray_temp_files() {
+        let dir = temp_dir("append-atomic-cleanup");
+        defer! { let _ = fs::remove_dir_all(&dir); }
+        let target = dir.join("out.ndjson");
+        fs::write(&target, "old\n").unwrap();
+
+        let claimed = AtomicBool::new(false);
+        let mut sink = OutputSink::open(
+            &Some(target.clone()),
+            AtomicOutput::Always,
+            false,
+            ClobberMode::Append,
+            &claimed,
+        )
+        .unwrap();
+        sink.write_all(b"new\n").unwrap();
+        sink.finish().unwrap();
+
+        let entries: Vec<_> = fs::read_dir(&dir).unwrap().collect();
+        assert_eq!(entries.len(), 1, "only the target file should remain");
     }
 }
