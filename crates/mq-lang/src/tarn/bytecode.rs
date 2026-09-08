@@ -1168,6 +1168,21 @@ mod tests {
     }
 
     #[test]
+    fn capture_slots_selects_the_last_declaration() {
+        let first = Ident::new("first");
+        let second = Ident::new("second");
+        let chunk = Chunk {
+            local_names: vec![first, second, first],
+            ..Default::default()
+        };
+
+        assert_eq!(
+            super::super::interpreter::capture_slots(&chunk, &[first, second]),
+            vec![(first, 2), (second, 1)]
+        );
+    }
+
+    #[test]
     fn verifier_rejects_invalid_constant_and_jump_targets() {
         let invalid_constant = Chunk {
             code: vec![OpCode::Const(0), OpCode::Return],

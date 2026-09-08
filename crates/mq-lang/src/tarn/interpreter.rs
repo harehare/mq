@@ -82,6 +82,27 @@ pub(crate) struct RunOptions<'a> {
     pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
 }
 
+/// A top-level local selected for capture after execution.
+///
+/// The compiler may retain multiple source declarations for the same name. The slot is resolved
+/// when bytecode is compiled so repeated evaluations can read it directly.
+pub(crate) type CaptureSlot = (Ident, u16);
+
+/// Resolves names to their final top-level slots, preserving the compiler's last-declaration
+/// lookup semantics.
+pub(crate) fn capture_slots(chunk: &Chunk, names: &[Ident]) -> Vec<CaptureSlot> {
+    names
+        .iter()
+        .filter_map(|name| {
+            chunk
+                .local_names
+                .iter()
+                .rposition(|local| local == name)
+                .map(|slot| (*name, slot as u16))
+        })
+        .collect()
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 /// Runs a compiled program.
 pub(crate) fn run(
@@ -195,6 +216,23 @@ pub(crate) fn run_with_env_capturing_locals(
     capture_names: &[Ident],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
+    let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
+    run_with_env_capturing_slots(compiled, input, bindings, options, env, &capture_slots, pools)
+}
+
+/// Runs with precomputed top-level local slots and captures their final values.
+///
+/// [`capture_slots`] lets cached callers resolve names once at compilation time rather than
+/// scanning the chunk's local names for every input value.
+pub(crate) fn run_with_env_capturing_slots(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    bindings: &[RuntimeValue],
+    options: RunOptions<'_>,
+    env: &VmEnv,
+    capture_slots: &[CaptureSlot],
+    pools: ExecutionPools,
+) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
     #[cfg(feature = "debugger")]
     let mut debug = DebugRuntime {
         hook: None,
@@ -208,7 +246,7 @@ pub(crate) fn run_with_env_capturing_locals(
         options,
         env,
         pools,
-        capture_names,
+        capture_slots,
         #[cfg(feature = "debugger")]
         &mut debug,
     )
@@ -261,6 +299,7 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
         current_node: None,
     };
     let env = VmEnv::from_bindings(options.global_bindings);
+    let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
     let (result, captured, _) = run_impl_capturing_locals_with_env(
         compiled,
         input,
@@ -268,7 +307,7 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
         options,
         &env,
         ExecutionPools::default(),
-        capture_names,
+        &capture_slots,
         &mut debug,
     );
     (result, captured)
@@ -389,8 +428,8 @@ fn run_impl_with_bindings(
     (result, limits.into_pools())
 }
 
-/// Like [`run_impl_with_bindings`], but captures `capture_names`' final slot values. Bypasses
-/// `run_chunk`'s pooling wrapper to keep `locals` readable; not for use on a hot path.
+/// Like [`run_impl_with_bindings`], but captures precomputed local slots' final values. Bypasses
+/// `run_chunk`'s pooling wrapper to keep `locals` readable.
 #[allow(clippy::too_many_arguments)] // The separate pools, capture list, and debugger are independent services.
 fn run_impl_capturing_locals_with_env(
     compiled: &CompiledProgram,
@@ -399,7 +438,7 @@ fn run_impl_capturing_locals_with_env(
     options: RunOptions<'_>,
     env: &VmEnv,
     pools: ExecutionPools,
-    capture_names: &[Ident],
+    capture_slots: &[CaptureSlot],
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
@@ -438,15 +477,11 @@ fn run_impl_capturing_locals_with_env(
         #[cfg(feature = "debugger")]
         debug,
     );
-    let captured = capture_names
+    let captured = capture_slots
         .iter()
-        .filter_map(|name| {
-            // Last-declared slot wins, matching the compiler's reverse name resolution.
-            top_level_chunk
-                .local_names
-                .iter()
-                .rposition(|local| local == name)
-                .and_then(|slot| locals.get_checked(slot as u16))
+        .filter_map(|(name, slot)| {
+            locals
+                .get_checked(*slot)
                 .map(|value| (*name, into_runtime_value(value, chunks)))
         })
         .collect();

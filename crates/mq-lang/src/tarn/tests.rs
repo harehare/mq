@@ -1093,6 +1093,23 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
+#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[test]
+fn cached_nodes_capture_reuses_precomputed_slots() {
+    let mut engine = crate::DefaultEngine::default();
+    let compiled = engine.compile("let [x] = [1] | let [x] = [2] | nodes | x").unwrap();
+
+    let results = engine
+        .eval_compiled(
+            &compiled,
+            vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())].into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(results.values(), &[RuntimeValue::Number(2.0.into())]);
+    assert!(compiled.cached_vm_program().flatten().is_some());
+}
+
 // Deliberate divergence from the tree-walker (which returns None here) — not worth the
 // per-iteration cost of matching it exactly.
 #[rstest]

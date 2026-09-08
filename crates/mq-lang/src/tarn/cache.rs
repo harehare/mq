@@ -19,6 +19,8 @@ pub(crate) struct CachedProgram {
     program: compiler::CompiledProgram,
     after: Option<compiler::CompiledProgram>,
     let_names: Vec<crate::Ident>,
+    /// Final slots for `let_names` in `program`, resolved once for all cached inputs.
+    let_slots: Vec<interpreter::CaptureSlot>,
     configuration: Vec<engine::VmModulePrelude>,
     /// Global snapshot used to bake module `let` initializers into constants; must still match
     /// for the cache to stay valid, since a global's value can change under the same name.
@@ -119,10 +121,12 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
             Vec::new(),
         )
     };
+    let let_slots = interpreter::capture_slots(&program.chunks[0], &let_names);
     Ok(CachedProgram {
         program,
         after,
         let_names,
+        let_slots,
         configuration,
         baked_globals_key,
         module_cache_key,
@@ -256,7 +260,7 @@ where
                     pools = next_pools;
                     result
                 } else {
-                    let (result, captured, next_pools) = interpreter::run_with_env_capturing_locals(
+                    let (result, captured, next_pools) = interpreter::run_with_env_capturing_slots(
                         &compiled.program,
                         value,
                         &[],
@@ -267,7 +271,7 @@ where
                             global_bindings,
                         },
                         &env,
-                        &compiled.let_names,
+                        &compiled.let_slots,
                         execution_pools,
                     );
                     pools = next_pools;
