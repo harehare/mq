@@ -43,14 +43,6 @@ awk -v transformed="$tmpfile" '
 ' ../Cargo.toml > "$tmpfile2" && mv "$tmpfile2" ../Cargo.toml
 rm -f "$tmpfile"
 
-# Update Cargo.toml files
-for crate in ../crates/*; do
-    if [ -f "$crate/Cargo.toml" ]; then
-        tmpfile=$(mktemp)
-        mq -I text --args version $MQ_VERSION 'import "bump_version" | bump_version::crate_version()' "$crate/Cargo.toml" > "$tmpfile" && mv "$tmpfile" "$crate/Cargo.toml"
-    fi
-done
-
 # Update package.json files
 for dir in ../packages ../editors; do
     for package in "$dir"/*; do

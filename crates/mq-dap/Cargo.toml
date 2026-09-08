@@ -1,15 +1,15 @@
 [package]
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+authors.workspace = true
 categories = ["command-line-utilities", "text-processing"]
 description = "Debug Adapter Protocol implementation for mq"
-edition = "2024"
+edition.workspace = true
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
-license = "MIT"
+license.workspace = true
 name = "mq-dap"
 readme = "README.md"
-repository = "https://github.com/harehare/mq"
-version = "0.8.4"
+repository.workspace = true
+version.workspace = true
 
 [features]
 tarn = ["mq-lang/tarn"]

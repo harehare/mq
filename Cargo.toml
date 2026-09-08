@@ -22,6 +22,13 @@ members = [
 ]
 resolver = "3"
 
+[workspace.package]
+authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/harehare/mq"
+version = "0.8.4"
+
 [workspace.dependencies]
 # Internal crates
 mq-check = {path = "crates/mq-check", version = "0.8.4"}

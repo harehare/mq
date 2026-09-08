@@ -1,12 +1,3 @@
-def crate_version(line):
-  if (line != "[workspace.package]" && line != "[package]" && starts_with(line, "[")):
-    s"
-${line}"
-  elif (starts_with(line, "version = ")):
-    s"version = \"${version}\""
-  else: line
-end
-
 def gradle_version(line):
   if (starts_with(line, "pluginVersion = ")):
     s"pluginVersion = ${version}"
@@ -31,6 +22,8 @@ end
 def crates_version(line):
   if (contains(line, "path = \"crates/")):
     gsub(line, "version = \"[0-9]+.[0-9]+.[0-9]+\"", s"version = \"${version}\"")
+  elif (starts_with(line, "version = \"")):
+    s"version = \"${version}\""
   else: line
 end
 

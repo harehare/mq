@@ -1,12 +1,12 @@
 [package]
 name = "mq-macros"
-version = "0.8.4"
-edition = "2024"
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "Procedural macros for mq builtin function registration"
 homepage = "https://mqlang.org/"
-license = "MIT"
-repository = "https://github.com/harehare/mq"
+license.workspace = true
+repository.workspace = true
 
 [lib]
 proc-macro = true

@@ -1,16 +1,16 @@
 [package]
-authors = ["Takahiro Sato <harehare1110@gmail.com>"]
+authors.workspace = true
 categories = ["command-line-utilities", "text-processing"]
 description = "C API for integrating mq into C applications"
-edition = "2024"
+edition.workspace = true
 homepage = "https://mqlang.org/"
 keywords = ["markdown", "jq", "query"]
-license = "MIT"
+license.workspace = true
 name = "mq-ffi"
 publish = false
 readme = "README.md"
-repository = "https://github.com/harehare/mq"
-version = "0.8.4"
+repository.workspace = true
+version.workspace = true
 
 [dependencies]
 libc = {workspace = true}
