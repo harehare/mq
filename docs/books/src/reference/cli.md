@@ -22,6 +22,10 @@ Options:
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
           Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, gron, json, psv, toml, toon, tsv, xml, yaml]
+      --csv-delimiter <CHAR>
+          Custom delimiter for `-I csv` input (a single ASCII character). Has no effect on `-I tsv`/`-I psv`, which use a fixed tab/pipe delimiter by design; pass `-I csv` with this flag instead if you need a different delimiter (e.g. `;`)
+      --no-header
+          Treat csv/tsv/psv input as headerless: each row becomes an array of values instead of a dict keyed by header names. Applies to `-I csv`, `-I tsv`, and `-I psv`
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -69,7 +73,7 @@ Options:
   -a, --allow-all
           Grant every sandboxed permission at once (read/write/net/run/env), and also enable HTTP module imports as if --allow-http-import were passed. Disabled by default. Cannot be combined with the individual --allow-* flags above
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
+          Set output format. When omitted, inferred from the `-o`/`--output` file extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to markdown [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
       --diff
@@ -86,6 +90,8 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+      --atomic-output <ATOMIC_OUTPUT>
+          Write `-o`/`--output` atomically via a same-directory temp file + fsync + rename, so a crash or full disk mid-write can't truncate the target [default: auto] [possible values: auto, always, never]
   -C, --color-output
           Colorize markdown output
   -B, --before-context <NUM>
@@ -104,6 +110,14 @@ Options:
           Limit output to at most N results
       --no-position
           Omit Markdown node position information from structured output (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size when source line/column spans aren't needed
+      --compact
+          Print JSON on a single line, without pretty-printing. Only valid with -F json
+      --indent <N>
+          Number of spaces per indent level in pretty-printed output (0-7), jq's `--indent`. Only valid with -F json or -F xml; default is 2
+      --tab
+          Indent pretty-printed output with tabs instead of spaces, jq's `--tab`. Only valid with -F json or -F xml
+  -T, --format <FORMAT>
+          Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`). An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag [possible values: markdown, html, text, json, gron, raw, csv, toml, toon, xml, yaml]
       --list
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
@@ -115,7 +129,7 @@ Options:
       --timeout <SECONDS>
           Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). No timeout by default
   -h, --help
-          Print help
+          Print help (see more with '--help')
   -V, --version
           Print version
 
