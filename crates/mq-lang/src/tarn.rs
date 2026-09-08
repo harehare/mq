@@ -39,6 +39,7 @@ use crate::engine;
 use crate::error;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
+#[cfg(test)]
 use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
@@ -153,9 +154,6 @@ fn compile_error_to_runtime_error(
     match err {
         compiler::CompileError::UndefinedIdent(name, _) => RuntimeError::UndefinedReference(token, name, Box::new([])),
         compiler::CompileError::Unsupported(what, _) => RuntimeError::Runtime(token, format!("unsupported: {what}")),
-        compiler::CompileError::UnsupportedExpr(what, _) => {
-            RuntimeError::Runtime(token, format!("unsupported expression: {what}"))
-        }
         compiler::CompileError::AssignToImmutable(name, _) => RuntimeError::AssignToImmutable(token, name),
         compiler::CompileError::InvalidBytecode(message) => RuntimeError::Runtime(token, message),
         compiler::CompileError::Module(_) => unreachable!("routed to InnerError::Module by into_inner_error instead"),
@@ -171,7 +169,7 @@ pub(crate) fn vm_error_to_runtime_error(
     err.to_runtime_error(token, token_id, token_arena)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
     compile_and_run_full(
         program,
@@ -191,7 +189,7 @@ pub(crate) fn compile_and_run_with_input(
     compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg(test)]
 pub(crate) fn compile_and_run_full(
     program: &Program,
     input: RuntimeValue,

@@ -103,8 +103,8 @@ pub(crate) fn capture_slots(chunk: &Chunk, names: &[Ident]) -> Vec<CaptureSlot> 
         .collect()
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
 /// Runs a compiled program.
+#[cfg(test)]
 pub(crate) fn run(
     compiled: &CompiledProgram,
     input: RuntimeValue,

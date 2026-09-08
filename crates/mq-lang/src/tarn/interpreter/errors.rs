@@ -63,7 +63,6 @@ impl fmt::Display for VmError {
 }
 
 impl VmError {
-    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
             VmError::Located(_, token_id) => Some(*token_id),
