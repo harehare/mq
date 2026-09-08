@@ -140,6 +140,10 @@ test-fuzz:
 test-fuzz-tarn:
     cargo +nightly fuzz run tarn --features tarn
 
+# Differentially fuzz the tree-walking evaluator and Tarn VM. Optional argument is run count.
+test-fuzz-differential runs="1000":
+    MQ_DIFF_RUNS={{runs}} ./fuzz/scripts/run-differential.sh
+
 # Run WebAssembly tests in Chrome
 [working-directory: 'crates/mq-wasm']
 test-wasm:

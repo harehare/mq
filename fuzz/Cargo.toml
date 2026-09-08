@@ -36,3 +36,17 @@ doc = false
 name = "tarn"
 path = "fuzz_targets/tarn.rs"
 test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "differential-runner"
+path = "src/bin/differential_runner.rs"
+test = false
