@@ -9,10 +9,15 @@ function M.is_running()
   return client_id ~= nil
 end
 
--- Start LSP server
-function M.start()
+-- Start LSP server.
+-- on_ready, if given, is called once the client has finished the
+-- initialize handshake (or immediately if the server is already running).
+function M.start(on_ready)
   if M.is_running() then
     utils.info("LSP server is already running")
+    if on_ready then
+      on_ready()
+    end
     return
   end
 
@@ -67,6 +72,12 @@ function M.start()
     on_attach = lsp_config.on_attach,
     capabilities = config.get_capabilities(),
     settings = lsp_config.settings,
+    on_init = function(...)
+      utils.info("LSP server started")
+      if on_ready then
+        on_ready()
+      end
+    end,
   }
 
   client_id = vim.lsp.start_client(client_config)
@@ -81,8 +92,6 @@ function M.start()
   if vim.bo[bufnr].filetype == "mq" then
     vim.lsp.buf_attach_client(bufnr, client_id)
   end
-
-  utils.info("LSP server started")
 end
 
 -- Stop LSP server
@@ -105,8 +114,16 @@ function M.restart()
 end
 
 function M.execute_command(command, script, input, input_format)
+  -- Auto-start the LSP server on demand instead of erroring out. Commands
+  -- like MqExecuteQuery/MqRunSelected/MqExecuteFile run against markdown/html
+  -- buffers, which never trigger the FileType=mq autostart autocmd in
+  -- setup_autostart(), so without this the server would never be running
+  -- when they're invoked from a non-mq buffer.
   if not M.is_running() then
-    utils.error("LSP server is not running")
+    utils.info("mq LSP server not running, starting it...")
+    M.start(function()
+      M.execute_command(command, script, input, input_format)
+    end)
     return
   end
 
