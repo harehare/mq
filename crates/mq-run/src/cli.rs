@@ -29,7 +29,7 @@ static HAD_TRUTHY_OUTPUT: AtomicBool = AtomicBool::new(false);
 // Tracks whether --diff found any changed input, for the exit-code-1 CI check below.
 static HAD_DIFF: AtomicBool = AtomicBool::new(false);
 
-use crate::atomic_output::{AtomicOutput, OutputSink};
+use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
 
@@ -603,6 +603,24 @@ struct OutputArgs {
     /// + rename, so a crash or full disk mid-write can't truncate the target.
     #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_file")]
     atomic_output: AtomicOutput,
+
+    /// Fail instead of overwriting `-o`/`--output` if the target already exists.
+    #[clap(long, default_value_t = false, requires = "output_file", conflicts_with = "append")]
+    no_clobber: bool,
+
+    /// Add to `-o`/`--output` instead of replacing it, creating it if missing.
+    /// Use `--atomic-output never` for concurrent-safe appends across processes.
+    #[clap(
+        long,
+        default_value_t = false,
+        requires = "output_file",
+        conflicts_with = "no_clobber"
+    )]
+    append: bool,
+
+    /// Whether this process has already opened `output_file` once.
+    #[clap(skip)]
+    output_claimed: std::sync::Arc<AtomicBool>,
 
     /// Colorize markdown output
     #[arg(short = 'C', long = "color-output", default_value_t = false)]
@@ -1769,6 +1787,16 @@ impl Cli {
             })
     }
 
+    fn clobber_mode(&self) -> ClobberMode {
+        if self.output.append {
+            ClobberMode::Append
+        } else if self.output.no_clobber {
+            ClobberMode::NoClobber
+        } else {
+            ClobberMode::Overwrite
+        }
+    }
+
     fn auto_query_prefix(&self, file: &Option<PathBuf>) -> Option<String> {
         let fmt = match self.explicit_input_format() {
             Some(fmt) => fmt,
@@ -1894,6 +1922,8 @@ impl Cli {
                 &self.output.output_file,
                 self.output.atomic_output,
                 self.output.unbuffered,
+                self.clobber_mode(),
+                &self.output.output_claimed,
             )?;
             grep::print_grep(runtime_values, &input, file, handle, before, after)
         } else {
@@ -2214,7 +2244,9 @@ impl Cli {
             return self.execute_eval_all(&query, &files);
         }
 
-        if files.len() > self.parallel_threshold {
+        // Keep --append sequential: parallel files racing the same read-then-rename
+        // append could clobber each other.
+        if files.len() > self.parallel_threshold && !self.output.append {
             files.par_iter().try_for_each(|(file, content)| {
                 let mut engine = self.create_engine()?;
                 self.execute(&mut engine, &query, file, content)
@@ -2358,6 +2390,8 @@ impl Cli {
             &self.output.output_file,
             self.output.atomic_output,
             self.output.unbuffered,
+            self.clobber_mode(),
+            &self.output.output_claimed,
         )?;
 
         for (file, content) in files {
@@ -2804,6 +2838,8 @@ impl Cli {
             &self.output.output_file,
             self.output.atomic_output,
             self.output.unbuffered,
+            self.clobber_mode(),
+            &self.output.output_claimed,
         )?;
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
@@ -2855,6 +2891,8 @@ impl Cli {
             &self.output.output_file,
             self.output.atomic_output,
             self.output.unbuffered,
+            self.clobber_mode(),
+            &self.output.output_claimed,
         )?;
 
         let label = file
