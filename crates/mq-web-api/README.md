@@ -206,6 +206,8 @@ cached.
 | `QUERY_CACHE_ENABLED` | `true` | Enable the query result cache |
 | `QUERY_CACHE_TTL_SECONDS` | `30` | How long a cached result stays fresh |
 | `QUERY_CACHE_MAX_ENTRIES` | `1000` | Max number of cached query results |
+| `QUERY_CACHE_MAX_ENTRY_BYTES` | `1048576` | Max bytes retained by one cached response |
+| `QUERY_CACHE_MAX_TOTAL_BYTES` | `33554432` | Max bytes retained by all cached responses |
 
 ### Rate Limiting
 

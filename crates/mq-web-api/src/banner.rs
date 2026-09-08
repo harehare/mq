@@ -41,9 +41,10 @@ pub fn print_banner(config: &Config) {
     let server_url = config.server_url();
     let cache = if config.query_cache.enabled {
         format!(
-            "enabled (ttl {}s, max {})",
+            "enabled (ttl {}s, max {} entries / {} MiB)",
             config.query_cache.ttl.as_secs(),
-            config.query_cache.max_entries
+            config.query_cache.max_entries,
+            config.query_cache.max_total_bytes / (1024 * 1024)
         )
     } else {
         "disabled".to_string()

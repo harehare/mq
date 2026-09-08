@@ -155,6 +155,8 @@ pub async fn start_server(config: Config) -> Result<(), Box<dyn std::error::Erro
     info!("  QUERY_CACHE_ENABLED: Cache repeated query/input combinations (default: true)");
     info!("  QUERY_CACHE_TTL_SECONDS: How long a cached result stays fresh (default: 30)");
     info!("  QUERY_CACHE_MAX_ENTRIES: Max number of cached query results (default: 1000)");
+    info!("  QUERY_CACHE_MAX_ENTRY_BYTES: Max bytes retained by one cache entry (default: 1048576)");
+    info!("  QUERY_CACHE_MAX_TOTAL_BYTES: Max bytes retained by all cache entries (default: 33554432)");
     info!("  AUTH_ENABLED: Require an API key on protected endpoints (default: false)");
     info!("  API_KEYS: Comma-separated API keys (all get read+query scope, no rate limit override)");
     info!("  API_KEYS_FILE: Path to a JSON file of {{key, name, scopes, rate_limit_per_window}} entries");
