@@ -1,4 +1,5 @@
 use mq_lang::{Shared, SharedCell};
+use std::sync::LazyLock;
 
 fn main() {
     divan::main();
@@ -227,6 +228,23 @@ fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
         Shared::clone(&token_arena),
     )
     .unwrap()
+}
+
+/// Exercises byte-string lexing without charging construction of the input to the parser.
+#[divan::bench]
+fn parse_large_byte_string() -> Vec<Shared<mq_lang::AstNode>> {
+    static CODE: LazyLock<String> = LazyLock::new(|| format!(r#"b"{}""#, "a".repeat(16 * 1024)));
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(4)));
+    mq_lang::parse(&CODE, token_arena).unwrap()
+}
+
+/// Exercises flattening of a long logical-expression chain during AST construction.
+#[divan::bench]
+fn parse_long_and_chain() -> Vec<Shared<mq_lang::AstNode>> {
+    static CODE: LazyLock<String> =
+        LazyLock::new(|| std::iter::repeat_n("true", 4_096).collect::<Vec<_>>().join(" && "));
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(8_192)));
+    mq_lang::parse(&CODE, token_arena).unwrap()
 }
 
 #[divan::bench(name = "eval_foreach")]

@@ -10,7 +10,7 @@ use nom::{
     bytes::complete::{escaped_transform, tag, take_while_m_n},
     character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of, satisfy},
     combinator::{map, map_opt, map_res, recognize, value},
-    multi::{many0, many1},
+    multi::{fold_many0, many0, many1},
     sequence::{delimited, pair, preceded},
 };
 use nom_locate::{LocatedSpan, position};
@@ -447,20 +447,23 @@ fn byte_string_literal(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, _) = tag("b\"")(span)?;
 
-    let (span, byte_segments) = many0(alt((
-        map(byte_escape_seq, |b| vec![b]),
-        // Only plain ASCII characters are allowed unescaped; non-ASCII must
-        // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
-        map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| {
-            vec![c as u8]
-        }),
-    )))
+    let (span, bytes) = fold_many0(
+        alt((
+            byte_escape_seq,
+            // Only plain ASCII characters are allowed unescaped; non-ASCII must
+            // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
+            map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| c as u8),
+        )),
+        Vec::new,
+        |mut bytes, byte| {
+            bytes.push(byte);
+            bytes
+        },
+    )
     .parse(span)?;
 
     let (span, _) = char('"').parse(span)?;
     let (span, end) = position(span)?;
-    let bytes: Vec<u8> = byte_segments.into_iter().flatten().collect();
-
     Ok((
         span,
         Token {
