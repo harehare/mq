@@ -290,16 +290,7 @@ impl DebuggerHandler {
 
                     let value: mq_lang::RuntimeValue = context.current_value.clone();
                     let mut engine = self.engine.clone();
-                    #[cfg(feature = "tarn")]
                     let values = match engine.eval_debug_expression(&expr, value, &context.vm_bindings()) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            eprintln!("Error evaluating expression: {}", e);
-                            continue;
-                        }
-                    };
-                    #[cfg(not(feature = "tarn"))]
-                    let values = match engine.eval_debug_expression(&expr, value, &context.env) {
                         Ok(v) => v,
                         Err(e) => {
                             eprintln!("Error evaluating expression: {}", e);

@@ -1,26 +1,10 @@
 use super::interpreter::ExecutionPools;
 use super::*;
-#[cfg(not(feature = "tarn"))]
-use crate::Selector;
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{self as ast, Args};
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{MatchArm, Param, Pattern};
-#[cfg(not(feature = "tarn"))]
-use crate::error::runtime::RuntimeError;
-#[cfg(not(feature = "tarn"))]
-use crate::number::{INFINITE, NAN, Number};
 use crate::range::Range;
-#[cfg(not(feature = "tarn"))]
-use crate::{AstExpr, AstNode, DefaultModuleLoader, IdentWithToken, Program, error::InnerError};
 use crate::{Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
-#[cfg(not(feature = "tarn"))]
-use smallvec::{SmallVec, smallvec};
-#[cfg(not(feature = "tarn"))]
-use std::f64::consts::PI;
 
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
@@ -98,58 +82,6 @@ fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     );
     token_arena
 }
-
-#[cfg(not(feature = "tarn"))]
-fn ast_node(expr: AstExpr) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(expr),
-    })
-}
-
-#[cfg(not(feature = "tarn"))]
-fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(ast::Expr::Call(IdentWithToken::new(name), args)),
-    })
-}
-
-// The shared table keeps VM and evaluator cases aligned.
-#[cfg(not(feature = "tarn"))]
-crate::eval_table_cases!(
-    evaluator_table_cases_run_on_vm,
-    token_arena,
-    runtime_values,
-    program,
-    expected,
-    {
-        let host_functions = HostFunctions::default();
-        let vm_result = compile_and_run_many(
-            &program,
-            runtime_values.into_iter(),
-            EngineRunContext {
-                host_functions: &host_functions,
-                // Hand-built AST cases must never leave the VM test worker running forever.
-                timeout: Some(std::time::Duration::from_secs(1)),
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
-                token_arena,
-                module_loader: DefaultModuleLoader::default(),
-                global_bindings: &[],
-                session: None,
-                preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-            },
-        );
-
-        match expected {
-            Ok(expected_values) => assert_eq!(
-                vm_result.expect("VM should accept a successful evaluator table case"),
-                expected_values,
-            ),
-            Err(_) => assert!(vm_result.is_err(), "VM should reject an evaluator error case"),
-        }
-    }
-);
 
 fn run(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
@@ -232,7 +164,7 @@ fn run_with_prelude(code: &str) -> RuntimeValue {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
     ) {
         Ok(v) => v,
         Err(e) => panic!("{e}"),
@@ -564,7 +496,7 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
             RuntimeValue::None,
             &HostFunctions::default(),
             None,
-            crate::eval::Options::default().max_call_stack_depth,
+            crate::tarn::Options::default().max_call_stack_depth,
         )
         .unwrap()
     }
@@ -991,28 +923,10 @@ fn text_node(value: &str) -> mq_markdown::Node {
     })
 }
 
-/// Reference output from the tree-walking evaluator.
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-    tree_walk_eval_many(code, vec![input]).remove(0)
-}
-
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    let mut engine = crate::DefaultEngine::default();
-    engine.evaluator.load_builtin_module_full().unwrap();
-    let compiled = engine.compile(code).unwrap();
-    engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
-}
-
-// In a Tarn-only build the tree walker is intentionally absent. Keep the test helpers usable
-// for VM-only behavioural assertions without pulling the legacy evaluator into the binary.
-#[cfg(feature = "tarn")]
 fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
     vm_engine_eval_many(code, vec![input]).remove(0)
 }
 
-#[cfg(feature = "tarn")]
 fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     vm_engine_eval_many(code, inputs)
 }
@@ -1109,7 +1023,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1122,7 +1036,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 #[test]
 fn cached_nodes_capture_reuses_precomputed_slots() {
     let mut engine = crate::DefaultEngine::default();
@@ -1171,7 +1085,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1206,7 +1120,7 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
             engine: EngineRunContext {
                 host_functions: &HostFunctions::default(),
                 timeout: None,
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
                 token_arena,
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
@@ -1237,7 +1151,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1264,7 +1178,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1299,7 +1213,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1321,7 +1235,7 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1487,7 +1401,7 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1542,7 +1456,7 @@ fn debugger_hook_exposes_closure_bindings() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1646,7 +1560,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1735,7 +1649,7 @@ fn vm_debugger_hook_applies_live_frame_writes(
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1794,7 +1708,7 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1871,7 +1785,7 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -2259,7 +2173,7 @@ fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
     )
     .unwrap()
 }

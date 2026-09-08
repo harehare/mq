@@ -46,14 +46,6 @@ mod cst;
 pub mod diagnostic;
 mod engine;
 mod error;
-#[cfg(not(feature = "tarn"))]
-mod eval;
-// Keeps shared test helpers' limits path available without compiling the tree-walker.
-#[cfg(feature = "tarn")]
-mod eval {
-    #[allow(unused_imports)]
-    pub(crate) use crate::tarn::Options;
-}
 mod ident;
 mod io;
 mod lexer;
@@ -64,7 +56,6 @@ mod range;
 mod runtime;
 mod selector;
 pub mod suggest;
-#[cfg(feature = "tarn")]
 mod tarn;
 
 use lexer::Lexer;
