@@ -24,10 +24,7 @@ use crate::io::HttpRequestSpec;
 use crate::io::{FileKind, Io};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
-#[cfg(not(feature = "tarn"))]
-use crate::runtime::env::{self, Env};
 use crate::selector::Selector;
-#[cfg(feature = "tarn")]
 use crate::tarn::VmEnv;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
@@ -103,9 +100,6 @@ fn checked_index(value: &number::Number, operation: &str) -> Result<usize, Error
 
 type FunctionName = String;
 type ErrorArgs = Vec<RuntimeValue>;
-#[cfg(not(feature = "tarn"))]
-type SharedEnv = Shared<SharedCell<Env>>;
-#[cfg(feature = "tarn")]
 type SharedEnv = VmEnv;
 pub type Args = SmallVec<[RuntimeValue; 2]>;
 
@@ -170,37 +164,6 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     let provided = args;
 
     match fn_value {
-        #[cfg(not(feature = "tarn"))]
-        RuntimeValue::Function(f) => {
-            if provided.len() >= f.params.len() {
-                return Err(Error::InvalidNumberOfArguments(
-                    ident.to_string(),
-                    f.params.len() as u8,
-                    provided.len() as u8 + 1,
-                ));
-            }
-            let partial_env = Shared::new(SharedCell::new(Env::with_parent(Shared::downgrade(&f.env))));
-            let mut remaining = crate::ast::node::Params::new();
-            for (i, param) in f.params.iter().enumerate() {
-                if i < provided.len() {
-                    #[cfg(not(feature = "sync"))]
-                    partial_env.borrow_mut().define(param.ident.name, provided[i].clone());
-                    #[cfg(feature = "sync")]
-                    partial_env
-                        .write()
-                        .unwrap()
-                        .define(param.ident.name, provided[i].clone());
-                } else {
-                    remaining.push(param.clone());
-                }
-            }
-            Ok(RuntimeValue::new_function(
-                Shared::new(remaining),
-                Shared::clone(&f.body),
-                partial_env,
-            ))
-        }
-        #[cfg(feature = "tarn")]
         RuntimeValue::VmClosure(vc) => {
             let total_params = vc.chunks[vc.chunk_index as usize].param_shape.bindings.len();
             let already_bound = vc.bound_args.len();
@@ -4276,95 +4239,6 @@ fn _html_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
-/// Sets a symbol or variable in the current environment with the given value.
-///
-/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
-/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
-/// scheduled for removal in the next release.
-#[cfg(not(feature = "tarn"))]
-#[mq_macros::mq_fn(name = "set_variable", params = Fixed(2))]
-fn set_variable_impl(
-    ident: &Ident,
-    value: &RuntimeValue,
-    mut args: Args,
-    env: &SharedEnv,
-) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Symbol(var_ident), v] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow_mut().define(std::mem::take(var_ident), std::mem::take(v));
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.write()
-                    .unwrap()
-                    .define(std::mem::take(var_ident), std::mem::take(v));
-            }
-
-            Ok(value.clone())
-        }
-        [RuntimeValue::String(var_name), v] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow_mut().define(Ident::new(var_name), std::mem::take(v));
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.write().unwrap().define(Ident::new(var_name), std::mem::take(v));
-            }
-
-            Ok(value.clone())
-        }
-        [a, b] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b)],
-        )),
-        _ => unreachable!("set_variable should always receive exactly two arguments"),
-    }
-}
-
-/// Retrieves the value of a symbol or variable from the current environment.
-///
-/// Deprecated: relies on the tree-walker's dynamic [`Env`], which the Tarn bytecode VM
-/// does not maintain, so this builtin is unavailable under the `tarn` feature and is
-/// scheduled for removal in the next release.
-#[cfg(not(feature = "tarn"))]
-#[mq_macros::mq_fn(name = "get_variable", params = Fixed(1))]
-fn get_variable_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, env: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Symbol(var_name)] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow().resolve(std::mem::take(var_name)).map_err(Into::into)
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.read()
-                    .unwrap()
-                    .resolve(std::mem::take(var_name))
-                    .map_err(Into::into)
-            }
-        }
-        [RuntimeValue::String(var_name)] => {
-            #[cfg(not(feature = "sync"))]
-            {
-                env.borrow().resolve(Ident::new(var_name)).map_err(Into::into)
-            }
-
-            #[cfg(feature = "sync")]
-            {
-                env.read().unwrap().resolve(Ident::new(var_name)).map_err(Into::into)
-            }
-        }
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("get_variable should always receive exactly one argument"),
-    }
-}
-
 #[mq_macros::mq_fn(name = "is_debug_mode", params = None)]
 fn is_debug_mode_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     #[cfg(feature = "debugger")]
@@ -5698,10 +5572,6 @@ mq_macros::builtin_dispatch! {
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
     _XML_PARSE,
-    #[cfg(not(feature = "tarn"))]
-    SET_VARIABLE,
-    #[cfg(not(feature = "tarn"))]
-    GET_VARIABLE,
     IS_DEBUG_MODE,
     SHIFT_LEFT,
     SHIFT_RIGHT,
@@ -9348,30 +9218,6 @@ x
             capability: None,
         },
     );
-    #[cfg(not(feature = "tarn"))]
-    map.insert(
-        SmolStr::new("set_variable"),
-        BuiltinFunctionDoc {
-            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Sets a symbol or variable in the current environment with the given value.",
-            params: &["symbol_or_string", "value"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "dynamic",
-            examples: &[],
-            capability: None,
-        },
-    );
-    #[cfg(not(feature = "tarn"))]
-    map.insert(
-        SmolStr::new("get_variable"),
-        BuiltinFunctionDoc {
-            description: "Deprecated: tree-walker only, scheduled for removal in the next release. Retrieves the value of a symbol or variable from the current environment.",
-            params: &["symbol_or_string"],
-            param_types: &["dynamic"],
-            returns: "dynamic",
-            examples: &[],
-            capability: None,
-        },
-    );
     map.insert(
         SmolStr::new(constants::builtins::BREAKPOINT),
         BuiltinFunctionDoc {
@@ -9441,7 +9287,7 @@ pub enum Error {
     #[error("")]
     NotDefined(FunctionName, Vec<String>),
     #[error("")]
-    #[cfg_attr(feature = "tarn", allow(dead_code))]
+    #[allow(dead_code)]
     UndefinedReference(String, Vec<String>),
     #[error("")]
     InvalidDateTimeFormat(String),
@@ -9458,24 +9304,13 @@ pub enum Error {
     #[error("")]
     UserDefined(String),
     #[error("")]
-    #[cfg_attr(feature = "tarn", allow(dead_code))]
+    #[allow(dead_code)]
     AssignToImmutable(String),
     #[error("")]
-    #[cfg_attr(feature = "tarn", allow(dead_code))]
+    #[allow(dead_code)]
     UndefinedVariable(String),
     #[error("")]
     InvalidConvert(String),
-}
-
-#[cfg(not(feature = "tarn"))]
-impl From<env::EnvError> for Error {
-    fn from(e: env::EnvError) -> Self {
-        match e {
-            env::EnvError::UndefinedReference(name, candidates) => Error::UndefinedReference(name, candidates),
-            env::EnvError::AssignToImmutable(name) => Error::AssignToImmutable(name),
-            env::EnvError::UndefinedVariable(name) => Error::UndefinedVariable(name),
-        }
-    }
 }
 
 impl Error {
@@ -9543,11 +9378,6 @@ pub fn eval_builtin(
 ) -> Result<RuntimeValue, Error> {
     get_builtin_functions(ident).map_or_else(
         || {
-            #[cfg(all(not(feature = "tarn"), not(feature = "sync")))]
-            let candidates = env.borrow().defined_names();
-            #[cfg(all(not(feature = "tarn"), feature = "sync"))]
-            let candidates = env.read().unwrap().defined_names();
-            #[cfg(feature = "tarn")]
             let candidates = env.defined_names();
 
             Err(Error::NotDefined(ident.to_string(), candidates))
@@ -10164,7 +9994,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
     }
 }
 
-#[cfg(all(test, not(feature = "tarn")))]
+#[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
 
@@ -10252,12 +10082,7 @@ mod tests {
     fn test_eval_builtin(#[case] func_name: &str, #[case] args: Args, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new(func_name);
         assert_eq!(
-            eval_builtin(
-                &RuntimeValue::None,
-                &ident,
-                args,
-                &Shared::new(SharedCell::new(Env::default()))
-            ),
+            eval_builtin(&RuntimeValue::None, &ident, args, &VmEnv::default()),
             expected
         );
     }
@@ -10272,12 +10097,7 @@ mod tests {
         Error::Runtime("unicode_normalize: invalid normalization form `bogus`, expected one of \"nfc\", \"nfd\", \"nfkc\", \"nfkd\"".to_string()))]
     fn test_eval_builtin_errors(#[case] func_name: &str, #[case] args: Args, #[case] expected_error: Error) {
         let ident = Ident::new(func_name);
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args,
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, args, &VmEnv::default());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), expected_error);
     }
@@ -10288,13 +10108,7 @@ mod tests {
         // format: [year, mon(0-11), mday, hour, min, sec, wday(0=Sun), yday(0-365)]
         let ident = Ident::new("gmtime");
         let args = vec![RuntimeValue::Number(0.into())];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        )
-        .unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default()).unwrap();
         assert_eq!(
             result,
             RuntimeValue::Array(Shared::new(vec![
@@ -10315,13 +10129,7 @@ mod tests {
         // 2024-01-01T00:00:00 UTC = 1704067200 seconds
         let ident = Ident::new("gmtime");
         let args = vec![RuntimeValue::Number(1704067200_i64.into())];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        )
-        .unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default()).unwrap();
         assert_eq!(
             result,
             RuntimeValue::Array(Shared::new(vec![
@@ -10342,7 +10150,7 @@ mod tests {
     #[case(1704067200_i64, 1704067200_i64)]
     #[case(1718454645_i64, 1718454645_i64)]
     fn test_mktime_roundtrip(#[case] secs: i64, #[case] expected: i64) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let gmtime_ident = Ident::new("gmtime");
         let mktime_ident = Ident::new("mktime");
 
@@ -10358,7 +10166,7 @@ mod tests {
     }
 
     fn call_uuid_fn(name: &str) -> String {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         match eval_builtin(&RuntimeValue::None, &Ident::new(name), vec![].into(), &env).unwrap() {
             RuntimeValue::String(s) => s.to_string(),
             other => panic!("{name} should return a string, got {other:?}"),
@@ -10409,7 +10217,7 @@ mod tests {
 
     #[test]
     fn test_rand_is_in_unit_range() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         for _ in 0..200 {
             match eval_builtin(&RuntimeValue::None, &Ident::new("rand"), vec![].into(), &env).unwrap() {
                 RuntimeValue::Number(n) => assert!((0.0..1.0).contains(&n.value()), "rand() out of [0, 1)"),
@@ -10423,7 +10231,7 @@ mod tests {
     #[case(-5, 5)]
     #[case(7, 7)]
     fn test_rand_int_within_bounds(#[case] min: i64, #[case] max: i64) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         for _ in 0..200 {
             let result = eval_builtin(
                 &RuntimeValue::None,
@@ -10444,7 +10252,7 @@ mod tests {
 
     #[test]
     fn test_rand_seeded_is_deterministic_and_in_unit_range() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
             &Ident::new("rand"),
@@ -10463,7 +10271,7 @@ mod tests {
 
     #[test]
     fn test_rand_int_seeded_is_deterministic_and_within_bounds() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
             &Ident::new("rand_int"),
@@ -10491,7 +10299,7 @@ mod tests {
 
     #[test]
     fn test_rand_int_invalid_range_errors() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("rand_int"),
@@ -10503,7 +10311,7 @@ mod tests {
 
     #[test]
     fn test_random_string_uses_only_charset_chars_and_requested_length() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
@@ -10526,7 +10334,7 @@ mod tests {
 
     #[test]
     fn test_random_string_zero_length_is_empty() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
@@ -10543,7 +10351,7 @@ mod tests {
 
     #[test]
     fn test_random_string_rejects_lengths_above_the_allocation_limit() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
@@ -10559,7 +10367,7 @@ mod tests {
 
     #[test]
     fn test_random_string_empty_charset_errors() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
@@ -10578,7 +10386,7 @@ mod tests {
 
     #[test]
     fn test_random_string_seeded_is_deterministic() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
             &Ident::new("random_string"),
@@ -10604,7 +10412,7 @@ mod tests {
 
     #[test]
     fn test_random_string_calls_are_unique() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let values: std::collections::HashSet<String> = (0..200)
             .map(|_| {
                 match eval_builtin(
@@ -10633,7 +10441,7 @@ mod tests {
 
     #[test]
     fn test_shuffle_preserves_elements() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10657,7 +10465,7 @@ mod tests {
 
     #[test]
     fn test_shuffle_seeded_is_deterministic() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
@@ -10683,7 +10491,7 @@ mod tests {
 
     #[test]
     fn test_sample_returns_subset_without_duplicates() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10713,7 +10521,7 @@ mod tests {
 
     #[test]
     fn test_sample_seeded_is_deterministic() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let input: Vec<RuntimeValue> = (1..=10).map(|n| RuntimeValue::Number(n.into())).collect();
         let call = |seed: i64| match eval_builtin(
             &RuntimeValue::None,
@@ -10740,7 +10548,7 @@ mod tests {
 
     #[test]
     fn test_sample_n_exceeds_length_errors() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let input: Vec<RuntimeValue> = (1..=3).map(|n| RuntimeValue::Number(n.into())).collect();
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10764,13 +10572,7 @@ mod tests {
             RuntimeValue::Number(ts.into()),
             RuntimeValue::String(Shared::new(fmt.into())),
         ];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        )
-        .unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default()).unwrap();
         assert_eq!(result, RuntimeValue::String(Shared::new(expected.into())));
     }
 
@@ -10784,13 +10586,7 @@ mod tests {
             RuntimeValue::String(Shared::new(date_str.into())),
             RuntimeValue::String(Shared::new(fmt.into())),
         ];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        )
-        .unwrap();
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default()).unwrap();
         assert_eq!(result, RuntimeValue::Number(expected.into()));
     }
 
@@ -10801,17 +10597,12 @@ mod tests {
             RuntimeValue::String(Shared::new("not-a-date".into())),
             RuntimeValue::String(Shared::new("%Y-%m-%d".into())),
         ];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
     fn gmtime_array(secs: i64) -> RuntimeValue {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         eval_builtin(
             &RuntimeValue::None,
             &Ident::new("gmtime"),
@@ -10830,7 +10621,7 @@ mod tests {
     #[case(1704067200_i64, -1,  "days",    1703980800_i64)]
     #[case(1704067200_i64, 1, "weeks", 1704672000_i64)]
     fn test_date_add_duration(#[case] base: i64, #[case] n: i64, #[case] unit: &str, #[case] expected_secs: i64) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr = gmtime_array(base);
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10853,7 +10644,7 @@ mod tests {
     #[test]
     fn test_date_add_months_end_of_month() {
         // 2024-01-31 + 1 month = 2024-02-29 (leap year)
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr = gmtime_array(1706659200); // 2024-01-31T00:00:00Z
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10875,7 +10666,7 @@ mod tests {
     #[test]
     fn test_date_add_years() {
         // 2024-02-29 + 1 year = 2025-02-28 (non-leap year clamps)
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr = gmtime_array(1709164800); // 2024-02-29T00:00:00Z
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10896,7 +10687,7 @@ mod tests {
 
     #[test]
     fn test_date_add_invalid_unit() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr = gmtime_array(0);
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10921,7 +10712,7 @@ mod tests {
     #[case(1704067200_i64, 1704672000_i64, "weeks", 1_i64)]
     #[case(1704153600_i64, 1704067200_i64, "seconds", -86400_i64)]
     fn test_date_diff(#[case] base1: i64, #[case] base2: i64, #[case] unit: &str, #[case] expected: i64) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr1 = gmtime_array(base1);
         let arr2 = gmtime_array(base2);
         let result = eval_builtin(
@@ -10936,7 +10727,7 @@ mod tests {
 
     #[test]
     fn test_date_diff_invalid_unit() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let arr = gmtime_array(0);
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10951,12 +10742,7 @@ mod tests {
     fn test_gmtime_invalid_type() {
         let ident = Ident::new("gmtime");
         let args = vec![RuntimeValue::String(Shared::new("not a number".into()))];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default());
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
     }
 
@@ -10964,18 +10750,13 @@ mod tests {
     fn test_mktime_invalid_input() {
         let ident = Ident::new("mktime");
         let args = vec![RuntimeValue::String(Shared::new("not an array".into()))];
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, args.into(), &VmEnv::default());
         assert!(matches!(result, Err(Error::InvalidTypes(_, _))));
     }
 
     #[test]
     fn test_date_add_malformed_array_error_prefix() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("x".into())); 8]));
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -10996,7 +10777,7 @@ mod tests {
 
     #[test]
     fn test_date_diff_malformed_array_error_prefix() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let bad_arr = RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("x".into())); 8]));
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -11026,7 +10807,7 @@ mod tests {
     #[case("next monday", 1705881600_i64)]
     #[case("last friday", 1705017600_i64)]
     fn test_date_relative(#[case] input: &str, #[case] expected_secs: i64) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_relative"),
@@ -11043,7 +10824,7 @@ mod tests {
 
     #[test]
     fn test_date_relative_invalid_expression() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_relative"),
@@ -11065,7 +10846,7 @@ mod tests {
 
     #[test]
     fn test_date_relative_invalid_types() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("date_relative"),
@@ -11081,12 +10862,7 @@ mod tests {
         let first_arg = RuntimeValue::String(Shared::new("hello world".into()));
         let args = vec![RuntimeValue::String(Shared::new("hello".into()))];
 
-        let result = eval_builtin(
-            &first_arg,
-            &ident,
-            args.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&first_arg, &ident, args.into(), &VmEnv::default());
         assert_eq!(result, Ok(RuntimeValue::Boolean(true)));
     }
 
@@ -11462,7 +11238,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Dict(Shared::new(d1)), RuntimeValue::Dict(Shared::new(d2))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Dict(Shared::new(expected))));
     }
@@ -11470,12 +11246,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_new_dict() {
         let ident = Ident::new("dict");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![].into(), &VmEnv::default());
         assert!(result.is_ok());
         let map_val = result.unwrap();
         match map_val {
@@ -11493,7 +11264,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("value".into())),
             ]))]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(
             result,
@@ -11514,12 +11285,7 @@ mod tests {
             RuntimeValue::String(Shared::new("name".into())),
             RuntimeValue::String(Shared::new("Jules".into())),
         ];
-        let result1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_set, args1.into(), &VmEnv::default());
         assert!(result1.is_ok());
         let map_val1 = result1.unwrap();
         match &map_val1 {
@@ -11538,12 +11304,7 @@ mod tests {
             RuntimeValue::String(Shared::new("age".into())),
             RuntimeValue::Number(30.into()),
         ];
-        let result2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_set, args2.into(), &VmEnv::default());
         assert!(result2.is_ok());
         let map_val2 = result2.unwrap();
         match &map_val2 {
@@ -11563,12 +11324,7 @@ mod tests {
             RuntimeValue::String(Shared::new("name".into())),
             RuntimeValue::String(Shared::new("Vincent".into())),
         ];
-        let result3 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args3.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result3 = eval_builtin(&RuntimeValue::None, &ident_set, args3.into(), &VmEnv::default());
         assert!(result3.is_ok());
         let map_val3 = result3.unwrap();
         match &map_val3 {
@@ -11591,12 +11347,7 @@ mod tests {
             RuntimeValue::String(Shared::new("nested".into())),
             nested_map.clone(),
         ];
-        let result4 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args4.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result4 = eval_builtin(&RuntimeValue::None, &ident_set, args4.into(), &VmEnv::default());
         assert!(result4.is_ok());
         match result4.unwrap() {
             RuntimeValue::Dict(map) => {
@@ -11611,12 +11362,7 @@ mod tests {
             RuntimeValue::String(Shared::new("key".into())),
             RuntimeValue::String(Shared::new("value".into())),
         ];
-        let result_err1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args_err1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_set, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -11634,12 +11380,7 @@ mod tests {
             RuntimeValue::Number(123.into()),
             RuntimeValue::String(Shared::new("value".into())),
         ];
-        let result_err2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_set,
-            args_err2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_set, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -11662,33 +11403,18 @@ mod tests {
         let map_val: RuntimeValue = map_data.into();
 
         let args1 = vec![map_val.clone(), RuntimeValue::String(Shared::new("name".into()))];
-        let result1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_get,
-            args1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_get, args1.into(), &VmEnv::default());
         assert_eq!(result1, Ok(RuntimeValue::String(Shared::new("Jules".into()))));
 
         let args2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("location".into()))];
-        let result2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_get,
-            args2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_get, args2.into(), &VmEnv::default());
         assert_eq!(result2, Ok(RuntimeValue::None));
 
         let args_err1 = vec![
             RuntimeValue::String(Shared::new("not_a_map".into())),
             RuntimeValue::String(Shared::new("key".into())),
         ];
-        let result_err1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_get,
-            args_err1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_get, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -11701,12 +11427,7 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::Number(123.into())];
-        let result_err2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_get,
-            args_err2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_get, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
             Err(Error::InvalidTypes(
@@ -11738,7 +11459,7 @@ mod tests {
             &RuntimeValue::None,
             &ident_get,
             vec![parent.clone(), RuntimeValue::Number(255.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         )
         .unwrap();
         assert_eq!(in_range.markdown_node().unwrap().value(), "child255");
@@ -11750,7 +11471,7 @@ mod tests {
             &RuntimeValue::None,
             &ident_get,
             vec![parent, RuntimeValue::Number(300.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         )
         .unwrap();
         assert_eq!(out_of_range.markdown_node(), None);
@@ -11761,12 +11482,7 @@ mod tests {
         let ident_keys = Ident::new("keys");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
-        let result1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_keys,
-            args1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1.into(), &VmEnv::default());
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = BTreeMap::default();
@@ -11774,12 +11490,7 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
-        let result2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_keys,
-            args2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_keys, args2.into(), &VmEnv::default());
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(keys_array) => {
@@ -11797,12 +11508,7 @@ mod tests {
         }
 
         let args_err1 = vec![RuntimeValue::String(Shared::new("not_a_map".into()))];
-        let result_err1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_keys,
-            args_err1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -11812,12 +11518,7 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("extra".into()))];
-        let result_err2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_keys,
-            args_err2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_keys, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("keys".to_string(), 1, 2))
@@ -11829,12 +11530,7 @@ mod tests {
         let ident_values = Ident::new("values");
         let empty_map = RuntimeValue::new_dict();
         let args1 = vec![empty_map.clone()];
-        let result1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_values,
-            args1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1.into(), &VmEnv::default());
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
         let mut map_data = BTreeMap::default();
@@ -11842,12 +11538,7 @@ mod tests {
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
         let args2 = vec![map_val.clone()];
-        let result2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_values,
-            args2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result2 = eval_builtin(&RuntimeValue::None, &ident_values, args2.into(), &VmEnv::default());
         assert!(result2.is_ok());
         match result2.unwrap() {
             RuntimeValue::Array(values_array) => {
@@ -11859,12 +11550,7 @@ mod tests {
         }
 
         let args_err1 = vec![RuntimeValue::String(Shared::new("not_a_map".into()))];
-        let result_err1 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_values,
-            args_err1.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err1 = eval_builtin(&RuntimeValue::None, &ident_values, args_err1.into(), &VmEnv::default());
         assert_eq!(
             result_err1,
             Err(Error::InvalidTypes(
@@ -11874,12 +11560,7 @@ mod tests {
         );
 
         let args_err2 = vec![map_val.clone(), RuntimeValue::String(Shared::new("extra".into()))];
-        let result_err2 = eval_builtin(
-            &RuntimeValue::None,
-            &ident_values,
-            args_err2.into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result_err2 = eval_builtin(&RuntimeValue::None, &ident_values, args_err2.into(), &VmEnv::default());
         assert_eq!(
             result_err2,
             Err(Error::InvalidNumberOfArguments("values".to_string(), 1, 2))
@@ -12028,7 +11709,7 @@ mod tests {
     #[case::del_array("del", vec![RuntimeValue::empty_array(), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
     #[case::del_string("del", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::Number((MAX_RANGE_SIZE as i64).into())])]
     fn collection_mutators_reject_oversized_indices(#[case] name: &str, #[case] args: Vec<RuntimeValue>) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let result = eval_builtin(&RuntimeValue::None, &Ident::new(name), args.into(), &env);
         assert!(matches!(result, Err(Error::Runtime(message)) if message.contains("index")));
     }
@@ -12093,7 +11774,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(csv.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12160,7 +11841,7 @@ mod tests {
                 RuntimeValue::Boolean(true),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12210,7 +11891,7 @@ mod tests {
                 RuntimeValue::Boolean(has_header),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12220,12 +11901,7 @@ mod tests {
     #[case::invalid_type_bool(RuntimeValue::Boolean(false))]
     fn test_csv_parse_invalid_arg_type(#[case] invalid_arg: RuntimeValue) {
         let ident = Ident::new("_csv_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![invalid_arg].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![invalid_arg].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12270,7 +11946,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(json.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12284,12 +11960,7 @@ mod tests {
             RuntimeValue::Number(n) => RuntimeValue::Number(n),
             s => RuntimeValue::String(Shared::new(s.to_string())),
         };
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![arg].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![arg].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12363,7 +12034,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(yaml.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12376,12 +12047,7 @@ mod tests {
             RuntimeValue::Number(n) => RuntimeValue::Number(n),
             s => RuntimeValue::String(Shared::new(s.to_string())),
         };
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![arg].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![arg].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12459,7 +12125,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(toon.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12496,12 +12162,7 @@ mod tests {
     #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String(Shared::new("-x".to_string())), "\"-x\"")]
     fn test_toon_stringify(#[case] input: RuntimeValue, #[case] expected: &str) {
         let ident = Ident::new("_toon_stringify");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());
         assert_eq!(result, Ok(RuntimeValue::String(Shared::new(expected.to_string()))));
     }
 
@@ -12533,7 +12194,7 @@ mod tests {
         RuntimeValue::String(Shared::new("text".to_string())),
     ])))]
     fn test_toon_stringify_round_trip(#[case] original: RuntimeValue) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
 
         let ident_stringify = Ident::new("_toon_stringify");
         let stringified = eval_builtin(
@@ -12606,7 +12267,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(toml.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12619,7 +12280,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -12628,12 +12289,7 @@ mod tests {
     #[case::invalid_type(RuntimeValue::Number(1.into()))]
     fn test_toml_parse_invalid_type(#[case] input: RuntimeValue) {
         let ident = Ident::new("_toml_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12654,7 +12310,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12668,7 +12324,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -12677,12 +12333,7 @@ mod tests {
     #[case::invalid_type(RuntimeValue::Number(1.into()))]
     fn test_cbor_parse_invalid_type(#[case] input: RuntimeValue) {
         let ident = Ident::new("_cbor_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12698,7 +12349,7 @@ mod tests {
         }
     )]
     fn test_cbor_stringify_roundtrip(#[case] base64_input: &str, #[case] expected: Result<RuntimeValue, Error>) {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
 
         // parse
         let ident_parse = Ident::new("_cbor_parse");
@@ -12734,7 +12385,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(cbor_bytes.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_ok());
         let mut expected = BTreeMap::new();
@@ -12753,7 +12404,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(bytes.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::String(Shared::new("SGVsbG8=".to_string()))));
     }
@@ -12785,12 +12436,7 @@ mod tests {
     )]
     fn test_to_bytes(#[case] input: RuntimeValue, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("to_bytes");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());
         assert_eq!(result, expected);
     }
 
@@ -12804,12 +12450,7 @@ mod tests {
     #[case::array_with_infinity(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(f64::INFINITY.into())])))]
     fn test_to_bytes_invalid(#[case] input: RuntimeValue) {
         let ident = Ident::new("to_bytes");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![input].into(),
-            &Shared::new(SharedCell::new(Env::default())),
-        );
+        let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());
         assert!(result.is_err());
     }
 
@@ -12824,7 +12465,7 @@ mod tests {
                 RuntimeValue::Bytes(Shared::new(vec![3, 4])),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![1, 2, 3, 4]))));
     }
@@ -12836,7 +12477,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(vec![1, 2, 3]))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![3, 2, 1]))));
     }
@@ -12853,7 +12494,7 @@ mod tests {
                 RuntimeValue::Number(4.into()),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![20, 30, 40]))));
     }
@@ -12865,7 +12506,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(
             result,
@@ -12882,7 +12523,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(
             result,
@@ -12899,7 +12540,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new("hello".to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(
             result,
@@ -12916,7 +12557,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(
             result,
@@ -12936,7 +12577,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -12950,7 +12591,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(input.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result.is_err(), is_err);
     }
@@ -12966,14 +12607,14 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(input.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
 
     #[test]
     fn test_to_hex_roundtrip() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let original = vec![0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef];
         let hex = eval_builtin(
             &RuntimeValue::None,
@@ -13006,7 +12647,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(lhs.into()), RuntimeValue::Bytes(rhs.into())].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Boolean(expected)));
     }
@@ -13018,7 +12659,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::String(Shared::new("hello".to_string()))));
     }
@@ -13030,7 +12671,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::Bytes(Shared::new(vec![0xff, 0xfe]))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -13046,7 +12687,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::String(Shared::new("あ".to_string()))));
     }
@@ -13062,7 +12703,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("not-a-real-encoding".to_string())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -13078,7 +12719,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -13094,14 +12735,14 @@ mod tests {
                 RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0x82, 0xa0]))));
     }
 
     #[test]
     fn test_encode_decode_roundtrip() {
-        let env = Shared::new(SharedCell::new(Env::default()));
+        let env = VmEnv::default();
         let encoded = eval_builtin(
             &RuntimeValue::None,
             &Ident::new("encode"),
@@ -13133,7 +12774,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("shift_jis".to_string())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -13149,7 +12790,7 @@ mod tests {
                 RuntimeValue::Bytes(Shared::new(vec![0x55, 0x44])),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0xff, 0xff]))));
     }
@@ -13165,7 +12806,7 @@ mod tests {
                 RuntimeValue::Bytes(Shared::new(vec![0x00, 0x00, 0x00])),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::Bytes(Shared::new(vec![0x01, 0x02, 0x03]))));
     }
@@ -13181,7 +12822,7 @@ mod tests {
                 RuntimeValue::Bytes(Shared::new(vec![0x01])),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert!(result.is_err());
     }
@@ -13269,7 +12910,7 @@ mod tests {
             &RuntimeValue::None,
             &ident,
             vec![RuntimeValue::String(Shared::new(xml.to_string()))].into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
         assert_eq!(result, expected);
     }
@@ -13285,7 +12926,7 @@ mod tests {
                 RuntimeValue::String(Shared::new("abc ".into())),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
 
         assert!(result.is_ok());
@@ -13351,7 +12992,7 @@ mod tests {
                 RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
             ]
             .into(),
-            &Shared::new(SharedCell::new(Env::default())),
+            &VmEnv::default(),
         );
 
         assert!(result.is_ok());
@@ -13828,8 +13469,8 @@ mod tests {
         assert_eq!(!result.is_none(), expected_match);
     }
 
-    fn env() -> Shared<SharedCell<Env>> {
-        Shared::new(SharedCell::new(Env::default()))
+    fn env() -> VmEnv {
+        VmEnv::default()
     }
 
     fn call(name: &str, args: Vec<RuntimeValue>) -> Result<RuntimeValue, Error> {

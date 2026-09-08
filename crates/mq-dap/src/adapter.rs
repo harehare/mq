@@ -299,14 +299,9 @@ impl MqAdapter {
             ))) as Box<dyn std::error::Error>);
         };
 
-        #[cfg(feature = "tarn")]
         let result = self
             .engine
             .eval_debug_expression(code, context.current_value.clone(), &context.vm_bindings());
-        #[cfg(not(feature = "tarn"))]
-        let result = self
-            .engine
-            .eval_debug_expression(code, context.current_value.clone(), &context.env);
 
         result.map_err(|e| {
             let error_msg = format!("Evaluation error: {}", e);
@@ -315,7 +310,6 @@ impl MqAdapter {
         })
     }
 
-    #[cfg(feature = "tarn")]
     fn eval_single_value(&mut self, code: &str) -> DynResult<mq_lang::RuntimeValue> {
         self.eval(code)?.values().first().cloned().ok_or_else(|| {
             Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
@@ -522,90 +516,55 @@ impl MqAdapter {
             }
             Command::SetVariable(args) => {
                 debug!(?args, "Received SetVariables request");
-                #[cfg(feature = "tarn")]
-                {
-                    let name = args.name.clone();
-                    let response_value = args.value.clone();
-                    let value = self.eval_single_value(&response_value)?;
-                    let Some(context) = self.current_debug_context.as_ref() else {
-                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
-                            "Current context not found",
-                        ))));
-                    };
-                    let prefer_upvalue = args.variables_reference == 1;
-                    if !context.set_vm_variable(&name, value, prefer_upvalue) {
-                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
-                            "Variable `{}` is not visible in this VM scope",
-                            name
-                        )))));
-                    }
-                    let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
-                        value: response_value,
-                        indexed_variables: None,
-                        named_variables: None,
-                        type_field: None,
-                        variables_reference: None,
-                    }));
-                    server.respond(rsp)?;
+                let name = args.name.clone();
+                let response_value = args.value.clone();
+                let value = self.eval_single_value(&response_value)?;
+                let Some(context) = self.current_debug_context.as_ref() else {
+                    return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                        "Current context not found",
+                    ))));
+                };
+                let prefer_upvalue = args.variables_reference == 1;
+                if !context.set_vm_variable(&name, value, prefer_upvalue) {
+                    return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
+                        "Variable `{}` is not visible in this VM scope",
+                        name
+                    )))));
                 }
-                #[cfg(not(feature = "tarn"))]
-                {
-                    self.eval(format!("let {} = {}", args.name, args.value).as_str())?;
-
-                    let value = args.value.clone();
-                    let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
-                        value,
-                        indexed_variables: None,
-                        named_variables: None,
-                        type_field: None,
-                        variables_reference: None,
-                    }));
-                    server.respond(rsp)?;
-                }
+                let rsp = req.success(ResponseBody::SetVariable(SetVariableResponse {
+                    value: response_value,
+                    indexed_variables: None,
+                    named_variables: None,
+                    type_field: None,
+                    variables_reference: None,
+                }));
+                server.respond(rsp)?;
             }
             Command::SetExpression(args) => {
                 debug!(?args, "Received SetExpression request");
-                #[cfg(feature = "tarn")]
-                {
-                    let expression = args.expression.clone();
-                    let response_value = args.value.clone();
-                    let value = self.eval_single_value(&response_value)?;
-                    let Some(context) = self.current_debug_context.as_ref() else {
-                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
-                            "Current context not found",
-                        ))));
-                    };
-                    if !context.set_vm_expression(&expression, value) {
-                        return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
-                            "Expression `{}` is not a visible VM variable",
-                            expression
-                        )))));
-                    }
-                    let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
-                        value: response_value,
-                        type_field: None,
-                        presentation_hint: None,
-                        variables_reference: None,
-                        named_variables: None,
-                        indexed_variables: None,
-                    }));
-                    server.respond(rsp)?;
+                let expression = args.expression.clone();
+                let response_value = args.value.clone();
+                let value = self.eval_single_value(&response_value)?;
+                let Some(context) = self.current_debug_context.as_ref() else {
+                    return Err(Box::new(MqAdapterError::EvaluationError(Cow::Borrowed(
+                        "Current context not found",
+                    ))));
+                };
+                if !context.set_vm_expression(&expression, value) {
+                    return Err(Box::new(MqAdapterError::EvaluationError(Cow::Owned(format!(
+                        "Expression `{}` is not a visible VM variable",
+                        expression
+                    )))));
                 }
-                #[cfg(not(feature = "tarn"))]
-                {
-                    self.eval(format!("let {} = {}", args.expression, args.value).as_str())?;
-
-                    let value = args.value.clone();
-                    let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
-                        value,
-                        type_field: None,
-                        presentation_hint: None,
-                        variables_reference: None,
-                        named_variables: None,
-                        indexed_variables: None,
-                    }));
-                    server.respond(rsp)?;
-                }
+                let rsp = req.success(ResponseBody::SetExpression(SetExpressionResponse {
+                    value: response_value,
+                    type_field: None,
+                    presentation_hint: None,
+                    variables_reference: None,
+                    named_variables: None,
+                    indexed_variables: None,
+                }));
+                server.respond(rsp)?;
             }
             Command::Continue(_) => {
                 debug!("Received Continue request");
@@ -736,7 +695,6 @@ mod tests {
     use dap::server::Server;
     use mq_lang::Shared;
     use std::io::{BufReader, BufWriter, Cursor};
-    #[cfg(feature = "tarn")]
     use std::time::Duration;
 
     #[test]
@@ -1115,27 +1073,10 @@ mod tests {
         assert!(result.is_ok());
     }
 
-    #[cfg(not(feature = "tarn"))]
-    #[test]
-    fn test_eval_resolves_debug_context_bindings() {
-        let mut adapter = MqAdapter::new();
-        let context = mq_lang::DebugContext::default();
-        context
-            .env
-            .write()
-            .unwrap()
-            .define("x".into(), mq_lang::RuntimeValue::Number(41.into()));
-        adapter.current_debug_context = Some(context);
-
-        let result = adapter.eval("x + 1").unwrap();
-        assert_eq!(result[0], mq_lang::RuntimeValue::Number(42.into()));
-    }
-
     /// A real stopped VM frame must expose its bindings to DAP variable and evaluate requests.
     ///
     /// This runs through the configured `DapHandlerWrapper`, rather than constructing a
     /// `DebugContext` by hand, so it protects the VM debugger boundary → DAP adapter path.
-    /// The same test also runs without the `tarn` feature as the tree-walker reference.
     #[test]
     fn test_stopped_frame_exposes_live_bindings_to_dap() {
         let mut adapter = MqAdapter::new();
@@ -1195,7 +1136,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "tarn")]
     #[rstest::rstest]
     #[case::top_level_global_set_variable(("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", false, 42))]
     #[case::top_level_set_expression(("let x = 1 |\nx + 1", 2, 1, "x", "1", "41", true, 42))]

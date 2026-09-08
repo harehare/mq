@@ -80,7 +80,7 @@ fn eval_string_interpolation() -> mq_lang::RuntimeValues {
 }
 
 /// Isolates steady-state execution for a tiny, non-looping query — where compile overhead
-/// (shared with the tree-walker) otherwise swamps the signal in `eval_select_h`.
+/// otherwise swamps the signal in `eval_select_h`.
 #[divan::bench]
 fn eval_compiled_select_h(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -156,7 +156,6 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
 
 /// Covers a repeated query that includes an external module. Cached Tarn bytecode freezes the
 /// module source for its Engine, so this measures the cache-hit path without a file read/hash.
-#[cfg(feature = "tarn")]
 #[divan::bench]
 fn eval_compiled_reused_single_input_with_external_module(bencher: divan::Bencher) {
     let directory = tempfile::tempdir().unwrap();
