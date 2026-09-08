@@ -68,7 +68,6 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     builtin_module_cache: Option<(TokenArena, Module)>,
     /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
     /// parsed by this loader instead of reparsing its cached source.
-    #[cfg(feature = "tarn")]
     module_ast_cache: FxHashMap<SmolStr, Module>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
@@ -135,7 +134,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             source_code: None,
             source_cache: FxHashMap::default(),
             builtin_module_cache: None,
-            #[cfg(feature = "tarn")]
             module_ast_cache: FxHashMap::default(),
             resolver,
             #[cfg(feature = "http-import")]
@@ -143,7 +141,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
-    #[cfg(feature = "tarn")]
     pub(crate) fn with_same_resolver(&self) -> Self {
         let mut loader = Self::new(self.resolver.clone());
         loader.builtin_module_cache = self.builtin_module_cache.clone();
@@ -197,7 +194,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let module = Self::classify_module(module_name, program)?;
         self.loaded_modules.alloc(module_name.into());
-        #[cfg(feature = "tarn")]
         self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
         Ok(module)
     }
@@ -240,7 +236,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         })
     }
 
-    #[cfg(feature = "tarn")]
     pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let name = self.resolver.canonical_name(module_path).to_owned();
         // Already parsed by this same loader (e.g. a prelude pre-pass ran ahead of the real
@@ -629,7 +624,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "tarn")]
     #[test]
     fn test_load_builtin_reuses_ast_for_the_same_token_arena() {
         let token_arena = token_arena();
