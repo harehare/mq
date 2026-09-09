@@ -103,18 +103,6 @@ pub(crate) fn capture_slots(chunk: &Chunk, names: &[Ident]) -> Vec<CaptureSlot> 
         .collect()
 }
 
-/// Runs a compiled program.
-#[cfg(test)]
-pub(crate) fn run(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-) -> VmResult<RuntimeValue> {
-    run_with_globals(compiled, input, host_functions, timeout, max_call_stack_depth, &[])
-}
-
 /// Runs a compiled program with Engine-defined globals.
 pub(crate) fn run_with_globals(
     compiled: &CompiledProgram,
@@ -1450,7 +1438,9 @@ fn selector_op(
         }
         OpCode::SelectorMatchWithArgs(payload) => {
             let (selector, argc) = payload.as_ref();
-            let mut args = Vec::with_capacity(*argc as usize);
+            // Selector arguments are usually one or two values. `Args` keeps those inline,
+            // avoiding a heap allocation for every parameterized selector evaluation.
+            let mut args = Args::with_capacity(*argc as usize);
             for _ in 0..*argc {
                 args.push(pop_value_from(stack, chunks, chunk, ip)?);
             }
