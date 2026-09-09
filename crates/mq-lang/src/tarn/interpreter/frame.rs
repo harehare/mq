@@ -217,6 +217,37 @@ impl ExecutionLimits {
         Some(frame.on_complete)
     }
 
+    /// Replaces the active frame with its tail-call callee without consuming another call-depth
+    /// slot. The callee inherits the caller's continuation and operand-stack boundary.
+    pub(super) fn replace_top_frame(
+        &mut self,
+        frames: &mut Vec<Frame>,
+        mut replacement: Frame,
+        #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+    ) {
+        let frame = frames.pop().expect("tail call requires an active frame");
+        replacement.on_complete = frame.on_complete;
+        if frame.reusable_locals {
+            self.recycle_locals(frame.locals);
+        }
+        #[cfg(feature = "debugger")]
+        {
+            if frame.pushed_call_stack_entry {
+                debug.call_stack.pop();
+            }
+            debug.current_node = frame.caller_node;
+            let caller_node = debug.current_node.clone();
+            replacement.pushed_call_stack_entry = if let Some(node) = &caller_node {
+                debug.call_stack.push(crate::Shared::clone(node));
+                true
+            } else {
+                false
+            };
+            replacement.caller_node = caller_node;
+        }
+        frames.push(replacement);
+    }
+
     /// Releases a not-yet-running callee's locals when binding its parameters fails.
     pub(super) fn recycle_pending_locals(&mut self, pending: PendingCall) {
         if pending.callee_locals_reusable {
@@ -224,17 +255,17 @@ impl ExecutionLimits {
         }
     }
 
-    pub(super) fn take_locals(&mut self, count: u16, captures: bool) -> Locals {
-        self.take_locals_with_initialized_prefix(count, 0, captures)
+    pub(super) fn take_locals(&mut self, count: u16, captured_slots: &[u16]) -> Locals {
+        self.take_locals_with_initialized_prefix(count, 0, captured_slots)
     }
 
     pub(super) fn take_locals_with_initialized_prefix(
         &mut self,
         count: u16,
         initialized: usize,
-        captures: bool,
+        captured_slots: &[u16],
     ) -> Locals {
-        let locals = if captures {
+        let locals = if !captured_slots.is_empty() {
             None
         } else {
             self.pools
@@ -245,7 +276,7 @@ impl ExecutionLimits {
         if locals.is_some() {
             self.pools.pooled_local_slots = self.pools.pooled_local_slots.saturating_sub(count as usize);
         }
-        let mut locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captures));
+        let mut locals = locals.unwrap_or_else(|| fresh_locals(count as usize, captured_slots));
         locals.reset_from(initialized.min(count as usize));
         locals
     }
@@ -307,11 +338,11 @@ impl ExecutionPools {
     }
 }
 
-fn fresh_locals(count: usize, captures: bool) -> Locals {
-    if captures {
-        Locals::boxed(count)
-    } else {
+fn fresh_locals(count: usize, captured_slots: &[u16]) -> Locals {
+    if captured_slots.is_empty() {
         Locals::flat(count)
+    } else {
+        Locals::for_captured_slots(count, captured_slots)
     }
 }
 

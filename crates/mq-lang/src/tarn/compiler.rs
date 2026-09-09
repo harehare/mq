@@ -670,6 +670,9 @@ fn compile_program_impl<R: ModuleResolver>(
     compiler.chunks[0].local_mutable = compiler.scopes[0].local_mutable();
     compiler.chunks[0].upvalue_names = compiler.scopes[0].upvalue_names();
     bytecode::optimize_chunks(&mut compiler.chunks);
+    for chunk in &mut compiler.chunks {
+        chunk.refresh_captured_local_slots();
+    }
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
     #[cfg(feature = "debugger")]
     {
