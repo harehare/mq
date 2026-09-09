@@ -219,7 +219,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Set the maximum call stack depth for function calls.
     ///
     /// This prevents infinite recursion by limiting how deep function
-    /// calls can be nested. Useful for controlling resource usage.
+    /// calls can be nested. Useful for controlling resource usage. The default is 10,000 in
+    /// release builds (256 in debug builds).
     pub fn set_max_call_stack_depth(&mut self, max_call_stack_depth: u32) {
         self.vm.options.max_call_stack_depth = max_call_stack_depth;
     }

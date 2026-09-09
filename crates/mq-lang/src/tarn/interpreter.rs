@@ -387,7 +387,7 @@ fn run_impl_with_bindings(
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let top_level_chunk = &compiled.chunks[0];
     let captures_local_slots = top_level_chunk.captures_local_slots();
-    let mut locals = limits.take_locals(top_level_chunk.local_count, captures_local_slots);
+    let mut locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captured_local_slots());
     locals.set(SELF_SLOT, StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
         if !captures_local_slots {
@@ -435,7 +435,7 @@ fn run_impl_capturing_locals_with_env(
     let chunks = &compiled.chunks;
     let top_level_chunk = &chunks[0];
     let reusable_locals = !top_level_chunk.captures_local_slots();
-    let mut locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
+    let mut locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captured_local_slots());
     locals.set(SELF_SLOT, StackValue::Value(input));
     if bindings.len() + 1 > locals.len() {
         if reusable_locals {
@@ -580,6 +580,8 @@ fn run_chunk(
 
 enum FrameOutcome {
     Enter(Frame),
+    /// A call followed immediately by `Return`; the callee can replace this frame.
+    TailEnter(Frame),
     Complete(StackValue),
 }
 
@@ -657,6 +659,17 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                         Err((e, locals)) => return (Err(e), locals),
                     }
                 }
+                continue 'frames;
+            }
+            Ok(FrameOutcome::TailEnter(mut new_frame)) => {
+                let caller = frames.last().expect("the frame stack is never empty here");
+                new_frame.stack_base = caller.stack_base;
+                execution.limits.replace_top_frame(
+                    frames,
+                    new_frame,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
                 continue 'frames;
             }
             Ok(FrameOutcome::Complete(value)) => value,
@@ -802,7 +815,7 @@ fn unwind(
                 let catch_chunk = &catch_chunks[catch_closure.chunk_index as usize];
                 let mut catch_locals = execution
                     .limits
-                    .take_locals(catch_chunk.local_count, catch_chunk.captures_local_slots());
+                    .take_locals(catch_chunk.local_count, catch_chunk.captured_local_slots());
                 catch_locals.set(SELF_SLOT, parent.locals.get(SELF_SLOT));
                 if has_binder {
                     catch_locals.set(1, StackValue::Value(error_dict(&e)));
@@ -863,6 +876,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         };
     }
 
+    let mut tail_call_candidate = false;
     let outcome = 'dispatch: loop {
         if ip >= chunk.code.len() {
             let value = if stack.len() > frame.stack_base {
@@ -877,6 +891,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
         }
         let op = &chunk.code[ip];
+        // Only `CallSelf` is eligible today. Other call instructions can enter a
+        // default-parameter binder or carry call-depth behavior that must remain observable.
+        tail_call_candidate = matches!(op, OpCode::CallSelf(..));
         ip += 1;
 
         match op {
@@ -1429,6 +1446,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
         }
     };
+    let outcome = if tail_call_candidate
+        && matches!(outcome, FrameOutcome::Enter(_))
+        && matches!(chunk.code.get(ip), Some(OpCode::Return))
+    {
+        let FrameOutcome::Enter(frame) = outcome else {
+            unreachable!("guard above requires an entering call frame");
+        };
+        FrameOutcome::TailEnter(frame)
+    } else {
+        outcome
+    };
     frame.ip = ip;
     if let FrameOutcome::Complete(_) = &outcome {
         stack.truncate(frame.stack_base);
@@ -1466,7 +1494,7 @@ fn begin_try_catch(
     let try_chunk = &chunks[try_closure.chunk_index as usize];
     let mut try_locals = execution
         .limits
-        .take_locals(try_chunk.local_count, try_chunk.captures_local_slots());
+        .take_locals(try_chunk.local_count, try_chunk.captured_local_slots());
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
     Ok(Frame::new(
         try_closure.chunk_index,

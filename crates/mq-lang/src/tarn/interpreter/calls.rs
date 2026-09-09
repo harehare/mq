@@ -94,7 +94,7 @@ pub(super) fn call_stack_value(
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
     let mut callee_locals = execution
         .limits
-        .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
+        .take_locals(callee_chunk.local_count, callee_chunk.captured_local_slots());
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
 
     let frame = bind_params(
@@ -220,7 +220,7 @@ fn call_fixed_chunk_from_stack(
     let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
         callee_chunk.local_count,
         initialized_slots,
-        callee_chunk.captures_local_slots(),
+        callee_chunk.captured_local_slots(),
     );
     let self_value = call_site.locals.get(SELF_SLOT);
     let first_arg_slot = if uses_implicit_self {
@@ -387,7 +387,7 @@ fn resume_bind_params(
                     let default_chunk_ref = &context.chunks[*default_chunk as usize];
                     let mut default_locals = context
                         .limits
-                        .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
+                        .take_locals(default_chunk_ref.local_count, default_chunk_ref.captured_local_slots());
                     default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
                     let callee_locals_reusable = !context.chunks[callee_chunk_index as usize].captures_local_slots();
                     let pending = PendingCall {

@@ -59,11 +59,20 @@ pub(crate) fn new_cell(value: StackValue) -> Cell {
     Shared::new(SharedCell::new(value))
 }
 
-/// One frame's local slots. `Boxed` slots support captures.
+/// One frame's local slots.
+///
+/// A capturing frame only allocates shared cells for slots a nested closure actually captures;
+/// its other slots retain the direct-value representation used by non-capturing frames.
 pub(crate) enum Locals {
     #[cfg(not(feature = "sync"))]
     /// A contiguous, exclusively owned local region for a non-capturing frame.
     Flat(Vec<StackValue>),
+    #[cfg(not(feature = "sync"))]
+    /// Direct slots plus cells at the sparse set of captured slot positions.
+    Hybrid {
+        slots: Vec<StackValue>,
+        captured: Vec<Option<Cell>>,
+    },
     Boxed(Vec<Cell>),
 }
 
@@ -81,7 +90,32 @@ impl Locals {
     }
 
     /// Creates a capture-capable frame.
-    pub(crate) fn boxed(count: usize) -> Self {
+    pub(crate) fn for_captured_slots(count: usize, captured_slots: &[u16]) -> Self {
+        if captured_slots.len() == count {
+            return Locals::boxed(count);
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            let mut captured = vec![None; count];
+            for &slot in captured_slots {
+                if let Some(cell) = captured.get_mut(slot as usize) {
+                    *cell = Some(new_cell(StackValue::Value(RuntimeValue::None)));
+                }
+            }
+            Locals::Hybrid {
+                slots: (0..count).map(|_| StackValue::Value(RuntimeValue::None)).collect(),
+                captured,
+            }
+        }
+        #[cfg(feature = "sync")]
+        {
+            let _ = captured_slots;
+            Locals::boxed(count)
+        }
+    }
+
+    /// Creates a frame whose every slot is a shared cell.
+    fn boxed(count: usize) -> Self {
         Locals::Boxed(
             (0..count)
                 .map(|_| new_cell(StackValue::Value(RuntimeValue::None)))
@@ -94,6 +128,8 @@ impl Locals {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots.len(),
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, .. } => slots.len(),
             Locals::Boxed(slots) => slots.len(),
         }
     }
@@ -106,6 +142,17 @@ impl Locals {
                 let from = from.min(slots.len());
                 for slot in &mut slots[from..] {
                     *slot = StackValue::Value(RuntimeValue::None);
+                }
+            }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                let from = from.min(slots.len());
+                for index in from..slots.len() {
+                    if let Some(cell) = &captured[index] {
+                        write_cell(cell, StackValue::Value(RuntimeValue::None));
+                    } else {
+                        slots[index] = StackValue::Value(RuntimeValue::None);
+                    }
                 }
             }
             Locals::Boxed(slots) => {
@@ -121,6 +168,10 @@ impl Locals {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots[slot as usize].clone(),
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => captured[slot as usize]
+                .as_ref()
+                .map_or_else(|| slots[slot as usize].clone(), read_cell),
             Locals::Boxed(slots) => read_cell(&slots[slot as usize]),
         }
     }
@@ -135,6 +186,14 @@ impl Locals {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots[slot as usize] = value,
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                if let Some(cell) = &captured[slot as usize] {
+                    write_cell(cell, value);
+                } else {
+                    slots[slot as usize] = value;
+                }
+            }
             Locals::Boxed(slots) => write_cell(&slots[slot as usize], value),
         }
     }
@@ -153,6 +212,15 @@ impl Locals {
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
                 unsafe { slots.get_unchecked(slot as usize) }.clone()
             }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
+                match unsafe { captured.get_unchecked(slot as usize) } {
+                    Some(cell) => read_cell(cell),
+                    // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
+                    None => unsafe { slots.get_unchecked(slot as usize) }.clone(),
+                }
+            }
             Locals::Boxed(slots) => {
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
                 read_cell(unsafe { slots.get_unchecked(slot as usize) })
@@ -169,6 +237,16 @@ impl Locals {
                 // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
                 *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
             }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
+                if let Some(cell) = unsafe { captured.get_unchecked(slot as usize) } {
+                    write_cell(cell, value);
+                } else {
+                    // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
+                    *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
+                }
+            }
             Locals::Boxed(slots) => {
                 // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
                 write_cell(unsafe { slots.get_unchecked(slot as usize) }, value);
@@ -181,6 +259,10 @@ impl Locals {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(_) => unreachable!("a non-capturing chunk's locals can't be captured"),
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { captured, .. } => captured[slot as usize]
+                .as_ref()
+                .expect("bytecode attempted to capture a local slot without a cell"),
             Locals::Boxed(slots) => &slots[slot as usize],
         }
     }
@@ -196,6 +278,17 @@ impl Locals {
                 crate::runtime::runtime_value::array_mut(array).push(value);
                 Ok(())
             }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => match &captured[slot as usize] {
+                Some(cell) => append_to_array_cell(cell, value),
+                None => {
+                    let StackValue::Value(RuntimeValue::Array(array)) = &mut slots[slot as usize] else {
+                        return Err("ForeachCollect accumulator is not an array");
+                    };
+                    crate::runtime::runtime_value::array_mut(array).push(value);
+                    Ok(())
+                }
+            },
             Locals::Boxed(slots) => append_to_array_cell(&slots[slot as usize], value),
         }
     }
@@ -244,6 +337,34 @@ impl Locals {
                 *unsafe { slots.get_unchecked_mut(value_slot as usize) } = StackValue::Value(value.clone());
                 // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
                 *unsafe { slots.get_unchecked_mut(self_slot as usize) } = StackValue::Value(value.clone());
+                Ok(Some(value))
+            }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { .. } => {
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let index = unsafe { self.get_unchecked(index_slot) };
+                let StackValue::Value(RuntimeValue::Number(index)) = index else {
+                    return Err("ForeachNext has invalid loop state");
+                };
+                let index_value = index.value();
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let array = unsafe { self.get_unchecked(array_slot) };
+                let StackValue::Value(RuntimeValue::Array(array)) = array else {
+                    return Err("ForeachNext array slot is not an array");
+                };
+                if index_value >= array.len() as f64 {
+                    return Ok(None);
+                }
+                let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                unsafe {
+                    self.set_unchecked(
+                        index_slot,
+                        StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
+                    );
+                    self.set_unchecked(value_slot, StackValue::Value(value.clone()));
+                    self.set_unchecked(self_slot, StackValue::Value(value.clone()));
+                }
                 Ok(Some(value))
             }
             Locals::Boxed(slots) => {

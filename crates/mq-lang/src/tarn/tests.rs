@@ -43,6 +43,14 @@ fn compile_and_run_full(
     )?)
 }
 
+#[test]
+fn default_call_stack_depth_matches_the_build_profile() {
+    assert_eq!(
+        Options::default().max_call_stack_depth,
+        if cfg!(debug_assertions) { 256 } else { 10_000 }
+    );
+}
+
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
 #[case::builtin_calls("upcase(.) | trim(.)")]
@@ -360,6 +368,12 @@ fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
         run("def count(n): if (n == 0): 0 else: count(n - 1); | count(10)"),
         RuntimeValue::Number(0.0.into())
     );
+}
+
+#[test]
+fn tail_recursive_call_reuses_its_frame() {
+    let code = "def count(n): if (n <= 0): 0 else: count(n - 1); | count(100)";
+    assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(0.0.into()));
 }
 
 #[test]

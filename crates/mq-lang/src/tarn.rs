@@ -61,7 +61,9 @@ pub(crate) struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_call_stack_depth: if cfg!(debug_assertions) { 40 } else { 192 },
+            // Keep debug builds eager to expose accidental recursion, while the heap-backed VM
+            // can safely accommodate practical non-tail recursion in release builds.
+            max_call_stack_depth: if cfg!(debug_assertions) { 256 } else { 10_000 },
             timeout: None,
         }
     }
