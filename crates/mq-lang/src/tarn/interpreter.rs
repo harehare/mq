@@ -456,16 +456,10 @@ fn run_impl_capturing_locals_with_env(
         limits: &mut limits,
         host_functions: options.host_functions,
     };
-    let initial = Frame::new(
-        0,
-        Shared::clone(chunks),
-        locals,
-        None,
-        reusable_locals,
-        Continuation::Push,
-    );
+    let initial = Frame::new(0, None, locals, None, reusable_locals, Continuation::Push);
     let (raw_result, locals) = run_frames(
         initial,
+        chunks,
         &mut execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -558,16 +552,10 @@ fn run_chunk(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let reusable_locals = !chunks[chunk_index as usize].captures_local_slots();
-    let initial = Frame::new(
-        chunk_index,
-        Shared::clone(chunks),
-        locals,
-        None,
-        reusable_locals,
-        Continuation::Push,
-    );
+    let initial = Frame::new(chunk_index, None, locals, None, reusable_locals, Continuation::Push);
     let (result, locals) = run_frames(
         initial,
+        chunks,
         execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -589,6 +577,7 @@ enum FrameOutcome {
 /// decoupled from Rust stack depth. Returns the bottom frame's `Locals` unrecycled.
 fn run_frames(
     initial: Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<StackValue>, Locals) {
@@ -597,6 +586,7 @@ fn run_frames(
     let result = if execution.limits.has_deadline() {
         run_frames_impl::<true>(
             initial,
+            root_chunks,
             &mut frames,
             &mut operand_stack,
             execution,
@@ -606,6 +596,7 @@ fn run_frames(
     } else {
         run_frames_impl::<false>(
             initial,
+            root_chunks,
             &mut frames,
             &mut operand_stack,
             execution,
@@ -620,6 +611,7 @@ fn run_frames(
 
 fn run_frames_impl<const CHECK_TIMEOUT: bool>(
     initial: Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
     frames: &mut Vec<Frame>,
     operand_stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
@@ -631,6 +623,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let outcome = run_frame_slice::<CHECK_TIMEOUT>(
             frame,
+            root_chunks,
             operand_stack,
             execution,
             #[cfg(feature = "debugger")]
@@ -646,10 +639,11 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
-                    let e = locate_at_top(frames, e);
+                    let e = locate_at_top(frames, root_chunks, e);
                     match unwind(
                         e,
                         frames,
+                        root_chunks,
                         operand_stack,
                         execution,
                         #[cfg(feature = "debugger")]
@@ -676,6 +670,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
             Err(e) => match unwind(
                 e,
                 frames,
+                root_chunks,
                 operand_stack,
                 execution,
                 #[cfg(feature = "debugger")]
@@ -706,10 +701,11 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                 let next = match apply_pending(*pending, value, execution) {
                     Ok(next) => next,
                     Err(e) => {
-                        let e = locate_at_top(frames, e);
+                        let e = locate_at_top(frames, root_chunks, e);
                         match unwind(
                             e,
                             frames,
+                            root_chunks,
                             operand_stack,
                             execution,
                             #[cfg(feature = "debugger")]
@@ -728,10 +724,11 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
-                    let e = locate_at_top(frames, e);
+                    let e = locate_at_top(frames, root_chunks, e);
                     match unwind(
                         e,
                         frames,
+                        root_chunks,
                         operand_stack,
                         execution,
                         #[cfg(feature = "debugger")]
@@ -747,9 +744,10 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
 }
 
 /// `locate`s `e` at the still-suspended calling frame's own chunk/`ip`.
-fn locate_at_top(frames: &[Frame], e: VmError) -> VmError {
+fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError) -> VmError {
     let caller = frames.last().expect("the frame stack is never empty here");
-    locate(&caller.chunks[caller.chunk_index as usize], caller.ip, e)
+    let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+    locate(&chunks[caller.chunk_index as usize], caller.ip, e)
 }
 
 /// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
@@ -760,6 +758,7 @@ fn locate_at_top(frames: &[Frame], e: VmError) -> VmError {
 fn unwind(
     mut e: VmError,
     frames: &mut Vec<Frame>,
+    root_chunks: &Shared<Vec<Chunk>>,
     operand_stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
@@ -811,7 +810,7 @@ fn unwind(
                     return Ok(());
                 }
                 let parent = frames.last().expect("just checked len() > 1");
-                let catch_chunks = Shared::clone(&parent.chunks);
+                let catch_chunks = parent.chunks.as_ref().unwrap_or(root_chunks);
                 let catch_chunk = &catch_chunks[catch_closure.chunk_index as usize];
                 let mut catch_locals = execution
                     .limits
@@ -822,7 +821,7 @@ fn unwind(
                 }
                 let mut catch_frame = Frame::new(
                     catch_closure.chunk_index,
-                    Shared::clone(&catch_chunks),
+                    parent.chunks.clone(),
                     catch_locals,
                     catch_closure.upvalues.clone(),
                     !catch_chunk.captures_local_slots(),
@@ -837,7 +836,7 @@ fn unwind(
                 ) {
                     Ok(()) => return Ok(()),
                     Err(new_e) => {
-                        e = locate_at_top(&*frames, new_e);
+                        e = locate_at_top(&*frames, root_chunks, new_e);
                         continue;
                     }
                 }
@@ -848,12 +847,13 @@ fn unwind(
 
 fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     frame: &mut Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<FrameOutcome> {
-    let chunk = &frame.chunks[frame.chunk_index as usize];
-    let chunks = &frame.chunks;
+    let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+    let chunk = &chunks[frame.chunk_index as usize];
     let locals = &mut frame.locals;
     let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
     let mut ip = frame.ip;
@@ -1256,7 +1256,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     *chunk_index,
                     *argc,
                     stack,
-                    CallSite { locals, chunk, ip },
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
                     chunks,
                     execution,
                 )?;
@@ -1268,7 +1273,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     frame.upvalues.clone(),
                     *argc,
                     stack,
-                    CallSite { locals, chunk, ip },
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
                     chunks,
                     execution,
                 )?;
@@ -1289,7 +1299,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             remove_callee: false,
                         },
                         stack,
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
                     )?;
@@ -1303,7 +1318,18 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     args.push(pop!());
                 }
                 args.reverse();
-                let step = call_stack_value(callee, &mut args, CallSite { locals, chunk, ip }, chunks, execution);
+                let step = call_stack_value(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                );
                 execution.limits.recycle_stack(args);
                 match step? {
                     CallStep::Value(v) => stack.push(v),
@@ -1326,7 +1352,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             remove_callee: false,
                         },
                         stack,
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
                     )?;
@@ -1337,7 +1368,18 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     args.push(pop!());
                 }
                 args.reverse();
-                let step = call_stack_value(callee, &mut args, CallSite { locals, chunk, ip }, chunks, execution);
+                let step = call_stack_value(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                );
                 execution.limits.recycle_stack(args);
                 match step? {
                     CallStep::Value(v) => stack.push(v),
@@ -1369,7 +1411,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                             remove_callee: true,
                         },
                         stack,
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
                     )?;
@@ -1382,7 +1429,18 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
                 args.reverse();
                 let callee = pop!();
-                let step = call_stack_value(callee, &mut args, CallSite { locals, chunk, ip }, chunks, execution);
+                let step = call_stack_value(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                );
                 execution.limits.recycle_stack(args);
                 match step? {
                     CallStep::Value(v) => stack.push(v),
@@ -1408,7 +1466,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     match call_stack_value(
                         value,
                         &mut Vec::new(),
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
                     )? {
@@ -1426,7 +1489,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     info,
                     catch_closure,
                     try_closure,
-                    CallSite { locals, chunk, ip },
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
                     chunks,
                     execution,
                 )?;
@@ -1476,7 +1544,12 @@ fn begin_try_catch(
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> VmResult<Frame> {
-    let CallSite { locals, chunk, ip } = call_site;
+    let CallSite {
+        locals,
+        chunk,
+        ip,
+        frame_chunks,
+    } = call_site;
     let StackValue::Closure(catch_closure) = catch_closure else {
         return Err(locate(
             chunk,
@@ -1498,7 +1571,7 @@ fn begin_try_catch(
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
     Ok(Frame::new(
         try_closure.chunk_index,
-        Shared::clone(chunks),
+        frame_chunks,
         try_locals,
         try_closure.upvalues.clone(),
         !try_chunk.captures_local_slots(),

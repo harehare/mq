@@ -17,7 +17,11 @@ use crate::ast::node::Node;
 /// One call's state, held on the trampoline's frame stack instead of a native Rust call frame.
 pub(super) struct Frame {
     pub(super) chunk_index: u16,
-    pub(super) chunks: Shared<Vec<Chunk>>,
+    /// The chunk pool when it differs from the program's root pool. `None` means the root
+    /// chunk pool, supplied once by the trampoline. Most calls stay within the program being
+    /// evaluated, so avoiding an `Rc`/`Arc` clone here removes reference-count traffic from the
+    /// fixed-call hot path.
+    pub(super) chunks: Option<Shared<Vec<Chunk>>>,
     pub(super) locals: Locals,
     /// `None` for the top-level frame, which has no captures and must not allocate an empty
     /// vector for every evaluation.
@@ -38,7 +42,7 @@ impl Frame {
     /// Debug fields are filled in by `push_frame`.
     pub(super) fn new(
         chunk_index: u16,
-        chunks: Shared<Vec<Chunk>>,
+        chunks: Option<Shared<Vec<Chunk>>>,
         locals: Locals,
         upvalues: Option<Shared<Vec<Cell>>>,
         reusable_locals: bool,
