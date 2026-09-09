@@ -229,7 +229,10 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
             format!("SelectorMatchWithArgs {:?}, argc={}", payload.0, payload.1)
         }
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
+        bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
+        bytecode::OpCode::CallSelf(argc) => format!("CallSelf argc={argc}"),
         bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {}, argc={argc}", local(*slot)),
+        bytecode::OpCode::CallUpvalue(slot, argc) => format!("CallUpvalue {}, argc={argc}", upvalue(*slot)),
         bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
         bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),
         bytecode::OpCode::TryCatch(info) => {

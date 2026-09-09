@@ -111,6 +111,8 @@ struct PatternState {
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     scopes: Vec<FunctionScope>,
+    /// The directly enclosing named function and whether it has only required parameters.
+    function_names: Vec<Option<(crate::Ident, bool)>>,
     current: usize,
     loops: Vec<LoopCtx>,
     current_token_id: crate::ast::TokenId,
@@ -632,6 +634,7 @@ fn compile_program_impl<R: ModuleResolver>(
     let mut compiler = Compiler {
         chunks: vec![Chunk::default()],
         scopes: vec![scope],
+        function_names: vec![None],
         current: 0,
         loops: Vec::new(),
         current_token_id: crate::ast::TokenId::new(0),
@@ -899,12 +902,30 @@ impl<R: ModuleResolver> Compiler<R> {
         self.chunk_mut().emit(op, token_id)
     }
 
-    fn emit_closure(&mut self, chunk_index: u16, upvalues: Vec<UpvalueSource>) {
+    /// Emits a closure value and returns whether it is capture-free.
+    fn emit_closure(&mut self, chunk_index: u16, upvalues: Vec<UpvalueSource>) -> bool {
         if upvalues.is_empty() {
             let closure_index = self.chunk_mut().push_static_closure(chunk_index);
             self.emit(OpCode::MakeStaticClosure(closure_index));
+            true
         } else {
             self.emit(OpCode::MakeClosure(Box::new((chunk_index, upvalues))));
+            false
+        }
+    }
+
+    /// Records a direct-call target when it needs neither captured state nor the general
+    /// optional/variadic parameter binder.
+    fn register_static_function(&mut self, slot: u16, chunk_index: u16, capture_free: bool) {
+        if capture_free
+            && self.chunks[chunk_index as usize]
+                .param_shape
+                .fixed_required_arity()
+                .is_some()
+        {
+            self.scope_mut().set_static_function(slot, chunk_index);
+        } else {
+            self.scope_mut().clear_static_function(slot);
         }
     }
 
@@ -972,6 +993,9 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         let param_slots: Vec<u16> = params.iter().map(|param| scope.declare(param.ident.name)).collect();
         self.scopes.push(scope);
+        let is_fixed_arity = params.iter().all(|param| !param.is_variadic && param.default.is_none());
+        self.function_names
+            .push(name_for_shadow.map(|name| (name, is_fixed_arity)));
 
         let mut bindings = Vec::with_capacity(params.len());
         let mut required = 0usize;
@@ -995,6 +1019,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::Return);
 
         let finished = self.scopes.pop().expect("scope pushed above");
+        self.function_names.pop().expect("function name pushed above");
         self.chunks[new_index as usize].local_count = finished.local_count();
         self.chunks[new_index as usize].local_names = finished.local_names();
         self.chunks[new_index as usize].local_mutable = finished.local_mutable();
@@ -1082,8 +1107,13 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.scope_mut().mark_immutable(slot);
                 }
                 let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-                self.emit_closure(chunk_idx, upvalues);
+                let capture_free = self.emit_closure(chunk_idx, upvalues);
                 self.emit(OpCode::SetLocal(slot));
+                if mutable {
+                    self.scope_mut().clear_static_function(slot);
+                } else {
+                    self.register_static_function(slot, chunk_idx, capture_free);
+                }
             }
             Pattern::Ident(ident) => {
                 self.compile_expr(value)?;
@@ -1093,6 +1123,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 } else {
                     self.scope_mut().mark_immutable(slot);
                 }
+                self.scope_mut().clear_static_function(slot);
                 self.emit(OpCode::SetLocal(slot));
             }
             _ => {
@@ -1647,8 +1678,9 @@ impl<R: ModuleResolver> Compiler<R> {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-            self.emit_closure(chunk_idx, upvalues);
+            let capture_free = self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(slot));
+            self.register_static_function(slot, chunk_idx, capture_free);
         }
         Ok(())
     }
@@ -1707,8 +1739,9 @@ impl<R: ModuleResolver> Compiler<R> {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-            self.emit_closure(chunk_idx, upvalues);
+            let capture_free = self.emit_closure(chunk_idx, upvalues);
             self.emit(OpCode::SetLocal(*slot));
+            self.register_static_function(*slot, chunk_idx, capture_free);
             self.insert_qualified_binding(&[module_alias], ident.name, QualifiedSlot { depth, slot: *slot });
         }
         // Only qualified names remain visible after compilation.
@@ -1767,8 +1800,9 @@ impl<R: ModuleResolver> Compiler<R> {
                 Expr::Def(def_ident, params, body) => {
                     let slot = def_slots[&def_ident.name];
                     let (chunk_idx, upvalues) = self.compile_function(params, body, Some(def_ident.name))?;
-                    self.emit_closure(chunk_idx, upvalues);
+                    let capture_free = self.emit_closure(chunk_idx, upvalues);
                     self.emit(OpCode::SetLocal(slot));
+                    self.register_static_function(slot, chunk_idx, capture_free);
                     self.insert_qualified_binding(module_path, def_ident.name, QualifiedSlot { depth, slot });
                 }
                 Expr::Include(_) | Expr::Let(_, _) | Expr::Var(_, _) | Expr::Import(_, _) | Expr::Module(_, _) => {
@@ -2037,8 +2071,9 @@ impl<R: ModuleResolver> Compiler<R> {
                 let slot = self.scope_mut().declare_or_reuse(ident.name);
                 self.scope_mut().mark_immutable(slot);
                 let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
-                self.emit_closure(chunk_idx, upvalues);
+                let capture_free = self.emit_closure(chunk_idx, upvalues);
                 self.emit(OpCode::SetLocal(slot));
+                self.register_static_function(slot, chunk_idx, capture_free);
                 self.emit(OpCode::GetLocal(slot));
                 Ok(())
             }
@@ -2051,6 +2086,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_expr(value)?;
                 let slot = self.scope_mut().declare_or_reuse(ident.name);
                 self.scope_mut().mark_immutable(slot);
+                self.scope_mut().clear_static_function(slot);
                 self.emit(OpCode::SetLocal(slot));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
                 Ok(())
@@ -2208,6 +2244,29 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let shadowed = self.scope_mut().shadowed_builtin == Some(ident);
 
+        // A named function normally resolves its own name through an upvalue, which would make
+        // every recursive call load and clone the closure. At this lexical depth the active
+        // frame already supplies the correct captured environment, so call the current chunk
+        // directly. A same-named parameter/local still takes precedence.
+        let direct_self_call = self
+            .function_names
+            .last()
+            .and_then(|entry| *entry)
+            .filter(|(name, fixed)| *fixed && *name == ident)
+            .is_some_and(|_| {
+                self.scopes
+                    .last()
+                    .is_some_and(|scope| scope.resolve_local(ident).is_none())
+            });
+        if !shadowed && direct_self_call {
+            for arg in args {
+                self.compile_expr(arg)?;
+            }
+            self.current_token_id = call_token_id;
+            self.emit(OpCode::CallSelf(self.arg_count(args.len())?));
+            return Ok(());
+        }
+
         if !shadowed && let Some(resolved) = self.resolve(ident) {
             let local_call = match resolved {
                 Resolved::Local(slot) if self.scopes.last().is_some_and(|scope| scope.is_immutable(slot)) => Some(slot),
@@ -2219,7 +2278,19 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 self.current_token_id = call_token_id;
                 let argc = self.arg_count(args.len())?;
-                self.emit(OpCode::CallLocal(slot, argc));
+                if let Some(chunk) = self.scopes.last().and_then(|scope| scope.static_function(slot)) {
+                    self.emit(OpCode::CallStatic(chunk, argc));
+                } else {
+                    self.emit(OpCode::CallLocal(slot, argc));
+                }
+                return Ok(());
+            }
+            if let Resolved::Upvalue { index, immutable: true } = resolved {
+                for arg in args {
+                    self.compile_expr(arg)?;
+                }
+                self.current_token_id = call_token_id;
+                self.emit(OpCode::CallUpvalue(index, self.arg_count(args.len())?));
                 return Ok(());
             }
             match resolved {
