@@ -1,4 +1,5 @@
 use super::bytecode::Chunk;
+use crate::number::Number;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{Shared, SharedCell};
 
@@ -15,14 +16,19 @@ pub(crate) enum StackValue {
 /// A closure on the VM operand stack.
 pub(crate) struct Closure {
     pub(crate) chunk_index: u16,
-    pub(crate) upvalues: Vec<Cell>,
+    /// Absent for the common capture-free closure. Capturing closures share their cells with
+    /// call frames, avoiding a deep copy on every call.
+    pub(crate) upvalues: Option<Shared<Vec<Cell>>>,
 }
 
 impl std::fmt::Debug for Closure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Closure")
             .field("chunk_index", &self.chunk_index)
-            .field("upvalue_count", &self.upvalues.len())
+            .field(
+                "upvalue_count",
+                &self.upvalues.as_ref().map_or(0, |upvalues| upvalues.len()),
+            )
             .finish()
     }
 }
@@ -32,7 +38,7 @@ impl std::fmt::Debug for Closure {
 pub(crate) struct VmClosureValue {
     pub(crate) chunks: Shared<Vec<Chunk>>,
     pub(crate) chunk_index: u16,
-    pub(crate) upvalues: Vec<Cell>,
+    pub(crate) upvalues: Option<Shared<Vec<Cell>>>,
     pub(crate) bound_args: Vec<RuntimeValue>,
 }
 
@@ -56,7 +62,8 @@ pub(crate) fn new_cell(value: StackValue) -> Cell {
 /// One frame's local slots. `Boxed` slots support captures.
 pub(crate) enum Locals {
     #[cfg(not(feature = "sync"))]
-    Flat(Vec<std::cell::RefCell<StackValue>>),
+    /// A contiguous, exclusively owned local region for a non-capturing frame.
+    Flat(Vec<StackValue>),
     Boxed(Vec<Cell>),
 }
 
@@ -65,11 +72,7 @@ impl Locals {
     pub(crate) fn flat(count: usize) -> Self {
         #[cfg(not(feature = "sync"))]
         {
-            Locals::Flat(
-                (0..count)
-                    .map(|_| std::cell::RefCell::new(StackValue::Value(RuntimeValue::None)))
-                    .collect(),
-            )
+            Locals::Flat((0..count).map(|_| StackValue::Value(RuntimeValue::None)).collect())
         }
         #[cfg(feature = "sync")]
         {
@@ -96,12 +99,13 @@ impl Locals {
     }
 
     /// Clears slots from `from` onward.
-    pub(crate) fn reset_from(&self, from: usize) {
+    pub(crate) fn reset_from(&mut self, from: usize) {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
-                for slot in &slots[from.min(slots.len())..] {
-                    *slot.borrow_mut() = StackValue::Value(RuntimeValue::None);
+                let from = from.min(slots.len());
+                for slot in &mut slots[from..] {
+                    *slot = StackValue::Value(RuntimeValue::None);
                 }
             }
             Locals::Boxed(slots) => {
@@ -116,7 +120,7 @@ impl Locals {
     pub(crate) fn get(&self, slot: u16) -> StackValue {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => slots[slot as usize].borrow().clone(),
+            Locals::Flat(slots) => slots[slot as usize].clone(),
             Locals::Boxed(slots) => read_cell(&slots[slot as usize]),
         }
     }
@@ -127,10 +131,10 @@ impl Locals {
     }
 
     /// Writes a local slot.
-    pub(crate) fn set(&self, slot: u16, value: StackValue) {
+    pub(crate) fn set(&mut self, slot: u16, value: StackValue) {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => *slots[slot as usize].borrow_mut() = value,
+            Locals::Flat(slots) => slots[slot as usize] = value,
             Locals::Boxed(slots) => write_cell(&slots[slot as usize], value),
         }
     }
@@ -147,7 +151,7 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                unsafe { slots.get_unchecked(slot as usize) }.borrow().clone()
+                unsafe { slots.get_unchecked(slot as usize) }.clone()
             }
             Locals::Boxed(slots) => {
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
@@ -158,12 +162,12 @@ impl Locals {
 
     /// Like [`Locals::set`], without the bounds check. See [`Locals::get_unchecked`].
     #[inline(always)]
-    pub(crate) unsafe fn set_unchecked(&self, slot: u16, value: StackValue) {
+    pub(crate) unsafe fn set_unchecked(&mut self, slot: u16, value: StackValue) {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
                 // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
-                *unsafe { slots.get_unchecked(slot as usize) }.borrow_mut() = value;
+                *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
             }
             Locals::Boxed(slots) => {
                 // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
@@ -181,38 +185,101 @@ impl Locals {
         }
     }
 
-    /// Reads an array slot's length and element.
-    pub(crate) fn array_len_and_element_at(
-        &self,
-        slot: u16,
-        index: usize,
-    ) -> Result<(usize, Option<RuntimeValue>), &'static str> {
-        match self {
-            #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => {
-                let borrowed = slots[slot as usize].borrow();
-                let StackValue::Value(RuntimeValue::Array(array)) = &*borrowed else {
-                    return Err("ForeachNext array slot is not an array");
-                };
-                Ok((array.len(), array.get(index).cloned()))
-            }
-            Locals::Boxed(slots) => array_len_and_element_at_cell(&slots[slot as usize], index),
-        }
-    }
-
     /// Appends to an array stored in a local slot.
-    pub(crate) fn append_to_array_at(&self, slot: u16, value: RuntimeValue) -> Result<(), &'static str> {
+    pub(crate) fn append_to_array_at(&mut self, slot: u16, value: RuntimeValue) -> Result<(), &'static str> {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
-                let mut borrowed = slots[slot as usize].borrow_mut();
-                let StackValue::Value(RuntimeValue::Array(array)) = &mut *borrowed else {
+                let StackValue::Value(RuntimeValue::Array(array)) = &mut slots[slot as usize] else {
                     return Err("ForeachCollect accumulator is not an array");
                 };
                 crate::runtime::runtime_value::array_mut(array).push(value);
                 Ok(())
             }
             Locals::Boxed(slots) => append_to_array_cell(&slots[slot as usize], value),
+        }
+    }
+
+    /// Advances a `foreach` loop and updates its index, loop value, and implicit-self slots.
+    ///
+    /// # Safety
+    /// `array_slot`, `index_slot`, and `value_slot` must be valid local slots. The bytecode
+    /// verifier establishes this for every `ForeachNext` instruction before execution.
+    #[inline(always)]
+    pub(crate) unsafe fn foreach_next(
+        &mut self,
+        array_slot: u16,
+        index_slot: u16,
+        value_slot: u16,
+        self_slot: u16,
+    ) -> Result<Option<RuntimeValue>, &'static str> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let index_value = {
+                    let index = unsafe { slots.get_unchecked(index_slot as usize) };
+                    let StackValue::Value(RuntimeValue::Number(index)) = index else {
+                        return Err("ForeachNext has invalid loop state");
+                    };
+                    index.value()
+                };
+
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let value = {
+                    let array = unsafe { slots.get_unchecked(array_slot as usize) };
+                    let StackValue::Value(RuntimeValue::Array(array)) = array else {
+                        return Err("ForeachNext array slot is not an array");
+                    };
+                    if index_value >= array.len() as f64 {
+                        return Ok(None);
+                    }
+                    array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None)
+                };
+
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                *unsafe { slots.get_unchecked_mut(index_slot as usize) } =
+                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0)));
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                *unsafe { slots.get_unchecked_mut(value_slot as usize) } = StackValue::Value(value.clone());
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                *unsafe { slots.get_unchecked_mut(self_slot as usize) } = StackValue::Value(value.clone());
+                Ok(Some(value))
+            }
+            Locals::Boxed(slots) => {
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let index = read_cell(unsafe { slots.get_unchecked(index_slot as usize) });
+                let StackValue::Value(RuntimeValue::Number(index)) = index else {
+                    return Err("ForeachNext has invalid loop state");
+                };
+                let index_value = index.value();
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                let array = read_cell(unsafe { slots.get_unchecked(array_slot as usize) });
+                let StackValue::Value(RuntimeValue::Array(array)) = array else {
+                    return Err("ForeachNext array slot is not an array");
+                };
+                if index_value >= array.len() as f64 {
+                    return Ok(None);
+                }
+                let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
+
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                write_cell(
+                    unsafe { slots.get_unchecked(index_slot as usize) },
+                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
+                );
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                write_cell(
+                    unsafe { slots.get_unchecked(value_slot as usize) },
+                    StackValue::Value(value.clone()),
+                );
+                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                write_cell(
+                    unsafe { slots.get_unchecked(self_slot as usize) },
+                    StackValue::Value(value.clone()),
+                );
+                Ok(Some(value))
+            }
         }
     }
 }
@@ -238,29 +305,6 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     #[cfg(feature = "sync")]
     {
         *cell.write().unwrap() = value;
-    }
-}
-
-/// Reads an array cell's length and element.
-pub(crate) fn array_len_and_element_at_cell(
-    cell: &Cell,
-    index: usize,
-) -> Result<(usize, Option<RuntimeValue>), &'static str> {
-    #[cfg(not(feature = "sync"))]
-    {
-        let stored = cell.borrow();
-        let StackValue::Value(RuntimeValue::Array(array)) = &*stored else {
-            return Err("ForeachNext array slot is not an array");
-        };
-        Ok((array.len(), array.get(index).cloned()))
-    }
-    #[cfg(feature = "sync")]
-    {
-        let stored = cell.read().unwrap();
-        let StackValue::Value(RuntimeValue::Array(array)) = &*stored else {
-            return Err("ForeachNext array slot is not an array");
-        };
-        Ok((array.len(), array.get(index).cloned()))
     }
 }
 
