@@ -127,7 +127,6 @@ pub(crate) struct ExecutionPools {
 const MAX_POOLED_LOCAL_COUNT: usize = 256;
 const MAX_POOLED_LOCAL_SLOTS: usize = 4096;
 const MAX_POOLED_STACK_CAPACITY: usize = 4096;
-const INITIAL_FRAME_STACK_CAPACITY: usize = 32;
 const MAX_POOLED_FRAME_STACK_CAPACITY: usize = 4096;
 
 impl ExecutionLimits {
@@ -316,12 +315,14 @@ impl ExecutionLimits {
     }
 
     /// Takes the reusable trampoline frame stack for an evaluation.
+    ///
+    /// Does not eagerly reserve capacity for a first-time (empty) stack: most evaluations —
+    /// including every one-shot CLI invocation, which never benefits from a prior call's
+    /// pooling — push only a handful of frames, so amortized `Vec` growth costs less than
+    /// unconditionally allocating capacity up front. Deep recursion still reaches a large
+    /// capacity after a few cheap doublings.
     pub(super) fn take_frame_stack(&mut self) -> Vec<Frame> {
-        let mut frames = std::mem::take(&mut self.pools.frame_stack);
-        if frames.capacity() == 0 {
-            frames.reserve(INITIAL_FRAME_STACK_CAPACITY);
-        }
-        frames
+        std::mem::take(&mut self.pools.frame_stack)
     }
 
     /// Retains an empty trampoline frame stack for the next non-overlapping evaluation.
