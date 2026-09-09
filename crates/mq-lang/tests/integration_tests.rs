@@ -3585,7 +3585,9 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 
 #[rstest]
 #[case::invalid_function_syntax("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
-#[case::func("def func1(): 1 | func1(); | func1()", vec![RuntimeValue::Number(0.into())])]
+// Keep this an arity failure rather than an unbounded tail-recursive definition. Tail calls
+// intentionally reuse their frame and therefore do not consume the stack-depth limit.
+#[case::func("def func1(): 1; | func1(1)", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(x): 1; | func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::func_invalid_definition("def f(x): 1; | f2(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::invalid_definition("func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
@@ -3606,7 +3608,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::regex_invalid_pattern(r#""abc" =~ "[invalid""#, vec![RuntimeValue::None],)]
 #[case::is_regex_match_invalid_pattern(r#"is_regex_match("abc", "[invalid")"#, vec![RuntimeValue::None],)]
 // recursion depth exceeded
-#[case::recursion_limit("def f(x): f(x); | f(1)", vec![RuntimeValue::None],)]
+#[case::recursion_limit("def f(x): 1 + f(x); | f(1)", vec![RuntimeValue::None],)]
 // too many args to a user-defined function
 #[case::too_many_args_user_fn("def f(x): x; | f(1, 2, 3)", vec![RuntimeValue::None],)]
 // too few args to a variadic user-defined function (need 2+ required, given 0)

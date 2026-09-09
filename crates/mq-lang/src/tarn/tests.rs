@@ -238,7 +238,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallStatic(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
     );
     assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
 }
@@ -341,8 +341,54 @@ fn top_level_def_calls_use_call_static() {
         compiled
             .chunks
             .iter()
-            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallStatic(_, _)))),
-        "capture-free fixed-arity top-level def call should compile to CallStatic"
+            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallStaticExact(_, _)))),
+        "capture-free fixed-arity top-level def call should compile to CallStaticExact"
+    );
+}
+
+#[test]
+fn fixed_static_calls_specialize_the_exact_and_implicit_self_forms() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): x; | identity(1) | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticImplicitSelf(_, 0)))
+    );
+    assert_eq!(
+        run("def identity(x): x; | identity(1) | identity()"),
+        RuntimeValue::Number(1.into())
+    );
+}
+
+#[test]
+fn fixed_static_arity_mismatches_keep_the_checked_call_form() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("def identity(x): x; | identity(1, 2)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStatic(_, 2)))
     );
 }
 
@@ -360,13 +406,37 @@ fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
     let recursive_chunk = compiled
         .chunks
         .iter()
-        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelf(1))))
-        .expect("recursive body should use CallSelf");
+        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelfExact(1))))
+        .expect("recursive body should use CallSelfExact");
 
     assert!(recursive_chunk.upvalue_names.is_empty());
     assert_eq!(
         run("def count(n): if (n == 0): 0 else: count(n - 1); | count(10)"),
         RuntimeValue::Number(0.0.into())
+    );
+}
+
+#[test]
+fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): if (true): x else: identity(); | 42 | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallSelfImplicitSelf(0)))
+    }));
+    assert_eq!(
+        run("def identity(x): if (true): x else: identity(); | 42 | identity()"),
+        RuntimeValue::Number(42.into())
     );
 }
 
