@@ -309,31 +309,6 @@ pub(crate) struct TryCatchInfo {
     pub(crate) continue_offset: Option<i32>,
 }
 
-/// A build-dependent memoized boolean.
-#[derive(Debug, Default)]
-struct BoolCache(
-    #[cfg(not(feature = "sync"))] std::cell::Cell<Option<bool>>,
-    #[cfg(feature = "sync")] std::sync::OnceLock<bool>,
-);
-
-impl BoolCache {
-    fn get_or_init(&self, f: impl FnOnce() -> bool) -> bool {
-        #[cfg(not(feature = "sync"))]
-        {
-            if let Some(value) = self.0.get() {
-                return value;
-            }
-            let value = f();
-            self.0.set(Some(value));
-            value
-        }
-        #[cfg(feature = "sync")]
-        {
-            *self.0.get_or_init(f)
-        }
-    }
-}
-
 /// A run of instructions attributed to one source token.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct LineEntry {
@@ -357,7 +332,9 @@ pub(crate) struct Chunk {
     #[cfg(feature = "debugger")]
     pub(crate) debug_symbols: DebugSymbolTable,
     pub(crate) param_shape: ParamShape,
-    captures_local_slots_cache: BoolCache,
+    /// Sorted local slots whose cells are captured by a nested closure or default expression.
+    /// All remaining slots can stay as direct values in the interpreter frame.
+    captured_local_slots: Vec<u16>,
 }
 
 impl Chunk {
@@ -370,23 +347,46 @@ impl Chunk {
         (self.static_closures.len() - 1) as u16
     }
 
-    /// Returns whether locals can outlive the current frame.
+    /// Computes the local slots that a closure or default expression captures.
+    ///
+    /// This runs after bytecode optimization, so the interpreter can choose its local storage
+    /// layout without rescanning instructions each time a frame is entered.
+    pub(crate) fn refresh_captured_local_slots(&mut self) {
+        let mut captured = vec![false; self.local_count as usize];
+        let mut mark_sources = |sources: &[UpvalueSource]| {
+            for source in sources {
+                if let UpvalueSource::Local(slot) = source
+                    && let Some(captured) = captured.get_mut(*slot as usize)
+                {
+                    *captured = true;
+                }
+            }
+        };
+        for opcode in &self.code {
+            if let OpCode::MakeClosure(payload) = opcode {
+                mark_sources(&payload.1);
+            }
+        }
+        for binding in &self.param_shape.bindings {
+            if let ParamBinding::Optional(_, _, sources) = binding {
+                mark_sources(sources);
+            }
+        }
+        self.captured_local_slots = captured
+            .into_iter()
+            .enumerate()
+            .filter_map(|(slot, is_captured)| is_captured.then_some(slot as u16))
+            .collect();
+    }
+
+    /// Returns whether any local can outlive the current frame.
     pub(crate) fn captures_local_slots(&self) -> bool {
-        self.captures_local_slots_cache.get_or_init(|| {
-            self.code.iter().any(|op| {
-                matches!(
-                    op,
-                    OpCode::MakeClosure(payload)
-                        if payload.1.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-                )
-            }) || self.param_shape.bindings.iter().any(|binding| {
-                matches!(
-                    binding,
-                    ParamBinding::Optional(_, _, sources)
-                        if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-                )
-            })
-        })
+        !self.captured_local_slots.is_empty()
+    }
+
+    /// Returns the finalized list of local slots that need independently shared cells.
+    pub(crate) fn captured_local_slots(&self) -> &[u16] {
+        &self.captured_local_slots
     }
 
     /// Adds a constant and returns its index.
@@ -1227,6 +1227,23 @@ mod tests {
             super::super::interpreter::capture_slots(&chunk, &[first, second]),
             vec![(first, 2), (second, 1)]
         );
+    }
+
+    #[test]
+    fn captured_local_metadata_contains_only_closure_and_default_sources() {
+        let mut chunk = Chunk {
+            local_count: 5,
+            code: vec![OpCode::MakeClosure(Box::new((0, vec![UpvalueSource::Local(3)])))],
+            param_shape: ParamShape {
+                bindings: vec![ParamBinding::Optional(1, 0, vec![UpvalueSource::Local(1)])],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        chunk.refresh_captured_local_slots();
+
+        assert_eq!(chunk.captured_local_slots(), &[1, 3]);
     }
 
     #[test]
