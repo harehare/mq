@@ -377,6 +377,30 @@ fn fixed_static_calls_specialize_the_exact_and_implicit_self_forms() {
 }
 
 #[test]
+fn fixed_static_calls_bind_zero_and_two_arguments_without_generic_binding() {
+    use super::bytecode::OpCode;
+
+    let source = "def constant(): 7; | def add(left, right): left + right; | constant() + add(20, 22)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 0)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 2)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(49.into()));
+}
+
+#[test]
 fn fixed_static_arity_mismatches_keep_the_checked_call_form() {
     use super::bytecode::OpCode;
 
