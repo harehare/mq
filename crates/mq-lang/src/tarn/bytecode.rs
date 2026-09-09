@@ -48,6 +48,13 @@ pub(crate) enum BinaryOp {
     Ge,
 }
 
+impl BinaryOp {
+    /// Whether this op yields a boolean, making it eligible for compare-and-jump fusion.
+    pub(crate) fn is_comparison(self) -> bool {
+        matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
+    }
+}
+
 /// Compact argument-free node selector.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,6 +256,23 @@ pub(crate) enum OpCode {
         op: BinaryOp,
         local: u16,
         constant: u16,
+    },
+    /// Fuses a local/local comparison directly into its branch: computes `left op right` and
+    /// jumps without ever materializing the boolean on the operand stack. Produced by the
+    /// bytecode optimizer from a `BinaryLocalLocal` comparison immediately followed by
+    /// `JumpIfFalse`, the shape every `if`/`while`/`until` condition compiles to.
+    JumpIfFalseLocalLocal {
+        op: BinaryOp,
+        left: u16,
+        right: u16,
+        offset: i32,
+    },
+    /// Same fusion as [`Self::JumpIfFalseLocalLocal`] for a local/constant comparison.
+    JumpIfFalseLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+        offset: i32,
     },
     Neg,
     Not,
@@ -649,13 +673,15 @@ fn optimize_chunk(chunk: &mut Chunk) {
     }
 
     let has_rewrite = chunk.code.iter().enumerate().any(|(pc, op)| {
-        matches!(
-            (op, chunk.code.get(pc + 1)),
-            (OpCode::Const(_), Some(OpCode::Pop))
-                | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
-                | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
-                | (OpCode::Jump(0), _)
-        )
+        is_fusable_compare_jump(op, chunk.code.get(pc + 1)) || {
+            matches!(
+                (op, chunk.code.get(pc + 1)),
+                (OpCode::Const(_), Some(OpCode::Pop))
+                    | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
+                    | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
+                    | (OpCode::Jump(0), _)
+            )
+        }
     });
     if !has_rewrite {
         return;
@@ -703,6 +729,32 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc] = false;
                 pc += 1;
             }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::JumpIfFalse(offset)))
+                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::JumpIfFalseLocalLocal {
+                    op: *op,
+                    left: *left,
+                    right: *right,
+                    // The fused op keeps the `BinaryLocalLocal`'s old pc, one slot earlier than
+                    // the `JumpIfFalse` this offset was written for; +1 keeps the same target.
+                    offset: *offset + 1,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::JumpIfFalse(offset)))
+                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::JumpIfFalseLocalConst {
+                    op: *op,
+                    local: *local,
+                    constant: *constant,
+                    offset: *offset + 1,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
             _ => pc += 1,
         }
     }
@@ -728,11 +780,27 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
+/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse` —
+/// the shape every `if`/`while`/`until` condition compiles to — and so can fuse into a single
+/// compare-and-branch instruction with no boolean ever pushed to the operand stack.
+fn is_fusable_compare_jump(op: &OpCode, next: Option<&OpCode>) -> bool {
+    let Some(OpCode::JumpIfFalse(_)) = next else {
+        return false;
+    };
+    match op {
+        OpCode::BinaryLocalLocal { op, .. } | OpCode::BinaryLocalConst { op, .. } => op.is_comparison(),
+        _ => false,
+    }
+}
+
 fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
     let mut targets = std::collections::BTreeSet::new();
     for (pc, op) in code.iter().enumerate() {
         match op {
-            OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
+            OpCode::Jump(offset)
+            | OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfFalseLocalLocal { offset, .. }
+            | OpCode::JumpIfFalseLocalConst { offset, .. } => {
                 if let Some(target) = jump_target(pc, *offset) {
                     targets.insert(target);
                 }
@@ -789,6 +857,28 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
         OpCode::JumpIfFalse(offset) => OpCode::JumpIfFalse(rewrite(offset)),
+        OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset,
+        } => OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset: rewrite(offset),
+        },
+        OpCode::JumpIfFalseLocalConst {
+            op,
+            local,
+            constant,
+            offset,
+        } => OpCode::JumpIfFalseLocalConst {
+            op,
+            local,
+            constant,
+            offset: rewrite(offset),
+        },
         OpCode::ForeachNext {
             array_slot,
             index_slot,
@@ -912,6 +1002,42 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             index: *constant,
                         });
                     }
+                }
+                OpCode::JumpIfFalseLocalLocal {
+                    left, right, offset, ..
+                } => {
+                    for slot in [left, right] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
+                OpCode::JumpIfFalseLocalConst {
+                    local,
+                    constant,
+                    offset,
+                    ..
+                } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
                 OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
                     for slot in [array_slot, index_slot] {
