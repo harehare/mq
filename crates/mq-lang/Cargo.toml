@@ -14,6 +14,7 @@ version.workspace = true
 [dependencies]
 mq-macros = {workspace = true}
 base64 = {workspace = true}
+caseless = {workspace = true}
 ciborium = {workspace = true}
 csv = {workspace = true}
 encoding_rs = {workspace = true}
@@ -48,6 +49,8 @@ thiserror = {workspace = true}
 url = {workspace = true}
 toon-format = {workspace = true}
 quick-xml = {workspace = true}
+unicode-normalization = {workspace = true}
+unicode-segmentation = {workspace = true}
 unicode-width = {workspace = true}
 similar = {workspace = true}
 tiktoken-rs = { version = "0.12", optional = true }

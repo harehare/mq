@@ -45,6 +45,8 @@ use std::io;
 use std::process::exit;
 use std::sync::LazyLock;
 use thiserror::Error;
+use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
@@ -1602,6 +1604,59 @@ fn ascii_upcase_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
     }
 }
 
+/// Full Unicode case folding, unlike `downcase`'s simple lowercase (e.g. German `ß` -> `ss`).
+#[mq_macros::mq_fn(name = "casefold", params = Fixed(1))]
+fn casefold_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| Ok(node.update_markdown_value(caseless::default_case_fold_str(md.value().as_str()).as_str())))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::String(s)] => Ok(caseless::default_case_fold_str(s).into()),
+        _ => Ok(RuntimeValue::NONE),
+    }
+}
+
+fn normalize_unicode(caller: &str, s: &str, form: &str) -> Result<String, Error> {
+    match form.to_ascii_lowercase().as_str() {
+        "nfc" => Ok(s.nfc().collect()),
+        "nfd" => Ok(s.nfd().collect()),
+        "nfkc" => Ok(s.nfkc().collect()),
+        "nfkd" => Ok(s.nfkd().collect()),
+        _ => Err(Error::Runtime(format!(
+            "{caller}: invalid normalization form `{form}`, expected one of \"nfc\", \"nfd\", \"nfkc\", \"nfkd\""
+        ))),
+    }
+}
+
+/// Normalizes to a Unicode form: `"nfc"`, `"nfd"`, `"nfkc"`, or `"nfkd"`.
+#[mq_macros::mq_fn(name = "unicode_normalize", params = Fixed(2))]
+fn unicode_normalize_impl(
+    ident: &Ident,
+    _: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(form)] => {
+            Ok(normalize_unicode("unicode_normalize", s, form)?.into())
+        }
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(form)] => node
+            .markdown_node()
+            .map(|md| {
+                Ok(node
+                    .update_markdown_value(normalize_unicode("unicode_normalize", md.value().as_str(), form)?.as_str()))
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("unicode_normalize should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "update", params = Fixed(2))]
 fn update_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1943,6 +1998,37 @@ fn utf8bytelen_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> R
     match args.as_slice() {
         [a] => Ok(RuntimeValue::Number(a.len().into())),
         _ => unreachable!("utf8bytelen should always receive exactly one argument"),
+    }
+}
+
+/// Splits into extended grapheme clusters (user-perceived characters), unlike `explode`'s per-codepoint split.
+#[mq_macros::mq_fn(name = "graphemes", params = Fixed(1))]
+fn graphemes_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Array(Shared::new(
+            s.graphemes(true).map(RuntimeValue::from).collect::<Vec<_>>(),
+        ))),
+        [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Array(Shared::new(
+            node.markdown_node()
+                .map(|md| md.value().graphemes(true).map(RuntimeValue::from).collect::<Vec<_>>())
+                .unwrap_or_default(),
+        ))),
+        _ => Ok(RuntimeValue::empty_array()),
+    }
+}
+
+/// Counts extended grapheme clusters, unlike `len`'s codepoint count.
+#[mq_macros::mq_fn(name = "grapheme_len", params = Fixed(1))]
+fn grapheme_len_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::String(s)] => Ok(RuntimeValue::Number(s.graphemes(true).count().into())),
+        [node @ RuntimeValue::Markdown(_, _)] => Ok(RuntimeValue::Number(
+            node.markdown_node()
+                .map(|md| md.value().graphemes(true).count())
+                .unwrap_or(0)
+                .into(),
+        )),
+        _ => Ok(RuntimeValue::Number(0.into())),
     }
 }
 
@@ -5320,6 +5406,8 @@ mq_macros::builtin_dispatch! {
     SCAN,
     DOWNCASE,
     ASCII_DOWNCASE,
+    CASEFOLD,
+    UNICODE_NORMALIZE,
     GSUB,
     REPLACE,
     REPEAT,
@@ -5347,6 +5435,8 @@ mq_macros::builtin_dispatch! {
     INDICES,
     LEN,
     UTF8BYTELEN,
+    GRAPHEMES,
+    GRAPHEME_LEN,
     TOKEN_COUNT,
     TOKEN_COMPRESS,
     RINDEX,
@@ -7410,6 +7500,34 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("casefold"),
+        BuiltinFunctionDoc {
+            description: "Applies full Unicode case folding, for locale-independent case-insensitive comparison (e.g. German \"ß\" folds to \"ss\").",
+            params: &["input"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"casefold("Straße")"#,
+                expected: r#"strasse"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("unicode_normalize"),
+        BuiltinFunctionDoc {
+            description: "Normalizes the string to a Unicode normalization form: \"nfc\", \"nfd\", \"nfkc\", or \"nfkd\".",
+            params: &["input", "form"],
+            param_types: &["string", "string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"unicode_normalize("e\u{0301}", "nfc")"#,
+                expected: "\u{00e9}",
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("gsub"),
         BuiltinFunctionDoc {
             description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
@@ -7646,6 +7764,34 @@ world"# }],
             examples: &[BuiltinExample {
                 code: r#"len("hello")"#,
                 expected: r#"5"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("graphemes"),
+        BuiltinFunctionDoc {
+            description: "Splits the string into extended grapheme clusters (user-perceived characters), keeping combining marks and multi-codepoint emoji together.",
+            params: &["input"],
+            param_types: &["string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"graphemes("👨‍👩‍👧")"#,
+                expected: r#"["👨‍👩‍👧"]"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("grapheme_len"),
+        BuiltinFunctionDoc {
+            description: "Returns the number of extended grapheme clusters (user-perceived characters) in the string.",
+            params: &["input"],
+            param_types: &["string"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"grapheme_len("👨‍👩‍👧")"#,
+                expected: r#"1"#,
             }],
             capability: None,
         },
@@ -9844,6 +9990,22 @@ mod tests {
     #[rstest]
     #[case("type", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::String(Shared::new("string".into()))))]
     #[case("len", vec![RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
+    // German sharp s: full case folding expands ß -> ss, unlike downcase.
+    #[case("casefold", vec![RuntimeValue::String(Shared::new("Straße".into()))].into(), Ok(RuntimeValue::String(Shared::new("strasse".into()))))]
+    // Turkish dotted capital İ: default (non-Turkish) fold is i + combining dot above, not plain "i".
+    #[case("casefold", vec![RuntimeValue::String(Shared::new("İstanbul".into()))].into(), Ok(RuntimeValue::String(Shared::new("i\u{0307}stanbul".into()))))]
+    // Turkish dotless small ı is left untouched by default (non-Turkish) folding.
+    #[case("casefold", vec![RuntimeValue::String(Shared::new("ı".into()))].into(), Ok(RuntimeValue::String(Shared::new("ı".into()))))]
+    #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("e\u{0301}".into())), RuntimeValue::String(Shared::new("nfc".into()))].into(), Ok(RuntimeValue::String(Shared::new("\u{00e9}".into()))))]
+    #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("\u{00e9}".into())), RuntimeValue::String(Shared::new("nfd".into()))].into(), Ok(RuntimeValue::String(Shared::new("e\u{0301}".into()))))]
+    // NFKC of the compatibility-only ellipsis (…) decomposes it to three ASCII dots.
+    #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("\u{2026}".into())), RuntimeValue::String(Shared::new("NFKC".into()))].into(), Ok(RuntimeValue::String(Shared::new("...".into()))))]
+    // Combining acute accent stays attached to its base character as a single grapheme.
+    #[case("graphemes", vec![RuntimeValue::String(Shared::new("e\u{0301}f".into()))].into(), Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("e\u{0301}".into())), RuntimeValue::String(Shared::new("f".into()))]))))]
+    // Emoji ZWJ sequence (family) is one extended grapheme cluster despite five code points.
+    #[case("graphemes", vec![RuntimeValue::String(Shared::new("👨\u{200d}👩\u{200d}👧".into()))].into(), Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("👨\u{200d}👩\u{200d}👧".into()))]))))]
+    #[case("grapheme_len", vec![RuntimeValue::String(Shared::new("e\u{0301}f".into()))].into(), Ok(RuntimeValue::Number(2.into())))]
+    #[case("grapheme_len", vec![RuntimeValue::String(Shared::new("👨\u{200d}👩\u{200d}👧".into()))].into(), Ok(RuntimeValue::Number(1.into())))]
     #[case("token_count", vec![RuntimeValue::String(Shared::new("Hello, world!".into())), RuntimeValue::String(Shared::new("gpt-4".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
     #[case("token_count", vec![RuntimeValue::String(Shared::new("".into())), RuntimeValue::String(Shared::new("gpt-4".into()))].into(), Ok(RuntimeValue::Number(0.into())))]
     #[case("token_count", vec![RuntimeValue::String(Shared::new("Hello, world!".into()))].into(), Ok(RuntimeValue::Number(4.into())))]
@@ -9915,6 +10077,8 @@ mod tests {
     #[case("add", vec![].into(), Error::InvalidNumberOfArguments("add".to_string(), 2, 0))]
     #[case("add", vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())].into(),
         Error::InvalidTypes("add".to_string(), vec![RuntimeValue::Boolean(true), RuntimeValue::Number(1.0.into())]))]
+    #[case("unicode_normalize", vec![RuntimeValue::String(Shared::new("abc".into())), RuntimeValue::String(Shared::new("bogus".into()))].into(),
+        Error::Runtime("unicode_normalize: invalid normalization form `bogus`, expected one of \"nfc\", \"nfd\", \"nfkc\", \"nfkd\"".to_string()))]
     fn test_eval_builtin_errors(#[case] func_name: &str, #[case] args: Args, #[case] expected_error: Error) {
         let ident = Ident::new(func_name);
         let result = eval_builtin(
