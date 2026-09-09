@@ -286,7 +286,7 @@ def semver_min(versions):
   fold(versions[1:len(versions)], versions[0], fn(acc, v): if (semver_lt(v, acc)): v else: acc;)
 end
 
-# Parses a single version comparator (e.g. ">=1.0.0") into a dict with op and parsed version fields.
+# Parses a single non-range version comparator (e.g. ">=1.0.0") into a dict with op and parsed version fields.
 def _semver_parse_comparator(comp):
   let c = trim(comp)
   | if (starts_with(c, ">=")):
@@ -307,6 +307,41 @@ def _semver_parse_comparator(comp):
       {op: "=", version: semver_parse(c)}
 end
 
+# Upper (exclusive) bound of a caret range `^v`: the next version that would
+# introduce a breaking change per SemVer, treating a leading `0` major (or
+# `0.0`) as unstable so the allowed range narrows to the next non-zero component.
+# `^1.2.3` -> `<2.0.0`, `^0.2.3` -> `<0.3.0`, `^0.0.3` -> `<0.0.4`.
+def _semver_caret_upper(v):
+  if (v[:major] > 0): {type: "semver", major: v[:major] + 1, minor: 0, patch: 0, pre: "", build: ""}
+  elif (v[:minor] > 0): {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
+  else: {type: "semver", major: v[:major], minor: v[:minor], patch: v[:patch] + 1, pre: "", build: ""}
+end
+
+# Upper (exclusive) bound of a tilde range `~v`: allows patch-level changes only.
+# `~1.2.3` -> `<1.3.0`.
+def _semver_tilde_upper(v):
+  {type: "semver", major: v[:major], minor: v[:minor] + 1, patch: 0, pre: "", build: ""}
+end
+
+# Parses one comma-separated range term into one or more comparator dicts.
+# `^` and `~` expand to an `[">=", "<"]` comparator pair; every other form
+# (bare version or an explicit operator) delegates to `_semver_parse_comparator`.
+def _semver_parse_range_term(comp):
+  let c = trim(comp)
+  | if (starts_with(c, "^")):
+      do
+        let v = semver_parse(trim(ltrimstr(c, "^")))
+        | [{op: ">=", version: v}, {op: "<", version: _semver_caret_upper(v)}]
+      end
+    elif (starts_with(c, "~")):
+      do
+        let v = semver_parse(trim(ltrimstr(c, "~")))
+        | [{op: ">=", version: v}, {op: "<", version: _semver_tilde_upper(v)}]
+      end
+    else:
+      [_semver_parse_comparator(c)]
+end
+
 # Checks whether a parsed SemVer dict satisfies a single comparator dict produced by `_semver_parse_comparator`.
 def _semver_satisfies_comparator(v, cmp):
   let op = cmp[:op]
@@ -319,19 +354,45 @@ def _semver_satisfies_comparator(v, cmp):
     else: semver_eq(v, cv)
 end
 
-# Returns true if the given version string satisfies every comma-separated comparator in `range`.
-# Supported comparators: "=", "==", "!=", ">", ">=", "<", "<=". A bare version (no operator) requires an exact match.
+# Returns true if the given version string satisfies every comma-separated term in `range`.
+#
+# Supported terms:
+# - Comparators: "=", "==", "!=", ">", ">=", "<", "<=". A bare version (no operator) requires an exact match.
+# - Caret ranges: "^1.2.3" allows changes that do not modify the leftmost non-zero
+#   component (`>=1.2.3,<2.0.0`; `^0.2.3` -> `>=0.2.3,<0.3.0`; `^0.0.3` -> `>=0.0.3,<0.0.4`).
+# - Tilde ranges: "~1.2.3" allows patch-level changes only (`>=1.2.3,<1.3.0`).
+#
+# Pre-release versions (e.g. "1.0.0-alpha") are ordered using the same precedence
+# rules as `semver_compare` and are matched like any other version — there is no
+# npm-style restriction that hides pre-releases from ranges that don't mention one.
+#
 # Example: semver_satisfies("1.5.0", ">=1.0.0,<2.0.0") == true
 #
 # Example:
 # ```
-# import "semver" | semver::semver_satisfies("1.5.0", ">=1.0.0,<2.0.0")
+# import "semver" | semver::semver_satisfies("1.5.0", "^1.0.0")
 # #=> true
 # ```
 #
 # Returns: bool
 def semver_satisfies(version, range):
   let v = semver_parse(version)
-  | let comparators = map(split(range, ","), _semver_parse_comparator)
+  | let comparators = flatten(map(split(range, ","), _semver_parse_range_term))
   | all(comparators, fn(cmp): _semver_satisfies_comparator(v, cmp);)
+end
+
+# Returns the highest version string from `versions` that satisfies `range`,
+# or `None` if no version matches. See `semver_satisfies` for supported range syntax.
+#
+# Example:
+# ```
+# import "semver" | semver::semver_max_satisfying(["1.0.0", "1.5.0", "2.0.0"], "^1.0.0")
+# #=> 1.5.0
+# ```
+#
+# Returns: string | None
+def semver_max_satisfying(versions, range):
+  let matching = filter(versions, fn(version): semver_satisfies(version, range);)
+  | if (is_empty(matching)): None
+    else: semver_to_string(semver_max(map(matching, semver_parse)))
 end
