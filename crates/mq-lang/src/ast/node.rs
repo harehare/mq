@@ -67,7 +67,7 @@ pub struct Node {
         serde(skip_serializing, skip_deserializing, default = "default_token_id")
     )]
     pub token_id: TokenId,
-    pub expr: Shared<Expr>,
+    pub expr: Expr,
 }
 
 #[cfg(feature = "ast-json")]
@@ -87,7 +87,7 @@ impl Node {
     }
 
     pub fn range(&self, arena: Shared<Arena<Shared<Token>>>) -> Range {
-        match &*self.expr {
+        match &self.expr {
             Expr::Block(program)
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
@@ -194,7 +194,7 @@ impl Node {
     }
 
     pub fn is_nodes(&self) -> bool {
-        matches!(*self.expr, Expr::Nodes)
+        matches!(&self.expr, Expr::Nodes)
     }
 }
 
@@ -419,16 +419,16 @@ mod tests {
         Expr::CallDynamic(
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Shared::new(Expr::Literal(Literal::String("callee".to_string()))),
+                expr: Expr::Literal(Literal::String("callee".to_string())),
             }),
             smallvec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
+                    expr: Expr::Literal(Literal::String("arg1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
+                    expr: Expr::Literal(Literal::String("arg2".to_string())),
                 }),
             ]
         ),
@@ -442,7 +442,7 @@ mod tests {
         Expr::Match(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("val".to_string()))),
+                expr: Expr::Literal(Literal::String("val".to_string())),
             }),
             smallvec![
                 MatchArm {
@@ -450,7 +450,7 @@ mod tests {
                     guard: None,
                     body: Shared::new(Node {
                         token_id: ArenaId::new(1),
-                        expr: Shared::new(Expr::Literal(Literal::String("body1".to_string()))),
+                        expr: Expr::Literal(Literal::String("body1".to_string())),
                     }),
                 },
                 MatchArm {
@@ -458,7 +458,7 @@ mod tests {
                     guard: None,
                     body: Shared::new(Node {
                         token_id: ArenaId::new(2),
-                        expr: Shared::new(Expr::Literal(Literal::String("body2".to_string()))),
+                        expr: Expr::Literal(Literal::String("body2".to_string())),
                     }),
                 },
             ]
@@ -474,12 +474,12 @@ mod tests {
         Expr::Try(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("try".to_string()))),
+                expr: Expr::Literal(Literal::String("try".to_string())),
             }),
             None,
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Shared::new(Expr::Literal(Literal::String("catch".to_string()))),
+                expr: Expr::Literal(Literal::String("catch".to_string())),
             })
         ),
         vec![
@@ -493,7 +493,7 @@ mod tests {
             Pattern::Ident(IdentWithToken::new("x")),
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("letval".to_string()))),
+                expr: Expr::Literal(Literal::String("letval".to_string())),
             })
         ),
         vec![
@@ -505,7 +505,7 @@ mod tests {
         Expr::Paren(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("paren".to_string()))),
+                expr: Expr::Literal(Literal::String("paren".to_string())),
             })
         ),
         vec![
@@ -517,11 +517,11 @@ mod tests {
         Expr::Block(vec![
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("block1".to_string()))),
+                expr: Expr::Literal(Literal::String("block1".to_string())),
             }),
             Shared::new(Node {
                 token_id: ArenaId::new(1),
-                expr: Shared::new(Expr::Literal(Literal::String("block2".to_string()))),
+                expr: Expr::Literal(Literal::String("block2".to_string())),
             }),
         ]),
         vec![
@@ -537,11 +537,11 @@ mod tests {
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("def1".to_string()))),
+                    expr: Expr::Literal(Literal::String("def1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("def2".to_string()))),
+                    expr: Expr::Literal(Literal::String("def2".to_string())),
                 }),
             ]
         ),
@@ -557,11 +557,11 @@ mod tests {
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("fn1".to_string()))),
+                    expr: Expr::Literal(Literal::String("fn1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("fn2".to_string()))),
+                    expr: Expr::Literal(Literal::String("fn2".to_string())),
                 }),
             ]
         ),
@@ -575,16 +575,16 @@ mod tests {
         Expr::While(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
+                expr: Expr::Literal(Literal::String("cond".to_string())),
             }),
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("while1".to_string()))),
+                    expr: Expr::Literal(Literal::String("while1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Shared::new(Expr::Literal(Literal::String("while2".to_string()))),
+                    expr: Expr::Literal(Literal::String("while2".to_string())),
                 }),
             ]
         ),
@@ -599,16 +599,16 @@ mod tests {
         Expr::Until(
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("cond".to_string()))),
+                expr: Expr::Literal(Literal::String("cond".to_string())),
             }),
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("until1".to_string()))),
+                    expr: Expr::Literal(Literal::String("until1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Shared::new(Expr::Literal(Literal::String("until2".to_string()))),
+                    expr: Expr::Literal(Literal::String("until2".to_string())),
                 }),
             ]
         ),
@@ -624,16 +624,16 @@ mod tests {
             IdentWithToken::new("item"),
             Shared::new(Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(Expr::Literal(Literal::String("iter".to_string()))),
+                expr: Expr::Literal(Literal::String("iter".to_string())),
             }),
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("foreach1".to_string()))),
+                    expr: Expr::Literal(Literal::String("foreach1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Shared::new(Expr::Literal(Literal::String("foreach2".to_string()))),
+                    expr: Expr::Literal(Literal::String("foreach2".to_string())),
                 }),
             ]
         ),
@@ -649,21 +649,21 @@ mod tests {
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("cond1".to_string()))),
+                    expr: Expr::Literal(Literal::String("cond1".to_string())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("if1".to_string()))),
+                    expr: Expr::Literal(Literal::String("if1".to_string())),
                 })
             ),
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(2),
-                    expr: Shared::new(Expr::Literal(Literal::String("cond2".to_string()))),
+                    expr: Expr::Literal(Literal::String("cond2".to_string())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(3),
-                    expr: Shared::new(Expr::Literal(Literal::String("if2".to_string()))),
+                    expr: Expr::Literal(Literal::String("if2".to_string())),
                 })
             ),
         ]),
@@ -680,11 +680,11 @@ mod tests {
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("cond1".to_string()))),
+                    expr: Expr::Literal(Literal::String("cond1".to_string())),
                 })),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("unless1".to_string()))),
+                    expr: Expr::Literal(Literal::String("unless1".to_string())),
                 })
             ),
         ]),
@@ -700,11 +700,11 @@ mod tests {
             smallvec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
-                    expr: Shared::new(Expr::Literal(Literal::String("arg1".to_string()))),
+                    expr: Expr::Literal(Literal::String("arg1".to_string())),
                 }),
                 Shared::new(Node {
                     token_id: ArenaId::new(1),
-                    expr: Shared::new(Expr::Literal(Literal::String("arg2".to_string()))),
+                    expr: Expr::Literal(Literal::String("arg2".to_string())),
                 }),
             ]
         ),
@@ -726,7 +726,7 @@ mod tests {
         }
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(Shared::new(arena)), expected);
     }
@@ -734,7 +734,7 @@ mod tests {
     fn make_node(token_id: u32) -> Shared<Node> {
         Shared::new(Node {
             token_id: ArenaId::new(token_id),
-            expr: Shared::new(Expr::Literal(Literal::None)),
+            expr: Expr::Literal(Literal::None),
         })
     }
 
@@ -760,7 +760,7 @@ mod tests {
         let expr = Expr::Loop(vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(Shared::new(arena));
         assert_eq!(got.start, r0.start);
@@ -783,7 +783,7 @@ mod tests {
         let expr = Expr::Module(IdentWithToken::new("m"), vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(Shared::new(arena));
         assert_eq!(got.start, r0.start);
@@ -800,7 +800,7 @@ mod tests {
         let expr = Expr::Block(vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(arena);
         assert_eq!(got, Range::default());
@@ -816,7 +816,7 @@ mod tests {
         let expr = Expr::As(IdentWithToken::new("x"), make_node(0));
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), r0);
     }
@@ -831,7 +831,7 @@ mod tests {
         let expr = Expr::Var(Pattern::Wildcard, make_node(0));
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), r0);
     }
@@ -846,7 +846,7 @@ mod tests {
         let expr = Expr::Assign(IdentWithToken::new("v"), make_node(0));
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), r0);
     }
@@ -861,7 +861,7 @@ mod tests {
         let expr = Expr::And(vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), r0);
     }
@@ -876,7 +876,7 @@ mod tests {
         let expr = Expr::Or(vec![]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), r0);
     }
@@ -897,7 +897,7 @@ mod tests {
         let expr = Expr::And(vec![make_node(0), make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(Shared::new(arena));
         assert_eq!(got.start, r0.start);
@@ -920,7 +920,7 @@ mod tests {
         let expr = Expr::Break(Some(make_node(1)));
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(Shared::new(arena));
         assert_eq!(got.start, r0.start);
@@ -944,7 +944,7 @@ mod tests {
         let expr = Expr::SelectorCall(Selector::Heading(None), smallvec![make_node(1)]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         let got = node.range(Shared::new(arena));
         assert_eq!(got.start, r0.start);
@@ -968,7 +968,7 @@ mod tests {
             let arena = single_token_arena(r0);
             let node = Node {
                 token_id: ArenaId::new(0),
-                expr: Shared::new(expr),
+                expr,
             };
             assert_eq!(node.range(arena), r0, "terminal expr should use token range");
         }
@@ -984,7 +984,7 @@ mod tests {
         let expr = Expr::Call(IdentWithToken::new("f"), smallvec![]);
         let node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         };
         assert_eq!(node.range(arena), Range::default());
     }
@@ -995,12 +995,12 @@ mod tests {
         let arena = single_token_arena(r);
         let nodes_node = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(Expr::Nodes),
+            expr: Expr::Nodes,
         };
         assert!(nodes_node.is_nodes());
         let other = Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(Expr::Self_),
+            expr: Expr::Self_,
         };
         assert!(!other.is_nodes());
         let _ = arena;
@@ -1076,7 +1076,7 @@ mod tests {
     fn test_expr_display_call_dynamic() {
         let callee = Shared::new(Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(Expr::Literal(Literal::None)),
+            expr: Expr::Literal(Literal::None),
         });
         let dynamic = Expr::CallDynamic(callee, smallvec![]);
         let s = format!("{dynamic}");

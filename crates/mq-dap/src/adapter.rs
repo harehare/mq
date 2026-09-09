@@ -1591,7 +1591,7 @@ mod tests {
         let mut context = mq_lang::DebugContext::default();
 
         context.call_stack.push(Shared::new(mq_lang::AstNode {
-            expr: Shared::new(mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(42.into()))),
+            expr: mq_lang::AstExpr::Literal(mq_lang::AstLiteral::Number(42.into())),
             token_id: 0u32.into(),
         }));
         adapter.current_debug_context = Some(context);

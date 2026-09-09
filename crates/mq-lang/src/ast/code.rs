@@ -12,7 +12,7 @@ impl Node {
     }
 
     fn format_to_code(&self, buf: &mut String, indent: usize) {
-        match &*self.expr {
+        match &self.expr {
             Expr::Literal(lit) => {
                 format_literal(lit, buf);
             }
@@ -461,7 +461,7 @@ mod tests {
     fn create_node(expr: Expr) -> Node {
         Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         }
     }
 

@@ -1,6 +1,12 @@
 use mq_lang::{Shared, SharedCell};
 use std::sync::LazyLock;
 
+// Keep allocator behavior consistent with the `mq` CLI. This is deliberately
+// defined in the benchmark binary so library consumers retain control of their
+// allocator choice.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 fn main() {
     divan::main();
 }
