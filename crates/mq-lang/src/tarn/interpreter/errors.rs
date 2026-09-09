@@ -336,7 +336,21 @@ mod tests {
     fn zero_division_message_matches_through_a_real_try_catch() {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));
         let program = crate::parse("try: 1 / 0 catch(e): get(e, \"message\");", Shared::clone(&token_arena)).unwrap();
-        let result = super::super::super::compile_and_run(&program, token_arena).unwrap();
+        let compiled = super::super::super::compiler::compile_program(
+            &program,
+            token_arena,
+            crate::ModuleLoader::new(crate::module::resolver::std_resolver::StdModuleResolver),
+        )
+        .unwrap();
+        let result = super::super::run_with_globals(
+            &compiled,
+            RuntimeValue::None,
+            &crate::runtime::host::HostFunctions::default(),
+            None,
+            super::super::super::Options::default().max_call_stack_depth,
+            &[],
+        )
+        .unwrap();
         assert_eq!(
             result,
             RuntimeValue::String(Shared::new("Division by zero".to_string()))

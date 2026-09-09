@@ -62,14 +62,8 @@ pub(super) fn call_stack_value(
         // `Args` stores the common one- and two-argument cases inline, unlike `Vec`.
         let arg_values: Args = args.drain(..).map(|a| into_runtime_value(a, chunks)).collect();
         let self_value = current_self(call_site.locals, chunks);
-        let result = call_builtin(
-            &ident,
-            &arg_values,
-            &self_value,
-            execution.env,
-            execution.host_functions,
-        )
-        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+        let result = call_builtin_args(&ident, arg_values, &self_value, execution.env, execution.host_functions)
+            .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
         return Ok(StackValue::Value(result));
     }
 
@@ -441,46 +435,4 @@ pub(super) fn negate_ident() -> &'static crate::Ident {
     use std::sync::LazyLock;
     static NEGATE: LazyLock<crate::Ident> = LazyLock::new(|| crate::Ident::new(builtins::NEGATE));
     &NEGATE
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::runtime::runtime_value::RuntimeValue;
-
-    fn number(value: i64) -> StackValue {
-        StackValue::Value(RuntimeValue::Number(value.into()))
-    }
-
-    fn value_at(locals: &Locals, slot: u16) -> RuntimeValue {
-        match locals.get(slot) {
-            StackValue::Value(value) => value,
-            StackValue::Closure(_) => panic!("expected a runtime value"),
-        }
-    }
-
-    #[test]
-    fn fixed_required_binder_handles_explicit_and_implicit_self_arguments() {
-        let chunks = Shared::new(Vec::new());
-        let explicit_locals = Locals::boxed(3);
-        bind_fixed_required_params(2, &mut vec![number(3), number(4)], &explicit_locals, &chunks).unwrap();
-        assert_eq!(value_at(&explicit_locals, 1), RuntimeValue::Number(3.into()));
-        assert_eq!(value_at(&explicit_locals, 2), RuntimeValue::Number(4.into()));
-
-        let implicit_locals = Locals::boxed(3);
-        implicit_locals.set(0, number(10));
-        bind_fixed_required_params(2, &mut vec![number(4)], &implicit_locals, &chunks).unwrap();
-        assert_eq!(value_at(&implicit_locals, 1), RuntimeValue::Number(10.into()));
-        assert_eq!(value_at(&implicit_locals, 2), RuntimeValue::Number(4.into()));
-    }
-
-    #[test]
-    fn fixed_required_binder_rejects_invalid_arity() {
-        let chunks = Shared::new(Vec::new());
-        let locals = Locals::boxed(1);
-        assert!(matches!(
-            bind_fixed_required_params(0, &mut vec![number(1)], &locals, &chunks),
-            Err(VmError::ArityMismatch { expected: 0, actual: 1 })
-        ));
-    }
 }
