@@ -491,7 +491,7 @@ fn tail_recursive_call_reuses_its_frame() {
 /// Direct builtin calls preserve argument order through the specialized common-arity paths.
 #[rstest]
 #[case("type(42)", RuntimeValue::String(Shared::new("number".to_string())))]
-#[case("contains(\"tarn\", \"rn\")", RuntimeValue::Boolean(true))]
+#[case("sub(5, 3)", RuntimeValue::Number(2.0.into()))]
 fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str, #[case] expected: RuntimeValue) {
     assert_eq!(run(code), expected);
 }

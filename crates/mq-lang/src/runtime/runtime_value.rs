@@ -544,10 +544,13 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn update_markdown_value(&self, value: &str) -> RuntimeValue {
         match self {
-            RuntimeValue::Markdown(n, Some(sel)) => {
-                RuntimeValue::Markdown(Shared::new(n.with_children_value(value, sel.index_value())), Some(*sel))
+            RuntimeValue::Markdown(n, Some(sel)) => RuntimeValue::Markdown(
+                Shared::new((**n).clone().into_with_children_value(value, sel.index_value())),
+                Some(*sel),
+            ),
+            RuntimeValue::Markdown(n, selector) => {
+                RuntimeValue::Markdown(Shared::new((**n).clone().into_with_value(value)), *selector)
             }
-            RuntimeValue::Markdown(n, selector) => RuntimeValue::Markdown(Shared::new(n.with_value(value)), *selector),
             _ => RuntimeValue::NONE,
         }
     }
