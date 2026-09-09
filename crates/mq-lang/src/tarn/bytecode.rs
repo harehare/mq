@@ -279,7 +279,13 @@ pub(crate) enum OpCode {
     SelectorMatchHeading(u8),
     SelectorMatchWithArgs(Box<(Selector, u16)>),
     CallBuiltin(Ident, u16),
+    /// Calls a capture-free fixed-arity chunk without loading its closure from a local slot.
+    CallStatic(u16, u16),
+    /// Recursively calls the current fixed-arity chunk without capturing its own closure.
+    CallSelf(u16),
     CallLocal(u16, u16),
+    /// Calls an immutable upvalue without first placing its closure on the operand stack.
+    CallUpvalue(u16, u16),
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
@@ -359,7 +365,7 @@ impl Chunk {
     pub(crate) fn push_static_closure(&mut self, target_chunk: u16) -> u16 {
         self.static_closures.push(Shared::new(Closure {
             chunk_index: target_chunk,
-            upvalues: Vec::new(),
+            upvalues: None,
         }));
         (self.static_closures.len() - 1) as u16
     }
@@ -501,6 +507,11 @@ pub(crate) enum BytecodeError {
         expected: usize,
         actual: usize,
     },
+    StaticCallTargetInvalid {
+        chunk: usize,
+        pc: usize,
+        target: u16,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -553,6 +564,9 @@ impl fmt::Display for BytecodeError {
                     f,
                     "chunk {chunk} pc {pc} makes a closure over chunk {target} with {actual} captures, but it expects {expected}"
                 )
+            }
+            Self::StaticCallTargetInvalid { chunk, pc, target } => {
+                write!(f, "chunk {chunk} pc {pc} directly calls invalid static chunk {target}")
             }
         }
     }
@@ -889,6 +903,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
+                OpCode::CallUpvalue(index, _) => {
+                    if *index as usize >= chunk.upvalue_names.len() {
+                        return Err(BytecodeError::UpvalueOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                }
                 OpCode::MakeClosure(payload) => {
                     let (target, sources) = payload.as_ref();
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
@@ -904,7 +927,31 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     };
                     verify_chunk_target(chunks, chunk_index, pc, closure.chunk_index)?;
-                    verify_closure_capture_count(chunks, chunk_index, pc, closure.chunk_index, closure.upvalues.len())?;
+                    verify_closure_capture_count(
+                        chunks,
+                        chunk_index,
+                        pc,
+                        closure.chunk_index,
+                        closure.upvalues.as_ref().map_or(0, |upvalues| upvalues.len()),
+                    )?;
+                }
+                OpCode::CallStatic(target, _) => {
+                    verify_chunk_target(chunks, chunk_index, pc, *target)?;
+                    let callee = &chunks[*target as usize];
+                    if !callee.upvalue_names.is_empty() || callee.param_shape.fixed_required_arity().is_none() {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: *target,
+                        });
+                    }
+                }
+                OpCode::CallSelf(_) if chunk.param_shape.fixed_required_arity().is_none() => {
+                    return Err(BytecodeError::StaticCallTargetInvalid {
+                        chunk: chunk_index,
+                        pc,
+                        target: chunk_index as u16,
+                    });
                 }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
@@ -1428,7 +1475,7 @@ mod tests {
             code: vec![OpCode::MakeStaticClosure(0), OpCode::Return],
             static_closures: vec![Shared::new(Closure {
                 chunk_index: 1,
-                upvalues: Vec::new(),
+                upvalues: None,
             })],
             ..Default::default()
         };

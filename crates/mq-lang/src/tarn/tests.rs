@@ -219,6 +219,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(compiled.chunks[0].static_closures.len(), 1);
+    assert!(compiled.chunks[0].static_closures[0].upvalues.is_none());
     assert!(
         compiled.chunks[0]
             .code
@@ -229,7 +230,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallLocal(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStatic(_, 1)))
     );
     assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
 }
@@ -319,7 +320,7 @@ fn breakpoint_is_a_no_op_when_the_debugger_feature_is_disabled() {
 }
 
 #[test]
-fn top_level_def_calls_use_call_local() {
+fn top_level_def_calls_use_call_static() {
     use super::bytecode::OpCode;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(
@@ -332,9 +333,51 @@ fn top_level_def_calls_use_call_local() {
         compiled
             .chunks
             .iter()
-            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallLocal(_, _)))),
-        "top-level def call should compile to CallLocal, not the slower CallValue path"
+            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallStatic(_, _)))),
+        "capture-free fixed-arity top-level def call should compile to CallStatic"
     );
+}
+
+#[test]
+fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def count(n): if (n == 0): 0 else: count(n - 1); | count(10)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let recursive_chunk = compiled
+        .chunks
+        .iter()
+        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelf(1))))
+        .expect("recursive body should use CallSelf");
+
+    assert!(recursive_chunk.upvalue_names.is_empty());
+    assert_eq!(
+        run("def count(n): if (n == 0): 0 else: count(n - 1); | count(10)"),
+        RuntimeValue::Number(0.0.into())
+    );
+}
+
+#[test]
+fn immutable_function_upvalue_calls_use_call_upvalue() {
+    use super::bytecode::OpCode;
+
+    let source = "let increment = fn(x): x + 1; | let apply = fn(x): increment(x); | apply(41)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .any(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallUpvalue(_, 1))))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 
 #[test]
@@ -1362,6 +1405,19 @@ fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
     );
     // The top-level frame and the try frame both have no captures and are reusable.
     assert_eq!(pools.pooled_local_frame_count(), 2);
+}
+
+/// Regression: mq call depth used to equal native Rust stack depth, so a high
+/// `max_call_stack_depth` could overflow the OS thread stack instead of hitting
+/// `RecursionError`. The trampoline's `Vec<Frame>` is heap-bound, so this must just complete.
+#[rstest]
+#[case::plain_recursion("def f(n): if (n <= 0): 0 else: 1 + f(n - 1); | f(100000)")]
+#[case::recursion_through_try_catch("def f(n): if (n <= 0): 0 else: try: 1 + f(n - 1) catch(e): -1; | f(100000)")]
+fn deep_non_tail_recursion_does_not_overflow_the_native_stack(#[case] code: &str) {
+    assert_eq!(
+        run_with_max_depth(code, 1_000_000).unwrap(),
+        RuntimeValue::Number(100000.into())
+    );
 }
 
 #[cfg(feature = "debugger")]

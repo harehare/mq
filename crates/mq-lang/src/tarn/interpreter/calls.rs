@@ -1,10 +1,8 @@
-//! Invoking a callee: binding arguments into a new frame's locals and running its chunk.
-//! Covers the generic (`call_stack_value`) and fixed-arity fast (`call_fixed_closure_from_stack`)
-//! paths used by `CallLocal`/`CallValue`/`MaybeAutoCall`, and the shared parameter-binding logic
-//! (`bind_params`) both funnel into.
+//! Invoking a callee: binding arguments and producing the `Frame` for the trampoline to push,
+//! instead of calling back into the dispatch loop directly.
 use super::errors::{VmError, VmResult, locate};
-use super::frame::{ExecutionContext, ExecutionLimits};
-use super::{current_self, into_runtime_value, run_chunk};
+use super::frame::{Continuation, ExecutionContext, Frame, PendingCall};
+use super::{current_self, into_runtime_value};
 use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
@@ -13,9 +11,7 @@ use crate::runtime::runtime_value::RuntimeValue;
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
-
-#[cfg(feature = "debugger")]
-use super::DebugRuntime;
+use std::collections::VecDeque;
 
 pub(super) struct CallSite<'a> {
     pub(super) locals: &'a Locals,
@@ -30,12 +26,18 @@ pub(super) struct FixedClosureCall<'a> {
     pub(super) remove_callee: bool,
 }
 
-/// Runtime services shared by parameter binding and default-value evaluation.
+/// Resolved target metadata shared by closure and static fixed-arity calls.
+struct FixedChunkCall {
+    chunk_index: u16,
+    upvalues: Option<Shared<Vec<Cell>>>,
+    argc: u16,
+    remove_callee: bool,
+}
+
+/// Chunk/pool access shared by parameter binding and default-value evaluation.
 struct ParameterContext<'chunks, 'execution> {
     chunks: &'chunks Shared<Vec<Chunk>>,
-    env: &'execution VmEnv,
-    limits: &'execution mut ExecutionLimits,
-    host_functions: &'execution HostFunctions,
+    limits: &'execution mut super::frame::ExecutionLimits,
 }
 
 pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upvalues: &[Cell]) -> Vec<Cell> {
@@ -48,14 +50,19 @@ pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upval
         .collect()
 }
 
+/// A resolved call: either an already-computed value (a native builtin), or a `Frame` to push.
+pub(super) enum CallStep {
+    Value(StackValue),
+    Enter(Frame),
+}
+
 pub(super) fn call_stack_value(
     callee: StackValue,
     args: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
+) -> VmResult<CallStep> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
         // `drain` (rather than `into_iter`) leaves `args`'s allocation intact for the
         // caller to recycle, same as every other exit path below.
@@ -64,11 +71,11 @@ pub(super) fn call_stack_value(
         let self_value = current_self(call_site.locals, chunks);
         let result = call_builtin_args(&ident, arg_values, &self_value, execution.env, execution.host_functions)
             .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-        return Ok(StackValue::Value(result));
+        return Ok(CallStep::Value(StackValue::Value(result)));
     }
 
-    let (callee_chunks, callee_chunk_index, callee_upvalues): (&Shared<Vec<Chunk>>, u16, &[Cell]) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, &closure.upvalues),
+    let (callee_chunks, callee_chunk_index, callee_upvalues) = match &callee {
+        StackValue::Closure(closure) => (chunks, closure.chunk_index, closure.upvalues.clone()),
         StackValue::Value(RuntimeValue::VmClosure(vc)) => {
             if !vc.bound_args.is_empty() {
                 // `args` is a caller-owned pooled buffer. Prepend into a second pooled buffer,
@@ -80,65 +87,29 @@ pub(super) fn call_stack_value(
                 std::mem::swap(args, &mut combined);
                 execution.limits.recycle_stack(combined);
             }
-            (&vc.chunks, vc.chunk_index, &vc.upvalues)
+            (&vc.chunks, vc.chunk_index, vc.upvalues.clone())
         }
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
     let callee_chunk = &callee_chunks[callee_chunk_index as usize];
-    let callee_locals = execution
+    let mut callee_locals = execution
         .limits
         .take_locals(callee_chunk.local_count, callee_chunk.captures_local_slots());
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    if let Err(e) = execution.limits.enter_call() {
-        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
-        return Err(locate(call_site.chunk, call_site.ip, e));
-    }
-    if let Err(e) = bind_params(
+
+    let frame = bind_params(
         &callee_chunk.param_shape,
         args,
-        &callee_locals,
-        callee_upvalues,
-        &mut ParameterContext {
-            chunks: callee_chunks,
-            env: execution.env,
-            limits: execution.limits,
-            host_functions: execution.host_functions,
-        },
-        #[cfg(feature = "debugger")]
-        debug,
-    ) {
-        execution.limits.exit_call();
-        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
-        return Err(locate(call_site.chunk, call_site.ip, e));
-    }
-    #[cfg(feature = "debugger")]
-    let caller_node = debug.current_node.clone();
-    #[cfg(feature = "debugger")]
-    let pushed_call = if let Some(node) = &caller_node {
-        debug.call_stack.push(Shared::clone(node));
-        true
-    } else {
-        false
-    };
-    let call_result = run_chunk(
-        callee_chunk_index,
-        callee_chunks,
         callee_locals,
         callee_upvalues,
-        execution,
-        #[cfg(feature = "debugger")]
-        debug,
-    );
-    execution.limits.exit_call();
-    #[cfg(feature = "debugger")]
-    if pushed_call {
-        debug.call_stack.pop();
-    }
-    #[cfg(feature = "debugger")]
-    {
-        debug.current_node = caller_node;
-    }
-    call_result
+        callee_chunk_index,
+        &mut ParameterContext {
+            chunks: callee_chunks,
+            limits: execution.limits,
+        },
+    )
+    .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+    Ok(CallStep::Enter(frame))
 }
 
 pub(super) fn call_fixed_closure_from_stack(
@@ -147,10 +118,77 @@ pub(super) fn call_fixed_closure_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
-    let closure = call.closure;
-    let callee_chunk = &chunks[closure.chunk_index as usize];
+) -> VmResult<Frame> {
+    call_fixed_chunk_from_stack(
+        FixedChunkCall {
+            chunk_index: call.closure.chunk_index,
+            upvalues: call.closure.upvalues.clone(),
+            argc: call.argc,
+            remove_callee: call.remove_callee,
+        },
+        stack,
+        call_site,
+        chunks,
+        execution,
+    )
+}
+
+/// Builds a frame for a capture-free fixed-arity chunk. `CallStatic` uses this path so it does
+/// not need to load or clone the closure stored in the defining local slot.
+pub(super) fn call_static_chunk_from_stack(
+    chunk_index: u16,
+    argc: u16,
+    stack: &mut Vec<StackValue>,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    call_fixed_chunk_from_stack(
+        FixedChunkCall {
+            chunk_index,
+            upvalues: None,
+            argc,
+            remove_callee: false,
+        },
+        stack,
+        call_site,
+        chunks,
+        execution,
+    )
+}
+
+/// Builds a recursive frame using the current frame's captured environment directly.
+pub(super) fn call_self_chunk_from_stack(
+    chunk_index: u16,
+    upvalues: Option<Shared<Vec<Cell>>>,
+    argc: u16,
+    stack: &mut Vec<StackValue>,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    call_fixed_chunk_from_stack(
+        FixedChunkCall {
+            chunk_index,
+            upvalues,
+            argc,
+            remove_callee: false,
+        },
+        stack,
+        call_site,
+        chunks,
+        execution,
+    )
+}
+
+fn call_fixed_chunk_from_stack(
+    call: FixedChunkCall,
+    stack: &mut Vec<StackValue>,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    let callee_chunk = &chunks[call.chunk_index as usize];
     let Some(arity) = callee_chunk.param_shape.fixed_required_arity() else {
         return Err(locate(
             call_site.chunk,
@@ -179,7 +217,7 @@ pub(super) fn call_fixed_closure_from_stack(
     }
 
     let initialized_slots = SELF_SLOT as usize + 1 + arity;
-    let callee_locals = execution.limits.take_locals_with_initialized_prefix(
+    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
         callee_chunk.local_count,
         initialized_slots,
         callee_chunk.captures_local_slots(),
@@ -213,76 +251,123 @@ pub(super) fn call_fixed_closure_from_stack(
         ));
     }
 
-    if let Err(e) = execution.limits.enter_call() {
-        recycle_locals_if_possible(execution.limits, callee_locals, callee_chunk.captures_local_slots());
-        return Err(locate(call_site.chunk, call_site.ip, e));
-    }
-    #[cfg(feature = "debugger")]
-    let caller_node = debug.current_node.clone();
-    #[cfg(feature = "debugger")]
-    let pushed_call = if let Some(node) = &caller_node {
-        debug.call_stack.push(Shared::clone(node));
-        true
-    } else {
-        false
-    };
-    let call_result = run_chunk(
-        closure.chunk_index,
-        chunks,
+    Ok(Frame::new(
+        call.chunk_index,
+        Shared::clone(chunks),
         callee_locals,
-        &closure.upvalues,
-        execution,
-        #[cfg(feature = "debugger")]
-        debug,
-    );
-    execution.limits.exit_call();
-    #[cfg(feature = "debugger")]
-    if pushed_call {
-        debug.call_stack.pop();
-    }
-    #[cfg(feature = "debugger")]
-    {
-        debug.current_node = caller_node;
-    }
-    call_result
+        call.upvalues,
+        !callee_chunk.captures_local_slots(),
+        Continuation::Push,
+    ))
 }
 
+/// Binds `args` and returns the next `Frame` to push: the callee's body, or (if a missing
+/// argument needs its default) the default-value expression to run first.
 fn bind_params(
     shape: &ParamShape,
     args: &mut Vec<StackValue>,
-    callee_locals: &Locals,
-    enclosing_upvalues: &[Cell],
+    mut callee_locals: Locals,
+    callee_upvalues: Option<Shared<Vec<Cell>>>,
+    callee_chunk_index: u16,
     context: &mut ParameterContext<'_, '_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<()> {
+) -> VmResult<Frame> {
     if let Some(arity) = shape.fixed_required_arity() {
-        return bind_fixed_required_params(arity, args, callee_locals, context.chunks);
+        bind_fixed_required_params(arity, args, &mut callee_locals, context.chunks)?;
+        return Ok(build_callee_frame(
+            callee_locals,
+            callee_upvalues,
+            callee_chunk_index,
+            context,
+        ));
     }
 
     let arg_count = args.len();
     let param_count = shape.bindings.len();
     let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
 
-    let mut bindings = shape.bindings.iter();
     // `drain` (rather than `into_iter`) leaves `args`'s allocation for the caller to recycle.
-    let mut args = args.drain(..);
-
-    if use_self_param && let Some(binding) = bindings.next() {
-        let self_value = current_self(callee_locals, context.chunks);
+    let remaining_args: VecDeque<StackValue> = args.drain(..).collect();
+    let mut start_index = 0;
+    if use_self_param && let Some(binding) = shape.bindings.first() {
+        let self_value = current_self(&callee_locals, context.chunks);
         callee_locals.set(binding.slot(), StackValue::Value(self_value));
+        start_index = 1;
     }
 
-    for binding in bindings {
-        match binding {
+    resume_bind_params(
+        shape,
+        remaining_args,
+        callee_locals,
+        callee_upvalues,
+        callee_chunk_index,
+        context,
+        start_index,
+        arg_count,
+        param_count,
+    )
+}
+
+/// Stores a completed default-value expression's result and resumes binding.
+pub(super) fn apply_pending(
+    mut pending: PendingCall,
+    value: StackValue,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    pending.callee_locals.set(pending.target_slot, value);
+    let PendingCall {
+        callee_locals,
+        callee_locals_reusable: _,
+        callee_upvalues,
+        callee_chunk_index,
+        callee_chunks,
+        remaining_args,
+        target_slot: _,
+        next_index,
+        arg_count,
+        param_count,
+    } = pending;
+    let shape = &callee_chunks[callee_chunk_index as usize].param_shape;
+    let mut context = ParameterContext {
+        chunks: &callee_chunks,
+        limits: execution.limits,
+    };
+    resume_bind_params(
+        shape,
+        remaining_args,
+        callee_locals,
+        callee_upvalues,
+        callee_chunk_index,
+        &mut context,
+        next_index,
+        arg_count,
+        param_count,
+    )
+}
+
+/// Resumes binding `shape.bindings[start_index..]`.
+#[allow(clippy::too_many_arguments)]
+fn resume_bind_params(
+    shape: &ParamShape,
+    mut remaining_args: VecDeque<StackValue>,
+    mut callee_locals: Locals,
+    callee_upvalues: Option<Shared<Vec<Cell>>>,
+    callee_chunk_index: u16,
+    context: &mut ParameterContext<'_, '_>,
+    start_index: usize,
+    arg_count: usize,
+    param_count: usize,
+) -> VmResult<Frame> {
+    for index in start_index..shape.bindings.len() {
+        match &shape.bindings[index] {
             ParamBinding::Variadic(slot) => {
-                let collected: Vec<RuntimeValue> = args
-                    .by_ref()
+                let collected: Vec<RuntimeValue> = remaining_args
+                    .drain(..)
                     .map(|arg| into_runtime_value(arg, context.chunks))
                     .collect();
                 callee_locals.set(*slot, StackValue::Value(RuntimeValue::Array(Shared::new(collected))));
             }
             ParamBinding::Required(slot) => {
-                let Some(value) = args.next() else {
+                let Some(value) = remaining_args.pop_front() else {
                     return Err(VmError::ArityMismatch {
                         expected: param_count,
                         actual: arg_count,
@@ -291,50 +376,71 @@ fn bind_params(
                 callee_locals.set(*slot, value);
             }
             ParamBinding::Optional(slot, default_chunk, default_upvalues) => {
-                if let Some(value) = args.next() {
+                if let Some(value) = remaining_args.pop_front() {
                     callee_locals.set(*slot, value);
                 } else {
-                    let captured = capture_upvalues(default_upvalues, callee_locals, enclosing_upvalues);
+                    let captured = capture_upvalues(
+                        default_upvalues,
+                        &callee_locals,
+                        callee_upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice),
+                    );
                     let default_chunk_ref = &context.chunks[*default_chunk as usize];
-                    let default_locals = context
+                    let mut default_locals = context
                         .limits
                         .take_locals(default_chunk_ref.local_count, default_chunk_ref.captures_local_slots());
                     default_locals.set(SELF_SLOT, callee_locals.get(SELF_SLOT));
-                    if let Err(error) = context.limits.enter_call() {
-                        recycle_locals_if_possible(
-                            context.limits,
-                            default_locals,
-                            default_chunk_ref.captures_local_slots(),
-                        );
-                        return Err(error);
-                    }
-                    let result = {
-                        let mut execution = ExecutionContext {
-                            env: context.env,
-                            limits: context.limits,
-                            host_functions: context.host_functions,
-                        };
-                        run_chunk(
-                            *default_chunk,
-                            context.chunks,
-                            default_locals,
-                            &captured,
-                            &mut execution,
-                            #[cfg(feature = "debugger")]
-                            debug,
-                        )
+                    let callee_locals_reusable = !context.chunks[callee_chunk_index as usize].captures_local_slots();
+                    let pending = PendingCall {
+                        callee_locals,
+                        callee_locals_reusable,
+                        callee_upvalues,
+                        callee_chunk_index,
+                        callee_chunks: Shared::clone(context.chunks),
+                        remaining_args,
+                        target_slot: *slot,
+                        next_index: index + 1,
+                        arg_count,
+                        param_count,
                     };
-                    context.limits.exit_call();
-                    callee_locals.set(*slot, result?);
+                    return Ok(Frame::new(
+                        *default_chunk,
+                        Shared::clone(context.chunks),
+                        default_locals,
+                        (!captured.is_empty()).then(|| Shared::new(captured)),
+                        !default_chunk_ref.captures_local_slots(),
+                        Continuation::ResumeBindParams(Box::new(pending)),
+                    ));
                 }
             }
         }
     }
-    Ok(())
+    Ok(build_callee_frame(
+        callee_locals,
+        callee_upvalues,
+        callee_chunk_index,
+        context,
+    ))
+}
+
+fn build_callee_frame(
+    callee_locals: Locals,
+    callee_upvalues: Option<Shared<Vec<Cell>>>,
+    callee_chunk_index: u16,
+    context: &mut ParameterContext<'_, '_>,
+) -> Frame {
+    let reusable = !context.chunks[callee_chunk_index as usize].captures_local_slots();
+    Frame::new(
+        callee_chunk_index,
+        Shared::clone(context.chunks),
+        callee_locals,
+        callee_upvalues,
+        reusable,
+        Continuation::Push,
+    )
 }
 
 /// Returns a frame to the allocation pool when no closure can retain its local cells.
-fn recycle_locals_if_possible(limits: &mut ExecutionLimits, locals: Locals, captures_local_slots: bool) {
+fn recycle_locals_if_possible(limits: &mut super::frame::ExecutionLimits, locals: Locals, captures_local_slots: bool) {
     if !captures_local_slots {
         limits.recycle_locals(locals);
     }
@@ -343,7 +449,7 @@ fn recycle_locals_if_possible(limits: &mut ExecutionLimits, locals: Locals, capt
 fn bind_fixed_required_params(
     arity: usize,
     args: &mut Vec<StackValue>,
-    callee_locals: &Locals,
+    callee_locals: &mut Locals,
     chunks: &Shared<Vec<Chunk>>,
 ) -> VmResult<()> {
     let arg_count = args.len();
