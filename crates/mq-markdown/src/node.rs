@@ -1099,7 +1099,7 @@ impl Node {
     }
 
     pub(crate) fn render_with_theme(&self, options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
-        match self.clone() {
+        match self {
             Self::List(List {
                 level,
                 checked,
@@ -1109,13 +1109,13 @@ impl Node {
                 start,
                 ..
             }) => {
-                let marker = if ordered {
-                    format!("{}.", start.unwrap_or(1) as usize + index)
+                let marker = if *ordered {
+                    format!("{}.", start.unwrap_or(1) as usize + *index)
                 } else {
                     options.list_style.to_string()
                 };
-                let checkbox = checked.map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or_else(|| "");
-                let prefix_width = level as usize * 2 + list_own_prefix_width(ordered, index, start, checked);
+                let checkbox = (*checked).map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or("");
+                let prefix_width = *level as usize * 2 + list_own_prefix_width(*ordered, *index, *start, *checked);
                 // A block quote/callout child needs a flat prefix_width add, not the delta below.
                 let delta = if values.first().is_some_and(Self::is_blockquote_like) {
                     prefix_width as isize
@@ -1126,12 +1126,12 @@ impl Node {
                         .map(|c| prefix_width as isize - (c as isize - 1))
                         .unwrap_or(0)
                 };
-                let content = reindent_continuation(&render_values(&values, options, theme), delta);
+                let content = reindent_continuation(&render_values(values, options, theme), delta);
                 let content = reindent_first_leaf_block(content, values.first(), options, theme, prefix_width);
                 let (ms, me) = &theme.list_marker;
                 format!(
                     "{}{}{}{} {}{}",
-                    "  ".repeat(level as usize),
+                    "  ".repeat(*level as usize),
                     ms,
                     marker,
                     me,
@@ -1148,14 +1148,14 @@ impl Node {
                     .join("|");
                 format!("{}|{}{}|", ts, te, cells)
             }
-            Self::TableCell(TableCell { values, .. }) => render_values(&values, options, theme),
+            Self::TableCell(TableCell { values, .. }) => render_values(values, options, theme),
             Self::TableAlign(TableAlign { align, .. }) => {
                 let (ts, te) = &theme.table_separator;
                 format!("{}|{}|{}", ts, align.iter().map(|a| a.to_string()).join("|"), te)
             }
             Self::Blockquote(Blockquote { values, .. }) => {
                 let (bs, be) = &theme.blockquote_marker;
-                render_values_block(&values, options, theme)
+                render_values_block(values, options, theme)
                     .split('\n')
                     .map(|line| format!("{}> {}{}", bs, be, line))
                     .join("\n")
@@ -1173,7 +1173,7 @@ impl Node {
                 if values.is_empty() {
                     return header_line;
                 }
-                let body = render_values_block(&values, options, theme);
+                let body = render_values_block(values, options, theme);
                 if body.trim().is_empty() {
                     header_line
                 } else {
@@ -1197,11 +1197,11 @@ impl Node {
                 ..
             }) => {
                 let (cs, ce) = &theme.code;
-                if lang.is_some() || fence {
+                if lang.is_some() || *fence {
                     let meta = meta.as_deref().map(|meta| format!(" {}", meta)).unwrap_or_default();
                     let info = format!("{}{}", lang.as_deref().unwrap_or(""), meta);
                     // Empty body skips the content line so it doesn't gain a blank one.
-                    let fence_str = code_fence(&value, &info);
+                    let fence_str = code_fence(value, &info);
                     if value.is_empty() {
                         format!("{}{}{}\n{}{}", cs, fence_str, info, fence_str, ce)
                     } else {
@@ -1221,18 +1221,19 @@ impl Node {
                 let (us, ue) = &theme.link_url;
                 format!(
                     "[{}]: {}{}{}{}",
-                    escape_label(&label.unwrap_or(ident)),
+                    escape_label(label.as_deref().unwrap_or(ident)),
                     us,
                     url.to_string_with(options),
                     ue,
                     title
+                        .as_ref()
                         .map(|title| format!(" {}", title.to_string_with(options)))
                         .unwrap_or_default()
                 )
             }
             Self::Delete(Delete { values, .. }) => {
                 let (ds, de) = &theme.delete;
-                format!("{}~~{}~~{}", ds, render_values(&values, options, theme), de)
+                format!("{}~~{}~~{}", ds, render_values(values, options, theme), de)
             }
             Self::Emphasis(Emphasis { values, .. }) => {
                 let (es, ee) = &theme.emphasis;
@@ -1247,27 +1248,23 @@ impl Node {
                     "{}{}{}{}{}",
                     es,
                     delim,
-                    render_values(&values, options, theme),
+                    render_values(values, options, theme),
                     delim,
                     ee
                 )
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
-                format!(
-                    "[^{}]: {}",
-                    escape_label(&ident),
-                    render_values(&values, options, theme)
-                )
+                format!("[^{}]: {}", escape_label(ident), render_values(values, options, theme))
             }
             Self::FootnoteRef(FootnoteRef { label, .. }) => {
-                format!("[^{}]", escape_label(&label.unwrap_or_default()))
+                format!("[^{}]", escape_label(label.as_deref().unwrap_or_default()))
             }
             Self::Heading(Heading { depth, values, .. }) => {
                 let (hs, he) = &theme.heading;
-                let text = render_values(&values, options, theme);
+                let text = render_values(values, options, theme);
                 // Multi-line content must stay setext for depths 1-2; ATX has no setext form.
                 if text.contains('\n') && matches!(depth, 1 | 2) {
-                    let underline = if depth == 1 { "===" } else { "---" };
+                    let underline = if *depth == 1 { "===" } else { "---" };
                     format!("{}{}\n{}{}", hs, text, underline, he)
                 } else {
                     // A trailing `#` run reads back as an ATX closing sequence and gets
@@ -1285,7 +1282,7 @@ impl Node {
                         None if !text.is_empty() => format!("\\{text}"),
                         _ => text,
                     };
-                    format!("{}{} {}{}", hs, "#".repeat(depth as usize), text, he)
+                    format!("{}{} {}{}", hs, "#".repeat(*depth as usize), text, he)
                 }
             }
             Self::Html(Html { value, .. }) => {
@@ -1297,10 +1294,11 @@ impl Node {
                 format!(
                     "{}![{}]({}{}){}",
                     is,
-                    escape_label(&alt),
-                    render_link_destination(&url, &options.link_url_style),
+                    escape_label(alt),
+                    render_link_destination(url, &options.link_url_style),
                     title
-                        .map(|it| format!(" {}", render_link_title(&it, &options.link_title_style)))
+                        .as_deref()
+                        .map(|it| format!(" {}", render_link_title(it, &options.link_title_style)))
                         .unwrap_or_default(),
                     ie
                 )
@@ -1309,16 +1307,16 @@ impl Node {
             // (already correctly escaped), so escape_label would double it up.
             Self::ImageRef(ImageRef { alt, ident, .. }) => {
                 let (is, ie) = &theme.image;
-                let mismatched = normalize_reference_identifier(&alt) != ident;
-                if mismatched || needs_broad_escaping(&alt) {
-                    format!("{}![{}][{}]{}", is, escape_label(&alt), ident, ie)
+                let mismatched = normalize_reference_identifier(alt) != ident.as_str();
+                if mismatched || needs_broad_escaping(alt) {
+                    format!("{}![{}][{}]{}", is, escape_label(alt), ident, ie)
                 } else {
-                    format!("{}![{}]{}", is, escape_label(&alt), ie)
+                    format!("{}![{}]{}", is, escape_label(alt), ie)
                 }
             }
             Self::CodeInline(CodeInline { value, .. }) => {
                 let (cs, ce) = &theme.code_inline;
-                let fence = code_span_fence(&value);
+                let fence = code_span_fence(value);
                 // Padding avoids fusing with an edge backtick and protects a genuine
                 // leading+trailing space from the parser's own space-stripping rule.
                 let all_spaces = value.chars().all(|c| c == ' ');
@@ -1340,9 +1338,10 @@ impl Node {
                 format!(
                     "{}[{}]({}{}){}",
                     ls,
-                    render_values(&values, options, theme),
+                    render_values(values, options, theme),
                     url.to_string_with(options),
                     title
+                        .as_ref()
                         .map(|title| format!(" {}", title.to_string_with(options)))
                         .unwrap_or_default(),
                     le
@@ -1359,9 +1358,9 @@ impl Node {
             // Same reasoning as ImageRef, plus the same broad-escaping fallback.
             Self::LinkRef(LinkRef { values, ident, .. }) => {
                 let (ls, le) = &theme.link;
-                let rendered = render_values(&values, options, theme);
+                let rendered = render_values(values, options, theme);
                 let plain = values_to_value(values);
-                let mismatched = normalize_reference_identifier(&plain) != ident;
+                let mismatched = normalize_reference_identifier(&plain) != ident.as_str();
 
                 if mismatched || needs_broad_escaping(&plain) {
                     format!("{}[{}][{}]{}", ls, rendered, ident, le)
@@ -1377,16 +1376,16 @@ impl Node {
             // values like JSON output or attr lookups must stay untouched.
             Self::Text(Text { value, position }) => {
                 if position.is_some() {
-                    escape_text(value)
+                    escape_text(value.clone())
                 } else {
-                    value
+                    value.clone()
                 }
             }
             Self::MdxFlowExpression(mdx_flow_expression) => {
                 format!("{{{}}}", mdx_flow_expression.value)
             }
             Self::MdxJsxFlowElement(mdx_jsx_flow_element) => {
-                let name = mdx_jsx_flow_element.name.unwrap_or_default();
+                let name = mdx_jsx_flow_element.name.as_deref().unwrap_or_default();
                 let attributes = if mdx_jsx_flow_element.attributes.is_empty() {
                     "".to_string()
                 } else {
@@ -1394,7 +1393,7 @@ impl Node {
                         " {}",
                         mdx_jsx_flow_element
                             .attributes
-                            .into_iter()
+                            .iter()
                             .map(Self::mdx_attribute_content_to_string)
                             .join(" ")
                     )
@@ -1413,7 +1412,7 @@ impl Node {
                 }
             }
             Self::MdxJsxTextElement(mdx_jsx_text_element) => {
-                let name = mdx_jsx_text_element.name.unwrap_or_default();
+                let name = mdx_jsx_text_element.name.as_deref().unwrap_or_default();
                 let attributes = if mdx_jsx_text_element.attributes.is_empty() {
                     "".to_string()
                 } else {
@@ -1421,7 +1420,7 @@ impl Node {
                         " {}",
                         mdx_jsx_text_element
                             .attributes
-                            .into_iter()
+                            .iter()
                             .map(Self::mdx_attribute_content_to_string)
                             .join(" ")
                     )
@@ -1509,45 +1508,45 @@ impl Node {
     }
 
     pub fn value(&self) -> String {
-        match self.clone() {
-            Self::Blockquote(v) => values_to_value(v.values),
+        match self {
+            Self::Blockquote(v) => values_to_value(&v.values),
             Self::Definition(d) => d.url.as_str().to_string(),
-            Self::Delete(v) => values_to_value(v.values),
-            Self::Heading(h) => values_to_value(h.values),
-            Self::Emphasis(v) => values_to_value(v.values),
-            Self::Footnote(f) => values_to_value(f.values),
-            Self::FootnoteRef(f) => f.ident,
-            Self::Html(v) => v.value,
-            Self::Yaml(v) => v.value,
-            Self::Toml(v) => v.value,
-            Self::Image(i) => i.url,
-            Self::ImageRef(i) => i.ident,
+            Self::Delete(v) => values_to_value(&v.values),
+            Self::Heading(h) => values_to_value(&h.values),
+            Self::Emphasis(v) => values_to_value(&v.values),
+            Self::Footnote(f) => values_to_value(&f.values),
+            Self::FootnoteRef(f) => f.ident.clone(),
+            Self::Html(v) => v.value.clone(),
+            Self::Yaml(v) => v.value.clone(),
+            Self::Toml(v) => v.value.clone(),
+            Self::Image(i) => i.url.clone(),
+            Self::ImageRef(i) => i.ident.clone(),
             Self::CodeInline(v) => v.value.to_string(),
             Self::MathInline(v) => v.value.to_string(),
             Self::Link(l) => l.url.as_str().to_string(),
-            Self::LinkRef(l) => l.ident,
+            Self::LinkRef(l) => l.ident.clone(),
             #[cfg(feature = "wikilink")]
-            Self::WikiLink(w) => w.text.unwrap_or(w.target),
+            Self::WikiLink(w) => w.text.clone().unwrap_or_else(|| w.target.clone()),
             #[cfg(feature = "callout")]
-            Self::Callout(v) => values_to_value(v.values),
+            Self::Callout(v) => values_to_value(&v.values),
             #[cfg(feature = "embed")]
-            Self::Embed(e) => e.display.unwrap_or(e.target),
-            Self::Math(v) => v.value,
-            Self::List(l) => values_to_value(l.values),
-            Self::TableCell(c) => values_to_value(c.values),
-            Self::TableRow(c) => values_to_value(c.values),
-            Self::Code(c) => c.value,
-            Self::Strong(v) => values_to_value(v.values),
-            Self::Text(t) => t.value,
+            Self::Embed(e) => e.display.clone().unwrap_or_else(|| e.target.clone()),
+            Self::Math(v) => v.value.clone(),
+            Self::List(l) => values_to_value(&l.values),
+            Self::TableCell(c) => values_to_value(&c.values),
+            Self::TableRow(c) => values_to_value(&c.values),
+            Self::Code(c) => c.value.clone(),
+            Self::Strong(v) => values_to_value(&v.values),
+            Self::Text(t) => t.value.clone(),
             Self::Break { .. } => String::new(),
             Self::TableAlign(_) => String::new(),
             Self::MdxFlowExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxFlowElement(mdx) => values_to_value(mdx.children),
+            Self::MdxJsxFlowElement(mdx) => values_to_value(&mdx.children),
             Self::MdxTextExpression(mdx) => mdx.value.to_string(),
-            Self::MdxJsxTextElement(mdx) => values_to_value(mdx.children),
+            Self::MdxJsxTextElement(mdx) => values_to_value(&mdx.children),
             Self::MdxJsEsm(mdx) => mdx.value.to_string(),
             Self::HorizontalRule { .. } => String::new(),
-            Self::Fragment(v) => values_to_value(v.values),
+            Self::Fragment(v) => values_to_value(&v.values),
             Self::Empty => String::new(),
         }
     }
@@ -1937,26 +1936,36 @@ impl Node {
         }
     }
 
+    fn replace_value_at(values: &mut [Node], index: usize, value: &str) {
+        if let Some(slot) = values.get_mut(index) {
+            let node = std::mem::replace(slot, Self::Empty);
+            *slot = node.into_with_value(value);
+        }
+    }
+
+    /// Returns a clone of this node with its value replaced.
     pub fn with_value(&self, value: &str) -> Self {
-        match self.clone() {
+        self.clone().into_with_value(value)
+    }
+
+    /// Replaces this node's value while consuming the original tree.
+    ///
+    /// Prefer this over [`Self::with_value`] when the caller owns the node and does not need an
+    /// unchanged copy.
+    pub fn into_with_value(self, value: &str) -> Self {
+        match self {
             Self::Blockquote(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::Blockquote(v)
             }
             Self::Delete(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::Delete(v)
             }
             Self::Emphasis(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::Emphasis(v)
             }
@@ -1985,33 +1994,27 @@ impl Node {
                 Self::Math(math)
             }
             Self::List(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::List(v)
             }
             Self::TableCell(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::TableCell(v)
             }
             Self::TableRow(mut row) => {
                 row.values = row
                     .values
-                    .iter()
+                    .into_iter()
                     .zip(value.split(","))
-                    .map(|(cell, value)| cell.with_value(value))
+                    .map(|(cell, value)| cell.into_with_value(value))
                     .collect::<Vec<_>>();
 
                 Self::TableRow(row)
             }
             Self::Strong(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::Strong(v)
             }
@@ -2047,9 +2050,7 @@ impl Node {
                 Self::FootnoteRef(footnote)
             }
             Self::Heading(mut v) => {
-                if let Some(node) = v.values.first() {
-                    v.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, 0, value);
 
                 Self::Heading(v)
             }
@@ -2077,9 +2078,7 @@ impl Node {
                 Self::MdxJsEsm(mdx)
             }
             Self::MdxJsxFlowElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut mdx.children, 0, value);
 
                 Self::MdxJsxFlowElement(MdxJsxFlowElement {
                     name: mdx.name,
@@ -2089,9 +2088,7 @@ impl Node {
                 })
             }
             Self::MdxJsxTextElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut mdx.children, 0, value);
 
                 Self::MdxJsxTextElement(MdxJsxTextElement {
                     name: mdx.name,
@@ -2112,9 +2109,7 @@ impl Node {
             }
             #[cfg(feature = "callout")]
             Self::Callout(mut c) => {
-                if let Some(node) = c.values.first() {
-                    c.values[0] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut c.values, 0, value);
                 Self::Callout(c)
             }
             #[cfg(feature = "embed")]
@@ -2129,68 +2124,59 @@ impl Node {
         }
     }
 
+    /// Returns a clone of this node with the selected child's value replaced.
     pub fn with_children_value(&self, value: &str, index: usize) -> Self {
-        match self.clone() {
+        self.clone().into_with_children_value(value, index)
+    }
+
+    /// Replaces a selected child's value while consuming the original tree.
+    ///
+    /// Prefer this over [`Self::with_children_value`] when the caller owns the node and does not
+    /// need an unchanged copy.
+    pub fn into_with_children_value(self, value: &str, index: usize) -> Self {
+        match self {
             Self::Blockquote(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::Blockquote(v)
             }
             Self::Delete(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::Delete(v)
             }
             Self::Emphasis(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::Emphasis(v)
             }
             Self::List(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::List(v)
             }
             Self::TableCell(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::TableCell(v)
             }
             Self::Strong(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::Strong(v)
             }
             Self::LinkRef(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::LinkRef(v)
             }
             Self::Heading(mut v) => {
-                if v.values.get(index).is_some() {
-                    v.values[index] = v.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut v.values, index, value);
 
                 Self::Heading(v)
             }
             Self::MdxJsxFlowElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[index] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut mdx.children, index, value);
 
                 Self::MdxJsxFlowElement(MdxJsxFlowElement {
                     name: mdx.name,
@@ -2200,9 +2186,7 @@ impl Node {
                 })
             }
             Self::MdxJsxTextElement(mut mdx) => {
-                if let Some(node) = mdx.children.first() {
-                    mdx.children[index] = node.with_value(value);
-                }
+                Self::replace_value_at(&mut mdx.children, index, value);
 
                 Self::MdxJsxTextElement(MdxJsxTextElement {
                     name: mdx.name,
@@ -2215,9 +2199,7 @@ impl Node {
             a @ Self::WikiLink(_) => a,
             #[cfg(feature = "callout")]
             Self::Callout(mut c) => {
-                if c.values.get(index).is_some() {
-                    c.values[index] = c.values[index].with_value(value);
-                }
+                Self::replace_value_at(&mut c.values, index, value);
                 Self::Callout(c)
             }
             #[cfg(feature = "embed")]
@@ -3551,15 +3533,15 @@ impl Node {
         })
     }
 
-    fn mdx_attribute_content_to_string(attr: MdxAttributeContent) -> SmolStr {
+    fn mdx_attribute_content_to_string(attr: &MdxAttributeContent) -> SmolStr {
         match attr {
             MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
-            MdxAttributeContent::Property(property) => match property.value {
+            MdxAttributeContent::Property(property) => match &property.value {
                 Some(value) => match value {
                     MdxAttributeValue::Expression(value) => format!("{}={{{}}}", property.name, value).into(),
                     MdxAttributeValue::Literal(literal) => format!("{}=\"{}\"", property.name, literal).into(),
                 },
-                None => property.name,
+                None => property.name.clone(),
             },
         }
     }
@@ -3647,7 +3629,7 @@ pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, them
         .collect::<String>()
 }
 
-fn values_to_value(values: Vec<Node>) -> String {
+fn values_to_value(values: &[Node]) -> String {
     values.iter().map(|value| value.value()).collect::<String>()
 }
 
@@ -4091,7 +4073,8 @@ mod tests {
            "test".to_string(),
            Node::Math(Math{ value: "test".to_string(), position: None }))]
     fn test_with_value(#[case] node: Node, #[case] input: String, #[case] expected: Node) {
-        assert_eq!(node.with_value(input.as_str()), expected);
+        assert_eq!(node.clone().with_value(input.as_str()), expected);
+        assert_eq!(node.into_with_value(input.as_str()), expected);
     }
 
     #[rstest]
@@ -4287,7 +4270,8 @@ mod tests {
             position: None
         }))]
     fn test_with_children_value(#[case] node: Node, #[case] value: &str, #[case] index: usize, #[case] expected: Node) {
-        assert_eq!(node.with_children_value(value, index), expected);
+        assert_eq!(node.clone().with_children_value(value, index), expected);
+        assert_eq!(node.into_with_children_value(value, index), expected);
     }
 
     #[rstest]
@@ -4498,7 +4482,8 @@ mod tests {
         Node::WikiLink(WikiLink{target: "page".to_string(), text: Some("DISPLAY TEXT".to_string()), position: None})
     )]
     fn test_wikilink_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
-        assert_eq!(node.with_value(value), expected);
+        assert_eq!(node.clone().with_value(value), expected);
+        assert_eq!(node.into_with_value(value), expected);
     }
 
     #[cfg(feature = "wikilink")]
@@ -6396,7 +6381,8 @@ mod tests {
             position: None })
     )]
     fn test_callout_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
-        assert_eq!(node.with_value(value), expected);
+        assert_eq!(node.clone().with_value(value), expected);
+        assert_eq!(node.into_with_value(value), expected);
     }
 
     #[cfg(feature = "callout")]
@@ -6566,7 +6552,8 @@ mod tests {
         Node::Embed(Embed { target: "note".to_string(), display: Some("800".to_string()), position: None })
     )]
     fn test_embed_with_value(#[case] node: Node, #[case] value: &str, #[case] expected: Node) {
-        assert_eq!(node.with_value(value), expected);
+        assert_eq!(node.clone().with_value(value), expected);
+        assert_eq!(node.into_with_value(value), expected);
     }
 
     #[cfg(feature = "embed")]
