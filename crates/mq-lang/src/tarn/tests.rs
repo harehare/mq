@@ -1,10 +1,47 @@
 use super::interpreter::ExecutionPools;
 use super::*;
+use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::range::Range;
 use crate::{Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
+
+fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(
+        program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        token_arena,
+    )
+}
+
+fn compile_and_run_with_input(
+    program: &Program,
+    input: RuntimeValue,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
+}
+
+fn compile_and_run_full(
+    program: &Program,
+    input: RuntimeValue,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    let compiled = compiler::compile_program(program, token_arena, ModuleLoader::new(StdModuleResolver))?;
+    Ok(interpreter::run_with_globals(
+        &compiled,
+        input,
+        host_functions,
+        timeout,
+        Options::default().max_call_stack_depth,
+        &[],
+    )?)
+}
 
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
@@ -99,12 +136,13 @@ fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeVa
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
         max_call_stack_depth,
+        &[],
     )
 }
 
@@ -159,12 +197,13 @@ fn run_with_prelude(code: &str) -> RuntimeValue {
     let compiled =
         compiler::compile_program_with_builtin_prelude(&program, token_arena, ModuleLoader::new(StdModuleResolver))
             .unwrap();
-    match interpreter::run(
+    match interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
         crate::tarn::Options::default().max_call_stack_depth,
+        &[],
     ) {
         Ok(v) => v,
         Err(e) => panic!("{e}"),
@@ -491,12 +530,13 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
             &compiler::ResolvedModuleVars::default(),
         )
         .unwrap();
-        interpreter::run(
+        interpreter::run_with_globals(
             &compiled,
             RuntimeValue::None,
             &HostFunctions::default(),
             None,
             crate::tarn::Options::default().max_call_stack_depth,
+            &[],
         )
         .unwrap()
     }
@@ -2168,12 +2208,13 @@ fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
     let resolver =
         crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
         crate::tarn::Options::default().max_call_stack_depth,
+        &[],
     )
     .unwrap()
 }

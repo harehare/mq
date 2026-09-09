@@ -587,6 +587,19 @@ fn eval_compiled_function_call_overhead(bencher: divan::Bencher) {
     );
 }
 
+/// Measures calls through a local holding a native function, which use the VM's generic
+/// call path instead of the fixed-arity closure fast path.
+#[divan::bench]
+fn eval_compiled_dynamic_builtin_call(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let transform = upcase | foreach(i, range(0, 1000, 1)): transform("value");"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 #[divan::bench()]
 fn eval_nested_function_calls() -> mq_lang::RuntimeValues {
     let mut engine = mq_lang::DefaultEngine::default();

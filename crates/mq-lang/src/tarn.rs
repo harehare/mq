@@ -39,8 +39,6 @@ use crate::engine;
 use crate::error;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
-#[cfg(test)]
-use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver};
@@ -167,44 +165,6 @@ pub(crate) fn vm_error_to_runtime_error(
     let token_id = err.token_id().unwrap_or(crate::ast::TokenId::new(0));
     let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
     err.to_runtime_error(token, token_id, token_arena)
-}
-
-#[cfg(test)]
-pub(crate) fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
-    compile_and_run_full(
-        program,
-        RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        token_arena,
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn compile_and_run_with_input(
-    program: &Program,
-    input: RuntimeValue,
-    token_arena: TokenArena,
-) -> Result<RuntimeValue, Error> {
-    compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
-}
-
-#[cfg(test)]
-pub(crate) fn compile_and_run_full(
-    program: &Program,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    token_arena: TokenArena,
-) -> Result<RuntimeValue, Error> {
-    let compiled = compiler::compile_program(program, token_arena, ModuleLoader::new(StdModuleResolver))?;
-    Ok(interpreter::run(
-        &compiled,
-        input,
-        host_functions,
-        timeout,
-        Options::default().max_call_stack_depth,
-    )?)
 }
 
 fn run_for_input<F>(input: RuntimeValue, mut run_one: F) -> Result<RuntimeValue, interpreter::VmError>
