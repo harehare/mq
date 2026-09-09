@@ -186,6 +186,42 @@ import "md"
   )
 ```
 
+### Reference indexing and resolution
+
+`md::reference_index(md_nodes)` and `md::resolve_references(md_nodes, index = None)` index and
+resolve reference-style links (`[text][ident]`, including the shortcut form `[ident]`), reference
+images (`![alt][ident]`), and footnotes (`[^ident]`) against their `[ident]: url` / `[^ident]: ...`
+definitions. Both need every document node at once — pass `-A` on the CLI, or pipe through `nodes`
+in an inline query/script.
+
+`reference_index` groups every link and footnote definition by identifier:
+
+```mq
+import "md"
+| md::reference_index(nodes)
+# => {"links": {"ident": [{ident, label, url, title, location}, ...]}, "footnotes": {"ident": [{ident, location}, ...]}}
+```
+
+Each identifier maps to an array of *every* definition found for it, so a duplicate definition
+(more than one `[ident]:` line for the same `ident`) shows up as an array with more than one entry.
+
+`resolve_references` walks every reference node and looks it up in the index, returning one dict
+per reference with its `type`, `ident`, `label`, `location`, whether it `resolved` to a definition,
+whether that definition is `duplicate`, the `definition` picked (CommonMark's first-match-wins, or
+`None` if unresolved), and every candidate `definitions`:
+
+```mq
+import "md"
+| md::resolve_references(nodes)
+| filter(fn(r): !r[:resolved];)
+# => reference nodes with no matching definition (for building linkcheck-style diagnostics)
+```
+
+`index` defaults to `md::reference_index(md_nodes)`, resolving references against their own
+document. Pass an explicit index built from a different set of nodes to resolve references that
+got separated from their definitions — for example when a document is split or a section is moved
+into another file — which is exactly the case where a reference legitimately comes back unresolved.
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs
