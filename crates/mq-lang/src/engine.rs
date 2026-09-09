@@ -1294,7 +1294,7 @@ mod tests {
 
         let program = vec![Shared::new(AstNode {
             token_id: crate::arena::ArenaId::new(1),
-            expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+            expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
         })];
 
         let compiled = CompiledProgram::from(program);

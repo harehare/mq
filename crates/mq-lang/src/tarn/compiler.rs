@@ -361,7 +361,7 @@ fn builtin_dependency_graph(module: &crate::Module) -> Option<Shared<BuiltinDepe
     let dependencies = module
         .functions
         .iter()
-        .filter_map(|node| match &*node.expr {
+        .filter_map(|node| match &node.expr {
             Expr::Def(ident, _, _) => Some((ident.name, soft_builtin_names_in_program(&vec![Shared::clone(node)]))),
             _ => None,
         })
@@ -386,7 +386,7 @@ fn soft_builtin_names_in_program_with_shadowed(
 ) -> FxHashSet<crate::Ident> {
     let mut names = FxHashSet::default();
     let mut shadowed = inherited_shadowed.clone();
-    shadowed.extend(program.iter().filter_map(|node| match &*node.expr {
+    shadowed.extend(program.iter().filter_map(|node| match &node.expr {
         Expr::Def(ident, _, _) => Some(ident.name),
         _ => None,
     }));
@@ -401,7 +401,7 @@ fn collect_soft_builtin_names(
     shadowed: &FxHashSet<crate::Ident>,
     names: &mut FxHashSet<crate::Ident>,
 ) {
-    match &*node.expr {
+    match &node.expr {
         Expr::As(_, value)
         | Expr::Let(_, value)
         | Expr::Var(_, value)
@@ -512,7 +512,7 @@ fn referenced_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
 }
 
 fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Ident>) {
-    match &*node.expr {
+    match &node.expr {
         Expr::As(_, value)
         | Expr::Let(_, value)
         | Expr::Var(_, value)
@@ -748,7 +748,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut defs: Program = Vec::new();
         for node in program {
             self.current_token_id = node.token_id;
-            match &*node.expr {
+            match &node.expr {
                 Expr::Def(_, _, _) => defs.push(Shared::clone(node)),
                 Expr::Let(Pattern::Ident(ident), _) | Expr::Var(Pattern::Ident(ident), _) => {
                     self.scope_mut().declare_or_reuse(ident.name);
@@ -812,17 +812,17 @@ impl<R: ModuleResolver> Compiler<R> {
         for item in init {
             match item {
                 #[cfg(not(feature = "debugger"))]
-                Deferred::Statement(node) if matches!(&*node.expr, Expr::Let(..) | Expr::Var(..)) => {
-                    let (Expr::Let(pattern, value) | Expr::Var(pattern, value)) = &*node.expr else {
+                Deferred::Statement(node) if matches!(&node.expr, Expr::Let(..) | Expr::Var(..)) => {
+                    let (Expr::Let(pattern, value) | Expr::Var(pattern, value)) = &node.expr else {
                         unreachable!("guarded above");
                     };
                     self.current_token_id = node.token_id;
                     self.take_pending_pattern_override(pattern);
-                    self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                    self.compile_let_or_var_binding(pattern, value, matches!(&node.expr, Expr::Var(..)))?;
                     continue;
                 }
                 Deferred::Statement(node) => {
-                    if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+                    if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &node.expr {
                         self.take_pending_pattern_override(pattern);
                     }
                     self.compile_expr(node)?;
@@ -843,7 +843,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         match last {
             Deferred::Statement(node) => {
-                if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &*node.expr {
+                if let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &node.expr {
                     self.take_pending_pattern_override(pattern);
                 }
                 self.compile_expr(node)?;
@@ -910,7 +910,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_body(&mut self, body: &Program) -> CompileResult<()> {
         for node in body {
-            if let Expr::Def(ident, _, _) = &*node.expr {
+            if let Expr::Def(ident, _, _) = &node.expr {
                 self.scope_mut().declare(ident.name);
             }
         }
@@ -922,9 +922,9 @@ impl<R: ModuleResolver> Compiler<R> {
         for node in init {
             // See the matching case in `compile_top_level`.
             #[cfg(not(feature = "debugger"))]
-            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
+            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &node.expr {
                 self.current_token_id = node.token_id;
-                self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                self.compile_let_or_var_binding(pattern, value, matches!(&node.expr, Expr::Var(..)))?;
                 continue;
             }
             self.compile_expr(node)?;
@@ -942,7 +942,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn is_auto_call_candidate(node: &Node) -> bool {
         matches!(
-            &*node.expr,
+            &node.expr,
             Expr::Ident(_) | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
         )
     }
@@ -1071,8 +1071,8 @@ impl<R: ModuleResolver> Compiler<R> {
         mutable: bool,
     ) -> CompileResult<()> {
         match pattern {
-            Pattern::Ident(ident) if matches!(&*value.expr, Expr::Fn(_, _)) => {
-                let Expr::Fn(params, body) = &*value.expr else {
+            Pattern::Ident(ident) if matches!(&value.expr, Expr::Fn(_, _)) => {
+                let Expr::Fn(params, body) = &value.expr else {
                     unreachable!("guarded above");
                 };
                 let slot = self.scope_mut().declare_or_reuse(ident.name);
@@ -1404,7 +1404,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn predeclare_module_var_slots(&mut self, vars: &Program) {
         for node in vars {
-            if let Expr::Let(Pattern::Ident(ident), _) = &*node.expr {
+            if let Expr::Let(Pattern::Ident(ident), _) = &node.expr {
                 self.scope_mut().declare(ident.name);
             }
         }
@@ -1433,7 +1433,7 @@ impl<R: ModuleResolver> Compiler<R> {
             module
                 .vars
                 .iter()
-                .filter_map(|node| match &*node.expr {
+                .filter_map(|node| match &node.expr {
                     Expr::Let(Pattern::Ident(ident), _) => self
                         .scope_mut()
                         .resolve_local(ident.name)
@@ -1471,7 +1471,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<()> {
         for node in vars {
             self.current_token_id = node.token_id;
-            let Expr::Let(pattern, value) = &*node.expr else {
+            let Expr::Let(pattern, value) = &node.expr else {
                 self.compile_expr(node)?;
                 self.emit(OpCode::Pop);
                 continue;
@@ -1512,16 +1512,16 @@ impl<R: ModuleResolver> Compiler<R> {
         parent_module_path: &[crate::Ident],
     ) -> CompileResult<()> {
         for node in nodes {
-            if let Expr::Module(ident, program) = &*node.expr {
+            if let Expr::Module(ident, program) = &node.expr {
                 self.current_token_id = node.token_id;
                 self.compile_module(ident, program, parent_module_path)?;
                 self.emit(OpCode::Pop);
                 continue;
             }
             #[cfg(not(feature = "debugger"))]
-            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &*node.expr {
+            if let Expr::Let(pattern, value) | Expr::Var(pattern, value) = &node.expr {
                 self.current_token_id = node.token_id;
-                self.compile_let_or_var_binding(pattern, value, matches!(&*node.expr, Expr::Var(..)))?;
+                self.compile_let_or_var_binding(pattern, value, matches!(&node.expr, Expr::Var(..)))?;
                 continue;
             }
             self.compile_expr(node)?;
@@ -1560,7 +1560,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let definitions: FxHashMap<crate::Ident, &Shared<Node>> = module
             .functions
             .iter()
-            .filter_map(|node| match &*node.expr {
+            .filter_map(|node| match &node.expr {
                 Expr::Def(ident, _, _) => Some((ident.name, node)),
                 _ => None,
             })
@@ -1590,7 +1590,7 @@ impl<R: ModuleResolver> Compiler<R> {
         module
             .functions
             .iter()
-            .filter(|node| matches!(&*node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
+            .filter(|node| matches!(&node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
             .cloned()
             .collect()
     }
@@ -1622,7 +1622,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let functions = module
             .functions
             .iter()
-            .filter(|node| matches!(&*node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
+            .filter(|node| matches!(&node.expr, Expr::Def(ident, _, _) if required.contains(&ident.name)))
             .cloned()
             .collect();
         self.compile_functions_with_forward_refs(&functions)
@@ -1631,7 +1631,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_functions_with_forward_refs(&mut self, nodes: &Program) -> CompileResult<()> {
         let mut slots = Vec::with_capacity(nodes.len());
         for node in nodes {
-            let Expr::Def(ident, _, _) = &*node.expr else {
+            let Expr::Def(ident, _, _) = &node.expr else {
                 return Err(CompileError::Unsupported(
                     "module top-level statement is not a def",
                     self.current_token_id,
@@ -1643,7 +1643,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         for (node, slot) in nodes.iter().zip(slots) {
             self.current_token_id = node.token_id;
-            let Expr::Def(ident, params, body) = &*node.expr else {
+            let Expr::Def(ident, params, body) = &node.expr else {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
@@ -1691,7 +1691,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let depth = self.scopes.len() - 1;
         let mut slots = Vec::with_capacity(functions.len());
         for node in &functions {
-            let Expr::Def(ident, _, _) = &*node.expr else {
+            let Expr::Def(ident, _, _) = &node.expr else {
                 return Err(CompileError::Unsupported(
                     "module function is not a def",
                     self.current_token_id,
@@ -1703,7 +1703,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         for (node, slot) in functions.iter().zip(&slots) {
             self.current_token_id = node.token_id;
-            let Expr::Def(ident, params, body) = &*node.expr else {
+            let Expr::Def(ident, params, body) = &node.expr else {
                 unreachable!("validated as Def above");
             };
             let (chunk_idx, upvalues) = self.compile_function(params, body, Some(ident.name))?;
@@ -1741,7 +1741,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut def_slots = FxHashMap::default();
         let mut let_slots = FxHashMap::default();
         for node in program {
-            match &*node.expr {
+            match &node.expr {
                 Expr::Def(def_ident, _, _) => {
                     let slot = self.scope_mut().declare(def_ident.name);
                     self.scope_mut().mark_immutable(slot);
@@ -1763,7 +1763,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut rest = Program::new();
         for node in program {
             self.current_token_id = node.token_id;
-            match &*node.expr {
+            match &node.expr {
                 Expr::Def(def_ident, params, body) => {
                     let slot = def_slots[&def_ident.name];
                     let (chunk_idx, upvalues) = self.compile_function(params, body, Some(def_ident.name))?;
@@ -1796,7 +1796,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<()> {
         for node in rest {
             self.current_token_id = node.token_id;
-            match &*node.expr {
+            match &node.expr {
                 Expr::Include(literal) => {
                     // See `compile_discarding`: skip the discarded trailing self-value.
                     let Literal::String(path) = literal else {
@@ -1810,7 +1810,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_module_vars_binding(&path, &module, None)?;
                 }
                 Expr::Let(pattern, value) | Expr::Var(pattern, value) => {
-                    let mutable = matches!(&*node.expr, Expr::Var(..));
+                    let mutable = matches!(&node.expr, Expr::Var(..));
                     let mut names = Vec::new();
                     collect_pattern_idents(pattern, &mut names);
                     names.sort();
@@ -1991,7 +1991,7 @@ impl<R: ModuleResolver> Compiler<R> {
             self.chunk_mut().debug_nodes.push((node.token_id, Shared::clone(node)));
             self.emit(OpCode::StmtBoundary(node.token_id));
         }
-        match &*node.expr {
+        match &node.expr {
             Expr::Literal(lit) => {
                 let value = literal_to_runtime_value(lit);
                 let idx = self.chunk_mut().push_const(value);
@@ -2298,7 +2298,7 @@ impl<R: ModuleResolver> Compiler<R> {
             return false;
         };
 
-        match &*args[1].expr {
+        match &args[1].expr {
             Expr::Ident(_) => {
                 let Some(right_slot) = self.current_local_slot(&args[1]) else {
                     return false;
@@ -2324,20 +2324,20 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     fn current_local_slot(&self, node: &Shared<Node>) -> Option<u16> {
-        let Expr::Ident(ident) = &*node.expr else {
+        let Expr::Ident(ident) = &node.expr else {
             return None;
         };
         self.scopes.last().and_then(|scope| scope.resolve_local(ident.name))
     }
 
     fn is_spread(arg: &Node) -> bool {
-        matches!(&*arg.expr, Expr::Call(spread_ident, _) if spread_ident.name == builtins::SPREAD.into())
+        matches!(&arg.expr, Expr::Call(spread_ident, _) if spread_ident.name == builtins::SPREAD.into())
     }
 
     fn compile_array_call(&mut self, args: &ast::Args) -> CompileResult<()> {
         self.emit(OpCode::ArrayNew);
         for arg in args {
-            if let Expr::Call(spread_ident, spread_args) = &*arg.expr
+            if let Expr::Call(spread_ident, spread_args) = &arg.expr
                 && spread_ident.name == builtins::SPREAD.into()
             {
                 self.compile_expr(&spread_args[0])?;
@@ -2362,7 +2362,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.emit(OpCode::ArrayNew);
         for arg in args {
-            if let Expr::Call(spread_ident, spread_args) = &*arg.expr
+            if let Expr::Call(spread_ident, spread_args) = &arg.expr
                 && spread_ident.name == builtins::SPREAD.into()
             {
                 self.compile_expr(&spread_args[0])?;
@@ -2716,7 +2716,7 @@ pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<crate::Ide
 /// Names bound by a module's top-level `let`s, in declaration order.
 pub(super) fn module_var_names(vars: &Program) -> Vec<crate::Ident> {
     vars.iter()
-        .filter_map(|node| match &*node.expr {
+        .filter_map(|node| match &node.expr {
             Expr::Let(Pattern::Ident(ident), _) => Some(ident.name),
             _ => None,
         })

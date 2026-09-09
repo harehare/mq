@@ -109,12 +109,12 @@ impl Optimizer {
         // Merge parent user_defs with any local Defs. When there are no local Defs (the
         // common case for loop bodies and blocks), skip the allocation entirely.
         let merged;
-        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&n.expr, ast::Expr::Def(..))) {
             merged = parent_user_defs
                 .iter()
                 .copied()
                 .chain(program.iter().filter_map(|n| {
-                    if let ast::Expr::Def(ident, ..) = &*n.expr {
+                    if let ast::Expr::Def(ident, ..) = &n.expr {
                         Some(ident.name)
                     } else {
                         None
@@ -137,11 +137,11 @@ impl Optimizer {
         // empty set — no heap allocation.
         static EMPTY_DEFS: OnceLock<FxHashSet<Ident>> = OnceLock::new();
         let user_defs_owned: FxHashSet<Ident>;
-        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+        let user_defs: &FxHashSet<Ident> = if program.iter().any(|n| matches!(&n.expr, ast::Expr::Def(..))) {
             user_defs_owned = program
                 .iter()
                 .filter_map(|n| {
-                    if let ast::Expr::Def(ident, ..) = &*n.expr {
+                    if let ast::Expr::Def(ident, ..) = &n.expr {
                         Some(ident.name)
                     } else {
                         None
@@ -168,7 +168,7 @@ impl Optimizer {
                 let program = self.merge_selector_chains(program);
 
                 // Passes 2-4 are only worthwhile when Def nodes are present.
-                if !program.iter().any(|n| matches!(&*n.expr, ast::Expr::Def(..))) {
+                if !program.iter().any(|n| matches!(&n.expr, ast::Expr::Def(..))) {
                     return program;
                 }
 
@@ -199,9 +199,9 @@ impl Optimizer {
     ///   map if the result is a literal.
     /// - All other nodes: substitute known literals, then fold constants.
     fn propagate_and_fold(&self, program: Program, user_defs: &FxHashSet<Ident>) -> Program {
-        let has_let_literal = program.iter().any(|n| {
-            matches!(&*n.expr, ast::Expr::Let(Pattern::Ident(_), rhs) if matches!(&*rhs.expr, ast::Expr::Literal(_)))
-        });
+        let has_let_literal = program.iter().any(
+            |n| matches!(&n.expr, ast::Expr::Let(Pattern::Ident(_), rhs) if matches!(&rhs.expr, ast::Expr::Literal(_))),
+        );
 
         if !has_let_literal {
             return lazy_map_program(program, |n| self.optimize_node(Shared::clone(n), user_defs));
@@ -212,10 +212,10 @@ impl Optimizer {
 
         for node in program {
             let token_id = node.token_id;
-            match &*node.expr {
+            match &node.expr {
                 ast::Expr::Let(Pattern::Ident(ident), rhs) => {
                     let opt_rhs = self.optimize_node(Shared::clone(rhs), user_defs);
-                    if let ast::Expr::Literal(lit) = &*opt_rhs.expr {
+                    if let ast::Expr::Literal(lit) = &opt_rhs.expr {
                         env_insert(&mut env, ident.name, lit.clone());
                     } else {
                         env_remove(&mut env, ident.name);
@@ -226,7 +226,7 @@ impl Optimizer {
                     } else {
                         result.push(Shared::new(ast::Node {
                             token_id,
-                            expr: Shared::new(ast::Expr::Let(Pattern::Ident(ident.clone()), opt_rhs)),
+                            expr: ast::Expr::Let(Pattern::Ident(ident.clone()), opt_rhs),
                         }));
                     }
                 }
@@ -248,7 +248,7 @@ impl Optimizer {
         // Fast path: skip allocation when no consecutive Selector nodes exist.
         let has_consecutive = program
             .windows(2)
-            .any(|w| matches!(&*w[0].expr, ast::Expr::Selector(_)) && matches!(&*w[1].expr, ast::Expr::Selector(_)));
+            .any(|w| matches!(&w[0].expr, ast::Expr::Selector(_)) && matches!(&w[1].expr, ast::Expr::Selector(_)));
         if !has_consecutive {
             return program;
         }
@@ -257,13 +257,13 @@ impl Optimizer {
         let mut iter = program.into_iter().peekable();
 
         while let Some(node) = iter.next() {
-            if let ast::Expr::Selector(sel) = &*node.expr {
+            if let ast::Expr::Selector(sel) = &node.expr {
                 let token_id = node.token_id;
                 let mut chain: SmallVec<[Selector; 4]> = SmallVec::new();
                 chain.push(sel.clone());
 
                 while let Some(next) = iter.peek() {
-                    if let ast::Expr::Selector(next_sel) = &*next.expr {
+                    if let ast::Expr::Selector(next_sel) = &next.expr {
                         chain.push(next_sel.clone());
                         iter.next();
                     } else {
@@ -276,7 +276,7 @@ impl Optimizer {
                 } else {
                     result.push(Shared::new(ast::Node {
                         token_id,
-                        expr: Shared::new(ast::Expr::SelectorChain(chain)),
+                        expr: ast::Expr::SelectorChain(chain),
                     }));
                 }
             } else {
@@ -294,12 +294,12 @@ impl Optimizer {
         }
         let token_id = node.token_id;
 
-        match &*node.expr {
+        match &node.expr {
             ast::Expr::Ident(ident) => {
                 if let Some(lit) = env_get(env, ident.name) {
                     return Shared::new(ast::Node {
                         token_id,
-                        expr: Shared::new(ast::Expr::Literal(lit.clone())),
+                        expr: ast::Expr::Literal(lit.clone()),
                     });
                 }
                 node
@@ -311,7 +311,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Call(ident.clone(), subst_args)),
+                    expr: ast::Expr::Call(ident.clone(), subst_args),
                 })
             }
             ast::Expr::CallDynamic(callable, args) => {
@@ -322,7 +322,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::CallDynamic(subst_callable, subst_args)),
+                    expr: ast::Expr::CallDynamic(subst_callable, subst_args),
                 })
             }
             ast::Expr::SelectorCall(selector, args) => {
@@ -332,7 +332,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::SelectorCall(selector.clone(), subst_args)),
+                    expr: ast::Expr::SelectorCall(selector.clone(), subst_args),
                 })
             }
             ast::Expr::If(branches) => {
@@ -347,7 +347,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::If(subst_branches)),
+                    expr: ast::Expr::If(subst_branches),
                 })
             }
             ast::Expr::Unless(branches) => {
@@ -362,7 +362,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Unless(subst_branches)),
+                    expr: ast::Expr::Unless(subst_branches),
                 })
             }
             ast::Expr::And(operands) => {
@@ -372,7 +372,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::And(subst)),
+                    expr: ast::Expr::And(subst),
                 })
             }
             ast::Expr::Or(operands) => {
@@ -382,27 +382,25 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Or(subst)),
+                    expr: ast::Expr::Or(subst),
                 })
             }
             ast::Expr::Paren(inner) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Paren(self.substitute_literals(Shared::clone(inner), env))),
+                expr: ast::Expr::Paren(self.substitute_literals(Shared::clone(inner), env)),
             }),
             // No error binder: neither branch introduces a new binding, so substitution is safe.
             ast::Expr::Try(try_expr, None, catch_expr) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Try(
+                expr: ast::Expr::Try(
                     self.substitute_literals(Shared::clone(try_expr), env),
                     None,
                     self.substitute_literals(Shared::clone(catch_expr), env),
-                )),
+                ),
             }),
             ast::Expr::Break(Some(val)) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Break(Some(
-                    self.substitute_literals(Shared::clone(val), env),
-                ))),
+                expr: ast::Expr::Break(Some(self.substitute_literals(Shared::clone(val), env))),
             }),
             // Substitute into Expr segments of interpolated strings so that
             // `let x = "hi" | s"${x}!"` can later be folded to `"hi!"`.
@@ -418,7 +416,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::InterpolatedString(subst_segs)),
+                    expr: ast::Expr::InterpolatedString(subst_segs),
                 })
             }
             // Scope-creating or leaf nodes: stop substitution here.
@@ -455,7 +453,7 @@ impl Optimizer {
         }
         let token_id = node.token_id;
 
-        match &*node.expr {
+        match &node.expr {
             ast::Expr::Call(ident, args) => {
                 let opt_args: Args = args.iter().map(|a| self.apply_inline(Shared::clone(a), fns)).collect();
 
@@ -465,7 +463,7 @@ impl Optimizer {
 
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Call(ident.clone(), opt_args)),
+                    expr: ast::Expr::Call(ident.clone(), opt_args),
                 })
             }
             // Recurse into sub-expressions — but not across scope-creating nodes (Def, Fn, Block).
@@ -481,34 +479,30 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::If(branches)),
+                    expr: ast::Expr::If(branches),
                 })
             }
             ast::Expr::And(ops) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::And(
-                    ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect(),
-                )),
+                expr: ast::Expr::And(ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect()),
             }),
             ast::Expr::Or(ops) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Or(
-                    ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect(),
-                )),
+                expr: ast::Expr::Or(ops.iter().map(|o| self.apply_inline(Shared::clone(o), fns)).collect()),
             }),
             ast::Expr::Try(try_expr, None, catch_expr) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Try(
+                expr: ast::Expr::Try(
                     self.apply_inline(Shared::clone(try_expr), fns),
                     None,
                     self.apply_inline(Shared::clone(catch_expr), fns),
-                )),
+                ),
             }),
             ast::Expr::SelectorCall(sel, args) => {
                 let opt_args: Args = args.iter().map(|a| self.apply_inline(Shared::clone(a), fns)).collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::SelectorCall(sel.clone(), opt_args)),
+                    expr: ast::Expr::SelectorCall(sel.clone(), opt_args),
                 })
             }
             // Scope-creating and leaf nodes are left unchanged.
@@ -519,7 +513,7 @@ impl Optimizer {
     fn optimize_node(&self, node: Shared<ast::Node>, user_defs: &FxHashSet<Ident>) -> Shared<ast::Node> {
         let token_id = node.token_id;
 
-        match &*node.expr {
+        match &node.expr {
             ast::Expr::Paren(inner) => self.optimize_node(Shared::clone(inner), user_defs),
             ast::Expr::Call(ident, args) => {
                 let opt_args: Args = args
@@ -535,7 +529,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Call(ident.clone(), opt_args)),
+                    expr: ast::Expr::Call(ident.clone(), opt_args),
                 })
             }
             ast::Expr::If(branches) => self.optimize_if(token_id, branches, user_defs),
@@ -548,23 +542,23 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Block(opt)),
+                    expr: ast::Expr::Block(opt),
                 })
             }
             ast::Expr::Def(ident, params, program) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Def(
+                expr: ast::Expr::Def(
                     ident.clone(),
                     self.optimize_params(params, user_defs),
                     self.optimize_nested(program.clone(), user_defs),
-                )),
+                ),
             }),
             ast::Expr::Fn(params, program) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Fn(
+                expr: ast::Expr::Fn(
                     self.optimize_params(params, user_defs),
                     self.optimize_nested(program.clone(), user_defs),
-                )),
+                ),
             }),
             ast::Expr::While(cond, program) => {
                 let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
@@ -574,7 +568,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::While(opt_cond, opt_body)),
+                    expr: ast::Expr::While(opt_cond, opt_body),
                 })
             }
             ast::Expr::Loop(program) => {
@@ -584,7 +578,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Loop(opt)),
+                    expr: ast::Expr::Loop(opt),
                 })
             }
             ast::Expr::Until(cond, program) => {
@@ -595,7 +589,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Until(opt_cond, opt_body)),
+                    expr: ast::Expr::Until(opt_cond, opt_body),
                 })
             }
             ast::Expr::Unless(branches) => {
@@ -610,7 +604,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Unless(opt_branches)),
+                    expr: ast::Expr::Unless(opt_branches),
                 })
             }
             ast::Expr::Foreach(ident, values, program) => {
@@ -621,7 +615,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Foreach(ident.clone(), opt_values, opt_body)),
+                    expr: ast::Expr::Foreach(ident.clone(), opt_values, opt_body),
                 })
             }
             ast::Expr::As(ident, inner) => {
@@ -631,7 +625,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::As(ident.clone(), opt_inner)),
+                    expr: ast::Expr::As(ident.clone(), opt_inner),
                 })
             }
             ast::Expr::Let(pattern, inner) => {
@@ -641,7 +635,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Let(pattern.clone(), opt_inner)),
+                    expr: ast::Expr::Let(pattern.clone(), opt_inner),
                 })
             }
             ast::Expr::Var(pattern, inner) => {
@@ -651,7 +645,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Var(pattern.clone(), opt_inner)),
+                    expr: ast::Expr::Var(pattern.clone(), opt_inner),
                 })
             }
             ast::Expr::Assign(ident, inner) => {
@@ -661,7 +655,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Assign(ident.clone(), opt_inner)),
+                    expr: ast::Expr::Assign(ident.clone(), opt_inner),
                 })
             }
             ast::Expr::Try(try_expr, error_binder, catch_expr) => {
@@ -672,7 +666,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Try(opt_try, error_binder.clone(), opt_catch)),
+                    expr: ast::Expr::Try(opt_try, error_binder.clone(), opt_catch),
                 })
             }
             ast::Expr::Break(Some(val)) => {
@@ -682,7 +676,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Break(Some(opt_val))),
+                    expr: ast::Expr::Break(Some(opt_val)),
                 })
             }
             ast::Expr::Match(value_node, arms) => {
@@ -700,7 +694,7 @@ impl Optimizer {
                     .collect();
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::Match(opt_value, opt_arms)),
+                    expr: ast::Expr::Match(opt_value, opt_arms),
                 })
             }
             ast::Expr::CallDynamic(callable, args) => {
@@ -716,7 +710,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::CallDynamic(opt_callable, opt_args)),
+                    expr: ast::Expr::CallDynamic(opt_callable, opt_args),
                 })
             }
             ast::Expr::SelectorCall(selector, args) => {
@@ -729,7 +723,7 @@ impl Optimizer {
                 }
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::SelectorCall(selector.clone(), opt_args)),
+                    expr: ast::Expr::SelectorCall(selector.clone(), opt_args),
                 })
             }
             ast::Expr::InterpolatedString(segments) => {
@@ -740,7 +734,7 @@ impl Optimizer {
                     .map(|seg| match seg {
                         StringSegment::Expr(n) => {
                             let opt = self.optimize_node(Shared::clone(n), user_defs);
-                            if let ast::Expr::Literal(Literal::String(s)) = &*opt.expr {
+                            if let ast::Expr::Literal(Literal::String(s)) = &opt.expr {
                                 StringSegment::Text(s.clone())
                             } else {
                                 StringSegment::Expr(opt)
@@ -759,21 +753,18 @@ impl Optimizer {
                     });
                     return Shared::new(ast::Node {
                         token_id,
-                        expr: Shared::new(ast::Expr::Literal(Literal::String(folded))),
+                        expr: ast::Expr::Literal(Literal::String(folded)),
                     });
                 }
 
                 Shared::new(ast::Node {
                     token_id,
-                    expr: Shared::new(ast::Expr::InterpolatedString(opt_segs)),
+                    expr: ast::Expr::InterpolatedString(opt_segs),
                 })
             }
             ast::Expr::Module(ident, program) => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Module(
-                    ident.clone(),
-                    self.optimize_nested(program.clone(), user_defs),
-                )),
+                expr: ast::Expr::Module(ident.clone(), self.optimize_nested(program.clone(), user_defs)),
             }),
             ast::Expr::Literal(_)
             | ast::Expr::Ident(_)
@@ -806,7 +797,7 @@ impl Optimizer {
         let make_lit = |lit: Literal| {
             Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Literal(lit)),
+                expr: ast::Expr::Literal(lit),
             })
         };
 
@@ -1029,7 +1020,7 @@ impl Optimizer {
                 }
                 Some(cond) => {
                     let opt_cond = self.optimize_node(Shared::clone(cond), user_defs);
-                    match &*opt_cond.expr {
+                    match &opt_cond.expr {
                         ast::Expr::Literal(Literal::Bool(true)) => {
                             remaining.push((None, opt_body));
                             break;
@@ -1048,12 +1039,12 @@ impl Optimizer {
         match remaining.len() {
             0 => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Literal(Literal::None)),
+                expr: ast::Expr::Literal(Literal::None),
             }),
             1 if remaining[0].0.is_none() => Shared::clone(&remaining[0].1),
             _ => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::If(remaining)),
+                expr: ast::Expr::If(remaining),
             }),
         }
     }
@@ -1068,11 +1059,11 @@ impl Optimizer {
 
         for op in operands {
             let opt = self.optimize_node(Shared::clone(op), user_defs);
-            match &*opt.expr {
+            match &opt.expr {
                 ast::Expr::Literal(lit) if !literal_is_truthy(lit) => {
                     return Shared::new(ast::Node {
                         token_id,
-                        expr: Shared::new(ast::Expr::Literal(Literal::Bool(false))),
+                        expr: ast::Expr::Literal(Literal::Bool(false)),
                     });
                 }
                 ast::Expr::Literal(lit) if literal_is_truthy(lit) => continue,
@@ -1083,11 +1074,11 @@ impl Optimizer {
         match remaining.len() {
             0 => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Literal(Literal::Bool(true))),
+                expr: ast::Expr::Literal(Literal::Bool(true)),
             }),
             _ => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::And(remaining)),
+                expr: ast::Expr::And(remaining),
             }),
         }
     }
@@ -1102,7 +1093,7 @@ impl Optimizer {
 
         for op in operands {
             let opt = self.optimize_node(Shared::clone(op), user_defs);
-            match &*opt.expr {
+            match &opt.expr {
                 ast::Expr::Literal(lit) if literal_is_truthy(lit) => return opt,
                 ast::Expr::Literal(lit) if !literal_is_truthy(lit) => continue,
                 _ => remaining.push(opt),
@@ -1112,11 +1103,11 @@ impl Optimizer {
         match remaining.len() {
             0 => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Literal(Literal::Bool(false))),
+                expr: ast::Expr::Literal(Literal::Bool(false)),
             }),
             _ => Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Or(remaining)),
+                expr: ast::Expr::Or(remaining),
             }),
         }
     }
@@ -1151,7 +1142,7 @@ struct InlinableFn {
 fn collect_inlinable(program: &Program) -> FxHashMap<Ident, InlinableFn> {
     let mut map = FxHashMap::default();
     for node in program {
-        let ast::Expr::Def(ident, params, body) = &*node.expr else {
+        let ast::Expr::Def(ident, params, body) = &node.expr else {
             continue;
         };
         if body.len() != 1 {
@@ -1178,7 +1169,7 @@ fn collect_inlinable(program: &Program) -> FxHashMap<Ident, InlinableFn> {
 
 /// Returns `true` if `node` contains a direct or indirect call to `fn_name`.
 fn has_recursion(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Call(ident, args) => ident.name == fn_name || args.iter().any(|a| has_recursion(a, fn_name)),
         ast::Expr::Ident(ident) => ident.name == fn_name,
         ast::Expr::And(ops) | ast::Expr::Or(ops) => ops.iter().any(|o| has_recursion(o, fn_name)),
@@ -1199,7 +1190,7 @@ fn has_recursion(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
 /// Conservative: complex sub-expressions (blocks, lambdas, loops, let/var) cause
 /// the function to return `true` immediately so that inlining is skipped.
 fn has_free_vars(node: &Shared<ast::Node>, params: &[Ident]) -> bool {
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Ident(ident) => !params.contains(&ident.name),
         ast::Expr::Literal(_) | ast::Expr::Self_ | ast::Expr::Selector(_) | ast::Expr::SelectorChain(_) => false,
         ast::Expr::Call(callee, args) => {
@@ -1229,7 +1220,7 @@ fn substitute_params(
     call_token_id: TokenId,
 ) -> Shared<ast::Node> {
     let token_id = call_token_id;
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Ident(ident) => {
             if let Some(pos) = params.iter().position(|p| *p == ident.name) {
                 return Shared::clone(&args[pos]);
@@ -1243,7 +1234,7 @@ fn substitute_params(
                 .collect();
             Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::Call(ident.clone(), subst)),
+                expr: ast::Expr::Call(ident.clone(), subst),
             })
         }
         ast::Expr::SelectorCall(sel, call_args) => {
@@ -1253,24 +1244,24 @@ fn substitute_params(
                 .collect();
             Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::SelectorCall(sel.clone(), subst)),
+                expr: ast::Expr::SelectorCall(sel.clone(), subst),
             })
         }
         ast::Expr::And(ops) => Shared::new(ast::Node {
             token_id,
-            expr: Shared::new(ast::Expr::And(
+            expr: ast::Expr::And(
                 ops.iter()
                     .map(|o| substitute_params(Shared::clone(o), params, args, call_token_id))
                     .collect(),
-            )),
+            ),
         }),
         ast::Expr::Or(ops) => Shared::new(ast::Node {
             token_id,
-            expr: Shared::new(ast::Expr::Or(
+            expr: ast::Expr::Or(
                 ops.iter()
                     .map(|o| substitute_params(Shared::clone(o), params, args, call_token_id))
                     .collect(),
-            )),
+            ),
         }),
         ast::Expr::If(branches) => {
             let branches: ast::Branches = branches
@@ -1285,17 +1276,17 @@ fn substitute_params(
                 .collect();
             Shared::new(ast::Node {
                 token_id,
-                expr: Shared::new(ast::Expr::If(branches)),
+                expr: ast::Expr::If(branches),
             })
         }
         // `has_free_vars` already excludes error-binder bodies from inlining.
         ast::Expr::Try(t, error_binder, c) => Shared::new(ast::Node {
             token_id,
-            expr: Shared::new(ast::Expr::Try(
+            expr: ast::Expr::Try(
                 substitute_params(Shared::clone(t), params, args, call_token_id),
                 error_binder.clone(),
                 substitute_params(Shared::clone(c), params, args, call_token_id),
-            )),
+            ),
         }),
         ast::Expr::Paren(inner) => substitute_params(Shared::clone(inner), params, args, call_token_id),
         _ => node,
@@ -1303,7 +1294,7 @@ fn substitute_params(
 }
 
 fn literal_of(node: &Shared<ast::Node>) -> Option<Literal> {
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Literal(lit) => Some(lit.clone()),
         _ => None,
     }
@@ -1326,14 +1317,14 @@ fn apply_tco_transforms(program: Program) -> Program {
     program
         .into_iter()
         .map(|node| {
-            let ast::Expr::Def(ident, params, body) = &*node.expr else {
+            let ast::Expr::Def(ident, params, body) = &node.expr else {
                 return node;
             };
             let param_names: Vec<Ident> = params.iter().map(|p| p.ident.name).collect();
             match try_tco_transform(ident.name, &param_names, body, node.token_id) {
                 Some(new_body) => Shared::new(ast::Node {
                     token_id: node.token_id,
-                    expr: Shared::new(ast::Expr::Def(ident.clone(), params.clone(), new_body)),
+                    expr: ast::Expr::Def(ident.clone(), params.clone(), new_body),
                 }),
                 None => node,
             }
@@ -1348,7 +1339,7 @@ fn try_tco_transform(fn_name: Ident, param_names: &[Ident], body: &Program, toke
     if body.len() != 1 {
         return None;
     }
-    let ast::Expr::If(branches) = &*body[0].expr else {
+    let ast::Expr::If(branches) = &body[0].expr else {
         return None;
     };
 
@@ -1374,12 +1365,12 @@ fn try_tco_transform(fn_name: Ident, param_names: &[Ident], body: &Program, toke
 
 /// Returns `true` if `node` is exactly `Call(fn_name, args)`.
 fn is_direct_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
-    matches!(&*node.expr, ast::Expr::Call(ident, _) if ident.name == fn_name)
+    matches!(&node.expr, ast::Expr::Call(ident, _) if ident.name == fn_name)
 }
 
 /// Returns `true` if `node` contains any call to `fn_name` at any depth.
 fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Call(ident, args) => ident.name == fn_name || args.iter().any(|a| contains_self_call(a, fn_name)),
         ast::Expr::Ident(ident) => ident.name == fn_name,
         ast::Expr::And(ops) | ast::Expr::Or(ops) => ops.iter().any(|o| contains_self_call(o, fn_name)),
@@ -1408,12 +1399,7 @@ fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
 /// }
 /// ```
 fn build_tco_loop(fn_name: Ident, param_names: &[Ident], branches: &Branches, token_id: TokenId) -> Program {
-    let syn = |expr: ast::Expr| -> Shared<ast::Node> {
-        Shared::new(ast::Node {
-            token_id,
-            expr: Shared::new(expr),
-        })
-    };
+    let syn = |expr: ast::Expr| -> Shared<ast::Node> { Shared::new(ast::Node { token_id, expr }) };
 
     let tco_ident = |p: Ident| IdentWithToken::new(&format!("__tco_{}", p.as_str()));
 
@@ -1444,7 +1430,7 @@ fn build_tco_loop(fn_name: Ident, param_names: &[Ident], branches: &Branches, to
         .iter()
         .map(|(cond, body)| {
             let new_body = if is_direct_self_call(body, fn_name) {
-                let ast::Expr::Call(_, rec_args) = &*body.expr else {
+                let ast::Expr::Call(_, rec_args) = &body.expr else {
                     unreachable!()
                 };
                 // __tco_p = new_p; continue
@@ -1480,7 +1466,7 @@ fn collect_called_fns(program: &Program) -> FxHashSet<Ident> {
 }
 
 fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>) {
-    match &*node.expr {
+    match &node.expr {
         ast::Expr::Call(ident, args) => {
             set.insert(ident.name);
             for a in args {
@@ -1574,7 +1560,7 @@ fn eliminate_dead_defs(program: Program, inlinable: &FxHashMap<Ident, InlinableF
     let used = collect_called_fns(&program);
     program
         .into_iter()
-        .filter(|node| match &*node.expr {
+        .filter(|node| match &node.expr {
             ast::Expr::Def(ident, _, _) => !inlinable.contains_key(&ident.name) || used.contains(&ident.name),
             _ => true,
         })
@@ -1621,7 +1607,7 @@ mod tests {
     }
 
     fn assert_literal(node: &crate::Shared<crate::AstNode>, expected: &str, ctx: &str) {
-        match &*node.expr {
+        match &node.expr {
             Expr::Literal(lit) => assert_eq!(lit.to_string(), expected, "{ctx}"),
             other => panic!("{ctx}: expected Literal({expected:?}), got {other:?}"),
         }
@@ -1632,7 +1618,7 @@ mod tests {
         let prog = ast_none("1 + 2");
         assert_eq!(prog.len(), 1);
         assert!(
-            matches!(&*prog[0].expr, Expr::Call(..)),
+            matches!(&prog[0].expr, Expr::Call(..)),
             "None: expected Call, got {:?}",
             prog[0].expr
         );
@@ -1642,8 +1628,8 @@ mod tests {
     fn none_consecutive_selectors_stay_separate() {
         let prog = ast_none(".h1 | .text");
         assert_eq!(prog.len(), 2, "None must not merge selectors");
-        assert!(matches!(&*prog[0].expr, Expr::Selector(_)));
-        assert!(matches!(&*prog[1].expr, Expr::Selector(_)));
+        assert!(matches!(&prog[0].expr, Expr::Selector(_)));
+        assert!(matches!(&prog[1].expr, Expr::Selector(_)));
     }
 
     #[test]
@@ -1651,7 +1637,7 @@ mod tests {
         let prog = ast_none("if (true): 1 else: 2");
         assert_eq!(prog.len(), 1);
         assert!(
-            matches!(&*prog[0].expr, Expr::If(_)),
+            matches!(&prog[0].expr, Expr::If(_)),
             "None: expected If, got {:?}",
             prog[0].expr
         );
@@ -1662,7 +1648,7 @@ mod tests {
         let prog = ast_none("false && .");
         assert_eq!(prog.len(), 1);
         assert!(
-            matches!(&*prog[0].expr, Expr::And(_)),
+            matches!(&prog[0].expr, Expr::And(_)),
             "None: expected And, got {:?}",
             prog[0].expr
         );
@@ -1673,7 +1659,7 @@ mod tests {
         let prog = ast_none("s\"hello world\"");
         assert_eq!(prog.len(), 1);
         assert!(
-            matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+            matches!(&prog[0].expr, Expr::InterpolatedString(_)),
             "None: expected InterpolatedString, got {:?}",
             prog[0].expr
         );
@@ -1683,15 +1669,15 @@ mod tests {
     fn none_def_body_stays_as_if_no_tco() {
         let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
         assert_eq!(prog.len(), 1);
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "None: must not apply TCO; Loop found in body"
         );
         assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::If(_))),
+            body.iter().any(|n| matches!(&n.expr, Expr::If(_))),
             "None: original If must remain in body"
         );
     }
@@ -1760,7 +1746,7 @@ mod tests {
             let prog = ast_with("1 / 0", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: div-by-zero must stay as Call, got {:?}",
                 prog[0].expr
             );
@@ -1774,7 +1760,7 @@ mod tests {
             let prog = ast_with("add(., 1)", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: dynamic arg must prevent folding, got {:?}",
                 prog[0].expr
             );
@@ -1792,7 +1778,7 @@ mod tests {
             let prog = ast_with(query, level);
             assert_eq!(prog.len(), 1, "{level:?}: {query}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: {query} must stay a Call, got {:?}",
                 prog[0].expr
             );
@@ -1824,7 +1810,7 @@ mod tests {
             let prog = ast_with("if (false): 1", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::None)),
+                matches!(&prog[0].expr, Expr::Literal(Literal::None)),
                 "{level:?}: expected Literal(None), got {:?}",
                 prog[0].expr
             );
@@ -1847,7 +1833,7 @@ mod tests {
             let prog = ast_with("if (.): 1 else: 2", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::If(_)),
+                matches!(&prog[0].expr, Expr::If(_)),
                 "{level:?}: dynamic condition must not eliminate branch, got {:?}",
                 prog[0].expr
             );
@@ -1870,7 +1856,7 @@ mod tests {
             let prog = ast_with("if (false): 1 elif (false): 2 elif (false): 3", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::None)),
+                matches!(&prog[0].expr, Expr::Literal(Literal::None)),
                 "{level:?}: expected Literal(None), got {:?}",
                 prog[0].expr
             );
@@ -1894,7 +1880,7 @@ mod tests {
             let prog = ast_with("false && .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                matches!(&prog[0].expr, Expr::Literal(Literal::Bool(false))),
                 "{level:?}: expected Literal(false), got {:?}",
                 prog[0].expr
             );
@@ -1908,7 +1894,7 @@ mod tests {
             let prog = ast_with("true && .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::And(_)),
+                matches!(&prog[0].expr, Expr::And(_)),
                 "{level:?}: expected And([.]), got {:?}",
                 prog[0].expr
             );
@@ -1921,7 +1907,7 @@ mod tests {
             let prog = ast_with("true && true && true", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(true))),
+                matches!(&prog[0].expr, Expr::Literal(Literal::Bool(true))),
                 "{level:?}: expected Literal(true), got {:?}",
                 prog[0].expr
             );
@@ -1935,7 +1921,7 @@ mod tests {
             let prog = ast_with("true || .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(true))),
+                matches!(&prog[0].expr, Expr::Literal(Literal::Bool(true))),
                 "{level:?}: expected Literal(true), got {:?}",
                 prog[0].expr
             );
@@ -1949,7 +1935,7 @@ mod tests {
             let prog = ast_with("false || .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Or(_)),
+                matches!(&prog[0].expr, Expr::Or(_)),
                 "{level:?}: expected Or([.]), got {:?}",
                 prog[0].expr
             );
@@ -1962,7 +1948,7 @@ mod tests {
             let prog = ast_with("false || false || false", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                matches!(&prog[0].expr, Expr::Literal(Literal::Bool(false))),
                 "{level:?}: expected Literal(false), got {:?}",
                 prog[0].expr
             );
@@ -1977,7 +1963,7 @@ mod tests {
             let prog = ast_with(query, level);
             assert_eq!(prog.len(), 1, "{level:?}: expected single SelectorChain node");
             assert!(
-                matches!(&*prog[0].expr, Expr::SelectorChain(c) if c.len() == expected_len),
+                matches!(&prog[0].expr, Expr::SelectorChain(c) if c.len() == expected_len),
                 "{level:?}: expected SelectorChain(len={expected_len}), got {:?}",
                 prog[0].expr
             );
@@ -1990,7 +1976,7 @@ mod tests {
             let prog = ast_with(".h1", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Selector(_)),
+                matches!(&prog[0].expr, Expr::Selector(_)),
                 "{level:?}: single selector must NOT become SelectorChain"
             );
         }
@@ -2004,7 +1990,7 @@ mod tests {
             let prog = ast_with(query, level);
             assert!(prog.len() > 1, "{level:?}: call between selectors must break the chain");
             assert!(
-                !matches!(&*prog[0].expr, Expr::SelectorChain(_)),
+                !matches!(&prog[0].expr, Expr::SelectorChain(_)),
                 "{level:?}: must not merge selectors across a call"
             );
         }
@@ -2014,8 +2000,8 @@ mod tests {
     fn none_level_does_not_merge_selectors() {
         let prog = ast_none(".h1 | .text");
         assert_eq!(prog.len(), 2, "None must not merge consecutive selectors");
-        assert!(matches!(&*prog[0].expr, Expr::Selector(_)));
-        assert!(matches!(&*prog[1].expr, Expr::Selector(_)));
+        assert!(matches!(&prog[0].expr, Expr::Selector(_)));
+        assert!(matches!(&prog[1].expr, Expr::Selector(_)));
     }
 
     #[test]
@@ -2025,11 +2011,11 @@ mod tests {
         // has one top-level SelectorChain (the inlined call site) and no Def.
         let prog = ast_full("def extract: .h1 | .text; | extract()");
         assert!(
-            prog.iter().any(|n| matches!(&*n.expr, Expr::SelectorChain(_))),
+            prog.iter().any(|n| matches!(&n.expr, Expr::SelectorChain(_))),
             "Full: inlined extract() must produce a top-level SelectorChain"
         );
         assert!(
-            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            !prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: fully-inlined Def must be eliminated"
         );
     }
@@ -2042,7 +2028,7 @@ mod tests {
             let prog = ast_with(query, level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(_)),
+                matches!(&prog[0].expr, Expr::Literal(_)),
                 "{level:?}: all-text interpolated string must fold to Literal"
             );
             assert_literal(&prog[0], expected, &format!("{level:?}"));
@@ -2056,7 +2042,7 @@ mod tests {
             let prog = ast_with("s\"${self} end\"", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+                matches!(&prog[0].expr, Expr::InterpolatedString(_)),
                 "{level:?}: dynamic segment must prevent folding to Literal"
             );
         }
@@ -2068,7 +2054,7 @@ mod tests {
         let prog = ast_none("s\"hello world\"");
         assert_eq!(prog.len(), 1);
         assert!(
-            matches!(&*prog[0].expr, Expr::InterpolatedString(_)),
+            matches!(&prog[0].expr, Expr::InterpolatedString(_)),
             "None must not fold interpolated strings"
         );
     }
@@ -2087,7 +2073,7 @@ mod tests {
         let prog = ast_basic("let x = 5 | x + 1");
         assert_eq!(prog.len(), 2);
         assert!(
-            matches!(&*prog[1].expr, Expr::Call(..)),
+            matches!(&prog[1].expr, Expr::Call(..)),
             "Basic must not propagate let-literals; expected Call, got {:?}",
             prog[1].expr
         );
@@ -2117,7 +2103,7 @@ mod tests {
             let prog = ast_with("let x = add(1, .) | x + 0", level);
             assert_eq!(prog.len(), 2, "{level:?}");
             assert!(
-                !matches!(&*prog[1].expr, Expr::Literal(_)),
+                !matches!(&prog[1].expr, Expr::Literal(_)),
                 "{level:?}: non-literal let must not propagate to a literal, got {:?}",
                 prog[1].expr
             );
@@ -2130,7 +2116,7 @@ mod tests {
         let prog = ast_full("def double(x): x * 2; | double(4)");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(_)),
+            matches!(&last.expr, Expr::Literal(_)),
             "Full: inlined+folded call must be Literal, got {:?}",
             last.expr
         );
@@ -2143,7 +2129,7 @@ mod tests {
         let prog = ast_basic("def double(x): x * 2; | double(4)");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Call(..)),
+            matches!(&last.expr, Expr::Call(..)),
             "Basic must not inline; expected Call, got {:?}",
             last.expr
         );
@@ -2154,7 +2140,7 @@ mod tests {
         let prog = ast_full("def pi: 3; | pi()");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(_)),
+            matches!(&last.expr, Expr::Literal(_)),
             "Full: 0-param constant alias must inline to Literal, got {:?}",
             last.expr
         );
@@ -2167,7 +2153,7 @@ mod tests {
         let prog = ast_full("def fact(n): if (n == 0): 1 else: n * fact(n - 1); | fact(5)");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Call(..)),
+            matches!(&last.expr, Expr::Call(..)),
             "Full: recursive function must not be inlined; expected Call, got {:?}",
             last.expr
         );
@@ -2179,7 +2165,7 @@ mod tests {
         let prog = ast_full("let k = 10 | def add_k(x): x + k; | add_k(5)");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Call(..)),
+            matches!(&last.expr, Expr::Call(..)),
             "Full: function with free var must not be inlined; expected Call, got {:?}",
             last.expr
         );
@@ -2191,7 +2177,7 @@ mod tests {
         let prog = ast_full("def add1(x): x + 1; | def mul2(x): x * 2; | mul2(add1(3))");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(_)),
+            matches!(&last.expr, Expr::Literal(_)),
             "Full: chained inline+fold must collapse to Literal, got {:?}",
             last.expr
         );
@@ -2201,16 +2187,16 @@ mod tests {
     #[test]
     fn tco_tail_recursive_def_gets_loop_in_full() {
         let prog = ast_full("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "Full: TCO-transformed Def must contain a Loop node"
         );
         // The original top-level If must be replaced — not left alongside the Loop.
         assert!(
-            !body.iter().any(|n| matches!(&*n.expr, Expr::If(_))),
+            !body.iter().any(|n| matches!(&n.expr, Expr::If(_))),
             "Full: original If must be replaced by Loop after TCO"
         );
     }
@@ -2218,11 +2204,11 @@ mod tests {
     #[test]
     fn tco_not_applied_in_basic() {
         let prog = ast_basic("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "Basic must not apply TCO; Loop found unexpectedly"
         );
     }
@@ -2230,11 +2216,11 @@ mod tests {
     #[test]
     fn tco_not_applied_in_none() {
         let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "None must not apply TCO"
         );
     }
@@ -2243,11 +2229,11 @@ mod tests {
     fn tco_not_applied_to_non_tail_call() {
         // `n * fact(n-1)` is a binary op wrapping the recursive call — NOT a tail call.
         let prog = ast_full("def fact(n): if (n == 0): 1 else: n * fact(n - 1);");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            !body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "Full: non-tail-recursive function must not be TCO-transformed"
         );
     }
@@ -2255,11 +2241,11 @@ mod tests {
     #[test]
     fn tco_multi_param_def_gets_loop() {
         let prog = ast_full("def loop2(a, b): if (a == 0): b else: loop2(a - 1, b + 1);");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::Loop(_))),
+            body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
             "Full: multi-param tail-recursive Def must contain Loop"
         );
     }
@@ -2278,7 +2264,7 @@ mod tests {
         let prog = ast_full("def always_false(x): x == 999; | if (always_false(0)): \"bad\" else: \"good\"");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(_)),
+            matches!(&last.expr, Expr::Literal(_)),
             "Full: inline+dead-branch must collapse to Literal, got {:?}",
             last.expr
         );
@@ -2291,7 +2277,7 @@ mod tests {
         let prog = ast_full("def inc(x): x + 1; | let n = 9 | inc(n)");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(_)),
+            matches!(&last.expr, Expr::Literal(_)),
             "Full: propagation+inline+fold must collapse to Literal, got {:?}",
             last.expr
         );
@@ -2315,7 +2301,7 @@ mod tests {
         let prog = ast_full("let n = 0 | n == 0 && true");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Literal(Literal::Bool(true))),
+            matches!(&last.expr, Expr::Literal(Literal::Bool(true))),
             "Full: propagation+and fold must collapse to Literal(true), got {:?}",
             last.expr
         );
@@ -2377,7 +2363,7 @@ mod tests {
             let prog = ast_with("to_number(\"abc\")", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: unparsable to_number must stay as Call, got {:?}",
                 prog[0].expr
             );
@@ -2418,7 +2404,7 @@ mod tests {
             let prog = ast_with(query, level);
             assert_eq!(prog.len(), 1, "{level:?}: {query}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: {query} must stay a Call, got {:?}",
                 prog[0].expr
             );
@@ -2473,7 +2459,7 @@ mod tests {
             let prog = ast_with("coalesce(None, .)", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Self_),
+                matches!(&prog[0].expr, Expr::Self_),
                 "{level:?}: coalesce(None, .) must fold to Self_, got {:?}",
                 prog[0].expr
             );
@@ -2554,7 +2540,7 @@ mod tests {
                 let prog = ast_with(q, level);
                 assert_eq!(prog.len(), 1, "{level:?}: {q}");
                 assert!(
-                    matches!(&*prog[0].expr, Expr::Call(..)),
+                    matches!(&prog[0].expr, Expr::Call(..)),
                     "{level:?}: {q} must remain Call"
                 );
             }
@@ -2613,7 +2599,7 @@ mod tests {
         for q in ["floor(.)", "abs(.)"] {
             let prog = ast_basic(q);
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{q} with dynamic arg must stay Call"
             );
         }
@@ -2668,11 +2654,11 @@ mod tests {
         // while(.h1 | .text) is only 2 nodes in the condition, but the condition
         // itself is a single Call node; so we check a def body instead.
         let prog = ast_basic("def f: .h1 | .text;");
-        let Expr::Def(_, _, body) = &*prog[0].expr else {
+        let Expr::Def(_, _, body) = &prog[0].expr else {
             panic!("expected Def");
         };
         assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::SelectorChain(_))),
+            body.iter().any(|n| matches!(&n.expr, Expr::SelectorChain(_))),
             "Basic: SelectorChain must be merged inside Def body"
         );
     }
@@ -2682,11 +2668,11 @@ mod tests {
         // A let binding defined at the top level must not propagate into a nested
         // def body — they are separate scopes.
         let prog = ast_full("let x = 99 | def f: x;");
-        let Expr::Def(_, _, body) = &*prog.iter().find(|n| matches!(&*n.expr, Expr::Def(..))).unwrap().expr else {
+        let Expr::Def(_, _, body) = &prog.iter().find(|n| matches!(&n.expr, Expr::Def(..))).unwrap().expr else {
             panic!("expected Def");
         };
         assert!(
-            matches!(&*body[0].expr, Expr::Ident(_)),
+            matches!(&body[0].expr, Expr::Ident(_)),
             "Full: top-level let must not propagate into def body, got {:?}",
             body[0].expr
         );
@@ -2697,7 +2683,7 @@ mod tests {
         // After inlining, the Def is no longer called → eliminated.
         let prog = ast_full("def double(x): x * 2; | double(5)");
         assert!(
-            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            !prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: fully-inlined Def must be eliminated from the program"
         );
         let last = prog.last().unwrap();
@@ -2709,7 +2695,7 @@ mod tests {
         // A recursive Def is not inlinable → must be kept.
         let prog = ast_full("def count(n): if (n == 0): 0 else: count(n - 1);");
         assert!(
-            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: non-inlinable Def must be preserved"
         );
     }
@@ -2719,7 +2705,7 @@ mod tests {
         // When a Def is passed as a first-class function value, it must not be eliminated.
         let prog = ast_full("def is_pos(x): gt(x, 0); | filter(array(1, -1, 2), is_pos)");
         assert!(
-            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: Def passed as first-class value must be preserved"
         );
     }
@@ -2731,7 +2717,7 @@ mod tests {
     fn def_called_only_inside_conditional_or_loop_not_eliminated(#[case] query: &str, #[case] expected: i64) {
         let prog = ast_full(query);
         assert!(
-            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: Def called only inside the branch/loop body must be preserved for query {query:?}"
         );
 
@@ -2754,8 +2740,8 @@ mod tests {
 
         let has_loop = |prog: &crate::ast::Program| {
             prog.iter().any(|n| {
-                if let Expr::Def(_, _, body) = &*n.expr {
-                    body.iter().any(|b| matches!(&*b.expr, Expr::Loop(_)))
+                if let Expr::Def(_, _, body) = &n.expr {
+                    body.iter().any(|b| matches!(&b.expr, Expr::Loop(_)))
                 } else {
                     false
                 }
@@ -2825,7 +2811,7 @@ mod tests {
         let prog = ast_basic("let x = 5 | if (x == 5): \"yes\" else: \"no\"");
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::If(_)),
+            matches!(&last.expr, Expr::If(_)),
             "Basic: let propagation must not happen, expected If, got {:?}",
             last.expr
         );
@@ -2875,7 +2861,7 @@ mod tests {
             let prog = ast_with("to_string(b\"hi\")", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: to_string(bytes) must stay as Call"
             );
         }
@@ -2889,7 +2875,7 @@ mod tests {
             let prog = ast_with("floor(nan())", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: floor(nan()) must not fold"
             );
         }
@@ -2925,7 +2911,7 @@ mod tests {
         // inc is called twice — both sites get inlined, so def is eliminated.
         let prog = ast_full("def inc(x): x + 1; | inc(3) | inc(7)");
         assert!(
-            !prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            !prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: Def with two inlined call sites must be eliminated"
         );
         let last = prog.last().unwrap();
@@ -2940,7 +2926,7 @@ mod tests {
         assert_eq!(prog.len(), 1);
         // The while node itself must remain (condition is not false-literal).
         assert!(
-            matches!(&*prog[0].expr, Expr::While(..)),
+            matches!(&prog[0].expr, Expr::While(..)),
             "Basic: while must remain when condition is dynamic-ish"
         );
     }
@@ -2953,7 +2939,7 @@ mod tests {
             assert_eq!(prog.len(), 1, "{level:?}");
             // The Try node remains because catch matters even when body is constant.
             assert!(
-                matches!(&*prog[0].expr, Expr::Try(..)),
+                matches!(&prog[0].expr, Expr::Try(..)),
                 "{level:?}: Try must remain; got {:?}",
                 prog[0].expr
             );
@@ -2965,11 +2951,11 @@ mod tests {
         // foreach(x, [1]): 2 + 3 — body constant 5 should fold.
         let prog = ast_basic("foreach(x, [1]): 2 + 3;");
         assert_eq!(prog.len(), 1, "Basic: foreach must be single node");
-        let Expr::Foreach(_, _, body) = &*prog[0].expr else {
+        let Expr::Foreach(_, _, body) = &prog[0].expr else {
             panic!("expected Foreach");
         };
         assert!(
-            body.iter().any(|n| matches!(&*n.expr, Expr::Literal(_))),
+            body.iter().any(|n| matches!(&n.expr, Expr::Literal(_))),
             "Basic: Foreach body must have folded constant"
         );
     }
@@ -2982,7 +2968,7 @@ mod tests {
             assert_eq!(prog.len(), 1, "{level:?}");
             // The match node remains but its value should be folded.
             assert!(
-                matches!(&*prog[0].expr, Expr::Match(..)),
+                matches!(&prog[0].expr, Expr::Match(..)),
                 "{level:?}: Match must remain when value is not a pattern-eliminating literal"
             );
         }
@@ -3012,11 +2998,11 @@ mod tests {
         // double(3) should be inlined and folded to 6.
         // fact(4) must remain as Call.
         assert!(
-            prog.iter().any(|n| matches!(&*n.expr, Expr::Def(..))),
+            prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: recursive fact must be preserved"
         );
         let last = prog.last().unwrap();
-        assert!(matches!(&*last.expr, Expr::Call(..)), "Full: fact(4) must stay as Call");
+        assert!(matches!(&last.expr, Expr::Call(..)), "Full: fact(4) must stay as Call");
     }
 
     // ---- substitute_literals into a CallDynamic node ----
@@ -3047,7 +3033,7 @@ mod tests {
             let prog = ast_with("0 && .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Literal(Literal::Bool(false))),
+                matches!(&prog[0].expr, Expr::Literal(Literal::Bool(false))),
                 "{level:?}: 0 && . must short-circuit to false"
             );
         }
@@ -3060,7 +3046,7 @@ mod tests {
             let prog = ast_with("1 && .", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::And(_)),
+                matches!(&prog[0].expr, Expr::And(_)),
                 "{level:?}: 1 && . truthy lit must be dropped leaving And([.])"
             );
         }
@@ -3073,7 +3059,7 @@ mod tests {
             let prog = ast_with("coalesce(., .)", level);
             assert_eq!(prog.len(), 1, "{level:?}");
             assert!(
-                matches!(&*prog[0].expr, Expr::Call(..)),
+                matches!(&prog[0].expr, Expr::Call(..)),
                 "{level:?}: coalesce(., .) with both dynamic must stay as Call"
             );
         }
@@ -3086,7 +3072,7 @@ mod tests {
         // Has a default param → not inlineable.
         let last = prog.last().unwrap();
         assert!(
-            matches!(&*last.expr, Expr::Call(..)),
+            matches!(&last.expr, Expr::Call(..)),
             "Full: def with default param must not be inlined; expected Call"
         );
     }

@@ -7,6 +7,7 @@ use crate::module::ModuleId;
 use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
+use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
@@ -21,19 +22,21 @@ type IfExpr = (Option<Shared<Node>>, Shared<Node>);
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::builtins::GET));
 
 pub struct Parser<'a, 'alloc> {
-    tokens: Peekable<core::slice::Iter<'a, Shared<Token>>>,
+    tokens: Peekable<core::slice::Iter<'a, Token>>,
+    token_cache: FxHashMap<*const Token, Shared<Token>>,
     token_arena: &'alloc mut Arena<Shared<Token>>,
     module_id: ModuleId,
 }
 
 impl<'a, 'alloc> Parser<'a, 'alloc> {
     pub fn new(
-        tokens: core::slice::Iter<'a, Shared<Token>>,
+        tokens: core::slice::Iter<'a, Token>,
         token_arena: &'alloc mut Arena<Shared<Token>>,
         module_id: ModuleId,
     ) -> Self {
         Self {
             tokens: tokens.peekable(),
+            token_cache: FxHashMap::default(),
             token_arena,
             module_id,
         }
@@ -43,6 +46,25 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_program(true)
     }
 
+    /// Returns the shared representation for a token retained by the AST.
+    ///
+    /// The lexer owns the input token vector for the duration of parsing, so its element address
+    /// is a stable identity. Caching here avoids eagerly allocating an `Rc`/`Arc` for every token
+    /// while still sharing a token when multiple AST fields retain it.
+    fn shared_token(&mut self, token: &Token) -> Shared<Token> {
+        let token_address = token as *const Token;
+        self.token_cache
+            .entry(token_address)
+            .or_insert_with(|| Shared::new(token.clone()))
+            .clone()
+    }
+
+    /// Retains a token in the token arena and returns its arena identifier.
+    fn alloc_token(&mut self, token: &Token) -> TokenId {
+        let token = self.shared_token(token);
+        self.token_arena.alloc(token)
+    }
+
     fn parse_program(&mut self, root: bool) -> Result<Program, SyntaxError> {
         let mut asts = Vec::with_capacity(64);
 
@@ -50,10 +72,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::Pipe | TokenKind::SemiColon => {
-                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
                 TokenKind::End => {
-                    return Err(SyntaxError::UnmatchedEnd((***token).clone()));
+                    return Err(SyntaxError::UnmatchedEnd((**token).clone()));
                 }
                 _ => {}
             },
@@ -72,9 +94,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         match self.tokens.peek() {
                             Some(next_token) if !matches!(next_token.kind, TokenKind::Eof) => {
                                 if matches!(token.kind, TokenKind::End) {
-                                    return Err(SyntaxError::UnmatchedEnd((**token).clone()));
+                                    return Err(SyntaxError::UnmatchedEnd(token.clone()));
                                 } else {
-                                    return Err(SyntaxError::UnexpectedToken((***next_token).clone()));
+                                    return Err(SyntaxError::UnexpectedToken((**next_token).clone()));
                                 }
                             }
                             _ => break,
@@ -88,7 +110,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     asts.push(ast);
                 }
                 TokenKind::Nodes => {
-                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                    return Err(SyntaxError::UnexpectedToken(token.clone()));
                 }
                 TokenKind::NewLine | TokenKind::Tab(_) | TokenKind::Whitespace(_) => {
                     unreachable!("parse_program should have filtered out whitespace tokens")
@@ -108,7 +130,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     #[inline(always)]
-    fn parse_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_expr(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         self.parse_equality_expr(token)
     }
 
@@ -164,19 +186,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     fn create_compound_assign(
-        &self,
+        &mut self,
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
-        operator_token: &Shared<Token>,
+        operator_token: &Token,
         function_name: &'static str,
     ) -> Result<Shared<Node>, SyntaxError> {
         let compound_rhs = Shared::new(Node {
             token_id: operator_token_id,
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new_with_token(function_name, Some(Shared::clone(operator_token))),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(function_name, Some(self.shared_token(operator_token))),
                 smallvec![Shared::clone(lhs), rhs],
-            )),
+            ),
         });
         self.create_assign(lhs, compound_rhs, operator_token_id, operator_token)
     }
@@ -186,33 +208,33 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// - `x = rhs` → `Assign(x, rhs)`
     /// - `arr[idx] = rhs` (lhs is `Call("get", [arr, idx])`) → `Assign(arr, set(arr, idx, rhs))`
     fn create_assign(
-        &self,
+        &mut self,
         lhs: &Shared<Node>,
         rhs: Shared<Node>,
         operator_token_id: TokenId,
-        operator_token: &Shared<Token>,
+        operator_token: &Token,
     ) -> Result<Shared<Node>, SyntaxError> {
-        match &*lhs.expr {
+        match &lhs.expr {
             Expr::Ident(ident) => Ok(Shared::new(Node {
                 token_id: operator_token_id,
-                expr: Shared::new(Expr::Assign(ident.clone(), rhs)),
+                expr: Expr::Assign(ident.clone(), rhs),
             })),
-            Expr::Call(func_ident, args) if func_ident.name == *GET_IDENT && args.len() == 2 => match &*args[0].expr {
+            Expr::Call(func_ident, args) if func_ident.name == *GET_IDENT && args.len() == 2 => match &args[0].expr {
                 Expr::Ident(var_ident) => Ok(Shared::new(Node {
                     token_id: operator_token_id,
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         var_ident.clone(),
                         Shared::new(Node {
                             token_id: operator_token_id,
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(
                                     constants::builtins::SET,
-                                    Some(Shared::clone(operator_token)),
+                                    Some(self.shared_token(operator_token)),
                                 ),
                                 smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs,],
-                            )),
+                            ),
                         }),
-                    )),
+                    ),
                 })),
                 _ => Err(SyntaxError::InvalidAssignmentTarget(
                     (*self.token_arena[args[0].token_id]).clone(),
@@ -238,14 +260,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             let operator_token = parser.tokens.next().unwrap();
-            let operator_token_id = parser.token_arena.alloc(Shared::clone(operator_token));
+            let operator_token_id = parser.alloc_token(operator_token);
 
             let rhs_token = match parser.tokens.next() {
                 Some(t) if t.kind == TokenKind::Eof => {
-                    return Err(SyntaxError::UnexpectedEOFAfterToken((**operator_token).clone()));
+                    return Err(SyntaxError::UnexpectedEOFAfterToken(operator_token.clone()));
                 }
                 Some(t) => t,
-                None => return Err(SyntaxError::UnexpectedEOFAfterToken((**operator_token).clone())),
+                None => return Err(SyntaxError::UnexpectedEOFAfterToken(operator_token.clone())),
             };
             let mut rhs = parser.parse_primary_expr(rhs_token)?;
 
@@ -269,11 +291,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             lhs = match kind {
                 TokenKind::Equal => parser.create_assign(&lhs, rhs, operator_token_id, operator_token)?,
                 TokenKind::And => {
-                    if matches!(&*lhs.expr, Expr::And(_)) {
+                    if matches!(&lhs.expr, Expr::And(_)) {
                         let mut lhs = lhs;
                         let node = Shared::make_mut(&mut lhs);
                         node.token_id = operator_token_id;
-                        let Expr::And(operands) = Shared::make_mut(&mut node.expr) else {
+                        let Expr::And(operands) = &mut node.expr else {
                             unreachable!("checked the expression before making it mutable");
                         };
                         operands.push(rhs);
@@ -281,16 +303,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     } else {
                         Shared::new(Node {
                             token_id: operator_token_id,
-                            expr: Shared::new(Expr::And(vec![lhs, rhs])),
+                            expr: Expr::And(vec![lhs, rhs]),
                         })
                     }
                 }
                 TokenKind::Or => {
-                    if matches!(&*lhs.expr, Expr::Or(_)) {
+                    if matches!(&lhs.expr, Expr::Or(_)) {
                         let mut lhs = lhs;
                         let node = Shared::make_mut(&mut lhs);
                         node.token_id = operator_token_id;
-                        let Expr::Or(operands) = Shared::make_mut(&mut node.expr) else {
+                        let Expr::Or(operands) = &mut node.expr else {
                             unreachable!("checked the expression before making it mutable");
                         };
                         operands.push(rhs);
@@ -298,7 +320,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     } else {
                         Shared::new(Node {
                             token_id: operator_token_id,
-                            expr: Shared::new(Expr::Or(vec![lhs, rhs])),
+                            expr: Expr::Or(vec![lhs, rhs]),
                         })
                     }
                 }
@@ -340,34 +362,34 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::DoubleSlashEqual => {
                     let floor_div_rhs = Shared::new(Node {
                         token_id: operator_token_id,
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(
                                 constants::builtins::FLOOR,
-                                Some(Shared::clone(operator_token)),
+                                Some(parser.shared_token(operator_token)),
                             ),
                             smallvec![Shared::new(Node {
                                 token_id: operator_token_id,
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(
                                         constants::builtins::DIV,
-                                        Some(Shared::clone(operator_token)),
+                                        Some(parser.shared_token(operator_token)),
                                     ),
                                     smallvec![Shared::clone(&lhs), rhs],
-                                )),
+                                ),
                             })],
-                        )),
+                        ),
                     });
                     parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
                 }
                 _ => Shared::new(Node {
                     token_id: operator_token_id,
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(
                             Self::binary_op_function_name(kind),
-                            Some(Shared::clone(operator_token)),
+                            Some(parser.shared_token(operator_token)),
                         ),
                         smallvec![lhs, rhs],
-                    )),
+                    ),
                 }),
             };
         }
@@ -375,7 +397,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(lhs)
     }
 
-    fn parse_equality_expr(&mut self, initial_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_equality_expr(&mut self, initial_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let lhs = self.parse_primary_expr(initial_token)?;
         let lhs = Self::parse_binary_op(self, 0, lhs)?;
 
@@ -390,7 +412,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     fn parse_as_binding(&mut self, expr: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         let as_token = self.tokens.next().unwrap();
-        let as_token_id = self.token_arena.alloc(Shared::clone(as_token));
+        let as_token_id = self.alloc_token(as_token);
 
         let name_token = match self.tokens.next() {
             Some(token) => token,
@@ -399,17 +421,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         match &name_token.kind {
             TokenKind::Ident(name) => {
-                let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(name_token)));
+                let ident = IdentWithToken::new_with_token(name, Some(self.shared_token(name_token)));
                 Ok(Shared::new(Node {
                     token_id: as_token_id,
-                    expr: Shared::new(Expr::As(ident, expr)),
+                    expr: Expr::As(ident, expr),
                 }))
             }
-            _ => Err(SyntaxError::UnexpectedToken((**name_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(name_token.clone())),
         }
     }
 
-    fn parse_primary_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_primary_expr(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(token),
             TokenKind::Let => self.parse_let(token),
@@ -446,11 +468,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::None => self.parse_literal(token),
             TokenKind::Colon => self.parse_symbol(token),
             TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(token.clone())),
         }
     }
 
-    fn parse_module(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_module(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Module => match self.tokens.peek() {
                 Some(_) => {
@@ -465,7 +487,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                     // Only allow 'let', 'def', or 'module' at the top-level of a module block
                     for node in &program {
-                        match &*node.expr {
+                        match &node.expr {
                             Expr::Let(_, _) | Expr::Def(_, _, _) | Expr::Module(_, _) | Expr::Import(_, _) => {}
                             _ => {
                                 return Err(SyntaxError::UnexpectedToken((*self.token_arena[node.token_id]).clone()));
@@ -474,28 +496,28 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }
 
                     Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Module(
+                        token_id: self.alloc_token(token),
+                        expr: Expr::Module(
                             IdentWithToken::new_with_token(
                                 match &ident_token.kind {
                                     TokenKind::Ident(name) => name,
                                     _ => {
-                                        return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
+                                        return Err(SyntaxError::UnexpectedToken(ident_token.clone()));
                                     }
                                 },
-                                Some(Shared::clone(ident_token)),
+                                Some(self.shared_token(ident_token)),
                             ),
                             program,
-                        )),
+                        ),
                     }))
                 }
-                None => Err(SyntaxError::UnexpectedToken((**token).clone())),
+                None => Err(SyntaxError::UnexpectedToken(token.clone())),
             },
-            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(token.clone())),
         }
     }
 
-    fn parse_symbol(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_symbol(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Colon => {
                 let next_token = match self.tokens.next() {
@@ -504,23 +526,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 };
                 match &next_token.kind {
                     TokenKind::Ident(name) => Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(name)))),
+                        token_id: self.alloc_token(token),
+                        expr: Expr::Literal(Literal::Symbol(Ident::new(name))),
                     })),
                     TokenKind::StringLiteral(s) => Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(s)))),
+                        token_id: self.alloc_token(token),
+                        expr: Expr::Literal(Literal::Symbol(Ident::new(s))),
                     })),
-                    _ => Err(SyntaxError::UnexpectedToken((**next_token).clone())),
+                    _ => Err(SyntaxError::UnexpectedToken(next_token.clone())),
                 }
             }
-            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(token.clone())),
         }
     }
 
-    fn parse_paren(&mut self, lparen_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let opening = (**lparen_token).clone();
-        let token_id = self.token_arena.alloc(Shared::clone(lparen_token));
+    fn parse_paren(&mut self, lparen_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let opening = lparen_token.clone();
+        let token_id = self.alloc_token(lparen_token);
         let expr_token = match self.tokens.next() {
             Some(t) => t,
             None => {
@@ -540,12 +562,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         match self.tokens.next() {
             Some(t) if t.kind == TokenKind::RParen => {}
             Some(t) if t.kind == TokenKind::Eof => {
-                return Err(SyntaxError::ExpectedClosingParen(
-                    (**t).clone(),
-                    Some(Box::new(opening)),
-                ));
+                return Err(SyntaxError::ExpectedClosingParen(t.clone(), Some(Box::new(opening))));
             }
-            Some(t) => return Err(SyntaxError::UnexpectedToken((**t).clone())),
+            Some(t) => return Err(SyntaxError::UnexpectedToken(t.clone())),
             None => {
                 return Err(SyntaxError::ExpectedClosingParen(
                     Token {
@@ -560,22 +579,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let paren_node = Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Paren(expr_node)),
+            expr: Expr::Paren(expr_node),
         });
 
         // Handle postfix operations: (expr)(args), (expr)[N], (expr)(args)[N], etc.
         self.parse_postfix_ops(paren_node, lparen_token)
     }
 
-    fn parse_not(&mut self, not_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(not_token));
+    fn parse_not(&mut self, not_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(not_token);
 
         let expr_token = match self.tokens.next() {
             Some(t) if t.kind == TokenKind::Eof => {
-                return Err(SyntaxError::UnexpectedEOFAfterToken((**not_token).clone()));
+                return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone()));
             }
             Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFAfterToken((**not_token).clone())),
+            None => return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone())),
         };
 
         if !matches!(
@@ -598,30 +617,30 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Not
                 | TokenKind::Ident(_)
         ) {
-            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
 
         // Convert ! to not() function call
-        let not_ident = IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::clone(not_token)));
+        let not_ident = IdentWithToken::new_with_token(constants::builtins::NOT, Some(self.shared_token(not_token)));
         let args = smallvec![expr_node];
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Call(not_ident, args)),
+            expr: Expr::Call(not_ident, args),
         }))
     }
 
-    fn parse_negate(&mut self, minus_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(minus_token));
+    fn parse_negate(&mut self, minus_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(minus_token);
 
         let expr_token = match self.tokens.next() {
             Some(t) if t.kind == TokenKind::Eof => {
-                return Err(SyntaxError::UnexpectedEOFAfterToken((**minus_token).clone()));
+                return Err(SyntaxError::UnexpectedEOFAfterToken(minus_token.clone()));
             }
             Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFAfterToken((**minus_token).clone())),
+            None => return Err(SyntaxError::UnexpectedEOFAfterToken(minus_token.clone())),
         };
 
         if !matches!(
@@ -638,17 +657,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Env(_)
                 | TokenKind::Ident(_)
         ) {
-            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
         let negate_ident =
-            IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(Shared::clone(minus_token)));
+            IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(self.shared_token(minus_token)));
         let args = smallvec![expr_node];
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Call(negate_ident, args)),
+            expr: Expr::Call(negate_ident, args),
         }))
     }
 
@@ -670,7 +689,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Ok(true)
             }
             Some(token) => Err(SyntaxError::ExpectedClosingBrace(
-                (***token).clone(),
+                (**token).clone(),
                 Some(Box::new(opening.clone())),
             )),
             None => Err(SyntaxError::ExpectedClosingBrace(
@@ -684,9 +703,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_dict(&mut self, lbrace_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let opening = (**lbrace_token).clone();
-        let token_id = self.token_arena.alloc(Shared::clone(lbrace_token));
+    fn parse_dict(&mut self, lbrace_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let opening = lbrace_token.clone();
+        let token_id = self.alloc_token(lbrace_token);
         let mut pairs = SmallVec::new();
 
         let eof_closing_err = |opening: &Token, module_id: ModuleId| {
@@ -708,7 +727,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 Some(token) if token.kind == TokenKind::Eof => {
                     return Err(SyntaxError::ExpectedClosingBrace(
-                        (***token).clone(),
+                        (**token).clone(),
                         Some(Box::new(opening.clone())),
                     ));
                 }
@@ -734,22 +753,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             let key_node = match &key_token.kind {
                 TokenKind::Ident(name) => Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(key_token)),
-                    expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new(name)))),
+                    token_id: self.alloc_token(key_token),
+                    expr: Expr::Literal(Literal::Symbol(Ident::new(name))),
                 }),
                 TokenKind::StringLiteral(s) => Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(key_token)),
-                    expr: Shared::new(Expr::Literal(Literal::String(s.clone()))),
+                    token_id: self.alloc_token(key_token),
+                    expr: Expr::Literal(Literal::String(s.clone())),
                 }),
                 _ => {
-                    return Err(SyntaxError::UnexpectedToken((**key_token).clone()));
+                    return Err(SyntaxError::UnexpectedToken(key_token.clone()));
                 }
             };
 
             // Expect Colon
             match self.tokens.next() {
                 Some(token) if token.kind == TokenKind::Colon => {}
-                Some(token) => return Err(SyntaxError::UnexpectedToken((**token).clone())),
+                Some(token) => return Err(SyntaxError::UnexpectedToken(token.clone())),
                 None => return Err(eof_closing_err(&opening, self.module_id)),
             }
 
@@ -762,10 +781,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             pairs.push(Shared::new(Node {
                 token_id,
-                expr: Shared::new(Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::clone(key_token))),
+                expr: Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(self.shared_token(key_token))),
                     smallvec![key_node, value_node],
-                )),
+                ),
             }));
 
             if self.parse_dict_separator(&opening)? {
@@ -775,29 +794,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::clone(lbrace_token))),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::DICT, Some(self.shared_token(lbrace_token))),
                 pairs,
-            )),
+            ),
         }))
     }
 
-    fn parse_env(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_env(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Env(s) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
+                token_id: self.alloc_token(token),
                 expr: io_context::current()
                     .env_var(s)
                     .map_err(|e| match e {
                         crate::io::IoError::PermissionDenied(_) => {
-                            SyntaxError::EnvNotAllowed((**token).clone(), SmolStr::new(s))
+                            SyntaxError::EnvNotAllowed(token.clone(), SmolStr::new(s))
                         }
-                        _ => SyntaxError::EnvNotFound((**token).clone(), SmolStr::new(s)),
+                        _ => SyntaxError::EnvNotFound(token.clone(), SmolStr::new(s)),
                     })
-                    .map(|s| Shared::new(Expr::Literal(Literal::String(s.to_owned()))))?,
+                    .map(|s| Expr::Literal(Literal::String(s.to_owned())))?,
             })),
             TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(token.clone())),
         }
     }
 
@@ -807,14 +826,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         token_id: TokenId,
     ) -> Result<Shared<Node>, SyntaxError> {
         let selector_token = match self.tokens.peek() {
-            Some(t) => Shared::clone(t),
+            Some(t) => *t,
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
         if let TokenKind::Selector(selector) = &selector_token.kind
             && selector.len() > 1
         {
-            if !Selector::try_from(&*selector_token)
+            if !Selector::try_from(selector_token)
                 .map_err(SyntaxError::UnknownSelector)?
                 .is_attribute_selector()
             {
@@ -822,10 +841,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             let attribute_name = &selector[1..]; // Skip the leading '.'
-            let attr_literal_token_id = self.token_arena.alloc(Shared::clone(&selector_token));
+            let attr_literal_token_id = self.alloc_token(selector_token);
             let attr_literal = Shared::new(Node {
                 token_id: attr_literal_token_id,
-                expr: Shared::new(Expr::Literal(Literal::String(attribute_name.to_string()))),
+                expr: Expr::Literal(Literal::String(attribute_name.to_string())),
             });
 
             self.tokens.next(); // Consume selector token
@@ -837,24 +856,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             Ok(Shared::new(Node {
                 token_id: attr_literal_token_id,
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(
                         constants::builtins::ATTR,
                         Some(Shared::clone(&self.token_arena[token_id])),
                     ),
                     smallvec![base_node, attr_literal],
-                )),
+                ),
             }))
         } else {
             Ok(base_node)
         }
     }
 
-    fn parse_self(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(token));
+    fn parse_self(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(token);
         let self_node = Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Self_),
+            expr: Expr::Self_,
         });
         let node = self.parse_attribute_access(self_node, token_id)?;
 
@@ -864,8 +883,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
-    fn parse_break(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(token));
+    fn parse_break(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(token);
 
         // Check for colon and expression (break: expr)
         let value = if self.tokens.peek().map(|t| &t.kind) == Some(&TokenKind::Colon) {
@@ -881,21 +900,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Break(value)),
+            expr: Expr::Break(value),
         }))
     }
 
-    fn parse_continue(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_continue(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Continue),
+            token_id: self.alloc_token(token),
+            expr: Expr::Continue,
         }))
     }
 
     /// Parses a `...expr` spread element, wrapping it in a `SPREAD` marker call that
     /// `eval_builtin` expands in place when building the enclosing array/dict.
-    fn parse_spread_element(&mut self, dots_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(dots_token));
+    fn parse_spread_element(&mut self, dots_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(dots_token);
         let next_token = self
             .tokens
             .next()
@@ -904,16 +923,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::SPREAD, Some(Shared::clone(dots_token))),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::SPREAD, Some(self.shared_token(dots_token))),
                 smallvec![inner],
-            )),
+            ),
         }))
     }
 
-    fn parse_array(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let opening = (**token).clone();
-        let token_id = self.token_arena.alloc(Shared::clone(token));
+    fn parse_array(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let opening = token.clone();
+        let token_id = self.alloc_token(token);
         let mut elements: SmallVec<[Shared<Node>; 4]> = SmallVec::new();
         let mut closed = false;
 
@@ -925,7 +944,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 TokenKind::Eof => {
                     return Err(SyntaxError::ExpectedClosingBracket(
-                        (**elem_token).clone(),
+                        elem_token.clone(),
                         Some(Box::new(opening)),
                     ));
                 }
@@ -953,20 +972,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let array_node = Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::clone(token))),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(self.shared_token(token))),
                 elements,
-            )),
+            ),
         });
 
         // Handle postfix bracket access: [1,2,3][0], [1,2,3][0:2], etc.
         self.parse_postfix_ops(array_node, token)
     }
 
-    fn parse_all_nodes(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_all_nodes(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Nodes),
+            token_id: self.alloc_token(token),
+            expr: Expr::Nodes,
         }))
     }
 
@@ -1054,30 +1073,30 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         )
     }
 
-    fn parse_literal(&mut self, literal_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_literal(&mut self, literal_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let literal_node = match &literal_token.kind {
             TokenKind::BoolLiteral(b) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
-                expr: Shared::new(Expr::Literal(Literal::Bool(*b))),
+                token_id: self.alloc_token(literal_token),
+                expr: Expr::Literal(Literal::Bool(*b)),
             })),
             TokenKind::StringLiteral(s) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
-                expr: Shared::new(Expr::Literal(Literal::String(s.to_owned()))),
+                token_id: self.alloc_token(literal_token),
+                expr: Expr::Literal(Literal::String(s.to_owned())),
             })),
             TokenKind::BytesLiteral(b) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
-                expr: Shared::new(Expr::Literal(Literal::Bytes(b.clone()))),
+                token_id: self.alloc_token(literal_token),
+                expr: Expr::Literal(Literal::Bytes(b.clone())),
             })),
             TokenKind::NumberLiteral(n) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
-                expr: Shared::new(Expr::Literal(Literal::Number(*n))),
+                token_id: self.alloc_token(literal_token),
+                expr: Expr::Literal(Literal::Number(*n)),
             })),
             TokenKind::None => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(literal_token)),
-                expr: Shared::new(Expr::Literal(Literal::None)),
+                token_id: self.alloc_token(literal_token),
+                expr: Expr::Literal(Literal::None),
             })),
             TokenKind::Eof => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
-            _ => Err(SyntaxError::UnexpectedToken((**literal_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(literal_token.clone())),
         }?;
 
         let token = self.tokens.peek();
@@ -1085,20 +1104,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if Self::is_next_token_allowed(token.as_ref().map(|t| &t.kind)) {
             Ok(literal_node)
         } else {
-            Err(SyntaxError::UnexpectedToken((***token.unwrap()).clone()))
+            Err(SyntaxError::UnexpectedToken((*token.unwrap()).clone()))
         }
     }
 
-    fn parse_ident(&mut self, ident: &str, ident_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_ident(&mut self, ident: &str, ident_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::Selector(selector)) if selector.len() > 1 => {
-                let token_id = self.token_arena.alloc(Shared::clone(ident_token));
+                let token_id = self.alloc_token(ident_token);
                 let base_node = Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                    expr: Expr::Ident(IdentWithToken::new_with_token(
                         ident,
-                        Some(Shared::clone(ident_token)),
-                    ))),
+                        Some(self.shared_token(ident_token)),
+                    )),
                 });
 
                 self.parse_attribute_access(base_node, token_id)
@@ -1106,7 +1125,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(TokenKind::DoubleColon) => {
                 // Parse qualified access: module::function(), module::ident, or module::module2::method
                 // Build the module path by collecting all identifiers separated by '::'
-                let mut module_path = vec![IdentWithToken::new_with_token(ident, Some(Shared::clone(ident_token)))];
+                let mut module_path = vec![IdentWithToken::new_with_token(
+                    ident,
+                    Some(self.shared_token(ident_token)),
+                )];
 
                 // Collect all module path segments
                 while matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::DoubleColon)) {
@@ -1119,7 +1141,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                     let next_ident = match &next_token.kind {
                         TokenKind::Ident(name) => name.clone(),
-                        _ => return Err(SyntaxError::UnexpectedToken((**next_token).clone())),
+                        _ => return Err(SyntaxError::UnexpectedToken(next_token.clone())),
                     };
 
                     // Check if this is the last segment (followed by '(' or not '::')
@@ -1128,21 +1150,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             // More segments to come, add to module path
                             module_path.push(IdentWithToken::new_with_token(
                                 &next_ident,
-                                Some(Shared::clone(next_token)),
+                                Some(self.shared_token(next_token)),
                             ));
                         }
                         Some(TokenKind::LParen) => {
                             // This is a function call: module::...::function(args)
                             let args = self.parse_args()?;
                             let access_target = AccessTarget::Call(
-                                IdentWithToken::new_with_token(&next_ident, Some(Shared::clone(next_token))),
+                                IdentWithToken::new_with_token(&next_ident, Some(self.shared_token(next_token))),
                                 args,
                             );
 
-                            let token_id = self.token_arena.alloc(Shared::clone(ident_token));
+                            let token_id = self.alloc_token(ident_token);
                             let qualified_node = Shared::new(Node {
                                 token_id,
-                                expr: Shared::new(Expr::QualifiedAccess(module_path, access_target)),
+                                expr: Expr::QualifiedAccess(module_path, access_target),
                             });
                             // Check for bracket access after qualified function call (e.g., module::func()[:1])
                             if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
@@ -1154,24 +1176,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             // This is an identifier: module::...::ident
                             let access_target = AccessTarget::Ident(IdentWithToken::new_with_token(
                                 &next_ident,
-                                Some(Shared::clone(next_token)),
+                                Some(self.shared_token(next_token)),
                             ));
 
-                            let token_id = self.token_arena.alloc(Shared::clone(ident_token));
+                            let token_id = self.alloc_token(ident_token);
                             return Ok(Shared::new(Node {
                                 token_id,
-                                expr: Shared::new(Expr::QualifiedAccess(module_path, access_target)),
+                                expr: Expr::QualifiedAccess(module_path, access_target),
                             }));
                         }
                     }
                 }
 
                 // This should not be reached, but handle it gracefully
-                Err(SyntaxError::UnexpectedToken((**ident_token).clone()))
+                Err(SyntaxError::UnexpectedToken(ident_token.clone()))
             }
             Some(TokenKind::LParen) => {
                 let mut args = self.parse_args()?;
-                let token_id = self.token_arena.alloc(Shared::clone(ident_token));
+                let token_id = self.alloc_token(ident_token);
 
                 // Check for a call with a trailing do-block argument (e.g., foo(args) do ...)
                 if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::Do)) {
@@ -1180,36 +1202,36 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     args.push(block);
 
                     return Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(ident_token)),
-                        expr: Shared::new(Expr::Call(
-                            IdentWithToken::new_with_token(ident, Some(Shared::clone(ident_token))),
+                        token_id: self.alloc_token(ident_token),
+                        expr: Expr::Call(
+                            IdentWithToken::new_with_token(ident, Some(self.shared_token(ident_token))),
                             args,
-                        )),
+                        ),
                     }));
                 }
 
                 let call_node = Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token(ident, Some(Shared::clone(ident_token))),
+                    expr: Expr::Call(
+                        IdentWithToken::new_with_token(ident, Some(self.shared_token(ident_token))),
                         args,
-                    )),
+                    ),
                 });
 
                 if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Question)) {
                     let question_token = self.tokens.next().unwrap();
-                    let question_token_id = self.token_arena.alloc(Shared::clone(question_token));
+                    let question_token_id = self.alloc_token(question_token);
 
                     return Ok(Shared::new(Node {
                         token_id: question_token_id,
-                        expr: Shared::new(Expr::Try(
+                        expr: Expr::Try(
                             call_node,
                             None,
                             Shared::new(Node {
                                 token_id,
-                                expr: Shared::new(Expr::Literal(Literal::None)),
+                                expr: Expr::Literal(Literal::None),
                             }),
-                        )),
+                        ),
                     }));
                 }
 
@@ -1222,29 +1244,29 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 } else if Self::is_next_token_allowed(self.tokens.peek().map(|t| &t.kind)) {
                     Ok(call_node)
                 } else {
-                    Err(SyntaxError::UnexpectedToken((***self.tokens.peek().unwrap()).clone()))
+                    Err(SyntaxError::UnexpectedToken((*self.tokens.peek().unwrap()).clone()))
                 }
             }
             Some(TokenKind::LBracket) => {
                 let ident_node = Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(ident_token)),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                    token_id: self.alloc_token(ident_token),
+                    expr: Expr::Ident(IdentWithToken::new_with_token(
                         ident,
-                        Some(Shared::clone(ident_token)),
-                    ))),
+                        Some(self.shared_token(ident_token)),
+                    )),
                 });
 
                 let result = self.parse_bracket_access(ident_node, ident_token)?;
                 self.parse_postfix_ops(result, ident_token)
             }
             token if Self::is_next_token_allowed(token) => Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(ident_token)),
-                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                token_id: self.alloc_token(ident_token),
+                expr: Expr::Ident(IdentWithToken::new_with_token(
                     ident,
-                    Some(Shared::clone(ident_token)),
-                ))),
+                    Some(self.shared_token(ident_token)),
+                )),
             })),
-            _ => Err(SyntaxError::UnexpectedToken((**ident_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(ident_token.clone())),
         }
     }
 
@@ -1252,9 +1274,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_bracket_access(
         &mut self,
         target_node: Shared<Node>,
-        original_token: &Shared<Token>,
+        original_token: &Token,
     ) -> Result<Shared<Node>, SyntaxError> {
-        let lbracket = self.tokens.next().map(|t| (**t).clone()); // consume '['
+        let lbracket = self.tokens.next().cloned(); // consume '['
 
         // Check for [:N] or [:]  style slice (empty start index).
         // [:ident] and [:string] are dict key accesses using a symbol, not slices.
@@ -1267,32 +1289,32 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if is_slice_from_start {
             let _ = self.tokens.next(); // consume ':'
             let start_node = Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                token_id: self.alloc_token(original_token),
+                expr: Expr::Literal(Literal::Number(0.into())),
             });
 
             let result_node = match self.tokens.next() {
                 Some(t) if t.kind == TokenKind::RBracket => {
                     // [:] = slice(arr, 0, len(arr))
                     Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                        expr: Shared::new(Expr::Call(
+                        token_id: self.alloc_token(original_token),
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(
                                 constants::builtins::SLICE,
-                                Some(Shared::clone(original_token)),
+                                Some(self.shared_token(original_token)),
                             ),
                             smallvec![
                                 Shared::clone(&target_node),
                                 start_node,
                                 Shared::new(Node {
-                                    token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                                    expr: Shared::new(Expr::Call(
+                                    token_id: self.alloc_token(original_token),
+                                    expr: Expr::Call(
                                         IdentWithToken::new_with_token(constants::builtins::LEN, None,),
                                         smallvec![target_node],
-                                    )),
+                                    ),
                                 })
                             ],
-                        )),
+                        ),
                     })
                 }
                 Some(t) => {
@@ -1303,7 +1325,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                         Some(token) => {
                             return Err(SyntaxError::ExpectedClosingBracket(
-                                (***token).clone(),
+                                (**token).clone(),
                                 lbracket.clone().map(Box::new),
                             ));
                         }
@@ -1319,14 +1341,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                     }
                     Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                        expr: Shared::new(Expr::Call(
+                        token_id: self.alloc_token(original_token),
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(
                                 constants::builtins::SLICE,
-                                Some(Shared::clone(original_token)),
+                                Some(self.shared_token(original_token)),
                             ),
                             smallvec![target_node, start_node, end_node],
-                        )),
+                        ),
                     })
                 }
                 None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -1357,21 +1379,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             match self.tokens.next() {
                 Some(t) if t.kind == TokenKind::RBracket => Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                    expr: Shared::new(Expr::Call(
-                        IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::clone(original_token))),
+                    token_id: self.alloc_token(original_token),
+                    expr: Expr::Call(
+                        IdentWithToken::new_with_token(
+                            constants::builtins::SLICE,
+                            Some(self.shared_token(original_token)),
+                        ),
                         smallvec![
                             Shared::clone(&target_node),
                             first_node,
                             Shared::new(Node {
-                                token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                                expr: Shared::new(Expr::Call(
+                                token_id: self.alloc_token(original_token),
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::LEN, None),
                                     smallvec![target_node],
-                                )),
+                                ),
                             })
                         ],
-                    )),
+                    ),
                 }),
                 Some(t) => {
                     let second_node = self.parse_expr(t)?;
@@ -1383,7 +1408,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                         Some(token) => {
                             return Err(SyntaxError::ExpectedClosingBracket(
-                                (***token).clone(),
+                                (**token).clone(),
                                 lbracket.clone().map(Box::new),
                             ));
                         }
@@ -1400,14 +1425,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     }
 
                     Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                        expr: Shared::new(Expr::Call(
+                        token_id: self.alloc_token(original_token),
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(
                                 constants::builtins::SLICE,
-                                Some(Shared::clone(original_token)),
+                                Some(self.shared_token(original_token)),
                             ),
                             smallvec![target_node, first_node, second_node],
-                        )),
+                        ),
                     })
                 }
                 None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
@@ -1420,7 +1445,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 Some(token) => {
                     return Err(SyntaxError::ExpectedClosingBracket(
-                        (***token).clone(),
+                        (**token).clone(),
                         lbracket.clone().map(Box::new),
                     ));
                 }
@@ -1437,11 +1462,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                expr: Shared::new(Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::clone(original_token))),
+                token_id: self.alloc_token(original_token),
+                expr: Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::GET, Some(self.shared_token(original_token))),
                     smallvec![target_node, first_node],
-                )),
+                ),
             })
         };
 
@@ -1457,8 +1482,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
             let args = self.parse_args()?;
             let call_dynamic = Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                expr: Shared::new(Expr::CallDynamic(final_result, args)),
+                token_id: self.alloc_token(original_token),
+                expr: Expr::CallDynamic(final_result, args),
             });
             self.parse_postfix_ops(call_dynamic, original_token)
         } else {
@@ -1471,14 +1496,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_postfix_ops(
         &mut self,
         mut current: Shared<Node>,
-        original_token: &Shared<Token>,
+        original_token: &Token,
     ) -> Result<Shared<Node>, SyntaxError> {
         loop {
             if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LParen)) {
                 let args = self.parse_args()?;
                 current = Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(original_token)),
-                    expr: Shared::new(Expr::CallDynamic(current, args)),
+                    token_id: self.alloc_token(original_token),
+                    expr: Expr::CallDynamic(current, args),
                 });
             } else if matches!(self.tokens.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 current = self.parse_bracket_access(current, original_token)?;
@@ -1489,16 +1514,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(current)
     }
 
-    fn parse_def(&mut self, def_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_def(&mut self, def_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
             Some(token) => match &token.kind {
                 TokenKind::Ident(ident) => Ok(ident),
-                _ => Err(SyntaxError::UnexpectedToken((***token).clone())),
+                _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
             },
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
-        let def_token_id = self.token_arena.alloc(Shared::clone(def_token));
+        let def_token_id = self.alloc_token(def_token);
         let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon | TokenKind::Do)) {
             SmallVec::new()
         } else {
@@ -1511,16 +1536,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id: def_token_id,
-            expr: Shared::new(Expr::Def(
-                IdentWithToken::new_with_token(ident, ident_token.map(Shared::clone)),
+            expr: Expr::Def(
+                IdentWithToken::new_with_token(ident, ident_token.map(|token| self.shared_token(token))),
                 params,
                 program,
-            )),
+            ),
         }))
     }
 
-    fn parse_block(&mut self, do_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let do_token_id = self.token_arena.alloc(Shared::clone(do_token));
+    fn parse_block(&mut self, do_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let do_token_id = self.alloc_token(do_token);
         let program = self.parse_program(false)?;
 
         // The End token is already consumed by parse_program when it encounters it
@@ -1528,12 +1553,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id: do_token_id,
-            expr: Shared::new(Expr::Block(program)),
+            expr: Expr::Block(program),
         }))
     }
 
-    fn parse_fn(&mut self, fn_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let fn_token_id = self.token_arena.alloc(Shared::clone(fn_token));
+    fn parse_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let fn_token_id = self.alloc_token(fn_token);
         let params = self.parse_params()?;
 
         self.consume_colon_or_do();
@@ -1542,19 +1567,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let fn_node = Shared::new(Node {
             token_id: fn_token_id,
-            expr: Shared::new(Expr::Fn(params, program)),
+            expr: Expr::Fn(params, program),
         });
 
         // Handle postfix operations: fn(...): ... end(args), fn(...): ... end(args)[N], etc.
         self.parse_postfix_ops(fn_node, fn_token)
     }
 
-    fn parse_while(&mut self, while_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(while_token));
+    fn parse_while(&mut self, while_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(while_token);
         let args = self.parse_args()?;
 
         if args.len() != 1 {
-            return Err(SyntaxError::UnexpectedToken((**while_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(while_token.clone()));
         }
 
         self.consume_colon_or_do();
@@ -1566,15 +1591,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::While(Shared::clone(cond), body_program)),
+                    expr: Expr::While(Shared::clone(cond), body_program),
                 }))
             }
-            None => Err(SyntaxError::UnexpectedToken((**while_token).clone())),
+            None => Err(SyntaxError::UnexpectedToken(while_token.clone())),
         }
     }
 
-    fn parse_loop(&mut self, loop_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(loop_token));
+    fn parse_loop(&mut self, loop_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(loop_token);
 
         self.consume_colon_or_do();
 
@@ -1584,19 +1609,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Loop(body_program)),
+                    expr: Expr::Loop(body_program),
                 }))
             }
-            None => Err(SyntaxError::UnexpectedToken((**loop_token).clone())),
+            None => Err(SyntaxError::UnexpectedToken(loop_token.clone())),
         }
     }
 
-    fn parse_until(&mut self, until_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(until_token));
+    fn parse_until(&mut self, until_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(until_token);
         let args = self.parse_args()?;
 
         if args.len() != 1 {
-            return Err(SyntaxError::UnexpectedToken((**until_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(until_token.clone()));
         }
 
         self.consume_colon_or_do();
@@ -1608,15 +1633,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Until(Shared::clone(cond), body_program)),
+                    expr: Expr::Until(Shared::clone(cond), body_program),
                 }))
             }
-            None => Err(SyntaxError::UnexpectedToken((**until_token).clone())),
+            None => Err(SyntaxError::UnexpectedToken(until_token.clone())),
         }
     }
 
-    fn parse_unless(&mut self, unless_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(unless_token));
+    fn parse_unless(&mut self, unless_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(unless_token);
         let args = self.parse_args()?;
 
         if args.len() != 1 {
@@ -1632,13 +1657,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         branches.push((Some(Shared::clone(cond)), then_expr));
 
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(unless_token)),
-            expr: Shared::new(Expr::Unless(branches)),
+            token_id: self.alloc_token(unless_token),
+            expr: Expr::Unless(branches),
         }))
     }
 
-    fn parse_try(&mut self, try_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(try_token));
+    fn parse_try(&mut self, try_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(try_token);
 
         self.consume_colon_or_do();
 
@@ -1651,14 +1676,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         if !self.is_next_token(|token_kind| matches!(token_kind, TokenKind::Catch)) {
             return Ok(Shared::new(Node {
                 token_id,
-                expr: Shared::new(Expr::Try(
+                expr: Expr::Try(
                     try_expr,
                     None,
                     Shared::new(Node {
                         token_id,
-                        expr: Shared::new(Expr::Literal(Literal::None)),
+                        expr: Expr::Literal(Literal::None),
                     }),
-                )),
+                ),
             }));
         }
 
@@ -1669,7 +1694,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let error_binder = if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LParen)) {
             let args = self.parse_args()?;
             match args.as_slice() {
-                [arg] => match &*arg.expr {
+                [arg] => match &arg.expr {
                     Expr::Ident(ident) => Some(ident.clone()),
                     _ => return Err(SyntaxError::UnexpectedToken((*self.token_arena[arg.token_id]).clone())),
                 },
@@ -1693,18 +1718,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Try(try_expr, error_binder, catch_expr)),
+            expr: Expr::Try(try_expr, error_binder, catch_expr),
         }))
     }
 
-    fn parse_foreach(&mut self, foreach_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_foreach(&mut self, foreach_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let args = self.parse_args()?;
 
         if args.len() != 2 {
-            return Err(SyntaxError::UnexpectedToken((**foreach_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(foreach_token.clone()));
         }
 
-        let first_arg = &*args.first().unwrap().expr;
+        let first_arg = &args.first().unwrap().expr;
 
         match first_arg {
             Expr::Ident(IdentWithToken {
@@ -1717,23 +1742,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let body_program = self.parse_program(false)?;
 
                 Ok(Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(foreach_token)),
-                    expr: Shared::new(Expr::Foreach(
+                    token_id: self.alloc_token(foreach_token),
+                    expr: Expr::Foreach(
                         IdentWithToken {
                             name: *ident,
                             token: ident_token.clone(),
                         },
                         Shared::clone(&each_values),
                         body_program,
-                    )),
+                    ),
                 }))
             }
-            _ => Err(SyntaxError::UnexpectedToken((**foreach_token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(foreach_token.clone())),
         }
     }
 
-    fn parse_if(&mut self, if_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(if_token));
+    fn parse_if(&mut self, if_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(if_token);
         let args = self.parse_args()?;
 
         if args.len() != 1 {
@@ -1763,13 +1788,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(if_token)),
-            expr: Shared::new(Expr::If(branches)),
+            token_id: self.alloc_token(if_token),
+            expr: Expr::If(branches),
         }))
     }
 
-    fn parse_match(&mut self, match_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(match_token));
+    fn parse_match(&mut self, match_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(match_token);
 
         // Parse the value expression: match (value):
         let args = self.parse_args()?;
@@ -1796,7 +1821,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             // Check for guard (if condition)
             let guard = if let Some(token) = self.tokens.peek() {
                 if matches!(token.kind, TokenKind::If) {
-                    let if_token = Shared::clone(token);
+                    let if_token = Shared::new((*token).clone());
                     self.tokens.next(); // consume 'if'
                     let guard_args = self.parse_args()?;
                     if guard_args.len() != 1 {
@@ -1827,7 +1852,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Match(value, arms)),
+            expr: Expr::Match(value, arms),
         }))
     }
 
@@ -1861,7 +1886,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 };
                 match &type_token.kind {
                     TokenKind::Ident(type_name) => Ok(Pattern::Type(Ident::new(type_name))),
-                    _ => Err(SyntaxError::UnexpectedToken((**type_token).clone())),
+                    _ => Err(SyntaxError::UnexpectedToken(type_token.clone())),
                 }
             }
             // Literal patterns
@@ -1876,7 +1901,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::LBrace => self.parse_dict_pattern(),
             // Identifier pattern (binding)
             TokenKind::Ident(name) => Ok(Pattern::Ident(IdentWithToken::new(name))),
-            _ => Err(SyntaxError::UnexpectedToken((**token).clone())),
+            _ => Err(SyntaxError::UnexpectedToken(token.clone())),
         }
     }
 
@@ -1901,14 +1926,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             rest_binding = Some(IdentWithToken::new(name));
                             has_rest = true;
                         } else {
-                            return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
+                            return Err(SyntaxError::UnexpectedToken(ident_token.clone()));
                         }
                     }
                     // Expect closing bracket after rest
                     if let Some(token) = self.tokens.next()
                         && !matches!(token.kind, TokenKind::RBracket)
                     {
-                        return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                        return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
                     break;
                 }
@@ -1925,7 +1950,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
             }
         }
@@ -1957,7 +1982,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             let key = match &key_token.kind {
                 TokenKind::Ident(name) => IdentWithToken::new(name),
-                _ => return Err(SyntaxError::UnexpectedToken((**key_token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken(key_token.clone())),
             };
 
             // Check if there's a colon (key: pattern) or just key shorthand
@@ -1983,7 +2008,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     // Will be consumed in next iteration
                     continue;
                 } else {
-                    return Err(SyntaxError::UnexpectedToken((***token).clone()));
+                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
                 }
             }
         }
@@ -2051,18 +2076,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let ident_token = self.tokens.next().unwrap();
                 Ok(Pattern::Ident(IdentWithToken::new_with_token(
                     name,
-                    Some(Shared::clone(ident_token)),
+                    Some(self.shared_token(ident_token)),
                 )))
             }
             _ => {
                 let bad_token = self.tokens.next().unwrap();
-                Err(SyntaxError::UnexpectedToken((**bad_token).clone()))
+                Err(SyntaxError::UnexpectedToken(bad_token.clone()))
             }
         }
     }
 
-    fn parse_let(&mut self, let_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let let_token_id = self.token_arena.alloc(Shared::clone(let_token));
+    fn parse_let(&mut self, let_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let let_token_id = self.alloc_token(let_token);
         let pattern = self.parse_let_or_var_pattern()?;
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
@@ -2072,7 +2097,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
 
         if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
-            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let ast = self.parse_expr(expr_token)?;
@@ -2083,17 +2108,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
             )
         {
-            return Err(SyntaxError::UnexpectedToken((***token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**token).clone()));
         }
 
         Ok(Shared::new(Node {
             token_id: let_token_id,
-            expr: Shared::new(Expr::Let(pattern, ast)),
+            expr: Expr::Let(pattern, ast),
         }))
     }
 
-    fn parse_var(&mut self, var_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let var_token_id = self.token_arena.alloc(Shared::clone(var_token));
+    fn parse_var(&mut self, var_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let var_token_id = self.alloc_token(var_token);
         let pattern = self.parse_let_or_var_pattern()?;
 
         self.next_token(|token_kind| matches!(token_kind, TokenKind::Equal))?;
@@ -2103,7 +2128,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
 
         if matches!(expr_token.kind, TokenKind::Let | TokenKind::Var) {
-            return Err(SyntaxError::UnexpectedToken((**expr_token).clone()));
+            return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let ast = self.parse_expr(expr_token)?;
@@ -2114,37 +2139,37 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Pipe | TokenKind::Eof | TokenKind::SemiColon | TokenKind::End
             )
         {
-            return Err(SyntaxError::UnexpectedToken((***token).clone()));
+            return Err(SyntaxError::UnexpectedToken((**token).clone()));
         }
 
         Ok(Shared::new(Node {
             token_id: var_token_id,
-            expr: Shared::new(Expr::Var(pattern, ast)),
+            expr: Expr::Var(pattern, ast),
         }))
     }
 
     #[inline(always)]
-    fn parse_include(&mut self, include_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_include(&mut self, include_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::StringLiteral(module) => {
                     self.tokens.next();
                     Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(include_token)),
-                        expr: Shared::new(Expr::Include(Literal::String(module.to_owned()))),
+                        token_id: self.alloc_token(include_token),
+                        expr: Expr::Include(Literal::String(module.to_owned())),
                     }))
                 }
-                _ => Err(SyntaxError::InsufficientTokens((***token).clone())),
+                _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
             },
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }
     }
 
     #[inline(always)]
-    fn parse_import(&mut self, import_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.token_arena.alloc(Shared::clone(import_token));
+    fn parse_import(&mut self, import_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(import_token);
         let token = match self.tokens.next() {
-            Some(token) => Ok(Shared::clone(token)),
+            Some(token) => Ok(self.shared_token(token)),
             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         }?;
 
@@ -2161,10 +2186,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     };
 
                     match &name_token.kind {
-                        TokenKind::Ident(name) => {
-                            Some(IdentWithToken::new_with_token(name, Some(Shared::clone(name_token))))
-                        }
-                        _ => return Err(SyntaxError::UnexpectedToken((**name_token).clone())),
+                        TokenKind::Ident(name) => Some(IdentWithToken::new_with_token(
+                            name,
+                            Some(self.shared_token(name_token)),
+                        )),
+                        _ => return Err(SyntaxError::UnexpectedToken(name_token.clone())),
                     }
                 } else {
                     None
@@ -2172,14 +2198,14 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
                 Ok(Shared::new(Node {
                     token_id,
-                    expr: Shared::new(Expr::Import(Literal::String(module_name), alias)),
+                    expr: Expr::Import(Literal::String(module_name), alias),
                 }))
             }
             _ => Err(SyntaxError::InsufficientTokens((*token).clone())),
         }
     }
 
-    fn parse_interpolated_string(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_interpolated_string(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::InterpolatedString(segments) = &token.kind {
             let mut parsed_segments = Vec::new();
 
@@ -2209,8 +2235,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                                 })
                             })?;
 
-                            let shared_tokens: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
-                            let mut parser = Parser::new(shared_tokens.iter(), self.token_arena, token.module_id);
+                            let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             let expr_node = parser.parse_expr_from_tokens().map_err(|_| {
                                 SyntaxError::UnexpectedToken(Token {
                                     range: *range,
@@ -2226,11 +2251,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::InterpolatedString(parsed_segments)),
+                token_id: self.alloc_token(token),
+                expr: Expr::InterpolatedString(parsed_segments),
             }))
         } else {
-            Err(SyntaxError::UnexpectedToken((**token).clone()))
+            Err(SyntaxError::UnexpectedToken(token.clone()))
         }
     }
 
@@ -2248,11 +2273,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let opening_paren = match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::LParen => {
-                    let t = (***token).clone();
+                    let t = (**token).clone();
                     self.tokens.next();
                     Some(t)
                 }
-                _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken((**token).clone())),
             },
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
@@ -2266,7 +2291,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             match &token.kind {
                 TokenKind::RParen => match prev_token {
                     Some(TokenKind::Comma) => {
-                        return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                        return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
                     _ => break,
                 },
@@ -2274,7 +2299,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(TokenKind::RParen) => break,
                     Some(_) | None => {
                         return Err(SyntaxError::ExpectedClosingParen(
-                            (**token).clone(),
+                            token.clone(),
                             opening_paren.clone().map(Box::new),
                         ));
                     }
@@ -2282,7 +2307,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Comma => match prev_token {
                     Some(_) => {
                         let token = match self.tokens.peek() {
-                            Some(token) => Ok(Shared::clone(token)),
+                            Some(token) => Ok(Shared::new((*token).clone())),
                             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                         }?;
                         match &token.kind {
@@ -2292,13 +2317,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             _ => continue,
                         }
                     }
-                    None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
+                    None => return Err(SyntaxError::UnexpectedToken(token.clone())),
                 },
                 TokenKind::SemiColon => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 TokenKind::Asterisk => {
                     // Variadic parameter: *name
                     if seen_variadic {
-                        return Err(SyntaxError::MultipleVariadicParameters((**token).clone()));
+                        return Err(SyntaxError::MultipleVariadicParameters(token.clone()));
                     }
                     let ident_token = match self.tokens.next() {
                         Some(t) => t,
@@ -2306,23 +2331,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     };
                     match &ident_token.kind {
                         TokenKind::Ident(name) => {
-                            let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(ident_token)));
+                            let ident = IdentWithToken::new_with_token(name, Some(self.shared_token(ident_token)));
                             params.push(Param::variadic(ident));
                             seen_variadic = true;
                         }
                         _ => {
-                            return Err(SyntaxError::UnexpectedToken((**ident_token).clone()));
+                            return Err(SyntaxError::UnexpectedToken(ident_token.clone()));
                         }
                     }
                 }
                 TokenKind::Ident(name) => {
                     // Non-variadic param after variadic is an error
                     if seen_variadic {
-                        return Err(SyntaxError::VariadicParameterMustBeLast((**token).clone()));
+                        return Err(SyntaxError::VariadicParameterMustBeLast(token.clone()));
                     }
 
                     // Parse parameter name
-                    let ident = IdentWithToken::new_with_token(name, Some(Shared::clone(token)));
+                    let ident = IdentWithToken::new_with_token(name, Some(self.shared_token(token)));
 
                     // Check for '=' indicating a default value
                     let default = if let Some(next_token) = self.tokens.peek()
@@ -2340,7 +2365,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         Some(self.parse_expr(default_token)?)
                     } else {
                         if seen_default {
-                            return Err(SyntaxError::ParameterWithoutDefaultAfterDefault((**token).clone()));
+                            return Err(SyntaxError::ParameterWithoutDefaultAfterDefault(token.clone()));
                         }
                         None
                     };
@@ -2348,7 +2373,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     params.push(Param::with_default(ident, default));
                 }
                 _ => {
-                    return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                    return Err(SyntaxError::UnexpectedToken(token.clone()));
                 }
             }
 
@@ -2358,7 +2383,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
             {
                 return Err(SyntaxError::ExpectedClosingParen(
-                    (***token).clone(),
+                    (**token).clone(),
                     opening_paren.clone().map(Box::new),
                 ));
             }
@@ -2371,11 +2396,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         let opening_paren = match self.tokens.peek() {
             Some(token) => match &token.kind {
                 TokenKind::LParen => {
-                    let t = (***token).clone();
+                    let t = (**token).clone();
                     self.tokens.next();
                     Some(t)
                 }
-                _ => return Err(SyntaxError::UnexpectedToken((***token).clone())),
+                _ => return Err(SyntaxError::UnexpectedToken((**token).clone())),
             },
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
@@ -2387,7 +2412,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             match &token.kind {
                 TokenKind::RParen => match prev_token {
                     Some(TokenKind::Comma) => {
-                        return Err(SyntaxError::UnexpectedToken((**token).clone()));
+                        return Err(SyntaxError::UnexpectedToken(token.clone()));
                     }
                     _ => break,
                 },
@@ -2395,7 +2420,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     Some(TokenKind::RParen) => break,
                     Some(_) | None => {
                         return Err(SyntaxError::ExpectedClosingParen(
-                            (**token).clone(),
+                            token.clone(),
                             opening_paren.clone().map(Box::new),
                         ));
                     }
@@ -2403,7 +2428,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 TokenKind::Comma => match prev_token {
                     Some(_) => {
                         let token = match self.tokens.peek() {
-                            Some(token) => Ok(Shared::clone(token)),
+                            Some(token) => Ok(Shared::new((*token).clone())),
                             None => Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                         }?;
                         match &token.kind {
@@ -2413,7 +2438,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             _ => continue,
                         }
                     }
-                    None => return Err(SyntaxError::UnexpectedToken((**token).clone())),
+                    None => return Err(SyntaxError::UnexpectedToken(token.clone())),
                 },
                 TokenKind::SemiColon => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
                 _ => {
@@ -2428,7 +2453,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 && !matches!(token.kind, TokenKind::RParen | TokenKind::Comma)
             {
                 return Err(SyntaxError::ExpectedClosingParen(
-                    (***token).clone(),
+                    (**token).clone(),
                     opening_paren.clone().map(Box::new),
                 ));
             }
@@ -2440,7 +2465,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     // Helper to parse an argument that is expected to be a general expression.
     // This typically involves a recursive call to `parse_expr`.
     #[inline(always)]
-    fn parse_arg_expr(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_arg_expr(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let first = self.parse_expr(token)?;
         if !self.is_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
             return Ok(first);
@@ -2452,17 +2477,17 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let pipe_token = self.tokens.next().unwrap();
             let next_token = match self.tokens.next() {
                 Some(token) if token.kind == TokenKind::Eof => {
-                    return Err(SyntaxError::UnexpectedEOFAfterToken((**pipe_token).clone()));
+                    return Err(SyntaxError::UnexpectedEOFAfterToken(pipe_token.clone()));
                 }
                 Some(token) => token,
-                None => return Err(SyntaxError::UnexpectedEOFAfterToken((**pipe_token).clone())),
+                None => return Err(SyntaxError::UnexpectedEOFAfterToken(pipe_token.clone())),
             };
             program.push(self.parse_expr(next_token)?);
         }
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Block(program)),
+            expr: Expr::Block(program),
         }))
     }
 
@@ -2479,11 +2504,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         // Create the set_attr() function call
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::SET_ATTR, Some(Shared::clone(token))),
+            token_id: self.alloc_token(token),
+            expr: Expr::Call(
+                IdentWithToken::new_with_token(constants::builtins::SET_ATTR, Some(self.shared_token(token))),
                 smallvec![selector_node, attr_literal, value],
-            )),
+            ),
         }))
     }
 
@@ -2491,21 +2516,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn build_attr_call_for_node(
         &mut self,
         base_node: Shared<Node>,
-        attr_token: Shared<Token>,
-        token: &Shared<Token>,
+        attr_token: &Token,
+        token: &Token,
     ) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::Selector(attr_selector) = &attr_token.kind {
-            if !Selector::try_from(&*attr_token)
+            if !Selector::try_from(attr_token)
                 .map_err(SyntaxError::UnknownSelector)?
                 .is_attribute_selector()
             {
-                return Err(SyntaxError::UnexpectedToken((*attr_token).clone()));
+                return Err(SyntaxError::UnexpectedToken(attr_token.clone()));
             }
 
             let attribute = &attr_selector[1..]; // Skip the dot
             let attr_literal = Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::Literal(Literal::String(attribute.to_string()))),
+                token_id: self.alloc_token(token),
+                expr: Expr::Literal(Literal::String(attribute.to_string())),
             });
 
             if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
@@ -2514,28 +2539,24 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }
 
             Ok(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::clone(token))),
+                token_id: self.alloc_token(token),
+                expr: Expr::Call(
+                    IdentWithToken::new_with_token(constants::builtins::ATTR, Some(self.shared_token(token))),
                     smallvec![base_node, attr_literal],
-                )),
+                ),
             }))
         } else {
-            Err(SyntaxError::UnexpectedToken((**token).clone()))
+            Err(SyntaxError::UnexpectedToken(token.clone()))
         }
     }
 
     /// Consumes any selector token(s) following an already-parsed `base_node`.
-    fn parse_selector_tail(
-        &mut self,
-        token: &Shared<Token>,
-        base_node: Shared<Node>,
-    ) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_selector_tail(&mut self, token: &Token, base_node: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
             return Ok(base_node);
         }
-        let next_token = Shared::clone(self.tokens.next().unwrap());
-        let selector = Selector::try_from(&*next_token).map_err(SyntaxError::UnknownSelector)?;
+        let next_token = self.tokens.next().unwrap();
+        let selector = Selector::try_from(next_token).map_err(SyntaxError::UnknownSelector)?;
 
         if selector.is_attribute_selector() {
             return self.build_attr_call_for_node(base_node, next_token, token);
@@ -2548,8 +2569,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         loop {
             nodes.push(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(token)),
-                expr: Shared::new(Expr::Selector(Selector::Recursive)),
+                token_id: self.alloc_token(token),
+                expr: Expr::Selector(Selector::Recursive),
             }));
 
             let step_expr = if self.is_next_token(|kind| matches!(kind, TokenKind::LParen)) {
@@ -2558,20 +2579,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 Expr::Selector(step_selector)
             };
             nodes.push(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(&step_token)),
-                expr: Shared::new(step_expr),
+                token_id: self.alloc_token(step_token),
+                expr: step_expr,
             }));
 
             if !self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
                 break;
             }
-            let peeked_token = Shared::clone(self.tokens.next().unwrap());
-            let peeked_selector = Selector::try_from(&*peeked_token).map_err(SyntaxError::UnknownSelector)?;
+            let peeked_token = self.tokens.next().unwrap();
+            let peeked_selector = Selector::try_from(peeked_token).map_err(SyntaxError::UnknownSelector)?;
 
             if peeked_selector.is_attribute_selector() {
                 let chained = Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(token)),
-                    expr: Shared::new(Expr::Block(nodes)),
+                    token_id: self.alloc_token(token),
+                    expr: Expr::Block(nodes),
                 });
                 return self.build_attr_call_for_node(chained, peeked_token, token);
             }
@@ -2581,36 +2602,36 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Block(nodes)),
+            token_id: self.alloc_token(token),
+            expr: Expr::Block(nodes),
         }))
     }
 
     /// Parse a selector without checking for attributes (to avoid infinite recursion)
-    fn parse_selector_direct(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_selector_direct(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Selector(selector) => {
                 if selector == "." {
                     if self.is_next_token(|token_kind| matches!(token_kind, TokenKind::LBracket)) {
-                        self.parse_selector_table_args(Shared::clone(token))
+                        self.parse_selector_table_args(token)
                     } else {
                         Ok(Shared::new(Node {
-                            token_id: self.token_arena.alloc(Shared::clone(token)),
-                            expr: Shared::new(Expr::Self_),
+                            token_id: self.alloc_token(token),
+                            expr: Expr::Self_,
                         }))
                     }
                 } else {
-                    let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
+                    let selector = Selector::try_from(token).map_err(SyntaxError::UnknownSelector)?;
 
                     if selector.is_attribute_selector() {
-                        let token_id = self.token_arena.alloc(Shared::clone(token));
+                        let token_id = self.alloc_token(token);
                         let self_node = Shared::new(Node {
                             token_id,
-                            expr: Shared::new(Expr::Self_),
+                            expr: Expr::Self_,
                         });
                         let attr_literal = Shared::new(Node {
                             token_id,
-                            expr: Shared::new(Expr::Literal(Literal::String(selector.name()))),
+                            expr: Expr::Literal(Literal::String(selector.name())),
                         });
                         if self.is_next_token(|kind| matches!(kind, TokenKind::PipeEqual)) {
                             self.tokens.next();
@@ -2618,10 +2639,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         }
                         return Ok(Shared::new(Node {
                             token_id,
-                            expr: Shared::new(Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::clone(token))),
+                            expr: Expr::Call(
+                                IdentWithToken::new_with_token(
+                                    constants::builtins::ATTR,
+                                    Some(self.shared_token(token)),
+                                ),
                                 smallvec![self_node, attr_literal],
-                            )),
+                            ),
                         }));
                     }
 
@@ -2630,22 +2654,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         && self.is_next_token(|kind| matches!(kind, TokenKind::LBracket))
                     {
                         let prop_node = Shared::new(Node {
-                            token_id: self.token_arena.alloc(Shared::clone(token)),
-                            expr: Shared::new(Expr::Selector(selector)),
+                            token_id: self.alloc_token(token),
+                            expr: Expr::Selector(selector),
                         });
                         return self.parse_property_iterator(token, vec![prop_node]);
                     }
 
                     Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Selector(selector)),
+                        token_id: self.alloc_token(token),
+                        expr: Expr::Selector(selector),
                     }))
                 }
             }
             TokenKind::DoubleDot => {
                 let recursive_node = Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(token)),
-                    expr: Shared::new(Expr::Selector(Selector::Recursive)),
+                    token_id: self.alloc_token(token),
+                    expr: Expr::Selector(Selector::Recursive),
                 });
                 if let Some(next) = self.tokens.peek() {
                     match &next.kind {
@@ -2654,12 +2678,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let key = key.clone();
                             let next = self.tokens.next().unwrap();
                             let prop_node = Shared::new(Node {
-                                token_id: self.token_arena.alloc(Shared::clone(next)),
-                                expr: Shared::new(Expr::Selector(Selector::Property(Ident::new(key.as_str())))),
+                                token_id: self.alloc_token(next),
+                                expr: Expr::Selector(Selector::Property(Ident::new(key.as_str()))),
                             });
                             return Ok(Shared::new(Node {
-                                token_id: self.token_arena.alloc(Shared::clone(token)),
-                                expr: Shared::new(Expr::Block(vec![recursive_node, prop_node])),
+                                token_id: self.alloc_token(token),
+                                expr: Expr::Block(vec![recursive_node, prop_node]),
                             }));
                         }
                         // ..text, ..h, ..code, etc. → recursive descent + Markdown node-type selector
@@ -2672,13 +2696,13 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             {
                                 let next = self.tokens.next().unwrap();
                                 let sel_node = Shared::new(Node {
-                                    token_id: self.token_arena.alloc(Shared::clone(next)),
-                                    expr: Shared::new(Expr::Selector(selector)),
+                                    token_id: self.alloc_token(next),
+                                    expr: Expr::Selector(selector),
                                 });
 
                                 return Ok(Shared::new(Node {
-                                    token_id: self.token_arena.alloc(Shared::clone(token)),
-                                    expr: Shared::new(Expr::Block(vec![recursive_node, sel_node])),
+                                    token_id: self.alloc_token(token),
+                                    expr: Expr::Block(vec![recursive_node, sel_node]),
                                 }));
                             }
                         }
@@ -2687,19 +2711,19 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 }
                 Ok(recursive_node)
             }
-            _ => Err(SyntaxError::InsufficientTokens((**token).clone())),
+            _ => Err(SyntaxError::InsufficientTokens(token.clone())),
         }
     }
 
-    fn parse_selector(&mut self, token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_selector(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         // Handle chained property access: .a.b.c → Block([Selector(Property("a")), ...])
         if let TokenKind::Selector(_) = &token.kind
-            && matches!(Selector::try_from(&**token), Ok(Selector::Property(_)))
+            && matches!(Selector::try_from(token), Ok(Selector::Property(_)))
         {
             let next_is_property = self
                 .tokens
                 .peek()
-                .is_some_and(|t| matches!(Selector::try_from(&***t), Ok(Selector::Property(_))));
+                .is_some_and(|t| matches!(Selector::try_from(*t), Ok(Selector::Property(_))));
             if next_is_property {
                 return self.parse_chained_property_selectors(token);
             }
@@ -2715,12 +2739,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             && let TokenKind::Selector(s) = &token.kind
             && s != "."
         {
-            let selector = Selector::try_from(&**token).map_err(SyntaxError::UnknownSelector)?;
+            let selector = Selector::try_from(token).map_err(SyntaxError::UnknownSelector)?;
             if !selector.is_attribute_selector() {
                 let args = self.parse_args()?;
                 let base_node = Shared::new(Node {
-                    token_id: self.token_arena.alloc(Shared::clone(token)),
-                    expr: Shared::new(Expr::SelectorCall(selector, args)),
+                    token_id: self.alloc_token(token),
+                    expr: Expr::SelectorCall(selector, args),
                 });
                 // Check for attribute access or a descendant chain continuation: `.h(1).level`, `.h(1) .code`
                 return self.parse_selector_tail(token, base_node);
@@ -2730,26 +2754,26 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_selector_direct(token)
     }
 
-    fn parse_chained_property_selectors(&mut self, first_token: &Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
-        let first_sel = Selector::try_from(&**first_token).map_err(SyntaxError::UnknownSelector)?;
+    fn parse_chained_property_selectors(&mut self, first_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let first_sel = Selector::try_from(first_token).map_err(SyntaxError::UnknownSelector)?;
         let mut nodes: Program = vec![Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(first_token)),
-            expr: Shared::new(Expr::Selector(first_sel)),
+            token_id: self.alloc_token(first_token),
+            expr: Expr::Selector(first_sel),
         })];
 
         while self.is_next_token(|kind| matches!(kind, TokenKind::Selector(_))) {
             let next_is_property = self
                 .tokens
                 .peek()
-                .is_some_and(|t| matches!(Selector::try_from(&***t), Ok(Selector::Property(_))));
+                .is_some_and(|t| matches!(Selector::try_from(*t), Ok(Selector::Property(_))));
             if !next_is_property {
                 break;
             }
             let next_token = self.tokens.next().unwrap();
-            let sel = Selector::try_from(&**next_token).map_err(SyntaxError::UnknownSelector)?;
+            let sel = Selector::try_from(next_token).map_err(SyntaxError::UnknownSelector)?;
             nodes.push(Shared::new(Node {
-                token_id: self.token_arena.alloc(Shared::clone(next_token)),
-                expr: Shared::new(Expr::Selector(sel)),
+                token_id: self.alloc_token(next_token),
+                expr: Expr::Selector(sel),
             }));
         }
 
@@ -2759,54 +2783,47 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(first_token)),
-            expr: Shared::new(Expr::Block(nodes)),
+            token_id: self.alloc_token(first_token),
+            expr: Expr::Block(nodes),
         }))
     }
 
-    fn parse_property_iterator(
-        &mut self,
-        token: &Shared<Token>,
-        mut nodes: Program,
-    ) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_property_iterator(&mut self, token: &Token, mut nodes: Program) -> Result<Shared<Node>, SyntaxError> {
         let index = self.parse_bracket_expr()?;
 
         let list_selector = match &index {
             None => Selector::List(None, None),
             Some(node) => {
-                if let Expr::Literal(Literal::Number(num)) = &*node.expr {
+                if let Expr::Literal(Literal::Number(num)) = &node.expr {
                     Selector::List(Some(num.value() as usize), None)
                 } else {
                     // Dynamic index expression: emit a SelectorCall so the index is evaluated at runtime
-                    let token_id = self.token_arena.alloc(Shared::clone(token));
+                    let token_id = self.alloc_token(token);
                     nodes.push(Shared::new(Node {
                         token_id,
-                        expr: Shared::new(Expr::SelectorCall(
-                            Selector::List(None, None),
-                            smallvec![Shared::clone(node)],
-                        )),
+                        expr: Expr::SelectorCall(Selector::List(None, None), smallvec![Shared::clone(node)]),
                     }));
                     return Ok(Shared::new(Node {
-                        token_id: self.token_arena.alloc(Shared::clone(token)),
-                        expr: Shared::new(Expr::Block(nodes)),
+                        token_id: self.alloc_token(token),
+                        expr: Expr::Block(nodes),
                     }));
                 }
             }
         };
 
         nodes.push(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Selector(list_selector)),
+            token_id: self.alloc_token(token),
+            expr: Expr::Selector(list_selector),
         }));
 
         Ok(Shared::new(Node {
-            token_id: self.token_arena.alloc(Shared::clone(token)),
-            expr: Shared::new(Expr::Block(nodes)),
+            token_id: self.alloc_token(token),
+            expr: Expr::Block(nodes),
         }))
     }
 
     // Parses arguments for table or list item selectors like `.[index1][index2]` (for tables) or `.[index1]` (for lists).
-    fn parse_selector_table_args(&mut self, token: Shared<Token>) -> Result<Shared<Node>, SyntaxError> {
+    fn parse_selector_table_args(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let first = self.parse_bracket_expr()?;
         let has_second = self.is_next_token(|kind| matches!(kind, TokenKind::LBracket));
         let second = if has_second {
@@ -2817,7 +2834,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let is_dynamic_node = |opt: &Option<Shared<Node>>| {
             opt.as_ref()
-                .is_some_and(|n| !matches!(&*n.expr, Expr::Literal(Literal::Number(_))))
+                .is_some_and(|n| !matches!(&n.expr, Expr::Literal(Literal::Number(_))))
         };
         let has_dynamic = is_dynamic_node(&first) || second.as_ref().is_some_and(is_dynamic_node);
         let has_explicit_args = self.is_next_token(|kind| matches!(kind, TokenKind::LParen));
@@ -2834,10 +2851,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             // .[][v]: insert None as row placeholder so args[0]=row, args[1]=col positional encoding holds.
             if is_table && first.is_none() && second.as_ref().is_some_and(|s| s.is_some()) {
-                let placeholder_token_id = self.token_arena.alloc(Shared::clone(&token));
+                let placeholder_token_id = self.alloc_token(token);
                 args.push(Shared::new(Node {
                     token_id: placeholder_token_id,
-                    expr: Shared::new(Expr::Literal(Literal::None)),
+                    expr: Expr::Literal(Literal::None),
                 }));
             } else if let Some(node) = first {
                 args.push(node);
@@ -2850,16 +2867,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 args.extend(self.parse_args()?);
             }
 
-            let token_id = self.token_arena.alloc(Shared::clone(&token));
+            let token_id = self.alloc_token(token);
             return Ok(Shared::new(Node {
                 token_id,
-                expr: Shared::new(Expr::SelectorCall(selector, args)),
+                expr: Expr::SelectorCall(selector, args),
             }));
         }
 
         let static_index = |opt: Option<Shared<Node>>| -> Option<usize> {
             opt.and_then(|n| {
-                if let Expr::Literal(Literal::Number(num)) = &*n.expr {
+                if let Expr::Literal(Literal::Number(num)) = &n.expr {
                     Some(num.value() as usize)
                 } else {
                     None
@@ -2872,16 +2889,16 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Some(opt) => Selector::Table(i1, static_index(opt)),
         };
 
-        let token_id = self.token_arena.alloc(Shared::clone(&token));
+        let token_id = self.alloc_token(token);
         Ok(Shared::new(Node {
             token_id,
-            expr: Shared::new(Expr::Selector(selector)),
+            expr: Expr::Selector(selector),
         }))
     }
 
     fn parse_bracket_expr(&mut self) -> Result<Option<Shared<Node>>, SyntaxError> {
         let bracket_token = match self.tokens.peek() {
-            Some(t) => Shared::clone(t),
+            Some(t) => (*t).clone(),
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
         self.next_token(|kind| matches!(kind, TokenKind::LBracket))?;
@@ -2892,10 +2909,10 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
 
         let expr_token = match self.tokens.next() {
-            Some(t) => Shared::clone(t),
-            None => return Err(SyntaxError::InsufficientTokens((*bracket_token).clone())),
+            Some(t) => t,
+            None => return Err(SyntaxError::InsufficientTokens(bracket_token.clone())),
         };
-        let node = self.parse_expr(&expr_token)?;
+        let node = self.parse_expr(expr_token)?;
         self.next_token(|kind| matches!(kind, TokenKind::RBracket))?;
         Ok(Some(node))
     }
@@ -2905,7 +2922,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             // Token found and matches one of the expected kinds.
             Some(token) if expected_kinds(&token.kind) => {
                 let token = self.tokens.next().unwrap();
-                Ok(self.token_arena.alloc(Shared::clone(token)))
+                Ok(self.alloc_token(token))
             } // Consume and return.
             // Token found but does not match expected kinds.
             Some(token) => Err(SyntaxError::UnexpectedToken(Token {
@@ -2977,31 +2994,31 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token("and", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                                 smallvec![Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("test".to_owned())))
+                                    expr: Expr::Literal(Literal::String("test".to_owned()))
                                 })],
-                            ))
+                            )
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("startswith", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("startswith")))))),
                                 smallvec![Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("test2".to_owned())))
+                                    expr: Expr::Literal(Literal::String("test2".to_owned()))
                                 })],
-                            ))
+                            )
                         })
                     ],
-                ))
+                )
             })
         ]))]
     #[case::ident2(
@@ -3022,19 +3039,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 8.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token("and", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                            expr: Expr::Selector(Selector::Heading(Some(1))),
                         }),
                         Shared::new(Node {
                             token_id: 5.into(),
-                            expr: Shared::new(Expr::Selector(Selector::Table(Some(2), None))),
+                            expr: Expr::Selector(Selector::Table(Some(2), None)),
                         }),
                     ],
-                ))
+                )
             })
         ]))]
     #[case::ident3(
@@ -3057,7 +3074,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                     IdentWithToken::new_with_token("filter", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("filter")))))),
                     smallvec![
                         Param::new(IdentWithToken::new_with_token("arg1", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arg1"))))))),
@@ -3065,21 +3082,21 @@ mod tests {
                     ],
                     vec![Shared::new(Node {
                         token_id: 4.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("arg1".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("arg1".to_owned())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("arg2".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("arg2".to_owned())),
                                 }),
                             ],
-                        )),
+                        ),
                     })],
-                )),
+                ),
             }),
         ]))]
     #[case::ident4(
@@ -3095,19 +3112,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token("and", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("and")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Literal(Literal::None)),
+                            expr: Expr::Literal(Literal::None),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Self_),
+                            expr: Expr::Self_,
                         }),
                     ],
-                ))
+                )
             })
         ]))]
     #[case::ident5(
@@ -3147,19 +3164,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("lang".to_owned()))),
+                            expr: Expr::Literal(Literal::String("lang".to_owned())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::error(
@@ -3183,14 +3200,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            expr: Expr::Literal(Literal::String("value".to_owned())),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_with_end(
@@ -3206,14 +3223,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            expr: Expr::Literal(Literal::String("value".to_owned())),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def2(
@@ -3298,14 +3315,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            expr: Expr::Literal(Literal::String("value".to_owned())),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_without_colon2(
@@ -3320,14 +3337,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         SmallVec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            expr: Expr::Literal(Literal::String("value".to_owned())),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_without_colon_with_args(
@@ -3343,18 +3360,18 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         smallvec![
                           Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         ],
                         vec![Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Ident(
+                            expr: Expr::Ident(
                                 IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
-                            )),
+                            ),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::unmatched_end_at_root(
@@ -3408,13 +3425,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                            expr: Expr::Literal(Literal::Number(42.into())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::let_2(
@@ -3428,13 +3445,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("hello".to_owned()))),
+                            expr: Expr::Literal(Literal::String("hello".to_owned())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::let_3(
@@ -3448,13 +3465,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("flag", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("flag"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                            expr: Expr::Literal(Literal::Bool(true)),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::let_4(
@@ -3468,15 +3485,15 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(
+                            expr:
                                 Expr::Ident(IdentWithToken::new_with_token("some_var",
-                                                 Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var"))))))))
+                                                 Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::let_5(
@@ -3490,14 +3507,14 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(
-                                Expr::Ident(IdentWithToken::new_with_token("some_var", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))),
+                            expr:
+                                Expr::Ident(IdentWithToken::new_with_token("some_var", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var"))))))),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::let_6(
@@ -3510,14 +3527,14 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Let(
+                    expr: Expr::Let(
                         Pattern::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident("z".into())))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(
-                                Expr::Ident(IdentWithToken::new_with_token("some_var", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var")))))))),
+                            expr:
+                                Expr::Ident(IdentWithToken::new_with_token("some_var", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("some_var"))))))),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::var_1(
@@ -3531,13 +3548,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Var(
+                    expr: Expr::Var(
                         Pattern::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                            expr: Expr::Literal(Literal::Number(42.into())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::var_2(
@@ -3551,13 +3568,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Var(
+                    expr: Expr::Var(
                         Pattern::Ident(IdentWithToken::new_with_token("count", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("count"))))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::assign_1(
@@ -3570,13 +3587,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(100.into()))),
+                            expr: Expr::Literal(Literal::Number(100.into())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::assign_2(
@@ -3589,13 +3606,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("Alice".to_owned()))),
+                            expr: Expr::Literal(Literal::String("Alice".to_owned())),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::index_assign(
@@ -3611,29 +3628,29 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::Equal)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                        expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 4.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(10.into()))),
+                                        expr: Expr::Literal(Literal::Number(10.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::index_compound_assign(
@@ -3649,53 +3666,53 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::PlusEqual)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                        expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token(constants::builtins::ADD, Some(Shared::new(token(TokenKind::PlusEqual)))),
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 2.into(),
-                                                    expr: Shared::new(Expr::Call(
+                                                    expr: Expr::Call(
                                                         IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                                                         smallvec![
                                                             Shared::new(Node {
                                                                 token_id: 0.into(),
-                                                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                                                expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                                             }),
                                                             Shared::new(Node {
                                                                 token_id: 1.into(),
-                                                                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                                                expr: Expr::Literal(Literal::Number(0.into())),
                                                             }),
                                                         ],
-                                                    )),
+                                                    ),
                                                 }),
                                                 Shared::new(Node {
                                                     token_id: 4.into(),
-                                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                                    expr: Expr::Literal(Literal::Number(1.into())),
                                                 }),
                                             ],
-                                        )),
+                                        ),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::index_double_slash_equal(
@@ -3712,59 +3729,59 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Assign(
+                    expr: Expr::Assign(
                         IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                        expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token(constants::builtins::FLOOR, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
                                             smallvec![Shared::new(Node {
                                                 token_id: 3.into(),
-                                                expr: Shared::new(Expr::Call(
+                                                expr: Expr::Call(
                                                     IdentWithToken::new_with_token(constants::builtins::DIV, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
                                                     smallvec![
                                                         Shared::new(Node {
                                                             token_id: 2.into(),
-                                                            expr: Shared::new(Expr::Call(
+                                                            expr: Expr::Call(
                                                                 IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                                                                 smallvec![
                                                                     Shared::new(Node {
                                                                         token_id: 0.into(),
-                                                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                                                     }),
                                                                     Shared::new(Node {
                                                                         token_id: 1.into(),
-                                                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                                                        expr: Expr::Literal(Literal::Number(0.into())),
                                                                     }),
                                                                 ],
-                                                            )),
+                                                            ),
                                                         }),
                                                         Shared::new(Node {
                                                             token_id: 4.into(),
-                                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                                            expr: Expr::Literal(Literal::Number(2.into())),
                                                         }),
                                                     ],
-                                                )),
+                                                ),
                                             })],
-                                        )),
+                                        ),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
-                    )),
+                    ),
                 })
             ]))]
     #[case::root_semicolon_error(
@@ -3791,25 +3808,25 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 7.into(),
-                    expr: Shared::new(Expr::If(smallvec![
+                    expr: Expr::If(smallvec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                expr: Expr::Literal(Literal::Bool(true)),
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
                             })
                         ),
                         (
                             None,
                             Shared::new(Node {
                                 token_id: 6.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("false branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("false branch".to_owned())),
                             })
                         )
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::if_elif_else(
@@ -3834,35 +3851,35 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 11.into(),
-                    expr: Shared::new(Expr::If(smallvec![
+                    expr: Expr::If(smallvec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                expr: Expr::Literal(Literal::Bool(true)),
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
                             })
                         ),
                         (
                             Some(Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                expr: Expr::Literal(Literal::Bool(false)),
                             })),
                             Shared::new(Node {
                                 token_id: 7.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("elif branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("elif branch".to_owned())),
                             })
                         ),
                         (
                             None,
                             Shared::new(Node {
                                 token_id: 10.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("else branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("else branch".to_owned())),
                             })
                         )
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::if_only(
@@ -3878,18 +3895,18 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Shared::new(Expr::If(smallvec![
+                    expr: Expr::If(smallvec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                expr: Expr::Literal(Literal::Bool(true)),
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
                             })
                         ),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::if_elif(
@@ -3911,28 +3928,28 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 8.into(),
-                    expr: Shared::new(Expr::If(smallvec![
+                    expr: Expr::If(smallvec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                expr: Expr::Literal(Literal::Bool(true)),
                             })),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
                             })
                         ),
                         (
                             Some(Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                expr: Expr::Literal(Literal::Bool(true)),
                             })),
                             Shared::new(Node {
                                 token_id: 7.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("true branch".to_owned()))),
+                                expr: Expr::Literal(Literal::String("true branch".to_owned())),
                             })
                         ),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::if_error(
@@ -3998,7 +4015,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Selector(Selector::Heading(None))),
+                expr: Expr::Selector(Selector::Heading(None)),
             })
         ]))]
     #[case::h_selector_without_number(
@@ -4009,7 +4026,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Selector(Selector::Heading(None))),
+                expr: Expr::Selector(Selector::Heading(None)),
             })
         ]))]
     #[case::while_(
@@ -4024,16 +4041,16 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Shared::new(Expr::While(
+            expr: Expr::While(
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                    expr: Expr::Literal(Literal::Bool(true)),
                 }),
                 vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
                 })],
-            )),
+            ),
         })]))]
     #[case::while_error(
         vec![
@@ -4066,16 +4083,16 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Shared::new(Expr::While(
+            expr: Expr::While(
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                    expr: Expr::Literal(Literal::Bool(true)),
                 }),
                 vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
                 })],
-            )),
+            ),
         })]))]
     #[case::loop_(
         vec![
@@ -4086,12 +4103,12 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 1.into(),
-            expr: Shared::new(Expr::Loop(
+            expr: Expr::Loop(
                 vec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
                 })],
-            )),
+            ),
         })]))]
     #[case::loop_error_no_body(
         vec![
@@ -4111,16 +4128,16 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Shared::new(Expr::Until(
+            expr: Expr::Until(
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                    expr: Expr::Literal(Literal::Bool(true)),
                 }),
                 vec![Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("loop body".to_owned()))),
+                    expr: Expr::Literal(Literal::String("loop body".to_owned())),
                 })],
-            )),
+            ),
         })]))]
     #[case::until_error(
         vec![
@@ -4145,18 +4162,18 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::Unless(smallvec![
+                expr: Expr::Unless(smallvec![
                     (
                         Some(Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                            expr: Expr::Literal(Literal::Bool(false)),
                         })),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("branch".to_owned()))),
+                            expr: Expr::Literal(Literal::String("branch".to_owned())),
                         })
                     ),
-                ])),
+                ]),
             })
         ]))]
     #[case::unless_error(
@@ -4181,17 +4198,17 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::Try(
+            expr: Expr::Try(
                 Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                    expr: Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr"))))))),
                 }),
                 None,
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("fallback".to_owned()))),
+                    expr: Expr::Literal(Literal::String("fallback".to_owned())),
                 }),
-            )),
+            ),
         })]))]
     #[case::try_catch_with_binder(
         vec![
@@ -4208,17 +4225,17 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::Try(
+            expr: Expr::Try(
                 Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                    expr: Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr"))))))),
                 }),
                 Some(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e"))))))),
                 Shared::new(Node {
                     token_id: 6.into(),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e")))))))),
+                    expr: Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e"))))))),
                 }),
-            )),
+            ),
         })]))]
     #[case::foreach(
         vec![
@@ -4237,18 +4254,18 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 6.into(),
-            expr: Shared::new(Expr::Foreach(
+            expr: Expr::Foreach(
                 IdentWithToken::new_with_token(
                     "item",
                     Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
                 ),
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("array".to_owned()))),
+                    expr: Expr::Literal(Literal::String("array".to_owned())),
                 }),
                 vec![Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(
                             "print",
                             Some(Shared::new(token(TokenKind::Ident(SmolStr::new(
@@ -4257,14 +4274,14 @@ mod tests {
                         ),
                         smallvec![Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                            expr: Expr::Ident(IdentWithToken::new_with_token(
                                 "item",
                                 Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
-                            ))),
+                            )),
                         })],
-                    )),
+                    ),
                 })],
-            )),
+            ),
         })]))]
     #[case::foreach(
         vec![
@@ -4296,18 +4313,18 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 6.into(),
-            expr: Shared::new(Expr::Foreach(
+            expr: Expr::Foreach(
                 IdentWithToken::new_with_token(
                     "item",
                     Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
                 ),
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("array".to_owned()))),
+                    expr: Expr::Literal(Literal::String("array".to_owned())),
                 }),
                 vec![Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(
                             "print",
                             Some(Shared::new(token(TokenKind::Ident(SmolStr::new(
@@ -4316,20 +4333,20 @@ mod tests {
                         ),
                         smallvec![Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                            expr: Expr::Ident(IdentWithToken::new_with_token(
                                 "item",
                                 Some(Shared::new(token(TokenKind::Ident(SmolStr::new("item"))))),
-                            ))),
+                            )),
                         })],
-                    )),
+                    ),
                 })],
-            )),
+            ),
         })]))]
     #[case::self_(
         vec![token(TokenKind::Self_), token(TokenKind::Eof)],
         Ok(vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Shared::new(Expr::Self_),
+            expr: Expr::Self_,
         })]))]
     #[case::include(
         vec![
@@ -4339,7 +4356,7 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 0.into(),
-            expr: Shared::new(Expr::Include(Literal::String("module_name".to_owned()))),
+            expr: Expr::Include(Literal::String("module_name".to_owned())),
         })]))]
     #[case::code_selector_with_language(
         vec![
@@ -4348,7 +4365,7 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::Selector(Selector::Code)),
+            expr: Expr::Selector(Selector::Code),
         })]))]
     #[case::selector_call_heading_single_arg(
         vec![
@@ -4360,14 +4377,14 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 1.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // arg literal is allocated first (id=0), then the selector token (id=1)
                 smallvec![Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                    expr: Expr::Literal(Literal::Number(1.into())),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_heading_multi_arg(
         vec![
@@ -4381,20 +4398,20 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // args are allocated first (id=0, id=1), then the selector token (id=2)
                 smallvec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                        expr: Expr::Literal(Literal::Number(1.into())),
                     }),
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                        expr: Expr::Literal(Literal::Number(2.into())),
                     }),
                 ],
-            )),
+            ),
         })]))]
     #[case::selector_call_code_lang(
         vec![
@@ -4406,14 +4423,14 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 1.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Code,
                 // arg literal is allocated first (id=0), then the selector token (id=1)
                 smallvec![Shared::new(Node {
                     token_id: 0.into(),
-                    expr: Shared::new(Expr::Literal(Literal::String("rust".to_owned()))),
+                    expr: Expr::Literal(Literal::String("rust".to_owned())),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_with_attribute(
         vec![
@@ -4427,7 +4444,7 @@ mod tests {
         Ok(vec![Shared::new(Node {
             // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
             token_id: 3.into(),
-            expr: Shared::new(Expr::Call(
+            expr: Expr::Call(
                 IdentWithToken::new_with_token(
                     constants::builtins::ATTR,
                     Some(Shared::new(token(TokenKind::Selector(SmolStr::new(".h"))))),
@@ -4435,20 +4452,20 @@ mod tests {
                 smallvec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::SelectorCall(
+                        expr: Expr::SelectorCall(
                             Selector::Heading(None),
                             smallvec![Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                expr: Expr::Literal(Literal::Number(1.into())),
                             })],
-                        )),
+                        ),
                     }),
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Literal(Literal::String("level".to_owned()))),
+                        expr: Expr::Literal(Literal::String("level".to_owned())),
                     }),
                 ],
-            )),
+            ),
         })]))]
     #[case::selector_call_code_with_lang_attribute(
         vec![
@@ -4462,7 +4479,7 @@ mod tests {
         Ok(vec![Shared::new(Node {
             // attr() Call: arg literal id=0, SelectorCall id=1, attr_literal id=2, Call id=3
             token_id: 3.into(),
-            expr: Shared::new(Expr::Call(
+            expr: Expr::Call(
                 IdentWithToken::new_with_token(
                     constants::builtins::ATTR,
                     Some(Shared::new(token(TokenKind::Selector(SmolStr::new(".code"))))),
@@ -4470,20 +4487,20 @@ mod tests {
                 smallvec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::SelectorCall(
+                        expr: Expr::SelectorCall(
                             Selector::Code,
                             smallvec![Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("rust".to_owned()))),
+                                expr: Expr::Literal(Literal::String("rust".to_owned())),
                             })],
-                        )),
+                        ),
                     }),
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Literal(Literal::String("lang".to_owned()))),
+                        expr: Expr::Literal(Literal::String("lang".to_owned())),
                     }),
                 ],
-            )),
+            ),
         })]))]
     #[case::table_selector(
         vec![
@@ -4498,7 +4515,7 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 8.into(),
-            expr: Shared::new(Expr::Selector(Selector::Table(Some(1), Some(2)))),
+            expr: Expr::Selector(Selector::Table(Some(1), Some(2))),
         })]))]
     #[case::selector_call_list_bracket_single_arg(
         vec![
@@ -4512,13 +4529,13 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 2.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::List(None, None),
                 smallvec![Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                    expr: Expr::Literal(Literal::Number(2.into())),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_table_bracket_single_arg(
         vec![
@@ -4534,13 +4551,13 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 3.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Table(None, None),
                 smallvec![Shared::new(Node {
                     token_id: 2.into(),
-                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                    expr: Expr::Literal(Literal::Number(1.into())),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_list_bracket_variable(
         vec![
@@ -4552,16 +4569,16 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 3.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::List(None, None),
                 smallvec![Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                    expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
-                    ))),
+                    )),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_table_bracket_column_variable(
         vec![
@@ -4575,22 +4592,22 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 5.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Table(None, None),
                 smallvec![
                     Shared::new(Node {
                         token_id: 4.into(),
-                        expr: Shared::new(Expr::Literal(Literal::None)),
+                        expr: Expr::Literal(Literal::None),
                     }),
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                        expr: Expr::Ident(IdentWithToken::new_with_token(
                             "v",
                             Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
-                        ))),
+                        )),
                     }),
                 ],
-            )),
+            ),
         })]))]
     #[case::selector_call_table_bracket_variable(
         vec![
@@ -4604,16 +4621,16 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 4.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Table(None, None),
                 smallvec![Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(
+                    expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
-                    ))),
+                    )),
                 })],
-            )),
+            ),
         })]))]
     #[case::selector_call_table_bracket_row_col_args(
         vec![
@@ -4631,19 +4648,19 @@ mod tests {
         ],
         Ok(vec![Shared::new(Node {
             token_id: 4.into(),
-            expr: Shared::new(Expr::SelectorCall(
+            expr: Expr::SelectorCall(
                 Selector::Table(None, None),
                 smallvec![
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                        expr: Expr::Literal(Literal::Number(1.into())),
                     }),
                     Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                        expr: Expr::Literal(Literal::Number(2.into())),
                     }),
                 ],
-            )),
+            ),
         })]))]
     #[case::foreach_error(
         vec![
@@ -4711,7 +4728,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Nodes),
+                expr: Expr::Nodes,
             })
         ]))]
     #[case::nodes_error_in_subprogram(
@@ -4735,11 +4752,11 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Nodes),
+                expr: Expr::Nodes,
             }),
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                expr: Expr::Selector(Selector::Heading(Some(1))),
             })
         ]))]
     #[case::root_level_with_multiple_pipes(
@@ -4756,19 +4773,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Nodes),
+                expr: Expr::Nodes,
             }),
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Nodes),
+                expr: Expr::Nodes,
             }),
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                expr: Expr::Selector(Selector::Heading(Some(1))),
             }),
             Shared::new(Node {
                 token_id: 3.into(),
-                expr: Shared::new(Expr::Selector(Selector::Text)),
+                expr: Expr::Selector(Selector::Text),
             })
         ]))]
     #[case::fn_simple(
@@ -4783,15 +4800,15 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Fn(
+                expr: Expr::Fn(
                     SmallVec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                            expr: Expr::Literal(Literal::String("result".to_owned())),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::fn_with_args(
@@ -4814,7 +4831,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Fn(
+                expr: Expr::Fn(
                     smallvec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
@@ -4822,22 +4839,22 @@ mod tests {
                     vec![
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::fn_with_multiple_statements(
@@ -4855,21 +4872,21 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Fn(
+                expr: Expr::Fn(
                     smallvec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                     ],
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("first".to_owned()))),
+                            expr: Expr::Literal(Literal::String("first".to_owned())),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("second".to_owned()))),
+                            expr: Expr::Literal(Literal::String("second".to_owned())),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::fn_with_invalid_args(
@@ -4909,25 +4926,25 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token("apply", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("apply")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Fn(
+                            expr: Expr::Fn(
                                 smallvec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("processed".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("processed".to_owned())),
                                     })
                                 ],
-                            )),
+                            ),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::empty_array(
@@ -4939,10 +4956,10 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                             SmallVec::new(),
-                        )),
+                        ),
                     })
                 ]))]
     #[case::array_with_elements(
@@ -4957,19 +4974,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("first".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("first".to_owned())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                                    expr: Expr::Literal(Literal::Number(42.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::array_with_mixed_elements(
@@ -4986,23 +5003,23 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("text".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("text".to_owned())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                    expr: Expr::Literal(Literal::Bool(true)),
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::None)),
+                                    expr: Expr::Literal(Literal::None),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::array_with_nested_array(
@@ -5021,35 +5038,35 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Call(
+                                    expr: Expr::Call(
                                         IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                                         smallvec![
                                             Shared::new(Node {
                                                 token_id: 2.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                                expr: Expr::Literal(Literal::Number(1.into())),
                                             }),
                                         ],
-                                    )),
+                                    ),
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Shared::new(Expr::Call(
+                                    expr: Expr::Call(
                                         IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                                         smallvec![
                                             Shared::new(Node {
                                                 token_id: 4.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                                expr: Expr::Literal(Literal::Number(2.into())),
                                             }),
                                         ],
-                                    )),
+                                    ),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::array_with_trailing_comma(
@@ -5063,15 +5080,15 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("value".to_owned())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::array_unclosed(
@@ -5110,19 +5127,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("bar", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("bar", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_simple(
@@ -5135,19 +5152,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("hello".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("hello".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("world".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("world".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_numbers(
@@ -5160,19 +5177,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                                        expr: Expr::Literal(Literal::Number(42.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                                        expr: Expr::Literal(Literal::Number(42.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_booleans(
@@ -5185,19 +5202,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                        expr: Expr::Literal(Literal::Bool(true)),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                        expr: Expr::Literal(Literal::Bool(false)),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_with_identifiers(
@@ -5210,19 +5227,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_with_function_call(
@@ -5238,27 +5255,27 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
                                                 }),
                                             ],
-                                        )),
+                                        ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("result".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_with_selectors(
@@ -5271,19 +5288,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                                        expr: Expr::Selector(Selector::Heading(Some(1))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Selector(Selector::Text)),
+                                        expr: Expr::Selector(Selector::Text),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_with_none(
@@ -5296,19 +5313,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::None)),
+                                        expr: Expr::Literal(Literal::None),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::None)),
+                                        expr: Expr::Literal(Literal::None),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::equality_error_missing_rhs(
@@ -5333,30 +5350,30 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::If(smallvec![
+                            expr: Expr::If(smallvec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 1.into(),
-                                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                                    expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                                 }),
                                                 Shared::new(Node {
                                                     token_id: 3.into(),
-                                                    expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                                    expr: Expr::Literal(Literal::Number(5.into())),
                                                 }),
                                             ],
-                                        )),
+                                        ),
                                     })),
                                     Shared::new(Node {
                                         token_id: 5.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("equal".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("equal".to_owned())),
                                     })
                                 ),
-                            ])),
+                            ]),
                         })
                     ]))]
     #[case::not_equality_simple(
@@ -5369,19 +5386,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("hello".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("hello".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("world".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("world".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_numbers(
@@ -5394,19 +5411,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                                        expr: Expr::Literal(Literal::Number(42.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(24.into()))),
+                                        expr: Expr::Literal(Literal::Number(24.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_booleans(
@@ -5419,19 +5436,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                        expr: Expr::Literal(Literal::Bool(true)),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                        expr: Expr::Literal(Literal::Bool(false)),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_with_identifiers(
@@ -5444,19 +5461,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_with_function_call(
@@ -5472,27 +5489,27 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 0.into(),
-                                                    expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
                                                 }),
                                             ],
-                                        )),
+                                        ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("result".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_with_selectors(
@@ -5505,19 +5522,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Selector(Selector::Heading(Some(1)))),
+                                        expr: Expr::Selector(Selector::Heading(Some(1))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Selector(Selector::Text)),
+                                        expr: Expr::Selector(Selector::Text),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_with_none(
@@ -5530,19 +5547,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::None)),
+                                        expr: Expr::Literal(Literal::None),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("something".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("something".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::not_equality_error_missing_rhs(
@@ -5567,30 +5584,30 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::If(smallvec![
+                            expr: Expr::If(smallvec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token(constants::builtins::NE, Some(Shared::new(token(TokenKind::NeEq)))),
                                             smallvec![
                                                 Shared::new(Node {
                                                     token_id: 1.into(),
-                                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                                    expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                                 }),
                                                 Shared::new(Node {
                                                     token_id: 3.into(),
-                                                    expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                                    expr: Expr::Literal(Literal::Number(5.into())),
                                                 }),
                                             ],
-                                        )),
+                                        ),
                                     })),
                                     Shared::new(Node {
                                         token_id: 5.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("not equal".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("not equal".to_owned())),
                                     })
                                 ),
-                            ])),
+                            ]),
                         })
                     ]))]
     #[case::plus_simple(
@@ -5603,19 +5620,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ADD, Some(Shared::new(token(TokenKind::Plus)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        expr: Expr::Literal(Literal::Number(1.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::plus_with_identifiers(
@@ -5628,19 +5645,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ADD, Some(Shared::new(token(TokenKind::Plus)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::plus_error_missing_rhs(
@@ -5660,19 +5677,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::LT, Some(Shared::new(token(TokenKind::Lt)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        expr: Expr::Literal(Literal::Number(1.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::lte_simple(
@@ -5685,19 +5702,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::LTE, Some(Shared::new(token(TokenKind::Lte)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        expr: Expr::Literal(Literal::Number(1.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::gt_simple(
@@ -5710,19 +5727,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::GT, Some(Shared::new(token(TokenKind::Gt)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                        expr: Expr::Literal(Literal::Number(3.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::gte_simple(
@@ -5735,19 +5752,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::GTE, Some(Shared::new(token(TokenKind::Gte)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                        expr: Expr::Literal(Literal::Number(3.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::dict_empty(
@@ -5759,10 +5776,10 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
                                     SmallVec::new(),
-                                )),
+                                ),
                             })
                         ]))]
     #[case::dict_single_pair(
@@ -5777,27 +5794,27 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Call(
+                                            expr: Expr::Call(
                                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("key")))))),
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("key")))),
+                                                        expr: Expr::Literal(Literal::Symbol(Ident::new("key"))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                                     }),
                                                 ],
-                                            )),
+                                            ),
                                         }),
                                     ],
-                                )),
+                                ),
                             })
                         ]))]
     #[case::dict_multiple_pairs(
@@ -5816,43 +5833,43 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Call(
+                                            expr: Expr::Call(
                                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))),
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("a")))),
+                                                        expr: Expr::Literal(Literal::Symbol(Ident::new("a"))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                                        expr: Expr::Literal(Literal::Number(1.into())),
                                                     }),
                                                 ],
-                                            )),
+                                            ),
                                         }),
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Call(
+                                            expr: Expr::Call(
                                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::StringLiteral("b".to_owned()))))),
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 3.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::String("b".to_owned()))),
+                                                        expr: Expr::Literal(Literal::String("b".to_owned())),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 4.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Bool(true))),
+                                                        expr: Expr::Literal(Literal::Bool(true)),
                                                     }),
                                                 ],
-                                            )),
+                                            ),
                                         }),
                                     ],
-                                )),
+                                ),
                             })
                         ]))]
     #[case::dict_trailing_comma(
@@ -5868,27 +5885,27 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::LBrace)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Call(
+                                            expr: Expr::Call(
                                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Symbol(Ident::new("x")))),
+                                                        expr: Expr::Literal(Literal::Symbol(Ident::new("x"))),
                                                     }),
                                                     Shared::new(Node {
                                                         token_id: 2.into(),
-                                                        expr: Shared::new(Expr::Literal(Literal::Number(10.into()))),
+                                                        expr: Expr::Literal(Literal::Number(10.into())),
                                                     }),
                                                 ],
-                                            )),
+                                            ),
                                         }),
                                     ],
-                                )),
+                                ),
                             })
                         ]))]
     #[case::dict_unclosed(
@@ -5927,19 +5944,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Selector(".h".into()))))),
+                expr: Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Selector(".h".into()))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Selector(Selector::Heading(None))),
+                            expr: Expr::Selector(Selector::Heading(None)),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                            expr: Expr::Literal(Literal::String("value".to_owned())),
                         }),
 
                     ],
-                ))})]))]
+                )})]))]
     #[case::attr(
         vec![
             token(TokenKind::Selector(".list".into())),
@@ -5948,19 +5965,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Selector(".list".into()))))),
+                expr: Expr::Call(IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Selector(".list".into()))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Selector(Selector::List(None, None))),
+                            expr: Expr::Selector(Selector::List(None, None)),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("checked".to_owned()))),
+                            expr: Expr::Literal(Literal::String("checked".to_owned())),
                         }),
 
                     ],
-                ))})]))]
+                )})]))]
     #[case::paren(
         vec![
             token(TokenKind::LParen),
@@ -5972,24 +5989,24 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Paren(
+                expr: Expr::Paren(
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::ADD, Some(Shared::new(token(TokenKind::Plus)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                    expr: Expr::Literal(Literal::Number(1.into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                    expr: Expr::Literal(Literal::Number(2.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
-                )),
+                ),
             })
         ]))]
     #[case::minus_simple(
@@ -6002,19 +6019,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::SUB, Some(Shared::new(token(TokenKind::Minus)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                            expr: Expr::Literal(Literal::Number(5.into())),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                            expr: Expr::Literal(Literal::Number(3.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::minus_with_identifiers(
@@ -6027,19 +6044,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::SUB, Some(Shared::new(token(TokenKind::Minus)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::slash_simple(
@@ -6052,19 +6069,19 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::DIV, Some(Shared::new(token(TokenKind::Slash)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(6.into()))),
+                            expr: Expr::Literal(Literal::Number(6.into())),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                            expr: Expr::Literal(Literal::Number(2.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::percent_simple(
@@ -6077,19 +6094,19 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::MOD, Some(Shared::new(token(TokenKind::Percent)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(10.into()))),
+                                expr: Expr::Literal(Literal::Number(10.into())),
                             }),
                             Shared::new(Node {
                                 token_id: 2.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                expr: Expr::Literal(Literal::Number(3.into())),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::percent_with_identifiers(
@@ -6102,19 +6119,19 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::MOD, Some(Shared::new(token(TokenKind::Percent)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                             }),
                             Shared::new(Node {
                                 token_id: 2.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::percent_error_missing_rhs(
@@ -6134,19 +6151,19 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::MUL, Some(Shared::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                expr: Expr::Literal(Literal::Number(3.into())),
                             }),
                             Shared::new(Node {
                                 token_id: 2.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(4.into()))),
+                                expr: Expr::Literal(Literal::Number(4.into())),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::mul_with_identifiers(
@@ -6159,19 +6176,19 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::MUL, Some(Shared::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                             }),
                             Shared::new(Node {
                                 token_id: 2.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::mul_error_missing_rhs(
@@ -6191,19 +6208,19 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::CONVERT, Some(Shared::new(token(TokenKind::Convert)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                             }),
                             Shared::new(Node {
                                 token_id: 2.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::convert_error_missing_rhs(
@@ -6225,31 +6242,31 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::MUL, Some(Shared::new(token(TokenKind::Asterisk)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::MUL, Some(Shared::new(token(TokenKind::Asterisk)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                            expr: Expr::Literal(Literal::Number(1.into())),
                                         }),
                                         Shared::new(Node {
                                             token_id: 2.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                            expr: Expr::Literal(Literal::Number(2.into())),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
                             Shared::new(Node {
                                 token_id: 4.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                expr: Expr::Literal(Literal::Number(3.into())),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::multiple_binary_operators_eq(
@@ -6264,31 +6281,31 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::EQ, Some(Shared::new(token(TokenKind::EqEq)))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::ADD, Some(Shared::new(token(TokenKind::Plus)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                            expr: Expr::Literal(Literal::Number(1.into())),
                                         }),
                                         Shared::new(Node {
                                             token_id: 2.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                            expr: Expr::Literal(Literal::Number(2.into())),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
                             Shared::new(Node {
                                 token_id: 4.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                expr: Expr::Literal(Literal::Number(3.into())),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::multiple_and_operators(
@@ -6303,20 +6320,20 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::And(vec![
+                    expr: Expr::And(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::multiple_or_operators(
@@ -6331,20 +6348,20 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("z")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("z", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("z"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::and_or_mixed(
@@ -6359,25 +6376,25 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::four_and_operators(
@@ -6394,24 +6411,24 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::And(vec![
+                    expr: Expr::And(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::four_or_operators(
@@ -6428,24 +6445,24 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::or_with_and_in_middle(
@@ -6462,29 +6479,29 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 4.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::and_or_and_mixed(
@@ -6502,34 +6519,34 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
                         Shared::new(Node {
                             token_id: 5.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 4.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 6.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::or_and_or_mixed(
@@ -6547,29 +6564,29 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 4.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::and_and_or_and_and_mixed(
@@ -6591,42 +6608,42 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 5.into(),
-                    expr: Shared::new(Expr::Or(vec![
+                    expr: Expr::Or(vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("b"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 4.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("c", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("c"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
                         Shared::new(Node {
                             token_id: 9.into(),
-                            expr: Shared::new(Expr::And(vec![
+                            expr: Expr::And(vec![
                                 Shared::new(Node {
                                     token_id: 6.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("d", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("d"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 8.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("e", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("e"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 10.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f"))))))),
                                 }),
-                            ])),
+                            ]),
                         }),
-                    ])),
+                    ]),
                 })
             ]))]
     #[case::range_simple(
@@ -6639,19 +6656,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::RANGE, Some(Shared::new(token(TokenKind::DoubleDot)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                    expr: Expr::Literal(Literal::Number(1.into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                    expr: Expr::Literal(Literal::Number(5.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::range_with_identifiers(
@@ -6664,19 +6681,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::RANGE, Some(Shared::new(token(TokenKind::DoubleDot)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("start", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("start")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("start", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("start"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("end", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("end")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("end", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("end"))))))),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::range_error_missing_rhs(
@@ -6751,40 +6768,40 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 3.into(),
-                        expr: Shared::new(Expr::Or(vec![
+                        expr: Expr::Or(vec![
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::GT, Some(Shared::new(token(TokenKind::Gt)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                            expr: Expr::Literal(Literal::Number(2.into())),
                                         }),
                                         Shared::new(Node {
                                             token_id: 2.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                            expr: Expr::Literal(Literal::Number(1.into())),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
                             Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::GT, Some(Shared::new(token(TokenKind::Gt)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 4.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                            expr: Expr::Literal(Literal::Number(2.into())),
                                         }),
                                         Shared::new(Node {
                                             token_id: 6.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                            expr: Expr::Literal(Literal::Number(1.into())),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
-                        ])),
+                        ]),
                     })
                 ]))]
     #[case::not_simple(
@@ -6796,15 +6813,15 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                    expr: Expr::Literal(Literal::Bool(false)),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::not_with_expr(
@@ -6816,15 +6833,15 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::bracket_access_with_number(
@@ -6838,19 +6855,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                    expr: Expr::Literal(Literal::Number(5.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::bracket_access_with_string(
@@ -6864,19 +6881,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("dict")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("dict")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token(constants::builtins::DICT, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("dict"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("key".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("key".to_owned())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::bracket_access_error_missing_rbracket(
@@ -6903,23 +6920,23 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 5.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                    expr: Expr::Literal(Literal::Number(1.into())),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(3.into()))),
+                                    expr: Expr::Literal(Literal::Number(3.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::slice_access_with_variables(
@@ -6935,23 +6952,23 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 5.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("items")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("items", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("items")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("items", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("items"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("start", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("start")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("start", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("start"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("end", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("end")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("end", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("end"))))))),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::not_with_paren_expr(
@@ -6965,20 +6982,20 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Paren(
+                                    expr: Expr::Paren(
                                         Shared::new(Node {
                                             token_id: 2.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Bool(false))),
+                                            expr: Expr::Literal(Literal::Bool(false)),
                                         })
-                                    )),
+                                    ),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::not_error_missing_rhs(
@@ -6995,7 +7012,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Break(None)),
+                            expr: Expr::Break(None),
                         })
                     ]))]
     #[case::continue_(
@@ -7006,7 +7023,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Continue),
+                            expr: Expr::Continue,
                         })
                     ]))]
     #[case::self_bracket_access_with_number(
@@ -7020,19 +7037,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Self_)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Self_),
+                                    expr: Expr::Self_,
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(5.into()))),
+                                    expr: Expr::Literal(Literal::Number(5.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     #[case::self_bracket_access_with_string(
@@ -7046,19 +7063,19 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Self_)))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Self_),
+                                    expr: Expr::Self_,
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("key".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("key".to_owned())),
                                 }),
                             ],
-                        )),
+                        ),
                     })
                 ]))]
     // Test function call followed by index access (e.g., foo()[0])
@@ -7075,22 +7092,22 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                 SmallVec::new(),
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test function call with arguments followed by index access
@@ -7108,27 +7125,27 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("bar", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("arg".to_owned())),
                                     })
                                 ],
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("key".to_owned()))),
+                            expr: Expr::Literal(Literal::String("key".to_owned())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test chained index access on function call result
@@ -7148,34 +7165,34 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token("baz", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("baz")))))),
                                             SmallVec::new(),
-                                        )),
+                                        ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                        expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                            expr: Expr::Literal(Literal::Number(1.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::try_without_catch(
@@ -7187,17 +7204,17 @@ mod tests {
             ],
             Ok(vec![Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::Try(
+                expr: Expr::Try(
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr")))))))),
+                        expr: Expr::Ident(IdentWithToken::new_with_token("error_expr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("error_expr"))))))),
                     }),
                     None,
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Literal(Literal::None)),
+                        expr: Expr::Literal(Literal::None),
                     }),
-                )),
+                ),
             })])
         )]
     // Test index access followed by function call (e.g., arr[0]())
@@ -7214,25 +7231,25 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::CallDynamic(
+                expr: Expr::CallDynamic(
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                    expr: Expr::Literal(Literal::Number(0.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     }),
                     SmallVec::new(),
-                )),
+                ),
             })
         ]))]
     // Test index access with args followed by function call (e.g., arr[0](arg))
@@ -7250,30 +7267,30 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 2.into(),
-                expr: Shared::new(Expr::CallDynamic(
+                expr: Expr::CallDynamic(
                     Shared::new(Node {
                         token_id: 2.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                 }),
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                    expr: Expr::Literal(Literal::Number(0.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     }),
                     smallvec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                            expr: Expr::Literal(Literal::String("test".to_owned())),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     // Test group expr with index access: (x)[0] → get(Paren(x), 0)
@@ -7290,24 +7307,24 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LParen)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Paren(
+                            expr: Expr::Paren(
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                    expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 }),
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test group expr with dynamic call: (x)("test") → CallDynamic(Paren(x), ["test"])
@@ -7324,23 +7341,23 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::CallDynamic(
+                expr: Expr::CallDynamic(
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Paren(
+                        expr: Expr::Paren(
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                             }),
-                        )),
+                        ),
                     }),
                     smallvec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("test".to_owned()))),
+                            expr: Expr::Literal(Literal::String("test".to_owned())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test group expr with chained call then index: (f)("a")[0] → get(CallDynamic(Paren(f), ["a"]), 0)
@@ -7360,35 +7377,35 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LParen)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::CallDynamic(
+                            expr: Expr::CallDynamic(
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Paren(
+                                    expr: Expr::Paren(
                                         Shared::new(Node {
                                             token_id: 1.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))))),
+                                            expr: Expr::Ident(IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f"))))))),
                                         }),
-                                    )),
+                                    ),
                                 }),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("a".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("a".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test array literal with index access: [1,2][0] → get(array([1,2]), 0)
@@ -7407,31 +7424,31 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::LBracket)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ARRAY, Some(Shared::new(token(TokenKind::LBracket)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                        expr: Expr::Literal(Literal::Number(1.into())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                                        expr: Expr::Literal(Literal::Number(2.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     // Test chained index access followed by function call (e.g., arr[0][1]())
@@ -7451,37 +7468,37 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::CallDynamic(
+                expr: Expr::CallDynamic(
                     Shared::new(Node {
                         token_id: 4.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 2.into(),
-                                    expr: Shared::new(Expr::Call(
+                                    expr: Expr::Call(
                                         IdentWithToken::new_with_token(constants::builtins::GET, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                                         smallvec![
                                             Shared::new(Node {
                                                 token_id: 0.into(),
-                                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                                expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                             }),
                                             Shared::new(Node {
                                                 token_id: 1.into(),
-                                                expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                                                expr: Expr::Literal(Literal::Number(0.into())),
                                             }),
                                         ],
-                                    )),
+                                    ),
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                    expr: Expr::Literal(Literal::Number(1.into())),
                                 }),
                             ],
-                        )),
+                        ),
                     }),
                     SmallVec::new(),
-                )),
+                ),
             })
         ]))]
     #[case::function_call_with_question_mark(
@@ -7495,25 +7512,25 @@ mod tests {
             ],
             Ok(vec![Shared::new(Node {
                 token_id: 1.into(),
-                expr: Shared::new(Expr::Try(
+                expr: Expr::Try(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Call(
+                        expr: Expr::Call(
                             IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 0.into(),
-                                    expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                    expr: Expr::Literal(Literal::String("arg".to_owned())),
                                 }),
                             ],
-                        )),
+                        ),
                     }),
                     None,
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Literal(Literal::None)),
+                        expr: Expr::Literal(Literal::None),
                     }),
-                )),
+                ),
             })])
         )]
     #[case::question_mark_after_call(
@@ -7527,20 +7544,20 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Try(
+                        expr: Expr::Try(
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
                                     SmallVec::new(),
-                                )),
+                                ),
                             }),
                             None,
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::None)),
+                                expr: Expr::Literal(Literal::None),
                             }),
-                        )),
+                        ),
                     })
                 ]))]
     #[case::question_mark_after_call_with_args(
@@ -7555,25 +7572,25 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Try(
+                        expr: Expr::Try(
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token("bar", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("bar")))))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                            expr: Expr::Literal(Literal::String("arg".to_owned())),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
                             None,
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::None)),
+                                expr: Expr::Literal(Literal::None),
                             }),
-                        )),
+                        ),
                     })
                 ]))]
     #[case::question_mark_after_call_error(
@@ -7593,19 +7610,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("foo".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("foo".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("bar".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("bar".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::coalesce_with_none(
@@ -7618,19 +7635,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::None)),
+                                        expr: Expr::Literal(Literal::None),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("default".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("default".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::coalesce_with_identifiers(
@@ -7643,19 +7660,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::COALESCE, Some(Shared::new(token(TokenKind::Coalesce)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::coalesce_error_missing_rhs(
@@ -7674,15 +7691,15 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                            expr: Expr::Literal(Literal::Number(42.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::negate_with_identifier(
@@ -7694,15 +7711,15 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::negate_error_missing_rhs(
@@ -7720,10 +7737,10 @@ mod tests {
             Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Import(
+                expr: Expr::Import(
                     Literal::String("name".to_owned()),
                     None,
-                )),
+                ),
             })
             ]))]
     #[case::import_as(
@@ -7737,13 +7754,13 @@ mod tests {
             Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Import(
+                expr: Expr::Import(
                     Literal::String("name".to_owned()),
                     Some(IdentWithToken::new_with_token(
                         "alias",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("alias"))))),
                     )),
-                )),
+                ),
             })
             ]))]
     #[case::import_as_missing_ident(
@@ -7764,10 +7781,10 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 1.into(),
-                    expr: Shared::new(Expr::QualifiedAccess(
+                    expr: Expr::QualifiedAccess(
                         vec![IdentWithToken::new_with_token("test", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("test"))))))],
                         AccessTarget::Ident(IdentWithToken::new_with_token("foo", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("foo")))))),
-                    ))),
+                    )),
                 })
             ]))]
     #[case::qualified_access_with_call(
@@ -7783,18 +7800,18 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::QualifiedAccess(
+                expr: Expr::QualifiedAccess(
                     vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("arg".to_owned()))),
+                                expr: Expr::Literal(Literal::String("arg".to_owned())),
                             }),
                         ],
                     ),
-                )),
+                ),
             })
         ]))]
     #[case::qualified_access_multi_level(
@@ -7811,7 +7828,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::QualifiedAccess(
+                expr: Expr::QualifiedAccess(
                     vec![
                         IdentWithToken::new_with_token("mod1", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod1")))))),
                         IdentWithToken::new_with_token("mod2", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod2")))))),
@@ -7820,7 +7837,7 @@ mod tests {
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
                         smallvec![],
                     ),
-                )),
+                ),
             })
         ]))]
     #[case::slice_access_with_start_only(
@@ -7835,31 +7852,31 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Shared::new(Expr::Call(
+                    expr: Expr::Call(
                         IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                         smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                             }),
                             Shared::new(Node {
                                 token_id: 1.into(),
-                                expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                                expr: Expr::Literal(Literal::Number(1.into())),
                             }),
                             Shared::new(Node {
                                 token_id: 3.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token("len", None),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                                            expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                                         }),
                                     ],
-                                )),
+                                ),
                             }),
                         ],
-                    )),
+                    ),
                 })
             ]))]
     #[case::slice_access_with_end_only(
@@ -7874,23 +7891,23 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 3.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                            expr: Expr::Literal(Literal::Number(2.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::qualified_access_with_call_and_slice(
@@ -7910,29 +7927,29 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 3.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::QualifiedAccess(
+                            expr: Expr::QualifiedAccess(
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
                                     smallvec![],
                                 ),
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(2.into()))),
+                            expr: Expr::Literal(Literal::Number(2.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::qualified_access_with_call_and_end_only_slice(
@@ -7951,29 +7968,29 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 3.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token(constants::builtins::SLICE, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::QualifiedAccess(
+                            expr: Expr::QualifiedAccess(
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
                                     smallvec![],
                                 ),
-                            )),
+                            ),
                         }),
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(0.into()))),
+                            expr: Expr::Literal(Literal::Number(0.into())),
                         }),
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::Number(1.into()))),
+                            expr: Expr::Literal(Literal::Number(1.into())),
                         }),
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::selector_dot_is_self(
@@ -7984,7 +8001,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Shared::new(Expr::Self_),
+                        expr: Expr::Self_,
                     })
                 ]))]
     #[case::ident_with_single_attr(
@@ -7996,19 +8013,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("name".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("name".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::function_call_result_with_attr(
@@ -8022,22 +8039,22 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("get_user")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Call(
+                                        expr: Expr::Call(
                                             IdentWithToken::new_with_token("get_user", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("get_user")))))),
                                             SmallVec::new(),
-                                        )),
+                                        ),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("name".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("name".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::ident_with_attr_in_pipe(
@@ -8051,23 +8068,23 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("data", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("data")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("data", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("data"))))))),
                         }),
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::self_with_attr(
@@ -8079,19 +8096,19 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 1.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::ATTR, Some(Shared::new(token(TokenKind::Self_)))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Self_),
+                                        expr: Expr::Self_,
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::pipe_equal_with_selector(
@@ -8105,23 +8122,23 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET_ATTR, Some(Shared::new(token(TokenKind::StringLiteral("new_id".to_owned()))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Selector(selector::Selector::Heading(Some(1)))),
+                                        expr: Expr::Selector(selector::Selector::Heading(Some(1))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("new_id".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("new_id".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::pipe_equal_with_ident_and_attr(
@@ -8135,23 +8152,23 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 3.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET_ATTR, Some(Shared::new(token(TokenKind::StringLiteral("John".to_owned()))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("obj"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("John".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("John".to_owned())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::pipe_equal_with_self_and_attr(
@@ -8165,23 +8182,23 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token(constants::builtins::SET_ATTR, Some(Shared::new(token(TokenKind::NumberLiteral(42.into()))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 0.into(),
-                                        expr: Shared::new(Expr::Self_),
+                                        expr: Expr::Self_,
                                     }),
                                     Shared::new(Node {
                                         token_id: 1.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("value".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("value".to_owned())),
                                     }),
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::Number(42.into()))),
+                                        expr: Expr::Literal(Literal::Number(42.into())),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ]))]
     #[case::let_with_reserved_keyword_as_value(
@@ -8241,16 +8258,16 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
                         smallvec![
                             Param::variadic(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         ],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_with_regular_and_variadic_param(
@@ -8270,7 +8287,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
                         smallvec![
                             Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
@@ -8278,9 +8295,9 @@ mod tests {
                         ],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest"))))))),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_variadic_param_not_last(
@@ -8319,14 +8336,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
                         smallvec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::def_without_params_with_do(
@@ -8340,14 +8357,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Def(
+                expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
                         smallvec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args")))))))),
+                            expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         })],
-                )),
+                ),
             }),
         ]))]
     #[case::arrow_simple(
@@ -8362,15 +8379,15 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Fn(
+                expr: Expr::Fn(
                     SmallVec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
-                            expr: Shared::new(Expr::Literal(Literal::String("result".to_owned()))),
+                            expr: Expr::Literal(Literal::String("result".to_owned())),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::arrow_with_args(
@@ -8393,7 +8410,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Fn(
+                expr: Expr::Fn(
                     smallvec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
@@ -8401,22 +8418,22 @@ mod tests {
                     vec![
                         Shared::new(Node {
                             token_id: 4.into(),
-                            expr: Shared::new(Expr::Call(
+                            expr: Expr::Call(
                                 IdentWithToken::new_with_token("contains", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("contains")))))),
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                     }),
                                     Shared::new(Node {
                                         token_id: 3.into(),
-                                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y")))))))),
+                                        expr: Expr::Ident(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                                     }),
                                 ],
-                            )),
+                            ),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     #[case::arrow_nested_in_call(
@@ -8436,37 +8453,36 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Shared::new(Expr::Call(
+                expr: Expr::Call(
                     IdentWithToken::new_with_token("apply", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("apply")))))),
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Shared::new(Expr::Fn(
+                            expr: Expr::Fn(
                                 smallvec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
                                     Shared::new(Node {
                                         token_id: 2.into(),
-                                        expr: Shared::new(Expr::Literal(Literal::String("processed".to_owned()))),
+                                        expr: Expr::Literal(Literal::String("processed".to_owned())),
                                     })
                                 ],
-                            )),
+                            ),
                         })
                     ],
-                )),
+                ),
             })
         ]))]
     fn test_parse(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
-        let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let result = Parser::new(input.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match (&result, &expected) {
             (Ok(actual), Ok(expected)) => {
                 assert_eq!(actual.len(), expected.len());
-                let actual_exprs: Vec<_> = actual.iter().map(|a| &*a.expr).collect();
-                let expected_exprs: Vec<_> = expected.iter().map(|e| &*e.expr).collect();
+                let actual_exprs: Vec<_> = actual.iter().map(|a| &a.expr).collect();
+                let expected_exprs: Vec<_> = expected.iter().map(|e| &e.expr).collect();
                 assert_eq!(actual_exprs, expected_exprs);
             }
             (Err(actual), Err(expected)) => {
@@ -8535,12 +8551,13 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Selector(selector) = &*program[0].expr {
+                if let Expr::Selector(selector) = &program[0].expr {
                     assert_eq!(*selector, expected_selector);
                 } else {
                     panic!("Expected Selector expression, got {:?}", program[0].expr);
@@ -8615,12 +8632,13 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Selector(selector) = &*program[0].expr {
+                if let Expr::Selector(selector) = &program[0].expr {
                     assert_eq!(*selector, expected_selector);
                 } else {
                     panic!("Expected Selector expression, got {:?}", program[0].expr);
@@ -8671,17 +8689,18 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
             .parse()
             .expect("parse error");
 
         assert_eq!(result.len(), 1);
-        let Expr::Block(nodes) = &*result[0].expr else {
+        let Expr::Block(nodes) = &result[0].expr else {
             panic!("expected Block, got {:?}", result[0].expr);
         };
         assert_eq!(nodes.len(), expected.len());
         for (node, sel) in nodes.iter().zip(expected.iter()) {
-            let Expr::Selector(actual) = &*node.expr else {
+            let Expr::Selector(actual) = &node.expr else {
                 panic!("expected Selector, got {:?}", node.expr);
             };
             assert_eq!(actual, sel);
@@ -8735,17 +8754,18 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID)
             .parse()
             .expect("parse error");
 
         assert_eq!(result.len(), 1);
-        let Expr::Block(nodes) = &*result[0].expr else {
+        let Expr::Block(nodes) = &result[0].expr else {
             panic!("expected Block, got {:?}", result[0].expr);
         };
         assert_eq!(nodes.len(), expected.len());
         for (node, sel) in nodes.iter().zip(expected.iter()) {
-            let Expr::Selector(actual) = &*node.expr else {
+            let Expr::Selector(actual) = &node.expr else {
                 panic!("expected Selector, got {:?}", node.expr);
             };
             assert_eq!(actual, sel);
@@ -8777,15 +8797,16 @@ mod tests {
                 module_id: 1.into(),
             }),
         ];
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
         assert!(result.is_ok());
         let program = result.unwrap();
         assert_eq!(program.len(), 1);
-        let Expr::As(ident, inner) = &*program[0].expr else {
+        let Expr::As(ident, inner) = &program[0].expr else {
             panic!("expected Expr::As, got {:?}", program[0].expr);
         };
         assert_eq!(ident.name.as_str(), "x");
-        assert!(matches!(*inner.expr, Expr::Literal(Literal::Number(_))));
+        assert!(matches!(&inner.expr, Expr::Literal(Literal::Number(_))));
     }
 
     #[test]
@@ -8809,12 +8830,13 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Literal(Literal::String(value)) = &*program[0].expr {
+                if let Expr::Literal(Literal::String(value)) = &program[0].expr {
                     assert_eq!(value, "test_value");
                 } else {
                     panic!("Expected String literal, got {:?}", program[0].expr);
@@ -8846,7 +8868,8 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         assert!(matches!(
             result,
@@ -8890,15 +8913,16 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &program[0].expr {
                     assert_eq!(ident.name, "function".into());
                     assert_eq!(args.len(), 1);
-                    if let Expr::Literal(Literal::String(value)) = &*args[0].expr {
+                    if let Expr::Literal(Literal::String(value)) = &args[0].expr {
                         assert_eq!(value, "env_arg_value");
                     } else {
                         panic!("Expected String literal in argument, got {:?}", args[0].expr);
@@ -8930,16 +8954,17 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &program[0].expr {
                     assert_eq!(ident.name, "attr".into());
                     assert_eq!(args.len(), 2);
-                    assert!(matches!(&*args[0].expr, Expr::Self_));
-                    if let Expr::Literal(Literal::String(attr_str)) = &*args[1].expr {
+                    assert!(matches!(&args[0].expr, Expr::Self_));
+                    if let Expr::Literal(Literal::String(attr_str)) = &args[1].expr {
                         assert_eq!(attr_str, attribute);
                     } else {
                         panic!("Expected String literal in second argument, got {:?}", args[1].expr);
@@ -8980,18 +9005,19 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &program[0].expr {
                     // Should be transformed to attr(base_selector, "attribute")
                     assert_eq!(ident.name, "attr".into());
                     assert_eq!(args.len(), 2);
 
                     // First argument should be the base selector
-                    if let Expr::Selector(selector) = &*args[0].expr {
+                    if let Expr::Selector(selector) = &args[0].expr {
                         match base_selector {
                             "h" => assert_eq!(*selector, Selector::Heading(None)),
                             "h1" => assert_eq!(*selector, Selector::Heading(Some(1))),
@@ -9004,7 +9030,7 @@ mod tests {
                     }
 
                     // Second argument should be the attribute string
-                    if let Expr::Literal(Literal::String(attr_str)) = &*args[1].expr {
+                    if let Expr::Literal(Literal::String(attr_str)) = &args[1].expr {
                         assert_eq!(attr_str, attribute);
                     } else {
                         panic!("Expected String literal in second argument, got {:?}", args[1].expr);
@@ -9043,12 +9069,13 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Block(nodes) = &*program[0].expr {
+                if let Expr::Block(nodes) = &program[0].expr {
                     // Desugars to `base | .. | step1 | .. | step2 | ...`, i.e. a plain
                     // selector interleaved with a `Recursive` selector between each hop.
                     let expected: Vec<Selector> = expected_selectors
@@ -9064,7 +9091,7 @@ mod tests {
                         .collect();
                     assert_eq!(nodes.len(), expected.len());
                     for (node, expected_sel) in nodes.iter().zip(expected.iter()) {
-                        if let Expr::Selector(sel) = &*node.expr {
+                        if let Expr::Selector(sel) = &node.expr {
                             assert_eq!(sel, expected_sel);
                         } else {
                             panic!("Expected Selector expression, got {:?}", node.expr);
@@ -9099,16 +9126,17 @@ mod tests {
             module_id: 1.into(),
         }));
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::Call(ident, args) = &*program[0].expr {
+                if let Expr::Call(ident, args) = &program[0].expr {
                     assert_eq!(ident.name, "attr".into());
                     assert_eq!(args.len(), 2);
-                    assert!(matches!(&*args[0].expr, Expr::Block(nodes) if nodes.len() == 3));
-                    assert!(matches!(&*args[1].expr, Expr::Literal(Literal::String(s)) if s == "lang"));
+                    assert!(matches!(&args[0].expr, Expr::Block(nodes) if nodes.len() == 3));
+                    assert!(matches!(&args[1].expr, Expr::Literal(Literal::String(s)) if s == "lang"));
                 } else {
                     panic!("Expected Call expression, got {:?}", program[0].expr);
                 }
@@ -9143,14 +9171,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9158,7 +9186,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("one".to_owned())))
+                                expr: Expr::Literal(Literal::String("one".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9166,7 +9194,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("two".to_owned())))
+                                expr: Expr::Literal(Literal::String("two".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9174,11 +9202,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 11.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                                expr: Expr::Literal(Literal::String("other".to_owned()))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_type_pattern(
@@ -9204,14 +9232,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("value", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("value", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("value")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9219,7 +9247,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("is string".to_owned())))
+                                expr: Expr::Literal(Literal::String("is string".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9227,11 +9255,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("is number".to_owned())))
+                                expr: Expr::Literal(Literal::String("is number".to_owned()))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_array_pattern(
@@ -9255,14 +9283,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("arr")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9273,11 +9301,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("two elements".to_owned())))
+                                expr: Expr::Literal(Literal::String("two elements".to_owned()))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_array_rest_pattern(
@@ -9302,14 +9330,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("arr")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9320,15 +9348,15 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("first", Some(Shared::new(Token {
+                                expr: Expr::Ident(IdentWithToken::new_with_token("first", Some(Shared::new(Token {
                                     range: Range::default(),
                                     kind: TokenKind::Ident(SmolStr::new("first")),
                                     module_id: 1.into()
-                                })))))
+                                }))))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_dict_pattern(
@@ -9352,14 +9380,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("obj", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("obj")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9370,15 +9398,15 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("name", Some(Shared::new(Token {
+                                expr: Expr::Ident(IdentWithToken::new_with_token("name", Some(Shared::new(Token {
                                     range: Range::default(),
                                     kind: TokenKind::Ident(SmolStr::new("name")),
                                     module_id: 1.into()
-                                })))))
+                                }))))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_with_guard(
@@ -9418,68 +9446,68 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("n", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("n", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("n")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
                             pattern: Pattern::Ident(IdentWithToken::new("x")),
                             guard: Some(Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::GT, Some(Shared::new(token(TokenKind::Gt)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 4.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                                            expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                                                 range: Range::default(),
                                                 kind: TokenKind::Ident(SmolStr::new("x")),
                                                 module_id: 1.into()
-                                            })))))
+                                            }))))
                                         }),
                                         Shared::new(Node {
                                             token_id: 6.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(0.into())))
+                                            expr: Expr::Literal(Literal::Number(0.into()))
                                         })
                                     ]
-                                ))
+                                )
                             })),
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("positive".to_owned())))
+                                expr: Expr::Literal(Literal::String("positive".to_owned()))
                             })
                         },
                         MatchArm {
                             pattern: Pattern::Ident(IdentWithToken::new("x")),
                             guard: Some(Shared::new(Node {
                                 token_id: 11.into(),
-                                expr: Shared::new(Expr::Call(
+                                expr: Expr::Call(
                                     IdentWithToken::new_with_token(constants::builtins::LT, Some(Shared::new(token(TokenKind::Lt)))),
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 10.into(),
-                                            expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                                            expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                                                 range: Range::default(),
                                                 kind: TokenKind::Ident(SmolStr::new("x")),
                                                 module_id: 1.into()
-                                            })))))
+                                            }))))
                                         }),
                                         Shared::new(Node {
                                             token_id: 12.into(),
-                                            expr: Shared::new(Expr::Literal(Literal::Number(0.into())))
+                                            expr: Expr::Literal(Literal::Number(0.into()))
                                         })
                                     ]
-                                ))
+                                )
                             })),
                             body: Shared::new(Node {
                                 token_id: 14.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("negative".to_owned())))
+                                expr: Expr::Literal(Literal::String("negative".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9487,11 +9515,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 17.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("zero".to_owned())))
+                                expr: Expr::Literal(Literal::String("zero".to_owned()))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_do_end(
@@ -9519,10 +9547,10 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Literal(Literal::Number(2.into())))
+                        expr: Expr::Literal(Literal::Number(2.into()))
                     }),
                     smallvec![
                         MatchArm {
@@ -9530,7 +9558,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("one".to_owned())))
+                                expr: Expr::Literal(Literal::String("one".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9538,7 +9566,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("two".to_owned())))
+                                expr: Expr::Literal(Literal::String("two".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9546,11 +9574,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 11.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                                expr: Expr::Literal(Literal::String("other".to_owned()))
                             })
                         }
                     ]
-                ))
+                )
             })
         ]))]
     // --- or-pattern parser tests ---
@@ -9580,14 +9608,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9598,7 +9626,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                                expr: Expr::Literal(Literal::String("matched".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9606,11 +9634,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                                expr: Expr::Literal(Literal::String("other".to_owned()))
                             })
                         },
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_or_string_literals(
@@ -9636,14 +9664,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9654,7 +9682,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                                expr: Expr::Literal(Literal::String("matched".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9662,11 +9690,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                                expr: Expr::Literal(Literal::String("other".to_owned()))
                             })
                         },
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_or_type_patterns(
@@ -9690,14 +9718,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9708,11 +9736,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("str or num".to_owned())))
+                                expr: Expr::Literal(Literal::String("str or num".to_owned()))
                             })
                         },
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_or_three_alternatives(
@@ -9740,14 +9768,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9759,7 +9787,7 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("matched".to_owned())))
+                                expr: Expr::Literal(Literal::String("matched".to_owned()))
                             })
                         },
                         MatchArm {
@@ -9767,11 +9795,11 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 8.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("other".to_owned())))
+                                expr: Expr::Literal(Literal::String("other".to_owned()))
                             })
                         },
                     ]
-                ))
+                )
             })
         ]))]
     #[case::match_or_bool_literals(
@@ -9793,14 +9821,14 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Shared::new(Expr::Match(
+                expr: Expr::Match(
                     Shared::new(Node {
                         token_id: 1.into(),
-                        expr: Shared::new(Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
+                        expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(Token {
                             range: Range::default(),
                             kind: TokenKind::Ident(SmolStr::new("x")),
                             module_id: 1.into()
-                        })))))
+                        }))))
                     }),
                     smallvec![
                         MatchArm {
@@ -9811,17 +9839,16 @@ mod tests {
                             guard: None,
                             body: Shared::new(Node {
                                 token_id: 5.into(),
-                                expr: Shared::new(Expr::Literal(Literal::String("bool".to_owned())))
+                                expr: Expr::Literal(Literal::String("bool".to_owned()))
                             })
                         },
                     ]
-                ))
+                )
             })
         ]))]
     fn test_parse_match(#[case] input: Vec<Token>, #[case] expected: Result<Program, SyntaxError>) {
         let mut arena = Arena::new(10);
-        let tokens: Vec<Shared<Token>> = input.into_iter().map(Shared::new).collect();
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let result = Parser::new(input.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
         assert_eq!(result, expected);
     }
 
@@ -9834,7 +9861,7 @@ mod tests {
         2,
         |segments: &[StringSegment]| {
             matches!(&segments[0], StringSegment::Text(s) if s == "Value: ") &&
-            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::Number(_))))
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&node.expr, Expr::Literal(Literal::Number(_))))
         }
     )]
     #[case::expr_string(
@@ -9845,7 +9872,7 @@ mod tests {
         2,
         |segments: &[StringSegment]| {
             matches!(&segments[0], StringSegment::Text(s) if s == "Result: ") &&
-            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::String(s)) if s == "hello"))
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&node.expr, Expr::Literal(Literal::String(s)) if s == "hello"))
         }
     )]
     #[case::expr_call(
@@ -9857,7 +9884,7 @@ mod tests {
         |segments: &[StringSegment]| {
             matches!(&segments[0], StringSegment::Text(s) if s == "Result: ") &&
             if let StringSegment::Expr(node) = &segments[1] {
-                if let Expr::Call(ident, args) = &*node.expr {
+                if let Expr::Call(ident, args) = &node.expr {
                     ident.name == "add".into() && args.len() == 2
                 } else {
                     false
@@ -9933,7 +9960,7 @@ mod tests {
         2,
         |segments: &[StringSegment]| {
             matches!(&segments[0], StringSegment::Text(s) if s == "Bool: ") &&
-            matches!(&segments[1], StringSegment::Expr(node) if matches!(&*node.expr, Expr::Literal(Literal::Bool(true))))
+            matches!(&segments[1], StringSegment::Expr(node) if matches!(&node.expr, Expr::Literal(Literal::Bool(true))))
         }
     )]
     fn test_parse_interpolated_string_with_expr(
@@ -9955,12 +9982,13 @@ mod tests {
             }),
         ];
 
-        let result = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
+        let raw_tokens: Vec<Token> = tokens.iter().map(|token| (**token).clone()).collect();
+        let result = Parser::new(raw_tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse();
 
         match result {
             Ok(program) => {
                 assert_eq!(program.len(), 1);
-                if let Expr::InterpolatedString(segments) = &*program[0].expr {
+                if let Expr::InterpolatedString(segments) = &program[0].expr {
                     assert_eq!(segments.len(), expected_len);
                     assert!(validator(segments), "Validator failed for segments");
                 } else {

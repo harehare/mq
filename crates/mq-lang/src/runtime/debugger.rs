@@ -81,7 +81,7 @@ impl Default for DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: Shared::new(ast::Node {
                 token_id: crate::ast::TokenId::new(0),
-                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
+                expr: ast::Expr::Literal(ast::Literal::Number(0.0.into())),
             }),
             token: Shared::new(Token {
                 kind: crate::TokenKind::Eof,
@@ -690,7 +690,7 @@ mod tests {
     fn make_node(token_id: TokenId) -> Shared<ast::Node> {
         Shared::new(ast::Node {
             token_id,
-            expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(42.0.into()))),
+            expr: ast::Expr::Literal(ast::Literal::Number(42.0.into())),
         })
     }
 

@@ -185,13 +185,9 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         }
     };
 
-    AstParser::new(
-        tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
-        &mut token_arena,
-        Module::TOP_LEVEL_MODULE_ID,
-    )
-    .parse()
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+    AstParser::new(tokens.iter(), &mut token_arena, Module::TOP_LEVEL_MODULE_ID)
+        .parse()
+        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.

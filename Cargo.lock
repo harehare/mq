@@ -2706,6 +2706,7 @@ dependencies = [
  "itertools 0.15.0",
  "md5",
  "miette",
+ "mimalloc",
  "mq-macros",
  "mq-markdown",
  "nom 8.0.0",

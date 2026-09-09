@@ -3811,7 +3811,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+        expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
     }),
     Some(vec!["Literal", "String", "hello"]),
     true
@@ -3819,7 +3819,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Literal(AstLiteral::Number(123.45.into()))),
+        expr: AstExpr::Literal(AstLiteral::Number(123.45.into())),
     }),
     Some(vec!["Literal", "Number", "123.45"]),
     true
@@ -3827,7 +3827,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Ident(mq_lang::IdentWithToken::new("my_var"))),
+        expr: AstExpr::Ident(mq_lang::IdentWithToken::new("my_var")),
     }),
     Some(vec!["Ident", "my_var"]),
     true
@@ -3835,13 +3835,13 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Call(
+        expr: AstExpr::Call(
             mq_lang::IdentWithToken::new("my_func"),
             smallvec![Shared::new(AstNode {
                 token_id: default_token_id(),
-                expr: Shared::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
+                expr: AstExpr::Literal(AstLiteral::Number(1.into())),
             })],
-        )),
+        ),
     }),
     Some(vec!["Call", "my_func", "Literal", "Number", "1.0"]),
     true
@@ -3849,18 +3849,18 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::If(smallvec![
+        expr: AstExpr::If(smallvec![
             (
                 Some(Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Shared::new(AstExpr::Literal(AstLiteral::Bool(true))),
+                    expr: AstExpr::Literal(AstLiteral::Bool(true)),
                 })),
                 Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Shared::new(AstExpr::Literal(AstLiteral::String("then_branch".to_string()))),
+                    expr: AstExpr::Literal(AstLiteral::String("then_branch".to_string())),
                 })
             )
-        ])),
+        ]),
     }),
     Some(vec!["If", "Bool", "true", "String", "then_branch"]),
     false
@@ -3881,7 +3881,7 @@ mod ast_json {
         if check_token_id {
             assert_eq!(deserialized_node.token_id, default_token_id());
         }
-        if let AstExpr::Ident(ident) = &*deserialized_node.expr {
+        if let AstExpr::Ident(ident) = &deserialized_node.expr {
             assert_eq!(ident.token, None);
         }
     }
@@ -3890,11 +3890,11 @@ mod ast_json {
     fn test_program_serialization_deserialization() {
         let node1 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Shared::new(AstExpr::Literal(AstLiteral::String("first".to_string()))),
+            expr: AstExpr::Literal(AstLiteral::String("first".to_string())),
         });
         let node2 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Shared::new(AstExpr::Literal(AstLiteral::Number(10.into()))),
+            expr: AstExpr::Literal(AstLiteral::Number(10.into())),
         });
         let original_program: Program = vec![node1, node2];
 
