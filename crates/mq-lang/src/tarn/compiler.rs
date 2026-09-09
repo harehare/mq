@@ -68,6 +68,14 @@ enum Resolved {
     Upvalue { index: u16, immutable: bool },
 }
 
+/// The parameter-binding path selected for a compile-time known fixed-arity call.
+#[derive(Clone, Copy)]
+enum FixedCallForm {
+    Exact,
+    ImplicitSelf,
+    Fallback,
+}
+
 struct LoopCtx {
     continue_target: usize,
     break_jumps: Vec<usize>,
@@ -111,8 +119,8 @@ struct PatternState {
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     scopes: Vec<FunctionScope>,
-    /// The directly enclosing named function and whether it has only required parameters.
-    function_names: Vec<Option<(crate::Ident, bool)>>,
+    /// The directly enclosing named function and its fixed arity, if it has one.
+    function_names: Vec<Option<(crate::Ident, Option<usize>)>>,
     current: usize,
     loops: Vec<LoopCtx>,
     current_token_id: crate::ast::TokenId,
@@ -998,7 +1006,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.scopes.push(scope);
         let is_fixed_arity = params.iter().all(|param| !param.is_variadic && param.default.is_none());
         self.function_names
-            .push(name_for_shadow.map(|name| (name, is_fixed_arity)));
+            .push(name_for_shadow.map(|name| (name, is_fixed_arity.then_some(params.len()))));
 
         let mut bindings = Vec::with_capacity(params.len());
         let mut required = 0usize;
@@ -2251,22 +2259,27 @@ impl<R: ModuleResolver> Compiler<R> {
         // every recursive call load and clone the closure. At this lexical depth the active
         // frame already supplies the correct captured environment, so call the current chunk
         // directly. A same-named parameter/local still takes precedence.
-        let direct_self_call = self
+        let direct_self_arity = self
             .function_names
             .last()
             .and_then(|entry| *entry)
-            .filter(|(name, fixed)| *fixed && *name == ident)
-            .is_some_and(|_| {
+            .and_then(|(name, arity)| (name == ident).then_some(arity).flatten())
+            .filter(|_| {
                 self.scopes
                     .last()
                     .is_some_and(|scope| scope.resolve_local(ident).is_none())
             });
-        if !shadowed && direct_self_call {
+        if !shadowed && let Some(arity) = direct_self_arity {
             for arg in args {
                 self.compile_expr(arg)?;
             }
             self.current_token_id = call_token_id;
-            self.emit(OpCode::CallSelf(self.arg_count(args.len())?));
+            let argc = self.arg_count(args.len())?;
+            self.emit(match Self::fixed_call_form(arity, argc) {
+                FixedCallForm::Exact => OpCode::CallSelfExact(argc),
+                FixedCallForm::ImplicitSelf => OpCode::CallSelfImplicitSelf(argc),
+                FixedCallForm::Fallback => OpCode::CallSelf(argc),
+            });
             return Ok(());
         }
 
@@ -2282,7 +2295,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.current_token_id = call_token_id;
                 let argc = self.arg_count(args.len())?;
                 if let Some(chunk) = self.scopes.last().and_then(|scope| scope.static_function(slot)) {
-                    self.emit(OpCode::CallStatic(chunk, argc));
+                    let arity = self.chunks[chunk as usize].param_shape.required;
+                    self.emit(match Self::fixed_call_form(arity, argc) {
+                        FixedCallForm::Exact => OpCode::CallStaticExact(chunk, argc),
+                        FixedCallForm::ImplicitSelf => OpCode::CallStaticImplicitSelf(chunk, argc),
+                        FixedCallForm::Fallback => OpCode::CallStatic(chunk, argc),
+                    });
                 } else {
                     self.emit(OpCode::CallLocal(slot, argc));
                 }
@@ -2365,6 +2383,18 @@ impl<R: ModuleResolver> Compiler<R> {
         let argc = self.arg_count(args.len())?;
         self.emit(OpCode::CallBuiltin(ident, argc));
         Ok(())
+    }
+
+    /// Classifies a statically known fixed-arity call without changing the fallback's runtime
+    /// arity-error behavior.
+    fn fixed_call_form(arity: usize, argc: u16) -> FixedCallForm {
+        if argc as usize == arity {
+            FixedCallForm::Exact
+        } else if arity > 0 && argc as usize + 1 == arity {
+            FixedCallForm::ImplicitSelf
+        } else {
+            FixedCallForm::Fallback
+        }
     }
 
     fn compile_local_binary(&mut self, op: BinaryOp, args: &ast::Args) -> bool {

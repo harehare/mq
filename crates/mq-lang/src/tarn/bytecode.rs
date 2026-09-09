@@ -279,10 +279,18 @@ pub(crate) enum OpCode {
     SelectorMatchHeading(u8),
     SelectorMatchWithArgs(Box<(Selector, u16)>),
     CallBuiltin(Ident, u16),
-    /// Calls a capture-free fixed-arity chunk without loading its closure from a local slot.
+    /// Calls a capture-free fixed-arity chunk through the checked fallback path.
     CallStatic(u16, u16),
-    /// Recursively calls the current fixed-arity chunk without capturing its own closure.
+    /// Calls a capture-free fixed-arity chunk with exactly its declared arguments.
+    CallStaticExact(u16, u16),
+    /// Calls a capture-free fixed-arity chunk with the pipeline value as its first argument.
+    CallStaticImplicitSelf(u16, u16),
+    /// Recursively calls the current fixed-arity chunk through the checked fallback path.
     CallSelf(u16),
+    /// Recursively calls the current chunk with exactly its declared arguments.
+    CallSelfExact(u16),
+    /// Recursively calls the current chunk with the pipeline value as its first argument.
+    CallSelfImplicitSelf(u16),
     CallLocal(u16, u16),
     /// Calls an immutable upvalue without first placing its closure on the operand stack.
     CallUpvalue(u16, u16),
@@ -935,7 +943,9 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         closure.upvalues.as_ref().map_or(0, |upvalues| upvalues.len()),
                     )?;
                 }
-                OpCode::CallStatic(target, _) => {
+                OpCode::CallStatic(target, _)
+                | OpCode::CallStaticExact(target, _)
+                | OpCode::CallStaticImplicitSelf(target, _) => {
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
                     let callee = &chunks[*target as usize];
                     if !callee.upvalue_names.is_empty() || callee.param_shape.fixed_required_arity().is_none() {
@@ -945,13 +955,50 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             target: *target,
                         });
                     }
+                    let arity = callee.param_shape.required;
+                    match op {
+                        OpCode::CallStaticExact(_, argc) if arity != *argc as usize => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: *target,
+                            });
+                        }
+                        OpCode::CallStaticImplicitSelf(_, argc) if arity == 0 || arity != *argc as usize + 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: *target,
+                            });
+                        }
+                        _ => {}
+                    }
                 }
-                OpCode::CallSelf(_) if chunk.param_shape.fixed_required_arity().is_none() => {
-                    return Err(BytecodeError::StaticCallTargetInvalid {
-                        chunk: chunk_index,
-                        pc,
-                        target: chunk_index as u16,
-                    });
+                OpCode::CallSelf(_) | OpCode::CallSelfExact(_) | OpCode::CallSelfImplicitSelf(_) => {
+                    let Some(arity) = chunk.param_shape.fixed_required_arity() else {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: chunk_index as u16,
+                        });
+                    };
+                    match op {
+                        OpCode::CallSelfExact(argc) if arity != *argc as usize => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfImplicitSelf(argc) if arity == 0 || arity != *argc as usize + 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        _ => {}
+                    }
                 }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;

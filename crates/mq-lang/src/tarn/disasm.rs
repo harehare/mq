@@ -230,7 +230,15 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         }
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
         bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
+        bytecode::OpCode::CallStaticExact(chunk, argc) => {
+            format!("CallStaticExact chunk {chunk}, argc={argc}")
+        }
+        bytecode::OpCode::CallStaticImplicitSelf(chunk, argc) => {
+            format!("CallStaticImplicitSelf chunk {chunk}, argc={argc}")
+        }
         bytecode::OpCode::CallSelf(argc) => format!("CallSelf argc={argc}"),
+        bytecode::OpCode::CallSelfExact(argc) => format!("CallSelfExact argc={argc}"),
+        bytecode::OpCode::CallSelfImplicitSelf(argc) => format!("CallSelfImplicitSelf argc={argc}"),
         bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {}, argc={argc}", local(*slot)),
         bytecode::OpCode::CallUpvalue(slot, argc) => format!("CallUpvalue {}, argc={argc}", upvalue(*slot)),
         bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
