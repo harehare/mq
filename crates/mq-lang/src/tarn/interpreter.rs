@@ -877,7 +877,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         };
     }
 
-    let mut tail_call_candidate = false;
     let outcome = 'dispatch: loop {
         if ip >= chunk.code.len() {
             let value = if stack.len() > frame.stack_base {
@@ -892,17 +891,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
         }
         let op = &chunk.code[ip];
-        // Only `CallSelf` is eligible today. Other call instructions can enter a
-        // default-parameter binder or carry call-depth behavior that must remain observable.
-        tail_call_candidate = matches!(
-            op,
-            OpCode::CallSelf(..)
-                | OpCode::CallSelfExact(..)
-                | OpCode::CallSelfExact0
-                | OpCode::CallSelfExact1
-                | OpCode::CallSelfExact2
-                | OpCode::CallSelfImplicitSelf(..)
-        );
         ip += 1;
 
         match op {
@@ -1245,11 +1233,33 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(value));
             }
             OpCode::CallBuiltin(ident, argc) => {
-                let mut args = Args::with_capacity(*argc as usize);
-                for _ in 0..*argc {
-                    args.push(pop_value!());
-                }
-                args.reverse();
+                // Most direct builtin calls have at most two arguments, which fit in `Args`'
+                // inline storage. Construct those in evaluation order directly; larger calls
+                // retain the compact generic pop-and-reverse path.
+                let args = match *argc {
+                    0 => Args::new(),
+                    1 => {
+                        let mut args = Args::new();
+                        args.push(pop_value!());
+                        args
+                    }
+                    2 => {
+                        let second = pop_value!();
+                        let first = pop_value!();
+                        let mut args = Args::new();
+                        args.push(first);
+                        args.push(second);
+                        args
+                    }
+                    _ => {
+                        let mut args = Args::with_capacity(*argc as usize);
+                        for _ in 0..*argc {
+                            args.push(pop_value!());
+                        }
+                        args.reverse();
+                        args
+                    }
+                };
                 let result = call_builtin_args(
                     ident,
                     args,
@@ -1368,7 +1378,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact0 => {
                 let new_frame = call_exact_fixed_chunk_0(
@@ -1386,7 +1396,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     },
                     execution,
                 );
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact1 => {
                 let new_frame = call_exact_fixed_chunk_1(
@@ -1405,7 +1415,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     },
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact2 => {
                 let new_frame = call_exact_fixed_chunk_2(
@@ -1424,7 +1434,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     },
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
                 let new_frame = call_known_fixed_chunk_from_stack(
@@ -1445,7 +1455,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallLocal(slot, argc) => {
                 let callee = locals.get(*slot);
@@ -1677,22 +1687,25 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
         }
     };
-    let outcome = if tail_call_candidate
-        && matches!(outcome, FrameOutcome::Enter(_))
-        && matches!(chunk.code.get(ip), Some(OpCode::Return))
-    {
-        let FrameOutcome::Enter(frame) = outcome else {
-            unreachable!("guard above requires an entering call frame");
-        };
-        FrameOutcome::TailEnter(frame)
-    } else {
-        outcome
-    };
     frame.ip = ip;
     if let FrameOutcome::Complete(_) = &outcome {
         stack.truncate(frame.stack_base);
     }
     Ok(outcome)
+}
+
+/// Marks a self call immediately followed by `Return` as a tail call.
+///
+/// Only self calls use the frame-replacement path: other calls can require parameter binding
+/// or preserve observable call-depth behavior. Keeping this check at self-call dispatch avoids
+/// reclassifying every ordinary VM instruction in the hot loop.
+#[inline(always)]
+fn tail_call_outcome(chunk: &Chunk, next_ip: usize, frame: Frame) -> FrameOutcome {
+    if matches!(chunk.code.get(next_ip), Some(OpCode::Return)) {
+        FrameOutcome::TailEnter(frame)
+    } else {
+        FrameOutcome::Enter(frame)
+    }
 }
 
 /// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame` — `unwind`

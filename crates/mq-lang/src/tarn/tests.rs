@@ -488,6 +488,14 @@ fn tail_recursive_call_reuses_its_frame() {
     assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(0.0.into()));
 }
 
+/// Direct builtin calls preserve argument order through the specialized common-arity paths.
+#[rstest]
+#[case("type(42)", RuntimeValue::String(Shared::new("number".to_string())))]
+#[case("contains(\"tarn\", \"rn\")", RuntimeValue::Boolean(true))]
+fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
 #[test]
 fn immutable_function_upvalue_calls_use_call_upvalue() {
     use super::bytecode::OpCode;
