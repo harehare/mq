@@ -149,21 +149,32 @@ fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> R
 }
 
 fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
-    let mut result = vec![value.clone()];
+    let mut result = Vec::new();
+    collect_recursive_into(value, &mut result);
+    result
+}
+
+/// Appends a pre-order recursive walk without allocating an intermediate vector per child.
+///
+/// Recursive selectors are often used on nested data converted from frontmatter. Building a
+/// separate `Vec` for every child made the traversal allocation-heavy and repeatedly copied
+/// partial results into its parent. A single output buffer preserves the selector's order while
+/// making allocation scale with the complete result instead.
+fn collect_recursive_into(value: &RuntimeValue, result: &mut Vec<RuntimeValue>) {
+    result.push(value.clone());
     match value {
         RuntimeValue::Array(items) => {
             for item in items.iter() {
-                result.extend(collect_recursive(item));
+                collect_recursive_into(item, result);
             }
         }
         RuntimeValue::Dict(map) => {
             for v in map.values() {
-                result.extend(collect_recursive(v));
+                collect_recursive_into(v, result);
             }
         }
         _ => {}
     }
-    result
 }
 
 #[cfg(test)]
@@ -202,6 +213,31 @@ mod tests {
                 RuntimeValue::None
             ])),
             "recursive dict results must remain flattened when selected through an array"
+        );
+    }
+
+    #[test]
+    fn collect_recursive_preserves_preorder_for_nested_values() {
+        let input = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+                Ident::new("nested"),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+            )]))),
+        ]));
+
+        assert_eq!(
+            collect_recursive(&input),
+            vec![
+                input.clone(),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+                    Ident::new("nested"),
+                    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+                )]))),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+                RuntimeValue::Number(2.into()),
+            ]
         );
     }
 }

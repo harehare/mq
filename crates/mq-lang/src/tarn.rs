@@ -177,10 +177,15 @@ where
         // `input` owns its shared node. In the common case it is uniquely held, so move the
         // Markdown tree into the transform instead of cloning it before walking every value.
         RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node)
-            .map_values_into(
-                &mut |child_node: &mq_markdown::Node| -> Result<mq_markdown::Node, interpreter::VmError> {
-                    let value = run_one(RuntimeValue::new_markdown(child_node.clone()))?;
-                    Ok(markdown_child_result(value, child_node))
+            .map_values_into_owned(
+                &mut |child_node: mq_markdown::Node| -> Result<mq_markdown::Node, interpreter::VmError> {
+                    // The VM receives one shared reference and this fallback keeps the other.
+                    // Read-only work and no-match results move the same node back out without a
+                    // deep clone, while mutations naturally take the existing copy-on-write path.
+                    let child_node = Shared::new(child_node);
+                    let fallback = Shared::clone(&child_node);
+                    let value = run_one(RuntimeValue::Markdown(child_node, None))?;
+                    Ok(markdown_child_result(value, fallback))
                 },
             )
             .map(RuntimeValue::new_markdown),
@@ -188,9 +193,9 @@ where
     }
 }
 
-fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) -> mq_markdown::Node {
+fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node>) -> mq_markdown::Node {
     match value {
-        RuntimeValue::None => child_node.to_fragment(),
+        RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
         RuntimeValue::NativeFunction(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
@@ -205,7 +210,12 @@ fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) ->
         | RuntimeValue::String(_)
         | RuntimeValue::Bytes(_) => value.to_string().into(),
         RuntimeValue::Symbol(i) => i.as_str().into(),
-        RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node),
+        RuntimeValue::Markdown(node, _) => {
+            // `node` can be the shared VM input. Drop the unmatched fallback first so the
+            // result is uniquely owned again and can move out without cloning.
+            drop(fallback);
+            Shared::unwrap_or_clone(node)
+        }
     }
 }
 

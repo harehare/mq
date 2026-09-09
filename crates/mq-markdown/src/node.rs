@@ -938,6 +938,19 @@ impl Node {
         Self::_map_values(self, f)
     }
 
+    /// Maps this node and its fragment descendants, giving the callback ownership of each node.
+    ///
+    /// This is useful when a transform must retain an unchanged fallback node without cloning it
+    /// again after the callback returns. The traversal continues through a fragment returned by
+    /// the callback, matching [`Self::map_values_into`]'s behavior.
+    pub fn map_values_into_owned<E, F>(self, f: &mut F) -> Result<Node, E>
+    where
+        E: std::error::Error,
+        F: FnMut(Node) -> Result<Node, E>,
+    {
+        Self::_map_values_owned(self, f)
+    }
+
     fn _map_values<E, F>(node: Node, f: &mut F) -> Result<Node, E>
     where
         E: std::error::Error,
@@ -962,8 +975,40 @@ impl Node {
         }
     }
 
+    fn _map_values_owned<E, F>(node: Node, f: &mut F) -> Result<Node, E>
+    where
+        E: std::error::Error,
+        F: FnMut(Node) -> Result<Node, E>,
+    {
+        match f(node)? {
+            Node::Fragment(mut v) => {
+                let values = v
+                    .values
+                    .into_iter()
+                    .map(|node| Self::_map_values_owned(node, f))
+                    .collect::<Result<Vec<_>, _>>();
+                match values {
+                    Ok(values) => {
+                        v.values = values;
+                        Ok(Node::Fragment(v))
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            node => Ok(node),
+        }
+    }
+
     pub fn to_fragment(&self) -> Node {
-        match self.clone() {
+        self.clone().into_fragment()
+    }
+
+    /// Converts this node into a fragment, preserving its children without cloning them.
+    ///
+    /// Leaf nodes become [`Node::Empty`]. This is the consuming counterpart to
+    /// [`Self::to_fragment`].
+    pub fn into_fragment(self) -> Node {
+        match self {
             Node::List(List { values, .. })
             | Node::TableCell(TableCell { values, .. })
             | Node::TableRow(TableRow { values, .. })
@@ -3896,6 +3941,30 @@ mod tests {
         assert_eq!(mapped.to_string(), "BEFORE");
     }
 
+    #[test]
+    fn map_values_into_owned_moves_nodes_through_the_callback() {
+        let node = Node::Fragment(Fragment {
+            values: vec![Node::Text(Text {
+                value: "before".to_string(),
+                position: None,
+            })],
+        });
+
+        let mapped = node
+            .map_values_into_owned(&mut |node| -> Result<Node, std::io::Error> {
+                Ok(match node {
+                    Node::Text(mut text) => {
+                        text.value.make_ascii_uppercase();
+                        Node::Text(text)
+                    }
+                    node => node,
+                })
+            })
+            .unwrap();
+
+        assert_eq!(mapped.to_string(), "BEFORE");
+    }
+
     #[rstest]
     #[case::text(Node::Text(Text{value: "".to_string(), position: None}),
            "test".to_string(),
@@ -5089,7 +5158,8 @@ mod tests {
            Node::Empty)]
     #[case(Node::Empty, Node::Empty)]
     fn test_to_fragment(#[case] node: Node, #[case] expected: Node) {
-        assert_eq!(node.to_fragment(), expected);
+        assert_eq!(node.clone().to_fragment(), expected);
+        assert_eq!(node.into_fragment(), expected);
     }
 
     // Regression coverage for the 0.6.2 blank-line bug: `eval_markdown_node`
