@@ -182,6 +182,31 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("BinaryLocalConst {op:?} {}, const {constant}", local(*slot))
         }
+        bytecode::OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset,
+        } => {
+            format!(
+                "JumpIfFalseLocalLocal {op:?} {}, {} -> {}",
+                local(*left),
+                local(*right),
+                jump_ref(pc, *offset)
+            )
+        }
+        bytecode::OpCode::JumpIfFalseLocalConst {
+            op,
+            local: slot,
+            constant,
+            offset,
+        } => {
+            format!(
+                "JumpIfFalseLocalConst {op:?} {}, const {constant} -> {}",
+                local(*slot),
+                jump_ref(pc, *offset)
+            )
+        }
         bytecode::OpCode::Neg => "Neg".to_string(),
         bytecode::OpCode::Not => "Not".to_string(),
         bytecode::OpCode::ArrayNew => "ArrayNew".to_string(),

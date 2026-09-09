@@ -1063,6 +1063,35 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
             }
+            OpCode::JumpIfFalseLocalLocal {
+                op,
+                left,
+                right,
+                offset,
+            } => {
+                let a = local_runtime_value(locals, *left, chunks)?;
+                let b = local_runtime_value(locals, *right, chunks)?;
+                let cond = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                if !cond.is_truthy() {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+            }
+            OpCode::JumpIfFalseLocalConst {
+                op,
+                local,
+                constant,
+                offset,
+            } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let cond = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                if !cond.is_truthy() {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+            }
             OpCode::Neg => {
                 let a = pop_value!();
                 stack.push(StackValue::Value(match a {
