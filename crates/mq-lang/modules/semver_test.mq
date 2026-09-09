@@ -131,8 +131,30 @@ end
 #   ["2.0.0", "<2.0.0", false],
 #   ["1.5.0", " >= 1.0.0 , < 2.0.0 ", true],
 #   ["1.0.0-alpha", "<1.0.0", true],
+#   ["1.2.3", "^1.2.3", true],
+#   ["1.9.9", "^1.2.3", true],
+#   ["2.0.0", "^1.2.3", false],
+#   ["1.2.2", "^1.2.3", false],
+#   ["0.2.5", "^0.2.3", true],
+#   ["0.3.0", "^0.2.3", false],
+#   ["0.0.3", "^0.0.3", true],
+#   ["0.0.4", "^0.0.3", false],
+#   ["1.2.3", "~1.2.3", true],
+#   ["1.2.9", "~1.2.3", true],
+#   ["1.3.0", "~1.2.3", false],
+#   ["1.2.2", "~1.2.3", false],
 # ])
 def test_semver_satisfies(version, range_expr, expected):
   let result = semver::semver_satisfies(version, range_expr)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
+#   [["1.0.0", "1.5.0", "2.0.0"], "^1.0.0", "1.5.0"],
+#   [["1.0.0", "1.2.3", "1.9.9", "2.0.0"], "~1.2.0", "1.2.3"],
+#   [["1.0.0", "2.0.0"], ">3.0.0", None],
+# ])
+def test_semver_max_satisfying(versions, range_expr, expected):
+  let result = semver::semver_max_satisfying(versions, range_expr)
   | assert_eq(result, expected)
 end
