@@ -36,6 +36,15 @@ struct FixedChunkCall {
     remove_callee: bool,
 }
 
+/// Metadata embedded in an exact or implicit-self direct-call opcode.
+pub(super) struct KnownFixedChunkCall {
+    pub(super) chunk_index: u16,
+    pub(super) upvalues: Option<Shared<Vec<Cell>>>,
+    pub(super) argc: u16,
+    pub(super) uses_implicit_self: bool,
+    pub(super) remove_callee: bool,
+}
+
 /// Chunk/pool access shared by parameter binding and default-value evaluation.
 struct ParameterContext<'chunks, 'execution> {
     chunks: &'chunks Shared<Vec<Chunk>>,
@@ -230,6 +239,41 @@ fn call_fixed_chunk_from_stack(
         ));
     }
 
+    call_known_fixed_chunk_from_stack(
+        KnownFixedChunkCall {
+            chunk_index: call.chunk_index,
+            upvalues: call.upvalues,
+            argc: call.argc,
+            uses_implicit_self,
+            remove_callee: call.remove_callee,
+        },
+        stack,
+        call_site,
+        chunks,
+        execution,
+    )
+}
+
+/// Builds a frame for a direct fixed-arity call whose parameter form was established while
+/// compiling bytecode. The verifier ensures the opcode agrees with the target chunk.
+pub(super) fn call_known_fixed_chunk_from_stack(
+    call: KnownFixedChunkCall,
+    stack: &mut Vec<StackValue>,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    let callee_chunk = &chunks[call.chunk_index as usize];
+    let argc = call.argc as usize;
+    if stack.len() < argc + usize::from(call.remove_callee) {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::Corrupt("stack underflow in fixed closure call"),
+        ));
+    }
+
+    let arity = argc + usize::from(call.uses_implicit_self);
     let initialized_slots = SELF_SLOT as usize + 1 + arity;
     let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
         callee_chunk.local_count,
@@ -237,7 +281,7 @@ fn call_fixed_chunk_from_stack(
         callee_chunk.captured_local_slots(),
     );
     let self_value = call_site.locals.get(SELF_SLOT);
-    let first_arg_slot = if uses_implicit_self {
+    let first_arg_slot = if call.uses_implicit_self {
         callee_locals.set(SELF_SLOT, self_value.clone());
         callee_locals.set(SELF_SLOT + 1, self_value);
         SELF_SLOT as usize + 2
@@ -264,7 +308,6 @@ fn call_fixed_chunk_from_stack(
             VmError::Corrupt("stack underflow while removing fixed-call callee"),
         ));
     }
-
     Ok(Frame::new(
         call.chunk_index,
         call_site.frame_chunks,
