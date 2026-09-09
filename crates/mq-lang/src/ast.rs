@@ -42,7 +42,7 @@ mod tests {
 
         let ident = Shared::new(Node {
             token_id: TokenId::new(1),
-            expr: Shared::new(AstExpr::Ident(IdentWithToken::new("foo"))),
+            expr: AstExpr::Ident(IdentWithToken::new("foo")),
         });
         let program = vec![ident.clone()];
 
@@ -50,7 +50,7 @@ mod tests {
         let deserialized = ast_from_json(&json).expect("Deserialization should succeed");
 
         assert_eq!(deserialized.len(), 1);
-        match &*deserialized[0].expr {
+        match &deserialized[0].expr {
             AstExpr::Ident(name) => assert_eq!(name.name, "foo".into()),
             _ => panic!("Expected Ident node"),
         }

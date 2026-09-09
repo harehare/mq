@@ -86,6 +86,7 @@ tiktoken = ["dep:tiktoken-rs"]
 
 [dev-dependencies]
 divan = {workspace = true}
+mimalloc = {workspace = true, features = ["v3"]}
 proptest = {workspace = true}
 rstest = {workspace = true}
 scopeguard = {workspace = true}

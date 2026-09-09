@@ -486,7 +486,7 @@ fn collect_module_prelude_targets(
     inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
 ) {
     for (index, node) in program.iter().enumerate() {
-        match &*node.expr {
+        match &node.expr {
             Expr::Include(Literal::String(path)) => {
                 if !paths.iter().any(|existing| existing == path) {
                     paths.push(path.clone());
@@ -510,7 +510,7 @@ fn collect_module_prelude_targets(
 /// as separate probes.
 fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
     for node in program {
-        match &*node.expr {
+        match &node.expr {
             Expr::Include(Literal::String(path)) | Expr::Import(Literal::String(path), _) => {
                 if !paths.iter().any(|existing| existing == path) {
                     paths.push(path.clone());
@@ -576,7 +576,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
 
     let directive_program: Program = vec![Shared::new(Node {
         token_id: crate::ast::TokenId::new(0),
-        expr: Shared::new(Expr::Include(Literal::String(path.to_string()))),
+        expr: Expr::Include(Literal::String(path.to_string())),
     })];
     let compiled = compiler::compile_program_for_engine(
         &directive_program,
@@ -616,7 +616,7 @@ fn collect_inline_module_vars(
     let mut path = parent_path.to_vec();
     path.push(module.clone());
     for node in body {
-        match &*node.expr {
+        match &node.expr {
             Expr::Let(Pattern::Ident(_), _) => vars.push((path.clone(), Shared::clone(node))),
             Expr::Module(nested_module, nested_body) => {
                 collect_inline_module_vars(nested_module, nested_body, &path, vars);
@@ -671,26 +671,23 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         let probe_args: ast::Args = module_vars
             .iter()
             .map(|(path, node)| {
-                let Expr::Let(Pattern::Ident(let_ident), _) = &*node.expr else {
+                let Expr::Let(Pattern::Ident(let_ident), _) = &node.expr else {
                     unreachable!("filtered above");
                 };
                 Shared::new(Node {
                     token_id: crate::ast::TokenId::new(0),
-                    expr: Shared::new(Expr::QualifiedAccess(
-                        path.clone(),
-                        AccessTarget::Ident(let_ident.clone()),
-                    )),
+                    expr: Expr::QualifiedAccess(path.clone(), AccessTarget::Ident(let_ident.clone())),
                 })
             })
             .collect();
         let mut probe_program = prefix;
         probe_program.push(Shared::new(Node {
             token_id: crate::ast::TokenId::new(0),
-            expr: Shared::new(Expr::Module(ident.clone(), body)),
+            expr: Expr::Module(ident.clone(), body),
         }));
         probe_program.push(Shared::new(Node {
             token_id: crate::ast::TokenId::new(0),
-            expr: Shared::new(Expr::Call(ast::IdentWithToken::new("array"), probe_args)),
+            expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
         }));
 
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
