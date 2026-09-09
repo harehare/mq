@@ -17,6 +17,8 @@ pub(super) struct CallSite<'a> {
     pub(super) locals: &'a Locals,
     pub(super) chunk: &'a Chunk,
     pub(super) ip: usize,
+    /// `None` represents the root chunk pool held by the active trampoline.
+    pub(super) frame_chunks: Option<Shared<Vec<Chunk>>>,
 }
 
 /// Static properties of a direct fixed-arity closure call.
@@ -37,6 +39,7 @@ struct FixedChunkCall {
 /// Chunk/pool access shared by parameter binding and default-value evaluation.
 struct ParameterContext<'chunks, 'execution> {
     chunks: &'chunks Shared<Vec<Chunk>>,
+    frame_chunks: Option<Shared<Vec<Chunk>>>,
     limits: &'execution mut super::frame::ExecutionLimits,
 }
 
@@ -74,8 +77,13 @@ pub(super) fn call_stack_value(
         return Ok(CallStep::Value(StackValue::Value(result)));
     }
 
-    let (callee_chunks, callee_chunk_index, callee_upvalues) = match &callee {
-        StackValue::Closure(closure) => (chunks, closure.chunk_index, closure.upvalues.clone()),
+    let (callee_chunks, callee_chunk_index, callee_upvalues, callee_frame_chunks) = match &callee {
+        StackValue::Closure(closure) => (
+            chunks,
+            closure.chunk_index,
+            closure.upvalues.clone(),
+            call_site.frame_chunks,
+        ),
         StackValue::Value(RuntimeValue::VmClosure(vc)) => {
             if !vc.bound_args.is_empty() {
                 // `args` is a caller-owned pooled buffer. Prepend into a second pooled buffer,
@@ -87,7 +95,12 @@ pub(super) fn call_stack_value(
                 std::mem::swap(args, &mut combined);
                 execution.limits.recycle_stack(combined);
             }
-            (&vc.chunks, vc.chunk_index, vc.upvalues.clone())
+            (
+                &vc.chunks,
+                vc.chunk_index,
+                vc.upvalues.clone(),
+                Some(Shared::clone(&vc.chunks)),
+            )
         }
         _ => return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable)),
     };
@@ -105,6 +118,7 @@ pub(super) fn call_stack_value(
         callee_chunk_index,
         &mut ParameterContext {
             chunks: callee_chunks,
+            frame_chunks: callee_frame_chunks,
             limits: execution.limits,
         },
     )
@@ -253,7 +267,7 @@ fn call_fixed_chunk_from_stack(
 
     Ok(Frame::new(
         call.chunk_index,
-        Shared::clone(chunks),
+        call_site.frame_chunks,
         callee_locals,
         call.upvalues,
         !callee_chunk.captures_local_slots(),
@@ -329,6 +343,7 @@ pub(super) fn apply_pending(
     let shape = &callee_chunks[callee_chunk_index as usize].param_shape;
     let mut context = ParameterContext {
         chunks: &callee_chunks,
+        frame_chunks: Some(Shared::clone(&callee_chunks)),
         limits: execution.limits,
     };
     resume_bind_params(
@@ -404,7 +419,7 @@ fn resume_bind_params(
                     };
                     return Ok(Frame::new(
                         *default_chunk,
-                        Shared::clone(context.chunks),
+                        Some(Shared::clone(context.chunks)),
                         default_locals,
                         (!captured.is_empty()).then(|| Shared::new(captured)),
                         !default_chunk_ref.captures_local_slots(),
@@ -431,7 +446,7 @@ fn build_callee_frame(
     let reusable = !context.chunks[callee_chunk_index as usize].captures_local_slots();
     Frame::new(
         callee_chunk_index,
-        Shared::clone(context.chunks),
+        context.frame_chunks.take(),
         callee_locals,
         callee_upvalues,
         reusable,
