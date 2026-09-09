@@ -681,6 +681,7 @@ fn compile_program_impl<R: ModuleResolver>(
     for chunk in &mut compiler.chunks {
         chunk.refresh_captured_local_slots();
     }
+    bytecode::specialize_static_exact_calls(&mut compiler.chunks);
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
     #[cfg(feature = "debugger")]
     {
@@ -2276,7 +2277,7 @@ impl<R: ModuleResolver> Compiler<R> {
             self.current_token_id = call_token_id;
             let argc = self.arg_count(args.len())?;
             self.emit(match Self::fixed_call_form(arity, argc) {
-                FixedCallForm::Exact => OpCode::CallSelfExact(argc),
+                FixedCallForm::Exact => Self::self_exact_call_opcode(argc),
                 FixedCallForm::ImplicitSelf => OpCode::CallSelfImplicitSelf(argc),
                 FixedCallForm::Fallback => OpCode::CallSelf(argc),
             });
@@ -2394,6 +2395,16 @@ impl<R: ModuleResolver> Compiler<R> {
             FixedCallForm::ImplicitSelf
         } else {
             FixedCallForm::Fallback
+        }
+    }
+
+    /// Selects a dedicated self-call opcode for the three most common exact arities.
+    fn self_exact_call_opcode(argc: u16) -> OpCode {
+        match argc {
+            0 => OpCode::CallSelfExact0,
+            1 => OpCode::CallSelfExact1,
+            2 => OpCode::CallSelfExact2,
+            _ => OpCode::CallSelfExact(argc),
         }
     }
 
