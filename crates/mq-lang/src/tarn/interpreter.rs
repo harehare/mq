@@ -10,10 +10,10 @@ mod frame;
 mod selectors;
 
 use self::calls::{
-    CallSite, CallStep, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin, call_builtin_args,
-    call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2, call_fixed_closure_from_stack,
-    call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value, call_static_chunk_from_stack,
-    capture_upvalues, negate_ident,
+    CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
+    call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
+    call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
+    call_static_chunk_from_stack, capture_upvalues, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -896,7 +896,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         // default-parameter binder or carry call-depth behavior that must remain observable.
         tail_call_candidate = matches!(
             op,
-            OpCode::CallSelf(..) | OpCode::CallSelfExact(..) | OpCode::CallSelfImplicitSelf(..)
+            OpCode::CallSelf(..)
+                | OpCode::CallSelfExact(..)
+                | OpCode::CallSelfExact0
+                | OpCode::CallSelfExact1
+                | OpCode::CallSelfExact2
+                | OpCode::CallSelfImplicitSelf(..)
         );
         ip += 1;
 
@@ -1271,9 +1276,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallStaticExact(chunk_index, 0) => {
+            OpCode::CallStaticExact0(target) => {
                 let new_frame = call_exact_fixed_chunk_0(
-                    *chunk_index,
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
                     None,
                     CallSite {
                         locals,
@@ -1281,14 +1290,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 );
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallStaticExact(chunk_index, 1) => {
+            OpCode::CallStaticExact1(target) => {
                 let new_frame = call_exact_fixed_chunk_1(
-                    *chunk_index,
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
                     None,
                     stack,
                     CallSite {
@@ -1297,14 +1309,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallStaticExact(chunk_index, 2) => {
+            OpCode::CallStaticExact2(target) => {
                 let new_frame = call_exact_fixed_chunk_2(
-                    *chunk_index,
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
                     None,
                     stack,
                     CallSite {
@@ -1313,7 +1328,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
@@ -1356,9 +1370,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallSelfExact(0) => {
+            OpCode::CallSelfExact0 => {
                 let new_frame = call_exact_fixed_chunk_0(
-                    frame.chunk_index,
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
                     frame.upvalues.clone(),
                     CallSite {
                         locals,
@@ -1366,14 +1384,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 );
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallSelfExact(1) => {
+            OpCode::CallSelfExact1 => {
                 let new_frame = call_exact_fixed_chunk_1(
-                    frame.chunk_index,
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
                     frame.upvalues.clone(),
                     stack,
                     CallSite {
@@ -1382,14 +1403,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
-            OpCode::CallSelfExact(2) => {
+            OpCode::CallSelfExact2 => {
                 let new_frame = call_exact_fixed_chunk_2(
-                    frame.chunk_index,
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
                     frame.upvalues.clone(),
                     stack,
                     CallSite {
@@ -1398,7 +1422,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         ip,
                         frame_chunks: frame.chunks.clone(),
                     },
-                    chunks,
                     execution,
                 )?;
                 break 'dispatch FrameOutcome::Enter(new_frame);

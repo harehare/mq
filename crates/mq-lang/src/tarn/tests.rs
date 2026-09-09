@@ -238,7 +238,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
     );
     assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
 }
@@ -338,11 +338,11 @@ fn top_level_def_calls_use_call_static() {
     .unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     assert!(
-        compiled
-            .chunks
-            .iter()
-            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallStaticExact(_, _)))),
-        "capture-free fixed-arity top-level def call should compile to CallStaticExact"
+        compiled.chunks.iter().any(|c| c.code.iter().any(|op| matches!(
+            op,
+            OpCode::CallStaticExact0(_) | OpCode::CallStaticExact1(_) | OpCode::CallStaticExact2(_)
+        ))),
+        "capture-free common-arity top-level def call should compile to a specialized CallStaticExact opcode"
     );
 }
 
@@ -362,7 +362,7 @@ fn fixed_static_calls_specialize_the_exact_and_implicit_self_forms() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
     );
     assert!(
         compiled.chunks[0]
@@ -389,15 +389,33 @@ fn fixed_static_calls_bind_zero_and_two_arguments_without_generic_binding() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallStaticExact(_, 0)))
+            .any(|op| matches!(op, OpCode::CallStaticExact0(_)))
     );
     assert!(
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallStaticExact(_, 2)))
+            .any(|op| matches!(op, OpCode::CallStaticExact2(_)))
     );
     assert_eq!(run(source), RuntimeValue::Number(49.into()));
+}
+
+#[test]
+fn static_calls_with_captured_locals_keep_the_generic_exact_opcode() {
+    use super::bytecode::OpCode;
+
+    let source = "let f = fn(value): fn(): value;; | let read = f(42) | read()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.into()));
 }
 
 #[test]
@@ -430,8 +448,8 @@ fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
     let recursive_chunk = compiled
         .chunks
         .iter()
-        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelfExact(1))))
-        .expect("recursive body should use CallSelfExact");
+        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelfExact1)))
+        .expect("recursive body should use CallSelfExact1");
 
     assert!(recursive_chunk.upvalue_names.is_empty());
     assert_eq!(

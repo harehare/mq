@@ -13,6 +13,17 @@ use std::fmt;
 /// The implicit pipeline value (`.` / `self`) slot.
 pub(crate) const SELF_SLOT: u16 = 0;
 
+/// Compile-time frame metadata for a capture-free static call with a common exact arity.
+///
+/// The dedicated call opcodes carrying this target avoid indexing the chunk table before a
+/// callee frame starts. Chunks whose locals are captured retain the generic call path, because
+/// their per-slot cell layout cannot be represented by this compact payload.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StaticExactCallTarget {
+    pub(crate) chunk_index: u16,
+    pub(crate) local_count: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// A captured value's source slot.
 pub(crate) enum UpvalueSource {
@@ -283,12 +294,24 @@ pub(crate) enum OpCode {
     CallStatic(u16, u16),
     /// Calls a capture-free fixed-arity chunk with exactly its declared arguments.
     CallStaticExact(u16, u16),
+    /// Calls a capture-free zero-argument chunk with its frame metadata embedded.
+    CallStaticExact0(StaticExactCallTarget),
+    /// Calls a capture-free one-argument chunk with its frame metadata embedded.
+    CallStaticExact1(StaticExactCallTarget),
+    /// Calls a capture-free two-argument chunk with its frame metadata embedded.
+    CallStaticExact2(StaticExactCallTarget),
     /// Calls a capture-free fixed-arity chunk with the pipeline value as its first argument.
     CallStaticImplicitSelf(u16, u16),
     /// Recursively calls the current fixed-arity chunk through the checked fallback path.
     CallSelf(u16),
     /// Recursively calls the current chunk with exactly its declared arguments.
     CallSelfExact(u16),
+    /// Recursively calls the current zero-argument chunk.
+    CallSelfExact0,
+    /// Recursively calls the current one-argument chunk.
+    CallSelfExact1,
+    /// Recursively calls the current two-argument chunk.
+    CallSelfExact2,
     /// Recursively calls the current chunk with the pipeline value as its first argument.
     CallSelfImplicitSelf(u16),
     CallLocal(u16, u16),
@@ -586,6 +609,37 @@ impl std::error::Error for BytecodeError {}
 pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
     for chunk in chunks {
         optimize_chunk(chunk);
+    }
+}
+
+/// Rewrites common capture-free exact static calls after local capture metadata is finalized.
+pub(crate) fn specialize_static_exact_calls(chunks: &mut [Chunk]) {
+    let targets: Vec<Option<StaticExactCallTarget>> = chunks
+        .iter()
+        .enumerate()
+        .map(|(chunk_index, chunk)| {
+            (!chunk.captures_local_slots()).then_some(StaticExactCallTarget {
+                chunk_index: chunk_index as u16,
+                local_count: chunk.local_count,
+            })
+        })
+        .collect();
+
+    for chunk in chunks {
+        for op in &mut chunk.code {
+            let OpCode::CallStaticExact(chunk_index, argc) = op else {
+                continue;
+            };
+            let Some(target) = targets.get(*chunk_index as usize).copied().flatten() else {
+                continue;
+            };
+            *op = match *argc {
+                0 => OpCode::CallStaticExact0(target),
+                1 => OpCode::CallStaticExact1(target),
+                2 => OpCode::CallStaticExact2(target),
+                _ => continue,
+            };
+        }
     }
 }
 
@@ -974,7 +1028,35 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         _ => {}
                     }
                 }
-                OpCode::CallSelf(_) | OpCode::CallSelfExact(_) | OpCode::CallSelfImplicitSelf(_) => {
+                OpCode::CallStaticExact0(target)
+                | OpCode::CallStaticExact1(target)
+                | OpCode::CallStaticExact2(target) => {
+                    verify_chunk_target(chunks, chunk_index, pc, target.chunk_index)?;
+                    let callee = &chunks[target.chunk_index as usize];
+                    let expected_arity = match op {
+                        OpCode::CallStaticExact0(_) => 0,
+                        OpCode::CallStaticExact1(_) => 1,
+                        OpCode::CallStaticExact2(_) => 2,
+                        _ => unreachable!("the outer match limits the opcode variants"),
+                    };
+                    if !callee.upvalue_names.is_empty()
+                        || callee.param_shape.fixed_required_arity() != Some(expected_arity)
+                        || callee.captures_local_slots()
+                        || callee.local_count != target.local_count
+                    {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: target.chunk_index,
+                        });
+                    }
+                }
+                OpCode::CallSelf(_)
+                | OpCode::CallSelfExact(_)
+                | OpCode::CallSelfExact0
+                | OpCode::CallSelfExact1
+                | OpCode::CallSelfExact2
+                | OpCode::CallSelfImplicitSelf(_) => {
                     let Some(arity) = chunk.param_shape.fixed_required_arity() else {
                         return Err(BytecodeError::StaticCallTargetInvalid {
                             chunk: chunk_index,
@@ -991,6 +1073,27 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             });
                         }
                         OpCode::CallSelfImplicitSelf(argc) if arity == 0 || arity != *argc as usize + 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact0 if arity != 0 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact1 if arity != 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact2 if arity != 2 => {
                             return Err(BytecodeError::StaticCallTargetInvalid {
                                 chunk: chunk_index,
                                 pc,

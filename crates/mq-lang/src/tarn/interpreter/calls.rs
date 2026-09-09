@@ -45,6 +45,13 @@ pub(super) struct KnownFixedChunkCall {
     pub(super) remove_callee: bool,
 }
 
+/// Metadata already available to a direct exact-call opcode or its active self frame.
+pub(super) struct ExactCallTarget<'a> {
+    pub(super) chunk_index: u16,
+    pub(super) local_count: u16,
+    pub(super) captured_local_slots: &'a [u16],
+}
+
 /// Chunk/pool access shared by parameter binding and default-value evaluation.
 struct ParameterContext<'chunks, 'execution> {
     chunks: &'chunks Shared<Vec<Chunk>>,
@@ -321,35 +328,26 @@ pub(super) fn call_known_fixed_chunk_from_stack(
 /// Builds a frame for a verified zero-argument direct call without entering the generic
 /// fixed-call binder.
 pub(super) fn call_exact_fixed_chunk_0(
-    chunk_index: u16,
+    target: ExactCallTarget<'_>,
     upvalues: Option<Shared<Vec<Cell>>>,
     call_site: CallSite<'_>,
-    chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> Frame {
-    let callee_chunk = &chunks[chunk_index as usize];
     let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
+        target.local_count,
         SELF_SLOT as usize + 1,
-        callee_chunk.captured_local_slots(),
+        target.captured_local_slots,
     );
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
-    exact_fixed_frame(
-        chunk_index,
-        call_site.frame_chunks,
-        callee_locals,
-        upvalues,
-        callee_chunk,
-    )
+    exact_fixed_frame(target, call_site.frame_chunks, callee_locals, upvalues)
 }
 
 /// Builds a frame for a verified one-argument direct call without a parameter-binding loop.
 pub(super) fn call_exact_fixed_chunk_1(
-    chunk_index: u16,
+    target: ExactCallTarget<'_>,
     upvalues: Option<Shared<Vec<Cell>>>,
     stack: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
-    chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> VmResult<Frame> {
     let Some(argument) = stack.pop() else {
@@ -359,30 +357,27 @@ pub(super) fn call_exact_fixed_chunk_1(
             VmError::Corrupt("stack underflow in one-argument exact fixed call"),
         ));
     };
-    let callee_chunk = &chunks[chunk_index as usize];
     let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
+        target.local_count,
         SELF_SLOT as usize + 2,
-        callee_chunk.captured_local_slots(),
+        target.captured_local_slots,
     );
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     callee_locals.set(SELF_SLOT + 1, argument);
     Ok(exact_fixed_frame(
-        chunk_index,
+        target,
         call_site.frame_chunks,
         callee_locals,
         upvalues,
-        callee_chunk,
     ))
 }
 
 /// Builds a frame for a verified two-argument direct call without a parameter-binding loop.
 pub(super) fn call_exact_fixed_chunk_2(
-    chunk_index: u16,
+    target: ExactCallTarget<'_>,
     upvalues: Option<Shared<Vec<Cell>>>,
     stack: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
-    chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> VmResult<Frame> {
     let Some(second_argument) = stack.pop() else {
@@ -400,37 +395,34 @@ pub(super) fn call_exact_fixed_chunk_2(
             VmError::Corrupt("stack underflow in two-argument exact fixed call"),
         ));
     };
-    let callee_chunk = &chunks[chunk_index as usize];
     let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
-        callee_chunk.local_count,
+        target.local_count,
         SELF_SLOT as usize + 3,
-        callee_chunk.captured_local_slots(),
+        target.captured_local_slots,
     );
     callee_locals.set(SELF_SLOT, call_site.locals.get(SELF_SLOT));
     callee_locals.set(SELF_SLOT + 1, first_argument);
     callee_locals.set(SELF_SLOT + 2, second_argument);
     Ok(exact_fixed_frame(
-        chunk_index,
+        target,
         call_site.frame_chunks,
         callee_locals,
         upvalues,
-        callee_chunk,
     ))
 }
 
 fn exact_fixed_frame(
-    chunk_index: u16,
+    target: ExactCallTarget<'_>,
     frame_chunks: Option<Shared<Vec<Chunk>>>,
     callee_locals: Locals,
     upvalues: Option<Shared<Vec<Cell>>>,
-    callee_chunk: &Chunk,
 ) -> Frame {
     Frame::new(
-        chunk_index,
+        target.chunk_index,
         frame_chunks,
         callee_locals,
         upvalues,
-        !callee_chunk.captures_local_slots(),
+        target.captured_local_slots.is_empty(),
         Continuation::Push,
     )
 }
