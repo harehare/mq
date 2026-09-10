@@ -708,6 +708,7 @@ fn ident_or_keyword(input: Span) -> IResult<Span, Token> {
             "until" => Some(TokenKind::Until),
             "var" => Some(TokenKind::Var),
             "while" => Some(TokenKind::While),
+            "yield" => Some(TokenKind::Yield),
             _ => None,
         };
 
@@ -1334,6 +1335,11 @@ mod tests {
         Ok(vec![
             Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 9} }, kind: TokenKind::Ident(SmolStr::new("ifconfig")), module_id: 1.into()},
             Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 9} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_boundary_yield("yielding",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 9} }, kind: TokenKind::Ident(SmolStr::new("yielding")), module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 9}, end: Position {line: 1, column: 9} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     #[case::keyword_proper_def("def ",
         Options::default(),
         Ok(vec![
@@ -1344,6 +1350,11 @@ mod tests {
         Ok(vec![
             Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 4} }, kind: TokenKind::End, module_id: 1.into()},
             Token{range: Range { start: Position {line: 1, column: 5}, end: Position {line: 1, column: 5} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
+    #[case::keyword_proper_yield("yield ",
+        Options::default(),
+        Ok(vec![
+            Token{range: Range { start: Position {line: 1, column: 1}, end: Position {line: 1, column: 6} }, kind: TokenKind::Yield, module_id: 1.into()},
+            Token{range: Range { start: Position {line: 1, column: 7}, end: Position {line: 1, column: 7} }, kind: TokenKind::Eof, module_id: 1.into()}]))]
     // Non-ASCII alphanumeric after an ASCII keyword base must block the keyword match.
     // "defä" must not lex as keyword Def; the ASCII portion becomes Ident("def") instead.
     #[case::keyword_boundary_non_ascii_def("defä",

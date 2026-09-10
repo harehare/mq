@@ -58,6 +58,8 @@ pub mod builtins {
 
     pub const BREAKPOINT: &str = "breakpoint";
     pub const COALESCE: &str = "coalesce";
+    /// `next(stream)`: drives a generator's coroutine one step.
+    pub const NEXT: &str = "next";
 }
 
 pub mod identifiers {

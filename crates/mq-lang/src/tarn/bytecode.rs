@@ -365,6 +365,11 @@ pub(crate) enum OpCode {
     FlowContinue,
     RaiseDestructuringFailed,
     Return,
+    /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
+    Yield,
+    /// `next(stream)`: drives a coroutine one step, pushing a `{ value, done }` dict. The `u8`
+    /// argument count is always `1` for now; reserved for a future `send`.
+    Resume(u8),
 }
 
 #[cfg(feature = "vm-profile")]
@@ -452,6 +457,8 @@ impl OpCode {
             Self::FlowContinue => "FlowContinue",
             Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
             Self::Return => "Return",
+            Self::Yield => "Yield",
+            Self::Resume(_) => "Resume",
         }
     }
 
@@ -506,6 +513,9 @@ pub(crate) struct Chunk {
     /// Sorted local slots whose cells are captured by a nested closure or default expression.
     /// All remaining slots can stay as direct values in the interpreter frame.
     captured_local_slots: Vec<u16>,
+    /// Whether this chunk's body directly contains a `yield`. Calling it binds arguments as
+    /// usual but wraps the resulting frame as a `RuntimeValue::Coroutine` instead of entering it.
+    pub(crate) is_generator: bool,
 }
 
 impl Chunk {
@@ -758,7 +768,9 @@ pub(crate) fn specialize_static_exact_calls(chunks: &mut [Chunk]) {
         .iter()
         .enumerate()
         .map(|(chunk_index, chunk)| {
-            (!chunk.captures_local_slots()).then_some(StaticExactCallTarget {
+            // A generator call must produce a coroutine, not run the chunk directly, so it can
+            // never take this embedded-metadata fast path.
+            (!chunk.captures_local_slots() && !chunk.is_generator).then_some(StaticExactCallTarget {
                 chunk_index: chunk_index as u16,
                 local_count: chunk.local_count,
             })
@@ -1320,6 +1332,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         || callee.param_shape.fixed_required_arity() != Some(expected_arity)
                         || callee.captures_local_slots()
                         || callee.local_count != target.local_count
+                        || callee.is_generator
                     {
                         return Err(BytecodeError::StaticCallTargetInvalid {
                             chunk: chunk_index,
@@ -1341,6 +1354,19 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             target: chunk_index as u16,
                         });
                     };
+                    // Same reasoning as `CallStaticExact0/1/2` above, for self-recursion.
+                    if chunk.is_generator
+                        && matches!(
+                            op,
+                            OpCode::CallSelfExact0 | OpCode::CallSelfExact1 | OpCode::CallSelfExact2
+                        )
+                    {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: chunk_index as u16,
+                        });
+                    }
                     match op {
                         OpCode::CallSelfExact(argc) if arity != *argc as usize => {
                             return Err(BytecodeError::StaticCallTargetInvalid {
@@ -1400,6 +1426,9 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
                 }
+                // Neither carries a checkable index; listed explicitly so a real operand added
+                // later doesn't silently skip verification via the wildcard below.
+                OpCode::Yield | OpCode::Resume(_) => {}
                 _ => {}
             }
         }
@@ -1962,6 +1991,49 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn verifier_rejects_a_generator_target_on_the_embedded_exact_call_fast_path() {
+        let generator = Chunk {
+            code: vec![OpCode::Const(0), OpCode::Yield, OpCode::Return],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            is_generator: true,
+            ..Default::default()
+        };
+        let caller = Chunk {
+            code: vec![
+                OpCode::CallStaticExact0(StaticExactCallTarget {
+                    chunk_index: 1,
+                    local_count: 1,
+                }),
+                OpCode::Return,
+            ],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[caller, generator]),
+            Err(BytecodeError::StaticCallTargetInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_accepts_a_generator_target_on_the_checked_static_call_path() {
+        let generator = Chunk {
+            code: vec![OpCode::Const(0), OpCode::Yield, OpCode::Return],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            is_generator: true,
+            ..Default::default()
+        };
+        let caller = Chunk {
+            code: vec![OpCode::CallStatic(1, 0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(verify_chunks(&[caller, generator]), Ok(()));
     }
 
     #[cfg(target_pointer_width = "64")]

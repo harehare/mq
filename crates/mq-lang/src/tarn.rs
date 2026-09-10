@@ -17,7 +17,7 @@ mod debug_symbols;
 mod debugger;
 #[cfg(feature = "debug-trace")]
 mod disasm;
-mod interpreter;
+pub(crate) mod interpreter;
 mod nodes_split;
 mod resolver;
 pub(crate) mod value;
@@ -156,6 +156,9 @@ fn compile_error_to_runtime_error(
         compiler::CompileError::Unsupported(what, _) => RuntimeError::Runtime(token, format!("unsupported: {what}")),
         compiler::CompileError::AssignToImmutable(name, _) => RuntimeError::AssignToImmutable(token, name),
         compiler::CompileError::InvalidBytecode(message) => RuntimeError::Runtime(token, message),
+        compiler::CompileError::YieldOutsideFunction(_) => {
+            RuntimeError::Runtime(token, "yield outside a function".to_string())
+        }
         compiler::CompileError::Module(_) => unreachable!("routed to InnerError::Module by into_inner_error instead"),
     }
 }
@@ -198,6 +201,7 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
         RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
         RuntimeValue::NativeFunction(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
+        RuntimeValue::Coroutine(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
             .iter()
             .filter_map(|v| if v.is_none() { None } else { Some(v.to_string()) })

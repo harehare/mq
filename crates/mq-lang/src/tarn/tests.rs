@@ -2612,3 +2612,306 @@ fn nested_remote_module_directive_is_blocked_under_tarn(
         "{code:?}: {err:?}"
     );
 }
+
+// Generator/coroutine tests. No surface syntax exists yet (lexer/parser/compiler land in a
+// later phase), so these hand-build `Chunk`s directly instead of going through `crate::parse`.
+
+fn generator_program(chunks: Vec<bytecode::Chunk>) -> compiler::CompiledProgram {
+    compiler::CompiledProgram {
+        chunks: Shared::new(chunks),
+        #[cfg(feature = "debugger")]
+        debug_sources: Vec::new(),
+    }
+}
+
+fn run_generator_program(program: &compiler::CompiledProgram) -> Result<RuntimeValue, interpreter::VmError> {
+    interpreter::run_with_globals(
+        program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        Options::default().max_call_stack_depth,
+        &[],
+    )
+}
+
+fn dict_field(value: &RuntimeValue, key: &str) -> RuntimeValue {
+    let RuntimeValue::Dict(map) = value else {
+        panic!("expected a dict, got {value:?}");
+    };
+    map.get(&crate::Ident::new(key)).cloned().unwrap_or(RuntimeValue::None)
+}
+
+// `Chunk`'s private `captured_local_slots` field rules out `..Default::default()` from outside
+// `bytecode`, so tests build via `Chunk::default()` plus field assignment instead.
+fn chunk(code: Vec<bytecode::OpCode>, constants: Vec<RuntimeValue>, local_count: u16) -> bytecode::Chunk {
+    let mut c = bytecode::Chunk::default();
+    c.code = code;
+    c.constants = constants;
+    c.local_count = local_count;
+    c
+}
+
+/// Chunk 1 in every test below: yields `1`, then `2`, then completes with `3`.
+fn yield_1_2_return_3() -> bytecode::Chunk {
+    use bytecode::OpCode;
+    let mut c = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::Const(1),
+            OpCode::Yield,
+            OpCode::Const(2),
+            OpCode::Return,
+        ],
+        vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ],
+        1,
+    );
+    c.is_generator = true;
+    c
+}
+
+/// Chunk 0: calls the generator at chunk 1, then `next()`s it `n` times, returning the last
+/// `{ value, done }` result.
+fn drive_n_times(n: u32) -> bytecode::Chunk {
+    use bytecode::OpCode;
+    let mut code = vec![OpCode::CallStatic(1, 0), OpCode::SetLocal(1)];
+    for i in 0..n {
+        code.push(OpCode::GetLocal(1));
+        code.push(OpCode::Resume(1));
+        if i + 1 < n {
+            code.push(OpCode::Pop);
+        }
+    }
+    code.push(OpCode::Return);
+    chunk(code, Vec::new(), 2)
+}
+
+#[test]
+fn next_before_first_resume_runs_to_the_first_yield() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(1), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn repeated_next_resumes_after_the_previous_yield() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(2), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(2.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn next_past_the_last_yield_completes_the_coroutine() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(3), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(3.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn next_after_completion_is_idempotent() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(4), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn next_after_failure_reraises_the_same_error() {
+    use bytecode::OpCode;
+    let mut failing_generator = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::Const(0),
+            OpCode::Const(1),
+            OpCode::Div,
+            OpCode::Return,
+        ],
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(0.into())],
+        1,
+    );
+    failing_generator.is_generator = true;
+    let err = run_generator_program(&generator_program(vec![drive_n_times(3), failing_generator])).unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("division by zero"));
+}
+
+#[test]
+fn cloning_a_coroutine_shares_its_progress() {
+    use bytecode::OpCode;
+    let main = chunk(
+        vec![
+            OpCode::CallStatic(1, 0),
+            OpCode::Dup,
+            OpCode::Resume(1),
+            OpCode::Pop,
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        Vec::new(),
+        1,
+    );
+    let result = run_generator_program(&generator_program(vec![main, yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(2.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+/// A generator that, after its first yield, resumes itself via a captured upvalue holding its
+/// own coroutine handle. `next()` on it must observe `Running` and fail.
+#[test]
+fn reentrant_next_on_a_running_coroutine_errors() {
+    use bytecode::{OpCode, UpvalueSource};
+    let mut generator = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::GetUpvalue(0),
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        vec![RuntimeValue::Number(1.into())],
+        1,
+    );
+    generator.is_generator = true;
+    generator.upvalue_names = vec![crate::Ident::new("s")];
+
+    let mut main = chunk(
+        vec![
+            OpCode::PushNone,
+            OpCode::SetLocal(1),
+            OpCode::MakeClosure(Box::new((1, vec![UpvalueSource::Local(1)]))),
+            OpCode::CallValue(0),
+            OpCode::TeeLocal(1),
+            OpCode::Resume(1),
+            OpCode::Pop,
+            OpCode::GetLocal(1),
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        Vec::new(),
+        2,
+    );
+    main.refresh_captured_local_slots();
+
+    let err = run_generator_program(&generator_program(vec![main, generator])).unwrap_err();
+    assert_eq!(err.to_string(), "coroutine is already running");
+}
+
+// End-to-end generator tests compiled from real `yield`/`next()` source (Phase 4: lexer, CST,
+// AST, HIR-free compiler wiring all land together so every commit stays green).
+
+/// Drives `stream` (bound by `def_and_binding`) with `n` `next()` calls, discarding all but the
+/// last, and returns its `{ value, done }` dict.
+fn run_yield_source(def_and_binding: &str, n: u32) -> RuntimeValue {
+    let mut code = format!("{def_and_binding} | var s = stream");
+    for _ in 0..n {
+        code.push_str(" | s | next(s)");
+    }
+    run(&code)
+}
+
+#[test]
+fn range_example_yields_then_completes() {
+    let def = "def range(n): var i = 0 | while (i < n): yield: i | i += 1;; | let stream = range(3)";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 1), "value"),
+        RuntimeValue::Number(0.into())
+    );
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(1.into())
+    );
+    assert_eq!(
+        dict_field(&run_yield_source(def, 3), "value"),
+        RuntimeValue::Number(2.into())
+    );
+    let fourth = run_yield_source(def, 4);
+    assert_eq!(dict_field(&fourth, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&fourth, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn bare_yield_produces_none_value() {
+    let result = run("def g(): yield; | let s = g() | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn yield_after_a_nested_call_returns_still_suspends_correctly() {
+    let code = "def helper(x): x * 2; | def g(): var a = helper(3) | yield: a; | let s = g() | next(s)";
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(6.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn yield_inside_try_catch_suspends_and_resumes_through_the_try_frame() {
+    let def = "def g(): try: yield: 1 catch: yield: -1 | yield: 2; | let stream = g()";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 1), "value"),
+        RuntimeValue::Number(1.into())
+    );
+    // Confirm the *second* next() correctly resumes past the try body, not just the first.
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(2.into())
+    );
+}
+
+#[test]
+fn yield_inside_foreach_suspends_once_per_element() {
+    let def = "def g(): foreach (x, array(10, 20, 30)): yield: x;; | let stream = g()";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(20.into())
+    );
+}
+
+#[test]
+fn generator_closure_mutates_captured_state_across_suspensions() {
+    // `fn` (not `def`) capturing an outer `var`, mutated between yields. Closures/upvalues
+    // must survive suspend/resume, and the mutation must be visible to the caller afterward.
+    let code = "var total = 0 \
+                | let g = fn(): total += 1 | yield: total | total += 1 | yield: total; \
+                | let s = g() \
+                | next(s) \
+                | s | next(s) \
+                | total";
+    assert_eq!(run(code), RuntimeValue::Number(2.into()));
+}
+
+#[test]
+fn calling_a_generator_does_not_execute_it() {
+    // Calling `g()` alone (no `next()`) must produce a coroutine, not run the body, so `marker`
+    // stays unset.
+    let code = "var marker = 0 | def g(): marker = 1 | yield: 1; | let s = g() | marker";
+    assert_eq!(run(code), RuntimeValue::Number(0.into()));
+}
+
+#[test]
+fn ordinary_functions_are_unaffected_by_generator_support() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let code = "def add(a, b): a + b; | add(1, 2)";
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().all(|chunk| !chunk.is_generator));
+    assert!(compiled.chunks.iter().all(|chunk| {
+        !chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, bytecode::OpCode::Yield | bytecode::OpCode::Resume(_)))
+    }));
+}
+
+#[test]
+fn yield_outside_a_function_is_a_compile_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("yield: 1", Shared::clone(&token_arena)).unwrap();
+    let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap_err();
+    assert!(matches!(err, compiler::CompileError::YieldOutsideFunction(_)));
+}

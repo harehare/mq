@@ -410,6 +410,14 @@ mod tests {
     use rstest::rstest;
 
     #[test]
+    fn test_generator_code_does_not_produce_type_errors() {
+        let mut hir = Hir::default();
+        hir.add_code(None, "def g(): yield: 1; | let s = g() | next(s)");
+        let errors = TypeChecker::new().check(&hir);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
     fn test_typechecker_creation() {
         let checker = TypeChecker::new();
         assert_eq!(checker.symbol_types.len(), 0);

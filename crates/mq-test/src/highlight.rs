@@ -84,7 +84,7 @@ fn classify_token(
 
     Some(match token_kind {
         Def | Let | If | Unless | Elif | Else | End | While | Until | Loop | Foreach | Include | Import | Module
-        | Match | Fn | Do | Var | Try | Catch | As | Break | Continue => TokenClass::Keyword,
+        | Match | Fn | Do | Var | Try | Catch | As | Break | Continue | Yield => TokenClass::Keyword,
         Self_ | Nodes | None => TokenClass::Builtin,
         BoolLiteral(_) => TokenClass::Boolean,
         NumberLiteral(_) => TokenClass::Number,

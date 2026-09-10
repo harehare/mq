@@ -5,6 +5,7 @@
 //! pools), `calls` (binding arguments and invoking a callee), and `selectors` (applying a
 //! `Selector` to a value) hold the parts that split out cleanly; this file is what remains.
 mod calls;
+pub(crate) mod coroutine;
 mod errors;
 mod frame;
 mod selectors;
@@ -574,6 +575,16 @@ enum FrameOutcome {
     /// A call followed immediately by `Return`; the callee can replace this frame.
     TailEnter(Frame),
     Complete(StackValue),
+    /// `OpCode::Yield`. Unlike `Complete`, nothing is popped; frames are left as-is for the
+    /// caller to detach into a `CoroutineState`.
+    Suspend(StackValue),
+}
+
+/// Outcome of driving a frame stack until it suspends, completes, or fails.
+enum DriveOutcome {
+    Completed(StackValue, Locals),
+    Suspended(StackValue),
+    Failed(VmError, Locals),
 }
 
 /// The trampoline: an explicit `Vec<Frame>` replaces Rust's own call stack, so mq call depth is
@@ -612,6 +623,10 @@ fn run_frames(
     result
 }
 
+/// Pushes `initial` and drives it to completion. A generator call constructs a
+/// `RuntimeValue::Coroutine` instead of entering the generator's frame, so top-level evaluation
+/// never observes `DriveOutcome::Suspended`; only `OpCode::Resume`'s direct `drive_frames` call
+/// does.
 fn run_frames_impl<const CHECK_TIMEOUT: bool>(
     initial: Frame,
     root_chunks: &Shared<Vec<Chunk>>,
@@ -621,7 +636,29 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<StackValue>, Locals) {
     frames.push(initial);
+    match drive_frames::<CHECK_TIMEOUT>(
+        root_chunks,
+        frames,
+        operand_stack,
+        execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    ) {
+        DriveOutcome::Completed(value, locals) => (Ok(value), locals),
+        DriveOutcome::Suspended(_) => unreachable!("top-level evaluation never yields"),
+        DriveOutcome::Failed(e, locals) => (Err(e), locals),
+    }
+}
 
+/// Shared by `run_frames_impl` (seeds a single fresh frame) and `OpCode::Resume` (restores a
+/// coroutine's saved, possibly multi-frame, stack).
+fn drive_frames<const CHECK_TIMEOUT: bool>(
+    root_chunks: &Shared<Vec<Chunk>>,
+    frames: &mut Vec<Frame>,
+    operand_stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> DriveOutcome {
     'frames: loop {
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let outcome = run_frame_slice::<CHECK_TIMEOUT>(
@@ -653,7 +690,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                         debug,
                     ) {
                         Ok(()) => continue 'frames,
-                        Err((e, locals)) => return (Err(e), locals),
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                     }
                 }
                 continue 'frames;
@@ -669,6 +706,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                 );
                 continue 'frames;
             }
+            Ok(FrameOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
             Ok(FrameOutcome::Complete(value)) => value,
             Err(e) => match unwind(
                 e,
@@ -680,13 +718,13 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                 debug,
             ) {
                 Ok(()) => continue 'frames,
-                Err((e, locals)) => return (Err(e), locals),
+                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
             },
         };
 
         if frames.len() == 1 {
             let finished = frames.pop().expect("just checked len() == 1");
-            return (Ok(value), finished.locals);
+            break 'frames DriveOutcome::Completed(value, finished.locals);
         }
         let continuation = execution
             .limits
@@ -715,7 +753,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                             debug,
                         ) {
                             Ok(()) => continue 'frames,
-                            Err((e, locals)) => return (Err(e), locals),
+                            Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                         }
                     }
                 };
@@ -738,7 +776,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                         debug,
                     ) {
                         Ok(()) => continue 'frames,
-                        Err((e, locals)) => return (Err(e), locals),
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                     }
                 }
             }
@@ -1328,7 +1366,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallStatic(chunk_index, argc) => {
-                let new_frame = call_static_chunk_from_stack(
+                let step = call_static_chunk_from_stack(
                     *chunk_index,
                     *argc,
                     stack,
@@ -1341,7 +1379,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                match step {
+                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    CallStep::Value(v) => stack.push(v),
+                }
             }
             OpCode::CallStaticExact0(target) => {
                 let new_frame = call_exact_fixed_chunk_0(
@@ -1400,7 +1441,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::CallStaticExact(chunk_index, argc) | OpCode::CallStaticImplicitSelf(chunk_index, argc) => {
-                let new_frame = call_known_fixed_chunk_from_stack(
+                let step = call_known_fixed_chunk_from_stack(
                     KnownFixedChunkCall {
                         chunk_index: *chunk_index,
                         upvalues: None,
@@ -1418,10 +1459,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                match step {
+                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    CallStep::Value(v) => stack.push(v),
+                }
             }
             OpCode::CallSelf(argc) => {
-                let new_frame = call_self_chunk_from_stack(
+                let step = call_self_chunk_from_stack(
                     frame.chunk_index,
                     frame.upvalues.clone(),
                     *argc,
@@ -1435,7 +1479,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+                match step {
+                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                    CallStep::Value(v) => stack.push(v),
+                }
             }
             OpCode::CallSelfExact0 => {
                 let new_frame = call_exact_fixed_chunk_0(
@@ -1494,7 +1541,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
-                let new_frame = call_known_fixed_chunk_from_stack(
+                let step = call_known_fixed_chunk_from_stack(
                     KnownFixedChunkCall {
                         chunk_index: frame.chunk_index,
                         upvalues: frame.upvalues.clone(),
@@ -1512,7 +1559,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+                match step {
+                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                    CallStep::Value(v) => stack.push(v),
+                }
             }
             OpCode::CallLocal(slot, argc) => {
                 let callee = locals.get(*slot);
@@ -1522,7 +1572,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .fixed_required_arity()
                         .is_some()
                 {
-                    let new_frame = call_fixed_closure_from_stack(
+                    let step = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure,
                             argc: *argc,
@@ -1538,32 +1588,37 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
-                // variadic/optional params, `partial`-bound closures) runs often enough in
-                // higher-order builtins that a fresh heap allocation per call is worth avoiding.
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    match step {
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        CallStep::Value(v) => stack.push(v),
+                    }
+                } else {
+                    // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
+                    // variadic/optional params, `partial`-bound closures) runs often enough in
+                    // higher-order builtins that a fresh heap allocation per call is worth
+                    // avoiding.
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let step = call_stack_value(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::CallUpvalue(index, argc) => {
@@ -1575,7 +1630,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .fixed_required_arity()
                         .is_some()
                 {
-                    let new_frame = call_fixed_closure_from_stack(
+                    let step = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure,
                             argc: *argc,
@@ -1591,29 +1646,33 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    match step {
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        CallStep::Value(v) => stack.push(v),
+                    }
+                } else {
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let step = call_stack_value(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::CallValue(argc) => {
@@ -1634,7 +1693,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     // popped them. This avoids `Vec::remove(callee_index)`, which shifts
                     // every argument and is especially costly for large calls.
                     let closure = Shared::clone(closure);
-                    let new_frame = call_fixed_closure_from_stack(
+                    let step = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure: &closure,
                             argc: *argc,
@@ -1650,31 +1709,35 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                // See the `CallLocal` non-fixed-arity path above for why this is pooled.
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let callee = pop!();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    match step {
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                        CallStep::Value(v) => stack.push(v),
+                    }
+                } else {
+                    // See the `CallLocal` non-fixed-arity path above for why this is pooled.
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let callee = pop!();
+                    let step = call_stack_value(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::MaybeAutoCall => {
@@ -1741,6 +1804,25 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::Return => {
                 let v = pop!();
                 break 'dispatch FrameOutcome::Complete(v);
+            }
+            OpCode::Yield => {
+                let v = pop!();
+                break 'dispatch FrameOutcome::Suspend(v);
+            }
+            OpCode::Resume(argc) => {
+                debug_assert_eq!(*argc, 1, "next(stream, value)/`send` is not supported yet");
+                let arg = pop!();
+                let RuntimeValue::Coroutine(handle) = into_runtime_value(arg, chunks) else {
+                    bail!(VmError::NotCallable);
+                };
+                let result = coroutine::resume::<CHECK_TIMEOUT>(
+                    &handle,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
             }
         }
     };

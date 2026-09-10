@@ -33,6 +33,12 @@ pub(crate) enum VmError {
     InvalidForeachTarget(String),
     Timeout(Duration),
     RecursionError(u32),
+    /// `next()` was called on a coroutine already being driven by an outer `next()` higher on
+    /// the Rust call stack.
+    CoroutineReentrant,
+    /// `next()` on a coroutine that previously failed re-raises the same error rather than
+    /// re-running (or silently completing) it.
+    CoroutineFailed(Shared<VmError>),
     Located(Box<VmError>, TokenId),
 }
 
@@ -57,6 +63,8 @@ impl fmt::Display for VmError {
             VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
             VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
             VmError::RecursionError(max) => write!(f, "maximum recursion depth exceeded ({max})"),
+            VmError::CoroutineReentrant => write!(f, "coroutine is already running"),
+            VmError::CoroutineFailed(inner) => write!(f, "{inner}"),
             VmError::Located(inner, _) => write!(f, "{inner}"),
         }
     }
@@ -107,6 +115,8 @@ impl VmError {
             VmError::Timeout(d) => RuntimeError::Timeout(*d),
             VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
             VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
+            VmError::CoroutineReentrant => RuntimeError::Runtime(token, "coroutine is already running".to_string()),
+            VmError::CoroutineFailed(inner) => inner.to_runtime_error(token, token_id, token_arena),
             VmError::Located(inner, token_id) => {
                 let token_id = *token_id;
                 let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
@@ -301,6 +311,11 @@ mod tests {
         VmError::Located(Box::new(VmError::ZeroDivision), TokenId::new(0)),
         "Division by zero"
     )]
+    #[case::coroutine_reentrant(VmError::CoroutineReentrant, "Runtime error: coroutine is already running")]
+    #[case::coroutine_failed_unwraps_to_the_inner_message(
+        VmError::CoroutineFailed(Shared::new(VmError::ZeroDivision)),
+        "Division by zero"
+    )]
     fn vm_error_message_matches_the_tree_walkers_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
         assert_eq!(error_message(&error), expected);
     }
@@ -325,6 +340,8 @@ mod tests {
             | VmError::InvalidForeachTarget(_)
             | VmError::Timeout(_)
             | VmError::RecursionError(_)
+            | VmError::CoroutineReentrant
+            | VmError::CoroutineFailed(_)
             | VmError::Located(_, _) => {}
         }
     }
