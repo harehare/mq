@@ -892,6 +892,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
         }
         let op = &chunk.code[ip];
         ip += 1;
+        #[cfg(feature = "vm-profile")]
+        if op.is_profiled_instruction() {
+            vm_profile::record_opcode(op.profile_name());
+        }
 
         match op {
             #[cfg(feature = "debugger")]

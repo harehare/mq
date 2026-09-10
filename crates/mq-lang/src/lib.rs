@@ -57,6 +57,8 @@ mod runtime;
 mod selector;
 pub mod suggest;
 mod tarn;
+#[cfg(feature = "vm-profile")]
+pub mod vm_profile;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
