@@ -11,33 +11,11 @@ def test_toon_parse():
 end
 
 
-# `RuntimeValue::Dict` (a `BTreeMap<Ident, _>`, see mq-lang/src/ident.rs) orders keys by
-# interned symbol id, not by string content, so a multi-key dict's field order in the
-# stringified output depends on which other identifiers this process happened to intern
-# first (e.g. which other test files ran earlier) rather than on `toon_input` itself.
-# Comparing sorted lines instead of an exact/ordered snapshot keeps this test meaningful
-# (it still catches content/format regressions) without being sensitive to that order.
+# `RuntimeValue::Dict` preserves insertion order, so TOON stringification has stable
+# key ordering. Keep the complete output in a snapshot to catch format regressions.
 def test_toon_stringify():
   let result = toon::toon_stringify(toon::toon_parse(toon_input))
-  | let expected_lines = [
-      "context:",
-      "  task: Our favorite hikes together",
-      "  location: Boulder",
-      "  season: spring_2025",
-      "friends[3]: ana,luis,sam",
-      "hikes[3]{name,id,distanceKm,elevationGain,companion,wasSunny}:",
-      "  Blue Lake Trail,1,7.5,320,ana,true",
-      "  Ridge Overlook,2,9.2,540,luis,false",
-      "  Wildflower Loop,3,5.1,180,sam,true",
-      "items[3]:",
-      "  - 1",
-      "  - a: 1",
-      "  - text",
-      "items2[2]{name,price}:",
-      "  Laptop,999",
-      "  Mouse,29",
-    ]
-  | assert_eq(sort(lines(result)), sort(expected_lines))
+  | assert_snapshot("toon_stringify", result)
 end
 
 def test_toon_round_trip():
