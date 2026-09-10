@@ -127,6 +127,7 @@ pub enum TokenKind {
     While,
     LParen,
     Var,
+    Yield,
 }
 
 impl Token {
@@ -252,6 +253,7 @@ impl Display for TokenKind {
             TokenKind::LBrace => write!(f, "{{"),
             TokenKind::Question => write!(f, "?"),
             TokenKind::Var => write!(f, "var"),
+            TokenKind::Yield => write!(f, "yield"),
         }
     }
 }

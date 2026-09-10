@@ -213,6 +213,9 @@ impl Hir {
             mq_lang::CstNodeKind::Break => {
                 self.add_break_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Yield => {
+                self.add_yield_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
@@ -1413,6 +1416,28 @@ impl Hir {
             insertion_order: 0,
         });
         // Process break value expression (if present) as a child of this symbol.
+        for child in node.children_without_token() {
+            self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+        }
+    }
+
+    /// Mirrors `add_break_expr`.
+    fn add_yield_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::Keyword,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+            insertion_order: 0,
+        });
         for child in node.children_without_token() {
             self.add_expr(&child, source_id, scope_id, Some(symbol_id));
         }

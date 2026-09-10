@@ -2097,11 +2097,11 @@ pub(super) fn generate_symbol_constraints(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
 
-        // `break: value` carries the type of its value expression.
-        // Bare `break` (no value child) gets a fresh type variable.
+        // `break: value` / `yield: value` carry the type of their value expression.
+        // Bare `break`/`yield` (no value child) get a fresh type variable.
         SymbolKind::Keyword => {
             let symbol = hir.symbol(symbol_id);
-            if symbol.is_some_and(|s| s.value.as_deref() == Some("break")) {
+            if symbol.is_some_and(|s| matches!(s.value.as_deref(), Some("break") | Some("yield"))) {
                 let children = get_children(children_index, symbol_id);
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);

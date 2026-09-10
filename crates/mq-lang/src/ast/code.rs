@@ -52,6 +52,13 @@ impl Node {
             Expr::Continue => {
                 buf.push_str("continue");
             }
+            Expr::Yield(None) => {
+                buf.push_str("yield");
+            }
+            Expr::Yield(Some(value)) => {
+                buf.push_str("yield: ");
+                value.format_to_code(buf, indent);
+            }
             Expr::Paren(node) => {
                 buf.push('(');
                 node.format_to_code(buf, indent);

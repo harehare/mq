@@ -24,7 +24,7 @@ impl LintRule for InfiniteLoop {
             .collect();
 
         for (loop_id, loop_sym) in loops {
-            if !has_break_descendant(ctx, loop_id) {
+            if !has_exit_descendant(ctx, loop_id) {
                 let mut d = Diagnostic::new(LintMessage::InfiniteLoop, self.severity());
                 if let Some(range) = loop_sym.source.text_range {
                     d = d.with_range(range);
@@ -37,12 +37,12 @@ impl LintRule for InfiniteLoop {
     }
 }
 
-/// Returns true if any descendant of `ancestor_id` in the source is `Keyword("break")`.
+/// Returns true if any descendant of `ancestor_id` is `Keyword("break")` or `Keyword("yield")`.
 /// Keyword symbols use `insert_symbol`, so we use `all_symbols`.
-fn has_break_descendant(ctx: &LintContext<'_>, ancestor_id: SymbolId) -> bool {
+fn has_exit_descendant(ctx: &LintContext<'_>, ancestor_id: SymbolId) -> bool {
     ctx.all_symbols().any(|(_, s)| {
         matches!(s.kind, SymbolKind::Keyword)
-            && s.value.as_deref() == Some("break")
+            && matches!(s.value.as_deref(), Some("break") | Some("yield"))
             && is_descendant_of(ctx, s.parent, ancestor_id)
     })
 }
@@ -86,6 +86,7 @@ mod tests {
     #[case("loop break end")]
     #[case("loop if (true): break else: .h1 end")]
     #[case("while (.h1): .h1 end")]
+    #[case("def g(): loop yield: 1 end;")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

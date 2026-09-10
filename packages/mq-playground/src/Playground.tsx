@@ -1697,6 +1697,22 @@ export const Playground = () => {
             },
           },
           {
+            label: "yield",
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: "yield: ${0:value}",
+            insertTextRules:
+              monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: "Suspend the enclosing function, producing a value",
+            documentation:
+              "Used inside a def/fn body to make it a generator function; calling it returns a coroutine driven by next().",
+            range: {
+              startLineNumber: position.lineNumber,
+              startColumn: wordRange.startColumn,
+              endLineNumber: position.lineNumber,
+              endColumn: wordRange.endColumn,
+            },
+          },
+          {
             label: "def",
             kind: monaco.languages.CompletionItemKind.Snippet,
             insertText: "def ${0}(${1:args}): ${2:body};",
@@ -1808,7 +1824,7 @@ export const Playground = () => {
         root: [
           [/#[^\n]*/, "comment"],
           [
-            /\b(let|def|do|match|while|until|unless|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|loop)\b/,
+            /\b(let|def|do|match|while|until|unless|foreach|if|elif|else|end|self|None|nodes|break|continue|include|import|module|var|loop|yield)\b/,
             "keyword",
           ],
           [/;/, "delimiter"],

@@ -454,6 +454,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Self_ => self.parse_self(token),
             TokenKind::Break => self.parse_break(token),
             TokenKind::Continue => self.parse_continue(token),
+            TokenKind::Yield => self.parse_yield(token),
             TokenKind::Ident(name) => self.parse_ident(name, token),
             TokenKind::BoolLiteral(_) => self.parse_literal(token),
             TokenKind::StringLiteral(_) => self.parse_literal(token),
@@ -901,6 +902,27 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(Shared::new(Node {
             token_id,
             expr: Expr::Break(value),
+        }))
+    }
+
+    fn parse_yield(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(token);
+
+        // Check for colon and expression (yield: expr)
+        let value = if self.tokens.peek().map(|t| &t.kind) == Some(&TokenKind::Colon) {
+            self.tokens.next(); // consume colon
+            let expr_token = self
+                .tokens
+                .next()
+                .ok_or(SyntaxError::UnexpectedEOFDetected(self.module_id))?;
+            Some(self.parse_expr(expr_token)?)
+        } else {
+            None
+        };
+
+        Ok(Shared::new(Node {
+            token_id,
+            expr: Expr::Yield(value),
         }))
     }
 

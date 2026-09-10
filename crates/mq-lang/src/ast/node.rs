@@ -165,7 +165,7 @@ impl Node {
                     arena[self.token_id].range
                 }
             }
-            Expr::Break(Some(value_node)) => {
+            Expr::Break(Some(value_node)) | Expr::Yield(Some(value_node)) => {
                 let start = arena[self.token_id].range.start;
                 let end = value_node.range(Shared::clone(&arena)).end;
                 Range { start, end }
@@ -189,7 +189,8 @@ impl Node {
             | Expr::Nodes
             | Expr::Self_
             | Expr::Break(None)
-            | Expr::Continue => arena[self.token_id].range,
+            | Expr::Continue
+            | Expr::Yield(None) => arena[self.token_id].range,
         }
     }
 
@@ -368,6 +369,7 @@ pub enum Expr {
     Try(Shared<Node>, Option<IdentWithToken>, Shared<Node>),
     Break(Option<Shared<Node>>),
     Continue,
+    Yield(Option<Shared<Node>>),
 }
 
 #[cfg(feature = "debugger")]

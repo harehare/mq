@@ -21,11 +21,13 @@
   "try"
   "catch"
   "as"
+  "yield"
 ] @keyword
 
 ; Statement keywords
 (break_expr) @keyword
 (continue_expr) @keyword
+(yield_expr) @keyword
 
 ; Special identifiers
 (self) @variable.builtin

@@ -313,6 +313,8 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::FlowContinue => "FlowContinue".to_string(),
         bytecode::OpCode::RaiseDestructuringFailed => "RaiseDestructuringFailed".to_string(),
         bytecode::OpCode::Return => "Return".to_string(),
+        bytecode::OpCode::Yield => "Yield".to_string(),
+        bytecode::OpCode::Resume(argc) => format!("Resume argc={argc}"),
     }
 }
 
@@ -326,5 +328,17 @@ fn format_value(value: &RuntimeValue) -> String {
         format!("{preview}…")
     } else {
         preview
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yield_and_resume_render() {
+        let chunk = bytecode::Chunk::default();
+        assert_eq!(format_opcode(&bytecode::OpCode::Yield, &chunk, 0), "Yield");
+        assert_eq!(format_opcode(&bytecode::OpCode::Resume(1), &chunk, 0), "Resume argc=1");
     }
 }
