@@ -9,7 +9,7 @@ use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::ModuleId;
 use crate::tarn;
 use crate::{
-    ArenaId, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
     module::resolver::DefaultModuleResolver, token_alloc,
 };
 #[cfg(feature = "debugger")]
@@ -273,7 +273,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     /// Defines an arbitrary runtime value in the current environment.
     pub fn define_value(&self, name: &str, value: RuntimeValue) {
-        self.vm.define(crate::Ident::new(name), value);
+        self.vm.define(Ident::new(name), value);
     }
 
     /// Registers a native Rust function under `name`, callable from mq code as `name(...)`.

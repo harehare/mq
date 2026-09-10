@@ -189,7 +189,7 @@ impl ExecutionLimits {
         {
             let caller_node = debug.current_node.clone();
             frame.pushed_call_stack_entry = if let Some(node) = &caller_node {
-                debug.call_stack.push(crate::Shared::clone(node));
+                debug.call_stack.push(Shared::clone(node));
                 true
             } else {
                 false
@@ -242,7 +242,7 @@ impl ExecutionLimits {
             debug.current_node = frame.caller_node;
             let caller_node = debug.current_node.clone();
             replacement.pushed_call_stack_entry = if let Some(node) = &caller_node {
-                debug.call_stack.push(crate::Shared::clone(node));
+                debug.call_stack.push(Shared::clone(node));
                 true
             } else {
                 false
