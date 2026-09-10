@@ -394,7 +394,7 @@ In {year}, the snowfall was above average.
 #[case::input_format_xml(
     vec!["--unbuffered", "-I", "xml", "self"],
     "<root>text</root>",
-    Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
+    Some("{\"tag\": \"root\", \"attributes\": {}, \"children\": [], \"text\": \"text\"}\n")
 )]
 #[case::output_format_json_compact(
     vec!["--unbuffered", "-I", "json", "-F", "json", "--compact", "self"],

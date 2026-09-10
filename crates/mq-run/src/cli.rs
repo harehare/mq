@@ -3,9 +3,10 @@ use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
+use mq_lang::DictMap;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -1682,7 +1683,7 @@ impl Cli {
             || self.input.argjson.is_some()
             || self.input.slurp_file.is_some()
         {
-            let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
+            let mut named: DictMap = DictMap::default();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
@@ -1730,7 +1731,7 @@ impl Cli {
                 .iter()
                 .map(|s| mq_lang::RuntimeValue::String(Shared::new(s.clone())))
                 .collect();
-            let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
+            let args_map: DictMap = [
                 (
                     mq_lang::Ident::new("positional"),
                     mq_lang::RuntimeValue::Array(Shared::new(positional)),
@@ -2700,7 +2701,7 @@ impl Cli {
     }
 
     /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
-    fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
+    fn is_typed_dict(map: &DictMap) -> bool {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
@@ -2712,9 +2713,7 @@ impl Cli {
     ///
     /// Returns `None` if the dict is not a known expandable type.
     /// To add support for a new type, add a match arm for the type name.
-    fn expand_typed_dict(
-        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
-    ) -> Option<Vec<mq_markdown::Node>> {
+    fn expand_typed_dict(map: &DictMap) -> Option<Vec<mq_markdown::Node>> {
         let type_key = mq_lang::Ident::new("type");
         match map.get(&type_key) {
             Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {
@@ -6030,9 +6029,7 @@ mod tests {
 
         assert!(cli.run().is_ok());
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
-        // `named` is backed by a `BTreeMap<Ident, _>`, whose key order depends on the
-        // global string interner's symbol assignment order rather than the key text,
-        // so compare parsed JSON values instead of the raw serialized string.
+        // Compare parsed JSON values (rather than the raw string) so key order doesn't matter.
         let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
         let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
         assert_eq!(actual, expected);

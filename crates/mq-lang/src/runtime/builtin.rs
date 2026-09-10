@@ -14,6 +14,7 @@ mod range;
 mod regex;
 pub(super) mod tokenizer;
 
+use crate::DictMap;
 use crate::arena::Arena;
 use crate::ast::constants;
 use crate::error::runtime::RuntimeError;
@@ -37,7 +38,6 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::io;
 use std::process::exit;
 use std::sync::LazyLock;
@@ -2208,12 +2208,12 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
         [RuntimeValue::None, RuntimeValue::Number(_)] => Ok(RuntimeValue::NONE),
         [RuntimeValue::Dict(dict), RuntimeValue::String(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).remove(&Ident::new(key));
+            runtime_value::dict_mut(&mut dict).shift_remove(&Ident::new(key));
             Ok(RuntimeValue::Dict(dict))
         }
         [RuntimeValue::Dict(dict), RuntimeValue::Symbol(key)] => {
             let mut dict = std::mem::take(dict);
-            runtime_value::dict_mut(&mut dict).remove(key);
+            runtime_value::dict_mut(&mut dict).shift_remove(key);
             Ok(RuntimeValue::Dict(dict))
         }
         [a, b] => Err(Error::InvalidTypes(
@@ -3451,7 +3451,7 @@ fn dict_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     if args.is_empty() {
         Ok(RuntimeValue::new_dict())
     } else {
-        let mut dict = BTreeMap::default();
+        let mut dict = DictMap::default();
         let entries: Cow<'_, [RuntimeValue]> = match args.as_slice() {
             [RuntimeValue::Array(entries)] => match entries.as_slice() {
                 [RuntimeValue::Array(_)] if args.len() == 1 => Cow::Borrowed(entries),
@@ -3892,7 +3892,7 @@ fn _csv_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             .records()
             .map(|record| {
                 let record = record.map_err(|e| Error::Runtime(format!("Failed to parse CSV record: {e}")))?;
-                let map: BTreeMap<Ident, RuntimeValue> = headers
+                let map: DictMap = headers
                     .iter()
                     .enumerate()
                     .map(|(i, k)| {
@@ -4110,11 +4110,11 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             reader.config_mut().trim_text(true);
             let mut buf = Vec::new();
             #[allow(clippy::type_complexity)]
-            let mut stack: Vec<(String, BTreeMap<Ident, RuntimeValue>, Vec<RuntimeValue>, Option<String>)> = Vec::new();
+            let mut stack: Vec<(String, DictMap, Vec<RuntimeValue>, Option<String>)> = Vec::new();
             let mut root: Option<RuntimeValue> = None;
 
             let parse_attrs = |e: &quick_xml::events::BytesStart<'_>| {
-                let mut attrs = BTreeMap::new();
+                let mut attrs = DictMap::default();
                 for attr in e.attributes() {
                     let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
                     let key = attr.key.as_ref().to_string();
@@ -4153,7 +4153,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                             )));
                         }
 
-                        let mut dict = BTreeMap::new();
+                        let mut dict = DictMap::default();
                         dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
                         dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
                         dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
@@ -4174,7 +4174,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                     Ok(quick_xml::events::Event::Empty(e)) => {
                         let tag = e.name().as_ref().to_string();
                         let attrs = parse_attrs(&e)?;
-                        let mut dict = BTreeMap::new();
+                        let mut dict = DictMap::default();
                         dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
                         dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
                         dict.insert(Ident::new("children"), RuntimeValue::empty_array());
@@ -4339,20 +4339,20 @@ fn build_char_inline_diff(s1: &str, s2: &str) -> (Vec<RuntimeValue>, Vec<Runtime
         let val = RuntimeValue::String(Shared::new(c.value().to_string()));
         match c.tag() {
             ChangeTag::Delete => {
-                let mut m = BTreeMap::new();
+                let mut m = DictMap::default();
                 m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                 m.insert(Ident::new("value"), val);
                 del_inline.push(RuntimeValue::Dict(Shared::new(m)));
             }
             ChangeTag::Insert => {
-                let mut m = BTreeMap::new();
+                let mut m = DictMap::default();
                 m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                 m.insert(Ident::new("value"), val);
                 ins_inline.push(RuntimeValue::Dict(Shared::new(m)));
             }
             ChangeTag::Equal => {
                 for inline in [&mut del_inline, &mut ins_inline] {
-                    let mut m = BTreeMap::new();
+                    let mut m = DictMap::default();
                     m.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("equal".into())));
                     m.insert(
                         Ident::new("value"),
@@ -4389,22 +4389,22 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     let new_val = &a2[new_idx];
                     if let (RuntimeValue::String(s1), RuntimeValue::String(s2)) = (old_val, new_val) {
                         let (del_inline, ins_inline) = build_char_inline_diff(s1.as_str(), s2.as_str());
-                        let mut del_map = BTreeMap::new();
+                        let mut del_map = DictMap::default();
                         del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                         del_map.insert(Ident::new("value"), old_val.clone());
                         del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
                         result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                        let mut ins_map = BTreeMap::new();
+                        let mut ins_map = DictMap::default();
                         ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                         ins_map.insert(Ident::new("value"), new_val.clone());
                         ins_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(ins_inline)));
                         result.push(RuntimeValue::Dict(Shared::new(ins_map)));
                     } else {
-                        let mut del_map = BTreeMap::new();
+                        let mut del_map = DictMap::default();
                         del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                         del_map.insert(Ident::new("value"), old_val.clone());
                         result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                        let mut ins_map = BTreeMap::new();
+                        let mut ins_map = DictMap::default();
                         ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                         ins_map.insert(Ident::new("value"), new_val.clone());
                         result.push(RuntimeValue::Dict(Shared::new(ins_map)));
@@ -4420,7 +4420,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                         ChangeTag::Equal | ChangeTag::Delete => a1[changes[i].old_index().unwrap()].clone(),
                         ChangeTag::Insert => a2[changes[i].new_index().unwrap()].clone(),
                     };
-                    let mut map = BTreeMap::new();
+                    let mut map = DictMap::default();
                     map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
                     map.insert(Ident::new("value"), value);
                     result.push(RuntimeValue::Dict(Shared::new(map)));
@@ -4444,7 +4444,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     let old_val = changes[i].value().trim_end_matches('\n');
                     let new_val = changes[i + 1].value().trim_end_matches('\n');
                     let (del_inline, ins_inline) = build_char_inline_diff(old_val, new_val);
-                    let mut del_map = BTreeMap::new();
+                    let mut del_map = DictMap::default();
                     del_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("delete".into())));
                     del_map.insert(
                         Ident::new("value"),
@@ -4452,7 +4452,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                     );
                     del_map.insert(Ident::new("inline"), RuntimeValue::Array(Shared::new(del_inline)));
                     result.push(RuntimeValue::Dict(Shared::new(del_map)));
-                    let mut ins_map = BTreeMap::new();
+                    let mut ins_map = DictMap::default();
                     ins_map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("insert".into())));
                     ins_map.insert(
                         Ident::new("value"),
@@ -4468,7 +4468,7 @@ fn _diff_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Res
                         ChangeTag::Insert => "insert",
                     };
                     let val = changes[i].value().trim_end_matches('\n').to_string();
-                    let mut map = BTreeMap::new();
+                    let mut map = DictMap::default();
                     map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag_str.into())));
                     map.insert(Ident::new("value"), RuntimeValue::String(val.into()));
                     result.push(RuntimeValue::Dict(Shared::new(map)));
@@ -5064,7 +5064,7 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
         body_nodes.iter().cloned().map(RuntimeValue::from).collect(),
     ));
 
-    let mut record = BTreeMap::new();
+    let mut record = DictMap::default();
     record.insert(Ident::new("path"), RuntimeValue::String(path.into()));
     record.insert(Ident::new("title"), title);
     record.insert(Ident::new("frontmatter"), frontmatter);
@@ -9853,7 +9853,7 @@ fn repeat(value: &mut RuntimeValue, n: usize) -> Result<RuntimeValue, Error> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
+    use crate::DictMap;
 
     use mq_markdown::Node;
     use rstest::rstest;
@@ -9929,9 +9929,9 @@ mod tests {
     #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
     #[case("eq", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("ne", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("different".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
-    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
-    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("c".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
-    #[case("has", vec![BTreeMap::from([(Ident::new("a"), RuntimeValue::None)]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
+    #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("c".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
+    #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::None)]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(1.into())].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number(5.into())].into(), Ok(RuntimeValue::Boolean(false)))]
     #[case("has", vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into())])), RuntimeValue::Number((-1).into())].into(), Ok(RuntimeValue::Boolean(false)))]
@@ -11066,30 +11066,26 @@ mod tests {
     // Tests for Dict functions
     #[rstest]
     #[case(
-        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        BTreeMap::from([("c".into(), RuntimeValue::Number(3.0.into()))]),
-        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into())), ("c".into(), RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("c".into(), RuntimeValue::Number(3.0.into()))]),
+        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into())), ("b".into(), RuntimeValue::Number(2.0.into())), ("c".into(), RuntimeValue::Number(3.0.into()))]),
     )]
     #[case(
-        BTreeMap::from([("a".into(), RuntimeValue::Number(1.0.into()))]),
-        BTreeMap::from([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
-        BTreeMap::from([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a".into(), RuntimeValue::Number(1.0.into()))]),
+        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
+        DictMap::from_iter([("a".into(), RuntimeValue::Number(99.0.into())), ("b".into(), RuntimeValue::Number(2.0.into()))]),
     )]
     #[case(
-        BTreeMap::new(),
-        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
-        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::default(),
+        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
     )]
     #[case(
-        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
-        BTreeMap::new(),
-        BTreeMap::from([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
+        DictMap::default(),
+        DictMap::from_iter([("x".into(), RuntimeValue::String(Shared::new("hello".into())))]),
     )]
-    fn test_eval_builtin_add_dict(
-        #[case] d1: BTreeMap<Ident, RuntimeValue>,
-        #[case] d2: BTreeMap<Ident, RuntimeValue>,
-        #[case] expected: BTreeMap<Ident, RuntimeValue>,
-    ) {
+    fn test_eval_builtin_add_dict(#[case] d1: DictMap, #[case] d2: DictMap, #[case] expected: DictMap) {
         let ident = Ident::new("add");
         let result = eval_builtin(
             &RuntimeValue::None,
@@ -11125,7 +11121,7 @@ mod tests {
         );
         assert_eq!(
             result,
-            Ok(RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+            Ok(RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
                 "key".into(),
                 RuntimeValue::String(Shared::new("value".into()))
             )]))))
@@ -11196,7 +11192,7 @@ mod tests {
             _ => panic!("Expected Dict, got {:?}", map_val3),
         }
 
-        let mut nested_map_data = BTreeMap::default();
+        let mut nested_map_data = DictMap::default();
         nested_map_data.insert(Ident::new("level"), RuntimeValue::Number(2.into()));
         let nested_map: RuntimeValue = nested_map_data.into();
         let args4 = vec![
@@ -11254,7 +11250,7 @@ mod tests {
     #[test]
     fn test_eval_builtin_get_map() {
         let ident_get = Ident::new("get");
-        let mut map_data = BTreeMap::default();
+        let mut map_data = DictMap::default();
         map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
@@ -11342,7 +11338,7 @@ mod tests {
         let result1 = eval_builtin(&RuntimeValue::None, &ident_keys, args1.into(), &VmEnv::default());
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
-        let mut map_data = BTreeMap::default();
+        let mut map_data = DictMap::default();
         map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
@@ -11390,7 +11386,7 @@ mod tests {
         let result1 = eval_builtin(&RuntimeValue::None, &ident_values, args1.into(), &VmEnv::default());
         assert_eq!(result1, Ok(RuntimeValue::Array(Shared::new(vec![]))));
 
-        let mut map_data = BTreeMap::default();
+        let mut map_data = DictMap::default();
         map_data.insert("name".into(), RuntimeValue::String(Shared::new("Jules".into())));
         map_data.insert("age".into(), RuntimeValue::Number(30.into()));
         let map_val: RuntimeValue = map_data.into();
@@ -11640,10 +11636,10 @@ mod tests {
     #[case::simple_with_header(
         "name,age\nAlice,30\nBob,25",
         {
-            let mut alice = BTreeMap::new();
+            let mut alice = DictMap::default();
             alice.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             alice.insert(Ident::new("age"), RuntimeValue::String(Shared::new("30".to_string())));
-            let mut bob = BTreeMap::new();
+            let mut bob = DictMap::default();
             bob.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string())));
             bob.insert(Ident::new("age"), RuntimeValue::String(Shared::new("25".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![
@@ -11655,7 +11651,7 @@ mod tests {
     #[case::single_row_with_header(
         "id,value\n1,hello",
         {
-            let mut row = BTreeMap::new();
+            let mut row = DictMap::default();
             row.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
             row.insert(Ident::new("value"), RuntimeValue::String(Shared::new("hello".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
@@ -11664,7 +11660,7 @@ mod tests {
     #[case::quoted_fields_with_header(
         "name,note\n\"Doe, Jane\",\"says \"\"hi\"\"\"",
         {
-            let mut row = BTreeMap::new();
+            let mut row = DictMap::default();
             row.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Doe, Jane".to_string())));
             row.insert(Ident::new("note"), RuntimeValue::String(Shared::new("says \"hi\"".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
@@ -11673,11 +11669,11 @@ mod tests {
     #[case::ragged_rows_with_header(
         "a,b,c\n1,2\n3,4,5,6",
         {
-            let mut short_row = BTreeMap::new();
+            let mut short_row = DictMap::default();
             short_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string())));
             short_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string())));
             short_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("".to_string())));
-            let mut long_row = BTreeMap::new();
+            let mut long_row = DictMap::default();
             long_row.insert(Ident::new("a"), RuntimeValue::String(Shared::new("3".to_string())));
             long_row.insert(Ident::new("b"), RuntimeValue::String(Shared::new("4".to_string())));
             long_row.insert(Ident::new("c"), RuntimeValue::String(Shared::new("5".to_string())));
@@ -11726,7 +11722,7 @@ mod tests {
         "\t",
         true,
         {
-            let mut row = BTreeMap::new();
+            let mut row = DictMap::default();
             row.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             row.insert(Ident::new("age"), RuntimeValue::String(Shared::new("30".to_string())));
             Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row))])))
@@ -11766,7 +11762,7 @@ mod tests {
     #[case::simple_object(
         r#"{"key": "value"}"#,
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("key"), RuntimeValue::String(Shared::new("value".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11782,12 +11778,12 @@ mod tests {
     #[case::nested(
         r#"{"a": [true, null], "b": {"c": 1.2}}"#,
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("a"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Boolean(true),
                 RuntimeValue::NONE,
             ])));
-            let mut inner = BTreeMap::new();
+            let mut inner = DictMap::default();
             inner.insert(Ident::new("c"), RuntimeValue::Number(1.2.into()));
             map.insert(Ident::new("b"), RuntimeValue::Dict(Shared::new(inner)));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -11825,7 +11821,7 @@ mod tests {
     #[case::mapping(
         "key: value",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("key"), RuntimeValue::String(Shared::new("value".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11841,9 +11837,9 @@ mod tests {
     #[case::nested(
         "a:\n  b: 42",
         {
-            let mut inner = BTreeMap::new();
+            let mut inner = DictMap::default();
             inner.insert(Ident::new("b"), RuntimeValue::Number(42.into()));
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner)));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11851,7 +11847,7 @@ mod tests {
     #[case::boolean(
         "flag: true",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("flag"), RuntimeValue::Boolean(true));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11859,7 +11855,7 @@ mod tests {
     #[case::null(
         "value: null",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("value"), RuntimeValue::NONE);
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11867,7 +11863,7 @@ mod tests {
     #[case::float(
         "ratio: 1.5",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("ratio"), RuntimeValue::Number(1.5.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11875,9 +11871,9 @@ mod tests {
     #[case::multi_document(
         "a: 1\n---\nb: 2\n",
         {
-            let mut first = BTreeMap::new();
+            let mut first = DictMap::default();
             first.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
-            let mut second = BTreeMap::new();
+            let mut second = DictMap::default();
             second.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
             Ok(RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Dict(Shared::new(first)),
@@ -11912,7 +11908,7 @@ mod tests {
     #[case::simple_kv(
         "a: 1\nb: 2",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
             map.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -11921,9 +11917,9 @@ mod tests {
     #[case::nested_indent(
         "parent:\n  child: value",
         {
-            let mut child_map = BTreeMap::new();
+            let mut child_map = DictMap::default();
             child_map.insert(Ident::new("child"), RuntimeValue::String(Shared::new("value".to_string())));
-            let mut parent_map = BTreeMap::new();
+            let mut parent_map = DictMap::default();
             parent_map.insert(Ident::new("parent"), RuntimeValue::Dict(Shared::new(child_map)));
             Ok(RuntimeValue::Dict(Shared::new(parent_map)))
         }
@@ -11931,13 +11927,13 @@ mod tests {
     #[case::tabular_data(
         "hikes[2]{id,name}:\n  1,Blue Lake\n  2,Ridge Trail",
         {
-            let mut row1 = BTreeMap::new();
+            let mut row1 = DictMap::default();
             row1.insert(Ident::new("id"), RuntimeValue::Number(1.into()));
             row1.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Blue Lake".to_string())));
-            let mut row2 = BTreeMap::new();
+            let mut row2 = DictMap::default();
             row2.insert(Ident::new("id"), RuntimeValue::Number(2.into()));
             row2.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Ridge Trail".to_string())));
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("hikes"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(row1)), RuntimeValue::Dict(Shared::new(row2))])));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -11945,7 +11941,7 @@ mod tests {
     #[case::inline_array(
         "items[3]: 1, 2, 3",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(2.into()),
@@ -11957,7 +11953,7 @@ mod tests {
     #[case::expanded_array(
         "items[2]:\n  - 1\n  - 2",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::Number(1.into()),
                 RuntimeValue::Number(2.into()),
@@ -11968,7 +11964,7 @@ mod tests {
     #[case::primitives(
         "s: \"string\"\nb: true\nn: null\nf: false",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("s"), RuntimeValue::String(Shared::new("string".to_string())));
             map.insert(Ident::new("b"), RuntimeValue::TRUE);
             map.insert(Ident::new("n"), RuntimeValue::NONE);
@@ -11999,7 +11995,7 @@ mod tests {
     #[case::none(RuntimeValue::NONE, "null")]
     #[case::single_key_dict(
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             RuntimeValue::Dict(Shared::new(map))
         },
@@ -12010,7 +12006,7 @@ mod tests {
         "[2]: 1,2"
     )]
     #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
-    #[case::empty_dict(RuntimeValue::Dict(Shared::new(BTreeMap::new())), "")]
+    #[case::empty_dict(RuntimeValue::Dict(Shared::new(DictMap::default())), "")]
     #[case::empty_string_needs_quoting(RuntimeValue::String(Shared::new("".to_string())), "\"\"")]
     #[case::numeric_like_string_needs_quoting(RuntimeValue::String(Shared::new("123".to_string())), "\"123\"")]
     #[case::keyword_like_string_needs_quoting(RuntimeValue::String(Shared::new("true".to_string())), "\"true\"")]
@@ -12024,7 +12020,7 @@ mod tests {
     }
 
     fn toon_tabular_row(id: i64, name: &str) -> RuntimeValue {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(Ident::new("id"), RuntimeValue::Number(id.into()));
         map.insert(Ident::new("name"), RuntimeValue::String(Shared::new(name.to_string())));
         RuntimeValue::Dict(Shared::new(map))
@@ -12039,9 +12035,9 @@ mod tests {
         toon_tabular_row(2, "Ridge Trail"),
     ])))]
     #[case::nested_dict({
-        let mut inner = BTreeMap::new();
+        let mut inner = DictMap::default();
         inner.insert(Ident::new("inner"), RuntimeValue::Number(1.into()));
-        let mut outer = BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(Ident::new("outer"), RuntimeValue::Dict(Shared::new(inner)));
         RuntimeValue::Dict(Shared::new(outer))
     })]
@@ -12081,7 +12077,7 @@ mod tests {
     #[case::simple_kv(
         "name = \"Alice\"\nage = 30",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -12090,7 +12086,7 @@ mod tests {
     #[case::boolean(
         "enabled = true\ndisabled = false",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("enabled"), RuntimeValue::Boolean(true));
             map.insert(Ident::new("disabled"), RuntimeValue::Boolean(false));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -12099,10 +12095,10 @@ mod tests {
     #[case::nested_table(
         "[server]\nhost = \"localhost\"\nport = 8080",
         {
-            let mut inner = BTreeMap::new();
+            let mut inner = DictMap::default();
             inner.insert(Ident::new("host"), RuntimeValue::String(Shared::new("localhost".to_string())));
             inner.insert(Ident::new("port"), RuntimeValue::Number(8080.into()));
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("server"), RuntimeValue::Dict(Shared::new(inner)));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
@@ -12110,7 +12106,7 @@ mod tests {
     #[case::array(
         "tags = [\"rust\", \"toml\"]",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("tags"), RuntimeValue::Array(Shared::new(vec![
                 RuntimeValue::String(Shared::new("rust".to_string())),
                 RuntimeValue::String(Shared::new("toml".to_string())),
@@ -12155,7 +12151,7 @@ mod tests {
         // {"name": "Alice", "age": 30}
         "omRuYW1lZUFsaWNlY2FnZRge",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -12199,7 +12195,7 @@ mod tests {
         // {"name": "Alice", "age": 30} encoded as CBOR then base64
         "omRuYW1lZUFsaWNlY2FnZRge",
         {
-            let mut map = BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string())));
             map.insert(Ident::new("age"), RuntimeValue::Number(30.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
@@ -12245,7 +12241,7 @@ mod tests {
             &VmEnv::default(),
         );
         assert!(result.is_ok());
-        let mut expected = BTreeMap::new();
+        let mut expected = DictMap::default();
         expected.insert(
             Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -12688,7 +12684,7 @@ mod tests {
     #[case::simple(
         "<root>hello</root>",
         {
-            let mut root = BTreeMap::new();
+            let mut root = DictMap::default();
             root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
             root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
             root.insert(Ident::new("children"), RuntimeValue::empty_array());
@@ -12699,8 +12695,8 @@ mod tests {
     #[case::with_attributes(
         "<root id=\"1\" class=\"main\">hello</root>",
         {
-            let mut root = BTreeMap::new();
-            let mut attrs = BTreeMap::new();
+            let mut root = DictMap::default();
+            let mut attrs = DictMap::default();
             attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
             attrs.insert(Ident::new("class"), RuntimeValue::String(Shared::new("main".to_string())));
             root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
@@ -12713,17 +12709,17 @@ mod tests {
     #[case::nested(
         "<root><child id=\"1\">hello</child><child id=\"2\">world</child></root>",
         {
-            let mut root = BTreeMap::new();
-            let mut child1 = BTreeMap::new();
-            let mut attrs1 = BTreeMap::new();
+            let mut root = DictMap::default();
+            let mut child1 = DictMap::default();
+            let mut attrs1 = DictMap::default();
             attrs1.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
             child1.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child1.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs1)));
             child1.insert(Ident::new("children"), RuntimeValue::empty_array());
             child1.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
 
-            let mut child2 = BTreeMap::new();
-            let mut attrs2 = BTreeMap::new();
+            let mut child2 = DictMap::default();
+            let mut attrs2 = DictMap::default();
             attrs2.insert(Ident::new("id"), RuntimeValue::String(Shared::new("2".to_string())));
             child2.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child2.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs2)));
@@ -12743,9 +12739,9 @@ mod tests {
     #[case::self_closing(
         "<root><child id=\"1\"/></root>",
         {
-            let mut root = BTreeMap::new();
-            let mut child = BTreeMap::new();
-            let mut attrs = BTreeMap::new();
+            let mut root = DictMap::default();
+            let mut child = DictMap::default();
+            let mut attrs = DictMap::default();
             attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
             child.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
             child.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
@@ -14082,7 +14078,7 @@ mod tests {
                 get(&entries[0], "title"),
                 RuntimeValue::String(Shared::new("World".into()))
             );
-            let mut toml_frontmatter = BTreeMap::new();
+            let mut toml_frontmatter = DictMap::default();
             toml_frontmatter.insert(Ident::new("title"), RuntimeValue::String(Shared::new("World".into())));
             assert_eq!(
                 get(&entries[0], "frontmatter"),
@@ -14729,15 +14725,15 @@ mod tests {
         }
 
         let requests = RuntimeValue::Array(Shared::new(vec![
-            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
                 Ident::new("url"),
                 RuntimeValue::String(Shared::new("https://example.invalid/a".into())),
             )]))),
-            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([(
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
                 Ident::new("url"),
                 RuntimeValue::String(Shared::new("https://example.invalid/b".into())),
             )]))),
-            RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::from([
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([
                 (Ident::new("method"), RuntimeValue::Symbol(Ident::new("post"))),
                 (
                     Ident::new("url"),
@@ -14774,9 +14770,9 @@ mod tests {
     fn test_http_all_rejects_request_without_url() {
         let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
 
-        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(
-            std::collections::BTreeMap::from([(Ident::new("method"), RuntimeValue::Symbol(Ident::new("get")))]),
-        ))]));
+        let requests = RuntimeValue::Array(Shared::new(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter(
+            [(Ident::new("method"), RuntimeValue::Symbol(Ident::new("get")))],
+        )))]));
 
         assert!(call("http_all", vec![requests]).is_err());
     }

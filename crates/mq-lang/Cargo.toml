@@ -25,6 +25,7 @@ chrono = {workspace = true}
 dirs = {workspace = true}
 glob = {workspace = true}
 ignore = {workspace = true, optional = true}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["json", "obsidian"]}

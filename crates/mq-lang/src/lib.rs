@@ -108,7 +108,7 @@ pub use runtime::builtin::{
     INTERNAL_FUNCTION_DOC,
 };
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
-pub use runtime::runtime_value::{RuntimeValue, RuntimeValues};
+pub use runtime::runtime_value::{DictMap, RuntimeValue, RuntimeValues};
 pub use selector::{AttrKind, Selector};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
