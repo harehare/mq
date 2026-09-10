@@ -123,8 +123,8 @@ struct PatternState {
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     scopes: Vec<FunctionScope>,
-    /// The directly enclosing named function and its fixed arity, if it has one.
-    function_names: Vec<Option<(crate::Ident, Option<usize>)>>,
+    /// The directly enclosing named function, its fixed arity if any, and whether it's a generator.
+    function_names: Vec<Option<(crate::Ident, Option<usize>, bool)>>,
     current: usize,
     loops: Vec<LoopCtx>,
     current_token_id: crate::ast::TokenId,
@@ -1056,7 +1056,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let is_generator = program_contains_direct_yield(body);
         let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, true);
-        let result = self.compile_function(params, body, name_for_shadow);
+        let result = self.compile_function(params, body, name_for_shadow, is_generator);
         self.in_fn_body = outer_in_fn_body;
         let (chunk_idx, upvalues) = result?;
         self.chunks[chunk_idx as usize].is_generator = is_generator;
@@ -1068,6 +1068,7 @@ impl<R: ModuleResolver> Compiler<R> {
         params: &ast::Params,
         body: &Program,
         name_for_shadow: Option<crate::Ident>,
+        is_generator: bool,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let outer = self.current;
         if self.chunks.len() > usize::from(u16::MAX) {
@@ -1090,7 +1091,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.scopes.push(scope);
         let is_fixed_arity = params.iter().all(|param| !param.is_variadic && param.default.is_none());
         self.function_names
-            .push(name_for_shadow.map(|name| (name, is_fixed_arity.then_some(params.len()))));
+            .push(name_for_shadow.map(|name| (name, is_fixed_arity.then_some(params.len()), is_generator)));
 
         let mut bindings = Vec::with_capacity(params.len());
         let mut required = 0usize;
@@ -1104,7 +1105,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 // A default-value expression runs before the function body starts, so `yield`
                 // in it is not "inside the function" for this purpose.
                 let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, false);
-                let default_result = self.compile_function(&ast::Params::new(), &default_body, None);
+                let default_result = self.compile_function(&ast::Params::new(), &default_body, None, false);
                 self.in_fn_body = outer_in_fn_body;
                 let (default_chunk, default_upvalues) = default_result?;
                 bindings.push(ParamBinding::Optional(slot, default_chunk, default_upvalues));
@@ -1147,7 +1148,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<()> {
         let try_program: Program = vec![Shared::clone(body)];
         self.try_depth += 1;
-        let try_result = self.compile_function(&ast::Params::new(), &try_program, None);
+        let try_result = self.compile_function(&ast::Params::new(), &try_program, None, false);
         self.try_depth -= 1;
         let (try_chunk, try_upvalues) = try_result?;
 
@@ -1157,7 +1158,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         let catch_program: Program = vec![Shared::clone(catch)];
         self.try_depth += 1;
-        let catch_result = self.compile_function(&catch_params, &catch_program, None);
+        let catch_result = self.compile_function(&catch_params, &catch_program, None, false);
         self.try_depth -= 1;
         let (catch_chunk, catch_upvalues) = catch_result?;
 
@@ -2360,23 +2361,25 @@ impl<R: ModuleResolver> Compiler<R> {
         // every recursive call load and clone the closure. At this lexical depth the active
         // frame already supplies the correct captured environment, so call the current chunk
         // directly. A same-named parameter/local still takes precedence.
-        let direct_self_arity = self
+        let direct_self_call = self
             .function_names
             .last()
             .and_then(|entry| *entry)
-            .and_then(|(name, arity)| (name == ident).then_some(arity).flatten())
+            .and_then(|(name, arity, is_generator)| (name == ident).then_some((arity?, is_generator)))
             .filter(|_| {
                 self.scopes
                     .last()
                     .is_some_and(|scope| scope.resolve_local(ident).is_none())
             });
-        if !shadowed && let Some(arity) = direct_self_arity {
+        if !shadowed && let Some((arity, is_generator)) = direct_self_call {
             for arg in args {
                 self.compile_expr(arg)?;
             }
             self.current_token_id = call_token_id;
             let argc = self.arg_count(args.len())?;
             self.emit(match Self::fixed_call_form(arity, argc) {
+                // Exact-arity opcodes skip generator detection; a generator's self-call can't use them.
+                FixedCallForm::Exact if is_generator => OpCode::CallSelf(argc),
                 FixedCallForm::Exact => Self::self_exact_call_opcode(argc),
                 FixedCallForm::ImplicitSelf => OpCode::CallSelfImplicitSelf(argc),
                 FixedCallForm::Fallback => OpCode::CallSelf(argc),

@@ -77,7 +77,7 @@ pub(super) enum CallStep {
 }
 
 /// A generator call binds arguments like any other call but never executes the body.
-fn frame_or_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> CallStep {
+pub(super) fn frame_or_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> CallStep {
     if chunk_pool[frame.chunk_index as usize].is_generator {
         let handle = super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool));
         CallStep::Value(StackValue::Value(RuntimeValue::Coroutine(handle)))

@@ -2915,3 +2915,22 @@ fn yield_outside_a_function_is_a_compile_error() {
     let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap_err();
     assert!(matches!(err, compiler::CompileError::YieldOutsideFunction(_)));
 }
+
+#[test]
+fn generator_call_with_a_defaulted_argument_still_produces_a_coroutine() {
+    let result = run("def g(x = 1): yield: x; | let s = g() | s | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn self_recursive_generator_call_produces_a_coroutine_instead_of_running_inline() {
+    let def = "def g(n): yield: n | if (n > 0): g(n - 1) else: None;";
+    let first = run_yield_source(&format!("{def} | let stream = g(1)"), 1);
+    assert_eq!(dict_field(&first, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&first, "done"), RuntimeValue::Boolean(false));
+
+    let second = run_yield_source(&format!("{def} | let stream = g(1)"), 2);
+    assert_eq!(dict_field(&second, "done"), RuntimeValue::Boolean(true));
+    assert!(matches!(dict_field(&second, "value"), RuntimeValue::Coroutine(_)));
+}

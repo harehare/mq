@@ -14,7 +14,7 @@ use self::calls::{
     CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
     call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
     call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
-    call_static_chunk_from_stack, capture_upvalues, negate_ident,
+    call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -757,26 +757,34 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                         }
                     }
                 };
-                let mut next = next;
-                next.stack_base = operand_stack.len();
-                if let Err(e) = execution.limits.push_frame(
-                    frames,
-                    next,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                ) {
-                    let e = locate_at_top(frames, root_chunks, e);
-                    match unwind(
-                        e,
-                        frames,
-                        root_chunks,
-                        operand_stack,
-                        execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    ) {
-                        Ok(()) => continue 'frames,
-                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                // May be the callee's own now-fully-bound frame; needs generator detection too.
+                let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
+                match frame_or_coroutine(next, &next_chunks) {
+                    CallStep::Value(coroutine) => {
+                        operand_stack.push(coroutine);
+                    }
+                    CallStep::Enter(mut next) => {
+                        next.stack_base = operand_stack.len();
+                        if let Err(e) = execution.limits.push_frame(
+                            frames,
+                            next,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        ) {
+                            let e = locate_at_top(frames, root_chunks, e);
+                            match unwind(
+                                e,
+                                frames,
+                                root_chunks,
+                                operand_stack,
+                                execution,
+                                #[cfg(feature = "debugger")]
+                                debug,
+                            ) {
+                                Ok(()) => continue 'frames,
+                                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                            }
+                        }
                     }
                 }
             }
