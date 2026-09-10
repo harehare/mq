@@ -167,3 +167,90 @@ def test_md_doc_skips_none_children():
   let result = to_string(md::doc(md::text("a"), None, md::text("b")))
   | assert_eq(result, "a\n\nb")
 end
+
+# -- Reference indexing/resolution (md::reference_index / md::resolve_references) --
+
+def test_md_reference_index_link():
+  let idx = md::reference_index(to_markdown("[a][b]\n\n[b]: https://example.com \"B\""))
+  | let entries = idx[:links]["b"]
+  | assert_eq(len(entries), 1)
+  | assert_eq(entries[0][:ident], "b")
+  | assert_eq(entries[0][:url], "https://example.com")
+  | assert_eq(entries[0][:title], "B")
+end
+
+def test_md_reference_index_footnote():
+  let idx = md::reference_index(to_markdown("note[^1]\n\n[^1]: Body."))
+  | let entries = idx[:footnotes]["1"]
+  | assert_eq(len(entries), 1)
+  | assert_eq(entries[0][:ident], "1")
+end
+
+def test_md_reference_index_duplicate_link_definitions():
+  let idx = md::reference_index(to_markdown("[a][b]\n\n[b]: https://x.com\n[b]: https://y.com"))
+  | assert_eq(len(idx[:links]["b"]), 2)
+end
+
+def test_md_reference_index_missing_ident_is_empty():
+  let idx = md::reference_index(to_markdown("[a][b]\n\n[b]: https://example.com"))
+  | assert_eq(get_or(idx[:links], "missing", []), [])
+end
+
+def test_md_reference_index_ignores_single_node_input_with_warning():
+  let idx = md::reference_index(first(to_markdown("[a][b]\n\n[b]: https://example.com")))
+  | assert_eq(is_dict(idx), true)
+end
+
+def test_md_resolve_references_link():
+  let refs = md::resolve_references(to_markdown("[a][b]\n\n[b]: https://example.com"))
+  | assert_eq(len(refs), 1)
+  | let r = first(refs)
+  | assert_eq(r[:type], "link_ref")
+  | assert_eq(r[:ident], "b")
+  | assert_eq(r[:resolved], true)
+  | assert_eq(r[:duplicate], false)
+  | assert_eq(r[:definition][:url], "https://example.com")
+end
+
+def test_md_resolve_references_shortcut_link():
+  let refs = md::resolve_references(to_markdown("See [shortcut] here.\n\n[shortcut]: https://example.com"))
+  | assert_eq(first(refs)[:ident], "shortcut")
+  | assert_eq(first(refs)[:resolved], true)
+end
+
+def test_md_resolve_references_image():
+  let refs = md::resolve_references(to_markdown("![alt][img]\n\n[img]: https://example.com/a.png"))
+  | assert_eq(first(refs)[:type], "image_ref")
+  | assert_eq(first(refs)[:resolved], true)
+end
+
+def test_md_resolve_references_footnote():
+  let refs = md::resolve_references(to_markdown("note[^1]\n\n[^1]: Body."))
+  | assert_eq(first(refs)[:type], "footnoteref")
+  | assert_eq(first(refs)[:resolved], true)
+end
+
+def test_md_resolve_references_duplicate_definition_picks_first():
+  let refs = md::resolve_references(to_markdown("[a][b]\n\n[b]: https://x.com\n[b]: https://y.com"))
+  | let r = first(refs)
+  | assert_eq(r[:duplicate], true)
+  | assert_eq(r[:definition][:url], "https://x.com")
+  | assert_eq(len(r[:definitions]), 2)
+end
+
+def test_md_resolve_references_unresolved_against_explicit_index():
+  let refs = md::resolve_references(to_markdown("[a][b]\n\n[b]: https://example.com"), dict())
+  | let r = first(refs)
+  | assert_eq(r[:resolved], false)
+  | assert_eq(r[:definition], None)
+  | assert_eq(r[:definitions], [])
+end
+
+def test_md_resolve_references_resolves_against_index_from_other_nodes():
+  let whole_doc = to_markdown("[a][b]\n\n[b]: https://example.com")
+  | let idx = md::reference_index(whole_doc)
+  | let refs_only = filter(whole_doc, fn(n): to_md_name(n) == "link_ref";)
+  | let r = first(md::resolve_references(refs_only, idx))
+  | assert_eq(r[:resolved], true)
+  | assert_eq(r[:definition][:url], "https://example.com")
+end

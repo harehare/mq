@@ -1,5 +1,10 @@
-# Builder functions for constructing markdown nodes from scratch.
+# Builder functions for constructing markdown nodes from scratch, plus utilities for
+# indexing and resolving reference-style links, images, and footnotes.
 # This module is under development. APIs and behavior may change without notice.
+#
+# `md::reference_index` and `md::resolve_references` need every document node at
+# once — pass `-A` on the CLI, or pipe through `nodes` in an inline query/script;
+# a single node instead prints a stderr warning and is treated as a one-element array.
 
 # Wraps `value` in a heading node at the given `depth` (1-6).
 #
@@ -288,3 +293,113 @@ def table(header, rows, aligns = []):
 #
 # Returns: markdown
 def doc(*values): to_md_fragment(values);
+
+def _is_definition(md): to_md_name(md) == "definition";
+def _is_footnote_def(md): to_md_name(md) == "footnote";
+def _is_link_ref(md): to_md_name(md) == "link_ref";
+def _is_image_ref(md): to_md_name(md) == "image_ref";
+def _is_footnote_ref(md): to_md_name(md) == "footnoteref";
+
+# Normalizes input into an array of Markdown nodes, for the same reason as
+# `section::_ensure_aggregated`: reference indexing/resolution needs the full
+# document, so a bare single node (missing `-A`/`nodes`) is warned about and
+# wrapped in a one-element array instead of silently producing nonsense.
+def _ensure_aggregated(md_nodes):
+  if (is_array(md_nodes)):
+    md_nodes
+  else:
+    do
+      [md_nodes] | stderr("mq: reference functions expect all document nodes; got a single node. Pass `-A` on the command line or pipe through `nodes` first.")
+    end
+end
+
+def _link_def_entry(d):
+  {ident: attr(d, "ident"), label: attr(d, "label"), url: attr(d, "url"), title: attr(d, "title"), location: get_location(d)}
+end
+
+def _footnote_def_entry(d):
+  {ident: attr(d, "ident"), location: get_location(d)}
+end
+
+# Scans `md_nodes` for link reference definitions (`[ident]: url "title"`) and
+# footnote definitions (`[^ident]: ...`), and indexes them by identifier. Each
+# identifier maps to an array of every definition found for it, in document
+# order, so a duplicate definition (multiple `[ident]:` lines for the same
+# `ident`) shows up as an array with more than one entry — CommonMark resolves
+# such a duplicate to the first one, which `md::resolve_references` picks.
+# Each entry carries its `location` (from `get_location`) for building
+# diagnostics like linkcheck output.
+#
+# Example:
+# ```
+# import "md" | len(md::reference_index(to_markdown("[a][b]\n\n[b]: https://example.com \"B\""))[:links]["b"])
+# #=> 1
+# ```
+# Example:
+# ```
+# import "md" | len(md::reference_index(to_markdown("[a][b]\n\n[b]: https://x.com\n[b]: https://y.com"))[:links]["b"])
+# #=> 2
+# ```
+#
+# Returns: dict
+def reference_index(md_nodes):
+  let agg_nodes = _ensure_aggregated(md_nodes)
+  | let link_groups = group_by(filter(agg_nodes, _is_definition), fn(d): attr(d, "ident");)
+  | let footnote_groups = group_by(filter(agg_nodes, _is_footnote_def), fn(d): attr(d, "ident");)
+  | {
+      links: map(link_groups, fn(e): [e[0], map(e[1], _link_def_entry)];),
+      footnotes: map(footnote_groups, fn(e): [e[0], map(e[1], _footnote_def_entry)];)
+    }
+end
+
+def _resolve_ref(n, idx):
+  let table = if (_is_footnote_ref(n)): get_or(idx, :footnotes, dict()) else: get_or(idx, :links, dict())
+  | let ident = attr(n, "ident")
+  | let defs = get_or(table, ident, [])
+  | let resolved = !is_empty(defs)
+  | {
+      type: to_md_name(n),
+      ident: ident,
+      label: attr(n, "label"),
+      location: get_location(n),
+      resolved: resolved,
+      duplicate: len(defs) > 1,
+      definition: if (resolved): first(defs) else: None,
+      definitions: defs
+    }
+end
+
+# Resolves every reference-style link (`[text][ident]`, including the shortcut
+# form `[ident]`), reference image (`![alt][ident]`), and footnote reference
+# (`[^ident]`) found in `md_nodes` against a reference index, returning one
+# dict per reference with its `type`, `ident`, `label`, `location`, whether it
+# `resolved` to a definition, whether that definition is `duplicate` (more
+# than one `[ident]:` for the same identifier), the `definition` picked
+# (CommonMark's first-match-wins, or `None` if unresolved), and every
+# candidate `definitions`.
+#
+# `index` defaults to `md::reference_index(md_nodes)`, resolving references
+# against their own document. Pass an explicit index (e.g. built from a
+# different set of nodes) to resolve references that got separated from their
+# definitions — for example when a document is split or a section is moved
+# into another file — which is exactly the case where a reference legitimately
+# comes back unresolved.
+#
+# Example:
+# ```
+# import "md" | first(md::resolve_references(to_markdown("[a][b]\n\n[b]: https://example.com")))[:resolved]
+# #=> true
+# ```
+# Example:
+# ```
+# import "md" | first(md::resolve_references(to_markdown("[a][b]\n\n[b]: https://example.com"), dict()))[:resolved]
+# #=> false
+# ```
+#
+# Returns: array
+def resolve_references(md_nodes, index = None):
+  let agg_nodes = _ensure_aggregated(md_nodes)
+  | let idx = if (is_none(index)): reference_index(agg_nodes) else: index
+  | let refs = filter(agg_nodes, fn(n): _is_link_ref(n) || _is_image_ref(n) || _is_footnote_ref(n);)
+  | map(refs, fn(n): _resolve_ref(n, idx);)
+end
