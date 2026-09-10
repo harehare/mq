@@ -1478,15 +1478,15 @@ impl Node {
     }
 
     pub fn node_values(&self) -> Vec<Node> {
-        match self.clone() {
-            Self::Blockquote(v) => v.values,
-            Self::Delete(v) => v.values,
-            Self::Heading(h) => h.values,
-            Self::Emphasis(v) => v.values,
-            Self::List(l) => l.values,
-            Self::Strong(v) => v.values,
+        match self {
+            Self::Blockquote(v) => v.values.clone(),
+            Self::Delete(v) => v.values.clone(),
+            Self::Heading(h) => h.values.clone(),
+            Self::Emphasis(v) => v.values.clone(),
+            Self::List(l) => l.values.clone(),
+            Self::Strong(v) => v.values.clone(),
             #[cfg(feature = "callout")]
-            Self::Callout(v) => v.values,
+            Self::Callout(v) => v.values.clone(),
             _ => vec![self.clone()],
         }
     }
