@@ -70,6 +70,9 @@ ast-json = ["smallvec/serde", "smol_str/serde"]
 # Captures VM operand-stack snapshots at debugger statement boundaries. Intended for
 # `mq-dbg` diagnosis; disabled by default to avoid snapshot allocations.
 debug-trace = []
+# Enables execution-count profiling for Tarn bytecode instructions. This is intended for
+# development diagnostics and is deliberately excluded from normal builds.
+vm-profile = []
 cst = ["dep:ropey"]
 css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]

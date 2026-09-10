@@ -102,6 +102,11 @@ pub struct Cli {
     #[arg(long = "dump-stack", default_value_t = false)]
     dump_stack: bool,
 
+    /// Print Tarn VM instruction execution counts to stderr (mq-dbg profile builds only).
+    #[cfg(feature = "vm-profile")]
+    #[arg(long = "vm-profile", default_value_t = false)]
+    vm_profile: bool,
+
     /// Print the Tarn VM bytecode to stderr before execution (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
     #[arg(long = "dump-bytecode", default_value_t = false)]
@@ -2021,6 +2026,9 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             #[cfg(feature = "debug-trace")]
             let results = engine
@@ -2041,6 +2049,9 @@ impl Cli {
                 engine.eval(query, input.into_iter()).map_err(|error| *error)?
             }
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2352,6 +2363,8 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(&effective_query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2364,6 +2377,9 @@ impl Cli {
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
             .map_err(|error| *error)?;
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, &None);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -2394,6 +2410,9 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             let results = engine
                 .eval_compiled(program, input.clone().into_iter())
@@ -2402,6 +2421,9 @@ impl Cli {
         } else {
             engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2428,6 +2450,8 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2439,7 +2463,20 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
+    }
+
+    #[cfg(feature = "vm-profile")]
+    fn emit_vm_profile(&self, scope: Option<mq_lang::vm_profile::VmProfileScope>, file: &Option<PathBuf>) {
+        let Some(scope) = scope else {
+            return;
+        };
+        let target = file
+            .as_ref()
+            .map_or_else(|| "stdin".to_string(), |path| path.display().to_string());
+        eprintln!("Tarn VM profile ({target})\n{}", scope.finish());
     }
 
     fn process_batch_count(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {

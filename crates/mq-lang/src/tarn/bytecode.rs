@@ -354,6 +354,107 @@ pub(crate) enum OpCode {
     Return,
 }
 
+#[cfg(feature = "vm-profile")]
+impl OpCode {
+    /// Returns a stable opcode name for execution-count profiling.
+    pub(crate) fn profile_name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "debugger")]
+            Self::StmtBoundary(_) => "StmtBoundary",
+            #[cfg(feature = "debugger")]
+            Self::Breakpoint(_) => "Breakpoint",
+            Self::Const(_) => "Const",
+            Self::PushNone => "PushNone",
+            Self::GetLocal(_) => "GetLocal",
+            Self::SetLocal(_) => "SetLocal",
+            Self::TeeLocal(_) => "TeeLocal",
+            Self::CopyLocal { .. } => "CopyLocal",
+            Self::GetUpvalue(_) => "GetUpvalue",
+            Self::SetUpvalue(_) => "SetUpvalue",
+            Self::MakeClosure(_) => "MakeClosure",
+            Self::MakeStaticClosure(_) => "MakeStaticClosure",
+            Self::Pop => "Pop",
+            Self::Dup => "Dup",
+            Self::Jump(_) => "Jump",
+            Self::JumpIfFalse(_) => "JumpIfFalse",
+            Self::Add => "Add",
+            Self::Sub => "Sub",
+            Self::Mul => "Mul",
+            Self::Div => "Div",
+            Self::Mod => "Mod",
+            Self::Eq => "Eq",
+            Self::Ne => "Ne",
+            Self::Lt => "Lt",
+            Self::Le => "Le",
+            Self::Gt => "Gt",
+            Self::Ge => "Ge",
+            Self::BinaryLocalLocal { .. } => "BinaryLocalLocal",
+            Self::BinaryLocalConst { .. } => "BinaryLocalConst",
+            Self::JumpIfFalseLocalLocal { .. } => "JumpIfFalseLocalLocal",
+            Self::JumpIfFalseLocalConst { .. } => "JumpIfFalseLocalConst",
+            Self::Neg => "Neg",
+            Self::Not => "Not",
+            Self::ArrayNew => "ArrayNew",
+            Self::ArrayPush => "ArrayPush",
+            Self::ArraySpread => "ArraySpread",
+            Self::DictSpread => "DictSpread",
+            Self::ToForeachIterable => "ToForeachIterable",
+            Self::ArrayLen => "ArrayLen",
+            Self::ArrayGetAt => "ArrayGetAt",
+            Self::ArrayLenLocal(_) => "ArrayLenLocal",
+            Self::ArrayGetLocalAt { .. } => "ArrayGetLocalAt",
+            Self::ForeachNext { .. } => "ForeachNext",
+            Self::ForeachCollect(_) => "ForeachCollect",
+            Self::ArraySliceFrom => "ArraySliceFrom",
+            Self::DictGetLocalOrFail { .. } => "DictGetLocalOrFail",
+            Self::TypeCheck(_) => "TypeCheck",
+            Self::GetEnvVar(_) => "GetEnvVar",
+            Self::GetExternalGlobal(_) => "GetExternalGlobal",
+            Self::InterpString(_) => "InterpString",
+            Self::SelectorMatch(_) => "SelectorMatch",
+            Self::SelectorMatchKind(_) => "SelectorMatchKind",
+            Self::SelectorMatchHeading(_) => "SelectorMatchHeading",
+            Self::SelectorMatchWithArgs(_) => "SelectorMatchWithArgs",
+            Self::CallBuiltin(_, _) => "CallBuiltin",
+            Self::CallStatic(_, _) => "CallStatic",
+            Self::CallStaticExact(_, _) => "CallStaticExact",
+            Self::CallStaticExact0(_) => "CallStaticExact0",
+            Self::CallStaticExact1(_) => "CallStaticExact1",
+            Self::CallStaticExact2(_) => "CallStaticExact2",
+            Self::CallStaticImplicitSelf(_, _) => "CallStaticImplicitSelf",
+            Self::CallSelf(_) => "CallSelf",
+            Self::CallSelfExact(_) => "CallSelfExact",
+            Self::CallSelfExact0 => "CallSelfExact0",
+            Self::CallSelfExact1 => "CallSelfExact1",
+            Self::CallSelfExact2 => "CallSelfExact2",
+            Self::CallSelfImplicitSelf(_) => "CallSelfImplicitSelf",
+            Self::CallLocal(_, _) => "CallLocal",
+            Self::CallUpvalue(_, _) => "CallUpvalue",
+            Self::CallValue(_) => "CallValue",
+            Self::MaybeAutoCall => "MaybeAutoCall",
+            Self::TryCatch(_) => "TryCatch",
+            Self::FlowBreak(_) => "FlowBreak",
+            Self::FlowContinue => "FlowContinue",
+            Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
+            Self::Return => "Return",
+        }
+    }
+
+    /// Returns whether this instruction represents user-program execution rather than a
+    /// debugger-only boundary. Debugger builds inject boundaries that normal mq builds do not
+    /// execute, so profiling excludes them to keep opcode proportions actionable.
+    pub(crate) fn is_profiled_instruction(&self) -> bool {
+        #[cfg(feature = "debugger")]
+        {
+            !matches!(self, Self::StmtBoundary(_) | Self::Breakpoint(_))
+        }
+        #[cfg(not(feature = "debugger"))]
+        {
+            true
+        }
+    }
+}
+
 /// Payload for [`OpCode::TryCatch`].
 #[derive(Debug, Clone)]
 /// `try`/`catch` instruction metadata.

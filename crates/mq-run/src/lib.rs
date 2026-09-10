@@ -11,6 +11,7 @@
 //! - Multiple output formats
 //! - Optional debugger integration (with `debugger` feature)
 //! - Optional Tarn VM operand-stack tracing (with `debug-trace` feature)
+//! - Optional Tarn VM instruction-count profiling (with `vm-profile` feature)
 //! - Configuration file support
 //! - Interactive REPL mode
 //!
