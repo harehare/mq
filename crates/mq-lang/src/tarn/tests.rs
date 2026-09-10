@@ -199,6 +199,32 @@ fn try_catch_body_counts_toward_call_stack_depth() {
     assert_eq!(run_with_max_depth(no_try, 5).unwrap(), RuntimeValue::Number(4.into()));
 }
 
+#[test]
+fn caught_error_from_an_array_literal_does_not_corrupt_the_enclosing_array() {
+    // The try body starts (and abandons) its own array before erroring, so unwinding must
+    // discard those partial operands or the outer array's accumulator gets clobbered.
+    assert_eq!(
+        run("[1, (try: [2, 3, 1 / 0] catch: 99), 4]"),
+        RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(99.into()),
+            RuntimeValue::Number(4.into()),
+        ]))
+    );
+}
+
+#[test]
+fn caught_error_from_a_dict_literal_does_not_corrupt_the_enclosing_dict() {
+    assert_eq!(
+        run(r#"{"a": 1, "b": (try: {"x": 1, "y": 1 / 0} catch: 99), "c": 4}"#),
+        RuntimeValue::Dict(Shared::new(crate::DictMap::from_iter([
+            (crate::Ident::new("a"), RuntimeValue::Number(1.into())),
+            (crate::Ident::new("b"), RuntimeValue::Number(99.into())),
+            (crate::Ident::new("c"), RuntimeValue::Number(4.into())),
+        ])))
+    );
+}
+
 fn run_with_prelude(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();

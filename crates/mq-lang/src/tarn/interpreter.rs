@@ -771,6 +771,7 @@ fn unwind(
             let finished = frames.pop().expect("just checked len() == 1");
             return Err((e, finished.locals));
         }
+        let failed_stack_base = frames.last().expect("just checked len() > 1").stack_base;
         let continuation = execution
             .limits
             .pop_frame(
@@ -779,6 +780,10 @@ fn unwind(
                 debug,
             )
             .expect("just checked len() > 1");
+        // Discard partial operands the failed frame left above its own stack_base (e.g. an
+        // in-progress array/dict literal), matching the truncation `run_frame_slice` does
+        // on success so a catch frame, or the next frame up the chain, starts clean.
+        operand_stack.truncate(failed_stack_base);
         match continuation {
             Continuation::Push => continue,
             Continuation::ResumeBindParams(pending) => {
