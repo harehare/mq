@@ -47,6 +47,10 @@ use mq_help as help;
     disable_help_subcommand = true
 )]
 pub struct Cli {
+    /// Suppress normal query output while preserving diagnostics, exit status, and query side effects.
+    #[arg(short = 'q', long, global = true, default_value_t = false)]
+    quiet: bool,
+
     #[clap(flatten)]
     input: InputArgs,
 
@@ -562,7 +566,7 @@ struct OutputArgs {
     /// Set output format. When omitted, inferred from the `-o`/`--output` file
     /// extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to
     /// markdown.
-    #[arg(short = 'F', long, value_enum)]
+    #[arg(short = 'F', long, value_enum, conflicts_with = "quiet")]
     output_format: Option<OutputFormat>,
 
     /// Update matching Markdown nodes and write the result to stdout
@@ -576,36 +580,36 @@ struct OutputArgs {
     diff: bool,
 
     /// Unbuffered output
-    #[clap(long, default_value_t = false)]
+    #[clap(long, default_value_t = false, conflicts_with = "quiet")]
     unbuffered: bool,
 
     /// Set the list style for markdown output
-    #[clap(long, value_enum, default_value_t = ListStyle::Dash)]
+    #[clap(long, value_enum, default_value_t = ListStyle::Dash, conflicts_with = "quiet")]
     list_style: ListStyle,
 
     /// Set the link title surround style for markdown output
-    #[clap(long, value_enum, default_value_t = LinkTitleStyle::Double)]
+    #[clap(long, value_enum, default_value_t = LinkTitleStyle::Double, conflicts_with = "quiet")]
     link_title_style: LinkTitleStyle,
 
     /// Set the link URL surround style for markdown links
-    #[clap(long, value_enum, default_value_t = LinkUrlStyle::None)]
+    #[clap(long, value_enum, default_value_t = LinkUrlStyle::None, conflicts_with = "quiet")]
     link_url_style: LinkUrlStyle,
 
     /// Specify a query to insert between files as a separator
-    #[clap(short = 'S', long, value_name = "QUERY")]
+    #[clap(short = 'S', long, value_name = "QUERY", conflicts_with = "quiet")]
     separator: Option<String>,
 
     /// Output to the specified file
-    #[clap(short = 'o', long = "output", value_name = "FILE")]
+    #[clap(short = 'o', long = "output", value_name = "FILE", conflicts_with = "quiet")]
     output_file: Option<PathBuf>,
 
     /// Write `-o`/`--output` atomically via a same-directory temp file + fsync
     /// + rename, so a crash or full disk mid-write can't truncate the target.
-    #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_file")]
+    #[clap(long, value_enum, default_value_t = AtomicOutput::Auto, requires = "output_file", conflicts_with = "quiet")]
     atomic_output: AtomicOutput,
 
     /// Fail instead of overwriting `-o`/`--output` if the target already exists.
-    #[clap(long, default_value_t = false, requires = "output_file", conflicts_with = "append")]
+    #[clap(long, default_value_t = false, requires = "output_file", conflicts_with_all = ["append", "quiet"])]
     no_clobber: bool,
 
     /// Add to `-o`/`--output` instead of replacing it, creating it if missing.
@@ -614,7 +618,7 @@ struct OutputArgs {
         long,
         default_value_t = false,
         requires = "output_file",
-        conflicts_with = "no_clobber"
+        conflicts_with_all = ["no_clobber", "quiet"]
     )]
     append: bool,
 
@@ -623,19 +627,24 @@ struct OutputArgs {
     output_claimed: std::sync::Arc<AtomicBool>,
 
     /// Colorize markdown output
-    #[arg(short = 'C', long = "color-output", default_value_t = false)]
+    #[arg(
+        short = 'C',
+        long = "color-output",
+        default_value_t = false,
+        conflicts_with = "quiet"
+    )]
     color_output: bool,
 
     /// Show NUM nodes before each match. Only effective with -F grep.
-    #[clap(short = 'B', long, value_name = "NUM")]
+    #[clap(short = 'B', long, value_name = "NUM", conflicts_with = "quiet")]
     before_context: Option<usize>,
 
     /// Show NUM nodes after each match. Only effective with -F grep.
-    #[clap(long, value_name = "NUM")]
+    #[clap(long, value_name = "NUM", conflicts_with = "quiet")]
     after_context: Option<usize>,
 
     /// Show NUM nodes before and after each match. Only effective with -F grep.
-    #[clap(long, value_name = "NUM")]
+    #[clap(long, value_name = "NUM", conflicts_with = "quiet")]
     context: Option<usize>,
 
     /// Exit with code 1 if the last output value is false, null, or the output
@@ -645,25 +654,25 @@ struct OutputArgs {
 
     /// Output only the count of matching (non-None) results. Mirrors grep -c.
     /// With multiple files, prints "filename: N" per file and "total: N" at the end.
-    #[arg(short = 'c', long = "count", default_value_t = false, conflicts_with_all = ["update", "stream"])]
+    #[arg(short = 'c', long = "count", default_value_t = false, conflicts_with_all = ["update", "stream", "quiet"])]
     count: bool,
 
     /// Skip the first N matching results before outputting.
-    #[arg(long, value_name = "N", conflicts_with = "update")]
+    #[arg(long, value_name = "N", conflicts_with_all = ["update", "quiet"])]
     skip: Option<usize>,
 
     /// Limit output to at most N results.
-    #[arg(long, value_name = "N", conflicts_with = "update")]
+    #[arg(long, value_name = "N", conflicts_with_all = ["update", "quiet"])]
     limit: Option<usize>,
 
     /// Omit Markdown node position information from structured output
     /// (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size
     /// when source line/column spans aren't needed.
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, conflicts_with = "quiet")]
     no_position: bool,
 
     /// Print JSON on a single line, without pretty-printing. Only valid with -F json.
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = false, conflicts_with = "quiet")]
     compact: bool,
 
     /// Number of spaces per indent level in pretty-printed output (0-7), jq's
@@ -672,13 +681,13 @@ struct OutputArgs {
         long,
         value_name = "N",
         value_parser = clap::value_parser!(u8).range(0..=7),
-        conflicts_with_all = ["tab", "compact"]
+        conflicts_with_all = ["tab", "compact", "quiet"]
     )]
     indent: Option<u8>,
 
     /// Indent pretty-printed output with tabs instead of spaces, jq's `--tab`.
     /// Only valid with -F json or -F xml.
-    #[arg(long, default_value_t = false, conflicts_with_all = ["indent", "compact"])]
+    #[arg(long, default_value_t = false, conflicts_with_all = ["indent", "compact", "quiet"])]
     tab: bool,
 }
 
@@ -1916,6 +1925,10 @@ impl Cli {
             runtime_values
         };
 
+        if self.quiet {
+            return self.print(runtime_values);
+        }
+
         if let Some(input) = grep_input {
             let (before, after) = self.output.context_counts();
             let handle = OutputSink::open(
@@ -2386,6 +2399,13 @@ impl Cli {
         let mut total = 0usize;
         let mut engine = self.create_engine()?;
 
+        if self.quiet {
+            for (file, content) in files {
+                self.count_file(&mut engine, query, file, content)?;
+            }
+            return Ok(());
+        }
+
         let mut handle = OutputSink::open(
             &self.output.output_file,
             self.output.atomic_output,
@@ -2834,13 +2854,6 @@ impl Cli {
     }
 
     fn print(&self, runtime_values: mq_lang::RuntimeValues) -> miette::Result<()> {
-        let mut handle = OutputSink::open(
-            &self.output.output_file,
-            self.output.atomic_output,
-            self.output.unbuffered,
-            self.clobber_mode(),
-            &self.output.output_claimed,
-        )?;
         let stripped_values: Option<Vec<mq_lang::RuntimeValue>> = self.output.no_position.then(|| {
             runtime_values
                 .values()
@@ -2855,6 +2868,18 @@ impl Cli {
         if self.output.exit_status && runtime_values.iter().any(|v| !Self::is_falsy(v)) {
             HAD_TRUTHY_OUTPUT.store(true, Ordering::Relaxed);
         }
+
+        if self.quiet {
+            return Ok(());
+        }
+
+        let mut handle = OutputSink::open(
+            &self.output.output_file,
+            self.output.atomic_output,
+            self.output.unbuffered,
+            self.clobber_mode(),
+            &self.output.output_claimed,
+        )?;
 
         let colorize = self.output.color_output && !Self::is_no_color();
         let buf = self.render(runtime_values, colorize)?;
@@ -2887,6 +2912,10 @@ impl Cli {
     /// by the file path (or `<stdin>` when there is none). Colorizes `+`/`-`/`@@`
     /// lines when `-C`/`--color-output` is set and `NO_COLOR` isn't.
     fn print_unified_diff(&self, original: &str, rendered: &str, file: &Option<PathBuf>) -> miette::Result<()> {
+        if self.quiet {
+            return Ok(());
+        }
+
         let mut handle = OutputSink::open(
             &self.output.output_file,
             self.output.atomic_output,

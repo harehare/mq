@@ -1344,6 +1344,91 @@ fn test_exit_status_parallel_batch(
     Ok(())
 }
 
+#[test]
+fn test_quiet_suppresses_query_output() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("--quiet")
+        .arg("-I")
+        .arg("null")
+        .arg("1")
+        .assert()
+        .success()
+        .stdout("")
+        .stderr("");
+}
+
+#[test]
+fn test_quiet_preserves_runtime_error_diagnostics() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--quiet")
+        .arg("-I")
+        .arg("null")
+        .arg(r#"error("expected failure")"#)
+        .assert();
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert.failure();
+    assert!(stderr.contains("expected failure"), "stderr was:\n{stderr}");
+}
+
+#[test]
+fn test_quiet_preserves_explicit_print_and_stderr_output() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("--quiet")
+        .arg("-I")
+        .arg("null")
+        .arg(r#"print("stdout") | stderr("stderr")"#)
+        .assert()
+        .success()
+        .stdout("stdout\n")
+        .stderr("stderr\n");
+}
+
+#[test]
+fn test_quiet_preserves_exit_status() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    cmd.arg("--quiet")
+        .arg("--exit-status")
+        .arg("-I")
+        .arg("null")
+        .arg("false")
+        .assert()
+        .code(1)
+        .stdout("")
+        .stderr("");
+}
+
+#[test]
+fn test_quiet_conflicts_with_output_format_options() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd
+        .arg("--quiet")
+        .arg("--output-format")
+        .arg("json")
+        .arg("-I")
+        .arg("null")
+        .arg("1")
+        .assert();
+    let stderr = String::from_utf8(assert.get_output().stderr.clone()).unwrap();
+    assert.failure();
+    assert!(!stderr.is_empty(), "argument errors must remain visible");
+}
+
+#[test]
+fn test_help_documents_quiet() {
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+
+    let assert = cmd.arg("--help").assert();
+    let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+    assert.success();
+    assert!(output.contains("-q, --quiet"), "help was:\n{output}");
+}
+
 #[rstest]
 #[case::two_matches("# h1\n\n## h2a\n\n## h2b\n", ".h2", "2\n")]
 #[case::no_matches("# h1\n\nbody\n", ".h2", "0\n")]
