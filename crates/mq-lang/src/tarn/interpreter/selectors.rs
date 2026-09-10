@@ -1,10 +1,10 @@
 //! Applies a compiled `Selector` to a runtime value: dispatches to `mq_markdown`'s selector
 //! evaluator for `Markdown` values and recurses through `Array`/`Dict` for the rest.
+use crate::DictMap;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
 use crate::{Ident, Shared};
-use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 fn type_ident() -> &'static Ident {
@@ -91,7 +91,7 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
             if args.is_none() && matches!(selector, Selector::Recursive) {
                 return RuntimeValue::Array(Shared::new(collect_recursive(value)));
             }
-            let new_map: BTreeMap<_, _> = map
+            let new_map: DictMap = map
                 .iter()
                 .map(|(k, v)| {
                     let new_v = if k == type_ident() {
@@ -180,7 +180,7 @@ fn collect_recursive_into(value: &RuntimeValue, result: &mut Vec<RuntimeValue>) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use crate::DictMap;
 
     #[test]
     fn list_selector_maps_an_array_without_changing_element_order() {
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn recursive_selector_flattens_dict_results_inside_an_array() {
-        let dict = RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+        let dict = RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
             Ident::new("key"),
             RuntimeValue::Number(1.into()),
         )])));
@@ -220,7 +220,7 @@ mod tests {
     fn collect_recursive_preserves_preorder_for_nested_values() {
         let input = RuntimeValue::Array(Shared::new(vec![
             RuntimeValue::Number(1.into()),
-            RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
                 Ident::new("nested"),
                 RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
             )]))),
@@ -231,7 +231,7 @@ mod tests {
             vec![
                 input.clone(),
                 RuntimeValue::Number(1.into()),
-                RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+                RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
                     Ident::new("nested"),
                     RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
                 )]))),

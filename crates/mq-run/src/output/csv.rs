@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_array_of_dicts() {
-        let mut m1 = std::collections::BTreeMap::new();
+        let mut m1 = mq_lang::DictMap::default();
         m1.insert(
             mq_lang::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -98,7 +98,7 @@ mod tests {
             mq_lang::Ident::new("age"),
             RuntimeValue::String(Shared::new("30".to_string())),
         );
-        let mut m2 = std::collections::BTreeMap::new();
+        let mut m2 = mq_lang::DictMap::default();
         m2.insert(
             mq_lang::Ident::new("name"),
             RuntimeValue::String(Shared::new("Bob".to_string())),
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_single_dict() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
@@ -129,7 +129,7 @@ mod tests {
 
     #[test]
     fn test_needs_quoting() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("has,comma".to_string())),
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn test_missing_key_is_empty() {
-        let mut m1 = std::collections::BTreeMap::new();
+        let mut m1 = mq_lang::DictMap::default();
         m1.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
@@ -160,7 +160,7 @@ mod tests {
             mq_lang::Ident::new("b"),
             RuntimeValue::String(Shared::new("2".to_string())),
         );
-        let mut m2 = std::collections::BTreeMap::new();
+        let mut m2 = mq_lang::DictMap::default();
         m2.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("3".to_string())),

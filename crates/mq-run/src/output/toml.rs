@@ -31,7 +31,7 @@ mod tests {
 
     #[test]
     fn test_dict_value() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(
             mq_lang::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -43,12 +43,12 @@ mod tests {
 
     #[test]
     fn test_nested_dict() {
-        let mut inner = std::collections::BTreeMap::new();
+        let mut inner = mq_lang::DictMap::default();
         inner.insert(
             mq_lang::Ident::new("city"),
             RuntimeValue::String(Shared::new("NYC".to_string())),
         );
-        let mut outer = std::collections::BTreeMap::new();
+        let mut outer = mq_lang::DictMap::default();
         outer.insert(mq_lang::Ident::new("address"), RuntimeValue::Dict(Shared::new(inner)));
         let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let result = runtime_values_to_toml(&values).unwrap();

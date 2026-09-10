@@ -90,7 +90,7 @@ end
 
 # @parametrize([
 #   [{"tag": "a"}, "{\"tag\": \"a\"}"],
-#   [{"tag": "br", "attributes": {}, "children": [], "text": None}, "{\"text\": null, \"tag\": \"br\", \"attributes\": {}, \"children\": []}"],
+#   [{"tag": "br", "attributes": {}, "children": [], "text": None}, "{\"tag\": \"br\", \"attributes\": {}, \"children\": [], \"text\": null}"],
 # ])
 def test_html_to_json_simple(data, expected):
   assert_eq(html::html_to_json(data), expected)

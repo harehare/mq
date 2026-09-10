@@ -1,12 +1,12 @@
 //! `VmError`: Tarn's runtime error type, its `Display`/tree-walker-error conversions, and the
 //! small helpers (`locate`, `error_dict`, `error_message`, `flow_break_value`/`flow_continue`)
 //! built on top of it.
+use crate::DictMap;
 use crate::ast::TokenId;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::tarn::bytecode::Chunk;
 use crate::{Ident, Shared};
-use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
 
@@ -134,7 +134,7 @@ impl From<builtin::Error> for VmError {
 pub(super) type VmResult<T> = Result<T, VmError>;
 
 pub(super) fn error_dict(e: &VmError) -> RuntimeValue {
-    let mut map = BTreeMap::new();
+    let mut map = DictMap::default();
     map.insert(
         Ident::new("message"),
         RuntimeValue::String(Shared::new(error_message(e))),

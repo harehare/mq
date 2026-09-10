@@ -16,12 +16,12 @@ pub(crate) fn runtime_values_to_toon(runtime_values: &[mq_lang::RuntimeValue]) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mq_lang::DictMap;
     use mq_lang::{Ident, RuntimeValue, Shared};
     use rstest::rstest;
-    use std::collections::BTreeMap;
 
     fn single_key_dict(key: &str, value: RuntimeValue) -> RuntimeValue {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(Ident::new(key), value);
         RuntimeValue::Dict(Shared::new(map))
     }
@@ -45,7 +45,7 @@ mod tests {
         "[2]: a,b"
     )]
     #[case::empty_array(RuntimeValue::Array(Shared::new(vec![])), "[0]:")]
-    #[case::empty_dict(RuntimeValue::Dict(Shared::new(BTreeMap::new())), "")]
+    #[case::empty_dict(RuntimeValue::Dict(Shared::new(DictMap::default())), "")]
     #[case::empty_string_needs_quoting(RuntimeValue::String(Shared::new("".to_string())), "\"\"")]
     #[case::numeric_like_string_needs_quoting(RuntimeValue::String(Shared::new("123".to_string())), "\"123\"")]
     #[case::keyword_like_string_needs_quoting(RuntimeValue::String(Shared::new("true".to_string())), "\"true\"")]
@@ -58,7 +58,7 @@ mod tests {
     }
 
     fn tabular_row(id: usize, name: &str) -> RuntimeValue {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(Ident::new("id"), RuntimeValue::from(id));
         map.insert(Ident::new("name"), RuntimeValue::String(Shared::new(name.to_string())));
         RuntimeValue::Dict(Shared::new(map))

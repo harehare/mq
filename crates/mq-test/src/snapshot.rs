@@ -1,8 +1,7 @@
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use mq_lang::{Ident, RuntimeValue, Shared};
+use mq_lang::{DictMap, Ident, RuntimeValue, Shared};
 use similar::{ChangeTag, TextDiff};
 
 use crate::html;
@@ -94,7 +93,7 @@ pub(crate) fn check_snapshot(test_file: &Path, name: &str, actual: &str, update:
 }
 
 fn fail(message: String) -> RuntimeValue {
-    let mut map = BTreeMap::new();
+    let mut map = DictMap::default();
     map.insert(Ident::new("error"), RuntimeValue::Boolean(true));
     map.insert(Ident::new("message"), RuntimeValue::String(message.into()));
     RuntimeValue::Dict(Shared::new(map))

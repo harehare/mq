@@ -26,8 +26,6 @@ where
     bencher.bench_local(|| engine.eval_compiled(&compiled, input().into_iter()).unwrap());
 }
 
-// VM core -------------------------------------------------------------------
-
 #[divan::bench]
 fn eval_compiled_fibonacci(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -74,8 +72,6 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
             .unwrap()
     });
 }
-
-// Calls and collection pipelines -------------------------------------------
 
 #[divan::bench]
 fn eval_compiled_array_map(bencher: divan::Bencher) {
@@ -175,7 +171,33 @@ fn eval_compiled_nested_function_calls(bencher: divan::Bencher) {
     );
 }
 
-// Markdown traversal --------------------------------------------------------
+/// Isolates repeated `get()` lookups on a small dict, the common `set()`/`get()` shape.
+#[divan::bench]
+fn eval_compiled_dict_field_access(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let obj = dict()
+        | let obj = set(obj, "a", 1) | let obj = set(obj, "b", 2) | let obj = set(obj, "c", 3)
+        | let obj = set(obj, "d", 4) | let obj = set(obj, "e", 5)
+        | foreach(i, range(0, 1000, 1)): add(add(add(add(get(obj, "a"), get(obj, "b")), get(obj, "c")), get(obj, "d")), get(obj, "e"));"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
+#[divan::bench]
+fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let d = fold(range(0, 100, 1), dict(), fn(acc, i): set(acc, to_string(i), i);)
+        | foreach(i, range(0, 2000, 1)): get(d, to_string(i % 100));"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
 
 fn owned_markdown_tree() -> mq_lang::RuntimeValue {
     mq_lang::RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment {
@@ -237,8 +259,6 @@ fn eval_compiled_nodes(bencher: divan::Bencher) {
     });
 }
 
-// Representative workloads --------------------------------------------------
-
 const CSV_PARSE_INPUT: &str =
     "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n";
 
@@ -275,8 +295,6 @@ fn eval_compiled_section_sections(bencher: divan::Bencher) {
         section_markdown_input().collect()
     });
 }
-
-// Parser --------------------------------------------------------------------
 
 #[divan::bench]
 fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {

@@ -2703,6 +2703,7 @@ dependencies = [
  "glob",
  "html-escape",
  "ignore",
+ "indexmap",
  "itertools 0.15.0",
  "md5",
  "miette",

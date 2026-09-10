@@ -197,8 +197,8 @@ fn flatten(value: &mq_lang::RuntimeValue) -> Vec<(String, mq_lang::RuntimeValue)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mq_lang::DictMap;
     use rstest::rstest;
-    use std::collections::BTreeMap;
 
     #[rstest]
     #[case::with_filename_and_line(Some("file.md".to_string()), Some(5), "## Heading", ":", "file.md:5:## Heading\n")]
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_flatten_flat_dict() {
-        let mut m = BTreeMap::new();
+        let mut m = DictMap::default();
         m.insert(
             mq_lang::Ident::new("key"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
@@ -278,12 +278,12 @@ mod tests {
 
     #[test]
     fn test_flatten_nested_dict() {
-        let mut inner = BTreeMap::new();
+        let mut inner = DictMap::default();
         inner.insert(
             mq_lang::Ident::new("b"),
             mq_lang::RuntimeValue::String(Shared::new("deep".to_string())),
         );
-        let mut outer = BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(
             mq_lang::Ident::new("a"),
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn test_flatten_dict_with_array() {
         // dict["key"][0] → "key[0]"
-        let mut m = BTreeMap::new();
+        let mut m = DictMap::default();
         m.insert(
             mq_lang::Ident::new("key"),
             mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::String(Shared::new(
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn test_flatten_array_with_dict() {
         // [0].key → "[0].key"
-        let mut m = BTreeMap::new();
+        let mut m = DictMap::default();
         m.insert(
             mq_lang::Ident::new("b"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),
@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn test_to_nodes_dict() {
-        let mut m = BTreeMap::new();
+        let mut m = DictMap::default();
         m.insert(
             mq_lang::Ident::new("key"),
             mq_lang::RuntimeValue::String(Shared::new("val".to_string())),

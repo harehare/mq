@@ -1,11 +1,15 @@
 use crate::{Ident, Shared, number::Number};
+use indexmap::IndexMap;
 use mq_markdown::Node;
+use rustc_hash::FxBuildHasher;
 use std::{
     borrow::Cow,
     cmp::Ordering,
-    collections::BTreeMap,
     ops::{Index, IndexMut},
 };
+
+/// The backing map for [`RuntimeValue::Dict`]: insertion-ordered, `FxHash`-based.
+pub type DictMap = IndexMap<Ident, RuntimeValue, FxBuildHasher>;
 
 /// Runtime selector for indexing into markdown nodes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -72,7 +76,7 @@ pub enum RuntimeValue {
     /// A dictionary mapping identifiers to runtime values.
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
-    Dict(Shared<BTreeMap<Ident, RuntimeValue>>),
+    Dict(Shared<DictMap>),
     /// Raw binary data (e.g. CBOR byte strings).
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`bytes_mut`].
@@ -175,8 +179,8 @@ impl From<Vec<RuntimeValue>> for RuntimeValue {
     }
 }
 
-impl From<BTreeMap<Ident, RuntimeValue>> for RuntimeValue {
-    fn from(map: BTreeMap<Ident, RuntimeValue>) -> Self {
+impl From<DictMap> for RuntimeValue {
+    fn from(map: DictMap) -> Self {
         RuntimeValue::Dict(Shared::new(map))
     }
 }
@@ -186,7 +190,7 @@ impl From<Vec<(String, Number)>> for RuntimeValue {
         RuntimeValue::Dict(Shared::new(
             v.into_iter()
                 .map(|(k, v)| (Ident::new(&k), RuntimeValue::Number(v)))
-                .collect::<BTreeMap<Ident, RuntimeValue>>(),
+                .collect::<DictMap>(),
         ))
     }
 }
@@ -221,7 +225,7 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
                 RuntimeValue::Array(Shared::new(arr.into_iter().map(RuntimeValue::from).collect()))
             }
             yaml_rust2::Yaml::Hash(map) => {
-                let mut btree = BTreeMap::new();
+                let mut btree = DictMap::default();
                 for (k, v) in map {
                     let key = match k {
                         yaml_rust2::Yaml::String(s) => s,
@@ -253,7 +257,7 @@ impl From<serde_json::Value> for RuntimeValue {
                 RuntimeValue::Array(Shared::new(arr.into_iter().map(RuntimeValue::from).collect()))
             }
             serde_json::Value::Object(obj) => {
-                let mut map = BTreeMap::new();
+                let mut map = DictMap::default();
                 for (k, v) in obj {
                     map.insert(Ident::new(&k), RuntimeValue::from(v));
                 }
@@ -280,7 +284,7 @@ impl From<ciborium::Value> for RuntimeValue {
                 RuntimeValue::Array(Shared::new(items))
             }
             ciborium::Value::Map(pairs) => {
-                let mut map = BTreeMap::new();
+                let mut map = DictMap::default();
                 for (k, v) in pairs {
                     let key = match k {
                         ciborium::Value::Text(s) => Ident::new(&s),
@@ -368,8 +372,8 @@ pub(crate) fn array_mut(array: &mut Shared<Vec<RuntimeValue>>) -> &mut Vec<Runti
 
 /// Clone-on-write access to a dict's entries; see [`array_mut`].
 #[inline(always)]
-pub(crate) fn dict_mut(map: &mut Shared<BTreeMap<Ident, RuntimeValue>>) -> &mut BTreeMap<Ident, RuntimeValue> {
-    Shared::<BTreeMap<Ident, RuntimeValue>>::make_mut(map)
+pub(crate) fn dict_mut(map: &mut Shared<DictMap>) -> &mut DictMap {
+    Shared::<DictMap>::make_mut(map)
 }
 
 /// Clone-on-write access to a markdown node; see [`array_mut`].
@@ -409,7 +413,7 @@ impl RuntimeValue {
     /// Creates a new empty dictionary.
     #[inline(always)]
     pub fn new_dict() -> RuntimeValue {
-        RuntimeValue::Dict(Shared::new(BTreeMap::new()))
+        RuntimeValue::Dict(Shared::new(DictMap::default()))
     }
 
     /// Creates a new markdown runtime value from the given node.
@@ -792,7 +796,7 @@ impl RuntimeValues {
                         )),
                         RuntimeValue::Bytes(b) => RuntimeValue::new_markdown(node.with_value(bytes_to_hex(b).as_str())),
                         RuntimeValue::Dict(map) => {
-                            let mut new_dict = BTreeMap::new();
+                            let mut new_dict = DictMap::default();
                             for (k, v) in map.iter() {
                                 if !v.is_none() && !v.is_empty() {
                                     new_dict.insert(
