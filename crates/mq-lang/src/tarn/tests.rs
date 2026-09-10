@@ -260,6 +260,23 @@ fn local_binary_expressions_use_compact_bytecode() {
 }
 
 #[test]
+fn local_constant_assignment_uses_update_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | x += 2 | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::UpdateLocalConst { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(run("var x = 1 | x += 2 | x"), RuntimeValue::Number(3.into()));
+}
+
+#[test]
 fn top_level_function_literal_produces_a_callable_value() {
     assert!(matches!(run("fn(x): x;"), RuntimeValue::VmClosure(_)));
 }

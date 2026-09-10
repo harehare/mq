@@ -31,6 +31,8 @@ use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, RuntimeValue};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
+#[cfg(feature = "vm-profile")]
+use crate::vm_profile;
 use crate::{Ident, Shared};
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
@@ -1066,6 +1068,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
+            }
+            OpCode::UpdateLocalConst { op, local, constant } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
             OpCode::JumpIfFalseLocalLocal {
                 op,
