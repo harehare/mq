@@ -1078,6 +1078,14 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
+            OpCode::UpdateLocalLocal { op, local, value } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                let b = local_runtime_value(locals, *value, chunks)?;
+                let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(result)) };
+            }
             OpCode::JumpIfFalseLocalLocal {
                 op,
                 left,

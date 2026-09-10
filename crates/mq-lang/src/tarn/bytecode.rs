@@ -264,6 +264,12 @@ pub(crate) enum OpCode {
         local: u16,
         constant: u16,
     },
+    /// Updates a local from another local without using the operand stack.
+    UpdateLocalLocal {
+        op: BinaryOp,
+        local: u16,
+        value: u16,
+    },
     /// Fuses a local/local comparison directly into its branch: computes `left op right` and
     /// jumps without ever materializing the boolean on the operand stack. Produced by the
     /// bytecode optimizer from a `BinaryLocalLocal` comparison immediately followed by
@@ -398,6 +404,7 @@ impl OpCode {
             Self::BinaryLocalLocal { .. } => "BinaryLocalLocal",
             Self::BinaryLocalConst { .. } => "BinaryLocalConst",
             Self::UpdateLocalConst { .. } => "UpdateLocalConst",
+            Self::UpdateLocalLocal { .. } => "UpdateLocalLocal",
             Self::JumpIfFalseLocalLocal { .. } => "JumpIfFalseLocalLocal",
             Self::JumpIfFalseLocalConst { .. } => "JumpIfFalseLocalConst",
             Self::Neg => "Neg",
@@ -789,6 +796,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                     | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
                     | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
                     | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
+                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
                     | (OpCode::Jump(0), _)
             )
         }
@@ -842,6 +850,17 @@ fn optimize_chunk(chunk: &mut Chunk) {
                     op: *op,
                     local: *local,
                     constant: *constant,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::SetLocal(destination)))
+                if left == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::UpdateLocalLocal {
+                    op: *op,
+                    local: *left,
+                    value: *right,
                 };
                 keep[pc + 1] = false;
                 pc += 2;
@@ -1099,6 +1118,17 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 }
                 OpCode::BinaryLocalLocal { left, right, .. } => {
                     for slot in [left, right] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                }
+                OpCode::UpdateLocalLocal { local, value, .. } => {
+                    for slot in [local, value] {
                         if *slot >= chunk.local_count {
                             return Err(BytecodeError::LocalOutOfBounds {
                                 chunk: chunk_index,
@@ -1690,6 +1720,10 @@ mod tests {
     #[case::binary_local_local(vec![
         OpCode::BinaryLocalLocal { op: BinaryOp::Add, left: 0, right: 0 },
         OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::update_local_local(vec![
+        OpCode::UpdateLocalLocal { op: BinaryOp::Add, local: 0, value: 0 },
         OpCode::Return,
     ])]
     #[case::binary_local_const(vec![
