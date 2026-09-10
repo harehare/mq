@@ -1,4 +1,4 @@
-use crate::{Ident, Shared, number::Number};
+use crate::{Ident, Shared, number::Number, tarn::interpreter::coroutine::CoroutineHandle};
 use indexmap::IndexMap;
 use mq_markdown::Node;
 use rustc_hash::FxBuildHasher;
@@ -85,7 +85,7 @@ pub enum RuntimeValue {
     /// `CoroutineState` is deliberately `pub(crate)`, so this variant is constructible only
     /// from within the crate. Cloning shares progress: every clone drives the same coroutine.
     #[allow(private_interfaces)]
-    Coroutine(crate::tarn::interpreter::coroutine::CoroutineHandle),
+    Coroutine(CoroutineHandle),
     /// An empty or null value.
     #[default]
     None,

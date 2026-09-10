@@ -2,7 +2,7 @@ use super::interpreter::ExecutionPools;
 use super::*;
 use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::range::Range;
-use crate::{Shared, SharedCell};
+use crate::{DictMap, Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
@@ -217,7 +217,7 @@ fn caught_error_from_an_array_literal_does_not_corrupt_the_enclosing_array() {
 fn caught_error_from_a_dict_literal_does_not_corrupt_the_enclosing_dict() {
     assert_eq!(
         run(r#"{"a": 1, "b": (try: {"x": 1, "y": 1 / 0} catch: 99), "c": 4}"#),
-        RuntimeValue::Dict(Shared::new(crate::DictMap::from_iter([
+        RuntimeValue::Dict(Shared::new(DictMap::from_iter([
             (crate::Ident::new("a"), RuntimeValue::Number(1.into())),
             (crate::Ident::new("b"), RuntimeValue::Number(99.into())),
             (crate::Ident::new("c"), RuntimeValue::Number(4.into())),
@@ -236,7 +236,7 @@ fn run_with_prelude(code: &str) -> RuntimeValue {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
     ) {
         Ok(v) => v,
@@ -775,7 +775,7 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
             RuntimeValue::None,
             &HostFunctions::default(),
             None,
-            crate::tarn::Options::default().max_call_stack_depth,
+            Options::default().max_call_stack_depth,
             &[],
         )
         .unwrap()
@@ -1303,7 +1303,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1365,7 +1365,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1400,7 +1400,7 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
             engine: EngineRunContext {
                 host_functions: &HostFunctions::default(),
                 timeout: None,
-                max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+                max_call_stack_depth: Options::default().max_call_stack_depth,
                 token_arena,
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
@@ -1431,7 +1431,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1458,7 +1458,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1493,7 +1493,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1515,7 +1515,7 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1694,7 +1694,7 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1749,7 +1749,7 @@ fn debugger_hook_exposes_closure_bindings() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1853,7 +1853,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1942,7 +1942,7 @@ fn vm_debugger_hook_applies_live_frame_writes(
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -2001,7 +2001,7 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -2078,7 +2078,7 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -2466,7 +2466,7 @@ fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::tarn::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
         &[],
     )
     .unwrap()
