@@ -2319,10 +2319,33 @@ impl Cli {
         // Keep --append sequential: parallel files racing the same read-then-rename
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
-            files.par_iter().try_for_each(|(file, content)| {
-                let mut engine = self.create_engine()?;
-                self.execute(&mut engine, &query, file, content)
-            })?;
+            // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
+            let can_compile_per_worker = self.all_files_same_prefix(&files) && self.output.separator.is_none();
+            #[cfg(feature = "debug-trace")]
+            // Preserve per-file bytecode diagnostics.
+            let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
+
+            if can_compile_per_worker {
+                let effective_query = self.effective_query(&query, &files[0].0);
+                files.par_iter().try_for_each_init(
+                    || {
+                        let mut engine = self.create_engine()?;
+                        let program = engine.compile(&effective_query).map_err(|error| *error)?;
+                        Ok::<_, miette::Error>((engine, program))
+                    },
+                    |prepared, (file, content)| {
+                        let (engine, program) = prepared
+                            .as_mut()
+                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                        self.execute_compiled(engine, program, file, content)
+                    },
+                )?;
+            } else {
+                files.par_iter().try_for_each(|(file, content)| {
+                    let mut engine = self.create_engine()?;
+                    self.execute(&mut engine, &query, file, content)
+                })?;
+            }
         } else {
             let mut engine = self.create_engine()?;
 
