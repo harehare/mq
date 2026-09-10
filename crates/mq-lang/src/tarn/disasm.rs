@@ -182,6 +182,13 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("BinaryLocalConst {op:?} {}, const {constant}", local(*slot))
         }
+        bytecode::OpCode::UpdateLocalConst {
+            op,
+            local: slot,
+            constant,
+        } => {
+            format!("UpdateLocalConst {op:?} {}, const {constant}", local(*slot))
+        }
         bytecode::OpCode::JumpIfFalseLocalLocal {
             op,
             left,
