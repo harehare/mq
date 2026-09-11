@@ -115,11 +115,13 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             drop(state);
             Ok(done_result(value, false))
         }
-        DriveOutcome::Completed(value, _locals) => {
-            let value = into_runtime_value(value, &chunks);
+        DriveOutcome::Completed(_, _locals) => {
             state.status = CoroutineStatus::Completed;
             drop(state);
-            Ok(done_result(value, true))
+            // `next()` signals exhaustion rather than returning a generator function's
+            // ordinary return value. This is the public generator contract; subsequent calls
+            // take the same already-completed path above.
+            Ok(done_result(RuntimeValue::None, true))
         }
         DriveOutcome::Failed(e, _locals) => {
             let stored = Shared::new(e);

@@ -156,6 +156,9 @@ mod tests {
         let profile = scope.finish();
         assert!(profile.instruction_count() > 0);
         assert!(profile.opcode_count("GetLocal") > 0);
+        #[cfg(feature = "debugger")]
         assert!(profile.opcode_count("Return") > 0);
+        #[cfg(not(feature = "debugger"))]
+        assert!(profile.opcode_count("ReturnLocal") > 0);
     }
 }
