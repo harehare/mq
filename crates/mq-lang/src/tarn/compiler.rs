@@ -2476,8 +2476,12 @@ impl<R: ModuleResolver> Compiler<R> {
         if ident == builtins::DICT.into() {
             return self.compile_dict_call(args, call_token_id);
         }
-        if ident == builtins::NEXT.into() && args.len() == 1 {
-            self.compile_expr(&args[0])?;
+        if ident == builtins::NEXT.into() && args.len() <= 1 {
+            if let Some(arg) = args.first() {
+                self.compile_expr(arg)?;
+            } else {
+                self.emit(OpCode::GetLocal(SELF_SLOT));
+            }
             self.current_token_id = call_token_id;
             self.emit(OpCode::Resume(1));
             return Ok(());

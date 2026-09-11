@@ -47,9 +47,16 @@ def g():
 `true`. A generator function's final expression is not exposed as a completion value. Calling
 `next()` again after completion keeps returning `{"value": None, "done": true}`.
 
+As with other single-input functions, a coroutine can be supplied through the pipeline:
+
+```mq
+stream | next() # equivalent to next(stream)
+```
+
 ## Rules
 
-- `next(stream)` is a plain call, not a keyword. A local `def next(...)` shadows it.
+- `next(stream)` (or `stream | next()`) is a plain call, not a keyword. A local `def next(...)`
+  shadows it.
 - Re-entering the same coroutine (calling `next()` on it while it is already running) is a
   runtime error.
 - A nested `def`/`fn`'s `yield` only makes that nested function a generator; it does not affect
