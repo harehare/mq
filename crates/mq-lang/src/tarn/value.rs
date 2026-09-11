@@ -295,21 +295,25 @@ impl Locals {
 
     /// Advances a `foreach` loop and updates its index, loop value, and implicit-self slots.
     ///
+    /// Returns whether an element was available. The caller only needs this control-flow
+    /// result, so keeping the element in the local slots avoids an otherwise unused clone on
+    /// every iteration.
+    ///
     /// # Safety
     /// `array_slot`, `index_slot`, and `value_slot` must be valid local slots. The bytecode
     /// verifier establishes this for every `ForeachNext` instruction before execution.
     #[inline(always)]
-    pub(crate) unsafe fn foreach_next(
+    pub(crate) unsafe fn advance_foreach(
         &mut self,
         array_slot: u16,
         index_slot: u16,
         value_slot: u16,
         self_slot: u16,
-    ) -> Result<Option<RuntimeValue>, &'static str> {
+    ) -> Result<bool, &'static str> {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let index_value = {
                     let index = unsafe { slots.get_unchecked(index_slot as usize) };
                     let StackValue::Value(RuntimeValue::Number(index)) = index else {
@@ -318,88 +322,88 @@ impl Locals {
                     index.value()
                 };
 
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let value = {
                     let array = unsafe { slots.get_unchecked(array_slot as usize) };
                     let StackValue::Value(RuntimeValue::Array(array)) = array else {
                         return Err("ForeachNext array slot is not an array");
                     };
                     if index_value >= array.len() as f64 {
-                        return Ok(None);
+                        return Ok(false);
                     }
                     array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None)
                 };
 
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 *unsafe { slots.get_unchecked_mut(index_slot as usize) } =
                     StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0)));
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 *unsafe { slots.get_unchecked_mut(value_slot as usize) } = StackValue::Value(value.clone());
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
-                *unsafe { slots.get_unchecked_mut(self_slot as usize) } = StackValue::Value(value.clone());
-                Ok(Some(value))
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
+                *unsafe { slots.get_unchecked_mut(self_slot as usize) } = StackValue::Value(value);
+                Ok(true)
             }
             #[cfg(not(feature = "sync"))]
             Locals::Hybrid { .. } => {
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let index = unsafe { self.get_unchecked(index_slot) };
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     return Err("ForeachNext has invalid loop state");
                 };
                 let index_value = index.value();
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let array = unsafe { self.get_unchecked(array_slot) };
                 let StackValue::Value(RuntimeValue::Array(array)) = array else {
                     return Err("ForeachNext array slot is not an array");
                 };
                 if index_value >= array.len() as f64 {
-                    return Ok(None);
+                    return Ok(false);
                 }
                 let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 unsafe {
                     self.set_unchecked(
                         index_slot,
                         StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
                     );
                     self.set_unchecked(value_slot, StackValue::Value(value.clone()));
-                    self.set_unchecked(self_slot, StackValue::Value(value.clone()));
+                    self.set_unchecked(self_slot, StackValue::Value(value));
                 }
-                Ok(Some(value))
+                Ok(true)
             }
             Locals::Boxed(slots) => {
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let index = read_cell(unsafe { slots.get_unchecked(index_slot as usize) });
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     return Err("ForeachNext has invalid loop state");
                 };
                 let index_value = index.value();
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let array = read_cell(unsafe { slots.get_unchecked(array_slot as usize) });
                 let StackValue::Value(RuntimeValue::Array(array)) = array else {
                     return Err("ForeachNext array slot is not an array");
                 };
                 if index_value >= array.len() as f64 {
-                    return Ok(None);
+                    return Ok(false);
                 }
                 let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
 
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 write_cell(
                     unsafe { slots.get_unchecked(index_slot as usize) },
                     StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
                 );
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 write_cell(
                     unsafe { slots.get_unchecked(value_slot as usize) },
                     StackValue::Value(value.clone()),
                 );
-                // SAFETY: inherited from `Locals::foreach_next`'s caller contract.
+                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 write_cell(
                     unsafe { slots.get_unchecked(self_slot as usize) },
-                    StackValue::Value(value.clone()),
+                    StackValue::Value(value),
                 );
-                Ok(Some(value))
+                Ok(true)
             }
         }
     }
@@ -448,4 +452,56 @@ pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(
         array_mut(array).push(value);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn advance_foreach_reports_progress_and_updates_loop_slots() {
+        let mut locals = Locals::flat(4);
+        assert_advance_foreach(&mut locals);
+    }
+
+    #[test]
+    fn advance_foreach_preserves_captured_loop_slots() {
+        // This is `Hybrid` in the default build and `Boxed` with the `sync` feature.
+        let mut locals = Locals::for_captured_slots(4, &[0, 3]);
+        assert_advance_foreach(&mut locals);
+    }
+
+    fn assert_advance_foreach(locals: &mut Locals) {
+        let values = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(10.into()),
+            RuntimeValue::Number(20.into()),
+        ]));
+        locals.set(0, StackValue::Value(RuntimeValue::None));
+        locals.set(1, StackValue::Value(values));
+        locals.set(2, StackValue::Value(RuntimeValue::Number(0.into())));
+
+        // SAFETY: all slots passed below are within this four-slot frame.
+        assert!(unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
+        assert_eq!(
+            into_value(locals.get(2)),
+            RuntimeValue::Number(1.into()),
+            "the loop index advances after loading an element"
+        );
+        assert_eq!(into_value(locals.get(3)), RuntimeValue::Number(10.into()));
+        assert_eq!(into_value(locals.get(0)), RuntimeValue::Number(10.into()));
+
+        // SAFETY: all slots passed below are within this four-slot frame.
+        assert!(unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
+        // SAFETY: all slots passed below are within this four-slot frame.
+        assert!(!unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
+        assert_eq!(into_value(locals.get(3)), RuntimeValue::Number(20.into()));
+        assert_eq!(into_value(locals.get(0)), RuntimeValue::Number(20.into()));
+    }
+
+    fn into_value(value: StackValue) -> RuntimeValue {
+        match value {
+            StackValue::Value(value) => value,
+            StackValue::Closure(_) => panic!("test locals only contain runtime values"),
+        }
+    }
 }

@@ -53,6 +53,15 @@ fn eval_compiled_while(bencher: divan::Bencher) {
     );
 }
 
+/// Isolates the VM's specialized `foreach` control path, including per-iteration local updates.
+#[divan::bench]
+fn eval_compiled_foreach(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(bencher, &mut engine, "foreach(i, range(0, 10000, 1)): i;", || {
+        vec![mq_lang::RuntimeValue::None]
+    });
+}
+
 /// Measures the API pattern used by line-oriented callers: one compiled query evaluated once
 /// per input value while file globals remain stable.
 #[divan::bench]

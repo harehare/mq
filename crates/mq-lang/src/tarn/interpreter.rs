@@ -1272,9 +1272,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 exit_offset,
             } => {
                 // SAFETY: `verify_chunks` validates every local slot before execution.
-                let value = unsafe { locals.foreach_next(*array_slot, *index_slot, *value_slot, SELF_SLOT) }
+                let advanced = unsafe { locals.advance_foreach(*array_slot, *index_slot, *value_slot, SELF_SLOT) }
                     .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                if value.is_none() {
+                if !advanced {
                     ip = (ip as i64 + *exit_offset as i64) as usize;
                     continue;
                 }
