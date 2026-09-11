@@ -221,6 +221,11 @@ pub(crate) enum OpCode {
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
+    /// Stores a constant directly in a local without using the operand stack.
+    SetLocalConst {
+        local: u16,
+        constant: u16,
+    },
     /// Stores the top stack value without popping it.
     TeeLocal(u16),
     /// Copies one local slot to another without using the operand stack.
@@ -366,6 +371,18 @@ pub(crate) enum OpCode {
     RaiseDestructuringFailed,
     /// Returns a local directly, without materializing it on the operand stack first.
     ReturnLocal(u16),
+    /// Evaluates a local/local binary expression and returns it without using the operand stack.
+    ReturnBinaryLocalLocal {
+        op: BinaryOp,
+        left: u16,
+        right: u16,
+    },
+    /// Evaluates a local/constant binary expression and returns it without using the operand stack.
+    ReturnBinaryLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
     Return,
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
@@ -387,6 +404,7 @@ impl OpCode {
             Self::PushNone => "PushNone",
             Self::GetLocal(_) => "GetLocal",
             Self::SetLocal(_) => "SetLocal",
+            Self::SetLocalConst { .. } => "SetLocalConst",
             Self::TeeLocal(_) => "TeeLocal",
             Self::CopyLocal { .. } => "CopyLocal",
             Self::GetUpvalue(_) => "GetUpvalue",
@@ -459,6 +477,8 @@ impl OpCode {
             Self::FlowContinue => "FlowContinue",
             Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
             Self::ReturnLocal(_) => "ReturnLocal",
+            Self::ReturnBinaryLocalLocal { .. } => "ReturnBinaryLocalLocal",
+            Self::ReturnBinaryLocalConst { .. } => "ReturnBinaryLocalConst",
             Self::Return => "Return",
             Self::Yield => "Yield",
             Self::Resume(_) => "Resume",
@@ -808,11 +828,14 @@ fn optimize_chunk(chunk: &mut Chunk) {
             matches!(
                 (op, chunk.code.get(pc + 1)),
                 (OpCode::Const(_), Some(OpCode::Pop))
+                    | (OpCode::Const(_), Some(OpCode::SetLocal(_)))
                     | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
                     | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
                     | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
                     | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
                     | (OpCode::GetLocal(_), Some(OpCode::Return))
+                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::Return))
+                    | (OpCode::BinaryLocalConst { .. }, Some(OpCode::Return))
                     | (OpCode::Jump(0), _)
             )
         }
@@ -834,6 +857,14 @@ fn optimize_chunk(chunk: &mut Chunk) {
         match (&old_code[pc], old_code.get(pc + 1)) {
             (OpCode::Const(_), Some(OpCode::Pop)) if !targets.contains(&pc) && !targets.contains(&(pc + 1)) => {
                 keep[pc] = false;
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::Const(constant), Some(OpCode::SetLocal(local))) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::SetLocalConst {
+                    local: *local,
+                    constant: *constant,
+                };
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -884,6 +915,26 @@ fn optimize_chunk(chunk: &mut Chunk) {
             }
             (OpCode::GetLocal(slot), Some(OpCode::Return)) if !targets.contains(&(pc + 1)) => {
                 old_code[pc] = OpCode::ReturnLocal(*slot);
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::Return)) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::ReturnBinaryLocalLocal {
+                    op: *op,
+                    left: *left,
+                    right: *right,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::Return))
+                if !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::ReturnBinaryLocalConst {
+                    op: *op,
+                    local: *local,
+                    constant: *constant,
+                };
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -1074,7 +1125,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         if chunk.code.is_empty() {
             return Err(BytecodeError::EmptyChunk(chunk_index));
         }
-        if !matches!(chunk.code.last(), Some(OpCode::Return | OpCode::ReturnLocal(_))) {
+        if !matches!(
+            chunk.code.last(),
+            Some(
+                OpCode::Return
+                    | OpCode::ReturnLocal(_)
+                    | OpCode::ReturnBinaryLocalLocal { .. }
+                    | OpCode::ReturnBinaryLocalConst { .. }
+            )
+        ) {
             return Err(BytecodeError::MissingReturn(chunk_index));
         }
         let max_entries = usize::from(u16::MAX) + 1;
@@ -1139,7 +1198,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
-                OpCode::BinaryLocalLocal { left, right, .. } => {
+                OpCode::BinaryLocalLocal { left, right, .. } | OpCode::ReturnBinaryLocalLocal { left, right, .. } => {
                     for slot in [left, right] {
                         if *slot >= chunk.local_count {
                             return Err(BytecodeError::LocalOutOfBounds {
@@ -1161,7 +1220,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
-                OpCode::BinaryLocalConst { local, constant, .. } | OpCode::UpdateLocalConst { local, constant, .. } => {
+                OpCode::SetLocalConst { local, constant }
+                | OpCode::BinaryLocalConst { local, constant, .. }
+                | OpCode::UpdateLocalConst { local, constant, .. }
+                | OpCode::ReturnBinaryLocalConst { local, constant, .. } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -1569,7 +1631,7 @@ mod tests {
     }
 
     #[test]
-    fn peephole_fuses_set_local_get_local_into_tee_local() {
+    fn peephole_fuses_constant_assignment_and_local_return() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::Const(0),
@@ -1586,8 +1648,29 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [OpCode::Const(0), OpCode::TeeLocal(0), OpCode::Return]
+            [OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::ReturnLocal(0)]
         ));
+    }
+
+    #[test]
+    fn peephole_keeps_a_constant_assignment_when_the_store_is_a_jump_target() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Const(0),
+                OpCode::Jump(1),
+                OpCode::Const(0),
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(!chunk.code.iter().any(|op| matches!(op, OpCode::SetLocalConst { .. })));
     }
 
     #[test]
@@ -1601,6 +1684,35 @@ mod tests {
         optimize_chunk(&mut chunk);
 
         assert!(matches!(chunk.code.as_slice(), [OpCode::ReturnLocal(0)]));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_returns_a_local_constant_binary_expression_without_using_the_operand_stack() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Mul,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(2.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [OpCode::ReturnBinaryLocalConst {
+                op: BinaryOp::Mul,
+                local: 0,
+                constant: 0,
+            }]
+        ));
         assert_eq!(verify_chunks(&[chunk]), Ok(()));
     }
 
@@ -1815,6 +1927,7 @@ mod tests {
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::return_local(vec![OpCode::ReturnLocal(0)])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
+    #[case::set_local_const(vec![OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::Return])]
     #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::copy_local(vec![
         OpCode::CopyLocal {
@@ -1835,6 +1948,11 @@ mod tests {
         OpCode::UpdateLocalLocal { op: BinaryOp::Add, local: 0, value: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_local(vec![OpCode::ReturnBinaryLocalLocal {
+        op: BinaryOp::Add,
+        left: 0,
+        right: 0,
+    }])]
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
@@ -1844,6 +1962,11 @@ mod tests {
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
+        op: BinaryOp::Add,
+        local: 0,
+        constant: 0,
+    }])]
     #[case::array_get_local_at(vec![
         OpCode::ArrayGetLocalAt { array_slot: 0, index_slot: 0 },
         OpCode::Pop,
@@ -1886,6 +2009,7 @@ mod tests {
     #[rstest]
     #[case::const_(vec![OpCode::Const(0), OpCode::Pop, OpCode::Return])]
     #[case::get_env_var(vec![OpCode::GetEnvVar(0), OpCode::Pop, OpCode::Return])]
+    #[case::set_local_const(vec![OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::Return])]
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
@@ -1895,6 +2019,11 @@ mod tests {
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
+        op: BinaryOp::Add,
+        local: 0,
+        constant: 0,
+    }])]
     fn verifier_rejects_out_of_bounds_constant_index(#[case] code: Vec<OpCode>) {
         let chunk = Chunk {
             code,

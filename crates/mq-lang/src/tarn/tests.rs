@@ -281,7 +281,7 @@ fn local_binary_expressions_use_compact_bytecode() {
         compiled.chunks[1]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::BinaryLocalConst { .. }))
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { .. }))
     );
 }
 
@@ -331,6 +331,43 @@ fn local_constant_assignment_uses_update_opcode() {
             .any(|op| matches!(op, OpCode::UpdateLocalConst { op: BinaryOp::Add, .. }))
     );
     assert_eq!(run("var x = 1 | x += 2 | x"), RuntimeValue::Number(3.into()));
+}
+
+#[test]
+fn constant_assignment_uses_set_local_const_opcode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::SetLocalConst { .. }))
+    );
+    assert_eq!(run("var x = 1 | x"), RuntimeValue::Number(1.into()));
+}
+
+#[test]
+fn local_constant_binary_return_uses_return_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("let double = fn(x): x * 2; | double(3)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { op: BinaryOp::Mul, .. }))
+    }));
+    assert_eq!(
+        run("let double = fn(x): x * 2; | double(3)"),
+        RuntimeValue::Number(6.into())
+    );
 }
 
 #[test]
@@ -2774,8 +2811,9 @@ fn nested_remote_module_directive_is_blocked_under_tarn(
     );
 }
 
-// Generator/coroutine tests. No surface syntax exists yet (lexer/parser/compiler land in a
-// later phase), so these hand-build `Chunk`s directly instead of going through `crate::parse`.
+// Bytecode-level generator/coroutine tests. Source-level coverage follows below; these tests
+// hand-build `Chunk`s to exercise suspension and resumption states that are awkward to construct
+// from a single surface program.
 
 fn generator_program(chunks: Vec<bytecode::Chunk>) -> compiler::CompiledProgram {
     compiler::CompiledProgram {
@@ -3007,6 +3045,21 @@ fn bare_yield_produces_none_value() {
     let result = run("def g(): yield; | let s = g() | next(s)");
     assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
     assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn next_without_an_argument_resumes_the_pipeline_coroutine() {
+    let result = run("def g(): yield: 1; | let stream = g() | stream | next()");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn local_next_definition_still_shadows_pipeline_resume() {
+    assert_eq!(
+        run("def next(stream): stream + 1; | 41 | next()"),
+        RuntimeValue::Number(42.into())
+    );
 }
 
 #[test]

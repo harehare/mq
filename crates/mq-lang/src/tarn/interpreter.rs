@@ -1028,6 +1028,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, v) };
             }
+            OpCode::SetLocalConst { local, constant } => {
+                // SAFETY: `verify_chunks` validates the local slot and constant index before execution.
+                let value = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
+            }
             OpCode::TeeLocal(slot) => {
                 let top = stack
                     .last()
@@ -1801,6 +1807,21 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::ReturnLocal(slot) => {
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 break 'dispatch FrameOutcome::Complete(unsafe { locals.get_unchecked(*slot) });
+            }
+            OpCode::ReturnBinaryLocalLocal { op, left, right } => {
+                let a = local_runtime_value(locals, *left, chunks)?;
+                let b = local_runtime_value(locals, *right, chunks)?;
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+            }
+            OpCode::ReturnBinaryLocalConst { op, local, constant } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
             }
             OpCode::Return => {
                 let v = pop!();
