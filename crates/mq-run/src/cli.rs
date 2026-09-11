@@ -265,6 +265,19 @@ impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
     }
 }
 
+/// Preset combination of `--allow-*` flags, set via `--sandbox`.
+#[derive(Clone, Debug, clap::ValueEnum, PartialEq)]
+enum SandboxProfile {
+    /// Deny everything (same as no flags).
+    Strict,
+    /// Unrestricted filesystem reads only.
+    ReadOnly,
+    /// Unrestricted network access (`http()` and HTTP imports) only.
+    Networked,
+    /// Everything, equivalent to `--allow-all`.
+    Unsafe,
+}
+
 #[derive(Clone, Debug, Default, clap::ValueEnum, PartialEq)]
 enum OutputFormat {
     #[default]
@@ -559,6 +572,43 @@ struct InputArgs {
         conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import"]
     )]
     allow_all: bool,
+
+    /// Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags.
+    #[arg(
+        long = "sandbox",
+        value_enum,
+        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import", "allow_all"]
+    )]
+    sandbox: Option<SandboxProfile>,
+}
+
+impl InputArgs {
+    /// Builds sandboxed IO permissions from `--sandbox` or the individual `--allow-*` flags.
+    fn build_sandboxed_io(&self) -> mq_lang::SandboxedIo {
+        let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
+        match &self.sandbox {
+            Some(SandboxProfile::Strict) => sandboxed_io,
+            Some(SandboxProfile::ReadOnly) => sandboxed_io.allow_read(true),
+            Some(SandboxProfile::Networked) => sandboxed_io.allow_net(true),
+            Some(SandboxProfile::Unsafe) => sandboxed_io.allow_all(),
+            None if self.allow_all => sandboxed_io.allow_all(),
+            None => sandboxed_io
+                .allow_read(self.allow_read.clone())
+                .allow_write(self.allow_write.clone())
+                .allow_net(self.allow_net.clone())
+                .allow_run(self.allow_run.clone())
+                .allow_env(self.allow_env.clone()),
+        }
+    }
+
+    /// Whether `--sandbox` enables HTTP module imports.
+    #[cfg(feature = "http-import")]
+    fn sandbox_enables_http_import(&self) -> bool {
+        matches!(
+            self.sandbox,
+            Some(SandboxProfile::Networked) | Some(SandboxProfile::Unsafe)
+        )
+    }
 }
 
 #[derive(Clone, Debug, clap::Args, Default)]
@@ -1304,6 +1354,10 @@ impl Cli {
             out,
             "  mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md"
         );
+        let _ = writeln!(
+            out,
+            "  mq --sandbox=read-only -I null 'read_file(\"notes.md\")'  # strict/read-only/networked/unsafe presets"
+        );
 
         #[cfg(feature = "http-import")]
         {
@@ -1437,7 +1491,8 @@ impl Cli {
             "```sh\nmq --allow-read=. -I null 'read_file(\"notes.md\")'\n\
             mq --allow-run=echo -I null 'system(\"echo\", [\"hello\"])'\n\
             mq --allow-env=MY_VAR -I null '$MY_VAR'\n\
-            mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md\n```"
+            mq --allow-net=api.example.com 'http(\"get\", \"https://api.example.com/data\")' file.md\n\
+            mq --sandbox=read-only -I null 'read_file(\"notes.md\")'  # strict/read-only/networked/unsafe presets\n```"
         );
 
         #[cfg(feature = "http-import")]
@@ -1596,17 +1651,7 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
-        let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
-        let sandboxed_io = if self.input.allow_all {
-            sandboxed_io.allow_all()
-        } else {
-            sandboxed_io
-                .allow_read(self.input.allow_read.clone())
-                .allow_write(self.input.allow_write.clone())
-                .allow_net(self.input.allow_net.clone())
-                .allow_run(self.input.allow_run.clone())
-                .allow_env(self.input.allow_env.clone())
-        };
+        let sandboxed_io = self.input.build_sandboxed_io();
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
@@ -1715,7 +1760,9 @@ impl Cli {
 
         #[cfg(feature = "http-import")]
         {
-            engine.set_http_import_enabled(self.input.allow_http_import || self.input.allow_all);
+            engine.set_http_import_enabled(
+                self.input.allow_http_import || self.input.allow_all || self.input.sandbox_enables_http_import(),
+            );
             if let Some(domains) = &self.input.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
             }
@@ -3202,6 +3249,108 @@ mod tests {
         assert!(
             Cli::try_parse_from(args).is_err(),
             "--allow-all should conflict with individual --allow-* flags"
+        );
+    }
+
+    #[rstest]
+    #[case(&["mq", "--sandbox=strict", "--allow-read=/tmp", "self"])]
+    #[case(&["mq", "--sandbox=read-only", "--allow-write=/tmp", "self"])]
+    #[case(&["mq", "--sandbox=networked", "--allow-net=example.com", "self"])]
+    #[case(&["mq", "--sandbox=unsafe", "--allow-run", "self"])]
+    #[case(&["mq", "--sandbox=unsafe", "--allow-env", "self"])]
+    #[case(&["mq", "--sandbox=unsafe", "--allow-http-import", "self"])]
+    #[case(&["mq", "--sandbox=unsafe", "--allow-all", "self"])]
+    fn test_sandbox_conflicts_with_individual_allow_flags(#[case] args: &[&str]) {
+        assert!(
+            Cli::try_parse_from(args).is_err(),
+            "--sandbox should conflict with --allow-* flags (including --allow-all)"
+        );
+    }
+
+    #[test]
+    fn test_sandbox_strict_denies_everything() {
+        let io = InputArgs {
+            sandbox: Some(SandboxProfile::Strict),
+            ..Default::default()
+        }
+        .build_sandboxed_io();
+
+        assert!(!io.is_read_allowed());
+        assert!(!io.is_write_allowed());
+        assert!(!io.is_net_allowed());
+        assert!(!io.is_run_allowed());
+        assert!(!io.is_env_allowed());
+    }
+
+    #[test]
+    fn test_sandbox_read_only_grants_read_only() {
+        let io = InputArgs {
+            sandbox: Some(SandboxProfile::ReadOnly),
+            ..Default::default()
+        }
+        .build_sandboxed_io();
+
+        assert!(io.is_read_allowed());
+        assert!(!io.is_write_allowed());
+        assert!(!io.is_net_allowed());
+        assert!(!io.is_run_allowed());
+        assert!(!io.is_env_allowed());
+    }
+
+    #[test]
+    fn test_sandbox_networked_grants_net_only() {
+        let io = InputArgs {
+            sandbox: Some(SandboxProfile::Networked),
+            ..Default::default()
+        }
+        .build_sandboxed_io();
+
+        assert!(!io.is_read_allowed());
+        assert!(!io.is_write_allowed());
+        assert!(io.is_net_allowed());
+        assert!(!io.is_run_allowed());
+        assert!(!io.is_env_allowed());
+    }
+
+    #[test]
+    fn test_sandbox_unsafe_grants_every_capability() {
+        let io = InputArgs {
+            sandbox: Some(SandboxProfile::Unsafe),
+            ..Default::default()
+        }
+        .build_sandboxed_io();
+
+        assert!(io.is_read_allowed());
+        assert!(io.is_write_allowed());
+        assert!(io.is_net_allowed());
+        assert!(io.is_run_allowed());
+        assert!(io.is_env_allowed());
+    }
+
+    #[cfg(feature = "http-import")]
+    #[test]
+    fn test_sandbox_http_import_enablement() {
+        assert!(!InputArgs::default().sandbox_enables_http_import());
+        assert!(
+            !InputArgs {
+                sandbox: Some(SandboxProfile::ReadOnly),
+                ..Default::default()
+            }
+            .sandbox_enables_http_import()
+        );
+        assert!(
+            InputArgs {
+                sandbox: Some(SandboxProfile::Networked),
+                ..Default::default()
+            }
+            .sandbox_enables_http_import()
+        );
+        assert!(
+            InputArgs {
+                sandbox: Some(SandboxProfile::Unsafe),
+                ..Default::default()
+            }
+            .sandbox_enables_http_import()
         );
     }
 
