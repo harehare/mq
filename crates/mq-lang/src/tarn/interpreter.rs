@@ -1854,13 +1854,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Suspend(v);
             }
             OpCode::Resume(argc) => {
-                debug_assert_eq!(*argc, 1, "next(stream, value)/`send` is not supported yet");
+                // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
+                let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
                 let arg = pop!();
                 let RuntimeValue::Coroutine(handle) = into_runtime_value(arg, chunks) else {
                     bail!(VmError::NotCallable);
                 };
                 let result = coroutine::resume::<CHECK_TIMEOUT>(
                     &handle,
+                    resume_value,
                     execution,
                     #[cfg(feature = "debugger")]
                     debug,

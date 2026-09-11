@@ -60,6 +60,8 @@ pub mod builtins {
     pub const COALESCE: &str = "coalesce";
     /// `next(stream)`: drives a generator's coroutine one step.
     pub const NEXT: &str = "next";
+    /// `send(stream, value)`: like `next`, but resumes to `value` instead of `None`.
+    pub const SEND: &str = "send";
 }
 
 pub mod identifiers {

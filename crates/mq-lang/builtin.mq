@@ -91,6 +91,17 @@ def is_dict(d): type(d) == "dict";
 # Returns: bool
 def is_bytes(b): type(b) == "bytes";
 
+# Checks if input is a generator function's coroutine
+#
+# Example:
+# ```
+# def g(): yield: 1; | is_coroutine(g())
+# #=> true
+# ```
+#
+# Returns: bool
+def is_coroutine(c): type(c) == "coroutine";
+
 # Checks if string contains a substring
 #
 # Example:

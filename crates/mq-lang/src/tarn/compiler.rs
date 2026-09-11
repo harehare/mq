@@ -2495,6 +2495,18 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::Resume(1));
             return Ok(());
         }
+        if ident == builtins::SEND.into() && (1..=2).contains(&args.len()) {
+            if args.len() == 2 {
+                self.compile_expr(&args[0])?;
+                self.compile_expr(&args[1])?;
+            } else {
+                self.emit(OpCode::GetLocal(SELF_SLOT));
+                self.compile_expr(&args[0])?;
+            }
+            self.current_token_id = call_token_id;
+            self.emit(OpCode::Resume(2));
+            return Ok(());
+        }
 
         // Might be a soft prelude builtin — can't tell without the prelude loaded.
         if builtin::get_builtin_functions(&ident).is_none() {
