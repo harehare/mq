@@ -9037,7 +9037,7 @@ x
             returns: "dict",
             examples: &[BuiltinExample {
                 code: r#"def g(): yield: 1; | let stream = g() | next(stream)"#,
-                expected: r#"{value: 1, done: false}"#,
+                expected: r#"{"value": 1, "done": false}"#,
             }],
             capability: None,
         },

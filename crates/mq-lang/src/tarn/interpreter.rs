@@ -698,12 +698,26 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             Ok(FrameOutcome::TailEnter(mut new_frame)) => {
                 let caller = frames.last().expect("the frame stack is never empty here");
                 new_frame.stack_base = caller.stack_base;
-                execution.limits.replace_top_frame(
+                if let Err(e) = execution.limits.replace_top_frame(
                     frames,
                     new_frame,
                     #[cfg(feature = "debugger")]
                     debug,
-                );
+                ) {
+                    let e = locate_at_top(frames, root_chunks, e);
+                    match unwind(
+                        e,
+                        frames,
+                        root_chunks,
+                        operand_stack,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    ) {
+                        Ok(()) => continue 'frames,
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                    }
+                }
                 continue 'frames;
             }
             Ok(FrameOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
@@ -841,6 +855,7 @@ fn unwind(
                     catch_closure,
                     has_binder,
                     break_acc_slot,
+                    break_completed_iteration_slot,
                     break_offset,
                     continue_offset,
                 } = *body;
@@ -851,6 +866,13 @@ fn unwind(
                     let parent = frames.last_mut().expect("just checked len() > 1");
                     if let Some(value) = value {
                         parent.locals.set(acc_slot, StackValue::Value(value));
+                        if let Some(slot) = break_completed_iteration_slot {
+                            parent.locals.set(slot, StackValue::Value(RuntimeValue::Boolean(true)));
+                        }
+                    } else if let Some(slot) = break_completed_iteration_slot
+                        && !matches!(parent.locals.get(slot), StackValue::Value(RuntimeValue::Boolean(true)))
+                    {
+                        parent.locals.set(acc_slot, StackValue::Value(RuntimeValue::None));
                     }
                     parent.ip = (parent.ip as i64 + offset as i64) as usize;
                     return Ok(());
@@ -1916,6 +1938,7 @@ fn begin_try_catch(
             catch_closure,
             has_binder: info.has_binder,
             break_acc_slot: info.break_acc_slot,
+            break_completed_iteration_slot: info.break_completed_iteration_slot,
             break_offset: info.break_offset,
             continue_offset: info.continue_offset,
         })),

@@ -32,6 +32,11 @@ pub(super) struct Frame {
     pub(super) ip: usize,
     pub(super) reusable_locals: bool,
     pub(super) on_complete: Continuation,
+    /// Number of logical call-stack slots represented by this physical frame.
+    ///
+    /// A tail call replaces its caller's physical frame, but it still consumes a logical
+    /// call-stack slot so `max_call_stack_depth` remains a recursion safeguard.
+    pub(super) call_depth_cost: u32,
     #[cfg(feature = "debugger")]
     pub(super) caller_node: Option<Shared<Node>>,
     #[cfg(feature = "debugger")]
@@ -57,6 +62,10 @@ impl Frame {
             ip: 0,
             reusable_locals,
             on_complete,
+            // Frames are constructed before they enter the trampoline. `push_frame` assigns
+            // the initial cost for ordinary calls; bottom frames are seeded directly and do not
+            // consume a call slot.
+            call_depth_cost: 0,
             #[cfg(feature = "debugger")]
             caller_node: None,
             #[cfg(feature = "debugger")]
@@ -84,6 +93,7 @@ pub(super) struct TryBody {
     pub(super) catch_closure: Shared<Closure>,
     pub(super) has_binder: bool,
     pub(super) break_acc_slot: Option<u16>,
+    pub(super) break_completed_iteration_slot: Option<u16>,
     pub(super) break_offset: Option<i32>,
     pub(super) continue_offset: Option<i32>,
 }
@@ -212,6 +222,7 @@ impl ExecutionLimits {
             return Err(VmError::RecursionError(self.max_call_stack_depth));
         }
         self.call_depth += 1;
+        frame.call_depth_cost = 1;
         #[cfg(feature = "debugger")]
         {
             let caller_node = debug.current_node.clone();
@@ -234,7 +245,7 @@ impl ExecutionLimits {
         #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
     ) -> Option<Continuation> {
         let frame = frames.pop()?;
-        self.call_depth = self.call_depth.saturating_sub(1);
+        self.call_depth = self.call_depth.saturating_sub(frame.call_depth_cost);
         if frame.reusable_locals {
             self.recycle_locals(frame.locals);
         }
@@ -248,16 +259,29 @@ impl ExecutionLimits {
         Some(frame.on_complete)
     }
 
-    /// Replaces the active frame with its tail-call callee without consuming another call-depth
-    /// slot. The callee inherits the caller's continuation and operand-stack boundary.
+    /// Replaces the active frame with its tail-call callee while retaining its allocation.
+    ///
+    /// The replacement consumes another *logical* call-stack slot even though it reuses the
+    /// caller's physical frame. This keeps tail recursion subject to `max_call_stack_depth`.
     pub(super) fn replace_top_frame(
         &mut self,
         frames: &mut Vec<Frame>,
         mut replacement: Frame,
         #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-    ) {
+    ) -> VmResult<()> {
+        if self.call_depth >= self.max_call_stack_depth {
+            if replacement.reusable_locals {
+                self.recycle_locals(replacement.locals);
+            }
+            return Err(VmError::RecursionError(self.max_call_stack_depth));
+        }
         let frame = frames.pop().expect("tail call requires an active frame");
         replacement.on_complete = frame.on_complete;
+        replacement.call_depth_cost = frame
+            .call_depth_cost
+            .checked_add(1)
+            .expect("call depth is bounded by u32::MAX");
+        self.call_depth += 1;
         if frame.reusable_locals {
             self.recycle_locals(frame.locals);
         }
@@ -277,6 +301,7 @@ impl ExecutionLimits {
             replacement.caller_node = caller_node;
         }
         frames.push(replacement);
+        Ok(())
     }
 
     /// Releases a not-yet-running callee's locals when binding its parameters fails.

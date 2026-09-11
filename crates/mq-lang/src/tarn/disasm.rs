@@ -299,6 +299,10 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),
         bytecode::OpCode::TryCatch(info) => {
             let break_acc = info.break_acc_slot.map(local).unwrap_or_else(|| "-".to_string());
+            let break_completed = info
+                .break_completed_iteration_slot
+                .map(local)
+                .unwrap_or_else(|| "-".to_string());
             let break_target = info
                 .break_offset
                 .map(|offset| jump_ref(pc, offset))
@@ -308,7 +312,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
                 .map(|offset| jump_ref(pc, offset))
                 .unwrap_or_else(|| "-".to_string());
             format!(
-                "TryCatch has_binder={}, break_acc={break_acc}, break={break_target}, continue={continue_target}",
+                "TryCatch has_binder={}, break_acc={break_acc}, break_completed={break_completed}, break={break_target}, continue={continue_target}",
                 info.has_binder
             )
         }
