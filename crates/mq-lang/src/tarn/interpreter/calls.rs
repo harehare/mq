@@ -79,11 +79,16 @@ pub(super) enum CallStep {
 /// A generator call binds arguments like any other call but never executes the body.
 pub(super) fn frame_or_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> CallStep {
     if chunk_pool[frame.chunk_index as usize].is_generator {
-        let handle = super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool));
-        CallStep::Value(StackValue::Value(RuntimeValue::Coroutine(handle)))
+        CallStep::Value(generator_coroutine(frame, chunk_pool))
     } else {
         CallStep::Enter(frame)
     }
+}
+
+/// Wraps an already-bound generator frame without entering its body.
+pub(super) fn generator_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> StackValue {
+    let handle = super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool));
+    StackValue::Value(RuntimeValue::Coroutine(handle))
 }
 
 pub(super) fn call_stack_value(
@@ -159,7 +164,7 @@ pub(super) fn call_fixed_closure_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-) -> VmResult<CallStep> {
+) -> VmResult<Frame> {
     call_fixed_chunk_from_stack(
         FixedChunkCall {
             chunk_index: call.closure.chunk_index,
@@ -183,7 +188,7 @@ pub(super) fn call_static_chunk_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-) -> VmResult<CallStep> {
+) -> VmResult<Frame> {
     call_fixed_chunk_from_stack(
         FixedChunkCall {
             chunk_index,
@@ -208,7 +213,7 @@ pub(super) fn call_self_chunk_from_stack(
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> VmResult<CallStep> {
-    call_fixed_chunk_from_stack(
+    let frame = call_fixed_chunk_from_stack(
         FixedChunkCall {
             chunk_index,
             upvalues,
@@ -219,7 +224,8 @@ pub(super) fn call_self_chunk_from_stack(
         call_site,
         chunks,
         execution,
-    )
+    )?;
+    Ok(frame_or_coroutine(frame, chunks))
 }
 
 fn call_fixed_chunk_from_stack(
@@ -228,7 +234,7 @@ fn call_fixed_chunk_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-) -> VmResult<CallStep> {
+) -> VmResult<Frame> {
     let callee_chunk = &chunks[call.chunk_index as usize];
     let Some(arity) = callee_chunk.param_shape.fixed_required_arity() else {
         return Err(locate(
@@ -280,7 +286,7 @@ pub(super) fn call_known_fixed_chunk_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-) -> VmResult<CallStep> {
+) -> VmResult<Frame> {
     let callee_chunk = &chunks[call.chunk_index as usize];
     let argc = call.argc as usize;
     if stack.len() < argc + usize::from(call.remove_callee) {
@@ -326,16 +332,13 @@ pub(super) fn call_known_fixed_chunk_from_stack(
             VmError::Corrupt("stack underflow while removing fixed-call callee"),
         ));
     }
-    Ok(frame_or_coroutine(
-        Frame::new(
-            call.chunk_index,
-            call_site.frame_chunks,
-            callee_locals,
-            call.upvalues,
-            !callee_chunk.captures_local_slots(),
-            Continuation::Push,
-        ),
-        chunks,
+    Ok(Frame::new(
+        call.chunk_index,
+        call_site.frame_chunks,
+        callee_locals,
+        call.upvalues,
+        !callee_chunk.captures_local_slots(),
+        Continuation::Push,
     ))
 }
 

@@ -1302,7 +1302,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 | OpCode::CallStaticImplicitSelf(target, _) => {
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
                     let callee = &chunks[*target as usize];
-                    if !callee.upvalue_names.is_empty() || callee.param_shape.fixed_required_arity().is_none() {
+                    if !callee.upvalue_names.is_empty()
+                        || callee.param_shape.fixed_required_arity().is_none()
+                        || (callee.is_generator && !matches!(op, OpCode::CallStatic(..)))
+                    {
                         return Err(BytecodeError::StaticCallTargetInvalid {
                             chunk: chunk_index,
                             pc,
