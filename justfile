@@ -49,11 +49,11 @@ build-target target:
 dump-bytecode query:
     cargo run -p mq-run --bin mq-dbg --features="debugger" -- -C --dump-bytecode -I null '{{query}}'
 
-# Profiles executed Tarn opcodes through the debug binary. The profile changes dispatch cost,
-# so use it to find hot instructions, not to measure elapsed time.
+# Profiles production Tarn bytecode without debugger-only boundaries. The profile changes
+# dispatch cost, so use it to find hot instructions, not to measure elapsed time.
 # Example: just vm-profile 'var i = 10000 | while(i > 0): i -= 1; | i'
 vm-profile query:
-    cargo run -p mq-run --bin mq-dbg --features="debugger,vm-profile" -- --vm-profile -I null '{{query}}'
+    cargo run -p mq-run --bin mq --features="vm-profile" -- --vm-profile -I null '{{query}}'
 
 # Build benchmarks with codspeed.
 [working-directory: 'crates/mq-lang']

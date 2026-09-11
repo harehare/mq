@@ -828,6 +828,9 @@ fn optimize_chunk(chunk: &mut Chunk) {
 
     let mut pc = 0;
     while pc < old_code.len() {
+        // A fused instruction stays at the first instruction's pc, so a branch that enters
+        // there still observes the same combined operation. The second instruction must not be
+        // a target: entering there can depend on an intermediate operand-stack value.
         match (&old_code[pc], old_code.get(pc + 1)) {
             (OpCode::Const(_), Some(OpCode::Pop)) if !targets.contains(&pc) && !targets.contains(&(pc + 1)) => {
                 keep[pc] = false;
@@ -841,9 +844,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
-            (OpCode::GetLocal(source), Some(OpCode::SetLocal(destination)))
-                if !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
-            {
+            (OpCode::GetLocal(source), Some(OpCode::SetLocal(destination))) if !targets.contains(&(pc + 1)) => {
                 old_code[pc] = OpCode::CopyLocal {
                     source: *source,
                     destination: *destination,
@@ -852,7 +853,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::SetLocal(set_slot), Some(OpCode::GetLocal(get_slot)))
-                if set_slot == get_slot && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if set_slot == get_slot && !targets.contains(&(pc + 1)) =>
             {
                 let slot = *set_slot;
                 old_code[pc] = OpCode::TeeLocal(slot);
@@ -860,7 +861,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::SetLocal(destination)))
-                if local == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if local == destination && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::UpdateLocalConst {
                     op: *op,
@@ -871,7 +872,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::SetLocal(destination)))
-                if left == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if left == destination && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::UpdateLocalLocal {
                     op: *op,
@@ -881,9 +882,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
-            (OpCode::GetLocal(slot), Some(OpCode::Return))
-                if !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
-            {
+            (OpCode::GetLocal(slot), Some(OpCode::Return)) if !targets.contains(&(pc + 1)) => {
                 old_code[pc] = OpCode::ReturnLocal(*slot);
                 keep[pc + 1] = false;
                 pc += 2;
@@ -893,7 +892,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 1;
             }
             (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::JumpIfFalse(offset)))
-                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if op.is_comparison() && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::JumpIfFalseLocalLocal {
                     op: *op,
@@ -907,7 +906,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::JumpIfFalse(offset)))
-                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if op.is_comparison() && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::JumpIfFalseLocalConst {
                     op: *op,
@@ -1619,7 +1618,7 @@ mod tests {
     }
 
     #[test]
-    fn peephole_does_not_fuse_set_local_get_local_across_a_jump_target() {
+    fn peephole_keeps_a_set_local_get_local_pair_when_its_second_instruction_is_a_jump_target() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::JumpIfFalse(1),
@@ -1635,17 +1634,12 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [
-                OpCode::JumpIfFalse(1),
-                OpCode::SetLocal(0),
-                OpCode::GetLocal(0),
-                OpCode::Return
-            ]
+            [OpCode::JumpIfFalse(1), OpCode::SetLocal(0), OpCode::ReturnLocal(0),]
         ));
     }
 
     #[test]
-    fn peephole_fuses_local_copy_without_changing_jump_targets() {
+    fn peephole_fuses_local_copy_and_local_return_at_jump_targets() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::Jump(2),
@@ -1668,7 +1662,47 @@ mod tests {
                     source: 0,
                     destination: 1,
                 },
-                OpCode::GetLocal(1),
+                OpCode::ReturnLocal(1),
+            ]
+        ));
+    }
+
+    #[test]
+    fn peephole_fuses_a_loop_header_comparison() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Gt,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::JumpIfFalse(2),
+                // This backedge targets the comparison at pc 0. The fused instruction remains
+                // at pc 0, so the backedge must not inhibit fusion.
+                OpCode::Jump(-3),
+                OpCode::Jump(1),
+                OpCode::PushNone,
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(0.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::JumpIfFalseLocalConst {
+                    op: BinaryOp::Gt,
+                    local: 0,
+                    constant: 0,
+                    offset: 2,
+                },
+                OpCode::Jump(-2),
+                OpCode::Jump(1),
+                OpCode::PushNone,
                 OpCode::Return,
             ]
         ));

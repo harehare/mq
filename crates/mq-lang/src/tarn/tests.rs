@@ -286,22 +286,30 @@ fn local_binary_expressions_use_compact_bytecode() {
 }
 
 #[test]
-fn local_return_uses_compact_bytecode() {
-    #[cfg(not(feature = "debugger"))]
-    {
-        use super::bytecode::OpCode;
+fn loop_header_comparisons_use_a_compact_branch_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
 
-        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
-        let program = crate::parse("let identity = fn(x): x; | identity(42)", Shared::clone(&token_arena)).unwrap();
-        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var i = 3 | while(i > 0): i -= 1; | i", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-        assert!(
-            compiled.chunks[1]
-                .code
-                .iter()
-                .any(|op| matches!(op, OpCode::ReturnLocal(_)))
-        );
-    }
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::JumpIfFalseLocalConst { op: BinaryOp::Gt, .. }))
+    );
+    assert_eq!(
+        run("var i = 3 | while(i > 0): i -= 1; | i"),
+        RuntimeValue::Number(0.into())
+    );
+}
+
+#[test]
+fn local_return_preserves_auto_call_semantics() {
+    // A function parameter can itself be callable, so its final expression carries
+    // `MaybeAutoCall` before returning. The bytecode optimizer's direct `ReturnLocal`
+    // coverage belongs in `bytecode::tests`, where the instruction shape is explicit.
     assert_eq!(
         run("let identity = fn(x): x; | identity(42)"),
         RuntimeValue::Number(42.into())
@@ -517,6 +525,28 @@ fn fixed_static_arity_mismatches_keep_the_checked_call_form() {
             .code
             .iter()
             .any(|op| matches!(op, OpCode::CallStatic(_, 2)))
+    );
+}
+
+#[test]
+fn defaulted_named_calls_keep_the_generic_local_form() {
+    use super::bytecode::OpCode;
+
+    let source = "def add(value, step = 1): value + step; | add()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallLocal(_, 0))),
+        "defaulted parameters must use the generic binder rather than a fixed-arity opcode"
+    );
+    assert_eq!(
+        run_with_input(source, RuntimeValue::Number(10.into())),
+        RuntimeValue::Number(11.into())
     );
 }
 
@@ -1013,6 +1043,18 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::variadic_param_collects_nothing_when_absent("def sum_all(*xs): len(xs); | sum_all()", 0.0)]
 #[case::required_and_variadic_together("def f(first, *rest): first + len(rest); | f(100, 1, 2, 3)", 103.0)]
 #[case::implicit_self_fills_missing_required_arg("def double(x): x * 2; | 21 | double()", 42.0)]
+#[case::implicit_self_is_bound_before_a_default_is_evaluated(
+    "def add(value, increment = value + 1): value + increment; | 20 | add()",
+    41.0
+)]
+#[case::explicit_argument_takes_precedence_over_implicit_self_with_a_default(
+    "def add(value, increment = value + 1): value + increment; | 99 | add(20)",
+    41.0
+)]
+#[case::paren_free_qualified_call_uses_implicit_self_before_a_default(
+    "module math: def increment(value, step = 1): value + step; end | 10 | math::increment",
+    11.0
+)]
 #[case::let_array_destruct("let [a, b] = [1, 2] | add(a, b)", 3.0)]
 #[case::let_array_wildcard("let [_, b] = [1, 2] | b", 2.0)]
 #[case::let_array_rest("let [first, ..rest] = [1, 2, 3] | len(rest)", 2.0)]
@@ -1033,6 +1075,81 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 )]
 fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
     assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+/// This carries the former evaluator's `test_default_params_with_self` semantics
+/// through the compiled VM. (Its test constructed a parameter named `self` directly
+/// in the AST; `self` is reserved in source syntax.) The first parameter receives the
+/// pipeline value, then the omitted optional parameter receives its default.
+#[test]
+fn implicit_self_and_default_parameter_match_previous_evaluator_semantics() {
+    assert_eq!(
+        run_with_input(
+            r#"def format(value, prefix = "[LOG]"): [prefix, value]; | format()"#,
+            RuntimeValue::String(Shared::new("message".to_string())),
+        ),
+        RuntimeValue::Array(
+            vec![
+                RuntimeValue::String(Shared::new("[LOG]".to_string())),
+                RuntimeValue::String(Shared::new("message".to_string())),
+            ]
+            .into(),
+        ),
+    );
+}
+
+/// Covers the parameter binder's distinct decisions rather than only individual examples:
+/// whether the pipeline value occupies the first required slot, which supplied arguments
+/// follow it, and when defaults and a variadic tail take over.
+#[rstest]
+#[case::implicit_self_then_chained_defaults(10.0, "def f(a, b = a + 1, c = b + 1): a + b + c; | f()", 33.0)]
+#[case::implicit_self_precedes_a_partial_explicit_argument_list(
+    10.0,
+    "def f(a, b, c = 1): a * 100 + b * 10 + c; | f(2)",
+    1021.0
+)]
+#[case::all_optional_parameters_prefer_a_zero_argument_call_over_implicit_self(
+    9.0,
+    "def f(a = 1, b = 2): a * 10 + b; | f()",
+    12.0
+)]
+#[case::implicit_self_with_optional_and_variadic_parameters(
+    4.0,
+    "def f(a, b = 2, *rest): a * 100 + b * 10 + len(rest); | f()",
+    420.0
+)]
+#[case::explicit_arguments_fill_optional_and_variadic_parameters_without_implicit_self(
+    99.0,
+    "def f(a, b = 2, *rest): a * 100 + b * 10 + len(rest); | f(1, 3, 4, 5)",
+    132.0
+)]
+#[case::optional_before_variadic_does_not_consume_implicit_self(
+    9.0,
+    "def f(a = 3, *rest): a * 10 + len(rest); | f()",
+    30.0
+)]
+#[case::default_expression_preserves_the_callers_self(10.0, "def f(a, b = . + a): a + b; | f()", 30.0)]
+#[case::dynamic_closure_call_uses_the_same_implicit_self_and_default_binding(
+    10.0,
+    "let f = fn(a, b = a + 1): a + b; | f()",
+    21.0
+)]
+#[case::paren_free_local_closure_call_uses_the_same_binding(10.0, "let f = fn(a, b = 1): a + b; | f", 11.0)]
+#[case::default_expression_captures_an_enclosing_binding(
+    0.0,
+    "let step = 2 | let f = fn(a, b = step): a + b; | f(40)",
+    42.0
+)]
+#[case::recursive_defaulted_call_rebinds_the_default_on_each_invocation(
+    0.0,
+    "def f(n, step = 1): if(n == 0): 0 else: step + f(n - 1); | f(3)",
+    3.0
+)]
+fn parameter_binding_matrix(#[case] input: f64, #[case] code: &str, #[case] expected: f64) {
+    assert_eq!(
+        run_with_input(code, RuntimeValue::Number(input.into())),
+        RuntimeValue::Number(expected.into()),
+    );
 }
 
 #[rstest]
@@ -1072,31 +1189,31 @@ fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
 )]
 #[case::unresolved_name_in_an_unreachable_branch("if(false): undefined_name else: 1")]
 #[case::unresolved_name_in_an_uncalled_function("def f(): undefined_name; | 1")]
-fn compiled_engine_matches_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+fn compiled_engine_executes_supported_constructs(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
-fn inline_module_destructuring_matches_tree_walker() {
-    assert_vm_matches_tree_walker(
+fn inline_module_destructuring_executes() {
+    assert_vm_executes(
         r#"module constants: let [pi, ..digits] = [314, 1, 5, 9] | let {major: version} = {"major": 8} end | constants::pi + len(constants::digits) + constants::version"#,
         vec![RuntimeValue::None],
     );
 }
 
 #[test]
-fn nested_module_paths_match_tree_walker() {
-    assert_vm_matches_tree_walker(
+fn nested_module_paths_execute() {
+    assert_vm_executes(
         "module parent: module child: let answer = 40 | def add_two(): answer + 2; end end | parent::child::answer + parent::child::add_two()",
         vec![RuntimeValue::None],
     );
 }
 
 #[test]
-fn calls_with_256_arguments_match_tree_walker() {
+fn calls_with_256_arguments_execute() {
     let arguments = (0..256).map(|_| "1").collect::<Vec<_>>().join(", ");
     let code = format!("let count = fn(*args): len(args); | count({arguments})");
-    assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+    assert_vm_executes(&code, vec![RuntimeValue::None]);
 }
 
 #[test]
@@ -1132,19 +1249,22 @@ fn foreach_closures_share_the_loop_variables_captured_cell_exact_values() {
 #[case::self_and_pipe(". + 1 | . * 2", RuntimeValue::Number(42.0.into()))]
 #[case::multiple_inputs(". * .", RuntimeValue::Number(7.0.into()))]
 #[case::markdown_selector(".h1", heading(1))]
-fn compiled_engine_matches_tree_walker_with_input(#[case] code: &str, #[case] input: RuntimeValue) {
-    assert_vm_matches_tree_walker(code, vec![input]);
+fn compiled_engine_executes_with_input(#[case] code: &str, #[case] input: RuntimeValue) {
+    assert_vm_executes(code, vec![input]);
 }
 
 #[test]
-fn compiled_engine_matches_tree_walker_for_nodes_aggregation() {
-    assert_vm_matches_tree_walker(
-        ". * 10 | nodes | len()",
-        vec![
-            RuntimeValue::Number(1.0.into()),
-            RuntimeValue::Number(2.0.into()),
-            RuntimeValue::Number(3.0.into()),
-        ],
+fn compiled_engine_aggregates_nodes() {
+    assert_eq!(
+        vm_engine_eval_many(
+            ". * 10 | nodes | len()",
+            vec![
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ],
+        ),
+        vec![RuntimeValue::Number(3.0.into())],
     );
 }
 
@@ -1226,14 +1346,6 @@ fn text_node(value: &str) -> mq_markdown::Node {
     })
 }
 
-fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-    vm_engine_eval_many(code, vec![input]).remove(0)
-}
-
-fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    vm_engine_eval_many(code, inputs)
-}
-
 fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut engine = crate::DefaultEngine::default();
     engine.load_builtin_module();
@@ -1245,11 +1357,13 @@ fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValu
         .clone()
 }
 
-fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
+fn assert_vm_executes(code: &str, inputs: Vec<RuntimeValue>) {
+    let input_count = inputs.len();
+    let values = vm_engine_eval_many(code, inputs);
     assert_eq!(
-        vm_engine_eval_many(code, inputs.clone()),
-        tree_walk_eval_many(code, inputs),
-        "VM and tree-walker disagreed for: {code}"
+        values.len(),
+        input_count,
+        "VM returned an unexpected result count for: {code}"
     );
 }
 
@@ -1263,14 +1377,13 @@ fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
 #[case::later_iteration_bare_continue("var i = 0 | while(i < 5): i += 1 | if (i == 3): continue else: i;;")]
 #[case::until_completes_normally("until(. >= 5): . + 1;")]
 #[case::until_first_iteration_self_is_the_incoming_value("until(. != 0): is_none(.);")]
-fn while_until_matches_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::Number(0.0.into())]);
+fn while_until_executes(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::Number(0.0.into())]);
 }
 
 /// A closure created inside a loop/match block captures the block's *slot*, not a
-/// per-iteration snapshot — both engines agree a loop variable is one mutable binding
-/// reused every iteration (closures built in different iterations observe the same,
-/// final value), while a closure built before the loop keeps its own outer binding.
+/// per-iteration snapshot: a loop variable is one mutable binding reused every
+/// iteration, while a closure built before the loop keeps its own outer binding.
 #[rstest]
 #[case::foreach_loop_var_is_one_binding_shared_by_every_closure(
     "let fns = foreach(x, [1, 2, 3]): fn(): x;; | foreach(f, fns): f();"
@@ -1294,8 +1407,8 @@ fn while_until_matches_tree_walker(#[case] code: &str) {
 #[case::closure_built_before_a_loop_keeps_its_own_outer_binding(
     "let x = 100 | let f = fn(): x; | foreach(x, [1, 2, 3]): x; | f()"
 )]
-fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+fn closures_over_scoped_bindings_execute(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[rstest]
@@ -1305,13 +1418,13 @@ fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
 #[case::top_level_destructuring_var_visible_to_a_sibling_def("var [x] = [1] | def f(): x; | f()")]
 #[case::inline_module_let_visible_to_a_sibling_function("module m: let x = 1 | def f(): x; end | m::f()")]
 fn forward_declared_top_level_bindings_are_visible_to_a_sibling_def(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
 fn bare_soft_builtin_reference_inside_an_imported_module_becomes_reachable() {
     let code = r#"import "table" | table::tables(to_markdown("| id | v |\n| - | - |\n| 1 | 2 |\n| 1 | 3 |\n")) | first(self) | table::pivot_wider(self, 1, 2)"#;
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
@@ -1335,7 +1448,6 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
@@ -1356,8 +1468,6 @@ fn cached_nodes_capture_reuses_precomputed_slots() {
     assert!(compiled.cached_vm_program().flatten().is_some());
 }
 
-// Deliberate divergence from the tree-walker (which returns None here) — not worth the
-// per-iteration cost of matching it exactly.
 #[rstest]
 #[case::while_first_iteration_bare_break("while(true): break;", 7.0)]
 #[case::until_first_iteration_bare_break("until(false): break;", 7.0)]
@@ -1397,7 +1507,6 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(3.0.into())]);
 }
 
@@ -1463,7 +1572,6 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
@@ -1491,7 +1599,6 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     )
     .unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], tree_walk_eval(code, RuntimeValue::new_markdown(fragment)));
     assert_eq!(results[0].to_string(), "[a\nb]");
 }
 
@@ -1503,7 +1610,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         depth: 1,
     });
     let outer = mq_markdown::Node::Heading(mq_markdown::Heading {
-        values: vec![matching_child, text_node("no match anywhere")],
+        values: vec![matching_child.clone(), text_node("no match anywhere")],
         position: None,
         depth: 2,
     });
@@ -1525,7 +1632,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         },
     )
     .unwrap();
-    assert_eq!(results[0], tree_walk_eval(code, RuntimeValue::new_markdown(outer)));
+    assert_eq!(results, vec![RuntimeValue::new_markdown(matching_child)]);
 }
 
 #[test]
@@ -2141,6 +2248,12 @@ fn undefined_call_with_no_matching_host_function_errors() {
 
 #[rstest]
 #[case::missing_required("def add(a, b): a + b; | add()", 2, 0)]
+#[case::pipeline_self_cannot_fill_two_required_params("def add(a, b): a + b; | 10 | add()", 2, 0)]
+#[case::variadic_function_still_requires_more_than_one_missing_required_param(
+    "def add(a, b, *rest): a + b + len(rest); | add()",
+    2,
+    0
+)]
 #[case::too_many_required("def add(a, b): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_optional("def add(a, b = 1): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_zero_arity("def constant(): 1; | constant(1)", 0, 1)]
@@ -2270,7 +2383,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(96))]
 
     #[test]
-    fn generated_compiled_programs_match_the_tree_walker(
+    fn generated_compiled_programs_execute(
         initial in -100i16..100,
         scale in -10i16..10,
         offset in -100i16..100,
@@ -2281,7 +2394,7 @@ proptest! {
         let code = format!(
             "var total = {initial} | foreach(value, [{elements}]): total += value * {scale}; | let finish = fn(extra): total + extra + {offset}; | finish(.)"
         );
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
+        assert_vm_executes(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
     }
 }
 
@@ -2289,7 +2402,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     #[test]
-    fn generated_nested_closures_match_the_tree_walker(
+    fn generated_nested_closures_execute(
         x in -50i16..50,
         y in -50i16..50,
         z in -50i16..50,
@@ -2298,17 +2411,17 @@ proptest! {
         let code = format!(
             "let x = {x} | let make = fn(y): fn(z): x + y + z + {w};; | let step = make({y}) | step({z})"
         );
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+        assert_vm_executes(&code, vec![RuntimeValue::None]);
     }
 
     #[test]
-    fn generated_foreach_closures_match_the_tree_walker(
+    fn generated_foreach_closures_execute(
         values in proptest::collection::vec(-30i16..30, 1..8),
     ) {
         let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         let code =
             format!("let fns = foreach(i, [{elements}]): fn(): i * 2;; | fns | map(fn(f): f();)");
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+        assert_vm_executes(&code, vec![RuntimeValue::None]);
     }
 }
 
@@ -2600,7 +2713,7 @@ fn module_vars_binding_does_not_push_and_discard_self(module_with_vars: tempfile
 }
 
 /// A local module containing a remote `include`/`import` must still hit the top-level-only
-/// HTTP boundary when compiled through Tarn, not just the tree-walker.
+/// HTTP boundary when compiled through Tarn.
 #[rstest]
 #[case::nested_include(
     "nested_remote_include.mq",
