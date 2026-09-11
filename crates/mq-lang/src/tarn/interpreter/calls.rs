@@ -91,14 +91,54 @@ pub(super) fn generator_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>)
     StackValue::Value(RuntimeValue::Coroutine(handle))
 }
 
-pub(super) fn call_stack_value(
+pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     callee: StackValue,
     args: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut super::DebugRuntime<'_>,
 ) -> VmResult<CallStep> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
+        let resume_value = if ident == builtins::NEXT.into() && args.len() <= 1 {
+            let stream = args
+                .pop()
+                .map(|arg| into_runtime_value(arg, chunks))
+                .unwrap_or_else(|| current_self(call_site.locals, chunks));
+            Some((stream, None))
+        } else if ident == builtins::SEND.into() && (1..=2).contains(&args.len()) {
+            let Some(value) = args.pop() else {
+                return Err(locate(
+                    call_site.chunk,
+                    call_site.ip,
+                    VmError::Corrupt("missing send value after argument-count check"),
+                ));
+            };
+            let value = into_runtime_value(value, chunks);
+            let stream = args
+                .pop()
+                .map(|arg| into_runtime_value(arg, chunks))
+                .unwrap_or_else(|| current_self(call_site.locals, chunks));
+            Some((stream, Some(value)))
+        } else {
+            None
+        };
+
+        if let Some((stream, resume_value)) = resume_value {
+            let RuntimeValue::Coroutine(handle) = stream else {
+                return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable));
+            };
+            let result = super::coroutine::resume::<CHECK_TIMEOUT>(
+                &handle,
+                resume_value,
+                execution,
+                #[cfg(feature = "debugger")]
+                debug,
+            )
+            .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+            return Ok(CallStep::Value(StackValue::Value(result)));
+        }
+
         // `drain` (rather than `into_iter`) leaves `args`'s allocation intact for the
         // caller to recycle, same as every other exit path below.
         // `Args` stores the common one- and two-argument cases inline, unlike `Vec`.

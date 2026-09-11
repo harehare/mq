@@ -55,7 +55,10 @@ impl CoroutineState {
             frames: vec![frame],
             operand_stack: Vec::new(),
             chunks,
-            suspended_call_depth: 0,
+            // A created coroutine already owns its generator frame. Count it as soon as it
+            // starts running so recursively resuming child generators cannot bypass the VM's
+            // recursion limit before any of them reaches a `yield`.
+            suspended_call_depth: 1,
             #[cfg(feature = "debugger")]
             debug_call_stack: Vec::new(),
             #[cfg(feature = "debugger")]
@@ -197,8 +200,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         }
         DriveOutcome::Completed(_, _locals) => {
             debug_assert_eq!(
-                suspended_call_depth, 0,
-                "completed coroutine must release all call depth"
+                suspended_call_depth, 1,
+                "completed coroutine must release its initial generator frame depth"
             );
             state.status = CoroutineStatus::Completed;
             drop(state);
@@ -208,7 +211,10 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             Ok(done_result(RuntimeValue::None, true))
         }
         DriveOutcome::Failed(e, _locals) => {
-            debug_assert_eq!(suspended_call_depth, 0, "failed coroutine must release all call depth");
+            debug_assert_eq!(
+                suspended_call_depth, 1,
+                "failed coroutine must release its initial generator frame depth"
+            );
             let stored = Shared::new(e);
             state.status = CoroutineStatus::Failed(Shared::clone(&stored));
             drop(state);

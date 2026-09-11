@@ -1631,7 +1631,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         args.push(pop!());
                     }
                     args.reverse();
-                    let step = call_stack_value(
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
                         callee,
                         &mut args,
                         CallSite {
@@ -1642,6 +1642,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
                     );
                     execution.limits.recycle_stack(args);
                     match step? {
@@ -1683,7 +1685,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         args.push(pop!());
                     }
                     args.reverse();
-                    let step = call_stack_value(
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
                         callee,
                         &mut args,
                         CallSite {
@@ -1694,6 +1696,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
                     );
                     execution.limits.recycle_stack(args);
                     match step? {
@@ -1746,7 +1750,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     }
                     args.reverse();
                     let callee = pop!();
-                    let step = call_stack_value(
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
                         callee,
                         &mut args,
                         CallSite {
@@ -1757,6 +1761,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
                     );
                     execution.limits.recycle_stack(args);
                     match step? {
@@ -1781,7 +1787,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     _ => false,
                 };
                 if eligible {
-                    match call_stack_value(
+                    match call_stack_value::<CHECK_TIMEOUT>(
                         value,
                         &mut Vec::new(),
                         CallSite {
@@ -1792,6 +1798,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
                     )? {
                         CallStep::Value(v) => stack.push(v),
                         CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),

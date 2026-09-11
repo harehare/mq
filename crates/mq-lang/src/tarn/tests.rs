@@ -3073,6 +3073,55 @@ fn next_without_an_argument_resumes_the_pipeline_coroutine() {
     assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
 }
 
+#[rstest]
+#[case::stored("def g(): yield: 1; | let advance = next | let s = g() | advance(s)", 1)]
+#[case::passed(
+    "def apply(f, value): f(value); | def g(): yield: 2; | let s = g() | apply(next, s)",
+    2
+)]
+#[case::piped("def g(): yield: 3; | let advance = next | let s = g() | s | advance()", 3)]
+#[case::captured(
+    "def g(): yield: 4; | let advance = next | let apply = fn(stream): advance(stream); | let s = g() | apply(s)",
+    4
+)]
+#[case::contained(
+    "def g(): yield: 5; | let advances = [next] | let advance = advances[0] | let s = g() | advance(s)",
+    5
+)]
+fn next_is_first_class_across_call_paths(#[case] code: &str, #[case] expected: i64) {
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::stored_and_piped(
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | s | resume(42)",
+    42
+)]
+#[case::passed(
+    "def apply(f, stream, value): f(stream, value); | def g(): let value = yield: 1 | yield: value; | let s = g() | next(s) | apply(send, s, 99)",
+    99
+)]
+#[case::captured(
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let apply = fn(stream, value): resume(stream, value); | let s = g() | next(s) | apply(s, 100)",
+    100
+)]
+#[case::contained(
+    "def g(): let value = yield: 1 | yield: value; | let resumes = [send] | let resume = resumes[0] | let s = g() | next(s) | resume(s, 101)",
+    101
+)]
+fn send_is_first_class_across_call_paths(#[case] code: &str, #[case] expected: i64) {
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::next("def next(stream): stream + 1; | let advance = next | advance(41)", 42)]
+#[case::send("def send(stream, value): stream + value; | let resume = send | resume(40, 2)", 42)]
+fn local_resume_names_shadow_first_class_builtins(#[case] code: &str, #[case] expected: i64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
 #[test]
 fn local_next_definition_still_shadows_pipeline_resume() {
     assert_eq!(
@@ -3109,7 +3158,34 @@ fn suspended_generator_frames_do_not_consume_an_unrelated_call_depth() {
     // coroutine rather than the caller that invoked `next()`: a separate one-frame call must
     // still fit under this limit.
     let code = "def g(): try: yield: 1 catch: 0; | let s = g() | next(s) | def f(): 42; | f()";
-    assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(42.into()));
+    assert_eq!(run_with_max_depth(code, 2).unwrap(), RuntimeValue::Number(42.into()));
+}
+
+fn contains_recursion_error(error: &interpreter::VmError, max_depth: u32) -> bool {
+    match error {
+        interpreter::VmError::RecursionError(actual) => *actual == max_depth,
+        interpreter::VmError::Located(inner, _) => contains_recursion_error(inner, max_depth),
+        interpreter::VmError::CoroutineFailed(inner) => contains_recursion_error(inner, max_depth),
+        _ => false,
+    }
+}
+
+#[rstest]
+#[case::one(1)]
+#[case::four(4)]
+#[case::eight(8)]
+fn recursively_resumed_generators_respect_call_stack_depth(#[case] max_depth: u32) {
+    // Every invocation creates and resumes a child before yielding. This recursively enters
+    // `coroutine::resume` on the Rust stack, so each created generator frame must count toward
+    // the VM recursion limit before it reaches its first yield.
+    let code = "def g(n): if (n <= 0): yield: 0 else: let child = g(n - 1) | next(child) | yield: n; \
+                | let stream = g(20) \
+                | next(stream)";
+    let error = run_with_max_depth(code, max_depth).unwrap_err();
+    assert!(
+        contains_recursion_error(&error, max_depth),
+        "expected RecursionError, got {error}"
+    );
 }
 
 #[test]
