@@ -419,6 +419,17 @@ mod tests {
     }
 
     #[test]
+    fn test_coroutine_helpers_do_not_produce_type_errors() {
+        let mut hir = Hir::default();
+        hir.add_code(
+            None,
+            "def g(): yield: 1; | let s = g() | is_coroutine(s) | next(s) | send(s, 2) | status(s) | close(s)",
+        );
+        let errors = TypeChecker::new().check(&hir);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
     fn test_local_next_definition_shadows_the_generator_builtin() {
         let mut hir = Hir::default();
         hir.add_code(None, "def next(value): value + 1; | next(41)");

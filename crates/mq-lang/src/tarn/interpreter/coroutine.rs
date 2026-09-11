@@ -74,6 +74,50 @@ fn borrow_mut(handle: &CoroutineHandle) -> std::sync::RwLockWriteGuard<'_, Corou
     handle.write().unwrap()
 }
 
+#[cfg(not(feature = "sync"))]
+fn borrow(handle: &CoroutineHandle) -> std::cell::Ref<'_, CoroutineState> {
+    handle.borrow()
+}
+
+#[cfg(feature = "sync")]
+fn borrow(handle: &CoroutineHandle) -> std::sync::RwLockReadGuard<'_, CoroutineState> {
+    handle.read().unwrap()
+}
+
+/// Stable name for `handle`'s current lifecycle state, backing the `status()` builtin's symbol.
+pub(crate) fn status_name(handle: &CoroutineHandle) -> &'static str {
+    match borrow(handle).status {
+        CoroutineStatus::Created => "created",
+        CoroutineStatus::Suspended => "suspended",
+        CoroutineStatus::Running => "running",
+        CoroutineStatus::Completed => "completed",
+        CoroutineStatus::Failed(_) => "failed",
+    }
+}
+
+/// Forces `handle` straight to `Completed`, dropping its frames early. Backs `close()`.
+/// `Failed` is left as-is so its error still surfaces later. Returns `false` (no change) if
+/// `handle` is `Running`: its frames are live elsewhere on the Rust call stack.
+pub(crate) fn close(handle: &CoroutineHandle) -> bool {
+    let mut state = borrow_mut(handle);
+    match state.status {
+        CoroutineStatus::Running => false,
+        CoroutineStatus::Completed | CoroutineStatus::Failed(_) => true,
+        CoroutineStatus::Created | CoroutineStatus::Suspended => {
+            state.frames = Vec::new();
+            state.operand_stack = Vec::new();
+            state.suspended_call_depth = 0;
+            #[cfg(feature = "debugger")]
+            {
+                state.debug_call_stack = Vec::new();
+                state.debug_current_node = None;
+            }
+            state.status = CoroutineStatus::Completed;
+            true
+        }
+    }
+}
+
 fn done_result(value: RuntimeValue, done: bool) -> RuntimeValue {
     let mut map = DictMap::default();
     map.insert(Ident::new("value"), value);
@@ -81,9 +125,11 @@ fn done_result(value: RuntimeValue, done: bool) -> RuntimeValue {
     RuntimeValue::Dict(Shared::new(map))
 }
 
-/// Drives `handle` forward one step (`next(stream)`), returning a `{ value, done }` dict.
+/// Drives `handle` forward one step (`next(stream)`/`send(stream, value)`), returning a
+/// `{ value, done }` dict.
 pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     handle: &CoroutineHandle,
+    resume_value: Option<RuntimeValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
@@ -101,9 +147,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
                 state.status = CoroutineStatus::Running;
                 let mut operand_stack = std::mem::take(&mut state.operand_stack);
                 if was_suspended {
-                    // A resumed `yield` expression must leave a value on the stack, like any
-                    // other statement. `next(stream)` carries none, so it resumes to `None`.
-                    operand_stack.push(StackValue::Value(RuntimeValue::None));
+                    // The resumed `yield` expression's value; `next()` passes `None`.
+                    operand_stack.push(StackValue::Value(resume_value.unwrap_or(RuntimeValue::None)));
                 }
                 (
                     std::mem::take(&mut state.frames),

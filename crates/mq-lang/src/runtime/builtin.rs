@@ -27,6 +27,7 @@ use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
+use crate::tarn::interpreter::coroutine;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
@@ -242,6 +243,30 @@ fn type_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     match args.first() {
         Some(value) => Ok(value.name().to_string().into()),
         None => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "close", params = Fixed(1))]
+fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Coroutine(handle)] => {
+            if coroutine::close(handle) {
+                Ok(RuntimeValue::Coroutine(Shared::clone(handle)))
+            } else {
+                Err(Error::Runtime(format!("{ident}: cannot close a running coroutine")))
+            }
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+        _ => unreachable!("close should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "status", params = Fixed(1))]
+fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Coroutine(handle)] => Ok(RuntimeValue::Symbol(Ident::new(coroutine::status_name(handle)))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+        _ => unreachable!("status should always receive exactly one argument"),
     }
 }
 
@@ -5247,6 +5272,8 @@ mq_macros::builtin_dispatch! {
     PRINT,
     STDERR,
     TYPE,
+    CLOSE,
+    STATUS,
     ARRAY,
     FLATTEN,
     CONVERT,
@@ -9038,6 +9065,48 @@ x
             examples: &[BuiltinExample {
                 code: r#"def g(): yield: 1; | let stream = g() | next(stream)"#,
                 expected: r#"{"value": 1, "done": false}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("send"),
+        BuiltinFunctionDoc {
+            description: "Resumes a generator coroutine like `next`, but resumes its suspended `yield` expression to `value` instead of `None`.",
+            params: &["stream", "value"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"def g(): let a = yield: 1 | yield: a; | let stream = g() | next(stream) | send(stream, 2)"#,
+                expected: r#"{"value": 2, "done": false}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("close"),
+        BuiltinFunctionDoc {
+            description: "Forces a generator coroutine to completion, releasing its suspended frames early instead of waiting for it to be dropped.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | let stream = g() | close(stream) | next(stream)"#,
+                expected: r#"{"value": , "done": true}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("status"),
+        BuiltinFunctionDoc {
+            description: "Returns a generator coroutine's lifecycle state as a symbol: `:created`, `:suspended`, `:running`, `:completed`, or `:failed`.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "symbol",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | status(g())"#,
+                expected: r#":created"#,
             }],
             capability: None,
         },

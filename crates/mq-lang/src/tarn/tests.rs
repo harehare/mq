@@ -3184,3 +3184,99 @@ fn self_recursive_generator_call_produces_a_coroutine_instead_of_running_inline(
     assert_eq!(dict_field(&second, "done"), RuntimeValue::Boolean(true));
     assert_eq!(dict_field(&second, "value"), RuntimeValue::None);
 }
+
+#[test]
+fn send_resumes_a_suspended_yield_to_the_given_value() {
+    let code = "def g(): let a = yield: 1 | yield: a + 1; | let s = g() | next(s) | send(s, 10)";
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(11.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn send_without_an_explicit_stream_resumes_the_pipeline_coroutine() {
+    let code = "def g(): let a = yield: 1 | yield: a + 1; | let s = g() | next(s) | s | send(10)";
+    assert_eq!(dict_field(&run(code), "value"), RuntimeValue::Number(11.into()));
+}
+
+#[test]
+fn send_to_a_not_yet_started_coroutine_discards_the_value() {
+    let result = run("def g(): yield: 1; | let s = g() | send(s, 99)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn local_send_definition_still_shadows_pipeline_resume() {
+    assert_eq!(
+        run("def send(stream, v): stream + v; | 40 | send(2)"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn status_reports_each_lifecycle_state() {
+    assert_eq!(
+        run("def g(): yield: 1; | status(g())"),
+        RuntimeValue::Symbol(crate::Ident::new("created"))
+    );
+    assert_eq!(
+        run("def g(): yield: 1; | let s = g() | next(s) | status(s)"),
+        RuntimeValue::Symbol(crate::Ident::new("suspended"))
+    );
+    assert_eq!(
+        run("def g(): yield: 1; | let s = g() | next(s) | next(s) | status(s)"),
+        RuntimeValue::Symbol(crate::Ident::new("completed"))
+    );
+    let failing = "def g(): yield: 1 | 1 / 0; | let s = g() | next(s) | try: next(s) catch: 0 | status(s)";
+    assert_eq!(run(failing), RuntimeValue::Symbol(crate::Ident::new("failed")));
+}
+
+#[test]
+fn close_forces_a_suspended_coroutine_to_completion() {
+    let result = run("def g(): yield: 1; | let s = g() | next(s) | close(s) | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn close_on_a_completed_coroutine_is_a_no_op() {
+    let result = run("def g(): yield: 1; | let s = g() | next(s) | next(s) | close(s) | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn close_on_a_failed_coroutine_still_reraises_its_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let code = "def g(): yield: 1 | 1 / 0; | let s = g() | next(s) | try: next(s) catch: 0 | close(s) | next(s)";
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("division by zero"));
+}
+
+/// `close`'s `Running` check mirrors `next`'s reentrancy check: a generator that closes itself
+/// (via a captured `var`) mid-resume must fail the same way a self-`next()` does.
+#[test]
+fn closing_a_running_coroutine_errors() {
+    let code = "var s = None | let g = fn(): yield: 1 | close(s) | yield: 2; | s = g() | next(s) | next(s)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    // `builtin::Error`'s `Display` is deliberately empty (the real message is built by
+    // `to_runtime_error`), so unwrap the error shape instead of formatting it. The failure
+    // surfaces through the generator's own `CoroutineFailed`, wrapping a `Located` `Builtin` error.
+    fn close_error_message(e: &interpreter::VmError) -> Option<&str> {
+        match e {
+            interpreter::VmError::Located(inner, _) => close_error_message(inner),
+            interpreter::VmError::CoroutineFailed(inner) => close_error_message(inner),
+            interpreter::VmError::Builtin(crate::runtime::builtin::Error::Runtime(msg)) => Some(msg.as_str()),
+            _ => None,
+        }
+    }
+    let Error::Vm(vm_err) = &err else {
+        panic!("expected a VM error, got {err:?}")
+    };
+    let message = close_error_message(vm_err).unwrap_or_else(|| panic!("expected a close error, got {err:?}"));
+    assert!(message.contains("cannot close a running coroutine"));
+}
