@@ -998,6 +998,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 .param_shape
                 .fixed_required_arity()
                 .is_some()
+            && !self.chunks[chunk_index as usize].is_generator
         {
             self.scope_mut().set_static_function(slot, chunk_index);
         } else {
@@ -2378,8 +2379,9 @@ impl<R: ModuleResolver> Compiler<R> {
             self.current_token_id = call_token_id;
             let argc = self.arg_count(args.len())?;
             self.emit(match Self::fixed_call_form(arity, argc) {
-                // Exact-arity opcodes skip generator detection; a generator's self-call can't use them.
-                FixedCallForm::Exact if is_generator => OpCode::CallSelf(argc),
+                // Fixed-call opcodes enter a frame directly; a generator's self-call must create
+                // a coroutine through the checked path instead.
+                FixedCallForm::Exact | FixedCallForm::ImplicitSelf if is_generator => OpCode::CallSelf(argc),
                 FixedCallForm::Exact => Self::self_exact_call_opcode(argc),
                 FixedCallForm::ImplicitSelf => OpCode::CallSelfImplicitSelf(argc),
                 FixedCallForm::Fallback => OpCode::CallSelf(argc),

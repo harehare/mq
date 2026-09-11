@@ -14,7 +14,7 @@ use self::calls::{
     CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
     call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
     call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
-    call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine, negate_ident,
+    call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine, generator_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -1374,7 +1374,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallStatic(chunk_index, argc) => {
-                let step = call_static_chunk_from_stack(
+                let new_frame = call_static_chunk_from_stack(
                     *chunk_index,
                     *argc,
                     stack,
@@ -1387,9 +1387,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                match step {
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                    CallStep::Value(v) => stack.push(v),
+                if chunks[*chunk_index as usize].is_generator {
+                    stack.push(generator_coroutine(new_frame, chunks));
+                } else {
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 }
             }
             OpCode::CallStaticExact0(target) => {
@@ -1449,7 +1450,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::CallStaticExact(chunk_index, argc) | OpCode::CallStaticImplicitSelf(chunk_index, argc) => {
-                let step = call_known_fixed_chunk_from_stack(
+                let new_frame = call_known_fixed_chunk_from_stack(
                     KnownFixedChunkCall {
                         chunk_index: *chunk_index,
                         upvalues: None,
@@ -1467,10 +1468,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                match step {
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                    CallStep::Value(v) => stack.push(v),
-                }
+                break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::CallSelf(argc) => {
                 let step = call_self_chunk_from_stack(
@@ -1549,7 +1547,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
-                let step = call_known_fixed_chunk_from_stack(
+                let new_frame = call_known_fixed_chunk_from_stack(
                     KnownFixedChunkCall {
                         chunk_index: frame.chunk_index,
                         upvalues: frame.upvalues.clone(),
@@ -1567,10 +1565,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                match step {
-                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
-                    CallStep::Value(v) => stack.push(v),
-                }
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
             }
             OpCode::CallLocal(slot, argc) => {
                 let callee = locals.get(*slot);
@@ -1579,8 +1574,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
-                    let step = call_fixed_closure_from_stack(
+                    let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure,
                             argc: *argc,
@@ -1596,10 +1592,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    match step {
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                        CallStep::Value(v) => stack.push(v),
-                    }
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 } else {
                     // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
                     // variadic/optional params, `partial`-bound closures) runs often enough in
@@ -1637,8 +1630,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
-                    let step = call_fixed_closure_from_stack(
+                    let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure,
                             argc: *argc,
@@ -1654,10 +1648,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    match step {
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                        CallStep::Value(v) => stack.push(v),
-                    }
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 } else {
                     let mut args = execution.limits.take_stack();
                     for _ in 0..*argc {
@@ -1696,12 +1687,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
                     // Keep the callee below its arguments until the fixed-call binder has
                     // popped them. This avoids `Vec::remove(callee_index)`, which shifts
                     // every argument and is especially costly for large calls.
                     let closure = Shared::clone(closure);
-                    let step = call_fixed_closure_from_stack(
+                    let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure: &closure,
                             argc: *argc,
@@ -1717,10 +1709,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         chunks,
                         execution,
                     )?;
-                    match step {
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                        CallStep::Value(v) => stack.push(v),
-                    }
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 } else {
                     // See the `CallLocal` non-fixed-arity path above for why this is pooled.
                     let mut args = execution.limits.take_stack();

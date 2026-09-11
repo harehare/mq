@@ -551,6 +551,31 @@ fn defaulted_named_calls_keep_the_generic_local_form() {
 }
 
 #[test]
+fn generator_calls_stay_on_the_coroutine_aware_generic_paths() {
+    use super::bytecode::OpCode;
+
+    let source = "def g(value): yield: value | if (false): g() else: None; | let stream = g(42) | next(stream)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallLocal(_, 1))),
+        "a generator call must not use a direct static frame-enter opcode"
+    );
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .any(|chunk| { chunk.code.iter().any(|op| matches!(op, OpCode::CallSelf(0))) })
+    );
+    assert_eq!(dict_field(&run(source), "value"), RuntimeValue::Number(42.into()));
+}
+
+#[test]
 fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
     use super::bytecode::OpCode;
 
