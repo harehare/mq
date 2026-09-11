@@ -1,4 +1,4 @@
-//! `VmError`: Tarn's runtime error type, its `Display`/tree-walker-error conversions, and the
+//! `VmError`: Tarn's runtime error type, its `Display`/`RuntimeError` conversions, and the
 //! small helpers (`locate`, `error_dict`, `error_message`, `flow_break_value`/`flow_continue`)
 //! built on top of it.
 use crate::DictMap;
@@ -78,8 +78,8 @@ impl VmError {
         }
     }
 
-    /// Maps to the tree-walker's `RuntimeError`, reusing its `Display` text instead of
-    /// duplicating each variant's wording.
+    /// Maps to the common `RuntimeError`, reusing its `Display` text instead of duplicating
+    /// each variant's wording.
     pub(crate) fn to_runtime_error(
         &self,
         token: crate::Token,
@@ -255,10 +255,7 @@ mod tests {
         builtin::Error::InvalidConvert("bogus".to_string()),
         "Invalid convert: bogus"
     )]
-    fn builtin_error_message_matches_the_tree_walkers_runtime_error_display(
-        #[case] error: builtin::Error,
-        #[case] expected: &str,
-    ) {
+    fn builtin_error_message_matches_runtime_error_display(#[case] error: builtin::Error, #[case] expected: &str) {
         assert_eq!(error_message(&VmError::Builtin(error)), expected);
     }
 
@@ -316,7 +313,7 @@ mod tests {
         VmError::CoroutineFailed(Shared::new(VmError::ZeroDivision)),
         "Division by zero"
     )]
-    fn vm_error_message_matches_the_tree_walkers_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
+    fn vm_error_message_matches_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
         assert_eq!(error_message(&error), expected);
     }
 
@@ -348,7 +345,7 @@ mod tests {
 
     /// Guards against the two error-message paths drifting apart again: the VM's own
     /// `1 / 0` fast path used to report "division by zero" (lowercase) via `VmError`'s own
-    /// `Display`, while the tree-walker reported "Division by zero" for the same script.
+    /// `Display`, while the user-facing `RuntimeError` reports "Division by zero".
     #[test]
     fn zero_division_message_matches_through_a_real_try_catch() {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));

@@ -1,5 +1,4 @@
-//! Tarn: mq's bytecode VM, an alternative to the tree-walking evaluator (`eval.rs`).
-//! Enabled via the `tarn` feature, which routes `Engine::eval`/`eval_compiled` here instead.
+//! Tarn: mq's bytecode VM, which powers `Engine::eval` and `Engine::eval_compiled`.
 //!
 //! VM closures have a `RuntimeValue::VmClosure` representation, so they can be stored in
 //! collections and passed to native higher-order functions such as `partial`.
@@ -51,7 +50,7 @@ use std::time::{Duration, Instant};
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler, SharedCell, Source};
 
-/// VM execution limits, independent of the tree-walking evaluator.
+/// VM execution limits.
 #[derive(Debug, Clone)]
 pub(crate) struct Options {
     pub(crate) max_call_stack_depth: u32,
@@ -72,7 +71,7 @@ impl Default for Options {
 /// Flat external bindings visible to VM bytecode and builtin error reporting.
 ///
 /// VM lexical bindings are represented by slots and upvalue cells, so this deliberately has
-/// neither parent scopes nor mutability tracking from the tree-walker's `Env`.
+/// neither parent scopes nor separate mutability tracking.
 #[derive(Debug, Default)]
 pub(crate) struct VmEnv {
     globals: FxHashMap<crate::Ident, RuntimeValue>,

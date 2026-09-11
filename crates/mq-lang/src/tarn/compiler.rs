@@ -146,8 +146,8 @@ struct Compiler<R: ModuleResolver> {
     /// `try` body inherits this from its enclosing scope; a default-parameter expression does
     /// not (see the two call sites that toggle it). Gates `yield`.
     in_fn_body: bool,
-    /// Engine evaluation resolves unknown names at runtime, matching the tree walker. This
-    /// preserves lazy control-flow and function-body semantics for names that are never read.
+    /// Engine evaluation resolves unknown names at runtime. This preserves lazy control-flow
+    /// and function-body semantics for names that are never read.
     defer_undefined_identifiers: bool,
     patterns: PatternState,
 }
@@ -1506,7 +1506,7 @@ impl<R: ModuleResolver> Compiler<R> {
         };
         let module = self.load_module_or_reload(path)?;
         // Balanced with the pop below regardless of outcome: nested include/import must not
-        // reach the network once we're inside a loaded module (matches the tree-walker).
+        // reach the network once we're inside a loaded module.
         #[cfg(feature = "http-import")]
         self.module_loader.push_http_boundary();
         let directives_result = self.compile_module_directives(&module.modules, &[]);
