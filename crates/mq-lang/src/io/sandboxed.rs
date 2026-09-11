@@ -1,4 +1,4 @@
-use super::{HttpRequestSpec, Io, IoError, NativeIo};
+use super::{FileMetadata, HttpRequestSpec, Io, IoError, NativeIo};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -204,6 +204,16 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.file_size(path)
     }
 
+    fn metadata(&self, path: &Path) -> Result<FileMetadata, IoError> {
+        if self.allow_read.is_denied() {
+            return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.allow_read.permits(path) {
+            return Err(denied_path("read", path));
+        }
+        self.inner.metadata(path)
+    }
+
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
@@ -352,6 +362,18 @@ mod tests {
         }
 
         assert_eq!(io.write(Path::new(target), b"x").is_ok(), expected_ok);
+    }
+
+    #[test]
+    fn test_metadata_denied_by_default_then_allowed() {
+        let io = SandboxedIo::new(MemIo::default().with_file("/a.txt", "content"));
+        assert!(matches!(
+            io.metadata(Path::new("/a.txt")),
+            Err(IoError::PermissionDenied(_))
+        ));
+
+        let io = io.allow_read(true);
+        assert_eq!(io.metadata(Path::new("/a.txt")).unwrap().size, 7);
     }
 
     #[test]

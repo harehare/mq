@@ -514,7 +514,7 @@ struct InputArgs {
     #[arg(short = 'N', long = "allow-net", num_args = 0.., require_equals = true, value_delimiter = ',', value_name = "DOMAIN")]
     allow_net: Option<Vec<String>>,
 
-    /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images`
+    /// Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`file_info`/`embed_images`
     /// functions to read from the filesystem. Disabled by default. Pass with no value to
     /// allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the
     /// flag, or comma-separate, to add more) to restrict reads to just those paths and

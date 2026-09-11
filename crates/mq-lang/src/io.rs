@@ -61,6 +61,41 @@ pub struct HttpRequestSpec {
     pub headers: Vec<(String, String)>,
 }
 
+/// Kind of filesystem entry reported by [`Io::metadata`]. Reflects the entry itself
+/// (via a symlink-unaware stat), not what a symlink points to — a symlink is always
+/// reported as `Symlink`, never followed to its target's kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileKind {
+    File,
+    Dir,
+    Symlink,
+    /// A platform-specific entry that is neither a regular file, directory, nor symlink
+    /// (e.g. a Unix socket or device file).
+    Other,
+}
+
+impl FileKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FileKind::File => "file",
+            FileKind::Dir => "dir",
+            FileKind::Symlink => "symlink",
+            FileKind::Other => "other",
+        }
+    }
+}
+
+/// Metadata for the entry at a path, as returned by [`Io::metadata`], backing the
+/// `file_info` builtin. Never follows a symlink to inspect its target — see [`FileKind`].
+#[derive(Debug, Clone, Copy)]
+pub struct FileMetadata {
+    pub kind: FileKind,
+    pub size: u64,
+    /// Modification time as a unix timestamp (seconds), or `None` if the platform/filesystem
+    /// doesn't report one.
+    pub modified: Option<i64>,
+}
+
 /// Abstracts file, environment-variable, and network access for the mq
 /// engine. All methods are synchronous, matching the existing sync contract
 /// of [`ModuleResolver::resolve`](crate::module::resolver::ModuleResolver::resolve)
@@ -79,6 +114,9 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
 
     /// Size of the file at `path`, in bytes.
     fn file_size(&self, path: &Path) -> Result<u64, IoError>;
+
+    /// Kind/size/modification-time of the entry at `path`, backing the `file_info` builtin.
+    fn metadata(&self, path: &Path) -> Result<FileMetadata, IoError>;
 
     /// `(path, is_dir)` pairs for the immediate entries of a directory.
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError>;

@@ -4717,6 +4717,40 @@ fn file_size_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
     }
 }
 
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "file_info", params = Fixed(1))]
+fn file_info_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => {
+            let metadata = io_context::current()
+                .metadata(std::path::Path::new(path.as_str()))
+                .map_err(|e| Error::Runtime(format!("Failed to get info for {}: {}", path, e)))?;
+
+            let mut record = BTreeMap::new();
+            record.insert(Ident::new("path"), RuntimeValue::String(path.clone()));
+            record.insert(
+                Ident::new("kind"),
+                RuntimeValue::String(Shared::new(metadata.kind.as_str().to_string())),
+            );
+            record.insert(
+                Ident::new("size"),
+                RuntimeValue::Number((metadata.size as usize).into()),
+            );
+            record.insert(
+                Ident::new("modified"),
+                metadata
+                    .modified
+                    .map(|secs| RuntimeValue::Number(secs.into()))
+                    .unwrap_or(RuntimeValue::NONE),
+            );
+
+            Ok(RuntimeValue::Dict(Shared::new(record)))
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("file_info should always receive exactly one argument"),
+    }
+}
+
 /// Reads the contents of `path` as raw bytes. Requires the ambient [`Io`]'s read
 /// permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
@@ -5555,6 +5589,8 @@ mq_macros::builtin_dispatch! {
     FILE_EXISTS,
     #[cfg(feature = "file-io")]
     FILE_SIZE,
+    #[cfg(feature = "file-io")]
+    FILE_INFO,
     #[cfg(feature = "file-io")]
     READ_FILE_BYTES,
     #[cfg(feature = "file-io")]
@@ -6555,7 +6591,7 @@ pub struct BuiltinFunctionDoc {
 }
 
 pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>> = LazyLock::new(|| {
-    let mut map = FxHashMap::with_capacity_and_hasher(112, FxBuildHasher);
+    let mut map = FxHashMap::with_capacity_and_hasher(113, FxBuildHasher);
 
     map.insert(
         SmolStr::new("halt"),
@@ -8837,6 +8873,18 @@ x
             params: &["path"],
             param_types: &["string"],
             returns: "number",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("file_info"),
+        BuiltinFunctionDoc {
+            description: "Returns `{path, kind, size, modified}` for the entry at the given path: `kind` is `\"file\"`, `\"dir\"`, `\"symlink\"`, or `\"other\"`; `size` is in bytes; `modified` is a unix timestamp in seconds, or `None` if unavailable. A symlink is reported as `\"symlink\"` and never followed. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["path"],
+            param_types: &["string"],
+            returns: "dict",
             examples: &[],
             capability: Some("file-io"),
         },
@@ -14207,6 +14255,10 @@ mod tests {
             call("file_size", vec![RuntimeValue::String(Shared::new(text_path.clone()))]).is_err(),
             "file_size should be blocked when read access is not allowed"
         );
+        assert!(
+            call("file_info", vec![RuntimeValue::String(Shared::new(text_path.clone()))]).is_err(),
+            "file_info should be blocked when read access is not allowed"
+        );
 
         let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
         assert_eq!(
@@ -14270,6 +14322,95 @@ mod tests {
             "file_size should error for a nonexistent file"
         );
         assert!(call("file_size", vec![RuntimeValue::Number(42.into())]).is_err());
+
+        match call("file_info", vec![RuntimeValue::String(Shared::new(text_path.clone()))])
+            .expect("file_info should succeed")
+        {
+            RuntimeValue::Dict(d) => {
+                assert_eq!(
+                    d.get(&Ident::new("path")),
+                    Some(&RuntimeValue::String(Shared::new(text_path.clone())))
+                );
+                assert_eq!(
+                    d.get(&Ident::new("kind")),
+                    Some(&RuntimeValue::String(Shared::new("file".to_string())))
+                );
+                assert_eq!(d.get(&Ident::new("size")), Some(&RuntimeValue::Number(5.into())));
+                assert!(matches!(d.get(&Ident::new("modified")), Some(RuntimeValue::Number(_))));
+            }
+            other => panic!("expected Dict, got {other:?}"),
+        }
+        assert!(
+            call(
+                "file_info",
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_file.md".into()
+                ))]
+            )
+            .is_err(),
+            "file_info should error for a nonexistent file"
+        );
+        assert!(call("file_info", vec![RuntimeValue::Number(42.into())]).is_err());
+
+        #[cfg(unix)]
+        {
+            let dir = tempfile::tempdir().expect("failed to create temp dir");
+            match call(
+                "file_info",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned(),
+                ))],
+            )
+            .expect("file_info should succeed for a directory")
+            {
+                RuntimeValue::Dict(d) => {
+                    assert_eq!(
+                        d.get(&Ident::new("kind")),
+                        Some(&RuntimeValue::String(Shared::new("dir".to_string())))
+                    );
+                }
+                other => panic!("expected Dict, got {other:?}"),
+            }
+
+            let target = dir.path().join("target.txt");
+            std::fs::write(&target, "hello world").expect("failed to write");
+            let link = dir.path().join("link.txt");
+            std::os::unix::fs::symlink(&target, &link).expect("failed to create symlink");
+            match call(
+                "file_info",
+                vec![RuntimeValue::String(Shared::new(link.to_string_lossy().into_owned()))],
+            )
+            .expect("file_info should succeed for a symlink")
+            {
+                RuntimeValue::Dict(d) => {
+                    assert_eq!(
+                        d.get(&Ident::new("kind")),
+                        Some(&RuntimeValue::String(Shared::new("symlink".to_string())))
+                    );
+                }
+                other => panic!("expected Dict, got {other:?}"),
+            }
+
+            // A cyclic symlink resolves instantly since file_info never follows symlinks.
+            let a = dir.path().join("a");
+            let b = dir.path().join("b");
+            std::os::unix::fs::symlink(&b, &a).expect("failed to create symlink");
+            std::os::unix::fs::symlink(&a, &b).expect("failed to create symlink");
+            match call(
+                "file_info",
+                vec![RuntimeValue::String(Shared::new(a.to_string_lossy().into_owned()))],
+            )
+            .expect("file_info should succeed for a cyclic symlink")
+            {
+                RuntimeValue::Dict(d) => {
+                    assert_eq!(
+                        d.get(&Ident::new("kind")),
+                        Some(&RuntimeValue::String(Shared::new("symlink".to_string())))
+                    );
+                }
+                other => panic!("expected Dict, got {other:?}"),
+            }
+        }
 
         // Basic collection: YAML/TOML frontmatter, title, content, sorted by path.
         {
