@@ -406,15 +406,35 @@ impl Default for TypeChecker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mq_hir::SymbolKind;
+    use mq_hir::{HirError, SymbolKind};
     use rstest::rstest;
 
     #[test]
     fn test_generator_code_does_not_produce_type_errors() {
         let mut hir = Hir::default();
         hir.add_code(None, "def g(): yield: 1; | let s = g() | next(s)");
+        assert_no_unresolved_next(&hir);
         let errors = TypeChecker::new().check(&hir);
         assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    #[test]
+    fn test_local_next_definition_shadows_the_generator_builtin() {
+        let mut hir = Hir::default();
+        hir.add_code(None, "def next(value): value + 1; | next(41)");
+        assert_no_unresolved_next(&hir);
+        let errors = TypeChecker::new().check(&hir);
+        assert!(errors.is_empty(), "{errors:?}");
+    }
+
+    fn assert_no_unresolved_next(hir: &Hir) {
+        assert!(
+            !hir.errors().iter().any(|error| {
+                matches!(error, HirError::UnresolvedSymbol { symbol, .. } if symbol.value.as_deref() == Some("next"))
+            }),
+            "{:#?}",
+            hir.errors()
+        );
     }
 
     #[test]

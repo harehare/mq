@@ -37,12 +37,12 @@ impl LintRule for InfiniteLoop {
     }
 }
 
-/// Returns true if any descendant of `ancestor_id` is `Keyword("break")` or `Keyword("yield")`.
+/// Returns true if any descendant of `ancestor_id` is `Keyword("break")`.
 /// Keyword symbols use `insert_symbol`, so we use `all_symbols`.
 fn has_exit_descendant(ctx: &LintContext<'_>, ancestor_id: SymbolId) -> bool {
     ctx.all_symbols().any(|(_, s)| {
         matches!(s.kind, SymbolKind::Keyword)
-            && matches!(s.value.as_deref(), Some("break") | Some("yield"))
+            && s.value.as_deref() == Some("break")
             && is_descendant_of(ctx, s.parent, ancestor_id)
     })
 }
@@ -86,9 +86,15 @@ mod tests {
     #[case("loop break end")]
     #[case("loop if (true): break else: .h1 end")]
     #[case("while (.h1): .h1 end")]
-    #[case("def g(): loop yield: 1 end;")]
+    #[case("def g(): loop yield: 1 | break end;")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);
+    }
+
+    #[test]
+    fn yield_does_not_make_a_generator_loop_finite() {
+        let diags = check("def ticks(): loop yield: 1 end;");
+        assert_eq!(diags.len(), 1);
     }
 }

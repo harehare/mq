@@ -1343,6 +1343,12 @@ fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "is_debug_mode", Type::Bool);
     register_nullary(ctx, "breakpoint", Type::None);
 
+    // `next()` may take its coroutine from the pipeline or explicitly as its sole argument.
+    // Coroutines and their `{ value, done }` records are runtime-only VM types for now, so the
+    // checker models both sides as dynamic while still resolving the builtin name.
+    register_nullary(ctx, "next", Type::Dynamic);
+    register_unary(ctx, "next", Type::Dynamic, Type::Dynamic);
+
     let a = ctx.fresh_var();
     register_unary(ctx, "assert", Type::Var(a), Type::Var(a));
 }

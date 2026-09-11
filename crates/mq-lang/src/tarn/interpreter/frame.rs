@@ -170,6 +170,33 @@ impl ExecutionLimits {
         self.deadline.is_some()
     }
 
+    /// Adds a suspended coroutine's frame depth to the active caller depth.
+    ///
+    /// Suspended frames are not currently in the trampoline, but they still count toward the
+    /// recursion limit while the coroutine is being resumed. Returns the caller depth needed to
+    /// restore this execution after the coroutine yields, completes, or fails.
+    pub(super) fn enter_suspended_call_depth(&mut self, suspended_depth: u32) -> VmResult<u32> {
+        let caller_depth = self.call_depth;
+        let Some(combined_depth) = caller_depth.checked_add(suspended_depth) else {
+            return Err(VmError::RecursionError(self.max_call_stack_depth));
+        };
+        if combined_depth > self.max_call_stack_depth {
+            return Err(VmError::RecursionError(self.max_call_stack_depth));
+        }
+        self.call_depth = combined_depth;
+        Ok(caller_depth)
+    }
+
+    /// Detaches a coroutine's frame depth and restores its caller's active depth.
+    pub(super) fn leave_suspended_call_depth(&mut self, caller_depth: u32) -> u32 {
+        let suspended_depth = self
+            .call_depth
+            .checked_sub(caller_depth)
+            .expect("coroutine call depth must include its caller depth");
+        self.call_depth = caller_depth;
+        suspended_depth
+    }
+
     /// Pushes a frame, enforcing `max_call_stack_depth`.
     #[cfg_attr(not(feature = "debugger"), allow(unused_mut))]
     pub(super) fn push_frame(

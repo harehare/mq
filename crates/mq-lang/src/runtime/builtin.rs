@@ -9029,6 +9029,20 @@ x
         },
     );
     map.insert(
+        SmolStr::new("next"),
+        BuiltinFunctionDoc {
+            description: "Resumes a generator coroutine and returns its next value and completion status.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | let stream = g() | next(stream)"#,
+                expected: r#"{value: 1, done: false}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("input"),
         BuiltinFunctionDoc {
             description: "Reads a line from standard input and returns it as a string.",
