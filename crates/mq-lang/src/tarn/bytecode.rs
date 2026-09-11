@@ -364,6 +364,8 @@ pub(crate) enum OpCode {
     /// Propagates `continue` from a nested `try` closure.
     FlowContinue,
     RaiseDestructuringFailed,
+    /// Returns a local directly, without materializing it on the operand stack first.
+    ReturnLocal(u16),
     Return,
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
@@ -456,6 +458,7 @@ impl OpCode {
             Self::FlowBreak(_) => "FlowBreak",
             Self::FlowContinue => "FlowContinue",
             Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
+            Self::ReturnLocal(_) => "ReturnLocal",
             Self::Return => "Return",
             Self::Yield => "Yield",
             Self::Resume(_) => "Resume",
@@ -699,7 +702,7 @@ impl fmt::Display for BytecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyChunk(chunk) => write!(f, "chunk {chunk} has no instructions"),
-            Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in Return"),
+            Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in a return instruction"),
             Self::TooManyChunks(count) => write!(f, "bytecode has {count} chunks; the VM limit is 65536"),
             Self::TooManyConstants { chunk, count } => {
                 write!(f, "chunk {chunk} has {count} constants; the VM limit is 65536")
@@ -809,6 +812,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                     | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
                     | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
                     | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
+                    | (OpCode::GetLocal(_), Some(OpCode::Return))
                     | (OpCode::Jump(0), _)
             )
         }
@@ -874,6 +878,13 @@ fn optimize_chunk(chunk: &mut Chunk) {
                     local: *left,
                     value: *right,
                 };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::GetLocal(slot), Some(OpCode::Return))
+                if !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::ReturnLocal(*slot);
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -1064,7 +1075,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         if chunk.code.is_empty() {
             return Err(BytecodeError::EmptyChunk(chunk_index));
         }
-        if !matches!(chunk.code.last(), Some(OpCode::Return)) {
+        if !matches!(chunk.code.last(), Some(OpCode::Return | OpCode::ReturnLocal(_))) {
             return Err(BytecodeError::MissingReturn(chunk_index));
         }
         let max_entries = usize::from(u16::MAX) + 1;
@@ -1106,6 +1117,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::TeeLocal(slot)
+                | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
                 | OpCode::ForeachCollect(slot)
                 | OpCode::ArrayLenLocal(slot) => {
@@ -1577,6 +1589,36 @@ mod tests {
     }
 
     #[test]
+    fn peephole_returns_a_local_without_using_the_operand_stack() {
+        let mut chunk = Chunk {
+            code: vec![OpCode::GetLocal(0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(chunk.code.as_slice(), [OpCode::ReturnLocal(0)]));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_keeps_a_return_target_that_needs_its_operand() {
+        let mut chunk = Chunk {
+            code: vec![OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return]
+        ));
+    }
+
+    #[test]
     fn peephole_does_not_fuse_set_local_get_local_across_a_jump_target() {
         let mut chunk = Chunk {
             code: vec![
@@ -1734,6 +1776,7 @@ mod tests {
 
     #[rstest]
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::return_local(vec![OpCode::ReturnLocal(0)])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
     #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::copy_local(vec![

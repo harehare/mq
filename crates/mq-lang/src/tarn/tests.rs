@@ -286,6 +286,29 @@ fn local_binary_expressions_use_compact_bytecode() {
 }
 
 #[test]
+fn local_return_uses_compact_bytecode() {
+    #[cfg(not(feature = "debugger"))]
+    {
+        use super::bytecode::OpCode;
+
+        let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+        let program = crate::parse("let identity = fn(x): x; | identity(42)", Shared::clone(&token_arena)).unwrap();
+        let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+        assert!(
+            compiled.chunks[1]
+                .code
+                .iter()
+                .any(|op| matches!(op, OpCode::ReturnLocal(_)))
+        );
+    }
+    assert_eq!(
+        run("let identity = fn(x): x; | identity(42)"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
 fn local_constant_assignment_uses_update_opcode() {
     use super::bytecode::{BinaryOp, OpCode};
 
@@ -2708,7 +2731,7 @@ fn repeated_next_resumes_after_the_previous_yield() {
 #[test]
 fn next_past_the_last_yield_completes_the_coroutine() {
     let result = run_generator_program(&generator_program(vec![drive_n_times(3), yield_1_2_return_3()])).unwrap();
-    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(3.into()));
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
     assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
 }
 
@@ -2834,6 +2857,14 @@ fn range_example_yields_then_completes() {
 }
 
 #[test]
+fn generator_completion_discards_the_function_return_value() {
+    let def = "def g(): yield: 1 | 42; | let stream = g()";
+    let result = run_yield_source(def, 2);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
 fn bare_yield_produces_none_value() {
     let result = run("def g(): yield; | let s = g() | next(s)");
     assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
@@ -2932,5 +2963,5 @@ fn self_recursive_generator_call_produces_a_coroutine_instead_of_running_inline(
 
     let second = run_yield_source(&format!("{def} | let stream = g(1)"), 2);
     assert_eq!(dict_field(&second, "done"), RuntimeValue::Boolean(true));
-    assert!(matches!(dict_field(&second, "value"), RuntimeValue::Coroutine(_)));
+    assert_eq!(dict_field(&second, "value"), RuntimeValue::None);
 }

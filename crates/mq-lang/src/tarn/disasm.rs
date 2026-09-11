@@ -312,6 +312,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::FlowBreak(has_value) => format!("FlowBreak has_value={has_value}"),
         bytecode::OpCode::FlowContinue => "FlowContinue".to_string(),
         bytecode::OpCode::RaiseDestructuringFailed => "RaiseDestructuringFailed".to_string(),
+        bytecode::OpCode::ReturnLocal(slot) => format!("ReturnLocal {}", local(*slot)),
         bytecode::OpCode::Return => "Return".to_string(),
         bytecode::OpCode::Yield => "Yield".to_string(),
         bytecode::OpCode::Resume(argc) => format!("Resume argc={argc}"),

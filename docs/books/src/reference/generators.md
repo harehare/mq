@@ -44,7 +44,8 @@ def g():
 ```
 
 `next()` past the last `yield` completes the coroutine: its `value` is `None` and `done` is
-`true`. Calling `next()` again after completion keeps returning `{"value": None, "done": true}`.
+`true`. A generator function's final expression is not exposed as a completion value. Calling
+`next()` again after completion keeps returning `{"value": None, "done": true}`.
 
 ## Rules
 

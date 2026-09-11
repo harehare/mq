@@ -1809,6 +1809,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::RaiseDestructuringFailed => {
                 bail!(VmError::DestructuringFailed);
             }
+            OpCode::ReturnLocal(slot) => {
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                break 'dispatch FrameOutcome::Complete(unsafe { locals.get_unchecked(*slot) });
+            }
             OpCode::Return => {
                 let v = pop!();
                 break 'dispatch FrameOutcome::Complete(v);
