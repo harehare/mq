@@ -4625,7 +4625,7 @@ fn file_info_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
                 .metadata(std::path::Path::new(path.as_str()))
                 .map_err(|e| Error::Runtime(format!("Failed to get info for {}: {}", path, e)))?;
 
-            let mut record = BTreeMap::new();
+            let mut record = DictMap::default();
             record.insert(Ident::new("path"), RuntimeValue::String(path.clone()));
             record.insert(
                 Ident::new("kind"),
