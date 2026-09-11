@@ -71,6 +71,15 @@ def g():
 Sending a value to a not-yet-started (`Created`) coroutine has nothing to resume into, so the
 value is silently discarded, same as an ordinary `next()`.
 
+Both helpers can be used as values when a higher-order workflow is useful:
+
+```mq
+def g(): yield: 1;
+| let advance = next
+| let stream = g()
+| advance(stream)
+```
+
 ## Introspection
 
 - `is_coroutine(value)` reports whether `value` is a coroutine.
@@ -98,7 +107,8 @@ same as reentrant `next()`.
 ## Rules
 
 - `next(stream)`/`send(stream, value)` (or piped as `stream | next()`/`stream | send(value)`)
-  are plain calls, not keywords. A local `def next(...)`/`def send(...)` shadows them.
+  are plain, first-class calls, not keywords: they can be stored or passed like other builtins.
+  A local `def next(...)`/`def send(...)` shadows them.
 - Re-entering the same coroutine (calling `next()`/`send()`/`close()` on it while it is already
   running) is a runtime error.
 - A nested `def`/`fn`'s `yield` only makes that nested function a generator; it does not affect

@@ -2328,7 +2328,13 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::GetExternalGlobal(name));
                 Ok(())
             }
-            None if builtin::get_builtin_functions(&name).is_some() => {
+            // `next` and `send` use dedicated bytecode for direct calls, but remain ordinary
+            // first-class builtins when referenced as values. Local/upvalue resolution above
+            // deliberately takes precedence, preserving shadowing.
+            None if builtin::get_builtin_functions(&name).is_some()
+                || name == builtins::NEXT.into()
+                || name == builtins::SEND.into() =>
+            {
                 let idx = self.chunk_mut().push_const(RuntimeValue::NativeFunction(name));
                 self.emit(OpCode::Const(idx));
                 Ok(())
