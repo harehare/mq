@@ -661,9 +661,14 @@ fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
 }
 
 #[test]
-fn tail_recursive_call_reuses_its_frame() {
-    let code = "def count(n): if (n <= 0): 0 else: count(n - 1); | count(100)";
-    assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(0.0.into()));
+fn tail_recursive_call_respects_call_stack_depth() {
+    // This terminates even without a recursion guard. Before tail calls counted toward the
+    // configured limit, it returned `3` instead of reporting the exhausted depth.
+    let code = "def count(n): if (n >= 3): n else: count(n + 1); | count(0)";
+    assert!(matches!(
+        run_with_max_depth(code, 2),
+        Err(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::RecursionError(2))
+    ));
 }
 
 /// Direct builtin calls preserve argument order through the specialized common-arity paths.
@@ -1531,12 +1536,26 @@ fn cached_nodes_capture_reuses_precomputed_slots() {
 }
 
 #[rstest]
-#[case::while_first_iteration_bare_break("while(true): break;", 7.0)]
-#[case::until_first_iteration_bare_break("until(false): break;", 7.0)]
-fn bare_break_before_any_completed_iteration_keeps_the_incoming_value(#[case] code: &str, #[case] input: f64) {
+#[case::while_first_iteration_bare_break("while(true): break;")]
+#[case::until_first_iteration_bare_break("until(false): break;")]
+#[case::while_first_iteration_bare_break_through_try("while(true): try: break catch: 1;;")]
+#[case::until_first_iteration_bare_break_through_try("until(false): try: break catch: 1;;")]
+fn bare_break_before_any_completed_iteration_returns_none(#[case] code: &str) {
     assert_eq!(
-        run_with_input(code, RuntimeValue::Number(input.into())),
-        RuntimeValue::Number(input.into())
+        run_with_input(code, RuntimeValue::Number(7.0.into())),
+        RuntimeValue::None
+    );
+}
+
+#[rstest]
+#[case::while_first_iteration_break_with_value("while(true): break: 999;")]
+#[case::until_first_iteration_break_with_value("until(false): break: 999;")]
+#[case::while_first_iteration_break_with_value_through_try("while(true): try: break: 999 catch: 1;;")]
+#[case::until_first_iteration_break_with_value_through_try("until(false): try: break: 999 catch: 1;;")]
+fn break_with_value_before_any_completed_iteration_returns_its_value(#[case] code: &str) {
+    assert_eq!(
+        run_with_input(code, RuntimeValue::Number(7.0.into())),
+        RuntimeValue::Number(999.0.into())
     );
 }
 

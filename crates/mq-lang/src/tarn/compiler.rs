@@ -86,6 +86,7 @@ struct LoopCtx {
     break_try_catches: Vec<usize>,
     continue_try_catches: Vec<usize>,
     acc_slot: u16,
+    completed_iteration_slot: Option<u16>,
     chunk_index: usize,
 }
 
@@ -1165,14 +1166,16 @@ impl<R: ModuleResolver> Compiler<R> {
 
         self.emit_closure(try_chunk, try_upvalues);
         self.emit_closure(catch_chunk, catch_upvalues);
-        let break_acc_slot = self
+        let (break_acc_slot, break_completed_iteration_slot) = self
             .loops
             .last()
             .filter(|loop_ctx| loop_ctx.chunk_index == self.current)
-            .map(|loop_ctx| loop_ctx.acc_slot);
+            .map(|loop_ctx| (Some(loop_ctx.acc_slot), loop_ctx.completed_iteration_slot))
+            .unwrap_or((None, None));
         let try_catch = self.emit(OpCode::TryCatch(Box::new(TryCatchInfo {
             has_binder: binder.is_some(),
             break_acc_slot,
+            break_completed_iteration_slot,
             break_offset: None,
             continue_offset: None,
         })));
@@ -2221,9 +2224,15 @@ impl<R: ModuleResolver> Compiler<R> {
                     return Ok(());
                 }
                 let acc_slot = loop_ctx.acc_slot;
+                let completed_iteration_slot = loop_ctx.completed_iteration_slot;
                 if let Some(v) = value {
                     self.compile_expr(v)?;
                     self.emit(OpCode::SetLocal(acc_slot));
+                    if let Some(slot) = completed_iteration_slot {
+                        let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+                        self.emit(OpCode::Const(true_idx));
+                        self.emit(OpCode::SetLocal(slot));
+                    }
                 }
                 let at = self.emit(OpCode::Jump(0));
                 self.loops.last_mut().unwrap().break_jumps.push(at);
@@ -2721,6 +2730,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         continue_target: usize,
         acc_slot: u16,
+        completed_iteration_slot: Option<u16>,
         body: &Program,
     ) -> CompileResult<(Vec<usize>, Vec<usize>, Vec<usize>)> {
         self.loops.push(LoopCtx {
@@ -2729,6 +2739,7 @@ impl<R: ModuleResolver> Compiler<R> {
             break_try_catches: Vec::new(),
             continue_try_catches: Vec::new(),
             acc_slot,
+            completed_iteration_slot,
             chunk_index: self.current,
         });
         self.emit(OpCode::GetLocal(acc_slot));
@@ -2737,6 +2748,11 @@ impl<R: ModuleResolver> Compiler<R> {
         let body_result = self.compile_body(body);
         self.scope_mut().pop_scope();
         body_result?;
+        if let Some(slot) = completed_iteration_slot {
+            let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+            self.emit(OpCode::Const(true_idx));
+            self.emit(OpCode::SetLocal(slot));
+        }
         // Keep `self` in sync for the next loop condition.
         self.emit(OpCode::SetLocal(SELF_SLOT));
         self.emit(OpCode::GetLocal(SELF_SLOT));
@@ -2783,6 +2799,7 @@ impl<R: ModuleResolver> Compiler<R> {
             break_try_catches: Vec::new(),
             continue_try_catches: Vec::new(),
             acc_slot,
+            completed_iteration_slot: None,
             chunk_index: self.current,
         });
 
@@ -2823,23 +2840,20 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
 
         // Keep the condition at the loop head so the first iteration does not evaluate it
-        // twice. A separate flag preserves the language rule that a loop which never runs
-        // evaluates to `None`, rather than its input value.
-        let ran_slot = self.scope_mut().declare_synthetic();
+        // twice. A separate flag records completed iterations, so a loop that never runs — or
+        // exits via a bare `break` before its first body completes — evaluates to `None`.
+        let completed_iteration_slot = self.scope_mut().declare_synthetic();
         let false_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
         self.emit(OpCode::Const(false_idx));
-        self.emit(OpCode::SetLocal(ran_slot));
+        self.emit(OpCode::SetLocal(completed_iteration_slot));
         let loop_start = self.chunk_mut().code.len();
         self.compile_expr(cond)?;
         if invert {
             self.emit(OpCode::Not);
         }
         let exit_jump = self.emit(OpCode::JumpIfFalse(0));
-        let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
-        self.emit(OpCode::Const(true_idx));
-        self.emit(OpCode::SetLocal(ran_slot));
         let (break_jumps, break_try_catches, continue_try_catches) =
-            self.compile_loop_body(loop_start, acc_slot, body)?;
+            self.compile_loop_body(loop_start, acc_slot, Some(completed_iteration_slot), body)?;
 
         self.chunk_mut().patch_jump(exit_jump);
         for jump in break_jumps {
@@ -2851,7 +2865,7 @@ impl<R: ModuleResolver> Compiler<R> {
         for try_catch in continue_try_catches {
             self.chunk_mut().patch_try_continue_to(try_catch, loop_start);
         }
-        self.emit(OpCode::GetLocal(ran_slot));
+        self.emit(OpCode::GetLocal(completed_iteration_slot));
         let no_iterations = self.emit(OpCode::JumpIfFalse(0));
         self.emit(OpCode::GetLocal(acc_slot));
         let done = self.emit(OpCode::Jump(0));
@@ -2868,7 +2882,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let loop_start = self.chunk_mut().code.len();
         let (patch_sites, break_try_catches, continue_try_catches) =
-            self.compile_loop_body(loop_start, acc_slot, body)?;
+            self.compile_loop_body(loop_start, acc_slot, None, body)?;
 
         for jump in patch_sites {
             self.chunk_mut().patch_jump(jump);

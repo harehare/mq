@@ -506,6 +506,9 @@ impl OpCode {
 pub(crate) struct TryCatchInfo {
     pub(crate) has_binder: bool,
     pub(crate) break_acc_slot: Option<u16>,
+    /// Set only for conditional loops. It is true after a normal iteration or `break: value`,
+    /// both of which preserve the accumulator as the loop result.
+    pub(crate) break_completed_iteration_slot: Option<u16>,
     pub(crate) break_offset: Option<i32>,
     pub(crate) continue_offset: Option<i32>,
 }
@@ -1495,6 +1498,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             slot,
                         });
                     }
+                    if let Some(slot) = info.break_completed_iteration_slot
+                        && slot >= chunk.local_count
+                    {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot,
+                        });
+                    }
                     if let Some(offset) = info.break_offset {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
@@ -1832,6 +1844,7 @@ mod tests {
                 OpCode::TryCatch(Box::new(TryCatchInfo {
                     has_binder: false,
                     break_acc_slot: None,
+                    break_completed_iteration_slot: None,
                     break_offset: Some(0),
                     continue_offset: Some(1),
                 })),
@@ -2073,6 +2086,7 @@ mod tests {
                 OpCode::TryCatch(Box::new(TryCatchInfo {
                     has_binder: false,
                     break_acc_slot: Some(0),
+                    break_completed_iteration_slot: None,
                     break_offset: None,
                     continue_offset: None,
                 })),
