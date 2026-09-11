@@ -53,12 +53,16 @@ fn eval_compiled_while(bencher: divan::Bencher) {
     );
 }
 
-/// Isolates the VM's specialized `foreach` control path, including per-iteration local updates.
+/// Measures the VM's specialized `foreach` control path with per-iteration arithmetic.
+///
+/// Keep this workload aligned with the long-standing regression benchmark so historical
+/// measurements remain comparable.
 #[divan::bench]
 fn eval_compiled_foreach(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
-    bench_compiled(bencher, &mut engine, "foreach(i, range(0, 10000, 1)): i;", || {
-        vec![mq_lang::RuntimeValue::None]
+    engine.load_builtin_module();
+    bench_compiled(bencher, &mut engine, "foreach(x, range(0, 1000, 1)): x + 1;", || {
+        vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))]
     });
 }
 
