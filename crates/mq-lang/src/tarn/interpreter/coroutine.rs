@@ -8,6 +8,8 @@ use super::DebugRuntime;
 use super::errors::{VmError, VmResult};
 use super::frame::{ExecutionContext, Frame};
 use super::{DriveOutcome, into_runtime_value};
+#[cfg(feature = "debugger")]
+use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::StackValue;
@@ -32,6 +34,14 @@ pub(crate) struct CoroutineState {
     pub(super) frames: Vec<Frame>,
     pub(super) operand_stack: Vec<StackValue>,
     pub(super) chunks: Shared<Vec<Chunk>>,
+    /// Frames retained at suspension still count against recursion while the coroutine runs,
+    /// but must not consume depth in an unrelated caller between resumes.
+    pub(super) suspended_call_depth: u32,
+    /// Debugger state belongs to the suspended frames for the same reason as call depth.
+    #[cfg(feature = "debugger")]
+    pub(super) debug_call_stack: Vec<Shared<Node>>,
+    #[cfg(feature = "debugger")]
+    pub(super) debug_current_node: Option<Shared<Node>>,
 }
 
 /// Cloning a `RuntimeValue::Coroutine` shares this handle, so every clone drives the same
@@ -45,6 +55,11 @@ impl CoroutineState {
             frames: vec![frame],
             operand_stack: Vec::new(),
             chunks,
+            suspended_call_depth: 0,
+            #[cfg(feature = "debugger")]
+            debug_call_stack: Vec::new(),
+            #[cfg(feature = "debugger")]
+            debug_current_node: None,
         }))
     }
 }
@@ -72,13 +87,16 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
-    let (mut frames, mut operand_stack, chunks) = {
+    let (mut frames, mut operand_stack, chunks, caller_depth) = {
         let mut state = borrow_mut(handle);
         match &state.status {
             CoroutineStatus::Running => return Err(VmError::CoroutineReentrant),
             CoroutineStatus::Completed => return Ok(done_result(RuntimeValue::None, true)),
             CoroutineStatus::Failed(err) => return Err(VmError::CoroutineFailed(Shared::clone(err))),
             CoroutineStatus::Created | CoroutineStatus::Suspended => {
+                let caller_depth = execution
+                    .limits
+                    .enter_suspended_call_depth(state.suspended_call_depth)?;
                 let was_suspended = matches!(state.status, CoroutineStatus::Suspended);
                 state.status = CoroutineStatus::Running;
                 let mut operand_stack = std::mem::take(&mut state.operand_stack);
@@ -91,9 +109,19 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
                     std::mem::take(&mut state.frames),
                     operand_stack,
                     Shared::clone(&state.chunks),
+                    caller_depth,
                 )
             }
         }
+    };
+
+    #[cfg(feature = "debugger")]
+    let (caller_call_stack, caller_current_node) = {
+        let mut state = borrow_mut(handle);
+        (
+            std::mem::replace(&mut debug.call_stack, std::mem::take(&mut state.debug_call_stack)),
+            std::mem::replace(&mut debug.current_node, state.debug_current_node.take()),
+        )
     };
 
     let outcome = super::drive_frames::<CHECK_TIMEOUT>(
@@ -104,18 +132,29 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         #[cfg(feature = "debugger")]
         debug,
     );
+    let suspended_call_depth = execution.limits.leave_suspended_call_depth(caller_depth);
 
     let mut state = borrow_mut(handle);
+    #[cfg(feature = "debugger")]
+    {
+        state.debug_call_stack = std::mem::replace(&mut debug.call_stack, caller_call_stack);
+        state.debug_current_node = std::mem::replace(&mut debug.current_node, caller_current_node);
+    }
     match outcome {
         DriveOutcome::Suspended(value) => {
             let value = into_runtime_value(value, &chunks);
             state.frames = frames;
             state.operand_stack = operand_stack;
+            state.suspended_call_depth = suspended_call_depth;
             state.status = CoroutineStatus::Suspended;
             drop(state);
             Ok(done_result(value, false))
         }
         DriveOutcome::Completed(_, _locals) => {
+            debug_assert_eq!(
+                suspended_call_depth, 0,
+                "completed coroutine must release all call depth"
+            );
             state.status = CoroutineStatus::Completed;
             drop(state);
             // `next()` signals exhaustion rather than returning a generator function's
@@ -124,6 +163,7 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             Ok(done_result(RuntimeValue::None, true))
         }
         DriveOutcome::Failed(e, _locals) => {
+            debug_assert_eq!(suspended_call_depth, 0, "failed coroutine must release all call depth");
             let stored = Shared::new(e);
             state.status = CoroutineStatus::Failed(Shared::clone(&stored));
             drop(state);

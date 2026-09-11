@@ -3085,6 +3085,15 @@ fn yield_inside_try_catch_suspends_and_resumes_through_the_try_frame() {
 }
 
 #[test]
+fn suspended_generator_frames_do_not_consume_an_unrelated_call_depth() {
+    // Entering `try` pushes a synthetic VM frame. After its `yield`, that frame belongs to the
+    // coroutine rather than the caller that invoked `next()`: a separate one-frame call must
+    // still fit under this limit.
+    let code = "def g(): try: yield: 1 catch: 0; | let s = g() | next(s) | def f(): 42; | f()";
+    assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(42.into()));
+}
+
+#[test]
 fn yield_inside_foreach_suspends_once_per_element() {
     let def = "def g(): foreach (x, array(10, 20, 30)): yield: x;; | let stream = g()";
     assert_eq!(
