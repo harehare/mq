@@ -1,6 +1,6 @@
 #[cfg(feature = "http")]
 use super::HttpRequestSpec;
-use super::{Io, IoError};
+use super::{FileKind, FileMetadata, Io, IoError};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -40,6 +40,15 @@ fn io_err(err: std::io::Error, path: &Path) -> IoError {
     }
 }
 
+/// Converts to a unix-epoch-seconds timestamp, including times before the epoch
+/// (returned as negative), rather than panicking or silently clamping.
+fn system_time_to_unix(time: std::time::SystemTime) -> Option<i64> {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(since_epoch) => i64::try_from(since_epoch.as_secs()).ok(),
+        Err(before_epoch) => i64::try_from(before_epoch.duration().as_secs()).ok().map(|s| -s),
+    }
+}
+
 impl Io for NativeIo {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
         std::fs::read_to_string(path).map_err(|e| io_err(e, path))
@@ -59,6 +68,28 @@ impl Io for NativeIo {
 
     fn file_size(&self, path: &Path) -> Result<u64, IoError> {
         std::fs::metadata(path).map(|m| m.len()).map_err(|e| io_err(e, path))
+    }
+
+    fn metadata(&self, path: &Path) -> Result<FileMetadata, IoError> {
+        // `symlink_metadata` (lstat) rather than `metadata` (stat): a symlink is reported as
+        // such, never followed, so a symlink cycle can never make this call loop or fail.
+        let meta = std::fs::symlink_metadata(path).map_err(|e| io_err(e, path))?;
+        let file_type = meta.file_type();
+        let kind = if file_type.is_symlink() {
+            FileKind::Symlink
+        } else if file_type.is_dir() {
+            FileKind::Dir
+        } else if file_type.is_file() {
+            FileKind::File
+        } else {
+            FileKind::Other
+        };
+
+        Ok(FileMetadata {
+            kind,
+            size: meta.len(),
+            modified: meta.modified().ok().and_then(system_time_to_unix),
+        })
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
@@ -291,6 +322,92 @@ mod tests {
             entries,
             vec![(dir.path().join("a.txt"), false), (dir.path().join("subdir"), true),]
         );
+    }
+
+    #[test]
+    fn test_metadata_reports_file_kind_size_and_modified() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, "hello").unwrap();
+        let io = NativeIo::default();
+
+        let meta = io.metadata(&path).unwrap();
+        assert_eq!(meta.kind, FileKind::File);
+        assert_eq!(meta.size, 5);
+        assert!(meta.modified.is_some());
+    }
+
+    #[test]
+    fn test_metadata_reports_dir_kind() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let io = NativeIo::default();
+
+        let meta = io.metadata(dir.path()).unwrap();
+        assert_eq!(meta.kind, FileKind::Dir);
+    }
+
+    #[test]
+    fn test_metadata_missing_path_is_not_found() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let io = NativeIo::default();
+
+        assert!(matches!(
+            io.metadata(&dir.path().join("missing.txt")),
+            Err(IoError::NotFound(_))
+        ));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_metadata_reports_symlink_kind_without_following() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let target = dir.path().join("target.txt");
+        std::fs::write(&target, "hello world").unwrap();
+        let link = dir.path().join("link.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let io = NativeIo::default();
+
+        let meta = io.metadata(&link).unwrap();
+        assert_eq!(meta.kind, FileKind::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_metadata_handles_symlink_cycle_without_following() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let a = dir.path().join("a");
+        let b = dir.path().join("b");
+        std::os::unix::fs::symlink(&b, &a).unwrap();
+        std::os::unix::fs::symlink(&a, &b).unwrap();
+        let io = NativeIo::default();
+
+        // lstat never follows the link, so a cyclic symlink resolves instantly.
+        let meta = io.metadata(&a).unwrap();
+        assert_eq!(meta.kind, FileKind::Symlink);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_metadata_denied_by_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("file.txt");
+        std::fs::write(&path, "hello").unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let io = NativeIo::default();
+
+        let result = io.metadata(&path);
+        // A root-run process (e.g. inside a container) ignores permission bits, so only
+        // assert when the OS actually enforced them here — otherwise the test would flake.
+        let permissions_enforced = std::fs::metadata(&path).is_err();
+
+        // Restore permissions so the tempdir can be cleaned up.
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        if permissions_enforced {
+            assert!(result.is_err());
+        }
     }
 
     #[test]

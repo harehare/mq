@@ -1,4 +1,4 @@
-use super::{Io, IoError};
+use super::{FileKind, FileMetadata, Io, IoError};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -101,6 +101,28 @@ impl Io for MemIo {
             .get(path)
             .map(|bytes| bytes.len() as u64)
             .ok_or_else(|| IoError::NotFound(Cow::Owned(path.display().to_string())))
+    }
+
+    /// No mtime tracking (this is an in-memory fake with no clock of its own), so
+    /// `modified` is always `None`. A path is a `Dir` if it's a strict ancestor of some
+    /// registered file, since `MemIo` has no separate concept of an empty directory.
+    fn metadata(&self, path: &Path) -> Result<FileMetadata, IoError> {
+        let files = self.files.lock().unwrap();
+        if let Some(bytes) = files.get(path) {
+            return Ok(FileMetadata {
+                kind: FileKind::File,
+                size: bytes.len() as u64,
+                modified: None,
+            });
+        }
+        if files.keys().any(|p| p.as_path() != path && p.starts_with(path)) {
+            return Ok(FileMetadata {
+                kind: FileKind::Dir,
+                size: 0,
+                modified: None,
+            });
+        }
+        Err(IoError::NotFound(Cow::Owned(path.display().to_string())))
     }
 
     fn read_dir(&self, path: &Path) -> Result<Vec<(PathBuf, bool)>, IoError> {
@@ -235,6 +257,31 @@ mod tests {
         assert_eq!(io.execute("git", &["status".to_string()]).unwrap(), "clean");
         assert!(matches!(
             io.execute("git", &["log".to_string()]),
+            Err(IoError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn test_metadata_reports_file_kind_and_size() {
+        let io = MemIo::default().with_file("/a.txt", "hello");
+        let meta = io.metadata(Path::new("/a.txt")).unwrap();
+        assert_eq!(meta.kind, FileKind::File);
+        assert_eq!(meta.size, 5);
+        assert_eq!(meta.modified, None);
+    }
+
+    #[test]
+    fn test_metadata_reports_dir_kind_for_implied_directory() {
+        let io = MemIo::default().with_file("/dir/a.txt", "a");
+        let meta = io.metadata(Path::new("/dir")).unwrap();
+        assert_eq!(meta.kind, FileKind::Dir);
+    }
+
+    #[test]
+    fn test_metadata_missing_path_is_not_found() {
+        let io = MemIo::default();
+        assert!(matches!(
+            io.metadata(Path::new("/missing.txt")),
             Err(IoError::NotFound(_))
         ));
     }

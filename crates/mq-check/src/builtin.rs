@@ -1358,6 +1358,10 @@ fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "file_exists", Type::String, Type::Bool);
     register_unary(ctx, "file_size", Type::String, Type::Number);
 
+    // file_info: string (path) -> {path, kind, size, modified}
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_unary(ctx, "file_info", Type::String, Type::dict(Type::Var(k), Type::Var(v)));
+
     // collection: string (dir path) -> [{path, title, frontmatter, content}]
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(
@@ -1976,6 +1980,7 @@ mod tests {
     #[case::read_file_bytes("read_file_bytes(\"a.md\")", true)]
     #[case::file_exists("file_exists(\"a.md\")", true)]
     #[case::file_size("file_size(\"a.md\")", true)]
+    #[case::file_info("file_info(\"a.md\")", true)]
     #[case::collection("collection(\"docs\")", true)]
     #[case::collection_respect_gitignore("collection(\"docs\", true)", true)]
     #[case::collection_len("len(collection(\"docs\"))", true)]
@@ -2007,6 +2012,7 @@ mod tests {
     #[case::read_file_number("read_file(42)", false)] // Should fail: wrong type
     #[case::file_exists_number("file_exists(42)", false)] // Should fail: wrong type
     #[case::file_size_number("file_size(42)", false)] // Should fail: wrong type
+    #[case::file_info_number("file_info(42)", false)] // Should fail: wrong type
     #[case::collection_number("collection(42)", false)] // Should fail: wrong type
     #[case::collection_respect_gitignore_number("collection(\"docs\", 42)", false)] // Should fail: wrong type
     #[case::basename_number("basename(42)", false)] // Should fail: wrong type
