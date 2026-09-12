@@ -49,6 +49,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
+use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -4003,9 +4004,7 @@ fn _jaro_winkler_distance_impl(
 fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
-            let value: serde_json::Value =
-                serde_json::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {}", e)))?;
-            Ok(value.into())
+            parse_json_runtime_value(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {e}")))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_json_parse should always receive exactly one argument"),
