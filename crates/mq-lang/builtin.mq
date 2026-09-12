@@ -2207,15 +2207,15 @@ def dedent(s):
   else:
     do
       let prefix = common_indent(s)
-      | if (is_empty(prefix)):
-          s
-        else:
+      | if (prefix != None && !is_empty(prefix)):
           do
             s
             | lines
             | map(fn(line): if (is_empty(trim(line))): "" else: slice(line, len(prefix), len(line));)
             | unlines
           end
+        else:
+          s
     end
 end
 
