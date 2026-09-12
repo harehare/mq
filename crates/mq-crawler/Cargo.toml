@@ -11,9 +11,6 @@ readme = "README.md"
 repository.workspace = true
 version.workspace = true
 
-[features]
-tarn = ["mq-lang/tarn"]
-
 [dependencies]
 base64 = {workspace = true}
 chromiumoxide = {workspace = true}

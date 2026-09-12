@@ -585,7 +585,7 @@ fn collect_markdown_nodes(value: &mq_lang::RuntimeValue, nodes: &mut Vec<mq_mark
     }
 }
 
-fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
+fn is_typed_dict(map: &mq_lang::DictMap) -> bool {
     let type_key = mq_lang::Ident::new("type");
     matches!(
         map.get(&type_key),
@@ -593,9 +593,7 @@ fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::Runti
     )
 }
 
-fn expand_typed_dict(
-    map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
-) -> Option<Vec<mq_markdown::Node>> {
+fn expand_typed_dict(map: &mq_lang::DictMap) -> Option<Vec<mq_markdown::Node>> {
     let type_key = mq_lang::Ident::new("type");
     match map.get(&type_key) {
         Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {

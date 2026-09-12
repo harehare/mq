@@ -1,5 +1,16 @@
+//! Regression benchmarks for the parser and compiled Tarn VM.
+//!
+//! Each benchmark protects a distinct execution path. Exploratory, cold-start, and overlapping
+//! microbenchmarks belong in ad-hoc profiling rather than this always-run suite.
+
 use mq_lang::{Shared, SharedCell};
 use std::sync::LazyLock;
+
+// Keep allocator behavior consistent with the `mq` CLI. This is deliberately
+// defined in the benchmark binary so library consumers retain control of their
+// allocator choice.
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 fn main() {
     divan::main();
@@ -13,22 +24,6 @@ where
     let compiled = engine.compile(code).unwrap();
     engine.eval_compiled(&compiled, input().into_iter()).unwrap();
     bencher.bench_local(|| engine.eval_compiled(&compiled, input().into_iter()).unwrap());
-}
-
-#[divan::bench()]
-fn eval_fibonacci() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            "
-     def fibonacci(x):
-      if (x < 2):
-        x
-      else:
-        fibonacci(x - 1) + fibonacci(x - 2); | fibonacci(20)",
-            vec![mq_lang::RuntimeValue::Number(20.into())].into_iter(),
-        )
-        .unwrap()
 }
 
 #[divan::bench]
@@ -47,95 +42,19 @@ fn eval_compiled_fibonacci(bencher: divan::Bencher) {
     );
 }
 
-#[divan::bench()]
-fn eval_while_speed_test() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            "var i = 10000 | while(i > 0): i -= 1; | i",
-            vec![mq_lang::RuntimeValue::Number(1.into())].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench(name = "eval_select_h")]
-fn eval_select_h() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown =
-        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
-            .unwrap();
-    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.eval(".h1", input.into_iter()).unwrap()
-}
-
-#[divan::bench(name = "eval_string_interpolation")]
-fn eval_string_interpolation() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"let world = "world" | s"$$Hello, ${world}$$""#, // Semicolon is correct here before pipe
-            vec!["".into()].into_iter(),
-        )
-        .unwrap()
-}
-
-/// Isolates steady-state execution for a tiny, non-looping query — where compile overhead
-/// (shared with the tree-walker) otherwise swamps the signal in `eval_select_h`.
 #[divan::bench]
-fn eval_compiled_select_h(bencher: divan::Bencher) {
+fn eval_compiled_while(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
-    let input: Vec<mq_lang::RuntimeValue> =
-        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
-            .unwrap()
-            .nodes
-            .into_iter()
-            .map(mq_lang::RuntimeValue::from)
-            .collect();
-    bench_compiled(bencher, &mut engine, ".h1", || input.clone());
-}
-
-/// Measures a fresh Markdown input, as supplied by line-oriented callers. The node is uniquely
-/// owned at VM entry, so this catches unnecessary whole-tree clones during tree walking.
-#[divan::bench]
-fn eval_compiled_owned_markdown_tree(bencher: divan::Bencher) {
-    fn input() -> mq_lang::RuntimeValue {
-        mq_lang::RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment {
-            values: (0..1_000)
-                .map(|index| {
-                    mq_markdown::Node::Text(mq_markdown::Text {
-                        value: index.to_string(),
-                        position: None,
-                    })
-                })
-                .collect(),
-        }))
-    }
-
-    let mut engine = mq_lang::DefaultEngine::default();
-    let compiled = engine.compile(".").unwrap();
-    engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
-
-    bencher.bench_local(|| engine.eval_compiled(&compiled, std::iter::once(input())).unwrap());
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "var i = 10000 | while(i > 0): i -= 1; | i",
+        || vec![mq_lang::RuntimeValue::Number(1.into())],
+    );
 }
 
 /// Measures the API pattern used by line-oriented callers: one compiled query evaluated once
-/// per input value, rather than one call over a batch of inputs.
-#[divan::bench]
-fn eval_compiled_reused_single_input(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    let compiled = engine.compile(". * 10").unwrap();
-    engine
-        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::Number(1.into())))
-        .unwrap();
-
-    bencher.bench_local(|| {
-        engine
-            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::Number(1.into())))
-            .unwrap()
-    });
-}
-
-/// Mirrors line-oriented CLI calls whose per-file globals remain unchanged across rows.
+/// per input value while file globals remain stable.
 #[divan::bench]
 fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -152,334 +71,6 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
             .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
             .unwrap()
     });
-}
-
-/// Covers a repeated query that includes an external module. Cached Tarn bytecode freezes the
-/// module source for its Engine, so this measures the cache-hit path without a file read/hash.
-#[cfg(feature = "tarn")]
-#[divan::bench]
-fn eval_compiled_reused_single_input_with_external_module(bencher: divan::Bencher) {
-    let directory = tempfile::tempdir().unwrap();
-    std::fs::write(directory.path().join("constant.mq"), "def constant(): 42;").unwrap();
-
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.set_search_paths(vec![directory.path().to_owned()]);
-    let compiled = engine.compile(r#"include "constant" | constant()"#).unwrap();
-    engine
-        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
-        .unwrap();
-
-    bencher.bench_local(|| {
-        engine
-            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
-            .unwrap()
-    });
-}
-
-/// See `eval_compiled_select_h`.
-#[divan::bench]
-fn eval_compiled_string_interpolation(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    bench_compiled(
-        bencher,
-        &mut engine,
-        r#"let world = "world" | s"$$Hello, ${world}$$""#,
-        || vec!["".into()],
-    );
-}
-
-#[divan::bench(name = "eval_nodes")]
-fn eval_nodes() -> mq_lang::RuntimeValues {
-    let markdown: mq_markdown::Markdown =
-        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
-            .unwrap();
-    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine.eval(".h | nodes | map(upcase)", input.into_iter()).unwrap()
-}
-
-#[divan::bench]
-fn eval_compiled_nodes(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    bench_compiled(bencher, &mut engine, ".h | nodes | map(upcase)", || {
-        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
-            .unwrap()
-            .nodes
-            .into_iter()
-            .map(mq_lang::RuntimeValue::from)
-            .collect()
-    });
-}
-
-#[divan::bench]
-fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
-    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(100)));
-    mq_lang::parse(
-        "
-     def fibonacci(x):
-      if (x == 0):
-        0
-      elif (x == 1):
-        1
-      else:
-        fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
-        Shared::clone(&token_arena),
-    )
-    .unwrap()
-}
-
-/// Exercises byte-string lexing without charging construction of the input to the parser.
-#[divan::bench]
-fn parse_large_byte_string() -> Vec<Shared<mq_lang::AstNode>> {
-    static CODE: LazyLock<String> = LazyLock::new(|| format!(r#"b"{}""#, "a".repeat(16 * 1024)));
-    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(4)));
-    mq_lang::parse(&CODE, token_arena).unwrap()
-}
-
-/// Exercises flattening of a long logical-expression chain during AST construction.
-#[divan::bench]
-fn parse_long_and_chain() -> Vec<Shared<mq_lang::AstNode>> {
-    static CODE: LazyLock<String> =
-        LazyLock::new(|| std::iter::repeat_n("true", 4_096).collect::<Vec<_>>().join(" && "));
-    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(8_192)));
-    mq_lang::parse(&CODE, token_arena).unwrap()
-}
-
-#[divan::bench(name = "eval_foreach")]
-fn eval_foreach() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(r#"foreach(x, range(0, 1000, 1)): x + 1;"#, vec!["".into()].into_iter())
-        .unwrap()
-}
-
-#[divan::bench]
-fn eval_compiled_foreach(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    bench_compiled(bencher, &mut engine, r#"foreach(x, range(0, 1000, 1)): x + 1;"#, || {
-        vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))]
-    });
-}
-
-const CSV_PARSE_INPUT: &str =
-    "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n";
-
-/// Includes and compiles the CSV module on every invocation, representing one-shot use.
-#[divan::bench()]
-fn eval_csv_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"include "csv" | csv_parse(true)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new(CSV_PARSE_INPUT.to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-/// Reuses the optimized query/module bytecode after one warm-up evaluation.
-#[divan::bench]
-fn eval_compiled_csv_parse(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine.load_module("csv").unwrap();
-    bench_compiled(bencher, &mut engine, "csv_parse(true)", || {
-        vec![mq_lang::RuntimeValue::String(Shared::new(CSV_PARSE_INPUT.to_string()))]
-    });
-}
-
-#[divan::bench()]
-fn eval_yaml_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"include "yaml" | yaml_parse()"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("---\nstring: hello\nnumber: 42\nfloat: 3.14\nbool_true: true\nbool_false: false\nnull_value: null\narray:\n  - item1\n  - item2\n  - item3\nobject:\n  key1: value1\n  key2: value2\nnested:\n  arr:\n    - a\n    - b\n  obj:\n    subkey: subval\nmultiline: |\n  This is a\n  multiline string\nquoted: \"quoted string\"\nsingle_quoted: 'single quoted string'\ndate: 2024-06-01\ntimestamp: 2024-06-01T12:34:56Z\nempty_array: []\nempty_object: {}\nanchors:\n  &anchor_val anchored value\nref: *anchor_val\ncomplex:\n  - foo: bar\n    baz:\n      - qux\n      - quux\n  - corge: grault\nspecial_chars: \"!@#$%^&*()_+-=[]{}|;:',.<>/?\"\nunicode: \"こんにちは世界\"\nbool_list:\n  - true\n  - false\nnull_list:\n  - null\n  - ~".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_json_parse() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"include "json" | json_parse()"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("{\"users\":[{\"id\":1,\"name\":\"Alice\",\"email\":\"alice@example.com\",\"roles\":[\"admin\",\"user\"]},{\"id\":2,\"name\":\"Bob\",\"email\":\"bob@example.com\",\"roles\":[\"user\"]},{\"id\":3,\"name\":\"Charlie\",\"email\":\"charlie@example.com\",\"roles\":[\"editor\",\"user\"]}],\"meta\":{\"count\":3,\"generated_at\":\"2024-06-01T12:00:00Z\"}}".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_qualified_access_to_csv_module() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-       .eval(
-            r#"import "csv" | csv::csv_parse(true)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-fn section_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
-    let markdown_content = (0..30)
-        .map(|i| format!("# Section {i}\n\nIntro paragraph for section {i}.\n\n## Subsection {i}\n\nSome detail text.\n\n- point a\n- point b\n\n"))
-        .collect::<String>();
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
-    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
-}
-
-#[divan::bench()]
-fn eval_section_sections() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"nodes | import "section" | section::sections() | len()"#,
-            section_markdown_input(),
-        )
-        .unwrap()
-}
-
-#[divan::bench]
-fn eval_compiled_section_sections(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine.load_module("section").unwrap();
-    bench_compiled(bencher, &mut engine, "nodes | sections() | len()", || {
-        section_markdown_input().collect()
-    });
-}
-
-fn table_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
-    let header = "| Name | Age | City |\n| --- | --- | --- |\n";
-    let rows = (0..30)
-        .map(|i| format!("| Person {i} | {} | City {i} |\n", 20 + i % 50))
-        .collect::<String>();
-    let markdown_content = format!("{header}{rows}");
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
-    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
-}
-
-#[divan::bench()]
-fn eval_table_tables() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(r#"nodes | import "table" | table::tables()"#, table_markdown_input())
-        .unwrap()
-}
-
-#[divan::bench]
-fn eval_compiled_table_tables(bencher: divan::Bencher) {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine.load_module("table").unwrap();
-    bench_compiled(bencher, &mut engine, "nodes | tables()", || {
-        table_markdown_input().collect()
-    });
-}
-
-#[divan::bench()]
-fn eval_string_equality() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"
-let a1 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
-| let a2 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa2"
-| let a3 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa3"
-| let a4 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa4"
-| let a5 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa5"
-| let a6 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa6"
-| let a7 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7"
-| let a8 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa8"
-| a1 == a1 |  a1 == a2 |  a1 == a3 |  a1 == a4 |  a1 == a5 |  a1 == a6 |  a1 == a7 |  a1 == a8
-| a2 == a1 |  a2 == a2 |  a2 == a3 |  a2 == a4 |  a2 == a5 |  a2 == a6 |  a2 == a7 |  a2 == a8
-| a3 == a1 |  a3 == a2 |  a3 == a3 |  a3 == a4 |  a3 == a5 |  a3 == a6 |  a3 == a7 |  a3 == a8
-| a4 == a1 |  a4 == a2 |  a4 == a3 |  a4 == a4 |  a4 == a5 |  a4 == a6 |  a4 == a7 |  a4 == a8
-| a5 == a1 |  a5 == a2 |  a5 == a3 |  a5 == a4 |  a5 == a5 |  a5 == a6 |  a5 == a7 |  a5 == a8
-| a6 == a1 |  a6 == a2 |  a6 == a3 |  a6 == a4 |  a6 == a5 |  a6 == a6 |  a6 == a7 |  a6 == a8
-| a7 == a1 |  a7 == a2 |  a7 == a3 |  a7 == a4 |  a7 == a5 |  a7 == a6 |  a7 == a7 |  a7 == a8
-| a8 == a1 |  a8 == a2 |  a8 == a3 |  a8 == a4 |  a8 == a5 |  a8 == a6 |  a8 == a7 |  a8 == a8
-"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_large_program() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"
-let a = 1 | let b = 2 | let c = 3 | let d = 4 | let e = 5
-| let f = 6 | let g = 7 | let h = 8 | let i = 9 | let j = 10
-| let k = 11 | let l = 12 | let m = 13 | let n = 14 | let o = 15
-| a + b + c + d + e + f + g + h + i + j + k + l + m + n + o
-"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-// Array/Collection Operations Benchmarks
-
-#[divan::bench()]
-fn eval_array_map() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"range(0, 1000, 1) | map(fn(x): x * 2;)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_array_filter() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"range(0, 1000, 1) | filter(fn(x): x % 2 == 0;)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_array_fold() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"def sum(acc, x): add(acc, x); | fold(range(0, 100, 1), 0, sum)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_array_chained_operations() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"range(0, 500, 1) | filter(fn(x): x % 2 == 0;) | map(fn(x): x * 3;) | filter(fn(x): x > 100;)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
 }
 
 #[divan::bench]
@@ -530,52 +121,6 @@ fn eval_compiled_array_chained_operations(bencher: divan::Bencher) {
     );
 }
 
-// Object/Hash Access Benchmarks
-
-#[divan::bench()]
-fn eval_object_field_access() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"let obj = dict()
-            | let obj = set(obj, "a", 1) | let obj = set(obj, "b", 2) | let obj = set(obj, "c", 3)
-            | let obj = set(obj, "d", 4) | let obj = set(obj, "e", 5)
-            | foreach(i, range(0, 100, 1)): add(add(add(add(get(obj, "a"), get(obj, "b")), get(obj, "c")), get(obj, "d")), get(obj, "e"));"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-#[divan::bench()]
-fn eval_nested_object_access() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"let inner = dict() | let inner = set(inner, "value", 42)
-            | let middle = dict() | let middle = set(middle, "inner", inner)
-            | let outer = dict() | let outer = set(outer, "middle", middle)
-            | let obj = dict() | let obj = set(obj, "outer", outer)
-            | foreach(i, range(0, 100, 1)): get(get(get(get(obj, "outer"), "middle"), "inner"), "value");"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-// Function Call Overhead Benchmarks
-
-#[divan::bench()]
-fn eval_function_call_overhead() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"def identity(x): x; | foreach(i, range(0, 1000, 1)): identity(i);"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
 /// Isolates repeated non-capturing user-function calls after bytecode compilation.
 #[divan::bench]
 fn eval_compiled_function_call_overhead(bencher: divan::Bencher) {
@@ -588,16 +133,29 @@ fn eval_compiled_function_call_overhead(bencher: divan::Bencher) {
     );
 }
 
-#[divan::bench()]
-fn eval_nested_function_calls() -> mq_lang::RuntimeValues {
+/// Measures calls through a local holding a native function, which use the VM's generic call
+/// path instead of the fixed-arity closure fast path.
+#[divan::bench]
+fn eval_compiled_dynamic_builtin_call(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"def add1(x): x + 1; | def add2(x): add1(add1(x)); | def add4(x): add2(add2(x));
-            | foreach(i, range(0, 100, 1)): add4(i);"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let transform = upcase | foreach(i, range(0, 1000, 1)): transform("value");"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
+/// Tracks the direct `CallBuiltin` path for the one- and two-argument forms used in tight loops.
+#[divan::bench]
+fn eval_compiled_direct_builtin_calls(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"foreach(i, range(0, 1000, 1)): contains(upcase("value"), "A");"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
 }
 
 /// Isolates nested call-frame setup and teardown after bytecode compilation.
@@ -613,128 +171,161 @@ fn eval_compiled_nested_function_calls(bencher: divan::Bencher) {
     );
 }
 
-// Pipeline Processing Benchmarks
+/// Isolates repeated `get()` lookups on a small dict, the common `set()`/`get()` shape.
+#[divan::bench]
+fn eval_compiled_dict_field_access(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let obj = dict()
+        | let obj = set(obj, "a", 1) | let obj = set(obj, "b", 2) | let obj = set(obj, "c", 3)
+        | let obj = set(obj, "d", 4) | let obj = set(obj, "e", 5)
+        | foreach(i, range(0, 1000, 1)): add(add(add(add(get(obj, "a"), get(obj, "b")), get(obj, "c")), get(obj, "d")), get(obj, "e"));"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
 
-#[divan::bench()]
-fn eval_long_pipeline() -> mq_lang::RuntimeValues {
+#[divan::bench]
+fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
-    engine
-        .eval(
-            r#"range(0, 100, 1)
-            | map(fn(x): x + 1;)
-            | map(fn(x): x * 2;)
-            | map(fn(x): x - 3;)
-            | map(fn(x): x + 4;)
-            | map(fn(x): x * 5;)
-            | map(fn(x): x - 6;)
-            | map(fn(x): x + 7;)
-            | map(fn(x): x * 8;)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let d = fold(range(0, 100, 1), dict(), fn(acc, i): set(acc, to_string(i), i);)
+        | foreach(i, range(0, 2000, 1)): get(d, to_string(i % 100));"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
 }
 
-#[divan::bench()]
-fn eval_pipeline_with_conditionals() -> mq_lang::RuntimeValues {
+fn owned_markdown_tree() -> mq_lang::RuntimeValue {
+    mq_lang::RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment {
+        values: (0..1_000)
+            .map(|index| {
+                mq_markdown::Node::Text(mq_markdown::Text {
+                    value: index.to_string(),
+                    position: None,
+                })
+            })
+            .collect(),
+    }))
+}
+
+/// A matching tree walk catches unnecessary copies when the VM returns each source node.
+#[divan::bench]
+fn eval_compiled_owned_markdown_tree(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let compiled = engine.compile(".").unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(owned_markdown_tree()))
+        .unwrap();
+
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, std::iter::once(owned_markdown_tree()))
+            .unwrap()
+    });
+}
+
+/// A rejecting tree walk catches copies in the child-preserving fallback path.
+#[divan::bench]
+fn eval_compiled_owned_markdown_tree_without_matches(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let compiled = engine.compile(".h1").unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(owned_markdown_tree()))
+        .unwrap();
+
+    bencher.bench_local(|| {
+        engine
+            .eval_compiled(&compiled, std::iter::once(owned_markdown_tree()))
+            .unwrap()
+    });
+}
+
+/// Covers selector dispatch plus the `nodes` module's tree traversal and a native builtin.
+#[divan::bench]
+fn eval_compiled_nodes(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
-    engine
-        .eval(
-            r#"range(0, 100, 1)
-            | map(fn(x): if (x % 2 == 0): x * 2 else: x + 1;)
-            | filter(fn(x): x > 50;)
-            | map(fn(x): if (x % 3 == 0): x / 3 else: x;)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
+    bench_compiled(bencher, &mut engine, ".h | nodes | map(upcase)", || {
+        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+            .unwrap()
+            .nodes
+            .into_iter()
+            .map(mq_lang::RuntimeValue::from)
+            .collect()
+    });
 }
 
-// Real-World Markdown Processing Benchmarks
+const CSV_PARSE_INPUT: &str =
+    "a,b,c\n\"1,2\",\"2,3\",\"3,4\"\n4,5,6\n\"multi\nline\",7,8\n9,10,\"quoted,comma\"\n\"\",11,12\n13,14,15\n";
 
-#[divan::bench()]
-fn eval_large_markdown_filtering() -> mq_lang::RuntimeValues {
-    let markdown_content = (0..100)
-        .map(|i| format!("# Heading {}\n\nSome content here.\n\n- Item 1\n- Item 2\n- Item 3\n\n## Subheading {}\n\nMore content.\n\n", i, i))
-        .collect::<String>();
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
-    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
+/// Reuses optimized bytecode and the standard CSV module for one input record.
+#[divan::bench]
+fn eval_compiled_csv_parse(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
-    engine.eval(".h | nodes", input.into_iter()).unwrap()
+    engine.load_module("csv").unwrap();
+    bench_compiled(bencher, &mut engine, "csv_parse(true)", || {
+        vec![mq_lang::RuntimeValue::String(Shared::new(CSV_PARSE_INPUT.to_string()))]
+    });
 }
 
-#[divan::bench()]
-fn eval_markdown_complex_query() -> mq_lang::RuntimeValues {
-    let markdown_content = (0..50)
-        .map(|i| format!("# Heading {}\n\n**Bold text** and *italic text*.\n\n- Item 1\n- Item 2\n\n```rust\nfn main() {{\n    println!(\"Hello\");\n}}\n```\n\n", i))
-        .collect::<String>();
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
-    let input = markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from);
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            ".h1 | nodes | map(upcase) | filter(fn(x): contains(x, \"HEADING\");)",
-            input.into_iter(),
-        )
-        .unwrap()
-}
-
-// Variable Assignment and Access Benchmarks
-
-#[divan::bench()]
-fn eval_variable_assignment_chain() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine
-        .eval(
-            r#"foreach(i, range(0, 100, 1)):
-            let a = i | let b = a + 1 | let c = b + 2 | let d = c + 3 | let e = d + 4
-            | a + b + c + d + e;"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-// Conditional Execution Benchmarks
-
-#[divan::bench()]
-fn eval_if_else_branching() -> mq_lang::RuntimeValues {
-    let mut engine = mq_lang::DefaultEngine::default();
-    engine.load_builtin_module();
-    engine
-        .eval(
-            r#"def classify(x):
-              if (x % 5 == 0):
-                x * 5
-              elif (x % 3 == 0):
-                x * 3
-              elif (x % 2 == 0):
-                x * 2
-              else:
-                x;
-            | map(range(0, 500, 1), classify)"#,
-            vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-        )
-        .unwrap()
-}
-
-/// Measures `expand_wikilinks` post-processing cost when the document contains wikilinks.
-#[divan::bench(name = "parse_markdown_with_wikilinks")]
-fn parse_markdown_with_wikilinks() -> mq_markdown::Markdown {
-    let content = (0..100)
+fn section_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
+    let markdown_content = (0..30)
         .map(|i| {
-            format!("# Heading {i}\n\nSome text with [[target{i}]] and [[another{i}|Display Text {i}]] links.\n\n")
+            format!(
+                "# Section {i}\n\nIntro paragraph for section {i}.\n\n## Subsection {i}\n\nSome detail text.\n\n- point a\n- point b\n\n"
+            )
         })
         .collect::<String>();
-    mq_markdown::Markdown::from_markdown_str(&content).unwrap()
+    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
+    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
 }
 
-/// Baseline: same document shape but no `[[...]]` patterns — measures pure traversal cost.
-#[divan::bench(name = "parse_markdown_without_wikilinks")]
-fn parse_markdown_without_wikilinks() -> mq_markdown::Markdown {
-    let content = (0..100)
-        .map(|i| format!("# Heading {i}\n\nSome text without any wikilink patterns here.\n\n"))
-        .collect::<String>();
-    mq_markdown::Markdown::from_markdown_str(&content).unwrap()
+/// Covers a document-scale Markdown query through the cached standard `section` module.
+#[divan::bench]
+fn eval_compiled_section_sections(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.load_module("section").unwrap();
+    bench_compiled(bencher, &mut engine, "nodes | sections() | len()", || {
+        section_markdown_input().collect()
+    });
+}
+
+#[divan::bench]
+fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(100)));
+    mq_lang::parse(
+        "
+     def fibonacci(x):
+      if (x == 0):
+        0
+      elif (x == 1):
+        1
+      else:
+        fibonacci(sub(x, 1)) + fibonacci(sub(x, 2)); | fibonacci(20)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap()
+}
+
+/// Exercises byte-string lexing without charging construction of the input to the parser.
+#[divan::bench]
+fn parse_large_byte_string() -> Vec<Shared<mq_lang::AstNode>> {
+    static CODE: LazyLock<String> = LazyLock::new(|| format!(r#"b"{}""#, "a".repeat(16 * 1024)));
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(4)));
+    mq_lang::parse(&CODE, token_arena).unwrap()
+}
+
+/// Exercises flattening of a long logical-expression chain during AST construction.
+#[divan::bench]
+fn parse_long_and_chain() -> Vec<Shared<mq_lang::AstNode>> {
+    static CODE: LazyLock<String> =
+        LazyLock::new(|| std::iter::repeat_n("true", 4_096).collect::<Vec<_>>().join(" && "));
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(8_192)));
+    mq_lang::parse(&CODE, token_arena).unwrap()
 }

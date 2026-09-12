@@ -46,14 +46,6 @@ mod cst;
 pub mod diagnostic;
 mod engine;
 mod error;
-#[cfg(not(feature = "tarn"))]
-mod eval;
-// Keeps shared test helpers' limits path available without compiling the tree-walker.
-#[cfg(feature = "tarn")]
-mod eval {
-    #[allow(unused_imports)]
-    pub(crate) use crate::tarn::Options;
-}
 mod ident;
 mod io;
 mod lexer;
@@ -64,8 +56,9 @@ mod range;
 mod runtime;
 mod selector;
 pub mod suggest;
-#[cfg(feature = "tarn")]
 mod tarn;
+#[cfg(feature = "vm-profile")]
+pub mod vm_profile;
 
 use lexer::Lexer;
 #[cfg(not(feature = "sync"))]
@@ -117,7 +110,7 @@ pub use runtime::builtin::{
     INTERNAL_FUNCTION_DOC,
 };
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
-pub use runtime::runtime_value::{RuntimeValue, RuntimeValues};
+pub use runtime::runtime_value::{DictMap, RuntimeValue, RuntimeValues};
 pub use selector::{AttrKind, Selector};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
@@ -194,13 +187,9 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         }
     };
 
-    AstParser::new(
-        tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
-        &mut token_arena,
-        Module::TOP_LEVEL_MODULE_ID,
-    )
-    .parse()
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+    AstParser::new(tokens.iter(), &mut token_arena, Module::TOP_LEVEL_MODULE_ID)
+        .parse()
+        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.

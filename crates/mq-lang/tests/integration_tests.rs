@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-
-use mq_lang::{DefaultEngine, Engine, Ident, MqResult, RuntimeValue, Shared};
+use mq_lang::{DefaultEngine, DictMap, Engine, Ident, MqResult, RuntimeValue, Shared};
 use rstest::{fixture, rstest};
 
 #[fixture]
@@ -975,7 +973,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_map_identity(r#"let m = dict(["a", 1], ["b", 2]) | map(m, fn(kv): kv;)"#,
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
-          let mut dict = BTreeMap::new();
+          let mut dict = DictMap::default();
           dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
           dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
           dict.into()
@@ -983,7 +981,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_spread_basic("let base = {x: 1, y: 2} | {...base, z: 3}",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
-          let mut dict = BTreeMap::new();
+          let mut dict = DictMap::default();
           dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
           dict.insert(Ident::new("y"), RuntimeValue::Number(2.into()));
           dict.insert(Ident::new("z"), RuntimeValue::Number(3.into()));
@@ -992,7 +990,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_spread_later_key_overrides("let base = {x: 1, y: 2} | {...base, y: 99, z: 3}",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
-          let mut dict = BTreeMap::new();
+          let mut dict = DictMap::default();
           dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
           dict.insert(Ident::new("y"), RuntimeValue::Number(99.into()));
           dict.insert(Ident::new("z"), RuntimeValue::Number(3.into()));
@@ -1001,7 +999,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_spread_multiple("let a = {x: 1} | let b = {y: 2} | {...a, ...b}",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
-          let mut dict = BTreeMap::new();
+          let mut dict = DictMap::default();
           dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
           dict.insert(Ident::new("y"), RuntimeValue::Number(2.into()));
           dict.into()
@@ -1009,7 +1007,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_spread_none_contributes_nothing("{...None, x: 1}",
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![{
-          let mut dict = BTreeMap::new();
+          let mut dict = DictMap::default();
           dict.insert(Ident::new("x"), RuntimeValue::Number(1.into()));
           dict.into()
         }].into()))]
@@ -1021,7 +1019,7 @@ fn engine() -> DefaultEngine {
         ",
           vec![RuntimeValue::Number(0.into())],
           Ok(vec![{
-            let mut dict = BTreeMap::new();
+            let mut dict = DictMap::default();
             dict.insert(Ident::new("x"), RuntimeValue::Number(10.into()));
             dict.insert(Ident::new("y"), RuntimeValue::Number(20.into()));
             dict.into()
@@ -1034,7 +1032,7 @@ fn engine() -> DefaultEngine {
           "#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
-              let mut dict = BTreeMap::new();
+              let mut dict = DictMap::default();
               dict.insert(Ident::new("prefix_a"), RuntimeValue::Number(1.into()));
               dict.insert(Ident::new("prefix_b"), RuntimeValue::Number(2.into()));
               dict.into()
@@ -1052,7 +1050,7 @@ fn engine() -> DefaultEngine {
           "#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
-              let mut dict = BTreeMap::new();
+              let mut dict = DictMap::default();
               dict.insert(Ident::new("num1_transformed"), RuntimeValue::Number(101.into()));
               dict.insert(Ident::new("num2_transformed"), RuntimeValue::Number(102.into()));
               dict.into()
@@ -1065,7 +1063,7 @@ fn engine() -> DefaultEngine {
             "#,
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
-              let mut dict = BTreeMap::new();
+              let mut dict = DictMap::default();
               dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
               dict.insert(Ident::new("c"), RuntimeValue::Number(4.into()));
               dict.into()
@@ -1080,7 +1078,7 @@ fn engine() -> DefaultEngine {
             ",
               vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(7.into()), RuntimeValue::Number(8.into()), RuntimeValue::Number(9.into())]))],
               Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("0"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(3.into()), RuntimeValue::Number(6.into()), RuntimeValue::Number(9.into())])));
                 dict.insert(Ident::new("1"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(7.into())])));
                 dict.insert(Ident::new("2"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(8.into())])));
@@ -1093,7 +1091,7 @@ fn engine() -> DefaultEngine {
             "#,
               vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("cat".to_string())), RuntimeValue::String(Shared::new("dog".to_string())), RuntimeValue::String(Shared::new("bird".to_string())), RuntimeValue::String(Shared::new("fish".to_string())), RuntimeValue::String(Shared::new("elephant".to_string()))]))],
               Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("3"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("cat".to_string())), RuntimeValue::String(Shared::new("dog".to_string()))])));
                 dict.insert(Ident::new("4"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("bird".to_string())), RuntimeValue::String(Shared::new("fish".to_string()))])));
                 dict.insert(Ident::new("8"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("elephant".to_string()))])));
@@ -1113,7 +1111,7 @@ fn engine() -> DefaultEngine {
             ",
               vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(42.into())]))],
               Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("42"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(42.into())])));
                 dict.into()
               }].into()))]
@@ -1124,7 +1122,7 @@ fn engine() -> DefaultEngine {
             "#,
               vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())]))],
               Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("same"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into())])));
                 dict.into()
               }].into()))]
@@ -1135,7 +1133,7 @@ fn engine() -> DefaultEngine {
             ",
               vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(5.into()), RuntimeValue::Number(6.into())]))],
               Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("false"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into()), RuntimeValue::Number(5.into())])));
                 dict.insert(Ident::new("true"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into()), RuntimeValue::Number(4.into()), RuntimeValue::Number(6.into())])));
                 dict.into()
@@ -1593,7 +1591,7 @@ fn engine() -> DefaultEngine {
               Ok(vec![RuntimeValue::Boolean(false)].into()))]
 #[case::any_dict_true(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 2;)"#,
               vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
                 dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
@@ -1601,7 +1599,7 @@ fn engine() -> DefaultEngine {
               Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::any_dict_false(r#"any(dict(["a", 1], ["b", 2]), fn(kv): last(kv) == 3;)"#,
               vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
                 dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 dict.into()
@@ -1621,7 +1619,7 @@ fn engine() -> DefaultEngine {
               Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::all_dict_true(r#"all(dict(["a", 2], ["b", 4]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
-              let mut dict = BTreeMap::new();
+              let mut dict = DictMap::default();
               dict.insert(Ident::new("a"), RuntimeValue::Number(2.into()));
               dict.insert(Ident::new("b"), RuntimeValue::Number(4.into()));
               dict.into()
@@ -1629,7 +1627,7 @@ fn engine() -> DefaultEngine {
               Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::all_dict_false(r#"all(dict(["a", 2], ["b", 3]), fn(kv): mod(last(kv), 2) == 0;)"#,
               vec![{
-              let mut dict = BTreeMap::new();
+              let mut dict = DictMap::default();
               dict.insert(Ident::new("a"), RuntimeValue::Number(2.into()));
               dict.insert(Ident::new("b"), RuntimeValue::Number(3.into()));
               dict.into()
@@ -1716,7 +1714,7 @@ fn engine() -> DefaultEngine {
 #[case::dict_literal_simple(r#"let d = {"a": 1, "b": "two"} | d"#, // Mixing string and ident keys
             vec![RuntimeValue::Number(0.into())],
             Ok(vec![{
-                let mut dict = BTreeMap::new();
+                let mut dict = DictMap::default();
                 dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
                 dict.insert(Ident::new("b"), RuntimeValue::String(Shared::new("two".to_string())));
                 dict.into()
@@ -1943,7 +1941,7 @@ fn engine() -> DefaultEngine {
   } | d"#,
   vec![RuntimeValue::Number(0.into())],
   Ok(vec![{
-    let mut dict = BTreeMap::new();
+    let mut dict = DictMap::default();
     dict.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
     dict.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
     dict.insert(Ident::new("c"), RuntimeValue::Number(3.into()));
@@ -1978,12 +1976,12 @@ fn engine() -> DefaultEngine {
         vec![RuntimeValue::Number(0.into())],
         Ok(vec![RuntimeValue::Array(Shared::new(vec![
             {
-                let mut d = BTreeMap::new();
+                let mut d = DictMap::default();
                 d.insert(Ident::new("a"), RuntimeValue::Number(1.into()));
                 RuntimeValue::Dict(Shared::new(d))
             },
             {
-                let mut d = BTreeMap::new();
+                let mut d = DictMap::default();
                 d.insert(Ident::new("b"), RuntimeValue::Number(2.into()));
                 RuntimeValue::Dict(Shared::new(d))
             },
@@ -2549,21 +2547,21 @@ fn engine() -> DefaultEngine {
 #[case::lte_simple("lte(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::ne_simple("ne(1, 2)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(true)].into()))]
 #[case::csv_parse_simple(r##"_csv_parse("a,b\n1,2", ",", true)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
-    RuntimeValue::Dict(Shared::new(BTreeMap::from([
+    RuntimeValue::Dict(Shared::new(DictMap::from_iter([
         (Ident::new("a"), RuntimeValue::String(Shared::new("1".to_string()))),
         (Ident::new("b"), RuntimeValue::String(Shared::new("2".to_string()))),
     ])))
 ]))].into()))]
-#[case::json_parse_simple(r##"_json_parse("{\"a\": 1}")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::json_parse_simple(r##"_json_parse("{\"a\": 1}")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
-#[case::yaml_parse_simple(r##"_yaml_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::yaml_parse_simple(r##"_yaml_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
-#[case::toml_parse_simple(r##"_toml_parse("a = 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::toml_parse_simple(r##"_toml_parse("a = 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
-#[case::xml_parse_simple(r##"_xml_parse("<root>text</root>")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::xml_parse_simple(r##"_xml_parse("<root>text</root>")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string()))),
     (Ident::new("attributes"), RuntimeValue::new_dict()),
     (Ident::new("children"), RuntimeValue::Array(Shared::new(vec![]))),
@@ -2606,10 +2604,10 @@ fn engine() -> DefaultEngine {
 #[case::get_markdown_position_simple(r##"to_markdown("# title") | first() | _get_markdown_position() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::get_location_simple(r##"to_markdown("# title") | first() | get_location() | get("start_line")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 #[case::get_location_non_markdown(r##"get_location("not a node")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
-#[case::toon_parse_simple(r##"_toon_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::toon_parse_simple(r##"_toon_parse("a: 1")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("a"), RuntimeValue::Number(1.into())),
 ])))].into()))]
-#[case::capture_simple(r##"capture("abc123def", "(?P<num>\\d+)")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::capture_simple(r##"capture("abc123def", "(?P<num>\\d+)")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("num"), RuntimeValue::String(Shared::new("123".to_string()))),
 ])))].into()))]
 #[case::is_debug_mode_simple("is_debug_mode()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Boolean(cfg!(feature = "debugger"))].into()))]
@@ -2743,38 +2741,38 @@ fn engine() -> DefaultEngine {
 // partial: 2-param function can be partially applied — the scenario that triggered the redesign
 #[case::partial_two_param("def plus(a, b): a + b; | let plus10 = partial(plus, 10) | plus10(5)", vec![RuntimeValue::Number(0.into())], Ok(vec![RuntimeValue::Number(15.into())].into()))]
 // property selector: quoted form (."key") is the only way to access dict keys
-#[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("h1"), RuntimeValue::String(Shared::new("title".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
-#[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("url"), RuntimeValue::String(Shared::new("https://example.com".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("https://example.com".to_string()))].into()))]
-#[case::property_selector_quoted_text(r#"."text""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
+#[case::property_selector_quoted_h1(r#"."h1""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("h1"), RuntimeValue::String(Shared::new("title".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("title".to_string()))].into()))]
+#[case::property_selector_quoted_url(r#"."url""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("url"), RuntimeValue::String(Shared::new("https://example.com".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("https://example.com".to_string()))].into()))]
+#[case::property_selector_quoted_text(r#"."text""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // property selector: quoted form with spaces in key
-#[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("my key"), RuntimeValue::String(Shared::new("val".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("val".to_string()))].into()))]
+#[case::property_selector_quoted_space(r#"."my key""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("my key"), RuntimeValue::String(Shared::new("val".to_string()))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("val".to_string()))].into()))]
 // property selector: missing key returns None
-#[case::property_selector_quoted_missing(r#"."h1""#, vec![{let d = std::collections::BTreeMap::new(); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
+#[case::property_selector_quoted_missing(r#"."h1""#, vec![{let d = DictMap::default(); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
 // nested property selector: ."a"."b" accesses {"a": {"b": 1}}
-#[case::property_selector_nested(r#"."a"."b""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Number(1.into())); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Number(1.into())].into()))]
+#[case::property_selector_nested(r#"."a"."b""#, vec![{let mut outer = DictMap::default(); let mut inner = DictMap::default(); inner.insert(Ident::new("b"), RuntimeValue::Number(1.into())); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // nested property selector: ."a"."b"."c" accesses three levels deep
-#[case::property_selector_nested_three(r#"."a"."b"."c""#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut mid = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(Shared::new(inner))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(mid))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
+#[case::property_selector_nested_three(r#"."a"."b"."c""#, vec![{let mut outer = DictMap::default(); let mut mid = DictMap::default(); let mut inner = DictMap::default(); inner.insert(Ident::new("c"), RuntimeValue::Number(42.into())); mid.insert(Ident::new("b"), RuntimeValue::Dict(Shared::new(inner))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(mid))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Number(42.into())].into()))]
 // nested property selector: missing intermediate key returns None
-#[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
+#[case::property_selector_nested_missing(r#"."a"."b""#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("a"), RuntimeValue::Number(1.into())); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::None].into()))]
 // property selector on an array of dicts: maps over each element
 #[case::property_selector_array_of_dicts(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string()))); RuntimeValue::Dict(Shared::new(d))},
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Charlie".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Charlie".to_string()))); RuntimeValue::Dict(Shared::new(d))},
 ]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), "Bob".into(), "Charlie".into()]))].into()))]
 // property selector on an array of dicts: non-dict elements map to None
 #[case::property_selector_array_of_dicts_non_dict_element(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
-    {let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
+    {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
     RuntimeValue::Number(1.into()),
 ]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), RuntimeValue::None]))].into()))]
 // property iterator: ."items"[] iterates all elements of the array stored at the key
-#[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
+#[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
 // property iterator with index: ."items"[0] accesses the first element of the array
-#[case::property_selector_iterator_index(r#"."items"[0]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
+#[case::property_selector_iterator_index(r#"."items"[0]"#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("a".to_string()))].into()))]
 // property iterator with index: ."items"[1] accesses the second element
-#[case::property_selector_iterator_index_1(r#"."items"[1]"#, vec![{let mut d = std::collections::BTreeMap::new(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
+#[case::property_selector_iterator_index_1(r#"."items"[1]"#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::String(Shared::new("b".to_string()))].into()))]
 // chained property iterator: ."a"."b"[] iterates all elements of a nested array
-#[case::property_selector_nested_iterator(r#"."a"."b"[]"#, vec![{let mut outer = std::collections::BTreeMap::new(); let mut inner = std::collections::BTreeMap::new(); inner.insert(Ident::new("b"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
+#[case::property_selector_nested_iterator(r#"."a"."b"[]"#, vec![{let mut outer = DictMap::default(); let mut inner = DictMap::default(); inner.insert(Ident::new("b"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))); outer.insert(Ident::new("a"), RuntimeValue::Dict(Shared::new(inner))); RuntimeValue::Dict(Shared::new(outer))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())]))].into()))]
 // paren-free calls: 0-arg user-defined function called without parentheses
 #[case::paren_free_zero_arg_user_fn("def greet(): \"Hello!\"; | greet", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello!".to_string()))].into()))]
 // paren-free calls: 1-arg user-defined function called without parentheses uses current value
@@ -2911,7 +2909,7 @@ fn engine() -> DefaultEngine {
 // try/catch(e): error binder is bound to a dict with the failure message
 #[case::try_catch_binder(r#"try: error("boom") catch(e): e["message"]"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("boom".to_string()))].into()))]
 // try/catch(e): the full error dict is accessible when bound directly
-#[case::try_catch_binder_dict(r#"try: error("boom") catch(e): e"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(BTreeMap::from([
+#[case::try_catch_binder_dict(r#"try: error("boom") catch(e): e"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict(Shared::new(DictMap::from_iter([
     (Ident::new("message"), RuntimeValue::String(Shared::new("boom".to_string()))),
 ])))].into()))]
 // try/catch(e): the binder is unused when the try expression succeeds
@@ -3063,7 +3061,7 @@ fn engine() -> DefaultEngine {
 // del: None returns None
 #[case::del_none("del(None, 0)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // del: remove key from dict by string
-#[case::del_dict_string(r#"del({"a": 1, "b": 2}, "a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict({let mut m = std::collections::BTreeMap::new(); m.insert(mq_lang::Ident::new("b"), RuntimeValue::Number(2.into())); Shared::new(m)})].into()))]
+#[case::del_dict_string(r#"del({"a": 1, "b": 2}, "a")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Dict({let mut m = DictMap::default(); m.insert(mq_lang::Ident::new("b"), RuntimeValue::Number(2.into())); Shared::new(m)})].into()))]
 // index: bytes haystack
 #[case::index_bytes(r#"index(b"hello", b"ll")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
 // index: bytes not found
@@ -3583,50 +3581,11 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
     assert_eq!(engine.eval(program, input.into_iter()), expected);
 }
 
-// get_variable/set_variable are tree-walker-only (deprecated, scheduled for removal in the
-// next release) and are not registered as builtins when the `tarn` feature is enabled.
-#[cfg(not(feature = "tarn"))]
-#[rstest]
-#[case::get_variable_simple("
-          let x = 42
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(42.into())].into()))]
-#[case::set_variable_simple("
-          set_variable(\"x\", 99)
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(99.into())].into()))]
-#[case::set_variable_overwrite("
-          set_variable(\"x\", 1)
-          | set_variable(\"x\", 2)
-          | get_variable(\"x\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::Number(2.into())].into()))]
-#[case::set_and_get_multiple_variables("
-          set_variable(\"a\", \"foo\")
-          | set_variable(\"b\", \"bar\")
-          | get_variable(\"a\") + get_variable(\"b\")
-          ",
-          vec![RuntimeValue::Number(0.into())],
-          Ok(vec![RuntimeValue::String(Shared::new("foobar".to_string()))].into()))]
-#[case::set_variable_symbol(r#"set_variable(:myvar, 42) | get_variable(:myvar)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
-#[case::set_variable_string_key(r#"set_variable("myvar", 42) | get_variable("myvar") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("number".to_string()))].into()))]
-fn test_get_set_variable_deprecated(
-    mut engine: Engine,
-    #[case] program: &str,
-    #[case] input: Vec<RuntimeValue>,
-    #[case] expected: MqResult,
-) {
-    assert_eq!(engine.eval(program, input.into_iter()), expected);
-}
-
 #[rstest]
 #[case::invalid_function_syntax("f()def f(): 1", vec![RuntimeValue::Number(0.into())])]
-#[case::func("def func1(): 1 | func1(); | func1()", vec![RuntimeValue::Number(0.into())])]
+// Keep this an arity failure rather than an unbounded tail-recursive definition. Tail calls
+// intentionally reuse their frame and therefore do not consume the stack-depth limit.
+#[case::func("def func1(): 1; | func1(1)", vec![RuntimeValue::Number(0.into())])]
 #[case::func("def func1(x): 1; | func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::func_invalid_definition("def f(x): 1; | f2(1, 2)", vec![RuntimeValue::Number(0.into())])]
 #[case::invalid_definition("func1(1, 2)", vec![RuntimeValue::Number(0.into())])]
@@ -3647,7 +3606,7 @@ fn test_get_set_variable_deprecated(
 #[case::regex_invalid_pattern(r#""abc" =~ "[invalid""#, vec![RuntimeValue::None],)]
 #[case::is_regex_match_invalid_pattern(r#"is_regex_match("abc", "[invalid")"#, vec![RuntimeValue::None],)]
 // recursion depth exceeded
-#[case::recursion_limit("def f(x): f(x); | f(1)", vec![RuntimeValue::None],)]
+#[case::recursion_limit("def f(x): 1 + f(x); | f(1)", vec![RuntimeValue::None],)]
 // too many args to a user-defined function
 #[case::too_many_args_user_fn("def f(x): x; | f(1, 2, 3)", vec![RuntimeValue::None],)]
 // too few args to a variadic user-defined function (need 2+ required, given 0)
@@ -3852,7 +3811,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Literal(AstLiteral::String("hello".to_string()))),
+        expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
     }),
     Some(vec!["Literal", "String", "hello"]),
     true
@@ -3860,7 +3819,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Literal(AstLiteral::Number(123.45.into()))),
+        expr: AstExpr::Literal(AstLiteral::Number(123.45.into())),
     }),
     Some(vec!["Literal", "Number", "123.45"]),
     true
@@ -3868,7 +3827,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Ident(mq_lang::IdentWithToken::new("my_var"))),
+        expr: AstExpr::Ident(mq_lang::IdentWithToken::new("my_var")),
     }),
     Some(vec!["Ident", "my_var"]),
     true
@@ -3876,13 +3835,13 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::Call(
+        expr: AstExpr::Call(
             mq_lang::IdentWithToken::new("my_func"),
             smallvec![Shared::new(AstNode {
                 token_id: default_token_id(),
-                expr: Shared::new(AstExpr::Literal(AstLiteral::Number(1.into()))),
+                expr: AstExpr::Literal(AstLiteral::Number(1.into())),
             })],
-        )),
+        ),
     }),
     Some(vec!["Call", "my_func", "Literal", "Number", "1.0"]),
     true
@@ -3890,18 +3849,18 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(AstExpr::If(smallvec![
+        expr: AstExpr::If(smallvec![
             (
                 Some(Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Shared::new(AstExpr::Literal(AstLiteral::Bool(true))),
+                    expr: AstExpr::Literal(AstLiteral::Bool(true)),
                 })),
                 Shared::new(AstNode {
                     token_id: default_token_id(),
-                    expr: Shared::new(AstExpr::Literal(AstLiteral::String("then_branch".to_string()))),
+                    expr: AstExpr::Literal(AstLiteral::String("then_branch".to_string())),
                 })
             )
-        ])),
+        ]),
     }),
     Some(vec!["If", "Bool", "true", "String", "then_branch"]),
     false
@@ -3922,7 +3881,7 @@ mod ast_json {
         if check_token_id {
             assert_eq!(deserialized_node.token_id, default_token_id());
         }
-        if let AstExpr::Ident(ident) = &*deserialized_node.expr {
+        if let AstExpr::Ident(ident) = &deserialized_node.expr {
             assert_eq!(ident.token, None);
         }
     }
@@ -3931,11 +3890,11 @@ mod ast_json {
     fn test_program_serialization_deserialization() {
         let node1 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Shared::new(AstExpr::Literal(AstLiteral::String("first".to_string()))),
+            expr: AstExpr::Literal(AstLiteral::String("first".to_string())),
         });
         let node2 = Shared::new(AstNode {
             token_id: default_token_id(),
-            expr: Shared::new(AstExpr::Literal(AstLiteral::Number(10.into()))),
+            expr: AstExpr::Literal(AstLiteral::Number(10.into())),
         });
         let original_program: Program = vec![node1, node2];
 

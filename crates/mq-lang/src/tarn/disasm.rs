@@ -182,6 +182,45 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("BinaryLocalConst {op:?} {}, const {constant}", local(*slot))
         }
+        bytecode::OpCode::UpdateLocalConst {
+            op,
+            local: slot,
+            constant,
+        } => {
+            format!("UpdateLocalConst {op:?} {}, const {constant}", local(*slot))
+        }
+        bytecode::OpCode::UpdateLocalLocal {
+            op,
+            local: destination,
+            value,
+        } => {
+            format!("UpdateLocalLocal {op:?} {}, {}", local(*destination), local(*value))
+        }
+        bytecode::OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset,
+        } => {
+            format!(
+                "JumpIfFalseLocalLocal {op:?} {}, {} -> {}",
+                local(*left),
+                local(*right),
+                jump_ref(pc, *offset)
+            )
+        }
+        bytecode::OpCode::JumpIfFalseLocalConst {
+            op,
+            local: slot,
+            constant,
+            offset,
+        } => {
+            format!(
+                "JumpIfFalseLocalConst {op:?} {}, const {constant} -> {}",
+                local(*slot),
+                jump_ref(pc, *offset)
+            )
+        }
         bytecode::OpCode::Neg => "Neg".to_string(),
         bytecode::OpCode::Not => "Not".to_string(),
         bytecode::OpCode::ArrayNew => "ArrayNew".to_string(),
@@ -229,7 +268,30 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
             format!("SelectorMatchWithArgs {:?}, argc={}", payload.0, payload.1)
         }
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
+        bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
+        bytecode::OpCode::CallStaticExact(chunk, argc) => {
+            format!("CallStaticExact chunk {chunk}, argc={argc}")
+        }
+        bytecode::OpCode::CallStaticExact0(target) => {
+            format!("CallStaticExact0 chunk {}", target.chunk_index)
+        }
+        bytecode::OpCode::CallStaticExact1(target) => {
+            format!("CallStaticExact1 chunk {}", target.chunk_index)
+        }
+        bytecode::OpCode::CallStaticExact2(target) => {
+            format!("CallStaticExact2 chunk {}", target.chunk_index)
+        }
+        bytecode::OpCode::CallStaticImplicitSelf(chunk, argc) => {
+            format!("CallStaticImplicitSelf chunk {chunk}, argc={argc}")
+        }
+        bytecode::OpCode::CallSelf(argc) => format!("CallSelf argc={argc}"),
+        bytecode::OpCode::CallSelfExact(argc) => format!("CallSelfExact argc={argc}"),
+        bytecode::OpCode::CallSelfExact0 => "CallSelfExact0".to_string(),
+        bytecode::OpCode::CallSelfExact1 => "CallSelfExact1".to_string(),
+        bytecode::OpCode::CallSelfExact2 => "CallSelfExact2".to_string(),
+        bytecode::OpCode::CallSelfImplicitSelf(argc) => format!("CallSelfImplicitSelf argc={argc}"),
         bytecode::OpCode::CallLocal(slot, argc) => format!("CallLocal {}, argc={argc}", local(*slot)),
+        bytecode::OpCode::CallUpvalue(slot, argc) => format!("CallUpvalue {}, argc={argc}", upvalue(*slot)),
         bytecode::OpCode::CallValue(argc) => format!("CallValue argc={argc}"),
         bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),
         bytecode::OpCode::TryCatch(info) => {

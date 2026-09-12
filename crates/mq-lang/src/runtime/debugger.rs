@@ -1,11 +1,8 @@
 use itertools::Itertools;
 
 use super::runtime_value::RuntimeValue;
-#[cfg(feature = "tarn")]
 use crate::Ident;
 use crate::ast::node as ast;
-#[cfg(not(feature = "tarn"))]
-use crate::runtime::env::Env;
 use crate::{Shared, SharedCell, Token};
 
 use std::{collections::HashSet, fmt::Debug};
@@ -68,11 +65,8 @@ pub struct DebugContext {
     pub token: Shared<Token>,
     /// Call stack of AST nodes representing the current execution path
     pub call_stack: Vec<Shared<ast::Node>>,
-    /// Current evaluation environment info for the tree-walker backend.
-    #[cfg(not(feature = "tarn"))]
-    pub env: Shared<SharedCell<Env>>,
     /// Live VM bindings for the paused frame.
-    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    #[cfg(feature = "debugger")]
     pub(crate) vm_frame: VmDebugFrame,
     /// Snapshot of the VM operand stack at the current statement boundary.
     #[cfg(feature = "debug-trace")]
@@ -87,7 +81,7 @@ impl Default for DebugContext {
             current_value: RuntimeValue::NONE,
             current_node: Shared::new(ast::Node {
                 token_id: crate::ast::TokenId::new(0),
-                expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(0.0.into()))),
+                expr: ast::Expr::Literal(ast::Literal::Number(0.0.into())),
             }),
             token: Shared::new(Token {
                 kind: crate::TokenKind::Eof,
@@ -95,9 +89,7 @@ impl Default for DebugContext {
                 module_id: crate::ModuleId::new(0),
             }),
             call_stack: Vec::new(),
-            #[cfg(not(feature = "tarn"))]
-            env: Shared::new(SharedCell::new(Env::default())),
-            #[cfg(all(feature = "tarn", feature = "debugger"))]
+            #[cfg(feature = "debugger")]
             vm_frame: VmDebugFrame::default(),
             #[cfg(feature = "debug-trace")]
             operand_stack: Vec::new(),
@@ -107,7 +99,7 @@ impl Default for DebugContext {
 }
 
 /// A variable visible in a paused Tarn VM frame.
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 #[derive(Debug, Clone)]
 pub(crate) struct VmDebugBinding {
     name: Ident,
@@ -115,7 +107,7 @@ pub(crate) struct VmDebugBinding {
     value: RuntimeValue,
 }
 
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 impl VmDebugBinding {
     pub(crate) fn new(name: Ident, slot: u16, value: RuntimeValue) -> Self {
         Self { name, slot, value }
@@ -124,7 +116,7 @@ impl VmDebugBinding {
 
 /// Debugger display metadata for a VM slot. Kept separate from the tree-walker's
 /// environment representation so Tarn builds do not retain `runtime::env`.
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VmVariable {
     pub name: String,
@@ -132,7 +124,7 @@ pub struct VmVariable {
     pub type_field: String,
 }
 
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 impl VmVariable {
     fn from_binding(binding: &VmDebugBinding) -> Self {
         Self {
@@ -143,7 +135,7 @@ impl VmVariable {
     }
 }
 
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 impl std::fmt::Display for VmVariable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} = {}, type: {}", self.name, self.value, self.type_field)
@@ -151,7 +143,7 @@ impl std::fmt::Display for VmVariable {
 }
 
 /// A pending write to a VM slot requested while execution is stopped.
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 #[derive(Debug, Clone)]
 pub(crate) struct VmDebugUpdate {
     pub(crate) is_upvalue: bool,
@@ -163,7 +155,7 @@ pub(crate) struct VmDebugUpdate {
 ///
 /// The debugger handler blocks the VM while a DAP client inspects the frame, so updates queued
 /// here can safely be applied by the interpreter immediately before it resumes execution.
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 #[derive(Debug, Clone)]
 pub(crate) struct VmDebugFrame {
     locals: Shared<SharedCell<Vec<VmDebugBinding>>>,
@@ -172,7 +164,7 @@ pub(crate) struct VmDebugFrame {
     active: Shared<SharedCell<bool>>,
 }
 
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 impl Default for VmDebugFrame {
     fn default() -> Self {
         Self {
@@ -184,7 +176,7 @@ impl Default for VmDebugFrame {
     }
 }
 
-#[cfg(all(feature = "tarn", feature = "debugger"))]
+#[cfg(feature = "debugger")]
 impl VmDebugFrame {
     pub(crate) fn new(locals: Vec<VmDebugBinding>, upvalues: Vec<VmDebugBinding>) -> Self {
         Self {
@@ -243,19 +235,13 @@ impl VmDebugFrame {
 
 impl DebugContext {
     /// Returns variables local to the currently paused frame.
-    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    #[cfg(feature = "debugger")]
     pub fn local_variables(&self) -> Vec<VmVariable> {
         VmDebugFrame::variables(&self.vm_frame.locals)
     }
 
-    /// Returns variables local to the currently paused tree-walker frame.
-    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
-    pub fn local_variables(&self) -> Vec<super::env::Variable> {
-        self.env.read().unwrap().get_local_variables()
-    }
-
     /// Returns variables captured from the enclosing frame or global scope.
-    #[cfg(all(feature = "debugger", feature = "tarn"))]
+    #[cfg(feature = "debugger")]
     pub fn global_variables(&self) -> Vec<VmVariable> {
         if self.call_stack.is_empty() {
             VmDebugFrame::variables(&self.vm_frame.locals)
@@ -264,14 +250,8 @@ impl DebugContext {
         }
     }
 
-    /// Returns variables captured from the tree-walker's enclosing frame or global scope.
-    #[cfg(all(feature = "debugger", not(feature = "tarn")))]
-    pub fn global_variables(&self) -> Vec<super::env::Variable> {
-        self.env.read().unwrap().get_global_variables()
-    }
-
     /// Returns the bindings visible to a paused Tarn VM frame.
-    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    #[cfg(feature = "debugger")]
     pub fn vm_bindings(&self) -> Vec<(Ident, RuntimeValue)> {
         self.vm_frame.bindings()
     }
@@ -279,14 +259,14 @@ impl DebugContext {
     /// Queues an update to a local or captured Tarn VM binding.
     ///
     /// The update takes effect when the VM debugger hook returns to the interpreter.
-    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    #[cfg(feature = "debugger")]
     pub fn set_vm_variable(&self, name: &str, value: RuntimeValue, prefer_upvalue: bool) -> bool {
         self.vm_frame
             .set_variable(Ident::new(name), value, prefer_upvalue && !self.call_stack.is_empty())
     }
 
     /// Queues an update to any visible Tarn VM binding, preferring a local binding over a capture.
-    #[cfg(all(feature = "tarn", feature = "debugger"))]
+    #[cfg(feature = "debugger")]
     pub fn set_vm_expression(&self, name: &str, value: RuntimeValue) -> bool {
         self.vm_frame.set_expression(Ident::new(name), value)
     }
@@ -710,7 +690,7 @@ mod tests {
     fn make_node(token_id: TokenId) -> Shared<ast::Node> {
         Shared::new(ast::Node {
             token_id,
-            expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(42.0.into()))),
+            expr: ast::Expr::Literal(ast::Literal::Number(42.0.into())),
         })
     }
 
@@ -724,9 +704,7 @@ mod tests {
             current_node: node,
             token: Shared::clone(&token),
             call_stack: Vec::new(),
-            #[cfg(not(feature = "tarn"))]
-            env: Shared::new(SharedCell::new(Env::default())),
-            #[cfg(feature = "tarn")]
+            #[cfg(feature = "debugger")]
             vm_frame: Default::default(),
             #[cfg(feature = "debug-trace")]
             operand_stack: Vec::new(),

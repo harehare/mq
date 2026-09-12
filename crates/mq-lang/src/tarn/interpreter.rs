@@ -1,5 +1,5 @@
-//! Tarn's bytecode dispatch loop: `run_chunk_inner_impl` and its opcode handlers, plus the
-//! public `run_*` entry points that set up a top-level frame and call into it.
+//! Tarn's bytecode dispatch loop: `run_frame_slice` and its opcode handlers, `run_frames`'s
+//! explicit-frame-stack trampoline driving it, and the public `run_*` entry points.
 //!
 //! `errors` (the `VmError` type), `frame` (deadline/call-depth tracking and the `Locals`/stack
 //! pools), `calls` (binding arguments and invoking a callee), and `selectors` (applying a
@@ -10,14 +10,18 @@ mod frame;
 mod selectors;
 
 use self::calls::{
-    CallSite, FixedClosureCall, call_builtin, call_builtin_args, call_fixed_closure_from_stack, call_stack_value,
-    capture_upvalues, negate_ident,
+    CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
+    call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
+    call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
+    call_static_chunk_from_stack, capture_upvalues, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
-use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT};
+use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
 use super::compiler::CompiledProgram;
+#[cfg(feature = "debugger")]
+use super::value::Cell;
 use super::value::VmClosureValue;
-use super::value::{Cell, Closure, Locals, StackValue, read_cell, write_cell};
+use super::value::{Closure, Locals, StackValue, read_cell, write_cell};
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
@@ -27,11 +31,13 @@ use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, RuntimeValue};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
+#[cfg(feature = "vm-profile")]
+use crate::vm_profile;
 use crate::{Ident, Shared};
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
 pub(crate) use frame::ExecutionPools;
-use frame::{ExecutionContext, ExecutionLimits};
+use frame::{Continuation, ExecutionContext, ExecutionLimits, Frame, TryBody};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -101,18 +107,6 @@ pub(crate) fn capture_slots(chunk: &Chunk, names: &[Ident]) -> Vec<CaptureSlot> 
                 .map(|slot| (*name, slot as u16))
         })
         .collect()
-}
-
-/// Runs a compiled program.
-#[cfg(test)]
-pub(crate) fn run(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-) -> VmResult<RuntimeValue> {
-    run_with_globals(compiled, input, host_functions, timeout, max_call_stack_depth, &[])
 }
 
 /// Runs a compiled program with Engine-defined globals.
@@ -396,7 +390,7 @@ fn run_impl_with_bindings(
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let top_level_chunk = &compiled.chunks[0];
     let captures_local_slots = top_level_chunk.captures_local_slots();
-    let locals = limits.take_locals(top_level_chunk.local_count, captures_local_slots);
+    let mut locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captured_local_slots());
     locals.set(SELF_SLOT, StackValue::Value(input));
     if initial_bindings.len() + 1 > locals.len() {
         if !captures_local_slots {
@@ -419,7 +413,6 @@ fn run_impl_with_bindings(
         0,
         &compiled.chunks,
         locals,
-        &[],
         &mut execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -445,7 +438,7 @@ fn run_impl_capturing_locals_with_env(
     let chunks = &compiled.chunks;
     let top_level_chunk = &chunks[0];
     let reusable_locals = !top_level_chunk.captures_local_slots();
-    let locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captures_local_slots());
+    let mut locals = limits.take_locals(top_level_chunk.local_count, top_level_chunk.captured_local_slots());
     locals.set(SELF_SLOT, StackValue::Value(input));
     if bindings.len() + 1 > locals.len() {
         if reusable_locals {
@@ -461,18 +454,15 @@ fn run_impl_capturing_locals_with_env(
         locals.set(slot as u16 + 1, StackValue::Value(value));
     }
 
-    let mut stack = limits.take_stack();
     let mut execution = ExecutionContext {
         env,
         limits: &mut limits,
         host_functions: options.host_functions,
     };
-    let raw_result = run_chunk_inner(
-        0,
+    let initial = Frame::new(0, None, locals, None, reusable_locals, Continuation::Push);
+    let (raw_result, locals) = run_frames(
+        initial,
         chunks,
-        &locals,
-        &[],
-        &mut stack,
         &mut execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -485,7 +475,6 @@ fn run_impl_capturing_locals_with_env(
                 .map(|value| (*name, into_runtime_value(value, chunks)))
         })
         .collect();
-    execution.limits.recycle_stack(stack);
     if reusable_locals {
         execution.limits.recycle_locals(locals);
     }
@@ -545,7 +534,7 @@ struct DebugBindings {
 }
 
 #[cfg(feature = "debugger")]
-fn apply_debug_updates(frame: &VmDebugFrame, locals: &Locals, upvalues: &[Cell]) {
+fn apply_debug_updates(frame: &VmDebugFrame, locals: &mut Locals, upvalues: &[Cell]) {
     for update in frame.take_pending_updates() {
         if update.is_upvalue {
             if let Some(cell) = upvalues.get(update.slot as usize) {
@@ -557,22 +546,19 @@ fn apply_debug_updates(frame: &VmDebugFrame, locals: &Locals, upvalues: &[Cell])
     }
 }
 
+/// For callers that don't need the bottom frame's `Locals` back afterward.
 fn run_chunk(
     chunk_index: u16,
     chunks: &Shared<Vec<Chunk>>,
     locals: Locals,
-    upvalues: &[Cell],
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<StackValue> {
     let reusable_locals = !chunks[chunk_index as usize].captures_local_slots();
-    let mut stack = execution.limits.take_stack();
-    let result = run_chunk_inner(
-        chunk_index,
+    let initial = Frame::new(chunk_index, None, locals, None, reusable_locals, Continuation::Push);
+    let (result, locals) = run_frames(
+        initial,
         chunks,
-        &locals,
-        upvalues,
-        &mut stack,
         execution,
         #[cfg(feature = "debugger")]
         debug,
@@ -580,62 +566,314 @@ fn run_chunk(
     if reusable_locals {
         execution.limits.recycle_locals(locals);
     }
-    execution.limits.recycle_stack(stack);
     result
 }
 
-fn run_chunk_inner(
-    chunk_index: u16,
-    chunks: &Shared<Vec<Chunk>>,
-    locals: &Locals,
-    upvalues: &[Cell],
-    stack: &mut Vec<StackValue>,
+enum FrameOutcome {
+    Enter(Frame),
+    /// A call followed immediately by `Return`; the callee can replace this frame.
+    TailEnter(Frame),
+    Complete(StackValue),
+}
+
+/// The trampoline: an explicit `Vec<Frame>` replaces Rust's own call stack, so mq call depth is
+/// decoupled from Rust stack depth. Returns the bottom frame's `Locals` unrecycled.
+fn run_frames(
+    initial: Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
-    if execution.limits.has_deadline() {
-        run_chunk_inner_impl::<true>(
-            chunk_index,
-            chunks,
-            locals,
-            upvalues,
-            stack,
+) -> (VmResult<StackValue>, Locals) {
+    let mut operand_stack = execution.limits.take_stack();
+    let mut frames = execution.limits.take_frame_stack();
+    let result = if execution.limits.has_deadline() {
+        run_frames_impl::<true>(
+            initial,
+            root_chunks,
+            &mut frames,
+            &mut operand_stack,
             execution,
             #[cfg(feature = "debugger")]
             debug,
         )
     } else {
-        run_chunk_inner_impl::<false>(
-            chunk_index,
-            chunks,
-            locals,
-            upvalues,
-            stack,
+        run_frames_impl::<false>(
+            initial,
+            root_chunks,
+            &mut frames,
+            &mut operand_stack,
             execution,
             #[cfg(feature = "debugger")]
             debug,
         )
+    };
+    execution.limits.recycle_frame_stack(frames);
+    execution.limits.recycle_stack(operand_stack);
+    result
+}
+
+fn run_frames_impl<const CHECK_TIMEOUT: bool>(
+    initial: Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
+    frames: &mut Vec<Frame>,
+    operand_stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> (VmResult<StackValue>, Locals) {
+    frames.push(initial);
+
+    'frames: loop {
+        let frame = frames.last_mut().expect("the frame stack is never empty here");
+        let outcome = run_frame_slice::<CHECK_TIMEOUT>(
+            frame,
+            root_chunks,
+            operand_stack,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        );
+
+        let value = match outcome {
+            Ok(FrameOutcome::Enter(mut new_frame)) => {
+                new_frame.stack_base = operand_stack.len();
+                if let Err(e) = execution.limits.push_frame(
+                    frames,
+                    new_frame,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    let e = locate_at_top(frames, root_chunks, e);
+                    match unwind(
+                        e,
+                        frames,
+                        root_chunks,
+                        operand_stack,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    ) {
+                        Ok(()) => continue 'frames,
+                        Err((e, locals)) => return (Err(e), locals),
+                    }
+                }
+                continue 'frames;
+            }
+            Ok(FrameOutcome::TailEnter(mut new_frame)) => {
+                let caller = frames.last().expect("the frame stack is never empty here");
+                new_frame.stack_base = caller.stack_base;
+                execution.limits.replace_top_frame(
+                    frames,
+                    new_frame,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+                continue 'frames;
+            }
+            Ok(FrameOutcome::Complete(value)) => value,
+            Err(e) => match unwind(
+                e,
+                frames,
+                root_chunks,
+                operand_stack,
+                execution,
+                #[cfg(feature = "debugger")]
+                debug,
+            ) {
+                Ok(()) => continue 'frames,
+                Err((e, locals)) => return (Err(e), locals),
+            },
+        };
+
+        if frames.len() == 1 {
+            let finished = frames.pop().expect("just checked len() == 1");
+            return (Ok(value), finished.locals);
+        }
+        let continuation = execution
+            .limits
+            .pop_frame(
+                frames,
+                #[cfg(feature = "debugger")]
+                debug,
+            )
+            .expect("just checked len() > 1");
+        match continuation {
+            Continuation::Push | Continuation::TryBody(_) => {
+                operand_stack.push(value);
+            }
+            Continuation::ResumeBindParams(pending) => {
+                let next = match apply_pending(*pending, value, execution) {
+                    Ok(next) => next,
+                    Err(e) => {
+                        let e = locate_at_top(frames, root_chunks, e);
+                        match unwind(
+                            e,
+                            frames,
+                            root_chunks,
+                            operand_stack,
+                            execution,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        ) {
+                            Ok(()) => continue 'frames,
+                            Err((e, locals)) => return (Err(e), locals),
+                        }
+                    }
+                };
+                let mut next = next;
+                next.stack_base = operand_stack.len();
+                if let Err(e) = execution.limits.push_frame(
+                    frames,
+                    next,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    let e = locate_at_top(frames, root_chunks, e);
+                    match unwind(
+                        e,
+                        frames,
+                        root_chunks,
+                        operand_stack,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    ) {
+                        Ok(()) => continue 'frames,
+                        Err((e, locals)) => return (Err(e), locals),
+                    }
+                }
+            }
+        }
     }
 }
 
-fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
-    chunk_index: u16,
-    chunks: &Shared<Vec<Chunk>>,
-    locals: &Locals,
-    upvalues: &[Cell],
+/// `locate`s `e` at the still-suspended calling frame's own chunk/`ip`.
+fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError) -> VmError {
+    let caller = frames.last().expect("the frame stack is never empty here");
+    let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
+    locate(&chunks[caller.chunk_index as usize], caller.ip, e)
+}
+
+/// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
+#[allow(
+    clippy::ptr_arg,
+    reason = "unwinding may truncate and push onto the shared operand stack"
+)]
+fn unwind(
+    mut e: VmError,
+    frames: &mut Vec<Frame>,
+    root_chunks: &Shared<Vec<Chunk>>,
+    operand_stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> Result<(), (VmError, Locals)> {
+    loop {
+        if frames.len() == 1 {
+            let finished = frames.pop().expect("just checked len() == 1");
+            return Err((e, finished.locals));
+        }
+        let failed_stack_base = frames.last().expect("just checked len() > 1").stack_base;
+        let continuation = execution
+            .limits
+            .pop_frame(
+                frames,
+                #[cfg(feature = "debugger")]
+                debug,
+            )
+            .expect("just checked len() > 1");
+        // Discard partial operands the failed frame left above its own stack_base (e.g. an
+        // in-progress array/dict literal), matching the truncation `run_frame_slice` does
+        // on success so a catch frame, or the next frame up the chain, starts clean.
+        operand_stack.truncate(failed_stack_base);
+        match continuation {
+            Continuation::Push => continue,
+            Continuation::ResumeBindParams(pending) => {
+                execution.limits.recycle_pending_locals(*pending);
+                continue;
+            }
+            Continuation::TryBody(body) => {
+                let TryBody {
+                    catch_closure,
+                    has_binder,
+                    break_acc_slot,
+                    break_offset,
+                    continue_offset,
+                } = *body;
+                if let Some(value) = flow_break_value(&e) {
+                    let (Some(acc_slot), Some(offset)) = (break_acc_slot, break_offset) else {
+                        continue;
+                    };
+                    let parent = frames.last_mut().expect("just checked len() > 1");
+                    if let Some(value) = value {
+                        parent.locals.set(acc_slot, StackValue::Value(value));
+                    }
+                    parent.ip = (parent.ip as i64 + offset as i64) as usize;
+                    return Ok(());
+                }
+                if flow_continue(&e) {
+                    let Some(offset) = continue_offset else {
+                        continue;
+                    };
+                    let parent = frames.last_mut().expect("just checked len() > 1");
+                    parent.ip = (parent.ip as i64 + offset as i64) as usize;
+                    return Ok(());
+                }
+                let parent = frames.last().expect("just checked len() > 1");
+                let catch_chunks = parent.chunks.as_ref().unwrap_or(root_chunks);
+                let catch_chunk = &catch_chunks[catch_closure.chunk_index as usize];
+                let mut catch_locals = execution
+                    .limits
+                    .take_locals(catch_chunk.local_count, catch_chunk.captured_local_slots());
+                catch_locals.set(SELF_SLOT, parent.locals.get(SELF_SLOT));
+                if has_binder {
+                    catch_locals.set(1, StackValue::Value(error_dict(&e)));
+                }
+                let mut catch_frame = Frame::new(
+                    catch_closure.chunk_index,
+                    parent.chunks.clone(),
+                    catch_locals,
+                    catch_closure.upvalues.clone(),
+                    !catch_chunk.captures_local_slots(),
+                    Continuation::Push,
+                );
+                catch_frame.stack_base = operand_stack.len();
+                match execution.limits.push_frame(
+                    frames,
+                    catch_frame,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    Ok(()) => return Ok(()),
+                    Err(new_e) => {
+                        e = locate_at_top(&*frames, root_chunks, new_e);
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn run_frame_slice<const CHECK_TIMEOUT: bool>(
+    frame: &mut Frame,
+    root_chunks: &Shared<Vec<Chunk>>,
     stack: &mut Vec<StackValue>,
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<StackValue> {
-    let chunk = &chunks[chunk_index as usize];
-    let mut ip: usize = 0;
+) -> VmResult<FrameOutcome> {
+    let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+    let chunk = &chunks[frame.chunk_index as usize];
+    let locals = &mut frame.locals;
+    let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
+    let mut ip = frame.ip;
 
     macro_rules! pop {
-        () => {
-            stack
-                .pop()
-                .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow")))?
-        };
+        () => {{
+            if stack.len() <= frame.stack_base {
+                return Err(locate(chunk, ip, VmError::Corrupt("stack underflow")));
+            }
+            // SAFETY: the length check above proves the stack is non-empty.
+            unsafe { stack.pop().unwrap_unchecked() }
+        }};
     }
     macro_rules! pop_value {
         () => {{ into_runtime_value(pop!(), chunks) }};
@@ -646,12 +884,25 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
         };
     }
 
-    while ip < chunk.code.len() {
+    let outcome = 'dispatch: loop {
+        if ip >= chunk.code.len() {
+            let value = if stack.len() > frame.stack_base {
+                // SAFETY: the length check above proves the stack is non-empty.
+                unsafe { stack.pop().unwrap_unchecked() }
+            } else {
+                StackValue::Value(RuntimeValue::None)
+            };
+            break 'dispatch FrameOutcome::Complete(value);
+        }
         if CHECK_TIMEOUT {
             execution.limits.check().map_err(|e| locate(chunk, ip, e))?;
         }
         let op = &chunk.code[ip];
         ip += 1;
+        #[cfg(feature = "vm-profile")]
+        if op.is_profiled_instruction() {
+            vm_profile::record_opcode(op.profile_name());
+        }
 
         match op {
             #[cfg(feature = "debugger")]
@@ -755,7 +1006,7 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 let captured = capture_upvalues(sources, locals, upvalues);
                 stack.push(StackValue::Closure(Shared::new(Closure {
                     chunk_index: *target_chunk,
-                    upvalues: captured,
+                    upvalues: (!captured.is_empty()).then(|| Shared::new(captured)),
                 })));
             }
             OpCode::MakeStaticClosure(index) => {
@@ -822,6 +1073,52 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?,
                 ));
+            }
+            OpCode::UpdateLocalConst { op, local, constant } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
+            }
+            OpCode::UpdateLocalLocal { op, local, value } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                let b = local_runtime_value(locals, *value, chunks)?;
+                let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(result)) };
+            }
+            OpCode::JumpIfFalseLocalLocal {
+                op,
+                left,
+                right,
+                offset,
+            } => {
+                let a = local_runtime_value(locals, *left, chunks)?;
+                let b = local_runtime_value(locals, *right, chunks)?;
+                let cond = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                if !cond.is_truthy() {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+            }
+            OpCode::JumpIfFalseLocalConst {
+                op,
+                local,
+                constant,
+                offset,
+            } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let cond = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                if !cond.is_truthy() {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
             }
             OpCode::Neg => {
                 let a = pop_value!();
@@ -922,25 +1219,13 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 value_slot,
                 exit_offset,
             } => {
-                let index = locals.get(*index_slot);
-                let StackValue::Value(RuntimeValue::Number(index)) = index else {
-                    bail!(VmError::Corrupt("ForeachNext has invalid loop state"));
-                };
-                let index_value = index.value();
-                let (array_len, value) = locals
-                    .array_len_and_element_at(*array_slot, index_value as usize)
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                let value = unsafe { locals.foreach_next(*array_slot, *index_slot, *value_slot, SELF_SLOT) }
                     .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                if index_value >= array_len as f64 {
+                if value.is_none() {
                     ip = (ip as i64 + *exit_offset as i64) as usize;
                     continue;
                 }
-                let value = value.unwrap_or(RuntimeValue::None);
-                locals.set(
-                    *index_slot,
-                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
-                );
-                locals.set(*value_slot, StackValue::Value(value.clone()));
-                locals.set(SELF_SLOT, StackValue::Value(value));
             }
             OpCode::ForeachCollect(slot) => {
                 let value = pop_value!();
@@ -997,16 +1282,41 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     .len()
                     .checked_sub(*n as usize)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in InterpString")))?;
+                if start < frame.stack_base {
+                    bail!(VmError::Corrupt("stack underflow in InterpString"));
+                }
                 let value = interp_string(&stack[start..], chunks);
                 stack.truncate(start);
                 stack.push(StackValue::Value(value));
             }
             OpCode::CallBuiltin(ident, argc) => {
-                let mut args = Args::with_capacity(*argc as usize);
-                for _ in 0..*argc {
-                    args.push(pop_value!());
-                }
-                args.reverse();
+                // Most direct builtin calls have at most two arguments, which fit in `Args`'
+                // inline storage. Construct those in evaluation order directly; larger calls
+                // retain the compact generic pop-and-reverse path.
+                let args = match *argc {
+                    0 => Args::new(),
+                    1 => {
+                        let mut args = Args::new();
+                        args.push(pop_value!());
+                        args
+                    }
+                    2 => {
+                        let second = pop_value!();
+                        let first = pop_value!();
+                        let mut args = Args::new();
+                        args.push(first);
+                        args.push(second);
+                        args
+                    }
+                    _ => {
+                        let mut args = Args::with_capacity(*argc as usize);
+                        for _ in 0..*argc {
+                            args.push(pop_value!());
+                        }
+                        args.reverse();
+                        args
+                    }
+                };
                 let result = call_builtin_args(
                     ident,
                     args,
@@ -1017,6 +1327,193 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
+            OpCode::CallStatic(chunk_index, argc) => {
+                let new_frame = call_static_chunk_from_stack(
+                    *chunk_index,
+                    *argc,
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                )?;
+                break 'dispatch FrameOutcome::Enter(new_frame);
+            }
+            OpCode::CallStaticExact0(target) => {
+                let new_frame = call_exact_fixed_chunk_0(
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
+                    None,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                );
+                break 'dispatch FrameOutcome::Enter(new_frame);
+            }
+            OpCode::CallStaticExact1(target) => {
+                let new_frame = call_exact_fixed_chunk_1(
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
+                    None,
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                )?;
+                break 'dispatch FrameOutcome::Enter(new_frame);
+            }
+            OpCode::CallStaticExact2(target) => {
+                let new_frame = call_exact_fixed_chunk_2(
+                    ExactCallTarget {
+                        chunk_index: target.chunk_index,
+                        local_count: target.local_count,
+                        captured_local_slots: &[],
+                    },
+                    None,
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                )?;
+                break 'dispatch FrameOutcome::Enter(new_frame);
+            }
+            OpCode::CallStaticExact(chunk_index, argc) | OpCode::CallStaticImplicitSelf(chunk_index, argc) => {
+                let new_frame = call_known_fixed_chunk_from_stack(
+                    KnownFixedChunkCall {
+                        chunk_index: *chunk_index,
+                        upvalues: None,
+                        argc: *argc,
+                        uses_implicit_self: matches!(op, OpCode::CallStaticImplicitSelf(..)),
+                        remove_callee: false,
+                    },
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                )?;
+                break 'dispatch FrameOutcome::Enter(new_frame);
+            }
+            OpCode::CallSelf(argc) => {
+                let new_frame = call_self_chunk_from_stack(
+                    frame.chunk_index,
+                    frame.upvalues.clone(),
+                    *argc,
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                )?;
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+            }
+            OpCode::CallSelfExact0 => {
+                let new_frame = call_exact_fixed_chunk_0(
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
+                    frame.upvalues.clone(),
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                );
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+            }
+            OpCode::CallSelfExact1 => {
+                let new_frame = call_exact_fixed_chunk_1(
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
+                    frame.upvalues.clone(),
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                )?;
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+            }
+            OpCode::CallSelfExact2 => {
+                let new_frame = call_exact_fixed_chunk_2(
+                    ExactCallTarget {
+                        chunk_index: frame.chunk_index,
+                        local_count: chunk.local_count,
+                        captured_local_slots: chunk.captured_local_slots(),
+                    },
+                    frame.upvalues.clone(),
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    execution,
+                )?;
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+            }
+            OpCode::CallSelfExact(argc) | OpCode::CallSelfImplicitSelf(argc) => {
+                let new_frame = call_known_fixed_chunk_from_stack(
+                    KnownFixedChunkCall {
+                        chunk_index: frame.chunk_index,
+                        upvalues: frame.upvalues.clone(),
+                        argc: *argc,
+                        uses_implicit_self: matches!(op, OpCode::CallSelfImplicitSelf(..)),
+                        remove_callee: false,
+                    },
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                )?;
+                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+            }
             OpCode::CallLocal(slot, argc) => {
                 let callee = locals.get(*slot);
                 if let StackValue::Closure(closure) = &callee
@@ -1025,21 +1522,23 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                         .fixed_required_arity()
                         .is_some()
                 {
-                    let result = call_fixed_closure_from_stack(
+                    let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure,
                             argc: *argc,
                             remove_callee: false,
                         },
                         stack,
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
                     )?;
-                    stack.push(result);
-                    continue;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 }
                 // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
                 // variadic/optional params, `partial`-bound closures) runs often enough in
@@ -1049,23 +1548,82 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     args.push(pop!());
                 }
                 args.reverse();
-                let call_result = call_stack_value(
+                let step = call_stack_value(
                     callee,
                     &mut args,
-                    CallSite { locals, chunk, ip },
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
                     chunks,
                     execution,
-                    #[cfg(feature = "debugger")]
-                    debug,
                 );
                 execution.limits.recycle_stack(args);
-                stack.push(call_result?);
+                match step? {
+                    CallStep::Value(v) => stack.push(v),
+                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                }
+            }
+            OpCode::CallUpvalue(index, argc) => {
+                // SAFETY: `verify_chunks` validates every upvalue index before execution.
+                let callee = read_cell(unsafe { upvalues.get_unchecked(*index as usize) });
+                if let StackValue::Closure(closure) = &callee
+                    && chunks[closure.chunk_index as usize]
+                        .param_shape
+                        .fixed_required_arity()
+                        .is_some()
+                {
+                    let new_frame = call_fixed_closure_from_stack(
+                        FixedClosureCall {
+                            closure,
+                            argc: *argc,
+                            remove_callee: false,
+                        },
+                        stack,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    )?;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
+                }
+                let mut args = execution.limits.take_stack();
+                for _ in 0..*argc {
+                    args.push(pop!());
+                }
+                args.reverse();
+                let step = call_stack_value(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                );
+                execution.limits.recycle_stack(args);
+                match step? {
+                    CallStep::Value(v) => stack.push(v),
+                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                }
             }
             OpCode::CallValue(argc) => {
                 let callee_index = stack
                     .len()
                     .checked_sub(*argc as usize + 1)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in CallValue")))?;
+                if callee_index < frame.stack_base {
+                    bail!(VmError::Corrupt("stack underflow in CallValue"));
+                }
                 if let StackValue::Closure(closure) = &stack[callee_index]
                     && chunks[closure.chunk_index as usize]
                         .param_shape
@@ -1076,21 +1634,23 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     // popped them. This avoids `Vec::remove(callee_index)`, which shifts
                     // every argument and is especially costly for large calls.
                     let closure = Shared::clone(closure);
-                    let result = call_fixed_closure_from_stack(
+                    let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
                             closure: &closure,
                             argc: *argc,
                             remove_callee: true,
                         },
                         stack,
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
                     )?;
-                    stack.push(result);
-                    continue;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
                 }
                 // See the `CallLocal` non-fixed-arity path above for why this is pooled.
                 let mut args = execution.limits.take_stack();
@@ -1099,17 +1659,23 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 }
                 args.reverse();
                 let callee = pop!();
-                let call_result = call_stack_value(
+                let step = call_stack_value(
                     callee,
                     &mut args,
-                    CallSite { locals, chunk, ip },
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
                     chunks,
                     execution,
-                    #[cfg(feature = "debugger")]
-                    debug,
                 );
                 execution.limits.recycle_stack(args);
-                stack.push(call_result?);
+                match step? {
+                    CallStep::Value(v) => stack.push(v),
+                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                }
             }
             OpCode::MaybeAutoCall => {
                 let value = pop!();
@@ -1127,16 +1693,21 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                     _ => false,
                 };
                 if eligible {
-                    let result = call_stack_value(
+                    match call_stack_value(
                         value,
                         &mut Vec::new(),
-                        CallSite { locals, chunk, ip },
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
                         chunks,
                         execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    )?;
-                    stack.push(result);
+                    )? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 } else {
                     stack.push(value);
                 }
@@ -1144,27 +1715,20 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
             OpCode::TryCatch(info) => {
                 let catch_closure = pop!();
                 let try_closure = pop!();
-                match handle_try_catch(
-                    TryCatchArgs {
-                        has_binder: info.has_binder,
-                        break_acc_slot: info.break_acc_slot,
-                        break_offset: info.break_offset,
-                        continue_offset: info.continue_offset,
-                        catch_closure,
-                        try_closure,
+                let new_frame = begin_try_catch(
+                    info,
+                    catch_closure,
+                    try_closure,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
                     },
-                    CallSite { locals, chunk, ip },
                     chunks,
                     execution,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                )? {
-                    TryCatchOutcome::Value(value) => stack.push(value),
-                    TryCatchOutcome::JumpTo(offset) => {
-                        ip = (ip as i64 + offset as i64) as usize;
-                        continue;
-                    }
-                }
+                )?;
+                break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::FlowBreak(has_value) => {
                 let value = if *has_value { Some(pop_value!()) } else { None };
@@ -1175,50 +1739,58 @@ fn run_chunk_inner_impl<const CHECK_TIMEOUT: bool>(
                 bail!(VmError::DestructuringFailed);
             }
             OpCode::Return => {
-                return Ok(pop!());
+                let v = pop!();
+                break 'dispatch FrameOutcome::Complete(v);
             }
         }
+    };
+    frame.ip = ip;
+    if let FrameOutcome::Complete(_) = &outcome {
+        stack.truncate(frame.stack_base);
     }
-
-    Ok(stack.pop().unwrap_or(StackValue::Value(RuntimeValue::None)))
+    Ok(outcome)
 }
 
-struct TryCatchArgs {
-    has_binder: bool,
-    break_acc_slot: Option<u16>,
-    break_offset: Option<i32>,
-    continue_offset: Option<i32>,
-    catch_closure: StackValue,
-    try_closure: StackValue,
+/// Marks a self call immediately followed by `Return` as a tail call.
+///
+/// Only self calls use the frame-replacement path: other calls can require parameter binding
+/// or preserve observable call-depth behavior. Keeping this check at self-call dispatch avoids
+/// reclassifying every ordinary VM instruction in the hot loop.
+#[inline(always)]
+fn tail_call_outcome(chunk: &Chunk, next_ip: usize, frame: Frame) -> FrameOutcome {
+    if matches!(chunk.code.get(next_ip), Some(OpCode::Return)) {
+        FrameOutcome::TailEnter(frame)
+    } else {
+        FrameOutcome::Enter(frame)
+    }
 }
 
-enum TryCatchOutcome {
-    Value(StackValue),
-    /// Loop control (`break`/`continue`) raised inside the try chunk bypasses the catch
-    /// and jumps to the enclosing loop's patched target — signaled back to the dispatch
-    /// loop instead of jumping directly, since this function doesn't own `ip`.
-    JumpTo(i32),
-}
-
-/// `try`/`catch` is rare and large; kept out of `run_chunk_inner_impl` to keep it small.
+/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame` — `unwind`
+/// handles the rest (routing success, or dispatching to `catch`/a loop jump on error).
 #[cold]
 #[inline(never)]
-fn handle_try_catch(
-    args: TryCatchArgs,
+fn begin_try_catch(
+    info: &TryCatchInfo,
+    catch_closure: StackValue,
+    try_closure: StackValue,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
-) -> VmResult<TryCatchOutcome> {
-    let CallSite { locals, chunk, ip } = call_site;
-    let StackValue::Closure(catch_closure) = args.catch_closure else {
+) -> VmResult<Frame> {
+    let CallSite {
+        locals,
+        chunk,
+        ip,
+        frame_chunks,
+    } = call_site;
+    let StackValue::Closure(catch_closure) = catch_closure else {
         return Err(locate(
             chunk,
             ip,
             VmError::Corrupt("TryCatch catch operand is not a closure"),
         ));
     };
-    let StackValue::Closure(try_closure) = args.try_closure else {
+    let StackValue::Closure(try_closure) = try_closure else {
         return Err(locate(
             chunk,
             ip,
@@ -1226,74 +1798,27 @@ fn handle_try_catch(
         ));
     };
     let try_chunk = &chunks[try_closure.chunk_index as usize];
-    let try_locals = execution
+    let mut try_locals = execution
         .limits
-        .take_locals(try_chunk.local_count, try_chunk.captures_local_slots());
+        .take_locals(try_chunk.local_count, try_chunk.captured_local_slots());
     try_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
-    if let Err(error) = execution.limits.enter_call() {
-        if !try_chunk.captures_local_slots() {
-            execution.limits.recycle_locals(try_locals);
-        }
-        return Err(locate(chunk, ip, error));
-    }
-    let try_result = run_chunk(
+    Ok(Frame::new(
         try_closure.chunk_index,
-        chunks,
+        frame_chunks,
         try_locals,
-        &try_closure.upvalues,
-        execution,
-        #[cfg(feature = "debugger")]
-        debug,
-    );
-    execution.limits.exit_call();
-    match try_result {
-        Ok(value) => Ok(TryCatchOutcome::Value(value)),
-        Err(e) => {
-            if let Some(value) = flow_break_value(&e) {
-                let (Some(acc_slot), Some(offset)) = (args.break_acc_slot, args.break_offset) else {
-                    return Err(e);
-                };
-                if let Some(value) = value {
-                    locals.set(acc_slot, StackValue::Value(value));
-                }
-                return Ok(TryCatchOutcome::JumpTo(offset));
-            }
-            if flow_continue(&e) {
-                let Some(offset) = args.continue_offset else {
-                    return Err(e);
-                };
-                return Ok(TryCatchOutcome::JumpTo(offset));
-            }
-            let catch_chunk = &chunks[catch_closure.chunk_index as usize];
-            let catch_locals = execution
-                .limits
-                .take_locals(catch_chunk.local_count, catch_chunk.captures_local_slots());
-            catch_locals.set(SELF_SLOT, locals.get(SELF_SLOT));
-            if args.has_binder {
-                catch_locals.set(1, StackValue::Value(error_dict(&e)));
-            }
-            if let Err(error) = execution.limits.enter_call() {
-                if !catch_chunk.captures_local_slots() {
-                    execution.limits.recycle_locals(catch_locals);
-                }
-                return Err(locate(chunk, ip, error));
-            }
-            let catch_result = run_chunk(
-                catch_closure.chunk_index,
-                chunks,
-                catch_locals,
-                &catch_closure.upvalues,
-                execution,
-                #[cfg(feature = "debugger")]
-                debug,
-            );
-            execution.limits.exit_call();
-            Ok(TryCatchOutcome::Value(catch_result?))
-        }
-    }
+        try_closure.upvalues.clone(),
+        !try_chunk.captures_local_slots(),
+        Continuation::TryBody(Box::new(TryBody {
+            catch_closure,
+            has_binder: info.has_binder,
+            break_acc_slot: info.break_acc_slot,
+            break_offset: info.break_offset,
+            continue_offset: info.continue_offset,
+        })),
+    ))
 }
 
-/// Rare spread-syntax opcodes, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
+/// Rare spread-syntax opcodes, kept out of `run_frame_slice`.
 #[cold]
 #[inline(never)]
 fn array_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue> {
@@ -1363,7 +1888,7 @@ fn pop_value_from(
     Ok(into_runtime_value(v, chunks))
 }
 
-/// Rare array opcodes, kept out of `run_chunk_inner_impl` (see `handle_try_catch`).
+/// Rare array opcodes, kept out of `run_frame_slice`.
 #[cold]
 #[inline(never)]
 fn array_misc_op(
@@ -1450,7 +1975,9 @@ fn selector_op(
         }
         OpCode::SelectorMatchWithArgs(payload) => {
             let (selector, argc) = payload.as_ref();
-            let mut args = Vec::with_capacity(*argc as usize);
+            // Selector arguments are usually one or two values. `Args` keeps those inline,
+            // avoiding a heap allocation for every parameterized selector evaluation.
+            let mut args = Args::with_capacity(*argc as usize);
             for _ in 0..*argc {
                 args.push(pop_value_from(stack, chunks, chunk, ip)?);
             }

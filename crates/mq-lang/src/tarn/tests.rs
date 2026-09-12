@@ -1,26 +1,55 @@
 use super::interpreter::ExecutionPools;
 use super::*;
-#[cfg(not(feature = "tarn"))]
-use crate::Selector;
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{self as ast, Args};
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{MatchArm, Param, Pattern};
-#[cfg(not(feature = "tarn"))]
-use crate::error::runtime::RuntimeError;
-#[cfg(not(feature = "tarn"))]
-use crate::number::{INFINITE, NAN, Number};
+use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::range::Range;
-#[cfg(not(feature = "tarn"))]
-use crate::{AstExpr, AstNode, DefaultModuleLoader, IdentWithToken, Program, error::InnerError};
 use crate::{Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
-#[cfg(not(feature = "tarn"))]
-use smallvec::{SmallVec, smallvec};
-#[cfg(not(feature = "tarn"))]
-use std::f64::consts::PI;
+
+fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(
+        program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        token_arena,
+    )
+}
+
+fn compile_and_run_with_input(
+    program: &Program,
+    input: RuntimeValue,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
+}
+
+fn compile_and_run_full(
+    program: &Program,
+    input: RuntimeValue,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    let compiled = compiler::compile_program(program, token_arena, ModuleLoader::new(StdModuleResolver))?;
+    Ok(interpreter::run_with_globals(
+        &compiled,
+        input,
+        host_functions,
+        timeout,
+        Options::default().max_call_stack_depth,
+        &[],
+    )?)
+}
+
+#[test]
+fn default_call_stack_depth_matches_the_build_profile() {
+    assert_eq!(
+        Options::default().max_call_stack_depth,
+        if cfg!(debug_assertions) { 256 } else { 10_000 }
+    );
+}
 
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
@@ -99,58 +128,6 @@ fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
-#[cfg(not(feature = "tarn"))]
-fn ast_node(expr: AstExpr) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(expr),
-    })
-}
-
-#[cfg(not(feature = "tarn"))]
-fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(ast::Expr::Call(IdentWithToken::new(name), args)),
-    })
-}
-
-// The shared table keeps VM and evaluator cases aligned.
-#[cfg(not(feature = "tarn"))]
-crate::eval_table_cases!(
-    evaluator_table_cases_run_on_vm,
-    token_arena,
-    runtime_values,
-    program,
-    expected,
-    {
-        let host_functions = HostFunctions::default();
-        let vm_result = compile_and_run_many(
-            &program,
-            runtime_values.into_iter(),
-            EngineRunContext {
-                host_functions: &host_functions,
-                // Hand-built AST cases must never leave the VM test worker running forever.
-                timeout: Some(std::time::Duration::from_secs(1)),
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
-                token_arena,
-                module_loader: DefaultModuleLoader::default(),
-                global_bindings: &[],
-                session: None,
-                preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-            },
-        );
-
-        match expected {
-            Ok(expected_values) => assert_eq!(
-                vm_result.expect("VM should accept a successful evaluator table case"),
-                expected_values,
-            ),
-            Err(_) => assert!(vm_result.is_err(), "VM should reject an evaluator error case"),
-        }
-    }
-);
-
 fn run(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
@@ -167,12 +144,13 @@ fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeVa
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
         max_call_stack_depth,
+        &[],
     )
 }
 
@@ -221,18 +199,45 @@ fn try_catch_body_counts_toward_call_stack_depth() {
     assert_eq!(run_with_max_depth(no_try, 5).unwrap(), RuntimeValue::Number(4.into()));
 }
 
+#[test]
+fn caught_error_from_an_array_literal_does_not_corrupt_the_enclosing_array() {
+    // The try body starts (and abandons) its own array before erroring, so unwinding must
+    // discard those partial operands or the outer array's accumulator gets clobbered.
+    assert_eq!(
+        run("[1, (try: [2, 3, 1 / 0] catch: 99), 4]"),
+        RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(99.into()),
+            RuntimeValue::Number(4.into()),
+        ]))
+    );
+}
+
+#[test]
+fn caught_error_from_a_dict_literal_does_not_corrupt_the_enclosing_dict() {
+    assert_eq!(
+        run(r#"{"a": 1, "b": (try: {"x": 1, "y": 1 / 0} catch: 99), "c": 4}"#),
+        RuntimeValue::Dict(Shared::new(crate::DictMap::from_iter([
+            (crate::Ident::new("a"), RuntimeValue::Number(1.into())),
+            (crate::Ident::new("b"), RuntimeValue::Number(99.into())),
+            (crate::Ident::new("c"), RuntimeValue::Number(4.into())),
+        ])))
+    );
+}
+
 fn run_with_prelude(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled =
         compiler::compile_program_with_builtin_prelude(&program, token_arena, ModuleLoader::new(StdModuleResolver))
             .unwrap();
-    match interpreter::run(
+    match interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
+        &[],
     ) {
         Ok(v) => v,
         Err(e) => panic!("{e}"),
@@ -248,6 +253,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(compiled.chunks[0].static_closures.len(), 1);
+    assert!(compiled.chunks[0].static_closures[0].upvalues.is_none());
     assert!(
         compiled.chunks[0]
             .code
@@ -258,7 +264,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallLocal(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
     );
     assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
 }
@@ -276,6 +282,43 @@ fn local_binary_expressions_use_compact_bytecode() {
             .code
             .iter()
             .any(|op| matches!(op, OpCode::BinaryLocalConst { .. }))
+    );
+}
+
+#[test]
+fn local_constant_assignment_uses_update_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | x += 2 | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::UpdateLocalConst { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(run("var x = 1 | x += 2 | x"), RuntimeValue::Number(3.into()));
+}
+
+#[test]
+fn local_assignment_uses_local_update_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | var y = 2 | x += y | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::UpdateLocalLocal { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(
+        run("var x = 1 | var y = 2 | x += y | x"),
+        RuntimeValue::Number(3.into())
     );
 }
 
@@ -348,7 +391,7 @@ fn breakpoint_is_a_no_op_when_the_debugger_feature_is_disabled() {
 }
 
 #[test]
-fn top_level_def_calls_use_call_local() {
+fn top_level_def_calls_use_call_static() {
     use super::bytecode::OpCode;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(
@@ -358,12 +401,180 @@ fn top_level_def_calls_use_call_local() {
     .unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     assert!(
+        compiled.chunks.iter().any(|c| c.code.iter().any(|op| matches!(
+            op,
+            OpCode::CallStaticExact0(_) | OpCode::CallStaticExact1(_) | OpCode::CallStaticExact2(_)
+        ))),
+        "capture-free common-arity top-level def call should compile to a specialized CallStaticExact opcode"
+    );
+}
+
+#[test]
+fn fixed_static_calls_specialize_the_exact_and_implicit_self_forms() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): x; | identity(1) | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticImplicitSelf(_, 0)))
+    );
+    assert_eq!(
+        run("def identity(x): x; | identity(1) | identity()"),
+        RuntimeValue::Number(1.into())
+    );
+}
+
+#[test]
+fn fixed_static_calls_bind_zero_and_two_arguments_without_generic_binding() {
+    use super::bytecode::OpCode;
+
+    let source = "def constant(): 7; | def add(left, right): left + right; | constant() + add(20, 22)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact0(_)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact2(_)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(49.into()));
+}
+
+#[test]
+fn static_calls_with_captured_locals_keep_the_generic_exact_opcode() {
+    use super::bytecode::OpCode;
+
+    let source = "let f = fn(value): fn(): value;; | let read = f(42) | read()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.into()));
+}
+
+#[test]
+fn fixed_static_arity_mismatches_keep_the_checked_call_form() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("def identity(x): x; | identity(1, 2)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStatic(_, 2)))
+    );
+}
+
+#[test]
+fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def count(n): if (n == 0): 0 else: count(n - 1); | count(10)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let recursive_chunk = compiled
+        .chunks
+        .iter()
+        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelfExact1)))
+        .expect("recursive body should use CallSelfExact1");
+
+    assert!(recursive_chunk.upvalue_names.is_empty());
+    assert_eq!(
+        run("def count(n): if (n == 0): 0 else: count(n - 1); | count(10)"),
+        RuntimeValue::Number(0.0.into())
+    );
+}
+
+#[test]
+fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): if (true): x else: identity(); | 42 | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallSelfImplicitSelf(0)))
+    }));
+    assert_eq!(
+        run("def identity(x): if (true): x else: identity(); | 42 | identity()"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn tail_recursive_call_reuses_its_frame() {
+    let code = "def count(n): if (n <= 0): 0 else: count(n - 1); | count(100)";
+    assert_eq!(run_with_max_depth(code, 1).unwrap(), RuntimeValue::Number(0.0.into()));
+}
+
+/// Direct builtin calls preserve argument order through the specialized common-arity paths.
+#[rstest]
+#[case("type(42)", RuntimeValue::String(Shared::new("number".to_string())))]
+#[case("sub(5, 3)", RuntimeValue::Number(2.0.into()))]
+fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+#[test]
+fn immutable_function_upvalue_calls_use_call_upvalue() {
+    use super::bytecode::OpCode;
+
+    let source = "let increment = fn(x): x + 1; | let apply = fn(x): increment(x); | apply(41)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
         compiled
             .chunks
             .iter()
-            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallLocal(_, _)))),
-        "top-level def call should compile to CallLocal, not the slower CallValue path"
+            .any(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallUpvalue(_, 1))))
     );
+    assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 
 #[test]
@@ -559,12 +770,13 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
             &compiler::ResolvedModuleVars::default(),
         )
         .unwrap();
-        interpreter::run(
+        interpreter::run_with_globals(
             &compiled,
             RuntimeValue::None,
             &HostFunctions::default(),
             None,
-            crate::eval::Options::default().max_call_stack_depth,
+            crate::tarn::Options::default().max_call_stack_depth,
+            &[],
         )
         .unwrap()
     }
@@ -991,28 +1203,10 @@ fn text_node(value: &str) -> mq_markdown::Node {
     })
 }
 
-/// Reference output from the tree-walking evaluator.
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-    tree_walk_eval_many(code, vec![input]).remove(0)
-}
-
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    let mut engine = crate::DefaultEngine::default();
-    engine.evaluator.load_builtin_module_full().unwrap();
-    let compiled = engine.compile(code).unwrap();
-    engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
-}
-
-// In a Tarn-only build the tree walker is intentionally absent. Keep the test helpers usable
-// for VM-only behavioural assertions without pulling the legacy evaluator into the binary.
-#[cfg(feature = "tarn")]
 fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
     vm_engine_eval_many(code, vec![input]).remove(0)
 }
 
-#[cfg(feature = "tarn")]
 fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     vm_engine_eval_many(code, inputs)
 }
@@ -1109,7 +1303,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1122,7 +1316,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 #[test]
 fn cached_nodes_capture_reuses_precomputed_slots() {
     let mut engine = crate::DefaultEngine::default();
@@ -1171,7 +1365,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1206,7 +1400,7 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
             engine: EngineRunContext {
                 host_functions: &HostFunctions::default(),
                 timeout: None,
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
                 token_arena,
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
@@ -1237,7 +1431,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1264,7 +1458,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1299,7 +1493,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1321,7 +1515,7 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1410,6 +1604,19 @@ fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
     assert_eq!(pools.pooled_local_frame_count(), 2);
 }
 
+/// Regression: mq call depth used to equal native Rust stack depth, so a high
+/// `max_call_stack_depth` could overflow the OS thread stack instead of hitting
+/// `RecursionError`. The trampoline's `Vec<Frame>` is heap-bound, so this must just complete.
+#[rstest]
+#[case::plain_recursion("def f(n): if (n <= 0): 0 else: 1 + f(n - 1); | f(100000)")]
+#[case::recursion_through_try_catch("def f(n): if (n <= 0): 0 else: try: 1 + f(n - 1) catch(e): -1; | f(100000)")]
+fn deep_non_tail_recursion_does_not_overflow_the_native_stack(#[case] code: &str) {
+    assert_eq!(
+        run_with_max_depth(code, 1_000_000).unwrap(),
+        RuntimeValue::Number(100000.into())
+    );
+}
+
 #[cfg(feature = "debugger")]
 #[test]
 fn debugger_metadata_tracks_boundaries_and_static_slots() {
@@ -1487,7 +1694,7 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1542,7 +1749,7 @@ fn debugger_hook_exposes_closure_bindings() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut recorder,
     )
@@ -1646,7 +1853,7 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1735,7 +1942,7 @@ fn vm_debugger_hook_applies_live_frame_writes(
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1794,7 +2001,7 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -1871,7 +2078,7 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
         &[],
         &mut hook,
     )
@@ -2254,12 +2461,13 @@ fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
     let resolver =
         crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        crate::tarn::Options::default().max_call_stack_depth,
+        &[],
     )
     .unwrap()
 }

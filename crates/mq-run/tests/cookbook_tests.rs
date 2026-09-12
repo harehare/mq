@@ -1,6 +1,5 @@
 //! Runs the query/input/output examples from `docs/books/src/cookbook/*.md` through the
-//! built `mq` binary, so the docs stay honest under both the tree-walking evaluator and the
-//! `tarn` bytecode VM (this file runs under both via `just test-all`'s `--all-features` step).
+//! built `mq` binary, so the docs stay honest against the Tarn bytecode VM.
 
 use assert_cmd::cargo;
 use base64::Engine as _;

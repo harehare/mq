@@ -6,10 +6,11 @@
 //! single `Array` is automatically expanded so each element becomes its own row.
 //! Markdown nodes with children are displayed with a nested children table.
 
+use mq_lang::DictMap;
 use mq_lang::RuntimeValue;
 use mq_lang::Shared;
 use mq_markdown::ColorTheme;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use tabled::Table;
 use tabled::builder::Builder;
 use tabled::settings::location::Locator;
@@ -82,15 +83,15 @@ pub(crate) fn runtime_values_to_table<'a>(runtime_values: &[RuntimeValue], theme
                     rows.push(vec!["children".to_string(), children_str]);
                 }
                 if let Some(pos) = node.position() {
-                    let mut start_map = BTreeMap::new();
+                    let mut start_map = DictMap::default();
                     start_map.insert(mq_lang::Ident::new("line"), pos.start.line.to_string().into());
                     start_map.insert(mq_lang::Ident::new("column"), pos.start.column.to_string().into());
 
-                    let mut end_map = BTreeMap::new();
+                    let mut end_map = DictMap::default();
                     end_map.insert(mq_lang::Ident::new("line"), pos.end.line.to_string().into());
                     end_map.insert(mq_lang::Ident::new("column"), pos.end.column.to_string().into());
 
-                    let mut pos_map = BTreeMap::new();
+                    let mut pos_map = DictMap::default();
                     pos_map.insert(mq_lang::Ident::new("start"), RuntimeValue::Dict(Shared::new(start_map)));
                     pos_map.insert(mq_lang::Ident::new("end"), RuntimeValue::Dict(Shared::new(end_map)));
                     let pos_str = format_cell_value(&RuntimeValue::Dict(Shared::new(pos_map)), theme);
@@ -279,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_table_dict_values() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(
             mq_lang::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -298,12 +299,12 @@ mod tests {
     #[test]
     fn test_table_multiple_dicts() {
         let make_dict = |name: &str, val: &str| {
-            let mut map = std::collections::BTreeMap::new();
+            let mut map = DictMap::default();
             map.insert(
                 mq_lang::Ident::new("key"),
                 RuntimeValue::String(Shared::new(val.to_string())),
             );
-            let mut outer = std::collections::BTreeMap::new();
+            let mut outer = DictMap::default();
             outer.insert(
                 mq_lang::Ident::new("name"),
                 RuntimeValue::String(Shared::new(name.to_string())),
@@ -318,7 +319,7 @@ mod tests {
 
     #[test]
     fn test_table_dict_with_theme() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(mq_lang::Ident::new("x"), RuntimeValue::Boolean(true));
         map.insert(mq_lang::Ident::new("y"), RuntimeValue::Boolean(false));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -330,12 +331,12 @@ mod tests {
 
     #[test]
     fn test_table_array_of_dicts() {
-        let mut m1 = std::collections::BTreeMap::new();
+        let mut m1 = DictMap::default();
         m1.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
         );
-        let mut m2 = std::collections::BTreeMap::new();
+        let mut m2 = DictMap::default();
         m2.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("2".to_string())),
@@ -362,12 +363,12 @@ mod tests {
 
     #[test]
     fn test_table_nested_dict_in_cell() {
-        let mut inner = std::collections::BTreeMap::new();
+        let mut inner = DictMap::default();
         inner.insert(
             mq_lang::Ident::new("sub"),
             RuntimeValue::String(Shared::new("val".to_string())),
         );
-        let mut outer = std::collections::BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(mq_lang::Ident::new("nested"), RuntimeValue::Dict(Shared::new(inner)));
         let values = vec![RuntimeValue::Dict(Shared::new(outer))];
         let table = runtime_values_to_table(&values, None);
@@ -388,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_table_empty_array_in_cell() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(mq_lang::Ident::new("arr"), RuntimeValue::Array(Shared::new(vec![])));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
@@ -472,17 +473,17 @@ mod tests {
 
     #[test]
     fn test_table_dict_with_nested_array_of_dicts() {
-        let mut inner1 = std::collections::BTreeMap::new();
+        let mut inner1 = DictMap::default();
         inner1.insert(
             mq_lang::Ident::new("k"),
             RuntimeValue::String(Shared::new("v1".to_string())),
         );
-        let mut inner2 = std::collections::BTreeMap::new();
+        let mut inner2 = DictMap::default();
         inner2.insert(
             mq_lang::Ident::new("k"),
             RuntimeValue::String(Shared::new("v2".to_string())),
         );
-        let mut outer = std::collections::BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(
             mq_lang::Ident::new("items"),
             RuntimeValue::Array(Shared::new(vec![
@@ -502,7 +503,7 @@ mod tests {
             value: "node_value".to_string(),
             position: None,
         });
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(
             mq_lang::Ident::new("md"),
             RuntimeValue::Markdown(Shared::new(node), None),
@@ -515,7 +516,7 @@ mod tests {
 
     #[test]
     fn test_table_empty_dict() {
-        let map = std::collections::BTreeMap::new();
+        let map = DictMap::default();
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
         let table = runtime_values_to_table(&values, None);
         assert!(!table.to_string().is_empty());
@@ -523,7 +524,7 @@ mod tests {
 
     #[test]
     fn test_table_multiple_dicts_missing_key() {
-        let mut m1 = std::collections::BTreeMap::new();
+        let mut m1 = DictMap::default();
         m1.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("1".to_string())),
@@ -532,7 +533,7 @@ mod tests {
             mq_lang::Ident::new("b"),
             RuntimeValue::String(Shared::new("2".to_string())),
         );
-        let mut m2 = std::collections::BTreeMap::new();
+        let mut m2 = DictMap::default();
         m2.insert(
             mq_lang::Ident::new("a"),
             RuntimeValue::String(Shared::new("3".to_string())),

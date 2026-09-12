@@ -3,9 +3,10 @@ use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
+use mq_lang::DictMap;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -100,6 +101,11 @@ pub struct Cli {
     #[cfg(feature = "debug-trace")]
     #[arg(long = "dump-stack", default_value_t = false)]
     dump_stack: bool,
+
+    /// Print Tarn VM instruction execution counts to stderr (mq-dbg profile builds only).
+    #[cfg(feature = "vm-profile")]
+    #[arg(long = "vm-profile", default_value_t = false)]
+    vm_profile: bool,
 
     /// Print the Tarn VM bytecode to stderr before execution (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -1682,7 +1688,7 @@ impl Cli {
             || self.input.argjson.is_some()
             || self.input.slurp_file.is_some()
         {
-            let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
+            let mut named: DictMap = DictMap::default();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
@@ -1730,7 +1736,7 @@ impl Cli {
                 .iter()
                 .map(|s| mq_lang::RuntimeValue::String(Shared::new(s.clone())))
                 .collect();
-            let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
+            let args_map: DictMap = [
                 (
                     mq_lang::Ident::new("positional"),
                     mq_lang::RuntimeValue::Array(Shared::new(positional)),
@@ -2020,6 +2026,9 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             #[cfg(feature = "debug-trace")]
             let results = engine
@@ -2040,6 +2049,9 @@ impl Cli {
                 engine.eval(query, input.into_iter()).map_err(|error| *error)?
             }
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2307,10 +2319,33 @@ impl Cli {
         // Keep --append sequential: parallel files racing the same read-then-rename
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
-            files.par_iter().try_for_each(|(file, content)| {
-                let mut engine = self.create_engine()?;
-                self.execute(&mut engine, &query, file, content)
-            })?;
+            // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
+            let can_compile_per_worker = self.all_files_same_prefix(&files) && self.output.separator.is_none();
+            #[cfg(feature = "debug-trace")]
+            // Preserve per-file bytecode diagnostics.
+            let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
+
+            if can_compile_per_worker {
+                let effective_query = self.effective_query(&query, &files[0].0);
+                files.par_iter().try_for_each_init(
+                    || {
+                        let mut engine = self.create_engine()?;
+                        let program = engine.compile(&effective_query).map_err(|error| *error)?;
+                        Ok::<_, miette::Error>((engine, program))
+                    },
+                    |prepared, (file, content)| {
+                        let (engine, program) = prepared
+                            .as_mut()
+                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                        self.execute_compiled(engine, program, file, content)
+                    },
+                )?;
+            } else {
+                files.par_iter().try_for_each(|(file, content)| {
+                    let mut engine = self.create_engine()?;
+                    self.execute(&mut engine, &query, file, content)
+                })?;
+            }
         } else {
             let mut engine = self.create_engine()?;
 
@@ -2351,6 +2386,8 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(&effective_query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2363,6 +2400,9 @@ impl Cli {
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
             .map_err(|error| *error)?;
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, &None);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -2393,6 +2433,9 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             let results = engine
                 .eval_compiled(program, input.clone().into_iter())
@@ -2401,6 +2444,9 @@ impl Cli {
         } else {
             engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2427,6 +2473,8 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2438,7 +2486,20 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
+    }
+
+    #[cfg(feature = "vm-profile")]
+    fn emit_vm_profile(&self, scope: Option<mq_lang::vm_profile::VmProfileScope>, file: &Option<PathBuf>) {
+        let Some(scope) = scope else {
+            return;
+        };
+        let target = file
+            .as_ref()
+            .map_or_else(|| "stdin".to_string(), |path| path.display().to_string());
+        eprintln!("Tarn VM profile ({target})\n{}", scope.finish());
     }
 
     fn process_batch_count(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
@@ -2700,7 +2761,7 @@ impl Cli {
     }
 
     /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
-    fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
+    fn is_typed_dict(map: &DictMap) -> bool {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
@@ -2712,9 +2773,7 @@ impl Cli {
     ///
     /// Returns `None` if the dict is not a known expandable type.
     /// To add support for a new type, add a match arm for the type name.
-    fn expand_typed_dict(
-        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
-    ) -> Option<Vec<mq_markdown::Node>> {
+    fn expand_typed_dict(map: &DictMap) -> Option<Vec<mq_markdown::Node>> {
         let type_key = mq_lang::Ident::new("type");
         match map.get(&type_key) {
             Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {
@@ -6030,9 +6089,7 @@ mod tests {
 
         assert!(cli.run().is_ok());
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
-        // `named` is backed by a `BTreeMap<Ident, _>`, whose key order depends on the
-        // global string interner's symbol assignment order rather than the key text,
-        // so compare parsed JSON values instead of the raw serialized string.
+        // Compare parsed JSON values (rather than the raw string) so key order doesn't matter.
         let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
         let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
         assert_eq!(actual, expected);

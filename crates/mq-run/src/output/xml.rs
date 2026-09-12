@@ -8,25 +8,25 @@
 //! arrays becoming repeated `<item>` elements.
 
 use miette::miette;
+use mq_lang::DictMap;
 #[cfg(test)]
 use mq_lang::Shared;
 use mq_lang::{Ident, RuntimeValue};
 use quick_xml::Writer;
 use quick_xml::escape::escape;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
-use std::collections::BTreeMap;
 
 fn xml_err(e: std::io::Error) -> miette::Report {
     miette!("Failed to write XML: {}", e)
 }
 
-fn is_element_shape(map: &BTreeMap<Ident, RuntimeValue>) -> bool {
+fn is_element_shape(map: &DictMap) -> bool {
     matches!(map.get(&Ident::new("tag")), Some(RuntimeValue::String(_)))
 }
 
 /// Writes a `{tag, attributes, children, text}`-shaped dict (the shape produced by
 /// `xml_parse()`) as a real XML element, recursing into `children` of the same shape.
-fn write_element(writer: &mut Writer<&mut Vec<u8>>, map: &BTreeMap<Ident, RuntimeValue>) -> std::io::Result<()> {
+fn write_element(writer: &mut Writer<&mut Vec<u8>>, map: &DictMap) -> std::io::Result<()> {
     let tag = match map.get(&Ident::new("tag")) {
         Some(RuntimeValue::String(s)) => s.clone(),
         _ => return Ok(()),
@@ -143,9 +143,9 @@ mod tests {
 
     #[test]
     fn test_element_shape_round_trip() {
-        let mut attrs = BTreeMap::new();
+        let mut attrs = DictMap::default();
         attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
         map.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
         map.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![])));
@@ -161,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_generic_dict() {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(
             Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -192,14 +192,14 @@ mod tests {
 
     #[test]
     fn test_empty_dict() {
-        let values = vec![RuntimeValue::Dict(Shared::new(BTreeMap::new()))];
+        let values = vec![RuntimeValue::Dict(Shared::new(DictMap::default()))];
         let result = runtime_values_to_xml(&values, b' ', 2).unwrap();
         assert!(result.contains("<root/>"));
     }
 
     #[test]
     fn test_custom_indent_width() {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(
             Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),
@@ -211,7 +211,7 @@ mod tests {
 
     #[test]
     fn test_tab_indent() {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         map.insert(
             Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),

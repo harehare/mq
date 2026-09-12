@@ -394,7 +394,7 @@ In {year}, the snowfall was above average.
 #[case::input_format_xml(
     vec!["--unbuffered", "-I", "xml", "self"],
     "<root>text</root>",
-    Some("{\"text\": \"text\", \"attributes\": {}, \"tag\": \"root\", \"children\": []}\n")
+    Some("{\"tag\": \"root\", \"attributes\": {}, \"children\": [], \"text\": \"text\"}\n")
 )]
 #[case::output_format_json_compact(
     vec!["--unbuffered", "-I", "json", "-F", "json", "--compact", "self"],
@@ -1475,6 +1475,45 @@ fn test_help_documents_quiet() {
     let output = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
     assert.success();
     assert!(output.contains("-q, --quiet"), "help was:\n{output}");
+}
+
+#[test]
+fn test_parallel_batch_preserves_file_scoped_globals_with_compiled_workers() -> Result<(), Box<dyn std::error::Error>> {
+    let files: Vec<PathBuf> = (0..11)
+        .map(|i| create_file(&format!("test_parallel_compiled_worker_{i}.txt"), "input\n").1)
+        .collect();
+    let files_clone = files.clone();
+
+    defer! {
+        for file in &files_clone {
+            if file.exists() {
+                std::fs::remove_file(file).expect("Failed to delete temp file");
+            }
+        }
+    }
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-P")
+        .arg("0")
+        .arg("-I")
+        .arg("text")
+        .arg("__FILE_NAME__")
+        .args(&files)
+        .assert()
+        .success();
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+
+    for file in &files {
+        let name = file.file_name().and_then(|name| name.to_str()).unwrap();
+        assert!(
+            output.lines().any(|line| line == name),
+            "missing {name:?} in {output:?}"
+        );
+    }
+
+    Ok(())
 }
 
 #[rstest]

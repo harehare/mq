@@ -13,6 +13,17 @@ use std::fmt;
 /// The implicit pipeline value (`.` / `self`) slot.
 pub(crate) const SELF_SLOT: u16 = 0;
 
+/// Compile-time frame metadata for a capture-free static call with a common exact arity.
+///
+/// The dedicated call opcodes carrying this target avoid indexing the chunk table before a
+/// callee frame starts. Chunks whose locals are captured retain the generic call path, because
+/// their per-slot cell layout cannot be represented by this compact payload.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct StaticExactCallTarget {
+    pub(crate) chunk_index: u16,
+    pub(crate) local_count: u16,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// A captured value's source slot.
 pub(crate) enum UpvalueSource {
@@ -35,6 +46,13 @@ pub(crate) enum BinaryOp {
     Le,
     Gt,
     Ge,
+}
+
+impl BinaryOp {
+    /// Whether this op yields a boolean, making it eligible for compare-and-jump fusion.
+    pub(crate) fn is_comparison(self) -> bool {
+        matches!(self, Self::Eq | Self::Ne | Self::Lt | Self::Le | Self::Gt | Self::Ge)
+    }
 }
 
 /// Compact argument-free node selector.
@@ -239,6 +257,36 @@ pub(crate) enum OpCode {
         local: u16,
         constant: u16,
     },
+    /// Applies a binary operation between a local and a constant, then stores the result back
+    /// into that same local without materializing the value on the operand stack.
+    UpdateLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
+    /// Updates a local from another local without using the operand stack.
+    UpdateLocalLocal {
+        op: BinaryOp,
+        local: u16,
+        value: u16,
+    },
+    /// Fuses a local/local comparison directly into its branch: computes `left op right` and
+    /// jumps without ever materializing the boolean on the operand stack. Produced by the
+    /// bytecode optimizer from a `BinaryLocalLocal` comparison immediately followed by
+    /// `JumpIfFalse`, the shape every `if`/`while`/`until` condition compiles to.
+    JumpIfFalseLocalLocal {
+        op: BinaryOp,
+        left: u16,
+        right: u16,
+        offset: i32,
+    },
+    /// Same fusion as [`Self::JumpIfFalseLocalLocal`] for a local/constant comparison.
+    JumpIfFalseLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+        offset: i32,
+    },
     Neg,
     Not,
     ArrayNew,
@@ -279,7 +327,33 @@ pub(crate) enum OpCode {
     SelectorMatchHeading(u8),
     SelectorMatchWithArgs(Box<(Selector, u16)>),
     CallBuiltin(Ident, u16),
+    /// Calls a capture-free fixed-arity chunk through the checked fallback path.
+    CallStatic(u16, u16),
+    /// Calls a capture-free fixed-arity chunk with exactly its declared arguments.
+    CallStaticExact(u16, u16),
+    /// Calls a capture-free zero-argument chunk with its frame metadata embedded.
+    CallStaticExact0(StaticExactCallTarget),
+    /// Calls a capture-free one-argument chunk with its frame metadata embedded.
+    CallStaticExact1(StaticExactCallTarget),
+    /// Calls a capture-free two-argument chunk with its frame metadata embedded.
+    CallStaticExact2(StaticExactCallTarget),
+    /// Calls a capture-free fixed-arity chunk with the pipeline value as its first argument.
+    CallStaticImplicitSelf(u16, u16),
+    /// Recursively calls the current fixed-arity chunk through the checked fallback path.
+    CallSelf(u16),
+    /// Recursively calls the current chunk with exactly its declared arguments.
+    CallSelfExact(u16),
+    /// Recursively calls the current zero-argument chunk.
+    CallSelfExact0,
+    /// Recursively calls the current one-argument chunk.
+    CallSelfExact1,
+    /// Recursively calls the current two-argument chunk.
+    CallSelfExact2,
+    /// Recursively calls the current chunk with the pipeline value as its first argument.
+    CallSelfImplicitSelf(u16),
     CallLocal(u16, u16),
+    /// Calls an immutable upvalue without first placing its closure on the operand stack.
+    CallUpvalue(u16, u16),
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
@@ -293,6 +367,109 @@ pub(crate) enum OpCode {
     Return,
 }
 
+#[cfg(feature = "vm-profile")]
+impl OpCode {
+    /// Returns a stable opcode name for execution-count profiling.
+    pub(crate) fn profile_name(&self) -> &'static str {
+        match self {
+            #[cfg(feature = "debugger")]
+            Self::StmtBoundary(_) => "StmtBoundary",
+            #[cfg(feature = "debugger")]
+            Self::Breakpoint(_) => "Breakpoint",
+            Self::Const(_) => "Const",
+            Self::PushNone => "PushNone",
+            Self::GetLocal(_) => "GetLocal",
+            Self::SetLocal(_) => "SetLocal",
+            Self::TeeLocal(_) => "TeeLocal",
+            Self::CopyLocal { .. } => "CopyLocal",
+            Self::GetUpvalue(_) => "GetUpvalue",
+            Self::SetUpvalue(_) => "SetUpvalue",
+            Self::MakeClosure(_) => "MakeClosure",
+            Self::MakeStaticClosure(_) => "MakeStaticClosure",
+            Self::Pop => "Pop",
+            Self::Dup => "Dup",
+            Self::Jump(_) => "Jump",
+            Self::JumpIfFalse(_) => "JumpIfFalse",
+            Self::Add => "Add",
+            Self::Sub => "Sub",
+            Self::Mul => "Mul",
+            Self::Div => "Div",
+            Self::Mod => "Mod",
+            Self::Eq => "Eq",
+            Self::Ne => "Ne",
+            Self::Lt => "Lt",
+            Self::Le => "Le",
+            Self::Gt => "Gt",
+            Self::Ge => "Ge",
+            Self::BinaryLocalLocal { .. } => "BinaryLocalLocal",
+            Self::BinaryLocalConst { .. } => "BinaryLocalConst",
+            Self::UpdateLocalConst { .. } => "UpdateLocalConst",
+            Self::UpdateLocalLocal { .. } => "UpdateLocalLocal",
+            Self::JumpIfFalseLocalLocal { .. } => "JumpIfFalseLocalLocal",
+            Self::JumpIfFalseLocalConst { .. } => "JumpIfFalseLocalConst",
+            Self::Neg => "Neg",
+            Self::Not => "Not",
+            Self::ArrayNew => "ArrayNew",
+            Self::ArrayPush => "ArrayPush",
+            Self::ArraySpread => "ArraySpread",
+            Self::DictSpread => "DictSpread",
+            Self::ToForeachIterable => "ToForeachIterable",
+            Self::ArrayLen => "ArrayLen",
+            Self::ArrayGetAt => "ArrayGetAt",
+            Self::ArrayLenLocal(_) => "ArrayLenLocal",
+            Self::ArrayGetLocalAt { .. } => "ArrayGetLocalAt",
+            Self::ForeachNext { .. } => "ForeachNext",
+            Self::ForeachCollect(_) => "ForeachCollect",
+            Self::ArraySliceFrom => "ArraySliceFrom",
+            Self::DictGetLocalOrFail { .. } => "DictGetLocalOrFail",
+            Self::TypeCheck(_) => "TypeCheck",
+            Self::GetEnvVar(_) => "GetEnvVar",
+            Self::GetExternalGlobal(_) => "GetExternalGlobal",
+            Self::InterpString(_) => "InterpString",
+            Self::SelectorMatch(_) => "SelectorMatch",
+            Self::SelectorMatchKind(_) => "SelectorMatchKind",
+            Self::SelectorMatchHeading(_) => "SelectorMatchHeading",
+            Self::SelectorMatchWithArgs(_) => "SelectorMatchWithArgs",
+            Self::CallBuiltin(_, _) => "CallBuiltin",
+            Self::CallStatic(_, _) => "CallStatic",
+            Self::CallStaticExact(_, _) => "CallStaticExact",
+            Self::CallStaticExact0(_) => "CallStaticExact0",
+            Self::CallStaticExact1(_) => "CallStaticExact1",
+            Self::CallStaticExact2(_) => "CallStaticExact2",
+            Self::CallStaticImplicitSelf(_, _) => "CallStaticImplicitSelf",
+            Self::CallSelf(_) => "CallSelf",
+            Self::CallSelfExact(_) => "CallSelfExact",
+            Self::CallSelfExact0 => "CallSelfExact0",
+            Self::CallSelfExact1 => "CallSelfExact1",
+            Self::CallSelfExact2 => "CallSelfExact2",
+            Self::CallSelfImplicitSelf(_) => "CallSelfImplicitSelf",
+            Self::CallLocal(_, _) => "CallLocal",
+            Self::CallUpvalue(_, _) => "CallUpvalue",
+            Self::CallValue(_) => "CallValue",
+            Self::MaybeAutoCall => "MaybeAutoCall",
+            Self::TryCatch(_) => "TryCatch",
+            Self::FlowBreak(_) => "FlowBreak",
+            Self::FlowContinue => "FlowContinue",
+            Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
+            Self::Return => "Return",
+        }
+    }
+
+    /// Returns whether this instruction represents user-program execution rather than a
+    /// debugger-only boundary. Debugger builds inject boundaries that normal mq builds do not
+    /// execute, so profiling excludes them to keep opcode proportions actionable.
+    pub(crate) fn is_profiled_instruction(&self) -> bool {
+        #[cfg(feature = "debugger")]
+        {
+            !matches!(self, Self::StmtBoundary(_) | Self::Breakpoint(_))
+        }
+        #[cfg(not(feature = "debugger"))]
+        {
+            true
+        }
+    }
+}
+
 /// Payload for [`OpCode::TryCatch`].
 #[derive(Debug, Clone)]
 /// `try`/`catch` instruction metadata.
@@ -301,31 +478,6 @@ pub(crate) struct TryCatchInfo {
     pub(crate) break_acc_slot: Option<u16>,
     pub(crate) break_offset: Option<i32>,
     pub(crate) continue_offset: Option<i32>,
-}
-
-/// A build-dependent memoized boolean.
-#[derive(Debug, Default)]
-struct BoolCache(
-    #[cfg(not(feature = "sync"))] std::cell::Cell<Option<bool>>,
-    #[cfg(feature = "sync")] std::sync::OnceLock<bool>,
-);
-
-impl BoolCache {
-    fn get_or_init(&self, f: impl FnOnce() -> bool) -> bool {
-        #[cfg(not(feature = "sync"))]
-        {
-            if let Some(value) = self.0.get() {
-                return value;
-            }
-            let value = f();
-            self.0.set(Some(value));
-            value
-        }
-        #[cfg(feature = "sync")]
-        {
-            *self.0.get_or_init(f)
-        }
-    }
 }
 
 /// A run of instructions attributed to one source token.
@@ -351,7 +503,9 @@ pub(crate) struct Chunk {
     #[cfg(feature = "debugger")]
     pub(crate) debug_symbols: DebugSymbolTable,
     pub(crate) param_shape: ParamShape,
-    captures_local_slots_cache: BoolCache,
+    /// Sorted local slots whose cells are captured by a nested closure or default expression.
+    /// All remaining slots can stay as direct values in the interpreter frame.
+    captured_local_slots: Vec<u16>,
 }
 
 impl Chunk {
@@ -359,28 +513,51 @@ impl Chunk {
     pub(crate) fn push_static_closure(&mut self, target_chunk: u16) -> u16 {
         self.static_closures.push(Shared::new(Closure {
             chunk_index: target_chunk,
-            upvalues: Vec::new(),
+            upvalues: None,
         }));
         (self.static_closures.len() - 1) as u16
     }
 
-    /// Returns whether locals can outlive the current frame.
+    /// Computes the local slots that a closure or default expression captures.
+    ///
+    /// This runs after bytecode optimization, so the interpreter can choose its local storage
+    /// layout without rescanning instructions each time a frame is entered.
+    pub(crate) fn refresh_captured_local_slots(&mut self) {
+        let mut captured = vec![false; self.local_count as usize];
+        let mut mark_sources = |sources: &[UpvalueSource]| {
+            for source in sources {
+                if let UpvalueSource::Local(slot) = source
+                    && let Some(captured) = captured.get_mut(*slot as usize)
+                {
+                    *captured = true;
+                }
+            }
+        };
+        for opcode in &self.code {
+            if let OpCode::MakeClosure(payload) = opcode {
+                mark_sources(&payload.1);
+            }
+        }
+        for binding in &self.param_shape.bindings {
+            if let ParamBinding::Optional(_, _, sources) = binding {
+                mark_sources(sources);
+            }
+        }
+        self.captured_local_slots = captured
+            .into_iter()
+            .enumerate()
+            .filter_map(|(slot, is_captured)| is_captured.then_some(slot as u16))
+            .collect();
+    }
+
+    /// Returns whether any local can outlive the current frame.
     pub(crate) fn captures_local_slots(&self) -> bool {
-        self.captures_local_slots_cache.get_or_init(|| {
-            self.code.iter().any(|op| {
-                matches!(
-                    op,
-                    OpCode::MakeClosure(payload)
-                        if payload.1.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-                )
-            }) || self.param_shape.bindings.iter().any(|binding| {
-                matches!(
-                    binding,
-                    ParamBinding::Optional(_, _, sources)
-                        if sources.iter().any(|source| matches!(source, UpvalueSource::Local(_)))
-                )
-            })
-        })
+        !self.captured_local_slots.is_empty()
+    }
+
+    /// Returns the finalized list of local slots that need independently shared cells.
+    pub(crate) fn captured_local_slots(&self) -> &[u16] {
+        &self.captured_local_slots
     }
 
     /// Adds a constant and returns its index.
@@ -501,6 +678,11 @@ pub(crate) enum BytecodeError {
         expected: usize,
         actual: usize,
     },
+    StaticCallTargetInvalid {
+        chunk: usize,
+        pc: usize,
+        target: u16,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -554,6 +736,9 @@ impl fmt::Display for BytecodeError {
                     "chunk {chunk} pc {pc} makes a closure over chunk {target} with {actual} captures, but it expects {expected}"
                 )
             }
+            Self::StaticCallTargetInvalid { chunk, pc, target } => {
+                write!(f, "chunk {chunk} pc {pc} directly calls invalid static chunk {target}")
+            }
         }
     }
 }
@@ -567,19 +752,54 @@ pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
     }
 }
 
+/// Rewrites common capture-free exact static calls after local capture metadata is finalized.
+pub(crate) fn specialize_static_exact_calls(chunks: &mut [Chunk]) {
+    let targets: Vec<Option<StaticExactCallTarget>> = chunks
+        .iter()
+        .enumerate()
+        .map(|(chunk_index, chunk)| {
+            (!chunk.captures_local_slots()).then_some(StaticExactCallTarget {
+                chunk_index: chunk_index as u16,
+                local_count: chunk.local_count,
+            })
+        })
+        .collect();
+
+    for chunk in chunks {
+        for op in &mut chunk.code {
+            let OpCode::CallStaticExact(chunk_index, argc) = op else {
+                continue;
+            };
+            let Some(target) = targets.get(*chunk_index as usize).copied().flatten() else {
+                continue;
+            };
+            *op = match *argc {
+                0 => OpCode::CallStaticExact0(target),
+                1 => OpCode::CallStaticExact1(target),
+                2 => OpCode::CallStaticExact2(target),
+                _ => continue,
+            };
+        }
+    }
+}
+
 fn optimize_chunk(chunk: &mut Chunk) {
     if chunk.code.is_empty() {
         return;
     }
 
     let has_rewrite = chunk.code.iter().enumerate().any(|(pc, op)| {
-        matches!(
-            (op, chunk.code.get(pc + 1)),
-            (OpCode::Const(_), Some(OpCode::Pop))
-                | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
-                | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
-                | (OpCode::Jump(0), _)
-        )
+        is_fusable_compare_jump(op, chunk.code.get(pc + 1)) || {
+            matches!(
+                (op, chunk.code.get(pc + 1)),
+                (OpCode::Const(_), Some(OpCode::Pop))
+                    | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
+                    | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
+                    | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
+                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
+                    | (OpCode::Jump(0), _)
+            )
+        }
     });
     if !has_rewrite {
         return;
@@ -623,9 +843,57 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
+            (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::SetLocal(destination)))
+                if local == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::UpdateLocalConst {
+                    op: *op,
+                    local: *local,
+                    constant: *constant,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::SetLocal(destination)))
+                if left == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::UpdateLocalLocal {
+                    op: *op,
+                    local: *left,
+                    value: *right,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
             (OpCode::Jump(0), _) => {
                 keep[pc] = false;
                 pc += 1;
+            }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::JumpIfFalse(offset)))
+                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::JumpIfFalseLocalLocal {
+                    op: *op,
+                    left: *left,
+                    right: *right,
+                    // The fused op keeps the `BinaryLocalLocal`'s old pc, one slot earlier than
+                    // the `JumpIfFalse` this offset was written for; +1 keeps the same target.
+                    offset: *offset + 1,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::JumpIfFalse(offset)))
+                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::JumpIfFalseLocalConst {
+                    op: *op,
+                    local: *local,
+                    constant: *constant,
+                    offset: *offset + 1,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
             }
             _ => pc += 1,
         }
@@ -652,11 +920,27 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
+/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse` —
+/// the shape every `if`/`while`/`until` condition compiles to — and so can fuse into a single
+/// compare-and-branch instruction with no boolean ever pushed to the operand stack.
+fn is_fusable_compare_jump(op: &OpCode, next: Option<&OpCode>) -> bool {
+    let Some(OpCode::JumpIfFalse(_)) = next else {
+        return false;
+    };
+    match op {
+        OpCode::BinaryLocalLocal { op, .. } | OpCode::BinaryLocalConst { op, .. } => op.is_comparison(),
+        _ => false,
+    }
+}
+
 fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
     let mut targets = std::collections::BTreeSet::new();
     for (pc, op) in code.iter().enumerate() {
         match op {
-            OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
+            OpCode::Jump(offset)
+            | OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfFalseLocalLocal { offset, .. }
+            | OpCode::JumpIfFalseLocalConst { offset, .. } => {
                 if let Some(target) = jump_target(pc, *offset) {
                     targets.insert(target);
                 }
@@ -713,6 +997,28 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
         OpCode::JumpIfFalse(offset) => OpCode::JumpIfFalse(rewrite(offset)),
+        OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset,
+        } => OpCode::JumpIfFalseLocalLocal {
+            op,
+            left,
+            right,
+            offset: rewrite(offset),
+        },
+        OpCode::JumpIfFalseLocalConst {
+            op,
+            local,
+            constant,
+            offset,
+        } => OpCode::JumpIfFalseLocalConst {
+            op,
+            local,
+            constant,
+            offset: rewrite(offset),
+        },
         OpCode::ForeachNext {
             array_slot,
             index_slot,
@@ -821,7 +1127,18 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
-                OpCode::BinaryLocalConst { local, constant, .. } => {
+                OpCode::UpdateLocalLocal { local, value, .. } => {
+                    for slot in [local, value] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                }
+                OpCode::BinaryLocalConst { local, constant, .. } | OpCode::UpdateLocalConst { local, constant, .. } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -836,6 +1153,42 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             index: *constant,
                         });
                     }
+                }
+                OpCode::JumpIfFalseLocalLocal {
+                    left, right, offset, ..
+                } => {
+                    for slot in [left, right] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
+                OpCode::JumpIfFalseLocalConst {
+                    local,
+                    constant,
+                    offset,
+                    ..
+                } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
                 OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
                     for slot in [array_slot, index_slot] {
@@ -889,6 +1242,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
+                OpCode::CallUpvalue(index, _) => {
+                    if *index as usize >= chunk.upvalue_names.len() {
+                        return Err(BytecodeError::UpvalueOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                }
                 OpCode::MakeClosure(payload) => {
                     let (target, sources) = payload.as_ref();
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
@@ -904,7 +1266,119 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     };
                     verify_chunk_target(chunks, chunk_index, pc, closure.chunk_index)?;
-                    verify_closure_capture_count(chunks, chunk_index, pc, closure.chunk_index, closure.upvalues.len())?;
+                    verify_closure_capture_count(
+                        chunks,
+                        chunk_index,
+                        pc,
+                        closure.chunk_index,
+                        closure.upvalues.as_ref().map_or(0, |upvalues| upvalues.len()),
+                    )?;
+                }
+                OpCode::CallStatic(target, _)
+                | OpCode::CallStaticExact(target, _)
+                | OpCode::CallStaticImplicitSelf(target, _) => {
+                    verify_chunk_target(chunks, chunk_index, pc, *target)?;
+                    let callee = &chunks[*target as usize];
+                    if !callee.upvalue_names.is_empty() || callee.param_shape.fixed_required_arity().is_none() {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: *target,
+                        });
+                    }
+                    let arity = callee.param_shape.required;
+                    match op {
+                        OpCode::CallStaticExact(_, argc) if arity != *argc as usize => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: *target,
+                            });
+                        }
+                        OpCode::CallStaticImplicitSelf(_, argc) if arity == 0 || arity != *argc as usize + 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: *target,
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                OpCode::CallStaticExact0(target)
+                | OpCode::CallStaticExact1(target)
+                | OpCode::CallStaticExact2(target) => {
+                    verify_chunk_target(chunks, chunk_index, pc, target.chunk_index)?;
+                    let callee = &chunks[target.chunk_index as usize];
+                    let expected_arity = match op {
+                        OpCode::CallStaticExact0(_) => 0,
+                        OpCode::CallStaticExact1(_) => 1,
+                        OpCode::CallStaticExact2(_) => 2,
+                        _ => unreachable!("the outer match limits the opcode variants"),
+                    };
+                    if !callee.upvalue_names.is_empty()
+                        || callee.param_shape.fixed_required_arity() != Some(expected_arity)
+                        || callee.captures_local_slots()
+                        || callee.local_count != target.local_count
+                    {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: target.chunk_index,
+                        });
+                    }
+                }
+                OpCode::CallSelf(_)
+                | OpCode::CallSelfExact(_)
+                | OpCode::CallSelfExact0
+                | OpCode::CallSelfExact1
+                | OpCode::CallSelfExact2
+                | OpCode::CallSelfImplicitSelf(_) => {
+                    let Some(arity) = chunk.param_shape.fixed_required_arity() else {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: chunk_index as u16,
+                        });
+                    };
+                    match op {
+                        OpCode::CallSelfExact(argc) if arity != *argc as usize => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfImplicitSelf(argc) if arity == 0 || arity != *argc as usize + 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact0 if arity != 0 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact1 if arity != 1 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        OpCode::CallSelfExact2 if arity != 2 => {
+                            return Err(BytecodeError::StaticCallTargetInvalid {
+                                chunk: chunk_index,
+                                pc,
+                                target: chunk_index as u16,
+                            });
+                        }
+                        _ => {}
+                    }
                 }
                 OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
@@ -1183,6 +1657,23 @@ mod tests {
     }
 
     #[test]
+    fn captured_local_metadata_contains_only_closure_and_default_sources() {
+        let mut chunk = Chunk {
+            local_count: 5,
+            code: vec![OpCode::MakeClosure(Box::new((0, vec![UpvalueSource::Local(3)])))],
+            param_shape: ParamShape {
+                bindings: vec![ParamBinding::Optional(1, 0, vec![UpvalueSource::Local(1)])],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        chunk.refresh_captured_local_slots();
+
+        assert_eq!(chunk.captured_local_slots(), &[1, 3]);
+    }
+
+    #[test]
     fn verifier_rejects_invalid_constant_and_jump_targets() {
         let invalid_constant = Chunk {
             code: vec![OpCode::Const(0), OpCode::Return],
@@ -1231,9 +1722,17 @@ mod tests {
         OpCode::Pop,
         OpCode::Return,
     ])]
+    #[case::update_local_local(vec![
+        OpCode::UpdateLocalLocal { op: BinaryOp::Add, local: 0, value: 0 },
+        OpCode::Return,
+    ])]
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::update_local_const(vec![
+        OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
     #[case::array_get_local_at(vec![
@@ -1281,6 +1780,10 @@ mod tests {
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
+        OpCode::Return,
+    ])]
+    #[case::update_local_const(vec![
+        OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
     fn verifier_rejects_out_of_bounds_constant_index(#[case] code: Vec<OpCode>) {
@@ -1428,7 +1931,7 @@ mod tests {
             code: vec![OpCode::MakeStaticClosure(0), OpCode::Return],
             static_closures: vec![Shared::new(Closure {
                 chunk_index: 1,
-                upvalues: Vec::new(),
+                upvalues: None,
             })],
             ..Default::default()
         };

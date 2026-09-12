@@ -39,8 +39,6 @@ use crate::engine;
 use crate::error;
 use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
-#[cfg(test)]
-use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver};
@@ -63,7 +61,9 @@ pub(crate) struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            max_call_stack_depth: if cfg!(debug_assertions) { 40 } else { 192 },
+            // Keep debug builds eager to expose accidental recursion, while the heap-backed VM
+            // can safely accommodate practical non-tail recursion in release builds.
+            max_call_stack_depth: if cfg!(debug_assertions) { 256 } else { 10_000 },
             timeout: None,
         }
     }
@@ -169,44 +169,6 @@ pub(crate) fn vm_error_to_runtime_error(
     err.to_runtime_error(token, token_id, token_arena)
 }
 
-#[cfg(test)]
-pub(crate) fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
-    compile_and_run_full(
-        program,
-        RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        token_arena,
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn compile_and_run_with_input(
-    program: &Program,
-    input: RuntimeValue,
-    token_arena: TokenArena,
-) -> Result<RuntimeValue, Error> {
-    compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
-}
-
-#[cfg(test)]
-pub(crate) fn compile_and_run_full(
-    program: &Program,
-    input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    token_arena: TokenArena,
-) -> Result<RuntimeValue, Error> {
-    let compiled = compiler::compile_program(program, token_arena, ModuleLoader::new(StdModuleResolver))?;
-    Ok(interpreter::run(
-        &compiled,
-        input,
-        host_functions,
-        timeout,
-        Options::default().max_call_stack_depth,
-    )?)
-}
-
 fn run_for_input<F>(input: RuntimeValue, mut run_one: F) -> Result<RuntimeValue, interpreter::VmError>
 where
     F: FnMut(RuntimeValue) -> Result<RuntimeValue, interpreter::VmError>,
@@ -215,10 +177,15 @@ where
         // `input` owns its shared node. In the common case it is uniquely held, so move the
         // Markdown tree into the transform instead of cloning it before walking every value.
         RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node)
-            .map_values_into(
-                &mut |child_node: &mq_markdown::Node| -> Result<mq_markdown::Node, interpreter::VmError> {
-                    let value = run_one(RuntimeValue::new_markdown(child_node.clone()))?;
-                    Ok(markdown_child_result(value, child_node))
+            .map_values_into_owned(
+                &mut |child_node: mq_markdown::Node| -> Result<mq_markdown::Node, interpreter::VmError> {
+                    // The VM receives one shared reference and this fallback keeps the other.
+                    // Read-only work and no-match results move the same node back out without a
+                    // deep clone, while mutations naturally take the existing copy-on-write path.
+                    let child_node = Shared::new(child_node);
+                    let fallback = Shared::clone(&child_node);
+                    let value = run_one(RuntimeValue::Markdown(child_node, None))?;
+                    Ok(markdown_child_result(value, fallback))
                 },
             )
             .map(RuntimeValue::new_markdown),
@@ -226,9 +193,9 @@ where
     }
 }
 
-fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) -> mq_markdown::Node {
+fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node>) -> mq_markdown::Node {
     match value {
-        RuntimeValue::None => child_node.to_fragment(),
+        RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
         RuntimeValue::NativeFunction(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
@@ -243,7 +210,12 @@ fn markdown_child_result(value: RuntimeValue, child_node: &mq_markdown::Node) ->
         | RuntimeValue::String(_)
         | RuntimeValue::Bytes(_) => value.to_string().into(),
         RuntimeValue::Symbol(i) => i.as_str().into(),
-        RuntimeValue::Markdown(node, _) => Shared::unwrap_or_clone(node),
+        RuntimeValue::Markdown(node, _) => {
+            // `node` can be the shared VM input. Drop the unmatched fallback first so the
+            // result is uniquely owned again and can move out without cloning.
+            drop(fallback);
+            Shared::unwrap_or_clone(node)
+        }
     }
 }
 
@@ -526,7 +498,7 @@ fn collect_module_prelude_targets(
     inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
 ) {
     for (index, node) in program.iter().enumerate() {
-        match &*node.expr {
+        match &node.expr {
             Expr::Include(Literal::String(path)) => {
                 if !paths.iter().any(|existing| existing == path) {
                     paths.push(path.clone());
@@ -550,7 +522,7 @@ fn collect_module_prelude_targets(
 /// as separate probes.
 fn collect_module_paths(program: &Program, paths: &mut Vec<String>) {
     for node in program {
-        match &*node.expr {
+        match &node.expr {
             Expr::Include(Literal::String(path)) | Expr::Import(Literal::String(path), _) => {
                 if !paths.iter().any(|existing| existing == path) {
                     paths.push(path.clone());
@@ -616,7 +588,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
 
     let directive_program: Program = vec![Shared::new(Node {
         token_id: crate::ast::TokenId::new(0),
-        expr: Shared::new(Expr::Include(Literal::String(path.to_string()))),
+        expr: Expr::Include(Literal::String(path.to_string())),
     })];
     let compiled = compiler::compile_program_for_engine(
         &directive_program,
@@ -656,7 +628,7 @@ fn collect_inline_module_vars(
     let mut path = parent_path.to_vec();
     path.push(module.clone());
     for node in body {
-        match &*node.expr {
+        match &node.expr {
             Expr::Let(Pattern::Ident(_), _) => vars.push((path.clone(), Shared::clone(node))),
             Expr::Module(nested_module, nested_body) => {
                 collect_inline_module_vars(nested_module, nested_body, &path, vars);
@@ -711,26 +683,23 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         let probe_args: ast::Args = module_vars
             .iter()
             .map(|(path, node)| {
-                let Expr::Let(Pattern::Ident(let_ident), _) = &*node.expr else {
+                let Expr::Let(Pattern::Ident(let_ident), _) = &node.expr else {
                     unreachable!("filtered above");
                 };
                 Shared::new(Node {
                     token_id: crate::ast::TokenId::new(0),
-                    expr: Shared::new(Expr::QualifiedAccess(
-                        path.clone(),
-                        AccessTarget::Ident(let_ident.clone()),
-                    )),
+                    expr: Expr::QualifiedAccess(path.clone(), AccessTarget::Ident(let_ident.clone())),
                 })
             })
             .collect();
         let mut probe_program = prefix;
         probe_program.push(Shared::new(Node {
             token_id: crate::ast::TokenId::new(0),
-            expr: Shared::new(Expr::Module(ident.clone(), body)),
+            expr: Expr::Module(ident.clone(), body),
         }));
         probe_program.push(Shared::new(Node {
             token_id: crate::ast::TokenId::new(0),
-            expr: Shared::new(Expr::Call(ast::IdentWithToken::new("array"), probe_args)),
+            expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
         }));
 
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
