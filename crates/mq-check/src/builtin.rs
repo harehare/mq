@@ -437,6 +437,12 @@ fn register_string(ctx: &mut InferenceContext) {
     register_unary(ctx, "unlines", Type::array(Type::String), Type::String);
     register_unary(ctx, "unlines", Type::None, Type::None);
 
+    // common_indent/dedent: (string) -> string
+    register_unary(ctx, "common_indent", Type::String, Type::String);
+    register_unary(ctx, "common_indent", Type::None, Type::None);
+    register_unary(ctx, "dedent", Type::String, Type::String);
+    register_unary(ctx, "dedent", Type::None, Type::None);
+
     // slugify: (string, string) -> string
     register_unary(ctx, "slugify", Type::String, Type::String);
     // slugify: (string) -> string

@@ -295,6 +295,9 @@ impl TypeChecker {
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
 
+        // Resolve user-defined call return types before narrowing so `y != None` can narrow `let y = f(x)`.
+        deferred::propagate_user_call_returns(&mut ctx);
+
         // Apply type narrowings from type predicate conditions (e.g., is_string(x))
         // in if/elif branches. This overrides Ref types within narrowed branches.
         // Returns dead branch ranges for unreachable code detection.
