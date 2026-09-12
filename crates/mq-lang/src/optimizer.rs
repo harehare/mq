@@ -402,6 +402,10 @@ impl Optimizer {
                 token_id,
                 expr: ast::Expr::Break(Some(self.substitute_literals(Shared::clone(val), env))),
             }),
+            ast::Expr::Yield(Some(val)) => Shared::new(ast::Node {
+                token_id,
+                expr: ast::Expr::Yield(Some(self.substitute_literals(Shared::clone(val), env))),
+            }),
             // Substitute into Expr segments of interpolated strings so that
             // `let x = "hi" | s"${x}!"` can later be folded to `"hi!"`.
             ast::Expr::InterpolatedString(segments) => {
@@ -440,6 +444,7 @@ impl Optimizer {
             | ast::Expr::Nodes
             | ast::Expr::Break(None)
             | ast::Expr::Continue
+            | ast::Expr::Yield(None)
             | ast::Expr::Include(_)
             | ast::Expr::Import(_, _)
             | ast::Expr::Module(_, _)
@@ -679,6 +684,16 @@ impl Optimizer {
                     expr: ast::Expr::Break(Some(opt_val)),
                 })
             }
+            ast::Expr::Yield(Some(val)) => {
+                let opt_val = self.optimize_node(Shared::clone(val), user_defs);
+                if ptr_eq(&opt_val, val) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Yield(Some(opt_val)),
+                })
+            }
             ast::Expr::Match(value_node, arms) => {
                 let opt_value = self.optimize_node(Shared::clone(value_node), user_defs);
                 let opt_arms: MatchArms = arms
@@ -774,6 +789,7 @@ impl Optimizer {
             | ast::Expr::Nodes
             | ast::Expr::Break(None)
             | ast::Expr::Continue
+            | ast::Expr::Yield(None)
             | ast::Expr::Include(_)
             | ast::Expr::Import(_, _)
             | ast::Expr::QualifiedAccess(_, _) => node,

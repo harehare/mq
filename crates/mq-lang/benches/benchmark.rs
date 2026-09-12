@@ -53,6 +53,19 @@ fn eval_compiled_while(bencher: divan::Bencher) {
     );
 }
 
+/// Measures the VM's specialized `foreach` control path with per-iteration arithmetic.
+///
+/// Keep this workload aligned with the long-standing regression benchmark so historical
+/// measurements remain comparable.
+#[divan::bench]
+fn eval_compiled_foreach(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(bencher, &mut engine, "foreach(x, range(0, 1000, 1)): x + 1;", || {
+        vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))]
+    });
+}
+
 /// Measures the API pattern used by line-oriented callers: one compiled query evaluated once
 /// per input value while file globals remain stable.
 #[divan::bench]
@@ -195,6 +208,33 @@ fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
         &mut engine,
         r#"let d = fold(range(0, 100, 1), dict(), fn(acc, i): set(acc, to_string(i), i);)
         | foreach(i, range(0, 2000, 1)): get(d, to_string(i % 100));"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
+/// Isolates the `yield`/`next()` suspend-resume path with no captured container state.
+#[divan::bench]
+fn eval_compiled_generator_yield_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def g(n): var i = 0 | while (i < n): yield: i | i += 1;; | let s = g(1000)
+        | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
+/// Same as above, but rebuilds a growing local array each iteration, which `downgrade_self_references` now scans per suspend.
+#[divan::bench]
+fn eval_compiled_generator_yield_with_growing_array(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def g(n): var acc = [] | var i = 0 | while (i < n): acc = [...acc, i] | yield: len(acc) | i += 1;; | let s = g(1000)
+        | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#,
         || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
     );
 }

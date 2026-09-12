@@ -124,6 +124,7 @@ pub enum NodeKind {
     Until,
     UnaryOp(UnaryOp),
     While,
+    Yield,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

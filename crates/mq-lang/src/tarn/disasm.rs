@@ -147,6 +147,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::PushNone => "PushNone".to_string(),
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
+        bytecode::OpCode::SetLocalConst { local: slot, constant } => {
+            format!("SetLocalConst {} {constant}", local(*slot))
+        }
         bytecode::OpCode::TeeLocal(slot) => format!("TeeLocal {}", local(*slot)),
         bytecode::OpCode::CopyLocal { source, destination } => {
             format!("CopyLocal {} -> {}", local(*source), local(*destination))
@@ -296,6 +299,10 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::MaybeAutoCall => "MaybeAutoCall".to_string(),
         bytecode::OpCode::TryCatch(info) => {
             let break_acc = info.break_acc_slot.map(local).unwrap_or_else(|| "-".to_string());
+            let break_completed = info
+                .break_completed_iteration_slot
+                .map(local)
+                .unwrap_or_else(|| "-".to_string());
             let break_target = info
                 .break_offset
                 .map(|offset| jump_ref(pc, offset))
@@ -305,14 +312,27 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
                 .map(|offset| jump_ref(pc, offset))
                 .unwrap_or_else(|| "-".to_string());
             format!(
-                "TryCatch has_binder={}, break_acc={break_acc}, break={break_target}, continue={continue_target}",
+                "TryCatch has_binder={}, break_acc={break_acc}, break_completed={break_completed}, break={break_target}, continue={continue_target}",
                 info.has_binder
             )
         }
         bytecode::OpCode::FlowBreak(has_value) => format!("FlowBreak has_value={has_value}"),
         bytecode::OpCode::FlowContinue => "FlowContinue".to_string(),
         bytecode::OpCode::RaiseDestructuringFailed => "RaiseDestructuringFailed".to_string(),
+        bytecode::OpCode::ReturnLocal(slot) => format!("ReturnLocal {}", local(*slot)),
+        bytecode::OpCode::ReturnBinaryLocalLocal { op, left, right } => {
+            format!("ReturnBinaryLocalLocal {op:?} {} {}", local(*left), local(*right))
+        }
+        bytecode::OpCode::ReturnBinaryLocalConst {
+            op,
+            local: slot,
+            constant,
+        } => {
+            format!("ReturnBinaryLocalConst {op:?} {} {constant}", local(*slot))
+        }
         bytecode::OpCode::Return => "Return".to_string(),
+        bytecode::OpCode::Yield => "Yield".to_string(),
+        bytecode::OpCode::Resume(argc) => format!("Resume argc={argc}"),
     }
 }
 
@@ -326,5 +346,17 @@ fn format_value(value: &RuntimeValue) -> String {
         format!("{preview}…")
     } else {
         preview
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yield_and_resume_render() {
+        let chunk = bytecode::Chunk::default();
+        assert_eq!(format_opcode(&bytecode::OpCode::Yield, &chunk, 0), "Yield");
+        assert_eq!(format_opcode(&bytecode::OpCode::Resume(1), &chunk, 0), "Resume argc=1");
     }
 }

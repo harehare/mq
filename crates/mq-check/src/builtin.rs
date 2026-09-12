@@ -861,6 +861,7 @@ fn register_type_checks(ctx: &mut InferenceContext) {
         "is_number",
         "is_bool",
         "is_bytes",
+        "is_coroutine",
     ] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::Bool);
@@ -1342,6 +1343,16 @@ fn register_variable(ctx: &mut InferenceContext) {
 fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "is_debug_mode", Type::Bool);
     register_nullary(ctx, "breakpoint", Type::None);
+
+    // `next()`/`send()` may take their coroutine from the pipeline or explicitly as the first
+    // argument. Coroutines and their `{ value, done }` records are runtime-only VM types for
+    // now, so the checker models both sides as dynamic while still resolving the builtin name.
+    register_nullary(ctx, "next", Type::Dynamic);
+    register_unary(ctx, "next", Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "send", Type::Dynamic, Type::Dynamic);
+    register_binary(ctx, "send", Type::Dynamic, Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "close", Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "status", Type::Dynamic, Type::Symbol);
 
     let a = ctx.fresh_var();
     register_unary(ctx, "assert", Type::Var(a), Type::Var(a));

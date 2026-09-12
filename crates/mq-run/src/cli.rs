@@ -1703,7 +1703,7 @@ impl Cli {
                 for v in argjson.chunks(2) {
                     let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
                     let runtime_value: mq_lang::RuntimeValue = json_value.into();
-                    engine.define_value(&v[0], runtime_value.clone());
+                    engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
             }
@@ -1724,7 +1724,7 @@ impl Cli {
                     let runtime_value = mq_lang::RuntimeValue::Array(mq_lang::Shared::new(
                         json_values.into_iter().map(Into::into).collect(),
                     ));
-                    engine.define_value(&v[0], runtime_value.clone());
+                    engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
             }
@@ -1748,7 +1748,9 @@ impl Cli {
             ]
             .into_iter()
             .collect();
-            engine.define_value("ARGS", mq_lang::RuntimeValue::Dict(Shared::new(args_map)));
+            engine
+                .define_value("ARGS", mq_lang::RuntimeValue::Dict(Shared::new(args_map)))
+                .into_diagnostic()?;
         }
 
         if let Some(raw_file) = &self.input.raw_file {

@@ -7,7 +7,7 @@ use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
 use crate::runtime::host::HostFunctions;
-use crate::runtime::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
@@ -69,18 +69,44 @@ pub(super) fn capture_upvalues(sources: &[UpvalueSource], locals: &Locals, upval
         .collect()
 }
 
-/// A resolved call: either an already-computed value (a native builtin), or a `Frame` to push.
+/// A resolved call: an already-computed value (a native builtin, or a generator's coroutine), or
+/// a `Frame` to push.
 pub(super) enum CallStep {
     Value(StackValue),
     Enter(Frame),
 }
 
-pub(super) fn call_stack_value(
+/// A generator call binds arguments like any other call but never executes the body.
+pub(super) fn frame_or_coroutine(
+    frame: Frame,
+    chunk_pool: &Shared<Vec<Chunk>>,
+    token_arena: &crate::TokenArena,
+) -> CallStep {
+    if chunk_pool[frame.chunk_index as usize].is_generator {
+        CallStep::Value(generator_coroutine(frame, chunk_pool, token_arena))
+    } else {
+        CallStep::Enter(frame)
+    }
+}
+
+/// Wraps an already-bound generator frame without entering its body.
+pub(super) fn generator_coroutine(
+    frame: Frame,
+    chunk_pool: &Shared<Vec<Chunk>>,
+    token_arena: &crate::TokenArena,
+) -> StackValue {
+    let handle =
+        super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool), Shared::clone(token_arena));
+    StackValue::Value(RuntimeValue::Coroutine(handle))
+}
+
+pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     callee: StackValue,
     args: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut super::DebugRuntime<'_>,
 ) -> VmResult<CallStep> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
         // `drain` (rather than `into_iter`) leaves `args`'s allocation intact for the
@@ -90,6 +116,84 @@ pub(super) fn call_stack_value(
         let self_value = current_self(call_site.locals, chunks);
         let result = call_builtin_args(&ident, arg_values, &self_value, execution.env, execution.host_functions)
             .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+        return Ok(CallStep::Value(StackValue::Value(result)));
+    }
+
+    if let StackValue::Value(RuntimeValue::CoroutineBuiltin(builtin)) = callee {
+        let (stream, resume_value) = match builtin {
+            ResumeBuiltin::Next => match args.len() {
+                0 => (current_self(call_site.locals, chunks), None),
+                1 => {
+                    let Some(stream) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing next argument after argument-count check"),
+                        ));
+                    };
+                    (into_runtime_value(stream, chunks), None)
+                }
+                actual => {
+                    return Err(locate(
+                        call_site.chunk,
+                        call_site.ip,
+                        resume_arity_mismatch(builtins::NEXT, 1, actual),
+                    ));
+                }
+            },
+            ResumeBuiltin::Send => match args.len() {
+                1 => {
+                    let Some(value) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send value after argument-count check"),
+                        ));
+                    };
+                    (
+                        current_self(call_site.locals, chunks),
+                        Some(into_runtime_value(value, chunks)),
+                    )
+                }
+                2 => {
+                    let Some(value) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send value after argument-count check"),
+                        ));
+                    };
+                    let Some(stream) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send stream after argument-count check"),
+                        ));
+                    };
+                    let value = into_runtime_value(value, chunks);
+                    let stream = into_runtime_value(stream, chunks);
+                    (stream, Some(value))
+                }
+                actual => {
+                    return Err(locate(
+                        call_site.chunk,
+                        call_site.ip,
+                        resume_arity_mismatch(builtins::SEND, 2, actual),
+                    ));
+                }
+            },
+        };
+        let RuntimeValue::Coroutine(handle) = stream else {
+            return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable));
+        };
+        let result = super::coroutine::resume::<CHECK_TIMEOUT>(
+            &handle,
+            resume_value,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        )
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
         return Ok(CallStep::Value(StackValue::Value(result)));
     }
 
@@ -139,7 +243,15 @@ pub(super) fn call_stack_value(
         },
     )
     .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-    Ok(CallStep::Enter(frame))
+    Ok(frame_or_coroutine(frame, callee_chunks, &execution.env.token_arena))
+}
+
+fn resume_arity_mismatch(name: &str, expected: u8, actual: usize) -> VmError {
+    VmError::Builtin(builtin::Error::InvalidNumberOfArguments(
+        name.to_string(),
+        expected,
+        actual.try_into().unwrap_or(u8::MAX),
+    ))
 }
 
 pub(super) fn call_fixed_closure_from_stack(
@@ -196,8 +308,8 @@ pub(super) fn call_self_chunk_from_stack(
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
-) -> VmResult<Frame> {
-    call_fixed_chunk_from_stack(
+) -> VmResult<CallStep> {
+    let frame = call_fixed_chunk_from_stack(
         FixedChunkCall {
             chunk_index,
             upvalues,
@@ -208,7 +320,8 @@ pub(super) fn call_self_chunk_from_stack(
         call_site,
         chunks,
         execution,
-    )
+    )?;
+    Ok(frame_or_coroutine(frame, chunks, &execution.env.token_arena))
 }
 
 fn call_fixed_chunk_from_stack(

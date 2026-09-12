@@ -9,9 +9,10 @@ use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::ModuleId;
 use crate::tarn;
 use crate::{
-    ArenaId, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
     module::resolver::DefaultModuleResolver, token_alloc,
 };
+
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
 use crate::{
@@ -22,6 +23,14 @@ use crate::{
     parse,
     runtime::builtin::io_context,
 };
+
+/// An error returned when a value cannot be added to an [`Engine`] environment.
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum DefineValueError {
+    /// The value contains execution state that belongs to a particular VM.
+    #[error("cannot define a VM-bound {0}")]
+    VmBoundValue(&'static str),
+}
 
 /// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
 #[derive(Debug, Clone)]
@@ -268,12 +277,23 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// This allows you to inject values from the host environment
     /// into the mq execution context.
     pub fn define_string_value(&self, name: &str, value: &str) {
-        self.define_value(name, RuntimeValue::String(Shared::new(value.to_string())));
+        self.define_value_unchecked(name, RuntimeValue::String(Shared::new(value.to_string())));
     }
 
     /// Defines an arbitrary runtime value in the current environment.
-    pub fn define_value(&self, name: &str, value: RuntimeValue) {
-        self.vm.define(crate::Ident::new(name), value);
+    ///
+    /// Values that retain VM execution state, such as coroutines and closures, cannot be
+    /// injected. They may contain bytecode and source locations owned by another evaluation.
+    pub fn define_value(&self, name: &str, value: RuntimeValue) -> Result<(), DefineValueError> {
+        if let Some(kind) = value.vm_bound_value_kind() {
+            return Err(DefineValueError::VmBoundValue(kind));
+        }
+        self.define_value_unchecked(name, value);
+        Ok(())
+    }
+
+    fn define_value_unchecked(&self, name: &str, value: RuntimeValue) {
+        self.vm.define(Ident::new(name), value);
     }
 
     /// Registers a native Rust function under `name`, callable from mq code as `name(...)`.
@@ -682,6 +702,7 @@ impl Engine<DefaultModuleResolver> {
 #[cfg(test)]
 mod tests {
     use super::CompiledProgram;
+    use super::DefineValueError;
     use crate::DefaultEngine;
     use crate::RuntimeValue;
     use crate::Shared;
@@ -2287,7 +2308,9 @@ mod tests {
         // (`OpCode::GetExternalGlobal`, seeded from `VmState::global_bindings_snapshot`).
         let mut engine = DefaultEngine::default();
         engine.define_string_value("greeting", "hello");
-        engine.define_value("answer", RuntimeValue::Number(42.0.into()));
+        engine
+            .define_value("answer", RuntimeValue::Number(42.0.into()))
+            .unwrap();
         let compiled = engine.compile("[greeting, answer]").unwrap();
 
         let values = engine
@@ -2324,7 +2347,7 @@ mod tests {
         use crate::RuntimeValue;
 
         let mut engine = DefaultEngine::default();
-        engine.define_value("offset", RuntimeValue::Number(40.into()));
+        engine.define_value("offset", RuntimeValue::Number(40.into())).unwrap();
         let compiled = engine.compile(". + offset").unwrap();
 
         let values = engine
@@ -2340,7 +2363,7 @@ mod tests {
 
         // Values are deliberately not part of the bytecode-cache key. Each batch must instead
         // read a single, current global environment for all of its inputs.
-        engine.define_value("offset", RuntimeValue::Number(100.into()));
+        engine.define_value("offset", RuntimeValue::Number(100.into())).unwrap();
         let values = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::Number(1.into())))
             .unwrap();
@@ -2353,7 +2376,9 @@ mod tests {
         use crate::RuntimeValue;
 
         let mut first_engine = DefaultEngine::default();
-        first_engine.define_value("offset", RuntimeValue::Number(1.into()));
+        first_engine
+            .define_value("offset", RuntimeValue::Number(1.into()))
+            .unwrap();
         let compiled = first_engine.compile("offset").unwrap();
         assert_eq!(
             first_engine
@@ -2364,7 +2389,9 @@ mod tests {
         );
 
         let mut second_engine = DefaultEngine::default();
-        second_engine.define_value("offset", RuntimeValue::Number(2.into()));
+        second_engine
+            .define_value("offset", RuntimeValue::Number(2.into()))
+            .unwrap();
         assert_eq!(
             second_engine
                 .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
@@ -2384,6 +2411,25 @@ mod tests {
         );
     }
 
+    #[rstest::rstest]
+    #[case::coroutine("def g(): yield: 1; | g()", "coroutine")]
+    #[case::nested_coroutine("def g(): yield: 1; | [g()]", "coroutine")]
+    #[case::closure("fn(): 1", "VM closure")]
+    fn define_value_rejects_vm_bound_values(#[case] source: &str, #[case] kind: &'static str) {
+        let mut origin = DefaultEngine::default();
+        let value = origin
+            .eval(source, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values()[0]
+            .clone();
+
+        let target = DefaultEngine::default();
+        assert_eq!(
+            target.define_value("value", value),
+            Err(DefineValueError::VmBoundValue(kind))
+        );
+    }
+
     #[cfg(not(feature = "debugger"))]
     #[test]
     fn test_cached_vm_does_not_reuse_an_environment_after_its_engine_drops() {
@@ -2391,7 +2437,7 @@ mod tests {
 
         let compiled = {
             let mut engine = DefaultEngine::default();
-            engine.define_value("offset", RuntimeValue::Number(1.into()));
+            engine.define_value("offset", RuntimeValue::Number(1.into())).unwrap();
             let compiled = engine.compile("offset").unwrap();
             assert_eq!(
                 engine
@@ -2404,7 +2450,9 @@ mod tests {
         };
 
         let mut next_engine = DefaultEngine::default();
-        next_engine.define_value("offset", RuntimeValue::Number(2.into()));
+        next_engine
+            .define_value("offset", RuntimeValue::Number(2.into()))
+            .unwrap();
         assert_eq!(
             next_engine
                 .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))

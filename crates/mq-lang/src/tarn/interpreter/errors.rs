@@ -1,4 +1,4 @@
-//! `VmError`: Tarn's runtime error type, its `Display`/tree-walker-error conversions, and the
+//! `VmError`: Tarn's runtime error type, its `Display`/`RuntimeError` conversions, and the
 //! small helpers (`locate`, `error_dict`, `error_message`, `flow_break_value`/`flow_continue`)
 //! built on top of it.
 use crate::DictMap;
@@ -33,6 +33,12 @@ pub(crate) enum VmError {
     InvalidForeachTarget(String),
     Timeout(Duration),
     RecursionError(u32),
+    /// `next()` was called on a coroutine already being driven by an outer `next()` higher on
+    /// the Rust call stack.
+    CoroutineReentrant,
+    /// `next()` on a coroutine that previously failed re-raises the same error. Carries the
+    /// coroutine's own token arena, since the resuming call's arena may be a different one.
+    CoroutineFailed(Shared<VmError>, crate::TokenArena),
     Located(Box<VmError>, TokenId),
 }
 
@@ -57,6 +63,8 @@ impl fmt::Display for VmError {
             VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
             VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
             VmError::RecursionError(max) => write!(f, "maximum recursion depth exceeded ({max})"),
+            VmError::CoroutineReentrant => write!(f, "coroutine is already running"),
+            VmError::CoroutineFailed(inner, _) => write!(f, "{inner}"),
             VmError::Located(inner, _) => write!(f, "{inner}"),
         }
     }
@@ -70,8 +78,8 @@ impl VmError {
         }
     }
 
-    /// Maps to the tree-walker's `RuntimeError`, reusing its `Display` text instead of
-    /// duplicating each variant's wording.
+    /// Maps to the common `RuntimeError`, reusing its `Display` text instead of duplicating
+    /// each variant's wording.
     pub(crate) fn to_runtime_error(
         &self,
         token: crate::Token,
@@ -107,13 +115,34 @@ impl VmError {
             VmError::Timeout(d) => RuntimeError::Timeout(*d),
             VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
             VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
+            VmError::CoroutineReentrant => RuntimeError::Runtime(token, "coroutine is already running".to_string()),
+            VmError::CoroutineFailed(inner, origin_arena) => {
+                inner.to_runtime_error(token, token_id, Shared::clone(origin_arena))
+            }
             VmError::Located(inner, token_id) => {
                 let token_id = *token_id;
-                let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
+                let token = resolve_token(&token_arena, token_id);
                 inner.to_runtime_error(token, token_id, token_arena)
             }
         }
     }
+}
+
+/// Resolves `token_id` in `token_arena`, falling back to a placeholder token if out of range.
+fn resolve_token(token_arena: &crate::TokenArena, token_id: TokenId) -> crate::Token {
+    #[cfg(not(feature = "sync"))]
+    let found = token_arena.borrow().get(token_id).cloned();
+    #[cfg(feature = "sync")]
+    let found = token_arena.read().unwrap().get(token_id).cloned();
+
+    found.map_or_else(
+        || crate::Token {
+            range: crate::Range::default(),
+            kind: crate::TokenKind::Eof,
+            module_id: crate::ArenaId::new(0),
+        },
+        |token| (*token).clone(),
+    )
 }
 
 pub(super) fn locate(chunk: &Chunk, ip: usize, e: VmError) -> VmError {
@@ -245,10 +274,7 @@ mod tests {
         builtin::Error::InvalidConvert("bogus".to_string()),
         "Invalid convert: bogus"
     )]
-    fn builtin_error_message_matches_the_tree_walkers_runtime_error_display(
-        #[case] error: builtin::Error,
-        #[case] expected: &str,
-    ) {
+    fn builtin_error_message_matches_runtime_error_display(#[case] error: builtin::Error, #[case] expected: &str) {
         assert_eq!(error_message(&VmError::Builtin(error)), expected);
     }
 
@@ -301,7 +327,15 @@ mod tests {
         VmError::Located(Box::new(VmError::ZeroDivision), TokenId::new(0)),
         "Division by zero"
     )]
-    fn vm_error_message_matches_the_tree_walkers_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
+    #[case::coroutine_reentrant(VmError::CoroutineReentrant, "Runtime error: coroutine is already running")]
+    #[case::coroutine_failed_unwraps_to_the_inner_message(
+        VmError::CoroutineFailed(
+            Shared::new(VmError::ZeroDivision),
+            Shared::new(crate::SharedCell::new(crate::arena::Arena::new(1))),
+        ),
+        "Division by zero"
+    )]
+    fn vm_error_message_matches_runtime_error_display(#[case] error: VmError, #[case] expected: &str) {
         assert_eq!(error_message(&error), expected);
     }
 
@@ -325,13 +359,15 @@ mod tests {
             | VmError::InvalidForeachTarget(_)
             | VmError::Timeout(_)
             | VmError::RecursionError(_)
+            | VmError::CoroutineReentrant
+            | VmError::CoroutineFailed(_, _)
             | VmError::Located(_, _) => {}
         }
     }
 
     /// Guards against the two error-message paths drifting apart again: the VM's own
     /// `1 / 0` fast path used to report "division by zero" (lowercase) via `VmError`'s own
-    /// `Display`, while the tree-walker reported "Division by zero" for the same script.
+    /// `Display`, while the user-facing `RuntimeError` reports "Division by zero".
     #[test]
     fn zero_division_message_matches_through_a_real_try_catch() {
         let token_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(100)));
@@ -354,6 +390,41 @@ mod tests {
         assert_eq!(
             result,
             RuntimeValue::String(Shared::new("Division by zero".to_string()))
+        );
+    }
+
+    /// A coroutine's failure must resolve against its own (carried) arena, not whichever
+    /// unrelated, smaller arena happens to be resuming it. The latter used to panic by indexing
+    /// past its end.
+    #[test]
+    fn coroutine_failed_resolves_against_its_own_arena_not_the_resuming_ones() {
+        let origin_arena = Shared::new(crate::SharedCell::new(crate::arena::Arena::new(50)));
+        let mut origin_token_id = TokenId::new(0);
+        for line in 1..=40 {
+            origin_token_id = crate::token_alloc(
+                &origin_arena,
+                &Shared::new(crate::Token {
+                    range: crate::Range {
+                        start: crate::Position { line, column: 1 },
+                        end: crate::Position { line, column: 1 },
+                    },
+                    kind: crate::TokenKind::Eof,
+                    module_id: crate::ArenaId::new(0),
+                }),
+            );
+        }
+        let coroutine_failed = VmError::CoroutineFailed(
+            Shared::new(VmError::Located(Box::new(VmError::ZeroDivision), origin_token_id)),
+            origin_arena,
+        );
+
+        // Deliberately tiny and unrelated: `origin_token_id` (40) is out of range here.
+        let (token, token_id, resuming_arena) = placeholder_token_context();
+        let result = coroutine_failed.to_runtime_error(token, token_id, resuming_arena);
+        assert_eq!(
+            result.token().unwrap().range.start.line,
+            40,
+            "must resolve against origin_arena"
         );
     }
 }

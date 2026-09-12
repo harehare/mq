@@ -5,6 +5,7 @@
 //! pools), `calls` (binding arguments and invoking a callee), and `selectors` (applying a
 //! `Selector` to a value) hold the parts that split out cleanly; this file is what remains.
 mod calls;
+pub(crate) mod coroutine;
 mod errors;
 mod frame;
 mod selectors;
@@ -13,7 +14,7 @@ use self::calls::{
     CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
     call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
     call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
-    call_static_chunk_from_stack, capture_upvalues, negate_ident,
+    call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine, generator_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -21,14 +22,14 @@ use super::compiler::CompiledProgram;
 #[cfg(feature = "debugger")]
 use super::value::Cell;
 use super::value::VmClosureValue;
-use super::value::{Closure, Locals, StackValue, read_cell, write_cell};
+use super::value::{Closure, Locals, StackValue, read_cell, resolve_weak_coroutines, write_cell};
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
 use crate::number::Number;
 use crate::runtime::builtin::{self, Args};
 use crate::runtime::host::HostFunctions;
-use crate::runtime::runtime_value::{self, RuntimeValue};
+use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
@@ -43,6 +44,17 @@ use std::time::Duration;
 
 static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
+static ADD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::ADD));
+static SUB_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::SUB));
+static MUL_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MUL));
+static DIV_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::DIV));
+static MOD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MOD));
+static EQ_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::EQ));
+static NE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NE));
+static LT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LT));
+static LTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LTE));
+static GT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GT));
+static GTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GTE));
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSlot;
@@ -140,7 +152,7 @@ pub(crate) fn run_with_globals_and_pools(
     global_bindings: &[(Ident, RuntimeValue)],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(global_bindings);
+    let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
     run_with_env_and_pools(
         compiled,
         input,
@@ -196,7 +208,7 @@ pub(crate) fn run_with_globals_capturing_locals(
     capture_names: &[Ident],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     run_with_env_capturing_locals(compiled, input, bindings, options, &env, capture_names, pools)
 }
 
@@ -292,7 +304,7 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
         call_stack: Vec::new(),
         current_node: None,
     };
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
     let (result, captured, _) = run_impl_capturing_locals_with_env(
         compiled,
@@ -315,7 +327,7 @@ fn run_impl(
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     run_impl_with_env(
         compiled,
         input,
@@ -360,7 +372,7 @@ pub(crate) fn run_debug_expression(
         call_stack: Vec::new(),
         current_node: None,
     };
-    let env = VmEnv::from_bindings(&[]);
+    let env = VmEnv::from_bindings(&[], Shared::clone(&compiled.token_arena));
     run_impl_with_bindings(
         compiled,
         input,
@@ -488,6 +500,10 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
         StackValue::Closure(closure) => {
             RuntimeValue::VmClosure(Shared::new(VmClosureValue::from_closure(chunks, &closure)))
         }
+        StackValue::WeakCoroutine(handle) => coroutine::upgrade_handle(&handle)
+            .map(RuntimeValue::Coroutine)
+            .unwrap_or(RuntimeValue::None),
+        StackValue::NestedWeakCoroutine(value) => resolve_weak_coroutines(&value),
     }
 }
 
@@ -574,6 +590,16 @@ enum FrameOutcome {
     /// A call followed immediately by `Return`; the callee can replace this frame.
     TailEnter(Frame),
     Complete(StackValue),
+    /// `OpCode::Yield`. Unlike `Complete`, nothing is popped; frames are left as-is for the
+    /// caller to detach into a `CoroutineState`.
+    Suspend(StackValue),
+}
+
+/// Outcome of driving a frame stack until it suspends, completes, or fails.
+enum DriveOutcome {
+    Completed(StackValue, Locals),
+    Suspended(StackValue),
+    Failed(VmError, Locals),
 }
 
 /// The trampoline: an explicit `Vec<Frame>` replaces Rust's own call stack, so mq call depth is
@@ -587,7 +613,7 @@ fn run_frames(
     let mut operand_stack = execution.limits.take_stack();
     let mut frames = execution.limits.take_frame_stack();
     let result = if execution.limits.has_deadline() {
-        run_frames_impl::<true>(
+        drive_initial_frame::<true>(
             initial,
             root_chunks,
             &mut frames,
@@ -597,7 +623,7 @@ fn run_frames(
             debug,
         )
     } else {
-        run_frames_impl::<false>(
+        drive_initial_frame::<false>(
             initial,
             root_chunks,
             &mut frames,
@@ -612,7 +638,11 @@ fn run_frames(
     result
 }
 
-fn run_frames_impl<const CHECK_TIMEOUT: bool>(
+/// Pushes `initial` and drives it to completion. A generator call constructs a
+/// `RuntimeValue::Coroutine` instead of entering the generator's frame, so top-level evaluation
+/// never observes `DriveOutcome::Suspended`; only `OpCode::Resume`'s direct `drive_frames` call
+/// does.
+fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
     initial: Frame,
     root_chunks: &Shared<Vec<Chunk>>,
     frames: &mut Vec<Frame>,
@@ -621,7 +651,29 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<StackValue>, Locals) {
     frames.push(initial);
+    match drive_frames::<CHECK_TIMEOUT>(
+        root_chunks,
+        frames,
+        operand_stack,
+        execution,
+        #[cfg(feature = "debugger")]
+        debug,
+    ) {
+        DriveOutcome::Completed(value, locals) => (Ok(value), locals),
+        DriveOutcome::Suspended(_) => unreachable!("top-level evaluation never yields"),
+        DriveOutcome::Failed(e, locals) => (Err(e), locals),
+    }
+}
 
+/// Shared by `drive_initial_frame` (seeds a single fresh frame) and `OpCode::Resume` (restores a
+/// coroutine's saved, possibly multi-frame, stack).
+fn drive_frames<const CHECK_TIMEOUT: bool>(
+    root_chunks: &Shared<Vec<Chunk>>,
+    frames: &mut Vec<Frame>,
+    operand_stack: &mut Vec<StackValue>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> DriveOutcome {
     'frames: loop {
         let frame = frames.last_mut().expect("the frame stack is never empty here");
         let outcome = run_frame_slice::<CHECK_TIMEOUT>(
@@ -643,7 +695,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                     debug,
                 ) {
                     let e = locate_at_top(frames, root_chunks, e);
-                    match unwind(
+                    match unwind_frames(
                         e,
                         frames,
                         root_chunks,
@@ -653,7 +705,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                         debug,
                     ) {
                         Ok(()) => continue 'frames,
-                        Err((e, locals)) => return (Err(e), locals),
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                     }
                 }
                 continue 'frames;
@@ -661,16 +713,31 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
             Ok(FrameOutcome::TailEnter(mut new_frame)) => {
                 let caller = frames.last().expect("the frame stack is never empty here");
                 new_frame.stack_base = caller.stack_base;
-                execution.limits.replace_top_frame(
+                if let Err(e) = execution.limits.replace_top_frame(
                     frames,
                     new_frame,
                     #[cfg(feature = "debugger")]
                     debug,
-                );
+                ) {
+                    let e = locate_at_top(frames, root_chunks, e);
+                    match unwind_frames(
+                        e,
+                        frames,
+                        root_chunks,
+                        operand_stack,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    ) {
+                        Ok(()) => continue 'frames,
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                    }
+                }
                 continue 'frames;
             }
+            Ok(FrameOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
             Ok(FrameOutcome::Complete(value)) => value,
-            Err(e) => match unwind(
+            Err(e) => match unwind_frames(
                 e,
                 frames,
                 root_chunks,
@@ -680,13 +747,13 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                 debug,
             ) {
                 Ok(()) => continue 'frames,
-                Err((e, locals)) => return (Err(e), locals),
+                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
             },
         };
 
         if frames.len() == 1 {
             let finished = frames.pop().expect("just checked len() == 1");
-            return (Ok(value), finished.locals);
+            break 'frames DriveOutcome::Completed(value, finished.locals);
         }
         let continuation = execution
             .limits
@@ -705,7 +772,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                     Ok(next) => next,
                     Err(e) => {
                         let e = locate_at_top(frames, root_chunks, e);
-                        match unwind(
+                        match unwind_frames(
                             e,
                             frames,
                             root_chunks,
@@ -715,30 +782,38 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
                             debug,
                         ) {
                             Ok(()) => continue 'frames,
-                            Err((e, locals)) => return (Err(e), locals),
+                            Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                         }
                     }
                 };
-                let mut next = next;
-                next.stack_base = operand_stack.len();
-                if let Err(e) = execution.limits.push_frame(
-                    frames,
-                    next,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                ) {
-                    let e = locate_at_top(frames, root_chunks, e);
-                    match unwind(
-                        e,
-                        frames,
-                        root_chunks,
-                        operand_stack,
-                        execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    ) {
-                        Ok(()) => continue 'frames,
-                        Err((e, locals)) => return (Err(e), locals),
+                // May be the callee's own now-fully-bound frame; needs generator detection too.
+                let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
+                match frame_or_coroutine(next, &next_chunks, &execution.env.token_arena) {
+                    CallStep::Value(coroutine) => {
+                        operand_stack.push(coroutine);
+                    }
+                    CallStep::Enter(mut next) => {
+                        next.stack_base = operand_stack.len();
+                        if let Err(e) = execution.limits.push_frame(
+                            frames,
+                            next,
+                            #[cfg(feature = "debugger")]
+                            debug,
+                        ) {
+                            let e = locate_at_top(frames, root_chunks, e);
+                            match unwind_frames(
+                                e,
+                                frames,
+                                root_chunks,
+                                operand_stack,
+                                execution,
+                                #[cfg(feature = "debugger")]
+                                debug,
+                            ) {
+                                Ok(()) => continue 'frames,
+                                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                            }
+                        }
                     }
                 }
             }
@@ -758,7 +833,7 @@ fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError)
     clippy::ptr_arg,
     reason = "unwinding may truncate and push onto the shared operand stack"
 )]
-fn unwind(
+fn unwind_frames(
     mut e: VmError,
     frames: &mut Vec<Frame>,
     root_chunks: &Shared<Vec<Chunk>>,
@@ -795,6 +870,7 @@ fn unwind(
                     catch_closure,
                     has_binder,
                     break_acc_slot,
+                    break_completed_iteration_slot,
                     break_offset,
                     continue_offset,
                 } = *body;
@@ -805,6 +881,13 @@ fn unwind(
                     let parent = frames.last_mut().expect("just checked len() > 1");
                     if let Some(value) = value {
                         parent.locals.set(acc_slot, StackValue::Value(value));
+                        if let Some(slot) = break_completed_iteration_slot {
+                            parent.locals.set(slot, StackValue::Value(RuntimeValue::Boolean(true)));
+                        }
+                    } else if let Some(slot) = break_completed_iteration_slot
+                        && !matches!(parent.locals.get(slot), StackValue::Value(RuntimeValue::Boolean(true)))
+                    {
+                        parent.locals.set(acc_slot, StackValue::Value(RuntimeValue::None));
                     }
                     parent.ip = (parent.ip as i64 + offset as i64) as usize;
                     return Ok(());
@@ -981,6 +1064,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let v = pop!();
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, v) };
+            }
+            OpCode::SetLocalConst { local, constant } => {
+                // SAFETY: `verify_chunks` validates the local slot and constant index before execution.
+                let value = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
             OpCode::TeeLocal(slot) => {
                 let top = stack
@@ -1220,9 +1309,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 exit_offset,
             } => {
                 // SAFETY: `verify_chunks` validates every local slot before execution.
-                let value = unsafe { locals.foreach_next(*array_slot, *index_slot, *value_slot, SELF_SLOT) }
+                let advanced = unsafe { locals.advance_foreach(*array_slot, *index_slot, *value_slot, SELF_SLOT) }
                     .map_err(|e| locate(chunk, ip, VmError::Corrupt(e)))?;
-                if value.is_none() {
+                if !advanced {
                     ip = (ip as i64 + *exit_offset as i64) as usize;
                     continue;
                 }
@@ -1341,7 +1430,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch FrameOutcome::Enter(new_frame);
+                if chunks[*chunk_index as usize].is_generator {
+                    stack.push(generator_coroutine(new_frame, chunks, &execution.env.token_arena));
+                } else {
+                    break 'dispatch FrameOutcome::Enter(new_frame);
+                }
             }
             OpCode::CallStaticExact0(target) => {
                 let new_frame = call_exact_fixed_chunk_0(
@@ -1421,7 +1514,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::CallSelf(argc) => {
-                let new_frame = call_self_chunk_from_stack(
+                let step = call_self_chunk_from_stack(
                     frame.chunk_index,
                     frame.upvalues.clone(),
                     *argc,
@@ -1435,7 +1528,10 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     chunks,
                     execution,
                 )?;
-                break 'dispatch tail_call_outcome(chunk, ip, new_frame);
+                match step {
+                    CallStep::Enter(new_frame) => break 'dispatch tail_call_outcome(chunk, ip, new_frame),
+                    CallStep::Value(v) => stack.push(v),
+                }
             }
             OpCode::CallSelfExact0 => {
                 let new_frame = call_exact_fixed_chunk_0(
@@ -1521,6 +1617,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
                     let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
@@ -1539,31 +1636,35 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         execution,
                     )?;
                     break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
-                // variadic/optional params, `partial`-bound closures) runs often enough in
-                // higher-order builtins that a fresh heap allocation per call is worth avoiding.
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                } else {
+                    // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees,
+                    // variadic/optional params, `partial`-bound closures) runs often enough in
+                    // higher-order builtins that a fresh heap allocation per call is worth
+                    // avoiding.
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::CallUpvalue(index, argc) => {
@@ -1574,6 +1675,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
                     let new_frame = call_fixed_closure_from_stack(
                         FixedClosureCall {
@@ -1592,28 +1694,31 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         execution,
                     )?;
                     break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                } else {
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::CallValue(argc) => {
@@ -1629,6 +1734,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         .param_shape
                         .fixed_required_arity()
                         .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
                 {
                     // Keep the callee below its arguments until the fixed-call binder has
                     // popped them. This avoids `Vec::remove(callee_index)`, which shifts
@@ -1651,30 +1757,33 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         execution,
                     )?;
                     break 'dispatch FrameOutcome::Enter(new_frame);
-                }
-                // See the `CallLocal` non-fixed-arity path above for why this is pooled.
-                let mut args = execution.limits.take_stack();
-                for _ in 0..*argc {
-                    args.push(pop!());
-                }
-                args.reverse();
-                let callee = pop!();
-                let step = call_stack_value(
-                    callee,
-                    &mut args,
-                    CallSite {
-                        locals,
-                        chunk,
-                        ip,
-                        frame_chunks: frame.chunks.clone(),
-                    },
-                    chunks,
-                    execution,
-                );
-                execution.limits.recycle_stack(args);
-                match step? {
-                    CallStep::Value(v) => stack.push(v),
-                    CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                } else {
+                    // See the `CallLocal` non-fixed-arity path above for why this is pooled.
+                    let mut args = execution.limits.take_stack();
+                    for _ in 0..*argc {
+                        args.push(pop!());
+                    }
+                    args.reverse();
+                    let callee = pop!();
+                    let step = call_stack_value::<CHECK_TIMEOUT>(
+                        callee,
+                        &mut args,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    );
+                    execution.limits.recycle_stack(args);
+                    match step? {
+                        CallStep::Value(v) => stack.push(v),
+                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
+                    }
                 }
             }
             OpCode::MaybeAutoCall => {
@@ -1690,10 +1799,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     }
                     StackValue::Value(RuntimeValue::NativeFunction(ident)) => builtin::get_builtin_functions(ident)
                         .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0)),
+                    StackValue::Value(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next)) => true,
                     _ => false,
                 };
                 if eligible {
-                    match call_stack_value(
+                    match call_stack_value::<CHECK_TIMEOUT>(
                         value,
                         &mut Vec::new(),
                         CallSite {
@@ -1704,6 +1814,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                         },
                         chunks,
                         execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
                     )? {
                         CallStep::Value(v) => stack.push(v),
                         CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
@@ -1738,9 +1850,49 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::RaiseDestructuringFailed => {
                 bail!(VmError::DestructuringFailed);
             }
+            OpCode::ReturnLocal(slot) => {
+                // SAFETY: `verify_chunks` validates every local slot before execution.
+                break 'dispatch FrameOutcome::Complete(unsafe { locals.get_unchecked(*slot) });
+            }
+            OpCode::ReturnBinaryLocalLocal { op, left, right } => {
+                let a = local_runtime_value(locals, *left, chunks)?;
+                let b = local_runtime_value(locals, *right, chunks)?;
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+            }
+            OpCode::ReturnBinaryLocalConst { op, local, constant } => {
+                let a = local_runtime_value(locals, *local, chunks)?;
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let b = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
+                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                    .map_err(|e| locate(chunk, ip, e))?;
+                break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
+            }
             OpCode::Return => {
                 let v = pop!();
                 break 'dispatch FrameOutcome::Complete(v);
+            }
+            OpCode::Yield => {
+                let v = pop!();
+                break 'dispatch FrameOutcome::Suspend(v);
+            }
+            OpCode::Resume(argc) => {
+                // argc=2 is `send(stream, value)`; argc=1 is `next(stream)`.
+                let resume_value = if *argc == 2 { Some(pop_value!()) } else { None };
+                let arg = pop!();
+                let RuntimeValue::Coroutine(handle) = into_runtime_value(arg, chunks) else {
+                    bail!(VmError::NotCallable);
+                };
+                let result = coroutine::resume::<CHECK_TIMEOUT>(
+                    &handle,
+                    resume_value,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
             }
         }
     };
@@ -1765,7 +1917,7 @@ fn tail_call_outcome(chunk: &Chunk, next_ip: usize, frame: Frame) -> FrameOutcom
     }
 }
 
-/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame` — `unwind`
+/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame`, and `unwind_frames`
 /// handles the rest (routing success, or dispatching to `catch`/a loop jump on error).
 #[cold]
 #[inline(never)]
@@ -1812,6 +1964,7 @@ fn begin_try_catch(
             catch_closure,
             has_binder: info.has_binder,
             break_acc_slot: info.break_acc_slot,
+            break_completed_iteration_slot: info.break_completed_iteration_slot,
             break_offset: info.break_offset,
             continue_offset: info.continue_offset,
         })),
@@ -2021,6 +2174,10 @@ fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeVa
                 let value = into_runtime_value(StackValue::Closure(Shared::clone(closure)), chunks);
                 let _ = write!(result, "{value}");
             }
+            StackValue::WeakCoroutine(_) | StackValue::NestedWeakCoroutine(_) => {
+                let value = into_runtime_value(part.upgraded(), chunks);
+                let _ = write!(result, "{value}");
+            }
         }
     }
     RuntimeValue::String(result.into())
@@ -2092,20 +2249,14 @@ fn binop(
         }));
     }
     let ident = match op {
-        BinaryOp::Add => builtins::ADD,
-        BinaryOp::Sub => builtins::SUB,
-        BinaryOp::Mul => builtins::MUL,
-        BinaryOp::Div => builtins::DIV,
-        BinaryOp::Mod => builtins::MOD,
+        BinaryOp::Add => &ADD_IDENT,
+        BinaryOp::Sub => &SUB_IDENT,
+        BinaryOp::Mul => &MUL_IDENT,
+        BinaryOp::Div => &DIV_IDENT,
+        BinaryOp::Mod => &MOD_IDENT,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(
-        &crate::Ident::new(ident),
-        &[a, b],
-        &current_self(locals, chunks),
-        env,
-        host_functions,
-    )
+    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }
 
 fn cmp_op(
@@ -2129,19 +2280,13 @@ fn cmp_op(
         }));
     }
     let ident = match op {
-        BinaryOp::Eq => builtins::EQ,
-        BinaryOp::Ne => builtins::NE,
-        BinaryOp::Lt => builtins::LT,
-        BinaryOp::Le => builtins::LTE,
-        BinaryOp::Gt => builtins::GT,
-        BinaryOp::Ge => builtins::GTE,
+        BinaryOp::Eq => &EQ_IDENT,
+        BinaryOp::Ne => &NE_IDENT,
+        BinaryOp::Lt => &LT_IDENT,
+        BinaryOp::Le => &LTE_IDENT,
+        BinaryOp::Gt => &GT_IDENT,
+        BinaryOp::Ge => &GTE_IDENT,
         _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
     };
-    call_builtin(
-        &crate::Ident::new(ident),
-        &[a, b],
-        &current_self(locals, chunks),
-        env,
-        host_functions,
-    )
+    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }

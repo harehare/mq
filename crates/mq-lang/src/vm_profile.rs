@@ -142,18 +142,23 @@ mod tests {
 
     #[test]
     fn engine_evaluation_records_dispatched_bytecode() {
-        let mut engine = crate::DefaultEngine::default();
+        use crate::{DefaultEngine, RuntimeValue};
+
+        let mut engine = DefaultEngine::default();
         let scope = VmProfileScope::start();
         engine
             .eval(
                 "var i = 3 | while(i > 0): i -= 1; | i",
-                std::iter::once(crate::RuntimeValue::None),
+                std::iter::once(RuntimeValue::None),
             )
             .unwrap();
 
         let profile = scope.finish();
         assert!(profile.instruction_count() > 0);
         assert!(profile.opcode_count("GetLocal") > 0);
+        #[cfg(feature = "debugger")]
         assert!(profile.opcode_count("Return") > 0);
+        #[cfg(not(feature = "debugger"))]
+        assert!(profile.opcode_count("ReturnLocal") > 0);
     }
 }

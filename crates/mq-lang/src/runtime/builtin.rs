@@ -27,6 +27,7 @@ use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
+use crate::tarn::interpreter::coroutine;
 use crate::{Ident, Shared, SharedCell, Token, get_token, parse_markdown_input, parse_mdx_input};
 use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
@@ -48,6 +49,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
+use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
 
@@ -242,6 +244,30 @@ fn type_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
     match args.first() {
         Some(value) => Ok(value.name().to_string().into()),
         None => Ok(RuntimeValue::NONE),
+    }
+}
+
+#[mq_macros::mq_fn(name = "close", params = Fixed(1))]
+fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Coroutine(handle)] => {
+            if coroutine::close(handle) {
+                Ok(RuntimeValue::Coroutine(Shared::clone(handle)))
+            } else {
+                Err(Error::Runtime(format!("{ident}: cannot close a running coroutine")))
+            }
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+        _ => unreachable!("close should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "status", params = Fixed(1))]
+fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_slice() {
+        [RuntimeValue::Coroutine(handle)] => Ok(RuntimeValue::Symbol(Ident::new(coroutine::status_name(handle)))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+        _ => unreachable!("status should always receive exactly one argument"),
     }
 }
 
@@ -3978,9 +4004,7 @@ fn _jaro_winkler_distance_impl(
 fn _json_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
-            let value: serde_json::Value =
-                serde_json::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {}", e)))?;
-            Ok(value.into())
+            parse_json_runtime_value(s).map_err(|e| Error::Runtime(format!("Failed to parse JSON: {e}")))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_json_parse should always receive exactly one argument"),
@@ -4600,7 +4624,7 @@ fn file_info_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
                 .metadata(std::path::Path::new(path.as_str()))
                 .map_err(|e| Error::Runtime(format!("Failed to get info for {}: {}", path, e)))?;
 
-            let mut record = BTreeMap::new();
+            let mut record = DictMap::default();
             record.insert(Ident::new("path"), RuntimeValue::String(path.clone()));
             record.insert(
                 Ident::new("kind"),
@@ -5247,6 +5271,8 @@ mq_macros::builtin_dispatch! {
     PRINT,
     STDERR,
     TYPE,
+    CLOSE,
+    STATUS,
     ARRAY,
     FLATTEN,
     CONVERT,
@@ -9024,6 +9050,62 @@ x
             examples: &[BuiltinExample {
                 code: r#"coalesce(None, 5)"#,
                 expected: r#"5"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("next"),
+        BuiltinFunctionDoc {
+            description: "Resumes a generator coroutine and returns its next value and completion status.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | let stream = g() | next(stream)"#,
+                expected: r#"{"value": 1, "done": false}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("send"),
+        BuiltinFunctionDoc {
+            description: "Resumes a generator coroutine like `next`, but resumes its suspended `yield` expression to `value` instead of `None`.",
+            params: &["stream", "value"],
+            param_types: &["dynamic", "dynamic"],
+            returns: "dict",
+            examples: &[BuiltinExample {
+                code: r#"def g(): let a = yield: 1 | yield: a; | let stream = g() | next(stream) | send(stream, 2)"#,
+                expected: r#"{"value": 2, "done": false}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("close"),
+        BuiltinFunctionDoc {
+            description: "Forces a generator coroutine to completion, releasing its suspended frames early instead of waiting for it to be dropped.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "dynamic",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | let stream = g() | close(stream) | next(stream)"#,
+                expected: r#"{"value": , "done": true}"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("status"),
+        BuiltinFunctionDoc {
+            description: "Returns a generator coroutine's lifecycle state as a symbol: `:created`, `:suspended`, `:running`, `:completed`, or `:failed`.",
+            params: &["stream"],
+            param_types: &["dynamic"],
+            returns: "symbol",
+            examples: &[BuiltinExample {
+                code: r#"def g(): yield: 1; | status(g())"#,
+                expected: r#":created"#,
             }],
             capability: None,
         },

@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use thiserror::Error;
 
-use crate::{Hir, Symbol, SymbolKind};
+use crate::{Hir, ScopeId, ScopeKind, Symbol, SymbolKind};
 
 #[derive(Debug, Error)]
 pub enum HirError {
@@ -18,6 +18,8 @@ pub enum HirError {
     },
     #[error("Included module not found: {module_name}")]
     ModuleNotFound { symbol: Symbol, module_name: SmolStr },
+    #[error("`yield` outside a function")]
+    YieldOutsideFunction { symbol: Symbol },
 }
 
 #[derive(Debug, Error)]
@@ -50,6 +52,12 @@ impl Hir {
                             module_name,
                         }),
                     }
+                }
+                SymbolKind::Keyword
+                    if symbol.value.as_deref() == Some("yield")
+                        && (self.is_outside_function(symbol.scope) || self.crosses_module_boundary(symbol)) =>
+                {
+                    Some(HirError::YieldOutsideFunction { symbol: symbol.clone() })
                 }
                 _ => None,
             })
@@ -109,10 +117,45 @@ impl Hir {
                     match e {
                         HirError::UnresolvedSymbol { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
                         HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
+                        HirError::YieldOutsideFunction { symbol } => symbol.source.text_range.unwrap_or_default(),
                     },
                 )
             })
             .collect::<Vec<_>>()
+    }
+
+    /// Whether `symbol`'s parent chain hits a `Module` before a `Function`. Inline modules share
+    /// their enclosing scope, so `is_outside_function`'s scope walk misses this boundary.
+    fn crosses_module_boundary(&self, symbol: &Symbol) -> bool {
+        let mut parent_id = symbol.parent;
+        while let Some(id) = parent_id {
+            let Some(parent) = self.symbols.get(id) else {
+                return false;
+            };
+            match &parent.kind {
+                SymbolKind::Module(_) => return true,
+                SymbolKind::Function(_) => return false,
+                _ => parent_id = parent.parent,
+            }
+        }
+        false
+    }
+
+    /// Walks up to the nearest `Function` scope (found) or `Module` scope (top-level, outside).
+    fn is_outside_function(&self, mut scope_id: ScopeId) -> bool {
+        loop {
+            let Some(scope) = self.scopes.get(scope_id) else {
+                return true;
+            };
+            match &scope.kind {
+                ScopeKind::Function(_) => return false,
+                ScopeKind::Module(_) | ScopeKind::DefaultParam(_) => return true,
+                _ => match scope.parent_id {
+                    Some(parent_id) => scope_id = parent_id,
+                    None => return true,
+                },
+            }
+        }
     }
 
     pub fn warning_ranges(&self) -> Vec<(String, mq_lang::Range)> {
@@ -149,6 +192,8 @@ impl Hir {
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -233,6 +278,77 @@ mod tests {
 
         let warnings = hir.warnings();
         assert_eq!(warnings.len(), 0);
+    }
+
+    #[test]
+    fn test_yield_inside_a_function_is_not_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "def g(): yield: 1;");
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_yield_inside_nested_control_flow_is_not_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "def g(): while (true): yield: 1; end;");
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_yield_outside_a_function_is_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "yield: 1");
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], HirError::YieldOutsideFunction { .. }));
+    }
+
+    #[rstest]
+    #[case::def("def f(x = yield: 1): x;")]
+    #[case::fn_("let f = fn(x = yield: 1): x; | f()")]
+    fn test_yield_in_a_default_param_is_an_error(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, code);
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], HirError::YieldOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_yield_in_a_nested_fn_does_not_affect_the_outer_function() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "def outer(): let inner = fn(): yield: 1; | inner();");
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_yield_in_an_inline_module_nested_in_a_function_is_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "def g(): module m: yield: 1 end; | g()");
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], HirError::YieldOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_yield_in_a_function_nested_in_a_module_is_not_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "module a: def b(): yield: 1; end");
+
+        assert!(hir.errors().is_empty());
     }
 
     #[test]

@@ -77,6 +77,7 @@ fn hir_error_code(error: &HirError) -> &'static str {
     match error {
         HirError::UnresolvedSymbol { .. } => "hir::unresolved_symbol",
         HirError::ModuleNotFound { .. } => "hir::module_not_found",
+        HirError::YieldOutsideFunction { .. } => "hir::yield_outside_function",
     }
 }
 
@@ -84,6 +85,7 @@ fn hir_error_range(error: &HirError) -> mq_lang::Range {
     match error {
         HirError::UnresolvedSymbol { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
         HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
+        HirError::YieldOutsideFunction { symbol } => symbol.source.text_range.unwrap_or_default(),
     }
 }
 

@@ -3,8 +3,8 @@ use super::nodes_split::{
     immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
 use super::{
-    EngineRunContext, Error, compiler, engine, interpreter, remaining_timeout, resolve_module_prelude_globals,
-    run_for_input,
+    EngineRunContext, Error, compiler, engine, interpreter, map_input_values, remaining_timeout,
+    resolve_module_prelude_globals,
 };
 use crate::ast::Program;
 use crate::runtime::host::HostFunctions;
@@ -148,7 +148,10 @@ fn cached_environment(
         {
             return Shared::clone(&environment.env);
         }
-        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        let env = Shared::new(VmEnv::from_bindings(
+            global_bindings,
+            Shared::clone(&compiled.program.token_arena),
+        ));
         *slot = Some(CachedEnvironment {
             key,
             env: Shared::clone(&env),
@@ -163,7 +166,10 @@ fn cached_environment(
         {
             return Shared::clone(&environment.env);
         }
-        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        let env = Shared::new(VmEnv::from_bindings(
+            global_bindings,
+            Shared::clone(&compiled.program.token_arena),
+        ));
         *slot = Some(CachedEnvironment {
             key,
             env: Shared::clone(&env),
@@ -245,7 +251,7 @@ where
         let mut values = Vec::new();
         let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
         for input in inputs {
-            let result = run_for_input(input, |value| {
+            let result = map_input_values(input, |value| {
                 let execution_pools = std::mem::take(&mut pools);
                 if compiled.let_names.is_empty() {
                     let (result, next_pools) = interpreter::run_with_env_and_pools(

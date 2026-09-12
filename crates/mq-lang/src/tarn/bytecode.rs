@@ -221,6 +221,11 @@ pub(crate) enum OpCode {
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
+    /// Stores a constant directly in a local without using the operand stack.
+    SetLocalConst {
+        local: u16,
+        constant: u16,
+    },
     /// Stores the top stack value without popping it.
     TeeLocal(u16),
     /// Copies one local slot to another without using the operand stack.
@@ -364,7 +369,26 @@ pub(crate) enum OpCode {
     /// Propagates `continue` from a nested `try` closure.
     FlowContinue,
     RaiseDestructuringFailed,
+    /// Returns a local directly, without materializing it on the operand stack first.
+    ReturnLocal(u16),
+    /// Evaluates a local/local binary expression and returns it without using the operand stack.
+    ReturnBinaryLocalLocal {
+        op: BinaryOp,
+        left: u16,
+        right: u16,
+    },
+    /// Evaluates a local/constant binary expression and returns it without using the operand stack.
+    ReturnBinaryLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
     Return,
+    /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
+    Yield,
+    /// `next(stream)`: drives a coroutine one step, pushing a `{ value, done }` dict. The `u8`
+    /// argument count is always `1` for now; reserved for a future `send`.
+    Resume(u8),
 }
 
 #[cfg(feature = "vm-profile")]
@@ -380,6 +404,7 @@ impl OpCode {
             Self::PushNone => "PushNone",
             Self::GetLocal(_) => "GetLocal",
             Self::SetLocal(_) => "SetLocal",
+            Self::SetLocalConst { .. } => "SetLocalConst",
             Self::TeeLocal(_) => "TeeLocal",
             Self::CopyLocal { .. } => "CopyLocal",
             Self::GetUpvalue(_) => "GetUpvalue",
@@ -451,7 +476,12 @@ impl OpCode {
             Self::FlowBreak(_) => "FlowBreak",
             Self::FlowContinue => "FlowContinue",
             Self::RaiseDestructuringFailed => "RaiseDestructuringFailed",
+            Self::ReturnLocal(_) => "ReturnLocal",
+            Self::ReturnBinaryLocalLocal { .. } => "ReturnBinaryLocalLocal",
+            Self::ReturnBinaryLocalConst { .. } => "ReturnBinaryLocalConst",
             Self::Return => "Return",
+            Self::Yield => "Yield",
+            Self::Resume(_) => "Resume",
         }
     }
 
@@ -476,6 +506,9 @@ impl OpCode {
 pub(crate) struct TryCatchInfo {
     pub(crate) has_binder: bool,
     pub(crate) break_acc_slot: Option<u16>,
+    /// Set only for conditional loops. It is true after a normal iteration or `break: value`,
+    /// both of which preserve the accumulator as the loop result.
+    pub(crate) break_completed_iteration_slot: Option<u16>,
     pub(crate) break_offset: Option<i32>,
     pub(crate) continue_offset: Option<i32>,
 }
@@ -506,6 +539,9 @@ pub(crate) struct Chunk {
     /// Sorted local slots whose cells are captured by a nested closure or default expression.
     /// All remaining slots can stay as direct values in the interpreter frame.
     captured_local_slots: Vec<u16>,
+    /// Whether this chunk's body directly contains a `yield`. Calling it binds arguments as
+    /// usual but wraps the resulting frame as a `RuntimeValue::Coroutine` instead of entering it.
+    pub(crate) is_generator: bool,
 }
 
 impl Chunk {
@@ -689,7 +725,7 @@ impl fmt::Display for BytecodeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyChunk(chunk) => write!(f, "chunk {chunk} has no instructions"),
-            Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in Return"),
+            Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in a return instruction"),
             Self::TooManyChunks(count) => write!(f, "bytecode has {count} chunks; the VM limit is 65536"),
             Self::TooManyConstants { chunk, count } => {
                 write!(f, "chunk {chunk} has {count} constants; the VM limit is 65536")
@@ -758,7 +794,9 @@ pub(crate) fn specialize_static_exact_calls(chunks: &mut [Chunk]) {
         .iter()
         .enumerate()
         .map(|(chunk_index, chunk)| {
-            (!chunk.captures_local_slots()).then_some(StaticExactCallTarget {
+            // A generator call must produce a coroutine, not run the chunk directly, so it can
+            // never take this embedded-metadata fast path.
+            (!chunk.captures_local_slots() && !chunk.is_generator).then_some(StaticExactCallTarget {
                 chunk_index: chunk_index as u16,
                 local_count: chunk.local_count,
             })
@@ -793,10 +831,14 @@ fn optimize_chunk(chunk: &mut Chunk) {
             matches!(
                 (op, chunk.code.get(pc + 1)),
                 (OpCode::Const(_), Some(OpCode::Pop))
+                    | (OpCode::Const(_), Some(OpCode::SetLocal(_)))
                     | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
                     | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
                     | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
                     | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
+                    | (OpCode::GetLocal(_), Some(OpCode::Return))
+                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::Return))
+                    | (OpCode::BinaryLocalConst { .. }, Some(OpCode::Return))
                     | (OpCode::Jump(0), _)
             )
         }
@@ -812,9 +854,20 @@ fn optimize_chunk(chunk: &mut Chunk) {
 
     let mut pc = 0;
     while pc < old_code.len() {
+        // A fused instruction stays at the first instruction's pc, so a branch that enters
+        // there still observes the same combined operation. The second instruction must not be
+        // a target: entering there can depend on an intermediate operand-stack value.
         match (&old_code[pc], old_code.get(pc + 1)) {
             (OpCode::Const(_), Some(OpCode::Pop)) if !targets.contains(&pc) && !targets.contains(&(pc + 1)) => {
                 keep[pc] = false;
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::Const(constant), Some(OpCode::SetLocal(local))) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::SetLocalConst {
+                    local: *local,
+                    constant: *constant,
+                };
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -825,9 +878,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
-            (OpCode::GetLocal(source), Some(OpCode::SetLocal(destination)))
-                if !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
-            {
+            (OpCode::GetLocal(source), Some(OpCode::SetLocal(destination))) if !targets.contains(&(pc + 1)) => {
                 old_code[pc] = OpCode::CopyLocal {
                     source: *source,
                     destination: *destination,
@@ -836,7 +887,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::SetLocal(set_slot), Some(OpCode::GetLocal(get_slot)))
-                if set_slot == get_slot && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if set_slot == get_slot && !targets.contains(&(pc + 1)) =>
             {
                 let slot = *set_slot;
                 old_code[pc] = OpCode::TeeLocal(slot);
@@ -844,7 +895,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::SetLocal(destination)))
-                if local == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if local == destination && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::UpdateLocalConst {
                     op: *op,
@@ -855,7 +906,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::SetLocal(destination)))
-                if left == destination && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if left == destination && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::UpdateLocalLocal {
                     op: *op,
@@ -865,12 +916,37 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 keep[pc + 1] = false;
                 pc += 2;
             }
+            (OpCode::GetLocal(slot), Some(OpCode::Return)) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::ReturnLocal(*slot);
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::Return)) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::ReturnBinaryLocalLocal {
+                    op: *op,
+                    left: *left,
+                    right: *right,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::Return))
+                if !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::ReturnBinaryLocalConst {
+                    op: *op,
+                    local: *local,
+                    constant: *constant,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
             (OpCode::Jump(0), _) => {
                 keep[pc] = false;
                 pc += 1;
             }
             (OpCode::BinaryLocalLocal { op, left, right }, Some(OpCode::JumpIfFalse(offset)))
-                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if op.is_comparison() && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::JumpIfFalseLocalLocal {
                     op: *op,
@@ -884,7 +960,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 pc += 2;
             }
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::JumpIfFalse(offset)))
-                if op.is_comparison() && !targets.contains(&pc) && !targets.contains(&(pc + 1)) =>
+                if op.is_comparison() && !targets.contains(&(pc + 1)) =>
             {
                 old_code[pc] = OpCode::JumpIfFalseLocalConst {
                     op: *op,
@@ -920,8 +996,8 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
-/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse` —
-/// the shape every `if`/`while`/`until` condition compiles to — and so can fuse into a single
+/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse`,
+/// the shape every `if`/`while`/`until` condition compiles to, and so can fuse into a single
 /// compare-and-branch instruction with no boolean ever pushed to the operand stack.
 fn is_fusable_compare_jump(op: &OpCode, next: Option<&OpCode>) -> bool {
     let Some(OpCode::JumpIfFalse(_)) = next else {
@@ -1052,7 +1128,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         if chunk.code.is_empty() {
             return Err(BytecodeError::EmptyChunk(chunk_index));
         }
-        if !matches!(chunk.code.last(), Some(OpCode::Return)) {
+        if !matches!(
+            chunk.code.last(),
+            Some(
+                OpCode::Return
+                    | OpCode::ReturnLocal(_)
+                    | OpCode::ReturnBinaryLocalLocal { .. }
+                    | OpCode::ReturnBinaryLocalConst { .. }
+            )
+        ) {
             return Err(BytecodeError::MissingReturn(chunk_index));
         }
         let max_entries = usize::from(u16::MAX) + 1;
@@ -1094,6 +1178,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::TeeLocal(slot)
+                | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
                 | OpCode::ForeachCollect(slot)
                 | OpCode::ArrayLenLocal(slot) => {
@@ -1116,7 +1201,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
-                OpCode::BinaryLocalLocal { left, right, .. } => {
+                OpCode::BinaryLocalLocal { left, right, .. } | OpCode::ReturnBinaryLocalLocal { left, right, .. } => {
                     for slot in [left, right] {
                         if *slot >= chunk.local_count {
                             return Err(BytecodeError::LocalOutOfBounds {
@@ -1138,7 +1223,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
-                OpCode::BinaryLocalConst { local, constant, .. } | OpCode::UpdateLocalConst { local, constant, .. } => {
+                OpCode::SetLocalConst { local, constant }
+                | OpCode::BinaryLocalConst { local, constant, .. }
+                | OpCode::UpdateLocalConst { local, constant, .. }
+                | OpCode::ReturnBinaryLocalConst { local, constant, .. } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -1279,7 +1367,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 | OpCode::CallStaticImplicitSelf(target, _) => {
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
                     let callee = &chunks[*target as usize];
-                    if !callee.upvalue_names.is_empty() || callee.param_shape.fixed_required_arity().is_none() {
+                    if !callee.upvalue_names.is_empty()
+                        || callee.param_shape.fixed_required_arity().is_none()
+                        || (callee.is_generator && !matches!(op, OpCode::CallStatic(..)))
+                    {
                         return Err(BytecodeError::StaticCallTargetInvalid {
                             chunk: chunk_index,
                             pc,
@@ -1320,6 +1411,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         || callee.param_shape.fixed_required_arity() != Some(expected_arity)
                         || callee.captures_local_slots()
                         || callee.local_count != target.local_count
+                        || callee.is_generator
                     {
                         return Err(BytecodeError::StaticCallTargetInvalid {
                             chunk: chunk_index,
@@ -1341,6 +1433,19 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             target: chunk_index as u16,
                         });
                     };
+                    // Same reasoning as `CallStaticExact0/1/2` above, for self-recursion.
+                    if chunk.is_generator
+                        && matches!(
+                            op,
+                            OpCode::CallSelfExact0 | OpCode::CallSelfExact1 | OpCode::CallSelfExact2
+                        )
+                    {
+                        return Err(BytecodeError::StaticCallTargetInvalid {
+                            chunk: chunk_index,
+                            pc,
+                            target: chunk_index as u16,
+                        });
+                    }
                     match op {
                         OpCode::CallSelfExact(argc) if arity != *argc as usize => {
                             return Err(BytecodeError::StaticCallTargetInvalid {
@@ -1393,6 +1498,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             slot,
                         });
                     }
+                    if let Some(slot) = info.break_completed_iteration_slot
+                        && slot >= chunk.local_count
+                    {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot,
+                        });
+                    }
                     if let Some(offset) = info.break_offset {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
@@ -1400,6 +1514,9 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
                 }
+                // Neither carries a checkable index; listed explicitly so a real operand added
+                // later doesn't silently skip verification via the wildcard below.
+                OpCode::Yield | OpCode::Resume(_) => {}
                 _ => {}
             }
         }
@@ -1526,7 +1643,7 @@ mod tests {
     }
 
     #[test]
-    fn peephole_fuses_set_local_get_local_into_tee_local() {
+    fn peephole_fuses_constant_assignment_and_local_return() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::Const(0),
@@ -1543,12 +1660,92 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [OpCode::Const(0), OpCode::TeeLocal(0), OpCode::Return]
+            [OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::ReturnLocal(0)]
         ));
     }
 
     #[test]
-    fn peephole_does_not_fuse_set_local_get_local_across_a_jump_target() {
+    fn peephole_keeps_a_constant_assignment_when_the_store_is_a_jump_target() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::Const(0),
+                OpCode::Jump(1),
+                OpCode::Const(0),
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(!chunk.code.iter().any(|op| matches!(op, OpCode::SetLocalConst { .. })));
+    }
+
+    #[test]
+    fn peephole_returns_a_local_without_using_the_operand_stack() {
+        let mut chunk = Chunk {
+            code: vec![OpCode::GetLocal(0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(chunk.code.as_slice(), [OpCode::ReturnLocal(0)]));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_returns_a_local_constant_binary_expression_without_using_the_operand_stack() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Mul,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(2.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [OpCode::ReturnBinaryLocalConst {
+                op: BinaryOp::Mul,
+                local: 0,
+                constant: 0,
+            }]
+        ));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_keeps_a_return_target_that_needs_its_operand() {
+        let mut chunk = Chunk {
+            code: vec![OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return]
+        ));
+    }
+
+    #[test]
+    fn peephole_keeps_a_set_local_get_local_pair_when_its_second_instruction_is_a_jump_target() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::JumpIfFalse(1),
@@ -1564,17 +1761,12 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [
-                OpCode::JumpIfFalse(1),
-                OpCode::SetLocal(0),
-                OpCode::GetLocal(0),
-                OpCode::Return
-            ]
+            [OpCode::JumpIfFalse(1), OpCode::SetLocal(0), OpCode::ReturnLocal(0),]
         ));
     }
 
     #[test]
-    fn peephole_fuses_local_copy_without_changing_jump_targets() {
+    fn peephole_fuses_local_copy_and_local_return_at_jump_targets() {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::Jump(2),
@@ -1597,7 +1789,47 @@ mod tests {
                     source: 0,
                     destination: 1,
                 },
-                OpCode::GetLocal(1),
+                OpCode::ReturnLocal(1),
+            ]
+        ));
+    }
+
+    #[test]
+    fn peephole_fuses_a_loop_header_comparison() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Gt,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::JumpIfFalse(2),
+                // This backedge targets the comparison at pc 0. The fused instruction remains
+                // at pc 0, so the backedge must not inhibit fusion.
+                OpCode::Jump(-3),
+                OpCode::Jump(1),
+                OpCode::PushNone,
+                OpCode::Return,
+            ],
+            constants: vec![RuntimeValue::Number(0.into())],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::JumpIfFalseLocalConst {
+                    op: BinaryOp::Gt,
+                    local: 0,
+                    constant: 0,
+                    offset: 2,
+                },
+                OpCode::Jump(-2),
+                OpCode::Jump(1),
+                OpCode::PushNone,
                 OpCode::Return,
             ]
         ));
@@ -1612,6 +1844,7 @@ mod tests {
                 OpCode::TryCatch(Box::new(TryCatchInfo {
                     has_binder: false,
                     break_acc_slot: None,
+                    break_completed_iteration_slot: None,
                     break_offset: Some(0),
                     continue_offset: Some(1),
                 })),
@@ -1705,7 +1938,9 @@ mod tests {
 
     #[rstest]
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::return_local(vec![OpCode::ReturnLocal(0)])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
+    #[case::set_local_const(vec![OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::Return])]
     #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::copy_local(vec![
         OpCode::CopyLocal {
@@ -1726,6 +1961,11 @@ mod tests {
         OpCode::UpdateLocalLocal { op: BinaryOp::Add, local: 0, value: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_local(vec![OpCode::ReturnBinaryLocalLocal {
+        op: BinaryOp::Add,
+        left: 0,
+        right: 0,
+    }])]
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
@@ -1735,6 +1975,11 @@ mod tests {
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
+        op: BinaryOp::Add,
+        local: 0,
+        constant: 0,
+    }])]
     #[case::array_get_local_at(vec![
         OpCode::ArrayGetLocalAt { array_slot: 0, index_slot: 0 },
         OpCode::Pop,
@@ -1777,6 +2022,7 @@ mod tests {
     #[rstest]
     #[case::const_(vec![OpCode::Const(0), OpCode::Pop, OpCode::Return])]
     #[case::get_env_var(vec![OpCode::GetEnvVar(0), OpCode::Pop, OpCode::Return])]
+    #[case::set_local_const(vec![OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::Return])]
     #[case::binary_local_const(vec![
         OpCode::BinaryLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
@@ -1786,6 +2032,11 @@ mod tests {
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
+    #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
+        op: BinaryOp::Add,
+        local: 0,
+        constant: 0,
+    }])]
     fn verifier_rejects_out_of_bounds_constant_index(#[case] code: Vec<OpCode>) {
         let chunk = Chunk {
             code,
@@ -1835,6 +2086,7 @@ mod tests {
                 OpCode::TryCatch(Box::new(TryCatchInfo {
                     has_binder: false,
                     break_acc_slot: Some(0),
+                    break_completed_iteration_slot: None,
                     break_offset: None,
                     continue_offset: None,
                 })),
@@ -1962,6 +2214,49 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn verifier_rejects_a_generator_target_on_the_embedded_exact_call_fast_path() {
+        let generator = Chunk {
+            code: vec![OpCode::Const(0), OpCode::Yield, OpCode::Return],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            is_generator: true,
+            ..Default::default()
+        };
+        let caller = Chunk {
+            code: vec![
+                OpCode::CallStaticExact0(StaticExactCallTarget {
+                    chunk_index: 1,
+                    local_count: 1,
+                }),
+                OpCode::Return,
+            ],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[caller, generator]),
+            Err(BytecodeError::StaticCallTargetInvalid { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_accepts_a_generator_target_on_the_checked_static_call_path() {
+        let generator = Chunk {
+            code: vec![OpCode::Const(0), OpCode::Yield, OpCode::Return],
+            constants: vec![RuntimeValue::Number(1.into())],
+            local_count: 1,
+            is_generator: true,
+            ..Default::default()
+        };
+        let caller = Chunk {
+            code: vec![OpCode::CallStatic(1, 0), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert_eq!(verify_chunks(&[caller, generator]), Ok(()));
     }
 
     #[cfg(target_pointer_width = "64")]

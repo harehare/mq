@@ -3535,6 +3535,52 @@ fn engine() -> DefaultEngine {
     r#"to_markdown("> [!tip]\n> body") | first() | .callout | .kind"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String(Shared::new("tip".to_string()))].into()))]
+// coroutine/generator integration
+#[case::generator_yields_then_completes(
+    "def g(): yield: 1 | yield: 2; | let s = g() | let first = next(s) | let second = next(s) | let done = next(s) | [get(first, \"value\"), get(second, \"value\"), get(done, \"done\")]",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into()), RuntimeValue::Boolean(true)]))].into())
+)]
+#[case::generator_is_lazy(
+    "var marker = 0 | def g(): marker = 1 | yield: 1; | let s = g() | marker",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(0.into())].into())
+)]
+#[case::next_stored_as_value(
+    "def g(): yield: 3; | let advance = next | let s = g() | let result = advance(s) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(3.into())].into())
+)]
+#[case::next_passed_as_argument(
+    "def apply(f, s): f(s); | def g(): yield: 4; | let s = g() | let result = apply(next, s) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(4.into())].into())
+)]
+#[case::next_captured_and_piped(
+    "def g(): yield: 5; | let advance = next | let apply = fn(s): s | advance(); | let s = g() | let result = apply(s) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(5.into())].into())
+)]
+#[case::next_loaded_from_container(
+    "def g(): yield: 6; | let helpers = [next] | let s = g() | let result = helpers[0](s) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(6.into())].into())
+)]
+#[case::send_stored_as_value(
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | let result = resume(s, 7) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(7.into())].into())
+)]
+#[case::send_passed_as_argument(
+    "def apply(f, s, value): f(s, value); | def g(): let value = yield: 1 | yield: value; | let s = g() | next(s) | let result = apply(send, s, 8) | get(result, \"value\")",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(8.into())].into())
+)]
+#[case::local_resume_names_shadow_builtins(
+    "def next(value): value + 1; | def send(a, b): a + b; | let advance = next | let resume = send | advance(40) + resume(1, 1)",
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Number(43.into())].into())
+)]
 // embed selector
 #[case::embed_select_type(
     r#"to_markdown("![[image.png]]") | first() | .embed | type"#,
@@ -3770,8 +3816,49 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::array_spread_non_array(r#"let a = 5 | [...a]"#, vec![RuntimeValue::None],)]
 // dict spread: spreading a non-dict value → type error
 #[case::dict_spread_non_dict(r#"let a = 5 | {...a}"#, vec![RuntimeValue::None],)]
+#[case::next_too_many_arguments("next(None, None)", vec![RuntimeValue::None],)]
+#[case::send_without_value("send()", vec![RuntimeValue::None],)]
+#[case::send_too_many_arguments("send(None, None, None)", vec![RuntimeValue::None],)]
+#[case::yield_in_inline_module("def g(): module m: yield: 1 end; | g()", vec![RuntimeValue::None],)]
 fn test_eval_error(mut engine: Engine, #[case] program: &str, #[case] input: Vec<RuntimeValue>) {
     assert!(engine.eval(program, input.into_iter()).is_err());
+}
+
+#[rstest]
+#[case::next_direct("next(None, None)", "next", 1, 2)]
+#[case::next_as_value("let advance = next | advance(None, None)", "next", 1, 2)]
+#[case::send_direct("send()", "send", 2, 0)]
+#[case::send_as_value("let resume = send | resume(None, None, None)", "send", 2, 3)]
+fn resume_arity_errors_name_the_builtin(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] name: &str,
+    #[case] expected: usize,
+    #[case] actual: usize,
+) {
+    let error = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+    assert!(format!("{error}").contains(&format!(
+        "Invalid number of arguments in \"{name}\", expected {expected}, got {actual}"
+    )));
+}
+
+#[rstest]
+#[case::one(1)]
+#[case::four(4)]
+#[case::eight(8)]
+fn recursively_resumed_generators_hit_the_engine_call_stack_limit(#[case] max_depth: u32) {
+    let mut engine = DefaultEngine::default();
+    engine.set_max_call_stack_depth(max_depth);
+    let error = engine
+        .eval(
+            "def g(n): if (n <= 0): yield: 0 else: let child = g(n - 1) | next(child) | yield: n; | let s = g(20) | next(s)",
+            std::iter::once(RuntimeValue::None),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.cause.to_string(),
+        format!("Maximum recursion depth exceeded ({max_depth})")
+    );
 }
 
 #[rstest]
