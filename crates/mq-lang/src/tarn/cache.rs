@@ -148,7 +148,10 @@ fn cached_environment(
         {
             return Shared::clone(&environment.env);
         }
-        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        let env = Shared::new(VmEnv::from_bindings(
+            global_bindings,
+            Shared::clone(&compiled.program.token_arena),
+        ));
         *slot = Some(CachedEnvironment {
             key,
             env: Shared::clone(&env),
@@ -163,7 +166,10 @@ fn cached_environment(
         {
             return Shared::clone(&environment.env);
         }
-        let env = Shared::new(VmEnv::from_bindings(global_bindings));
+        let env = Shared::new(VmEnv::from_bindings(
+            global_bindings,
+            Shared::clone(&compiled.program.token_arena),
+        ));
         *slot = Some(CachedEnvironment {
             key,
             env: Shared::clone(&env),

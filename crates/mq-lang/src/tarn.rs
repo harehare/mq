@@ -72,15 +72,28 @@ impl Default for Options {
 ///
 /// VM lexical bindings are represented by slots and upvalue cells, so this deliberately has
 /// neither parent scopes nor separate mutability tracking.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct VmEnv {
     globals: FxHashMap<crate::Ident, RuntimeValue>,
+    /// Arena for this evaluation's token IDs; stashed onto coroutines it creates.
+    pub(crate) token_arena: TokenArena,
+}
+
+impl Default for VmEnv {
+    /// Placeholder arena; only for builtin unit tests, never a real evaluation.
+    fn default() -> Self {
+        Self {
+            globals: FxHashMap::default(),
+            token_arena: Shared::new(crate::SharedCell::new(crate::Arena::new(1))),
+        }
+    }
 }
 
 impl VmEnv {
-    pub(crate) fn from_bindings(bindings: &[(crate::Ident, RuntimeValue)]) -> Self {
+    pub(crate) fn from_bindings(bindings: &[(crate::Ident, RuntimeValue)], token_arena: TokenArena) -> Self {
         Self {
             globals: bindings.iter().cloned().collect(),
+            token_arena,
         }
     }
 

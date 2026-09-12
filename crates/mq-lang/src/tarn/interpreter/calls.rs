@@ -77,17 +77,26 @@ pub(super) enum CallStep {
 }
 
 /// A generator call binds arguments like any other call but never executes the body.
-pub(super) fn frame_or_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> CallStep {
+pub(super) fn frame_or_coroutine(
+    frame: Frame,
+    chunk_pool: &Shared<Vec<Chunk>>,
+    token_arena: &crate::TokenArena,
+) -> CallStep {
     if chunk_pool[frame.chunk_index as usize].is_generator {
-        CallStep::Value(generator_coroutine(frame, chunk_pool))
+        CallStep::Value(generator_coroutine(frame, chunk_pool, token_arena))
     } else {
         CallStep::Enter(frame)
     }
 }
 
 /// Wraps an already-bound generator frame without entering its body.
-pub(super) fn generator_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>) -> StackValue {
-    let handle = super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool));
+pub(super) fn generator_coroutine(
+    frame: Frame,
+    chunk_pool: &Shared<Vec<Chunk>>,
+    token_arena: &crate::TokenArena,
+) -> StackValue {
+    let handle =
+        super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool), Shared::clone(token_arena));
     StackValue::Value(RuntimeValue::Coroutine(handle))
 }
 
@@ -234,7 +243,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
         },
     )
     .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-    Ok(frame_or_coroutine(frame, callee_chunks))
+    Ok(frame_or_coroutine(frame, callee_chunks, &execution.env.token_arena))
 }
 
 fn resume_arity_mismatch(name: &str, expected: u8, actual: usize) -> VmError {
@@ -312,7 +321,7 @@ pub(super) fn call_self_chunk_from_stack(
         chunks,
         execution,
     )?;
-    Ok(frame_or_coroutine(frame, chunks))
+    Ok(frame_or_coroutine(frame, chunks, &execution.env.token_arena))
 }
 
 fn call_fixed_chunk_from_stack(

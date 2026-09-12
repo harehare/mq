@@ -2837,6 +2837,7 @@ fn nested_remote_module_directive_is_blocked_under_tarn(
 fn generator_program(chunks: Vec<bytecode::Chunk>) -> compiler::CompiledProgram {
     compiler::CompiledProgram {
         chunks: Shared::new(chunks),
+        token_arena: Shared::new(SharedCell::new(Arena::new(1))),
         #[cfg(feature = "debugger")]
         debug_sources: Vec::new(),
     }
@@ -3074,6 +3075,23 @@ fn dropping_a_coroutine_nested_in_a_captured_container_releases_its_frames(#[cas
     );
 }
 
+#[rstest]
+#[case::array("[s]", "0")]
+#[case::dict(r#"{"s": s}"#, "\"s\"")]
+fn suspending_does_not_erase_a_self_reference_from_an_aliased_captured_container(
+    #[case] container: &str,
+    #[case] key: &str,
+) {
+    let code = format!(
+        "var s = None | var holder = [] | let g = fn(): yield: 0 | holder; | s = g() | holder = {container} | next(s) | get(holder, {key})"
+    );
+    let value = run(&code);
+    assert!(
+        matches!(value, RuntimeValue::Coroutine(_)),
+        "suspending must not erase the coroutine from the caller's own captured container, got {value:?}"
+    );
+}
+
 // End-to-end generator tests compiled from real `yield`/`next()` source (Phase 4: lexer, CST,
 // AST, HIR-free compiler wiring all land together so every commit stays green).
 
@@ -3221,7 +3239,7 @@ fn contains_recursion_error(error: &interpreter::VmError, max_depth: u32) -> boo
     match error {
         interpreter::VmError::RecursionError(actual) => *actual == max_depth,
         interpreter::VmError::Located(inner, _) => contains_recursion_error(inner, max_depth),
-        interpreter::VmError::CoroutineFailed(inner) => contains_recursion_error(inner, max_depth),
+        interpreter::VmError::CoroutineFailed(inner, _) => contains_recursion_error(inner, max_depth),
         _ => false,
     }
 }
@@ -3420,7 +3438,7 @@ fn closing_a_running_coroutine_errors() {
     fn close_error_message(e: &interpreter::VmError) -> Option<&str> {
         match e {
             interpreter::VmError::Located(inner, _) => close_error_message(inner),
-            interpreter::VmError::CoroutineFailed(inner) => close_error_message(inner),
+            interpreter::VmError::CoroutineFailed(inner, _) => close_error_message(inner),
             interpreter::VmError::Builtin(crate::runtime::builtin::Error::Runtime(msg)) => Some(msg.as_str()),
             _ => None,
         }
