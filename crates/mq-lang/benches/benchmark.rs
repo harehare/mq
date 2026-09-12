@@ -212,6 +212,33 @@ fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
     );
 }
 
+/// Isolates the `yield`/`next()` suspend-resume path with no captured container state.
+#[divan::bench]
+fn eval_compiled_generator_yield_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def g(n): var i = 0 | while (i < n): yield: i | i += 1;; | let s = g(1000)
+        | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
+/// Same as above, but rebuilds a growing local array each iteration, which `downgrade_self_references` now scans per suspend.
+#[divan::bench]
+fn eval_compiled_generator_yield_with_growing_array(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"def g(n): var acc = [] | var i = 0 | while (i < n): acc = [...acc, i] | yield: len(acc) | i += 1;; | let s = g(1000)
+        | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 fn owned_markdown_tree() -> mq_lang::RuntimeValue {
     mq_lang::RuntimeValue::new_markdown(mq_markdown::Node::Fragment(mq_markdown::Fragment {
         values: (0..1_000)
