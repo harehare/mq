@@ -136,7 +136,7 @@ struct Compiler<R: ModuleResolver> {
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<QualifiedName, QualifiedSlot>,
     external_globals: FxHashSet<crate::Ident>,
-    /// Module var values the caller already computed once — see [`ResolvedModuleVars`].
+    /// Module var values the caller already computed once. See [`ResolvedModuleVars`].
     preresolved_module_vars: ResolvedModuleVars,
     /// Lazily collected roots for module-function pruning.
     top_level_program: Program,
@@ -293,7 +293,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
             Err(other) => return Err(other),
         }
     }
-    // Didn't converge on a minimal set within the attempt budget — compile everything.
+    // Didn't converge on a minimal set within the attempt budget. Compile everything.
     compile_program_impl(
         program,
         token_arena,
@@ -304,7 +304,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     .map(|(compiled, _)| compiled)
 }
 
-/// Module var values the caller already computed once — see
+/// Module var values the caller already computed once. See
 /// `super::resolve_module_prelude_globals`. `by_path` covers `include`/`import`; `by_token`
 /// covers inline `module { .. }` blocks' own `let`s, keyed by each `let`'s token id since an
 /// inline block has no path.
@@ -1564,7 +1564,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// Compiles a module's top-level `let`s — live, or baked in as constants when
+    /// Compiles a module's top-level `let`s, live or baked in as constants when
     /// `preresolved_module_vars` already has their values.
     fn compile_module_vars_binding(
         &mut self,
@@ -2544,7 +2544,7 @@ impl<R: ModuleResolver> Compiler<R> {
             return self.compile_resume_builtin_call(ResumeBuiltin::Send, args, call_token_id);
         }
 
-        // Might be a soft prelude builtin — can't tell without the prelude loaded.
+        // Might be a soft prelude builtin. Cannot tell without the prelude loaded.
         if builtin::get_builtin_functions(&ident).is_none() {
             self.unresolved_call_names.insert(ident);
         }
@@ -2904,8 +2904,8 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
 
         // Keep the condition at the loop head so the first iteration does not evaluate it
-        // twice. A separate flag records completed iterations, so a loop that never runs — or
-        // exits via a bare `break` before its first body completes — evaluates to `None`.
+        // twice. A separate flag records completed iterations, so a loop that never runs, or
+        // exits via a bare `break` before its first body completes, evaluates to `None`.
         let completed_iteration_slot = self.scope_mut().declare_synthetic();
         let false_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
         self.emit(OpCode::Const(false_idx));

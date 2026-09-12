@@ -77,7 +77,7 @@ impl Frame {
 /// What to do with a frame's outcome, replacing a recursive call's implicit return.
 ///
 /// `TryBody`/`ResumeBindParams` are boxed so the (overwhelmingly common) `Push` case keeps
-/// `Continuation` — and so `Frame`, which every call pushes/pops — pointer-sized.
+/// `Continuation`, and thus `Frame`, which every call pushes and pops, pointer-sized.
 pub(super) enum Continuation {
     /// Normal call return / `catch` body: push the value on success; propagate on error.
     Push,
