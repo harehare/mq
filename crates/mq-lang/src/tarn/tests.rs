@@ -3054,6 +3054,14 @@ fn outer_write_to_a_captured_self_reference_is_visible_after_resume(
     );
 }
 
+#[test]
+fn generator_assignment_to_a_captured_self_reference_survives_the_next_resume() {
+    let result = run(
+        "var s = None | let g = fn(): s = 42 | yield: 0 | yield: s; | s = g() | let saved = s | next(saved) | next(saved)",
+    );
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(42.into()));
+}
+
 #[rstest]
 #[case::array("[s]")]
 #[case::dict(r#"{"s": s}"#)]
@@ -3320,6 +3328,25 @@ fn unstarted_generator_with_a_captured_self_reference_is_released() {
     assert!(
         weak.upgrade().is_none(),
         "the unstarted coroutine must not retain itself"
+    );
+}
+
+#[rstest]
+#[case::array("[s]")]
+#[case::dict(r#"{"stream": s}"#)]
+fn unstarted_generator_nested_in_a_captured_container_is_released(#[case] container: &str) {
+    let code = format!("var holder = [] | let g = fn(): yield: holder; | let s = g() | holder = {container} | s");
+    let stream = run(&code);
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the unstarted coroutine must not retain itself through a captured container"
     );
 }
 

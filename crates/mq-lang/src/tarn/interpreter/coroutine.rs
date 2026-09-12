@@ -15,7 +15,8 @@ use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{
-    Cell, StackValue, WeakCell, read_cell, sanitize_nested_self_reference, weak_coroutine_cell, write_cell,
+    Cell, StackValue, WeakCell, is_weak_self_reference, read_cell, sanitize_nested_self_reference, weak_coroutine_cell,
+    write_cell,
 };
 use crate::{Ident, Shared, SharedCell, TokenArena};
 
@@ -161,6 +162,27 @@ fn done_result(value: RuntimeValue, done: bool) -> RuntimeValue {
     RuntimeValue::Dict(Shared::new(map))
 }
 
+/// Carries only unchanged self-reference resync pairs.
+fn carry_unchanged_resyncs(resyncs: Vec<(Cell, WeakCell)>, handle: &CoroutineHandle) -> Vec<(Cell, WeakCell)> {
+    let mut carried = Vec::new();
+    for (downgraded_cell, original) in resyncs {
+        let Some(original) = original.upgrade() else {
+            continue;
+        };
+
+        if !is_weak_self_reference(&downgraded_cell, handle) {
+            write_cell(&original, read_cell(&downgraded_cell));
+            continue;
+        }
+
+        let original_is_self_reference = matches!(read_cell(&original), StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(&value, handle));
+        if original_is_self_reference {
+            carried.push((downgraded_cell, Shared::downgrade(&original)));
+        }
+    }
+    carried
+}
+
 /// Drives `handle` forward one step (`next(stream)`/`send(stream, value)`), returning a
 /// `{ value, done }` dict.
 pub(super) fn resume<const CHECK_TIMEOUT: bool>(
@@ -241,6 +263,9 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         debug,
     );
     let suspended_call_depth = execution.limits.leave_suspended_call_depth(caller_depth);
+
+    // Keep only resyncs unchanged by this invocation.
+    let carried_resyncs = carry_unchanged_resyncs(carried_resyncs, handle);
 
     let mut state = borrow_mut(handle);
     #[cfg(feature = "debugger")]
@@ -342,4 +367,37 @@ pub(crate) fn downgrade_self_references_before_resume(handle: &CoroutineHandle) 
     state.frames = frames;
     state.operand_stack = operand_stack;
     state.pending_resyncs.extend(resyncs);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arena::Arena;
+    use crate::tarn::interpreter::frame::Continuation;
+    use crate::tarn::value::{Locals, append_to_array_cell, new_cell};
+
+    #[test]
+    fn appending_an_unstarted_coroutine_to_its_captured_array_releases_it() {
+        let holder = new_cell(StackValue::Value(RuntimeValue::Array(Shared::new(Vec::new()))));
+        let frame = Frame::new(
+            0,
+            None,
+            Locals::flat(0),
+            Some(Shared::new(vec![Shared::clone(&holder)])),
+            false,
+            Continuation::Push,
+        );
+        let handle = CoroutineState::new_handle(
+            frame,
+            Shared::new(vec![Chunk::default()]),
+            Shared::new(SharedCell::new(Arena::new(1))),
+        );
+        let weak = Shared::downgrade(&handle);
+
+        append_to_array_cell(&holder, RuntimeValue::Coroutine(Shared::clone(&handle))).unwrap();
+        drop(handle);
+        drop(holder);
+
+        assert!(weak.upgrade().is_none());
+    }
 }
