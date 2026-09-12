@@ -4,4 +4,5 @@ pub mod builtin;
 #[cfg(feature = "debugger")]
 pub mod debugger;
 pub mod host;
+mod json;
 pub mod runtime_value;
