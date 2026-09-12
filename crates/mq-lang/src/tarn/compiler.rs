@@ -649,7 +649,11 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         | Expr::Var(_, value)
         | Expr::Assign(_, value)
         | Expr::Paren(value) => node_contains_direct_yield(value),
-        Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => program_contains_direct_yield(body),
+        Expr::Block(body) | Expr::Loop(body) => program_contains_direct_yield(body),
+        // Inline modules only declare names in their enclosing scope; their initializer code is
+        // not part of the enclosing function body. A nested module checks its own boundary when
+        // it is compiled below.
+        Expr::Module(_, _) => false,
         Expr::Call(_, args) | Expr::SelectorCall(_, args) => args.iter().any(node_contains_direct_yield),
         Expr::CallDynamic(callee, args) => {
             node_contains_direct_yield(callee) || args.iter().any(node_contains_direct_yield)
@@ -1861,6 +1865,11 @@ impl<R: ModuleResolver> Compiler<R> {
         program: &Program,
         parent_path: &[crate::Ident],
     ) -> CompileResult<()> {
+        // Module initializers are declaration-only at the enclosing level. Rejecting a direct
+        // yield here avoids accepting code whose `Yield` opcode would otherwise be discarded.
+        if program_contains_direct_yield(program) {
+            return Err(CompileError::YieldOutsideFunction(self.current_token_id));
+        }
         let mut module_path = parent_path.to_vec();
         module_path.push(ident.name);
         let depth = self.scopes.len() - 1;
@@ -2502,27 +2511,33 @@ impl<R: ModuleResolver> Compiler<R> {
         if ident == builtins::DICT.into() {
             return self.compile_dict_call(args, call_token_id);
         }
-        if ident == builtins::NEXT.into() && args.len() <= 1 {
-            if let Some(arg) = args.first() {
-                self.compile_expr(arg)?;
-            } else {
-                self.emit(OpCode::GetLocal(SELF_SLOT));
+        if ident == builtins::NEXT.into() {
+            if args.len() <= 1 {
+                if let Some(arg) = args.first() {
+                    self.compile_expr(arg)?;
+                } else {
+                    self.emit(OpCode::GetLocal(SELF_SLOT));
+                }
+                self.current_token_id = call_token_id;
+                self.emit(OpCode::Resume(1));
+                return Ok(());
             }
-            self.current_token_id = call_token_id;
-            self.emit(OpCode::Resume(1));
-            return Ok(());
+            return self.compile_resume_builtin_call(ResumeBuiltin::Next, args, call_token_id);
         }
-        if ident == builtins::SEND.into() && (1..=2).contains(&args.len()) {
-            if args.len() == 2 {
-                self.compile_expr(&args[0])?;
-                self.compile_expr(&args[1])?;
-            } else {
-                self.emit(OpCode::GetLocal(SELF_SLOT));
-                self.compile_expr(&args[0])?;
+        if ident == builtins::SEND.into() {
+            if (1..=2).contains(&args.len()) {
+                if args.len() == 2 {
+                    self.compile_expr(&args[0])?;
+                    self.compile_expr(&args[1])?;
+                } else {
+                    self.emit(OpCode::GetLocal(SELF_SLOT));
+                    self.compile_expr(&args[0])?;
+                }
+                self.current_token_id = call_token_id;
+                self.emit(OpCode::Resume(2));
+                return Ok(());
             }
-            self.current_token_id = call_token_id;
-            self.emit(OpCode::Resume(2));
-            return Ok(());
+            return self.compile_resume_builtin_call(ResumeBuiltin::Send, args, call_token_id);
         }
 
         // Might be a soft prelude builtin — can't tell without the prelude loaded.
@@ -2536,6 +2551,22 @@ impl<R: ModuleResolver> Compiler<R> {
         self.current_token_id = call_token_id;
         let argc = self.arg_count(args.len())?;
         self.emit(OpCode::CallBuiltin(ident, argc));
+        Ok(())
+    }
+
+    fn compile_resume_builtin_call(
+        &mut self,
+        builtin: ResumeBuiltin,
+        args: &ast::Args,
+        call_token_id: crate::ast::TokenId,
+    ) -> CompileResult<()> {
+        let idx = self.chunk_mut().push_const(RuntimeValue::CoroutineBuiltin(builtin));
+        self.emit(OpCode::Const(idx));
+        for arg in args {
+            self.compile_expr(arg)?;
+        }
+        self.current_token_id = call_token_id;
+        self.emit(OpCode::CallValue(self.arg_count(args.len())?));
         Ok(())
     }
 

@@ -44,6 +44,17 @@ use std::time::Duration;
 
 static LEN_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LEN));
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GET));
+static ADD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::ADD));
+static SUB_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::SUB));
+static MUL_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MUL));
+static DIV_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::DIV));
+static MOD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MOD));
+static EQ_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::EQ));
+static NE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NE));
+static LT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LT));
+static LTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LTE));
+static GT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GT));
+static GTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GTE));
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSlot;
@@ -489,6 +500,9 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
         StackValue::Closure(closure) => {
             RuntimeValue::VmClosure(Shared::new(VmClosureValue::from_closure(chunks, &closure)))
         }
+        StackValue::WeakCoroutine(handle) => coroutine::upgrade_handle(&handle)
+            .map(RuntimeValue::Coroutine)
+            .unwrap_or(RuntimeValue::None),
     }
 }
 
@@ -2159,6 +2173,10 @@ fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeVa
                 let value = into_runtime_value(StackValue::Closure(Shared::clone(closure)), chunks);
                 let _ = write!(result, "{value}");
             }
+            StackValue::WeakCoroutine(_) => {
+                let value = into_runtime_value(part.upgraded(), chunks);
+                let _ = write!(result, "{value}");
+            }
         }
     }
     RuntimeValue::String(result.into())
@@ -2230,20 +2248,14 @@ fn binop(
         }));
     }
     let ident = match op {
-        BinaryOp::Add => builtins::ADD,
-        BinaryOp::Sub => builtins::SUB,
-        BinaryOp::Mul => builtins::MUL,
-        BinaryOp::Div => builtins::DIV,
-        BinaryOp::Mod => builtins::MOD,
+        BinaryOp::Add => &ADD_IDENT,
+        BinaryOp::Sub => &SUB_IDENT,
+        BinaryOp::Mul => &MUL_IDENT,
+        BinaryOp::Div => &DIV_IDENT,
+        BinaryOp::Mod => &MOD_IDENT,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(
-        &crate::Ident::new(ident),
-        &[a, b],
-        &current_self(locals, chunks),
-        env,
-        host_functions,
-    )
+    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }
 
 fn cmp_op(
@@ -2267,19 +2279,13 @@ fn cmp_op(
         }));
     }
     let ident = match op {
-        BinaryOp::Eq => builtins::EQ,
-        BinaryOp::Ne => builtins::NE,
-        BinaryOp::Lt => builtins::LT,
-        BinaryOp::Le => builtins::LTE,
-        BinaryOp::Gt => builtins::GT,
-        BinaryOp::Ge => builtins::GTE,
+        BinaryOp::Eq => &EQ_IDENT,
+        BinaryOp::Ne => &NE_IDENT,
+        BinaryOp::Lt => &LT_IDENT,
+        BinaryOp::Le => &LTE_IDENT,
+        BinaryOp::Gt => &GT_IDENT,
+        BinaryOp::Ge => &GTE_IDENT,
         _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
     };
-    call_builtin(
-        &crate::Ident::new(ident),
-        &[a, b],
-        &current_self(locals, chunks),
-        env,
-        host_functions,
-    )
+    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }

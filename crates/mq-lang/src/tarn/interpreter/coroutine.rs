@@ -12,7 +12,7 @@ use super::{DriveOutcome, into_runtime_value};
 use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
-use crate::tarn::value::StackValue;
+use crate::tarn::value::{StackValue, weak_coroutine_cell};
 use crate::{Ident, Shared, SharedCell};
 
 /// A coroutine's lifecycle.
@@ -47,6 +47,23 @@ pub(crate) struct CoroutineState {
 /// Cloning a `RuntimeValue::Coroutine` shares this handle, so every clone drives the same
 /// progress — the same interior-mutability idiom as upvalue cells (`tarn::value::Cell`).
 pub(crate) type CoroutineHandle = Shared<SharedCell<CoroutineState>>;
+
+#[cfg(not(feature = "sync"))]
+pub(crate) type CoroutineWeakHandle = std::rc::Weak<SharedCell<CoroutineState>>;
+#[cfg(feature = "sync")]
+pub(crate) type CoroutineWeakHandle = std::sync::Weak<SharedCell<CoroutineState>>;
+
+pub(crate) fn downgrade_handle(handle: &CoroutineHandle) -> CoroutineWeakHandle {
+    Shared::downgrade(handle)
+}
+
+pub(crate) fn upgrade_handle(handle: &CoroutineWeakHandle) -> Option<CoroutineHandle> {
+    handle.upgrade()
+}
+
+pub(crate) fn same_handle(left: &CoroutineHandle, right: &CoroutineHandle) -> bool {
+    Shared::ptr_eq(left, right)
+}
 
 impl CoroutineState {
     pub(super) fn new_handle(frame: Frame, chunks: Shared<Vec<Chunk>>) -> CoroutineHandle {
@@ -191,6 +208,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     match outcome {
         DriveOutcome::Suspended(value) => {
             let value = into_runtime_value(value, &chunks);
+            // Break captured self-reference cycles while this state is suspended.
+            downgrade_self_references(&mut frames, &mut operand_stack, handle);
             state.frames = frames;
             state.operand_stack = operand_stack;
             state.suspended_call_depth = suspended_call_depth;
@@ -220,5 +239,22 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             drop(state);
             Err(VmError::CoroutineFailed(stored))
         }
+    }
+}
+
+fn downgrade_self_references(frames: &mut [Frame], operand_stack: &mut [StackValue], handle: &CoroutineHandle) {
+    for frame in frames {
+        frame.locals.downgrade_coroutine_references(handle);
+        if let Some(upvalues) = &mut frame.upvalues {
+            // Do not weaken the caller's shared binding.
+            for upvalue in Shared::make_mut(upvalues) {
+                if let Some(weak_cell) = weak_coroutine_cell(upvalue, handle) {
+                    *upvalue = weak_cell;
+                }
+            }
+        }
+    }
+    for value in operand_stack {
+        value.downgrade_coroutine_reference(handle);
     }
 }

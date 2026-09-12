@@ -128,7 +128,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                     return Err(locate(
                         call_site.chunk,
                         call_site.ip,
-                        VmError::ArityMismatch { expected: 1, actual },
+                        resume_arity_mismatch(builtins::NEXT, 1, actual),
                     ));
                 }
             },
@@ -169,7 +169,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
                     return Err(locate(
                         call_site.chunk,
                         call_site.ip,
-                        VmError::ArityMismatch { expected: 2, actual },
+                        resume_arity_mismatch(builtins::SEND, 2, actual),
                     ));
                 }
             },
@@ -235,6 +235,14 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     )
     .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
     Ok(frame_or_coroutine(frame, callee_chunks))
+}
+
+fn resume_arity_mismatch(name: &str, expected: u8, actual: usize) -> VmError {
+    VmError::Builtin(builtin::Error::InvalidNumberOfArguments(
+        name.to_string(),
+        expected,
+        actual.try_into().unwrap_or(u8::MAX),
+    ))
 }
 
 pub(super) fn call_fixed_closure_from_stack(
