@@ -2,7 +2,8 @@ use super::bytecode::Chunk;
 use crate::number::Number;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
-    CoroutineHandle, CoroutineWeakHandle, downgrade_handle, same_handle, upgrade_handle,
+    CoroutineHandle, CoroutineWeakHandle, downgrade_handle, downgrade_self_references_before_resume, same_handle,
+    upgrade_handle,
 };
 use crate::{Shared, SharedCell};
 
@@ -86,6 +87,13 @@ fn clear_self_reference(value: &mut RuntimeValue, handle: &CoroutineHandle) {
 /// the replacement, so `resume`'s `pending_resyncs` handling can restore whatever the caller
 /// later writes.
 pub(crate) fn sanitize_nested_self_reference(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
+    // `read_cell` upgrades a `WeakCoroutine` back into a literal `Coroutine` for ordinary reads,
+    // which would make an already-downgraded cell look like a fresh nested self-reference here
+    // and spawn a redundant hop that `weak_coroutine_cell` (checked first, on the raw content)
+    // already made unnecessary.
+    if is_weak_coroutine(cell) {
+        return None;
+    }
     let mut sanitized = read_cell(cell);
     let StackValue::Value(value) = &mut sanitized else {
         return None;
@@ -548,6 +556,20 @@ pub(crate) fn read_cell(cell: &Cell) -> StackValue {
     }
 }
 
+/// Peeks at `cell`'s raw (non-upgraded) content to check whether it already holds the
+/// weak-and-upgradable form a self-reference is downgraded to, without `read_cell`'s upgrade
+/// turning that back into a literal `Coroutine` for the check.
+fn is_weak_coroutine(cell: &Cell) -> bool {
+    #[cfg(not(feature = "sync"))]
+    {
+        matches!(&*cell.borrow(), StackValue::WeakCoroutine(_))
+    }
+    #[cfg(feature = "sync")]
+    {
+        matches!(&*cell.read().unwrap(), StackValue::WeakCoroutine(_))
+    }
+}
+
 pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
     #[cfg(not(feature = "sync"))]
     {
@@ -564,7 +586,16 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
 }
 
 /// Writes a VM cell.
+///
+/// A coroutine handle written here may be its own captured upvalue cell (e.g. `s = g()` where
+/// `g`'s body captures `s`), forming a strong reference cycle the moment the write lands. The
+/// content must be stored before checking for that, since the check looks for `handle` inside
+/// `cell`'s own current value.
 pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
+    let written_coroutine = match &value {
+        StackValue::Value(RuntimeValue::Coroutine(handle)) => Some(Shared::clone(handle)),
+        _ => None,
+    };
     #[cfg(not(feature = "sync"))]
     {
         *cell.borrow_mut() = value;
@@ -572,6 +603,9 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     #[cfg(feature = "sync")]
     {
         *cell.write().unwrap() = value;
+    }
+    if let Some(handle) = written_coroutine {
+        downgrade_self_references_before_resume(&handle);
     }
 }
 
