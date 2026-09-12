@@ -56,6 +56,35 @@ fn value_contains_self_reference(value: &RuntimeValue, handle: &CoroutineHandle)
     }
 }
 
+/// Collects distinct coroutine handles nested in a value.
+fn collect_coroutine_handles(value: &RuntimeValue, handles: &mut Vec<CoroutineHandle>) {
+    match value {
+        RuntimeValue::Coroutine(handle) => {
+            if !handles.iter().any(|existing| same_handle(existing, handle)) {
+                handles.push(Shared::clone(handle));
+            }
+        }
+        RuntimeValue::Array(array) => {
+            for item in array.iter() {
+                collect_coroutine_handles(item, handles);
+            }
+        }
+        RuntimeValue::Dict(map) => {
+            for item in map.values() {
+                collect_coroutine_handles(item, handles);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Cleans up coroutine cycles after their value is stored.
+fn downgrade_coroutine_handles(handles: Vec<CoroutineHandle>) {
+    for handle in handles {
+        downgrade_self_references_before_resume(&handle);
+    }
+}
+
 /// Clears `handle`'s own coroutine out of any array/dict `value` holds it in, breaking the
 /// reference cycle a suspended coroutine would otherwise form through a captured container.
 /// Direct `RuntimeValue::Coroutine` matches are handled separately (see
@@ -570,6 +599,24 @@ fn is_weak_coroutine(cell: &Cell) -> bool {
     }
 }
 
+/// Checks whether `cell` is this coroutine's raw weak reference.
+pub(crate) fn is_weak_self_reference(cell: &Cell, handle: &CoroutineHandle) -> bool {
+    #[cfg(not(feature = "sync"))]
+    {
+        matches!(
+            &*cell.borrow(),
+            StackValue::WeakCoroutine(value) if upgrade_handle(value).is_some_and(|value| same_handle(&value, handle))
+        )
+    }
+    #[cfg(feature = "sync")]
+    {
+        matches!(
+            &*cell.read().unwrap(),
+            StackValue::WeakCoroutine(value) if upgrade_handle(value).is_some_and(|value| same_handle(&value, handle))
+        )
+    }
+}
+
 pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
     #[cfg(not(feature = "sync"))]
     {
@@ -585,17 +632,12 @@ pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Opti
     }
 }
 
-/// Writes a VM cell.
-///
-/// A coroutine handle written here may be its own captured upvalue cell (e.g. `s = g()` where
-/// `g`'s body captures `s`), forming a strong reference cycle the moment the write lands. The
-/// content must be stored before checking for that, since the check looks for `handle` inside
-/// `cell`'s own current value.
+/// Writes a VM cell and cleans up nested coroutine cycles.
 pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
-    let written_coroutine = match &value {
-        StackValue::Value(RuntimeValue::Coroutine(handle)) => Some(Shared::clone(handle)),
-        _ => None,
-    };
+    let mut written_handles = Vec::new();
+    if let StackValue::Value(value) = &value {
+        collect_coroutine_handles(value, &mut written_handles);
+    }
     #[cfg(not(feature = "sync"))]
     {
         *cell.borrow_mut() = value;
@@ -604,13 +646,13 @@ pub(crate) fn write_cell(cell: &Cell, value: StackValue) {
     {
         *cell.write().unwrap() = value;
     }
-    if let Some(handle) = written_coroutine {
-        downgrade_self_references_before_resume(&handle);
-    }
+    downgrade_coroutine_handles(written_handles);
 }
 
 /// Appends to an array cell.
 pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(), &'static str> {
+    let mut appended_handles = Vec::new();
+    collect_coroutine_handles(&value, &mut appended_handles);
     #[cfg(not(feature = "sync"))]
     {
         let mut stored = cell.borrow_mut();
@@ -627,6 +669,8 @@ pub(crate) fn append_to_array_cell(cell: &Cell, value: RuntimeValue) -> Result<(
         };
         array_mut(array).push(value);
     }
+    // Scan only the new value to keep `foreach` collection linear.
+    downgrade_coroutine_handles(appended_handles);
     Ok(())
 }
 
