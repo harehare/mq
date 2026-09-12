@@ -198,7 +198,7 @@ where
 fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node>) -> mq_markdown::Node {
     match value {
         RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
-        RuntimeValue::NativeFunction(_) => mq_markdown::Node::Empty,
+        RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Coroutine(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr

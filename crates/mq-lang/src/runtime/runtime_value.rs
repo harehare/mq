@@ -37,6 +37,19 @@ impl Selector {
     }
 }
 
+/// A coroutine resumption helper represented as a first-class runtime value.
+///
+/// These helpers require VM execution state and therefore cannot use the ordinary native
+/// builtin dispatcher. Keeping them distinct from [`RuntimeValue::NativeFunction`] also leaves
+/// the dynamic native-builtin hot path free of coroutine-specific checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ResumeBuiltin {
+    /// Advances a coroutine without sending a value to its suspended `yield` expression.
+    Next,
+    /// Advances a coroutine and sends a value to its suspended `yield` expression.
+    Send,
+}
+
 /// A value in the mq runtime.
 ///
 /// This enum represents all possible value types that can exist during
@@ -65,6 +78,8 @@ pub enum RuntimeValue {
     Markdown(Shared<Node>, Option<Selector>),
     /// A built-in native function identified by name.
     NativeFunction(Ident),
+    /// A first-class coroutine resumption helper (`next` or `send`).
+    CoroutineBuiltin(ResumeBuiltin),
     /// A VM closure that has crossed into plain-value territory (stored in an array/dict,
     /// passed to `partial`, ...) — see `tarn::value::VmClosureValue`. `VmClosureValue` is
     /// deliberately `pub(crate)` — this variant is constructible only from within the crate.
@@ -104,6 +119,7 @@ impl PartialEq for RuntimeValue {
                 Shared::ptr_eq(&a.chunks, &b.chunks) && a.chunk_index == b.chunk_index && a.bound_args == b.bound_args
             }
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
+            (RuntimeValue::CoroutineBuiltin(a), RuntimeValue::CoroutineBuiltin(b)) => a == b,
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::Coroutine(a), RuntimeValue::Coroutine(b)) => Shared::ptr_eq(a, b),
@@ -338,6 +354,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
+            Self::CoroutineBuiltin(_) => Cow::Borrowed("native_function"),
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Dict(_) => self.string(),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
@@ -440,6 +457,7 @@ impl RuntimeValue {
             RuntimeValue::Array(_) => "array",
             RuntimeValue::None => "None",
             RuntimeValue::NativeFunction(_) => "native_function",
+            RuntimeValue::CoroutineBuiltin(_) => "native_function",
             RuntimeValue::VmClosure(_) => "function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Bytes(_) => "bytes",
@@ -462,7 +480,10 @@ impl RuntimeValue {
     /// Returns `true` if this value is a native (built-in) function.
     #[inline(always)]
     pub fn is_native_function(&self) -> bool {
-        matches!(self, RuntimeValue::NativeFunction(_))
+        matches!(
+            self,
+            RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_)
+        )
     }
 
     /// Returns `true` if this value is an array.
@@ -510,7 +531,10 @@ impl RuntimeValue {
                 Some(sel) => node.find_at_index(sel.index_value()).is_some(),
                 None => true,
             },
-            RuntimeValue::Symbol(_) | RuntimeValue::NativeFunction(_) | RuntimeValue::Dict(_) => true,
+            RuntimeValue::Symbol(_)
+            | RuntimeValue::NativeFunction(_)
+            | RuntimeValue::CoroutineBuiltin(_)
+            | RuntimeValue::Dict(_) => true,
             RuntimeValue::VmClosure(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::Coroutine(_) => true,
@@ -535,6 +559,7 @@ impl RuntimeValue {
             RuntimeValue::Bytes(b) => b.len(),
             RuntimeValue::None => 0,
             RuntimeValue::NativeFunction(..) => 0,
+            RuntimeValue::CoroutineBuiltin(..) => 0,
             RuntimeValue::VmClosure(..) => 0,
             RuntimeValue::Coroutine(..) => 0,
         }
@@ -612,6 +637,7 @@ impl RuntimeValue {
             Self::Markdown(m, ..) => Cow::Owned(m.to_string()),
             Self::None => Cow::Borrowed(""),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
+            Self::CoroutineBuiltin(_) => Cow::Borrowed("native_function"),
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Coroutine(_) => Cow::Borrowed("coroutine"),
@@ -771,7 +797,9 @@ impl RuntimeValues {
 
                 if let RuntimeValue::Markdown(node, _) = &current_value {
                     match &updated_value {
-                        RuntimeValue::None | RuntimeValue::NativeFunction(_) => current_value.clone(),
+                        RuntimeValue::None | RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => {
+                            current_value.clone()
+                        }
                         RuntimeValue::VmClosure(_) => current_value.clone(),
                         RuntimeValue::Coroutine(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),

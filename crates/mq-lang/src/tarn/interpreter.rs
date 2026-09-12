@@ -29,7 +29,7 @@ use crate::ast::constants::builtins;
 use crate::number::Number;
 use crate::runtime::builtin::{self, Args};
 use crate::runtime::host::HostFunctions;
-use crate::runtime::runtime_value::{self, RuntimeValue};
+use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
@@ -1784,6 +1784,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     }
                     StackValue::Value(RuntimeValue::NativeFunction(ident)) => builtin::get_builtin_functions(ident)
                         .is_some_and(|f| f.num_params.is_valid(0) || f.num_params.is_missing_one_params(0)),
+                    StackValue::Value(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next)) => true,
                     _ => false,
                 };
                 if eligible {

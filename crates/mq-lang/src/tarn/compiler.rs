@@ -8,7 +8,7 @@ use crate::ast::node::{AccessTarget, Expr, IdentWithToken, Literal, Node, Patter
 use crate::ast::{Program, node as ast};
 use crate::module::BUILTIN_FILE;
 use crate::runtime::builtin;
-use crate::runtime::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::{ModuleError, ModuleLoader, ModuleResolver, TokenArena};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
@@ -2331,10 +2331,21 @@ impl<R: ModuleResolver> Compiler<R> {
             // `next` and `send` use dedicated bytecode for direct calls, but remain ordinary
             // first-class builtins when referenced as values. Local/upvalue resolution above
             // deliberately takes precedence, preserving shadowing.
-            None if builtin::get_builtin_functions(&name).is_some()
-                || name == builtins::NEXT.into()
-                || name == builtins::SEND.into() =>
-            {
+            None if name == builtins::NEXT.into() => {
+                let idx = self
+                    .chunk_mut()
+                    .push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next));
+                self.emit(OpCode::Const(idx));
+                Ok(())
+            }
+            None if name == builtins::SEND.into() => {
+                let idx = self
+                    .chunk_mut()
+                    .push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Send));
+                self.emit(OpCode::Const(idx));
+                Ok(())
+            }
+            None if builtin::get_builtin_functions(&name).is_some() => {
                 let idx = self.chunk_mut().push_const(RuntimeValue::NativeFunction(name));
                 self.emit(OpCode::Const(idx));
                 Ok(())
