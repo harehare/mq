@@ -980,6 +980,37 @@ def test_indent(value, prefix, expected):
 end
 
 # @parametrize([
+#   ["  a\n    b\n  c", "  "],
+#   ["a\nb", ""],
+#   ["  a\n\n  b", "  "],
+#   ["  a\n   \n  b", "  "],
+#   ["\ta\n  b", ""],
+#   ["\ta\n\t\tb", "\t"],
+#   ["  ```\n    code\n  ```", "  "],
+#   ["", ""],
+#   ["   ", ""],
+# ])
+def test_common_indent(value, expected):
+  let result = common_indent(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
+#   ["  a\n    b\n  c", "a\n  b\nc"],
+#   ["a\nb", "a\nb"],
+#   ["  a\n\n  b", "a\n\nb"],
+#   ["  a\n   \n  b", "a\n\nb"],
+#   ["\ta\n  b", "\ta\n  b"],
+#   ["\ta\n\t\tb", "a\n\tb"],
+#   ["  ```\n    code\n  ```", "```\n  code\n```"],
+#   ["", ""],
+# ])
+def test_dedent(value, expected):
+  let result = dedent(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
 #   [{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}],
 #   [{"x": 10, "y": 20}, ["y"], {"y": 20}],
 #   [{"key": "value"}, ["nonexistent"], dict()],

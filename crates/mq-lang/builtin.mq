@@ -1247,37 +1247,36 @@ def join_by(left, right, left_key, right_key, kind = "inner"):
     do
       let schema_of = fn(records): unique_by(flat_map(records, keys), identity);
       | let fill_missing = fn(record, schema):
-          fold(schema, record, fn(acc, k): if (in(keys(acc), k)): acc else: set(acc, k, None););
+              fold(schema, record, fn(acc, k): if (in(keys(acc), k)): acc else: set(acc, k, None););
       | let right_matchable = filter(right, fn(r): !is_none(get(r, right_key));)
       | let right_unmatchable = filter(right, fn(r): is_none(get(r, right_key));)
       | let right_by_key = group_by(right_matchable, fn(r): get(r, right_key);)
       | let right_schema = if (kind == "left" || kind == "full"): schema_of(right) else: []
       | let left_schema = if (kind == "right" || kind == "full"): schema_of(left) else: []
       | let left_keys_str = map(left, fn(l):
-            let k = get(l, left_key)
-            | if (is_none(k)): None else: to_string(k);
-          )
+              let k = get(l, left_key)
+              | if (is_none(k)): None else: to_string(k);
+      )
       | let matched_group_keys = unique_by(
-          filter(left_keys_str, fn(k): !is_none(k) && !is_none(get(right_by_key, k));),
-          identity
-        )
+        filter(left_keys_str, fn(k): !is_none(k) && !is_none(get(right_by_key, k));),
+        identity
+      )
       | let left_side = flat_map(left, fn(l):
-            let k = get(l, left_key)
-            | let group = if (is_none(k)): None else: get(right_by_key, to_string(k))
-            | if (is_none(group)):
-                if (kind == "left" || kind == "full"): [fill_missing(l, right_schema)] else: []
-              else:
-                map(group, fn(r): l + r;)
-            ;
-          )
+              let k = get(l, left_key)
+              | let group = if (is_none(k)): None else: get(right_by_key, to_string(k))
+              | if (is_none(group)):
+                  if (kind == "left" || kind == "full"): [fill_missing(l, right_schema)] else: []
+                else:
+                  map(group, fn(r): l + r;);
+      )
       | let right_unmatched_grouped = flat_map(
-          filter(entries(right_by_key), fn(e): !in(matched_group_keys, e[0]);),
-          fn(e): e[1];
-        )
+        filter(entries(right_by_key), fn(e): !in(matched_group_keys, e[0]);),
+        fn(e): e[1];
+      )
       | let right_side = if (kind == "right" || kind == "full"):
-            map(right_unmatched_grouped + right_unmatchable, fn(r): fill_missing(r, left_schema);)
-          else:
-            []
+              map(right_unmatched_grouped + right_unmatchable, fn(r): fill_missing(r, left_schema);)
+            else:
+              []
       | left_side + right_side
     end
 end
@@ -1901,7 +1900,7 @@ def describe(arr):
         median: percentile(arr, 0.5),
         stddev: stddev(arr),
         variance: variance(arr),
-        count: len(arr),
+        count: len(arr)
       }
     end
 end
@@ -1926,15 +1925,15 @@ def stats_by(arr, group_f, value_f, aggs = ["sum", "mean", "min", "max", "stddev
     map(entries(group_by(arr, group_f)), fn(e):
       let values = map(e[1], value_f)
       | fold(aggs, {group: e[0], count: len(values)}, fn(acc, agg):
-          if (agg == "sum"): set(acc, "sum", sum(values))
-          elif (agg == "mean"): set(acc, "mean", mean(values))
-          elif (agg == "min"): set(acc, "min", first(sort(values)))
-          elif (agg == "max"): set(acc, "max", last(sort(values)))
-          elif (agg == "stddev"): set(acc, "stddev", stddev(values))
-          elif (agg == "median"): set(acc, "median", median(values))
-          elif (agg == "variance"): set(acc, "variance", variance(values))
-          else: error("stats_by: unknown agg \"" + agg + "\"");
-        );
+        if (agg == "sum"): set(acc, "sum", sum(values))
+        elif (agg == "mean"): set(acc, "mean", mean(values))
+        elif (agg == "min"): set(acc, "min", first(sort(values)))
+        elif (agg == "max"): set(acc, "max", last(sort(values)))
+        elif (agg == "stddev"): set(acc, "stddev", stddev(values))
+        elif (agg == "median"): set(acc, "median", median(values))
+        elif (agg == "variance"): set(acc, "variance", variance(values))
+        else: error("stats_by: unknown agg \"" + agg + "\"");
+      );
     )
 end
 
@@ -1965,11 +1964,11 @@ def histogram(arr, buckets = 10):
       | let span = if (hi == lo): 1 else: hi - lo
       | let width = span / buckets
       | let bucket_of = fn(x):
-          let idx = floor((x - lo) / width)
-          | if (idx >= buckets): buckets - 1 else: idx;
+              let idx = floor((x - lo) / width)
+              | if (idx >= buckets): buckets - 1 else: idx;
       | let counts = fold(arr, foreach (i, range(0, buckets - 1)): 0;, fn(acc, x):
-          set(acc, bucket_of(x), acc[bucket_of(x)] + 1);
-        )
+              set(acc, bucket_of(x), acc[bucket_of(x)] + 1);
+      )
       | let max_count = max_by(counts, identity)
       | foreach (i, range(0, buckets - 1)):
           let count = counts[i]
@@ -1977,7 +1976,7 @@ def histogram(arr, buckets = 10):
           | {
             range: to_string(round(100 * (lo + i * width)) / 100) + "-" + to_string(round(100 * (lo + (i + 1) * width)) / 100),
             count: count,
-            bar: repeat("█", bar_len),
+            bar: repeat("█", bar_len)
           }
         end
     end
@@ -2156,6 +2155,70 @@ def unlines(arr): if (is_none(arr)): None else: join(arr, "\n");
 #
 # Returns: string
 def indent(s, prefix): s | lines | map(fn(line): prefix + line;) | unlines;
+
+# Returns the longest run of leading spaces/tabs shared by every non-blank line
+# of a string. Blank (empty or whitespace-only) lines are ignored when computing
+# the margin. Lines indented with a mix of tabs and spaces that don't agree on
+# the same prefix yield no common indent.
+#
+# Example:
+# ```
+# common_indent("  a\n    b\n  c") == "  "
+# #=> true
+# ```
+#
+# Returns: string
+def common_indent(s):
+  if (is_none(s)):
+    None
+  else:
+    do
+      let significant = filter(lines(s), fn(line): !is_empty(trim(line));)
+      | if (is_empty(significant)):
+          ""
+        else:
+          do
+            let indents = map(significant, fn(line): first(regex_match(line, "^[ \t]*"));)
+            | let base = first(indents)
+            | let min_len = first(sort(map(indents, len)))
+            | var n = 0
+            | while (n < min_len && all(indents, fn(ind): slice(ind, n, n + 1) == slice(base, n, n + 1);)):
+                n += 1
+              end
+            | slice(base, 0, n)
+          end
+    end
+end
+
+# Removes the common leading whitespace (see `common_indent`) from every line
+# of a string. Blank lines are normalized to empty; the string is returned
+# unchanged when there is no common indent to strip.
+#
+# Example:
+# ```
+# dedent("  a\n  b") == "a\nb"
+# #=> true
+# ```
+#
+# Returns: string
+def dedent(s):
+  if (is_none(s)):
+    None
+  else:
+    do
+      let prefix = common_indent(s)
+      | if (is_empty(prefix)):
+          s
+        else:
+          do
+            s
+            | lines
+            | map(fn(line): if (is_empty(trim(line))): "" else: slice(line, len(prefix), len(line));)
+            | unlines
+          end
+    end
+end
+
 
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 #
@@ -2388,8 +2451,7 @@ def merge_with(a, b, policy):
       elif (has(b, key)):
         set(acc, key, b[key])
       else:
-        set(acc, key, a[key])
-    ;)
+        set(acc, key, a[key]);)
   elif (is_array(a) && is_array(b)):
     if (policy == "append"):
       a + b
