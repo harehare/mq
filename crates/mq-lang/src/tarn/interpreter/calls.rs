@@ -7,7 +7,7 @@ use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
 use crate::runtime::host::HostFunctions;
-use crate::runtime::runtime_value::RuntimeValue;
+use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
@@ -100,45 +100,6 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
     #[cfg(feature = "debugger")] debug: &mut super::DebugRuntime<'_>,
 ) -> VmResult<CallStep> {
     if let StackValue::Value(RuntimeValue::NativeFunction(ident)) = callee {
-        let resume_value = if ident == builtins::NEXT.into() && args.len() <= 1 {
-            let stream = args
-                .pop()
-                .map(|arg| into_runtime_value(arg, chunks))
-                .unwrap_or_else(|| current_self(call_site.locals, chunks));
-            Some((stream, None))
-        } else if ident == builtins::SEND.into() && (1..=2).contains(&args.len()) {
-            let Some(value) = args.pop() else {
-                return Err(locate(
-                    call_site.chunk,
-                    call_site.ip,
-                    VmError::Corrupt("missing send value after argument-count check"),
-                ));
-            };
-            let value = into_runtime_value(value, chunks);
-            let stream = args
-                .pop()
-                .map(|arg| into_runtime_value(arg, chunks))
-                .unwrap_or_else(|| current_self(call_site.locals, chunks));
-            Some((stream, Some(value)))
-        } else {
-            None
-        };
-
-        if let Some((stream, resume_value)) = resume_value {
-            let RuntimeValue::Coroutine(handle) = stream else {
-                return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable));
-            };
-            let result = super::coroutine::resume::<CHECK_TIMEOUT>(
-                &handle,
-                resume_value,
-                execution,
-                #[cfg(feature = "debugger")]
-                debug,
-            )
-            .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-            return Ok(CallStep::Value(StackValue::Value(result)));
-        }
-
         // `drain` (rather than `into_iter`) leaves `args`'s allocation intact for the
         // caller to recycle, same as every other exit path below.
         // `Args` stores the common one- and two-argument cases inline, unlike `Vec`.
@@ -146,6 +107,84 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
         let self_value = current_self(call_site.locals, chunks);
         let result = call_builtin_args(&ident, arg_values, &self_value, execution.env, execution.host_functions)
             .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
+        return Ok(CallStep::Value(StackValue::Value(result)));
+    }
+
+    if let StackValue::Value(RuntimeValue::CoroutineBuiltin(builtin)) = callee {
+        let (stream, resume_value) = match builtin {
+            ResumeBuiltin::Next => match args.len() {
+                0 => (current_self(call_site.locals, chunks), None),
+                1 => {
+                    let Some(stream) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing next argument after argument-count check"),
+                        ));
+                    };
+                    (into_runtime_value(stream, chunks), None)
+                }
+                actual => {
+                    return Err(locate(
+                        call_site.chunk,
+                        call_site.ip,
+                        VmError::ArityMismatch { expected: 1, actual },
+                    ));
+                }
+            },
+            ResumeBuiltin::Send => match args.len() {
+                1 => {
+                    let Some(value) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send value after argument-count check"),
+                        ));
+                    };
+                    (
+                        current_self(call_site.locals, chunks),
+                        Some(into_runtime_value(value, chunks)),
+                    )
+                }
+                2 => {
+                    let Some(value) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send value after argument-count check"),
+                        ));
+                    };
+                    let Some(stream) = args.pop() else {
+                        return Err(locate(
+                            call_site.chunk,
+                            call_site.ip,
+                            VmError::Corrupt("missing send stream after argument-count check"),
+                        ));
+                    };
+                    let value = into_runtime_value(value, chunks);
+                    let stream = into_runtime_value(stream, chunks);
+                    (stream, Some(value))
+                }
+                actual => {
+                    return Err(locate(
+                        call_site.chunk,
+                        call_site.ip,
+                        VmError::ArityMismatch { expected: 2, actual },
+                    ));
+                }
+            },
+        };
+        let RuntimeValue::Coroutine(handle) = stream else {
+            return Err(locate(call_site.chunk, call_site.ip, VmError::NotCallable));
+        };
+        let result = super::coroutine::resume::<CHECK_TIMEOUT>(
+            &handle,
+            resume_value,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        )
+        .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
         return Ok(CallStep::Value(StackValue::Value(result)));
     }
 
