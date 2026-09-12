@@ -1,6 +1,9 @@
 use super::bytecode::Chunk;
 use crate::number::Number;
 use crate::runtime::runtime_value::{RuntimeValue, array_mut};
+use crate::tarn::interpreter::coroutine::{
+    CoroutineHandle, CoroutineWeakHandle, downgrade_handle, same_handle, upgrade_handle,
+};
 use crate::{Shared, SharedCell};
 
 /// A shared VM value cell.
@@ -11,6 +14,26 @@ pub(crate) type Cell = Shared<SharedCell<StackValue>>;
 pub(crate) enum StackValue {
     Value(RuntimeValue),
     Closure(Shared<Closure>),
+    WeakCoroutine(CoroutineWeakHandle),
+}
+
+impl StackValue {
+    pub(crate) fn upgraded(&self) -> Self {
+        match self {
+            StackValue::WeakCoroutine(handle) => upgrade_handle(handle)
+                .map(|handle| StackValue::Value(RuntimeValue::Coroutine(handle)))
+                .unwrap_or(StackValue::Value(RuntimeValue::None)),
+            value => value.clone(),
+        }
+    }
+
+    pub(crate) fn downgrade_coroutine_reference(&mut self, handle: &CoroutineHandle) {
+        if let StackValue::Value(RuntimeValue::Coroutine(value)) = self
+            && same_handle(value, handle)
+        {
+            *self = StackValue::WeakCoroutine(downgrade_handle(handle));
+        }
+    }
 }
 
 /// A closure on the VM operand stack.
@@ -167,11 +190,11 @@ impl Locals {
     pub(crate) fn get(&self, slot: u16) -> StackValue {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => slots[slot as usize].clone(),
+            Locals::Flat(slots) => slots[slot as usize].upgraded(),
             #[cfg(not(feature = "sync"))]
             Locals::Hybrid { slots, captured } => captured[slot as usize]
                 .as_ref()
-                .map_or_else(|| slots[slot as usize].clone(), read_cell),
+                .map_or_else(|| slots[slot as usize].upgraded(), read_cell),
             Locals::Boxed(slots) => read_cell(&slots[slot as usize]),
         }
     }
@@ -210,7 +233,7 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                unsafe { slots.get_unchecked(slot as usize) }.clone()
+                unsafe { slots.get_unchecked(slot as usize) }.upgraded()
             }
             #[cfg(not(feature = "sync"))]
             Locals::Hybrid { slots, captured } => {
@@ -218,7 +241,7 @@ impl Locals {
                 match unsafe { captured.get_unchecked(slot as usize) } {
                     Some(cell) => read_cell(cell),
                     // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                    None => unsafe { slots.get_unchecked(slot as usize) }.clone(),
+                    None => unsafe { slots.get_unchecked(slot as usize) }.upgraded(),
                 }
             }
             Locals::Boxed(slots) => {
@@ -264,6 +287,36 @@ impl Locals {
                 .as_ref()
                 .expect("bytecode attempted to capture a local slot without a cell"),
             Locals::Boxed(slots) => &slots[slot as usize],
+        }
+    }
+
+    pub(crate) fn downgrade_coroutine_references(&mut self, handle: &CoroutineHandle) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                for slot in slots {
+                    slot.downgrade_coroutine_reference(handle);
+                }
+            }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                for (slot, cell) in slots.iter_mut().zip(captured) {
+                    if let Some(cell) = cell {
+                        if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
+                            *cell = weak_cell;
+                        }
+                    } else {
+                        slot.downgrade_coroutine_reference(handle);
+                    }
+                }
+            }
+            Locals::Boxed(slots) => {
+                for cell in slots {
+                    if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
+                        *cell = weak_cell;
+                    }
+                }
+            }
         }
     }
 
@@ -413,11 +466,26 @@ impl Locals {
 pub(crate) fn read_cell(cell: &Cell) -> StackValue {
     #[cfg(not(feature = "sync"))]
     {
-        cell.borrow().clone()
+        cell.borrow().upgraded()
     }
     #[cfg(feature = "sync")]
     {
-        cell.read().unwrap().clone()
+        cell.read().unwrap().upgraded()
+    }
+}
+
+pub(crate) fn weak_coroutine_cell(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
+    #[cfg(not(feature = "sync"))]
+    {
+        let value = cell.borrow();
+        matches!(&*value, StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle))
+            .then(|| new_cell(StackValue::WeakCoroutine(downgrade_handle(handle))))
+    }
+    #[cfg(feature = "sync")]
+    {
+        let value = cell.read().unwrap();
+        matches!(&*value, StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle))
+            .then(|| new_cell(StackValue::WeakCoroutine(downgrade_handle(handle))))
     }
 }
 
@@ -502,6 +570,7 @@ mod tests {
         match value {
             StackValue::Value(value) => value,
             StackValue::Closure(_) => panic!("test locals only contain runtime values"),
+            StackValue::WeakCoroutine(_) => panic!("test locals only contain runtime values"),
         }
     }
 }

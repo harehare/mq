@@ -3018,6 +3018,22 @@ fn reentrant_next_on_a_running_coroutine_errors() {
     assert_eq!(err.to_string(), "coroutine is already running");
 }
 
+#[test]
+fn dropping_a_self_referencing_suspended_coroutine_releases_its_frames() {
+    let value = run("var s = None | let g = fn(): yield: 1 | s; | s = g() | next(s) | s");
+    let RuntimeValue::Coroutine(handle) = &value else {
+        panic!("expected a coroutine, got {value:?}");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(value);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "suspended coroutine retained a self-reference cycle"
+    );
+}
+
 // End-to-end generator tests compiled from real `yield`/`next()` source (Phase 4: lexer, CST,
 // AST, HIR-free compiler wiring all land together so every commit stays green).
 
