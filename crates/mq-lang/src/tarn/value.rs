@@ -1,6 +1,6 @@
 use super::bytecode::Chunk;
 use crate::number::Number;
-use crate::runtime::runtime_value::{RuntimeValue, array_mut};
+use crate::runtime::runtime_value::{RuntimeValue, array_mut, dict_mut};
 use crate::tarn::interpreter::coroutine::{
     CoroutineHandle, CoroutineWeakHandle, downgrade_handle, same_handle, upgrade_handle,
 };
@@ -8,6 +8,13 @@ use crate::{Shared, SharedCell};
 
 /// A shared VM value cell.
 pub(crate) type Cell = Shared<SharedCell<StackValue>>;
+
+/// A non-owning reference to a [`Cell`], used to resync a suspended coroutine's own downgraded
+/// copy of a captured variable with the (still strongly-owned) original cell on next resume.
+#[cfg(not(feature = "sync"))]
+pub(crate) type WeakCell = std::rc::Weak<SharedCell<StackValue>>;
+#[cfg(feature = "sync")]
+pub(crate) type WeakCell = std::sync::Weak<SharedCell<StackValue>>;
 
 #[derive(Clone)]
 /// A value held on the VM operand stack.
@@ -28,11 +35,58 @@ impl StackValue {
     }
 
     pub(crate) fn downgrade_coroutine_reference(&mut self, handle: &CoroutineHandle) {
-        if let StackValue::Value(RuntimeValue::Coroutine(value)) = self
-            && same_handle(value, handle)
-        {
-            *self = StackValue::WeakCoroutine(downgrade_handle(handle));
+        match self {
+            StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle) => {
+                *self = StackValue::WeakCoroutine(downgrade_handle(handle));
+            }
+            StackValue::Value(value) => clear_self_reference(value, handle),
+            _ => {}
         }
+    }
+}
+
+/// Whether `value` holds `handle`'s own coroutine, directly or nested in an array/dict.
+fn value_contains_self_reference(value: &RuntimeValue, handle: &CoroutineHandle) -> bool {
+    match value {
+        RuntimeValue::Coroutine(v) => same_handle(v, handle),
+        RuntimeValue::Array(array) => array.iter().any(|item| value_contains_self_reference(item, handle)),
+        RuntimeValue::Dict(map) => map.values().any(|item| value_contains_self_reference(item, handle)),
+        _ => false,
+    }
+}
+
+/// Clears `handle`'s own coroutine out of any array/dict `value` holds it in, breaking the
+/// reference cycle a suspended coroutine would otherwise form through a captured container.
+/// Direct `RuntimeValue::Coroutine` matches are handled separately (see
+/// [`StackValue::downgrade_coroutine_reference`] and [`weak_coroutine_cell`]), so those stay
+/// weak-and-upgradable instead of being cleared outright.
+fn clear_self_reference(value: &mut RuntimeValue, handle: &CoroutineHandle) {
+    match value {
+        RuntimeValue::Array(array) if array.iter().any(|item| value_contains_self_reference(item, handle)) => {
+            for item in array_mut(array) {
+                clear_self_reference(item, handle);
+            }
+        }
+        RuntimeValue::Dict(map) if map.values().any(|item| value_contains_self_reference(item, handle)) => {
+            for item in dict_mut(map).values_mut() {
+                clear_self_reference(item, handle);
+            }
+        }
+        RuntimeValue::Coroutine(v) if same_handle(v, handle) => *value = RuntimeValue::None,
+        _ => {}
+    }
+}
+
+/// Clears any nested self-reference (see [`clear_self_reference`]) out of `cell`'s current
+/// value, in place, without disturbing the cell's identity.
+pub(crate) fn clear_nested_self_reference_in_cell(cell: &Cell, handle: &CoroutineHandle) {
+    #[cfg(not(feature = "sync"))]
+    let mut value = cell.borrow_mut();
+    #[cfg(feature = "sync")]
+    let mut value = cell.write().unwrap();
+
+    if let StackValue::Value(value) = &mut *value {
+        clear_self_reference(value, handle);
     }
 }
 
@@ -304,6 +358,8 @@ impl Locals {
                     if let Some(cell) = cell {
                         if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
                             *cell = weak_cell;
+                        } else {
+                            clear_nested_self_reference_in_cell(cell, handle);
                         }
                     } else {
                         slot.downgrade_coroutine_reference(handle);
@@ -314,6 +370,8 @@ impl Locals {
                 for cell in slots {
                     if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
                         *cell = weak_cell;
+                    } else {
+                        clear_nested_self_reference_in_cell(cell, handle);
                     }
                 }
             }

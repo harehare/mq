@@ -12,7 +12,9 @@ use super::{DriveOutcome, into_runtime_value};
 use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
-use crate::tarn::value::{StackValue, weak_coroutine_cell};
+use crate::tarn::value::{
+    Cell, StackValue, WeakCell, clear_nested_self_reference_in_cell, read_cell, weak_coroutine_cell, write_cell,
+};
 use crate::{Ident, Shared, SharedCell};
 
 /// A coroutine's lifecycle.
@@ -37,6 +39,11 @@ pub(crate) struct CoroutineState {
     /// Frames retained at suspension still count against recursion while the coroutine runs,
     /// but must not consume depth in an unrelated caller between resumes.
     pub(super) suspended_call_depth: u32,
+    /// Upvalue cells downgraded to break a self-reference cycle (see
+    /// `downgrade_self_references`), paired with a weak pointer to the original cell they were
+    /// split from. Applied on the next resume so outer writes to the captured variable made
+    /// while suspended aren't lost.
+    pub(super) pending_resyncs: Vec<(Cell, WeakCell)>,
     /// Debugger state belongs to the suspended frames for the same reason as call depth.
     #[cfg(feature = "debugger")]
     pub(super) debug_call_stack: Vec<Shared<Node>>,
@@ -76,6 +83,7 @@ impl CoroutineState {
             // starts running so recursively resuming child generators cannot bypass the VM's
             // recursion limit before any of them reaches a `yield`.
             suspended_call_depth: 1,
+            pending_resyncs: Vec::new(),
             #[cfg(feature = "debugger")]
             debug_call_stack: Vec::new(),
             #[cfg(feature = "debugger")]
@@ -127,6 +135,7 @@ pub(crate) fn close(handle: &CoroutineHandle) -> bool {
             state.frames = Vec::new();
             state.operand_stack = Vec::new();
             state.suspended_call_depth = 0;
+            state.pending_resyncs = Vec::new();
             #[cfg(feature = "debugger")]
             {
                 state.debug_call_stack = Vec::new();
@@ -153,7 +162,7 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
-    let (mut frames, mut operand_stack, chunks, caller_depth) = {
+    let (mut frames, mut operand_stack, chunks, caller_depth, pending_resyncs) = {
         let mut state = borrow_mut(handle);
         match &state.status {
             CoroutineStatus::Running => return Err(VmError::CoroutineReentrant),
@@ -175,10 +184,19 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
                     operand_stack,
                     Shared::clone(&state.chunks),
                     caller_depth,
+                    std::mem::take(&mut state.pending_resyncs),
                 )
             }
         }
     };
+
+    // Pull in whatever the outer scope wrote to a captured self-reference while this coroutine
+    // was suspended, so the resumed body observes it instead of the stale downgraded snapshot.
+    for (downgraded_cell, original) in pending_resyncs {
+        if let Some(original) = original.upgrade() {
+            write_cell(&downgraded_cell, read_cell(&original));
+        }
+    }
 
     #[cfg(feature = "debugger")]
     let (caller_call_stack, caller_current_node) = {
@@ -209,9 +227,10 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         DriveOutcome::Suspended(value) => {
             let value = into_runtime_value(value, &chunks);
             // Break captured self-reference cycles while this state is suspended.
-            downgrade_self_references(&mut frames, &mut operand_stack, handle);
+            let resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
             state.frames = frames;
             state.operand_stack = operand_stack;
+            state.pending_resyncs = resyncs;
             state.suspended_call_depth = suspended_call_depth;
             state.status = CoroutineStatus::Suspended;
             drop(state);
@@ -242,14 +261,29 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     }
 }
 
-fn downgrade_self_references(frames: &mut [Frame], operand_stack: &mut [StackValue], handle: &CoroutineHandle) {
+/// Breaks self-reference cycles in `frames`/`operand_stack` before a coroutine suspends.
+///
+/// A captured upvalue that directly holds this coroutine's own handle can't be weakened in
+/// place: it shares its cell with the caller's binding, and weakening that cell would sever the
+/// caller's own strong reference too. Instead its cell is swapped for a new one holding a weak
+/// handle, and the swap is recorded so the next resume can pull in whatever the caller wrote to
+/// the original cell in the meantime (see `resume`'s `pending_resyncs` handling). A handle
+/// nested inside an array/dict has no such aliasing concern, so it's cleared in place instead.
+fn downgrade_self_references(
+    frames: &mut [Frame],
+    operand_stack: &mut [StackValue],
+    handle: &CoroutineHandle,
+) -> Vec<(Cell, WeakCell)> {
+    let mut resyncs = Vec::new();
     for frame in frames {
         frame.locals.downgrade_coroutine_references(handle);
         if let Some(upvalues) = &mut frame.upvalues {
-            // Do not weaken the caller's shared binding.
             for upvalue in Shared::make_mut(upvalues) {
                 if let Some(weak_cell) = weak_coroutine_cell(upvalue, handle) {
+                    resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(upvalue)));
                     *upvalue = weak_cell;
+                } else {
+                    clear_nested_self_reference_in_cell(upvalue, handle);
                 }
             }
         }
@@ -257,4 +291,5 @@ fn downgrade_self_references(frames: &mut [Frame], operand_stack: &mut [StackVal
     for value in operand_stack {
         value.downgrade_coroutine_reference(handle);
     }
+    resyncs
 }
