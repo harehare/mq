@@ -184,7 +184,7 @@ pub(crate) fn vm_error_to_runtime_error(
     err.to_runtime_error(token, token_id, token_arena)
 }
 
-fn run_for_input<F>(input: RuntimeValue, mut run_one: F) -> Result<RuntimeValue, interpreter::VmError>
+fn map_input_values<F>(input: RuntimeValue, mut run_one: F) -> Result<RuntimeValue, interpreter::VmError>
 where
     F: FnMut(RuntimeValue) -> Result<RuntimeValue, interpreter::VmError>,
 {
@@ -952,6 +952,45 @@ fn binding_values(bindings: &[(crate::Ident, RuntimeValue)]) -> Vec<RuntimeValue
     bindings.iter().map(|(_, value)| value.clone()).collect()
 }
 
+type CapturedBindings = Vec<(crate::Ident, RuntimeValue)>;
+
+/// Runs each input with the latest captured bindings and returns the final successful capture.
+///
+/// Session execution uses this for both normal and debugger-enabled evaluation. The caller owns
+/// any debugger-specific error reporting, while this helper preserves the shared state transition.
+fn run_inputs_with_captures<I, F>(
+    inputs: I,
+    initial_values: Vec<RuntimeValue>,
+    mut run_one: F,
+) -> Result<(Vec<RuntimeValue>, Option<CapturedBindings>), interpreter::VmError>
+where
+    I: Iterator<Item = RuntimeValue>,
+    F: FnMut(RuntimeValue, &[RuntimeValue]) -> Result<(RuntimeValue, CapturedBindings), interpreter::VmError>,
+{
+    let mut values = Vec::new();
+    let mut current_values = initial_values;
+    let mut captured = None;
+    for input in inputs {
+        let value = map_input_values(input, |value| {
+            let (value, newly_captured) = run_one(value, &current_values)?;
+            current_values = binding_values(&newly_captured);
+            captured = Some(newly_captured);
+            Ok(value)
+        })?;
+        values.push(value);
+    }
+    Ok((values, captured))
+}
+
+/// Runs each input through a single stateless evaluation step.
+fn run_inputs<I, F>(inputs: I, mut run_one: F) -> Result<Vec<RuntimeValue>, interpreter::VmError>
+where
+    I: Iterator<Item = RuntimeValue>,
+    F: FnMut(RuntimeValue) -> Result<RuntimeValue, interpreter::VmError>,
+{
+    inputs.map(|input| map_input_values(input, &mut run_one)).collect()
+}
+
 fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -> Vec<crate::Ident> {
     let declared_before = let_names_before_nodes(before);
     let mut names: Vec<crate::Ident> = seed
@@ -1006,28 +1045,19 @@ where
         &context.preresolved_module_vars,
     )?;
 
-    let mut values = Vec::new();
-    let mut before_bindings = Vec::new();
-    let mut current_values = seed.seed_values.clone();
-    for input in inputs {
-        let result = run_for_input(input, |value| {
-            let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
-                &before_compiled,
-                value,
-                &current_values,
-                context.run_options(remaining_timeout(deadline)),
-                &before_names,
-                interpreter::ExecutionPools::default(),
-            );
-            if result.is_ok() {
-                current_values = binding_values(&captured);
-                before_bindings = captured;
-            }
-            result
-        })
-        .map_err(Error::from)?;
-        values.push(result);
-    }
+    let (values, before_bindings) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
+        let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
+            &before_compiled,
+            value,
+            bindings,
+            context.run_options(remaining_timeout(deadline)),
+            &before_names,
+            interpreter::ExecutionPools::default(),
+        );
+        result.map(|value| (value, captured))
+    })
+    .map_err(Error::from)?;
+    let before_bindings = before_bindings.unwrap_or_default();
 
     let aggregate_program = program_after_nodes(before, after);
     let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
@@ -1086,28 +1116,18 @@ where
         &context.preresolved_module_vars,
     )?;
 
-    let mut values = Vec::new();
-    let mut current_values = seed.seed_values.clone();
-    let mut captured: Option<Vec<(crate::Ident, RuntimeValue)>> = None;
-    for input in inputs {
-        let result = run_for_input(input, |v| {
-            let (result, newly_captured, _) = interpreter::run_with_globals_capturing_locals(
-                &compiled,
-                v,
-                &current_values,
-                context.run_options(remaining_timeout(deadline)),
-                &seed.capture_names,
-                interpreter::ExecutionPools::default(),
-            );
-            if result.is_ok() {
-                current_values = binding_values(&newly_captured);
-                captured = Some(newly_captured);
-            }
-            result
-        })
-        .map_err(Error::from)?;
-        values.push(result);
-    }
+    let (values, captured) = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
+        let (result, newly_captured, _) = interpreter::run_with_globals_capturing_locals(
+            &compiled,
+            value,
+            bindings,
+            context.run_options(remaining_timeout(deadline)),
+            &seed.capture_names,
+            interpreter::ExecutionPools::default(),
+        );
+        result.map(|value| (value, newly_captured))
+    })
+    .map_err(Error::from)?;
 
     if let Some(captured) = captured {
         store_session(session, session_bindings_from_captured(&compiled, captured));
@@ -1158,33 +1178,22 @@ where
         engine.host_functions.clone(),
     );
 
-    let mut values = Vec::new();
-    let mut before_bindings = Vec::new();
-    let mut current_values = seed.seed_values.clone();
-    for input in inputs {
-        let result = run_for_input(input, |value| {
-            let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
-                &before_compiled,
-                value,
-                &current_values,
-                engine.run_options(remaining_timeout(deadline)),
-                &before_names,
-                &mut hook,
-            );
-            if result.is_ok() {
-                current_values = binding_values(&captured);
-                before_bindings = captured;
-            }
-            result
-        });
-        match result {
-            Ok(value) => values.push(value),
-            Err(error) => {
-                hook.notify_error(&error);
-                return Err(error.into());
-            }
-        }
-    }
+    let input_result = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
+        let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+            &before_compiled,
+            value,
+            bindings,
+            engine.run_options(remaining_timeout(deadline)),
+            &before_names,
+            &mut hook,
+        );
+        result.map(|value| (value, captured))
+    });
+    let (values, before_bindings) = input_result.map_err(|error| {
+        hook.notify_error(&error);
+        Error::from(error)
+    })?;
+    let before_bindings = before_bindings.unwrap_or_default();
 
     let aggregate_program = program_after_nodes(before, after);
     let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
@@ -1262,33 +1271,21 @@ where
         context.engine.host_functions.clone(),
     );
 
-    let mut values = Vec::new();
-    let mut current_values = seed.seed_values.clone();
-    let mut captured: Option<Vec<(crate::Ident, RuntimeValue)>> = None;
-    for input in inputs {
-        let result = run_for_input(input, |v| {
-            let (result, newly_captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
-                &compiled,
-                v,
-                &current_values,
-                context.engine.run_options(remaining_timeout(deadline)),
-                &seed.capture_names,
-                &mut hook,
-            );
-            if result.is_ok() {
-                current_values = binding_values(&newly_captured);
-                captured = Some(newly_captured);
-            }
-            result
-        });
-        match result {
-            Ok(value) => values.push(value),
-            Err(error) => {
-                hook.notify_error(&error);
-                return Err(error.into());
-            }
-        }
-    }
+    let input_result = run_inputs_with_captures(inputs, seed.seed_values.clone(), |value, bindings| {
+        let (result, newly_captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
+            &compiled,
+            value,
+            bindings,
+            context.engine.run_options(remaining_timeout(deadline)),
+            &seed.capture_names,
+            &mut hook,
+        );
+        result.map(|value| (value, newly_captured))
+    });
+    let (values, captured) = input_result.map_err(|error| {
+        hook.notify_error(&error);
+        Error::from(error)
+    })?;
 
     if let Some(captured) = captured {
         store_session(session, session_bindings_from_captured(&compiled, captured));
@@ -1378,21 +1375,17 @@ where
             &global_names,
             &context.preresolved_module_vars,
         )?;
-        return inputs
-            .map(|input| {
-                run_for_input(input, |v| {
-                    interpreter::run_with_globals(
-                        &compiled,
-                        v,
-                        context.host_functions,
-                        remaining_timeout(deadline),
-                        context.max_call_stack_depth,
-                        context.global_bindings,
-                    )
-                })
-                .map_err(Error::from)
-            })
-            .collect();
+        return run_inputs(inputs, |value| {
+            interpreter::run_with_globals(
+                &compiled,
+                value,
+                context.host_functions,
+                remaining_timeout(deadline),
+                context.max_call_stack_depth,
+                context.global_bindings,
+            )
+        })
+        .map_err(Error::from);
     };
     let compiled = compiler::compile_program_for_engine(
         &before.to_vec(),
@@ -1404,25 +1397,21 @@ where
     let let_names = let_names_before_nodes(before);
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
-        inputs
-            .map(|input| {
-                run_for_input(input, |v| {
-                    interpreter::run_with_globals(
-                        &compiled,
-                        v,
-                        context.host_functions,
-                        remaining_timeout(deadline),
-                        context.max_call_stack_depth,
-                        context.global_bindings,
-                    )
-                })
-                .map_err(Error::from)
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        run_inputs(inputs, |value| {
+            interpreter::run_with_globals(
+                &compiled,
+                value,
+                context.host_functions,
+                remaining_timeout(deadline),
+                context.max_call_stack_depth,
+                context.global_bindings,
+            )
+        })
+        .map_err(Error::from)?
     } else {
         inputs
             .map(|input| {
-                run_for_input(input, |v| {
+                map_input_values(input, |v| {
                     let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
                         &compiled,
                         v,
@@ -1482,27 +1471,21 @@ where
             context.engine.module_loader.with_same_resolver(),
             context.engine.host_functions.clone(),
         );
-        return inputs
-            .map(|input| {
-                match run_for_input(input, |v| {
-                    interpreter::run_with_debug_hook_and_globals(
-                        &compiled,
-                        v,
-                        context.engine.host_functions,
-                        remaining_timeout(deadline),
-                        context.engine.max_call_stack_depth,
-                        context.engine.global_bindings,
-                        &mut hook,
-                    )
-                }) {
-                    Ok(value) => Ok(value),
-                    Err(error) => {
-                        hook.notify_error(&error);
-                        Err(error.into())
-                    }
-                }
-            })
-            .collect();
+        return run_inputs(inputs, |value| {
+            interpreter::run_with_debug_hook_and_globals(
+                &compiled,
+                value,
+                context.engine.host_functions,
+                remaining_timeout(deadline),
+                context.engine.max_call_stack_depth,
+                context.engine.global_bindings,
+                &mut hook,
+            )
+        })
+        .map_err(|error| {
+            hook.notify_error(&error);
+            Error::from(error)
+        });
     };
     let compiled = compiler::compile_program_for_engine(
         &before.to_vec(),
@@ -1523,31 +1506,25 @@ where
     let let_names = let_names_before_nodes(before);
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
-        inputs
-            .map(|input| {
-                match run_for_input(input, |v| {
-                    interpreter::run_with_debug_hook_and_globals(
-                        &compiled,
-                        v,
-                        context.engine.host_functions,
-                        remaining_timeout(deadline),
-                        context.engine.max_call_stack_depth,
-                        context.engine.global_bindings,
-                        &mut hook,
-                    )
-                }) {
-                    Ok(value) => Ok(value),
-                    Err(error) => {
-                        hook.notify_error(&error);
-                        Err(Error::from(error))
-                    }
-                }
-            })
-            .collect::<Result<Vec<_>, Error>>()?
+        run_inputs(inputs, |value| {
+            interpreter::run_with_debug_hook_and_globals(
+                &compiled,
+                value,
+                context.engine.host_functions,
+                remaining_timeout(deadline),
+                context.engine.max_call_stack_depth,
+                context.engine.global_bindings,
+                &mut hook,
+            )
+        })
+        .map_err(|error| {
+            hook.notify_error(&error);
+            Error::from(error)
+        })?
     } else {
         inputs
             .map(|input| {
-                match run_for_input(input, |v| {
+                match map_input_values(input, |v| {
                     let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
                         &compiled,
                         v,
