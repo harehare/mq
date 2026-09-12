@@ -204,9 +204,22 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
 
     // Pull in whatever the outer scope wrote to a captured self-reference while this coroutine
     // was suspended, so the resumed body observes it instead of the stale downgraded snapshot.
+    // A pull that turns up this same coroutine again (the outer binding still holds it, e.g. it
+    // was never resumed before this write-time downgrade) is written back downgraded rather than
+    // literally, and the pairing is kept in `carried_resyncs` for the next resume: applying it
+    // only once would let `original` diverge from `downgraded_cell` forever the moment this
+    // resume's own suspension-time scan finds nothing left to downgrade there.
+    let mut carried_resyncs = Vec::new();
     for (downgraded_cell, original) in pending_resyncs {
         if let Some(original) = original.upgrade() {
-            write_cell(&downgraded_cell, read_cell(&original));
+            let mut value = read_cell(&original);
+            let is_direct_self_reference =
+                matches!(&value, StackValue::Value(RuntimeValue::Coroutine(h)) if same_handle(h, handle));
+            value.downgrade_coroutine_reference(handle);
+            write_cell(&downgraded_cell, value);
+            if is_direct_self_reference {
+                carried_resyncs.push((downgraded_cell, Shared::downgrade(&original)));
+            }
         }
     }
 
@@ -242,7 +255,8 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             let resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
             state.frames = frames;
             state.operand_stack = operand_stack;
-            state.pending_resyncs = resyncs;
+            state.pending_resyncs = carried_resyncs;
+            state.pending_resyncs.extend(resyncs);
             state.suspended_call_depth = suspended_call_depth;
             state.status = CoroutineStatus::Suspended;
             drop(state);
@@ -308,4 +322,24 @@ fn downgrade_self_references(
         value.downgrade_coroutine_reference(handle);
     }
     resyncs
+}
+
+/// Breaks a self-reference cycle the moment it's created, instead of waiting for `handle`'s
+/// first `Yield`: e.g. `s = g()` where `g`'s body captures `s` gives `handle`'s own frame an
+/// upvalue cell now holding `handle` itself, before the coroutine has ever suspended.
+/// `downgrade_self_references` only runs from `resume`'s `Suspended` arm, so an unstarted (or
+/// currently-suspended, if the caller writes into it again) coroutine would otherwise never reach
+/// that cleanup and leak the cycle for good. No-op while `Running`, `Completed`, or `Failed`:
+/// those either have their frames borrowed elsewhere or already released them.
+pub(crate) fn downgrade_self_references_before_resume(handle: &CoroutineHandle) {
+    let mut state = borrow_mut(handle);
+    if !matches!(state.status, CoroutineStatus::Created | CoroutineStatus::Suspended) {
+        return;
+    }
+    let mut frames = std::mem::take(&mut state.frames);
+    let mut operand_stack = std::mem::take(&mut state.operand_stack);
+    let resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
+    state.frames = frames;
+    state.operand_stack = operand_stack;
+    state.pending_resyncs.extend(resyncs);
 }

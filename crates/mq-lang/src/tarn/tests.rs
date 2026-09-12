@@ -3304,6 +3304,26 @@ fn suspended_generator_with_a_captured_self_reference_is_released() {
 }
 
 #[test]
+fn unstarted_generator_with_a_captured_self_reference_is_released() {
+    // Same self-reference as above, but `s` is never `next()`-ed: `g`'s frame captures `s`'s
+    // cell, and `s = g()` writes the coroutine into that very cell before it ever suspends.
+    // `downgrade_self_references` (suspend-time only) can't reach this; the write itself must
+    // break the cycle.
+    let stream = run("var s = None | let g = fn(): yield: s; | s = g() | s");
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the unstarted coroutine must not retain itself"
+    );
+}
+
+#[test]
 fn calling_a_generator_does_not_execute_it() {
     // Calling `g()` alone (no `next()`) must produce a coroutine, not run the body, so `marker`
     // stays unset.
