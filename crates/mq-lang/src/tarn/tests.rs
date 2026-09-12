@@ -3400,16 +3400,20 @@ fn dropping_two_mutually_capturing_coroutines_releases_both(#[case] code: &str) 
     assert!(weak_gb.upgrade().is_none(), "gb must not retain ga -> gb -> ga");
 }
 
-#[test]
-fn mutually_capturing_coroutines_still_read_each_other_after_the_cycle_is_broken() {
-    let code = "var a = None | var b = None \
-        | let ga = fn(): yield: b; \
-        | let gb = fn(): yield: a; \
-        | a = ga() | b = gb() | next(a)";
-    let result = run(code);
+#[rstest]
+#[case::a_reads_b("next(a)")]
+#[case::b_reads_a("next(b)")]
+fn mutually_capturing_coroutines_still_read_each_other_after_the_cycle_is_broken(#[case] read_expr: &str) {
+    let code = format!(
+        "var a = None | var b = None \
+         | let ga = fn(): yield: b; \
+         | let gb = fn(): yield: a; \
+         | a = ga() | b = gb() | {read_expr}"
+    );
+    let result = run(&code);
     assert!(
         matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
-        "ga must still read back gb through the broken cycle, got {:?}",
+        "must still read back the peer through the broken cycle, got {:?}",
         dict_field(&result, "value")
     );
 }
