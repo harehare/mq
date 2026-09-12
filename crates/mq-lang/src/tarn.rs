@@ -213,7 +213,7 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
         RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
         RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
-        RuntimeValue::Coroutine(_) => mq_markdown::Node::Empty,
+        RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
             .iter()
             .filter_map(|v| if v.is_none() { None } else { Some(v.to_string()) })

@@ -3350,6 +3350,83 @@ fn unstarted_generator_nested_in_a_captured_container_is_released(#[case] contai
     );
 }
 
+#[rstest]
+#[case::array("[s]", "holder[0]")]
+#[case::dict(r#"{"stream": s}"#, r#"holder["stream"]"#)]
+fn generator_reads_its_own_coroutine_back_through_a_captured_container(
+    #[case] container: &str,
+    #[case] read_expr: &str,
+) {
+    let code = format!(
+        "var holder = [] | let g = fn(): yield: 0 | yield: {read_expr}; | let s = g() | holder = {container} | next(s) | next(s)"
+    );
+    let result = run(&code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "the generator must read back its own coroutine through the captured container, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
+#[rstest]
+#[case::unstarted(
+    "var a = None | var b = None \
+     | let ga = fn(): yield: b; \
+     | let gb = fn(): yield: a; \
+     | a = ga() | b = gb() | [a, b]"
+)]
+#[case::suspended(
+    "var a = None | var b = None \
+     | let ga = fn(): yield: 0 | yield: b; \
+     | let gb = fn(): yield: 0 | yield: a; \
+     | a = ga() | b = gb() | next(a) | next(b) | [a, b]"
+)]
+fn dropping_two_mutually_capturing_coroutines_releases_both(#[case] code: &str) {
+    let value = run(code);
+    let RuntimeValue::Array(pair) = &value else {
+        panic!("expected an array, got {value:?}");
+    };
+    let RuntimeValue::Coroutine(ga) = &pair[0] else {
+        panic!("expected a coroutine, got {:?}", pair[0]);
+    };
+    let RuntimeValue::Coroutine(gb) = &pair[1] else {
+        panic!("expected a coroutine, got {:?}", pair[1]);
+    };
+    let (weak_ga, weak_gb) = (Shared::downgrade(ga), Shared::downgrade(gb));
+
+    drop(value);
+
+    assert!(weak_ga.upgrade().is_none(), "ga must not retain gb -> ga -> gb");
+    assert!(weak_gb.upgrade().is_none(), "gb must not retain ga -> gb -> ga");
+}
+
+#[test]
+fn mutually_capturing_coroutines_still_read_each_other_after_the_cycle_is_broken() {
+    let code = "var a = None | var b = None \
+        | let ga = fn(): yield: b; \
+        | let gb = fn(): yield: a; \
+        | a = ga() | b = gb() | next(a)";
+    let result = run(code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "ga must still read back gb through the broken cycle, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
+#[test]
+fn a_coroutine_capturing_another_non_cyclically_is_unaffected() {
+    // `ga` captures the coroutine `gb`, but `gb` doesn't capture `ga` back: not a cycle, so the
+    // mutual-capture check must not touch it.
+    let code = "let g = fn(): yield: 1; | let gb = g() | let ga = fn(): yield: gb; | next(ga())";
+    let result = run(code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "a non-cyclic capture must be unaffected by mutual-cycle detection, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
 #[test]
 fn calling_a_generator_does_not_execute_it() {
     // Calling `g()` alone (no `next()`) must produce a coroutine, not run the body, so `marker`

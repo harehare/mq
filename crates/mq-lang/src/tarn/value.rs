@@ -23,6 +23,9 @@ pub(crate) enum StackValue {
     Value(RuntimeValue),
     Closure(Shared<Closure>),
     WeakCoroutine(CoroutineWeakHandle),
+    /// Like `WeakCoroutine`, but for a self-reference nested inside a captured array/dict: the
+    /// container, with `RuntimeValue::WeakCoroutine` markers standing in for cleared entries.
+    NestedWeakCoroutine(RuntimeValue),
 }
 
 impl StackValue {
@@ -31,6 +34,7 @@ impl StackValue {
             StackValue::WeakCoroutine(handle) => upgrade_handle(handle)
                 .map(|handle| StackValue::Value(RuntimeValue::Coroutine(handle)))
                 .unwrap_or(StackValue::Value(RuntimeValue::None)),
+            StackValue::NestedWeakCoroutine(value) => StackValue::Value(resolve_weak_coroutines(value)),
             value => value.clone(),
         }
     }
@@ -40,7 +44,11 @@ impl StackValue {
             StackValue::Value(RuntimeValue::Coroutine(value)) if same_handle(value, handle) => {
                 *self = StackValue::WeakCoroutine(downgrade_handle(handle));
             }
-            StackValue::Value(value) => clear_self_reference(value, handle),
+            StackValue::Value(value) if value_contains_self_reference(value, handle) => {
+                let mut value = std::mem::take(value);
+                clear_self_reference(&mut value, handle);
+                *self = StackValue::NestedWeakCoroutine(value);
+            }
             _ => {}
         }
     }
@@ -78,6 +86,22 @@ fn collect_coroutine_handles(value: &RuntimeValue, handles: &mut Vec<CoroutineHa
     }
 }
 
+/// Collects coroutine handles `value` strongly holds (a bare `WeakCoroutine`/`NestedWeakCoroutine`
+/// doesn't count — it isn't an owning edge).
+pub(crate) fn collect_coroutine_handles_in_stack_value(value: &StackValue, handles: &mut Vec<CoroutineHandle>) {
+    if let StackValue::Value(value) = value {
+        collect_coroutine_handles(value, handles);
+    }
+}
+
+/// Like [`collect_coroutine_handles_in_stack_value`], reading `cell`'s raw content directly.
+pub(crate) fn collect_coroutine_handles_in_cell(cell: &Cell, handles: &mut Vec<CoroutineHandle>) {
+    #[cfg(not(feature = "sync"))]
+    collect_coroutine_handles_in_stack_value(&cell.borrow(), handles);
+    #[cfg(feature = "sync")]
+    collect_coroutine_handles_in_stack_value(&cell.read().unwrap(), handles);
+}
+
 /// Cleans up coroutine cycles after their value is stored.
 fn downgrade_coroutine_handles(handles: Vec<CoroutineHandle>) {
     for handle in handles {
@@ -85,11 +109,11 @@ fn downgrade_coroutine_handles(handles: Vec<CoroutineHandle>) {
     }
 }
 
-/// Clears `handle`'s own coroutine out of any array/dict `value` holds it in, breaking the
-/// reference cycle a suspended coroutine would otherwise form through a captured container.
-/// Direct `RuntimeValue::Coroutine` matches are handled separately (see
-/// [`StackValue::downgrade_coroutine_reference`] and [`weak_coroutine_cell`]), so those stay
-/// weak-and-upgradable instead of being cleared outright.
+/// Downgrades `handle`'s own coroutine, wherever `value` holds it nested in an array/dict, to a
+/// resolvable `RuntimeValue::WeakCoroutine`, breaking the reference cycle a suspended coroutine
+/// would otherwise form through a captured container. Direct `RuntimeValue::Coroutine` matches
+/// are handled separately (see [`StackValue::downgrade_coroutine_reference`] and
+/// [`weak_coroutine_cell`]).
 fn clear_self_reference(value: &mut RuntimeValue, handle: &CoroutineHandle) {
     match value {
         RuntimeValue::Array(array) if array.iter().any(|item| value_contains_self_reference(item, handle)) => {
@@ -102,19 +126,47 @@ fn clear_self_reference(value: &mut RuntimeValue, handle: &CoroutineHandle) {
                 clear_self_reference(item, handle);
             }
         }
-        RuntimeValue::Coroutine(v) if same_handle(v, handle) => *value = RuntimeValue::None,
+        RuntimeValue::Coroutine(v) if same_handle(v, handle) => {
+            *value = RuntimeValue::WeakCoroutine(downgrade_handle(v));
+        }
         _ => {}
+    }
+}
+
+/// Whether `value` holds a `WeakCoroutine` marker, directly or nested in an array/dict.
+fn contains_weak_coroutine(value: &RuntimeValue) -> bool {
+    match value {
+        RuntimeValue::WeakCoroutine(_) => true,
+        RuntimeValue::Array(array) => array.iter().any(contains_weak_coroutine),
+        RuntimeValue::Dict(map) => map.values().any(contains_weak_coroutine),
+        _ => false,
+    }
+}
+
+/// Resolves every `WeakCoroutine` marker in `value` back to `Coroutine` (or `None`, if the
+/// coroutine is truly gone), rebuilding containers only where a marker was actually found.
+pub(crate) fn resolve_weak_coroutines(value: &RuntimeValue) -> RuntimeValue {
+    match value {
+        RuntimeValue::WeakCoroutine(weak) => upgrade_handle(weak)
+            .map(RuntimeValue::Coroutine)
+            .unwrap_or(RuntimeValue::None),
+        RuntimeValue::Array(array) if array.iter().any(contains_weak_coroutine) => {
+            RuntimeValue::Array(Shared::new(array.iter().map(resolve_weak_coroutines).collect()))
+        }
+        RuntimeValue::Dict(map) if map.values().any(contains_weak_coroutine) => RuntimeValue::Dict(Shared::new(
+            map.iter().map(|(k, v)| (*k, resolve_weak_coroutines(v))).collect(),
+        )),
+        _ => value.clone(),
     }
 }
 
 /// Detaches a frame-local reference to `cell` from `handle`'s own coroutine nested inside a
 /// captured array/dict, without mutating `cell` itself: `cell` may still be the caller's own
-/// binding, and clearing the self-reference there would corrupt data the caller reads later.
-/// Returns a new, privately-owned cell holding a sanitized copy (the nested self-reference
-/// cleared to `None`) for the frame to use instead, or `None` if `cell` holds no such
-/// self-reference. Callers must downgrade a reference to the original `cell` before installing
-/// the replacement, so `resume`'s `pending_resyncs` handling can restore whatever the caller
-/// later writes.
+/// binding, and downgrading the self-reference there would corrupt data the caller reads later.
+/// Returns a new, privately-owned cell holding a sanitized copy for the frame to use instead, or
+/// `None` if `cell` holds no such self-reference. Callers must downgrade a reference to the
+/// original `cell` before installing the replacement, so `resume`'s `pending_resyncs` handling
+/// can restore whatever the caller later writes.
 pub(crate) fn sanitize_nested_self_reference(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
     // `read_cell` upgrades a `WeakCoroutine` back into a literal `Coroutine` for ordinary reads,
     // which would make an already-downgraded cell look like a fresh nested self-reference here
@@ -123,15 +175,14 @@ pub(crate) fn sanitize_nested_self_reference(cell: &Cell, handle: &CoroutineHand
     if is_weak_coroutine(cell) {
         return None;
     }
-    let mut sanitized = read_cell(cell);
-    let StackValue::Value(value) = &mut sanitized else {
+    let StackValue::Value(mut value) = read_cell(cell) else {
         return None;
     };
-    if !value_contains_self_reference(value, handle) {
+    if !value_contains_self_reference(&value, handle) {
         return None;
     }
-    clear_self_reference(value, handle);
-    Some(new_cell(sanitized))
+    clear_self_reference(&mut value, handle);
+    Some(new_cell(StackValue::NestedWeakCoroutine(value)))
 }
 
 /// A closure on the VM operand stack.
@@ -431,6 +482,33 @@ impl Locals {
         resyncs
     }
 
+    /// Read-only sibling of [`Locals::downgrade_coroutine_references`]: collects coroutine
+    /// handles these locals strongly hold, for pairwise-mutual-cycle detection.
+    pub(crate) fn collect_coroutine_handles(&self, handles: &mut Vec<CoroutineHandle>) {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                for slot in slots {
+                    collect_coroutine_handles_in_stack_value(slot, handles);
+                }
+            }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                for (slot, cell) in slots.iter().zip(captured) {
+                    match cell {
+                        Some(cell) => collect_coroutine_handles_in_cell(cell, handles),
+                        None => collect_coroutine_handles_in_stack_value(slot, handles),
+                    }
+                }
+            }
+            Locals::Boxed(slots) => {
+                for cell in slots {
+                    collect_coroutine_handles_in_cell(cell, handles);
+                }
+            }
+        }
+    }
+
     /// Appends to an array stored in a local slot.
     pub(crate) fn append_to_array_at(&mut self, slot: u16, value: RuntimeValue) -> Result<(), &'static str> {
         match self {
@@ -722,7 +800,9 @@ mod tests {
         match value {
             StackValue::Value(value) => value,
             StackValue::Closure(_) => panic!("test locals only contain runtime values"),
-            StackValue::WeakCoroutine(_) => panic!("test locals only contain runtime values"),
+            StackValue::WeakCoroutine(_) | StackValue::NestedWeakCoroutine(_) => {
+                panic!("test locals only contain runtime values")
+            }
         }
     }
 }
