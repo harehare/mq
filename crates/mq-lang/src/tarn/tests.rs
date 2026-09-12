@@ -2411,7 +2411,7 @@ fn unchanged_engine_globals_reuse_their_vm_snapshot() {
 #[test]
 fn cached_program_reflects_updated_global_in_module_var_initializer() {
     let mut engine = crate::DefaultEngine::default();
-    engine.define_value("g", RuntimeValue::Number(1.into()));
+    engine.define_value("g", RuntimeValue::Number(1.into())).unwrap();
     let compiled = engine.compile("module m: let x = g end | m::x").unwrap();
 
     assert_eq!(
@@ -2424,7 +2424,7 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
 
     // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
     // must invalidate that cache, not just the plain-global lookup environment.
-    engine.define_value("g", RuntimeValue::Number(2.into()));
+    engine.define_value("g", RuntimeValue::Number(2.into())).unwrap();
 
     assert_eq!(
         engine

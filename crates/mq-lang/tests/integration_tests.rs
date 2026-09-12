@@ -3547,32 +3547,32 @@ fn engine() -> DefaultEngine {
     Ok(vec![RuntimeValue::Number(0.into())].into())
 )]
 #[case::next_stored_as_value(
-    "def g(): yield: 3; | let advance = next | let s = g() | advance(s) | .value",
+    "def g(): yield: 3; | let advance = next | let s = g() | let result = advance(s) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(3.into())].into())
 )]
 #[case::next_passed_as_argument(
-    "def apply(f, s): f(s); | def g(): yield: 4; | let s = g() | apply(next, s) | .value",
+    "def apply(f, s): f(s); | def g(): yield: 4; | let s = g() | let result = apply(next, s) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(4.into())].into())
 )]
 #[case::next_captured_and_piped(
-    "def g(): yield: 5; | let advance = next | let apply = fn(s): s | advance(); | let s = g() | apply(s) | .value",
+    "def g(): yield: 5; | let advance = next | let apply = fn(s): s | advance(); | let s = g() | let result = apply(s) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(5.into())].into())
 )]
 #[case::next_loaded_from_container(
-    "def g(): yield: 6; | let helpers = [next] | let s = g() | helpers[0](s) | .value",
+    "def g(): yield: 6; | let helpers = [next] | let s = g() | let result = helpers[0](s) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(6.into())].into())
 )]
 #[case::send_stored_as_value(
-    "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | resume(s, 7) | .value",
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | let result = resume(s, 7) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(7.into())].into())
 )]
 #[case::send_passed_as_argument(
-    "def apply(f, s, value): f(s, value); | def g(): let value = yield: 1 | yield: value; | let s = g() | next(s) | apply(send, s, 8) | .value",
+    "def apply(f, s, value): f(s, value); | def g(): let value = yield: 1 | yield: value; | let s = g() | next(s) | let result = apply(send, s, 8) | get(result, \"value\")",
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::Number(8.into())].into())
 )]
@@ -3855,7 +3855,10 @@ fn recursively_resumed_generators_hit_the_engine_call_stack_limit(#[case] max_de
             std::iter::once(RuntimeValue::None),
         )
         .unwrap_err();
-    assert!(format!("{error}").contains("Maximum recursion depth exceeded ({max_depth})"));
+    assert_eq!(
+        error.cause.to_string(),
+        format!("Maximum recursion depth exceeded ({max_depth})")
+    );
 }
 
 #[rstest]
