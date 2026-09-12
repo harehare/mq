@@ -1,4 +1,8 @@
-use crate::{Ident, Shared, number::Number, tarn::interpreter::coroutine::CoroutineHandle};
+use crate::{
+    Ident, Shared,
+    number::Number,
+    tarn::interpreter::coroutine::{CoroutineHandle, CoroutineWeakHandle},
+};
 use indexmap::IndexMap;
 use mq_markdown::Node;
 use rustc_hash::FxBuildHasher;
@@ -101,6 +105,10 @@ pub enum RuntimeValue {
     /// from within the crate. Cloning shares progress: every clone drives the same coroutine.
     #[allow(private_interfaces)]
     Coroutine(CoroutineHandle),
+    /// A coroutine downgraded to break a capture cycle. Only ever lives inside a
+    /// `StackValue::NestedWeakCoroutine` cell, resolved before any other code sees it.
+    #[allow(private_interfaces)]
+    WeakCoroutine(CoroutineWeakHandle),
     /// An empty or null value.
     #[default]
     None,
@@ -123,6 +131,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Dict(a), RuntimeValue::Dict(b)) => a == b,
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::Coroutine(a), RuntimeValue::Coroutine(b)) => Shared::ptr_eq(a, b),
+            (RuntimeValue::WeakCoroutine(a), RuntimeValue::WeakCoroutine(b)) => a.ptr_eq(b),
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
         }
@@ -358,7 +367,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Dict(_) => self.string(),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
-            Self::Coroutine(_) => Cow::Borrowed("coroutine"),
+            Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
         };
         write!(f, "{}", value)
     }
@@ -476,6 +485,7 @@ impl RuntimeValue {
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Bytes(_) => "bytes",
             RuntimeValue::Coroutine(_) => "coroutine",
+            RuntimeValue::WeakCoroutine(_) => "coroutine",
         }
     }
 
@@ -551,7 +561,7 @@ impl RuntimeValue {
             | RuntimeValue::Dict(_) => true,
             RuntimeValue::VmClosure(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
-            RuntimeValue::Coroutine(_) => true,
+            RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -575,7 +585,7 @@ impl RuntimeValue {
             RuntimeValue::NativeFunction(..) => 0,
             RuntimeValue::CoroutineBuiltin(..) => 0,
             RuntimeValue::VmClosure(..) => 0,
-            RuntimeValue::Coroutine(..) => 0,
+            RuntimeValue::Coroutine(..) | RuntimeValue::WeakCoroutine(..) => 0,
         }
     }
 
@@ -654,7 +664,7 @@ impl RuntimeValue {
             Self::CoroutineBuiltin(_) => Cow::Borrowed("native_function"),
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
-            Self::Coroutine(_) => Cow::Borrowed("coroutine"),
+            Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
             Self::Dict(map) => {
                 let items = map
                     .iter()
@@ -815,7 +825,7 @@ impl RuntimeValues {
                             current_value.clone()
                         }
                         RuntimeValue::VmClosure(_) => current_value.clone(),
-                        RuntimeValue::Coroutine(_) => current_value.clone(),
+                        RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {

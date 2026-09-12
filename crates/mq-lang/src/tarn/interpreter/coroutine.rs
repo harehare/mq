@@ -15,8 +15,8 @@ use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{
-    Cell, StackValue, WeakCell, is_weak_self_reference, read_cell, sanitize_nested_self_reference, weak_coroutine_cell,
-    write_cell,
+    Cell, StackValue, WeakCell, collect_coroutine_handles_in_cell, collect_coroutine_handles_in_stack_value,
+    is_weak_self_reference, read_cell, sanitize_nested_self_reference, weak_coroutine_cell, write_cell,
 };
 use crate::{Ident, Shared, SharedCell, TokenArena};
 
@@ -277,7 +277,10 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         DriveOutcome::Suspended(value) => {
             let value = into_runtime_value(value, &chunks);
             // Break captured self-reference cycles while this state is suspended.
-            let resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
+            let mut resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
+            for peer in mutually_capturing_peers(handle, &frames, &operand_stack) {
+                resyncs.extend(downgrade_self_references(&mut frames, &mut operand_stack, &peer));
+            }
             state.frames = frames;
             state.operand_stack = operand_stack;
             state.pending_resyncs = carried_resyncs;
@@ -349,6 +352,48 @@ fn downgrade_self_references(
     resyncs
 }
 
+/// Coroutine handles `frames`/`operand_stack` directly hold (not following into any of those
+/// handles' own captured state).
+fn direct_coroutine_neighbors(frames: &[Frame], operand_stack: &[StackValue]) -> Vec<CoroutineHandle> {
+    let mut out = Vec::new();
+    for frame in frames {
+        frame.locals.collect_coroutine_handles(&mut out);
+        if let Some(upvalues) = &frame.upvalues {
+            for cell in upvalues.iter() {
+                collect_coroutine_handles_in_cell(cell, &mut out);
+            }
+        }
+    }
+    for value in operand_stack {
+        collect_coroutine_handles_in_stack_value(value, &mut out);
+    }
+    out
+}
+
+/// Whether `peer`'s own current frames directly hold `target`.
+fn peer_directly_references(peer: &CoroutineHandle, target: &CoroutineHandle) -> bool {
+    let state = borrow(peer);
+    direct_coroutine_neighbors(&state.frames, &state.operand_stack)
+        .iter()
+        .any(|h| same_handle(h, target))
+}
+
+/// Handles `handle` directly captures that also directly capture `handle` back: a 2-coroutine
+/// cycle closing right here (e.g. `a = ga()`, `b = gb()` where `ga` captures `b` and `gb`
+/// captures `a`). Breaking one edge of a 2-cycle fully eliminates it, so this covers the common
+/// "two generators capture each other" case without needing full graph reachability. Longer
+/// chains (`A -> B -> C -> A`) aren't detected.
+fn mutually_capturing_peers(
+    handle: &CoroutineHandle,
+    frames: &[Frame],
+    operand_stack: &[StackValue],
+) -> Vec<CoroutineHandle> {
+    direct_coroutine_neighbors(frames, operand_stack)
+        .into_iter()
+        .filter(|peer| !same_handle(peer, handle) && peer_directly_references(peer, handle))
+        .collect()
+}
+
 /// Breaks a self-reference cycle the moment it's created, instead of waiting for `handle`'s
 /// first `Yield`: e.g. `s = g()` where `g`'s body captures `s` gives `handle`'s own frame an
 /// upvalue cell now holding `handle` itself, before the coroutine has ever suspended.
@@ -363,7 +408,10 @@ pub(crate) fn downgrade_self_references_before_resume(handle: &CoroutineHandle) 
     }
     let mut frames = std::mem::take(&mut state.frames);
     let mut operand_stack = std::mem::take(&mut state.operand_stack);
-    let resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
+    let mut resyncs = downgrade_self_references(&mut frames, &mut operand_stack, handle);
+    for peer in mutually_capturing_peers(handle, &frames, &operand_stack) {
+        resyncs.extend(downgrade_self_references(&mut frames, &mut operand_stack, &peer));
+    }
     state.frames = frames;
     state.operand_stack = operand_stack;
     state.pending_resyncs.extend(resyncs);

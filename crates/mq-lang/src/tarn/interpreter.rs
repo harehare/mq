@@ -22,7 +22,7 @@ use super::compiler::CompiledProgram;
 #[cfg(feature = "debugger")]
 use super::value::Cell;
 use super::value::VmClosureValue;
-use super::value::{Closure, Locals, StackValue, read_cell, write_cell};
+use super::value::{Closure, Locals, StackValue, read_cell, resolve_weak_coroutines, write_cell};
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
 use crate::ast::constants::builtins;
@@ -503,6 +503,7 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
         StackValue::WeakCoroutine(handle) => coroutine::upgrade_handle(&handle)
             .map(RuntimeValue::Coroutine)
             .unwrap_or(RuntimeValue::None),
+        StackValue::NestedWeakCoroutine(value) => resolve_weak_coroutines(&value),
     }
 }
 
@@ -2173,7 +2174,7 @@ fn interp_string(parts: &[StackValue], chunks: &Shared<Vec<Chunk>>) -> RuntimeVa
                 let value = into_runtime_value(StackValue::Closure(Shared::clone(closure)), chunks);
                 let _ = write!(result, "{value}");
             }
-            StackValue::WeakCoroutine(_) => {
+            StackValue::WeakCoroutine(_) | StackValue::NestedWeakCoroutine(_) => {
                 let value = into_runtime_value(part.upgraded(), chunks);
                 let _ = write!(result, "{value}");
             }
