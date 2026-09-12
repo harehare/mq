@@ -330,23 +330,7 @@ pub(crate) struct VmEnvCacheKey {
 
 impl<T: ModuleResolver, IO: Io + Default> Default for VmState<T, IO> {
     fn default() -> Self {
-        Self {
-            options: Options::default(),
-            module_loader: ModuleLoader::new(T::default()),
-            io: Shared::new(IO::default()),
-            host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
-            global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
-            #[cfg(not(feature = "debugger"))]
-            module_cache_key: next_vm_module_cache_key(),
-            session: None,
-            #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
-            #[cfg(feature = "debugger")]
-            debugger: Shared::new(crate::SharedCell::new(Debugger::new())),
-            #[cfg(feature = "debugger")]
-            debugger_handler: Shared::new(crate::SharedCell::new(Box::new(
-                crate::runtime::debugger::DefaultDebuggerHandler,
-            ))),
-        }
+        Self::new(ModuleLoader::new(T::default()), Shared::new(IO::default()))
     }
 }
 
@@ -372,15 +356,13 @@ impl<T: ModuleResolver, IO: Io> Clone for VmState<T, IO> {
 
 impl<T: ModuleResolver, IO: Io + Default> VmState<T, IO> {
     pub(crate) fn with_module_loader(module_loader: ModuleLoader<T>) -> Self {
-        Self {
-            module_loader,
-            ..Default::default()
-        }
+        Self::new(module_loader, Shared::new(IO::default()))
     }
 }
 
 impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
-    pub(crate) fn with_module_loader_and_io(module_loader: ModuleLoader<T>, io: Shared<IO>) -> Self {
+    /// Creates VM state with its engine-owned services initialized consistently.
+    fn new(module_loader: ModuleLoader<T>, io: Shared<IO>) -> Self {
         Self {
             options: Options::default(),
             module_loader,
@@ -398,6 +380,10 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
                 crate::runtime::debugger::DefaultDebuggerHandler,
             ))),
         }
+    }
+
+    pub(crate) fn with_module_loader_and_io(module_loader: ModuleLoader<T>, io: Shared<IO>) -> Self {
+        Self::new(module_loader, io)
     }
 
     pub(crate) fn define(&self, name: crate::Ident, value: RuntimeValue) {
@@ -466,8 +452,35 @@ pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
     pub(crate) global_bindings: &'a [(crate::Ident, RuntimeValue)],
     /// `Some` when [`engine::Engine::enable_query_session`] is on.
     pub(crate) session: Option<&'a Shared<crate::SharedCell<Vec<SessionBinding>>>>,
-    /// Module var values computed once per eval — see [`resolve_module_prelude_globals`].
+    /// Module var values computed once per eval. See [`resolve_module_prelude_globals`].
     pub(crate) preresolved_module_vars: compiler::ResolvedModuleVars,
+}
+
+impl<'a, R: ModuleResolver> EngineRunContext<'a, R> {
+    /// Clones only the services a fresh compilation may mutate, leaving an evaluation's
+    /// pre-resolved module values intentionally empty.
+    fn fork_for_compilation(&self) -> Self {
+        Self {
+            host_functions: self.host_functions,
+            timeout: self.timeout,
+            max_call_stack_depth: self.max_call_stack_depth,
+            token_arena: Shared::clone(&self.token_arena),
+            module_loader: self.module_loader.with_same_resolver(),
+            global_bindings: self.global_bindings,
+            session: self.session,
+            preresolved_module_vars: compiler::ResolvedModuleVars::default(),
+        }
+    }
+
+    /// Builds the interpreter settings for one input, using the caller's shared deadline.
+    fn run_options(&self, timeout: Option<Duration>) -> interpreter::RunOptions<'a> {
+        interpreter::RunOptions {
+            host_functions: self.host_functions,
+            timeout,
+            max_call_stack_depth: self.max_call_stack_depth,
+            global_bindings: self.global_bindings,
+        }
+    }
 }
 
 #[cfg(feature = "debugger")]
@@ -801,16 +814,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     cached
                 }
                 _ => {
-                    let mut cache_context = EngineRunContext {
-                        host_functions: self.engine.host_functions,
-                        timeout: self.engine.timeout,
-                        max_call_stack_depth: self.engine.max_call_stack_depth,
-                        token_arena: Shared::clone(&self.engine.token_arena),
-                        module_loader: self.engine.module_loader.with_same_resolver(),
-                        global_bindings: self.engine.global_bindings,
-                        session: self.engine.session,
-                        preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-                    };
+                    let mut cache_context = self.engine.fork_for_compilation();
                     let prepared_program =
                         build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
                             .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
@@ -843,16 +847,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 program,
                 input,
                 DebugRunContext {
-                    engine: EngineRunContext {
-                        host_functions: self.engine.host_functions,
-                        timeout: self.engine.timeout,
-                        max_call_stack_depth: self.engine.max_call_stack_depth,
-                        token_arena: Shared::clone(&self.engine.token_arena),
-                        module_loader: self.engine.module_loader.with_same_resolver(),
-                        global_bindings: self.engine.global_bindings,
-                        session: self.engine.session,
-                        preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-                    },
+                    engine: self.engine.fork_for_compilation(),
                     debugger: Shared::clone(&self.debugger),
                     handler: Shared::clone(&self.debugger_handler),
                     source: self.source.clone(),
@@ -864,20 +859,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
             let prepared_program = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
                 .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
             let prepared_program = prepared_program.as_ref().unwrap_or(program);
-            compile_and_run_many(
-                prepared_program,
-                input,
-                EngineRunContext {
-                    host_functions: self.engine.host_functions,
-                    timeout: self.engine.timeout,
-                    max_call_stack_depth: self.engine.max_call_stack_depth,
-                    token_arena: Shared::clone(&self.engine.token_arena),
-                    module_loader: self.engine.module_loader.with_same_resolver(),
-                    global_bindings: self.engine.global_bindings,
-                    session: self.engine.session,
-                    preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-                },
-            )
+            compile_and_run_many(prepared_program, input, self.engine.fork_for_compilation())
         }
     }
 }
@@ -965,6 +947,11 @@ fn extend_unique(names: &mut Vec<crate::Ident>, additional: impl IntoIterator<It
     }
 }
 
+/// Clones the values from named bindings while preserving their compiler slot order.
+fn binding_values(bindings: &[(crate::Ident, RuntimeValue)]) -> Vec<RuntimeValue> {
+    bindings.iter().map(|(_, value)| value.clone()).collect()
+}
+
 fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -> Vec<crate::Ident> {
     let declared_before = let_names_before_nodes(before);
     let mut names: Vec<crate::Ident> = seed
@@ -1028,17 +1015,12 @@ where
                 &before_compiled,
                 value,
                 &current_values,
-                interpreter::RunOptions {
-                    host_functions: context.host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth: context.max_call_stack_depth,
-                    global_bindings: context.global_bindings,
-                },
+                context.run_options(remaining_timeout(deadline)),
                 &before_names,
                 interpreter::ExecutionPools::default(),
             );
             if result.is_ok() {
-                current_values = captured.iter().map(|(_, value)| value.clone()).collect();
+                current_values = binding_values(&captured);
                 before_bindings = captured;
             }
             result
@@ -1060,18 +1042,13 @@ where
     let aggregate_values = if before_bindings.is_empty() {
         aggregate_seed_values(&seed, &before_names)
     } else {
-        before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>()
+        binding_values(&before_bindings)
     };
     let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
         &aggregate_values,
-        interpreter::RunOptions {
-            host_functions: context.host_functions,
-            timeout: remaining_timeout(deadline),
-            max_call_stack_depth: context.max_call_stack_depth,
-            global_bindings: context.global_bindings,
-        },
+        context.run_options(remaining_timeout(deadline)),
         &seed.capture_names,
         interpreter::ExecutionPools::default(),
     );
@@ -1118,17 +1095,12 @@ where
                 &compiled,
                 v,
                 &current_values,
-                interpreter::RunOptions {
-                    host_functions: context.host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth: context.max_call_stack_depth,
-                    global_bindings: context.global_bindings,
-                },
+                context.run_options(remaining_timeout(deadline)),
                 &seed.capture_names,
                 interpreter::ExecutionPools::default(),
             );
             if result.is_ok() {
-                current_values = newly_captured.iter().map(|(_, value)| value.clone()).collect();
+                current_values = binding_values(&newly_captured);
                 captured = Some(newly_captured);
             }
             result
@@ -1195,17 +1167,12 @@ where
                 &before_compiled,
                 value,
                 &current_values,
-                interpreter::RunOptions {
-                    host_functions: engine.host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth: engine.max_call_stack_depth,
-                    global_bindings: engine.global_bindings,
-                },
+                engine.run_options(remaining_timeout(deadline)),
                 &before_names,
                 &mut hook,
             );
             if result.is_ok() {
-                current_values = captured.iter().map(|(_, value)| value.clone()).collect();
+                current_values = binding_values(&captured);
                 before_bindings = captured;
             }
             result
@@ -1233,18 +1200,13 @@ where
     let aggregate_values = if before_bindings.is_empty() {
         aggregate_seed_values(&seed, &before_names)
     } else {
-        before_bindings.into_iter().map(|(_, value)| value).collect::<Vec<_>>()
+        binding_values(&before_bindings)
     };
     let (result, captured) = interpreter::run_with_debug_hook_and_globals_capturing_locals(
         &aggregate_compiled,
         RuntimeValue::Array(Shared::new(values)),
         &aggregate_values,
-        interpreter::RunOptions {
-            host_functions: engine.host_functions,
-            timeout: remaining_timeout(deadline),
-            max_call_stack_depth: engine.max_call_stack_depth,
-            global_bindings: engine.global_bindings,
-        },
+        engine.run_options(remaining_timeout(deadline)),
         &seed.capture_names,
         &mut hook,
     );
@@ -1309,17 +1271,12 @@ where
                 &compiled,
                 v,
                 &current_values,
-                interpreter::RunOptions {
-                    host_functions: context.engine.host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth: context.engine.max_call_stack_depth,
-                    global_bindings: context.engine.global_bindings,
-                },
+                context.engine.run_options(remaining_timeout(deadline)),
                 &seed.capture_names,
                 &mut hook,
             );
             if result.is_ok() {
-                current_values = newly_captured.iter().map(|(_, value)| value.clone()).collect();
+                current_values = binding_values(&newly_captured);
                 captured = Some(newly_captured);
             }
             result
@@ -1370,7 +1327,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
             context.global_bindings,
         )
     } else {
-        let let_values: Vec<RuntimeValue> = let_bindings.iter().map(|(_, value)| value.clone()).collect();
+        let let_values = binding_values(let_bindings);
         let compiled = compiler::compile_program_for_engine_with_bindings(
             &program,
             Shared::clone(&context.token_arena),
@@ -1384,12 +1341,7 @@ fn run_nodes_aggregate<R: ModuleResolver>(
             &compiled,
             input,
             &let_values,
-            interpreter::RunOptions {
-                host_functions: context.host_functions,
-                timeout,
-                max_call_stack_depth: context.max_call_stack_depth,
-                global_bindings: context.global_bindings,
-            },
+            context.run_options(timeout),
             &[],
             interpreter::ExecutionPools::default(),
         )
@@ -1475,12 +1427,7 @@ where
                         &compiled,
                         v,
                         &[],
-                        interpreter::RunOptions {
-                            host_functions: context.host_functions,
-                            timeout: remaining_timeout(deadline),
-                            max_call_stack_depth: context.max_call_stack_depth,
-                            global_bindings: context.global_bindings,
-                        },
+                        context.run_options(remaining_timeout(deadline)),
                         &let_names,
                         interpreter::ExecutionPools::default(),
                     );
@@ -1605,12 +1552,7 @@ where
                         &compiled,
                         v,
                         &[],
-                        interpreter::RunOptions {
-                            host_functions: context.engine.host_functions,
-                            timeout: remaining_timeout(deadline),
-                            max_call_stack_depth: context.engine.max_call_stack_depth,
-                            global_bindings: context.engine.global_bindings,
-                        },
+                        context.engine.run_options(remaining_timeout(deadline)),
                         &let_names,
                         &mut hook,
                     );
@@ -1651,7 +1593,8 @@ where
             &mut hook,
         )
     } else {
-        let let_values: Vec<RuntimeValue> = let_bindings.iter().map(|(_, value)| value.clone()).collect();
+        let let_values = binding_values(&let_bindings);
+        let run_options = context.engine.run_options(remaining_timeout(deadline));
         let aggregate_compiled = compiler::compile_program_for_engine_with_bindings(
             &program,
             context.engine.token_arena,
@@ -1666,12 +1609,7 @@ where
             &aggregate_compiled,
             input,
             &let_values,
-            interpreter::RunOptions {
-                host_functions: context.engine.host_functions,
-                timeout: remaining_timeout(deadline),
-                max_call_stack_depth: context.engine.max_call_stack_depth,
-                global_bindings: context.engine.global_bindings,
-            },
+            run_options,
             &[],
             &mut hook,
         )

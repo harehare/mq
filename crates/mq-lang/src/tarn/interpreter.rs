@@ -612,7 +612,7 @@ fn run_frames(
     let mut operand_stack = execution.limits.take_stack();
     let mut frames = execution.limits.take_frame_stack();
     let result = if execution.limits.has_deadline() {
-        run_frames_impl::<true>(
+        drive_initial_frame::<true>(
             initial,
             root_chunks,
             &mut frames,
@@ -622,7 +622,7 @@ fn run_frames(
             debug,
         )
     } else {
-        run_frames_impl::<false>(
+        drive_initial_frame::<false>(
             initial,
             root_chunks,
             &mut frames,
@@ -641,7 +641,7 @@ fn run_frames(
 /// `RuntimeValue::Coroutine` instead of entering the generator's frame, so top-level evaluation
 /// never observes `DriveOutcome::Suspended`; only `OpCode::Resume`'s direct `drive_frames` call
 /// does.
-fn run_frames_impl<const CHECK_TIMEOUT: bool>(
+fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
     initial: Frame,
     root_chunks: &Shared<Vec<Chunk>>,
     frames: &mut Vec<Frame>,
@@ -664,7 +664,7 @@ fn run_frames_impl<const CHECK_TIMEOUT: bool>(
     }
 }
 
-/// Shared by `run_frames_impl` (seeds a single fresh frame) and `OpCode::Resume` (restores a
+/// Shared by `drive_initial_frame` (seeds a single fresh frame) and `OpCode::Resume` (restores a
 /// coroutine's saved, possibly multi-frame, stack).
 fn drive_frames<const CHECK_TIMEOUT: bool>(
     root_chunks: &Shared<Vec<Chunk>>,
@@ -694,7 +694,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                     debug,
                 ) {
                     let e = locate_at_top(frames, root_chunks, e);
-                    match unwind(
+                    match unwind_frames(
                         e,
                         frames,
                         root_chunks,
@@ -719,7 +719,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                     debug,
                 ) {
                     let e = locate_at_top(frames, root_chunks, e);
-                    match unwind(
+                    match unwind_frames(
                         e,
                         frames,
                         root_chunks,
@@ -736,7 +736,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             }
             Ok(FrameOutcome::Suspend(value)) => break 'frames DriveOutcome::Suspended(value),
             Ok(FrameOutcome::Complete(value)) => value,
-            Err(e) => match unwind(
+            Err(e) => match unwind_frames(
                 e,
                 frames,
                 root_chunks,
@@ -771,7 +771,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                     Ok(next) => next,
                     Err(e) => {
                         let e = locate_at_top(frames, root_chunks, e);
-                        match unwind(
+                        match unwind_frames(
                             e,
                             frames,
                             root_chunks,
@@ -800,7 +800,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                             debug,
                         ) {
                             let e = locate_at_top(frames, root_chunks, e);
-                            match unwind(
+                            match unwind_frames(
                                 e,
                                 frames,
                                 root_chunks,
@@ -832,7 +832,7 @@ fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError)
     clippy::ptr_arg,
     reason = "unwinding may truncate and push onto the shared operand stack"
 )]
-fn unwind(
+fn unwind_frames(
     mut e: VmError,
     frames: &mut Vec<Frame>,
     root_chunks: &Shared<Vec<Chunk>>,
@@ -1636,7 +1636,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     )?;
                     break 'dispatch FrameOutcome::Enter(new_frame);
                 } else {
-                    // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees —
+                    // Pooled, not `Vec::with_capacity`: this path (non-fixed-arity callees,
                     // variadic/optional params, `partial`-bound closures) runs often enough in
                     // higher-order builtins that a fresh heap allocation per call is worth
                     // avoiding.
@@ -1916,7 +1916,7 @@ fn tail_call_outcome(chunk: &Chunk, next_ip: usize, frame: Frame) -> FrameOutcom
     }
 }
 
-/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame` — `unwind`
+/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame`, and `unwind_frames`
 /// handles the rest (routing success, or dispatching to `catch`/a loop jump on error).
 #[cold]
 #[inline(never)]

@@ -1,7 +1,7 @@
 //! Suspended generator/coroutine state: the `Vec<Frame>` + operand stack a `yield` detaches
 //! from the trampoline instead of letting it recycle them, resumed by `OpCode::Resume`.
 //!
-//! Holds no borrows of `VmEnv`/`HostFunctions`/`ExecutionContext` — `resume` takes those fresh
+//! Holds no borrows of `VmEnv`/`HostFunctions`/`ExecutionContext`. `resume` takes those fresh
 //! from the caller, so a coroutine can be resumed by an unrelated later evaluation. It does keep
 //! its own owned `TokenArena` (see `CoroutineState::token_arena`), since that evaluation's arena
 //! is the wrong one to blame a failure on.
@@ -59,7 +59,7 @@ pub(crate) struct CoroutineState {
 }
 
 /// Cloning a `RuntimeValue::Coroutine` shares this handle, so every clone drives the same
-/// progress — the same interior-mutability idiom as upvalue cells (`tarn::value::Cell`).
+/// progress, using the same interior-mutability idiom as upvalue cells (`tarn::value::Cell`).
 pub(crate) type CoroutineHandle = Shared<SharedCell<CoroutineState>>;
 
 #[cfg(not(feature = "sync"))]

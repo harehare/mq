@@ -996,8 +996,8 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
-/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse` —
-/// the shape every `if`/`while`/`until` condition compiles to — and so can fuse into a single
+/// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse`,
+/// the shape every `if`/`while`/`until` condition compiles to, and so can fuse into a single
 /// compare-and-branch instruction with no boolean ever pushed to the operand stack.
 fn is_fusable_compare_jump(op: &OpCode, next: Option<&OpCode>) -> bool {
     let Some(OpCode::JumpIfFalse(_)) = next else {

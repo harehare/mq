@@ -394,7 +394,7 @@ mod tests {
     }
 
     /// A coroutine's failure must resolve against its own (carried) arena, not whichever
-    /// unrelated, smaller arena happens to be resuming it — the latter used to panic by indexing
+    /// unrelated, smaller arena happens to be resuming it. The latter used to panic by indexing
     /// past its end.
     #[test]
     fn coroutine_failed_resolves_against_its_own_arena_not_the_resuming_ones() {

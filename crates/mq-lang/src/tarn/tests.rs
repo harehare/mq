@@ -1563,7 +1563,7 @@ fn break_with_value_before_any_completed_iteration_returns_its_value(#[case] cod
 fn nodes_aggregates_per_input_results_into_one_run() {
     // `nodes` (see `split_at_nodes`/`run_nodes_aggregate`) collects every input's
     // per-input result into one array and runs the rest of the program against that
-    // array once, rather than once per input — `len()` here only makes sense read that
+    // array once, rather than once per input. `len()` here only makes sense read that
     // way (3 individual numbers each have no `len`, but an array of 3 does).
     let code = "nodes | len()";
     let inputs = vec![
