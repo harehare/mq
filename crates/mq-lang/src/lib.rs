@@ -82,8 +82,7 @@ pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
 pub use diagnostic::Diagnostic;
-pub use engine::CompiledProgram;
-pub use engine::Engine;
+pub use engine::{CompiledProgram, DefineValueError, Engine};
 pub use error::Error;
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]

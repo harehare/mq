@@ -419,6 +419,20 @@ pub(crate) fn bytes_mut(b: &mut Shared<Vec<u8>>) -> &mut Vec<u8> {
 }
 
 impl RuntimeValue {
+    pub(crate) fn vm_bound_value_kind(&self) -> Option<&'static str> {
+        let mut pending = vec![self];
+        while let Some(value) = pending.pop() {
+            match value {
+                Self::Coroutine(_) => return Some("coroutine"),
+                Self::VmClosure(_) => return Some("VM closure"),
+                Self::Array(values) => pending.extend(values.iter()),
+                Self::Dict(values) => pending.extend(values.values()),
+                _ => {}
+            }
+        }
+        None
+    }
+
     /// The boolean `false` value.
     pub const FALSE: RuntimeValue = Self::Boolean(false);
     /// The `None` (null) value.
