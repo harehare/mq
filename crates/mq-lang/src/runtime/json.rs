@@ -138,23 +138,27 @@ mod tests {
         assert_eq!(dict_keys(&value), expected_order);
     }
 
-    #[test]
-    fn duplicate_keys_keep_their_first_position_and_last_value() {
-        let value = parse_json_runtime_value(r#"{"z": 1, "a": 2, "z": 3}"#).unwrap();
+    #[rstest]
+    #[case::duplicate_in_middle(r#"{"z": 1, "a": 2, "z": 3}"#, &[("z", 3), ("a", 2)])]
+    #[case::only_key_is_duplicated(r#"{"a": 1, "a": 2}"#, &[("a", 2)])]
+    #[case::multiple_duplicate_keys(r#"{"a": 1, "b": 2, "a": 3, "b": 4}"#, &[("a", 3), ("b", 4)])]
+    fn duplicate_keys_keep_their_first_position_and_last_value(#[case] json: &str, #[case] expected: &[(&str, i64)]) {
+        let value = parse_json_runtime_value(json).unwrap();
+        let RuntimeValue::Dict(map) = &value else {
+            panic!("expected a dict, got {value:?}");
+        };
 
         assert_eq!(
             dict_keys(&value),
-            vec!["z", "a"],
+            expected.iter().map(|(k, _)| k.to_string()).collect::<Vec<_>>(),
             "the first occurrence's position wins"
         );
-        let RuntimeValue::Dict(map) = &value else {
-            unreachable!()
-        };
-        assert_eq!(
-            map.get(&Ident::new("z")),
-            Some(&RuntimeValue::Number(3.into())),
-            "the last value wins"
-        );
-        assert_eq!(map.get(&Ident::new("a")), Some(&RuntimeValue::Number(2.into())));
+        for (key, expected_value) in expected {
+            assert_eq!(
+                map.get(&Ident::new(key)),
+                Some(&RuntimeValue::Number((*expected_value).into())),
+                "the last value must win for key {key:?}"
+            );
+        }
     }
 }
