@@ -7,8 +7,9 @@ use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 /// Decodes one complete JSON document directly into a runtime value.
 ///
 /// This avoids constructing an intermediate `serde_json::Value` tree before converting it to mq
-/// values. Object entries are accumulated in a `BTreeMap` to retain serde_json's default key
-/// ordering and duplicate-key (last value wins) semantics.
+/// values. Object entries are accumulated directly into a `DictMap` to preserve document order
+/// (`RuntimeValue::Dict`'s own contract), with duplicate keys keeping their first position and
+/// last value.
 pub(super) fn parse_json_runtime_value(input: &str) -> Result<RuntimeValue, serde_json::Error> {
     let mut deserializer = serde_json::Deserializer::from_str(input);
     let value = JsonRuntimeValueSeed.deserialize(&mut deserializer)?;
@@ -104,14 +105,10 @@ impl<'de> Visitor<'de> for JsonRuntimeValueVisitor {
     where
         A: MapAccess<'de>,
     {
-        let mut values = std::collections::BTreeMap::new();
+        let mut values = DictMap::default();
         while let Some(key) = map.next_key::<String>()? {
-            values.insert(key, map.next_value_seed(JsonRuntimeValueSeed)?);
+            values.insert(Ident::new(&key), map.next_value_seed(JsonRuntimeValueSeed)?);
         }
-        let values: DictMap = values
-            .into_iter()
-            .map(|(key, value)| (Ident::new(&key), value))
-            .collect();
         Ok(RuntimeValue::Dict(Shared::new(values)))
     }
 }
@@ -119,18 +116,45 @@ impl<'de> Visitor<'de> for JsonRuntimeValueVisitor {
 #[cfg(test)]
 mod tests {
     use super::parse_json_runtime_value;
+    use crate::Ident;
     use crate::runtime::runtime_value::RuntimeValue;
-    use crate::{DictMap, Ident, Shared};
+    use rstest::rstest;
+
+    /// `RuntimeValue::Dict`'s `PartialEq` compares as a set (order-independent, see
+    /// `IndexMap`'s own contract), so key order must be asserted separately from value equality.
+    fn dict_keys(value: &RuntimeValue) -> Vec<String> {
+        let RuntimeValue::Dict(map) = value else {
+            panic!("expected a dict, got {value:?}");
+        };
+        map.keys().map(|k| k.to_string()).collect()
+    }
+
+    #[rstest]
+    #[case::already_sorted(r#"{"a": 1, "z": 2}"#, &["a", "z"])]
+    #[case::reverse_sorted(r#"{"z": 1, "a": 2}"#, &["z", "a"])]
+    #[case::nested_object(r#"{"z": {"b": 1, "a": 2}, "a": 3}"#, &["z", "a"])]
+    fn preserves_document_key_order(#[case] json: &str, #[case] expected_order: &[&str]) {
+        let value = parse_json_runtime_value(json).unwrap();
+        assert_eq!(dict_keys(&value), expected_order);
+    }
 
     #[test]
-    fn retains_sorted_keys_and_last_duplicate_value() {
-        let mut expected = DictMap::default();
-        expected.insert(Ident::new("a"), RuntimeValue::Number(2.into()));
-        expected.insert(Ident::new("z"), RuntimeValue::Number(3.into()));
+    fn duplicate_keys_keep_their_first_position_and_last_value() {
+        let value = parse_json_runtime_value(r#"{"z": 1, "a": 2, "z": 3}"#).unwrap();
 
         assert_eq!(
-            parse_json_runtime_value(r#"{"z": 1, "a": 2, "z": 3}"#).unwrap(),
-            RuntimeValue::Dict(Shared::new(expected))
+            dict_keys(&value),
+            vec!["z", "a"],
+            "the first occurrence's position wins"
         );
+        let RuntimeValue::Dict(map) = &value else {
+            unreachable!()
+        };
+        assert_eq!(
+            map.get(&Ident::new("z")),
+            Some(&RuntimeValue::Number(3.into())),
+            "the last value wins"
+        );
+        assert_eq!(map.get(&Ident::new("a")), Some(&RuntimeValue::Number(2.into())));
     }
 }
