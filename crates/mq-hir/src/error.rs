@@ -54,7 +54,8 @@ impl Hir {
                     }
                 }
                 SymbolKind::Keyword
-                    if symbol.value.as_deref() == Some("yield") && self.is_outside_function(symbol.scope) =>
+                    if symbol.value.as_deref() == Some("yield")
+                        && (self.is_outside_function(symbol.scope) || self.crosses_module_boundary(symbol)) =>
                 {
                     Some(HirError::YieldOutsideFunction { symbol: symbol.clone() })
                 }
@@ -121,6 +122,23 @@ impl Hir {
                 )
             })
             .collect::<Vec<_>>()
+    }
+
+    /// Whether `symbol`'s parent chain hits a `Module` before a `Function`. Inline modules share
+    /// their enclosing scope, so `is_outside_function`'s scope walk misses this boundary.
+    fn crosses_module_boundary(&self, symbol: &Symbol) -> bool {
+        let mut parent_id = symbol.parent;
+        while let Some(id) = parent_id {
+            let Some(parent) = self.symbols.get(id) else {
+                return false;
+            };
+            match &parent.kind {
+                SymbolKind::Module(_) => return true,
+                SymbolKind::Function(_) => return false,
+                _ => parent_id = parent.parent,
+            }
+        }
+        false
     }
 
     /// Walks up to the nearest `Function` scope (found) or `Module` scope (top-level, outside).
@@ -309,6 +327,26 @@ mod tests {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
         let _ = hir.add_code(None, "def outer(): let inner = fn(): yield: 1; | inner();");
+
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_yield_in_an_inline_module_nested_in_a_function_is_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "def g(): module m: yield: 1 end; | g()");
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], HirError::YieldOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_yield_in_a_function_nested_in_a_module_is_not_an_error() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, "module a: def b(): yield: 1; end");
 
         assert!(hir.errors().is_empty());
     }
