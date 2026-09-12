@@ -3418,6 +3418,45 @@ fn mutually_capturing_coroutines_still_read_each_other_after_the_cycle_is_broken
     );
 }
 
+#[rstest]
+#[case::unstarted(
+    "var a = None | var b = None | var c = None \
+     | let ga = fn(): yield: b; \
+     | let gb = fn(): yield: c; \
+     | let gc = fn(): yield: a; \
+     | a = ga() | b = gb() | c = gc() | [a, b, c]"
+)]
+#[case::suspended(
+    "var a = None | var b = None | var c = None \
+     | let ga = fn(): yield: 0 | yield: b; \
+     | let gb = fn(): yield: 0 | yield: c; \
+     | let gc = fn(): yield: 0 | yield: a; \
+     | a = ga() | b = gb() | c = gc() | next(a) | next(b) | next(c) | [a, b, c]"
+)]
+fn dropping_three_mutually_capturing_coroutines_releases_all(#[case] code: &str) {
+    // A -> B -> C -> A: longer than the direct pairwise case.
+    let value = run(code);
+    let RuntimeValue::Array(trio) = &value else {
+        panic!("expected an array, got {value:?}");
+    };
+    let RuntimeValue::Coroutine(ga) = &trio[0] else {
+        panic!("expected a coroutine, got {:?}", trio[0]);
+    };
+    let RuntimeValue::Coroutine(gb) = &trio[1] else {
+        panic!("expected a coroutine, got {:?}", trio[1]);
+    };
+    let RuntimeValue::Coroutine(gc) = &trio[2] else {
+        panic!("expected a coroutine, got {:?}", trio[2]);
+    };
+    let (weak_ga, weak_gb, weak_gc) = (Shared::downgrade(ga), Shared::downgrade(gb), Shared::downgrade(gc));
+
+    drop(value);
+
+    assert!(weak_ga.upgrade().is_none(), "ga must not retain gb -> gc -> ga");
+    assert!(weak_gb.upgrade().is_none(), "gb must not retain gc -> ga -> gb");
+    assert!(weak_gc.upgrade().is_none(), "gc must not retain ga -> gb -> gc");
+}
+
 #[test]
 fn a_coroutine_capturing_another_non_cyclically_is_unaffected() {
     // `ga` captures the coroutine `gb`, but `gb` doesn't capture `ga` back: not a cycle, so the
