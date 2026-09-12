@@ -378,16 +378,19 @@ fn peer_directly_references(peer: &CoroutineHandle, target: &CoroutineHandle) ->
         .any(|h| same_handle(h, target))
 }
 
-/// Handles `handle` directly captures that also directly capture `handle` back: a 2-coroutine
-/// cycle closing right here (e.g. `a = ga()`, `b = gb()` where `ga` captures `b` and `gb`
-/// captures `a`). Breaking one edge of a 2-cycle fully eliminates it, so this covers the common
-/// "two generators capture each other" case without needing full graph reachability. Longer
-/// chains (`A -> B -> C -> A`) aren't detected.
+/// Handles `handle` directly captures that also directly capture `handle` back (a 2-coroutine
+/// cycle). Only pairwise cycles are detected, not longer chains, and not cycles formed purely
+/// through uncaptured locals (requires a shared, captured variable on both sides).
 fn mutually_capturing_peers(
     handle: &CoroutineHandle,
     frames: &[Frame],
     operand_stack: &[StackValue],
 ) -> Vec<CoroutineHandle> {
+    // No captures, no shared variable a peer could have been assigned into: skip the scan on
+    // every capture-free generator's every yield.
+    if !frames.iter().any(|frame| frame.upvalues.is_some()) {
+        return Vec::new();
+    }
     direct_coroutine_neighbors(frames, operand_stack)
         .into_iter()
         .filter(|peer| !same_handle(peer, handle) && peer_directly_references(peer, handle))
