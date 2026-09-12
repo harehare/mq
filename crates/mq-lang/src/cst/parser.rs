@@ -157,10 +157,6 @@ pub struct Parser<'a> {
     tokens: &'a [Shared<Token>],
     pos: usize,
     errors: ErrorReporter,
-    /// Whether the token cursor is currently inside a `def`/`fn` body, for gating `yield`. A
-    /// field rather than a threaded parameter (unlike `in_loop`) since only `parse_def`/
-    /// `parse_fn` need to touch it. Every other parser function is naturally unaffected.
-    in_fn: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -169,7 +165,6 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             errors: ErrorReporter::new(100),
-            in_fn: false,
         }
     }
 
@@ -495,7 +490,8 @@ impl<'a> Parser<'a> {
             TokenKind::Not | TokenKind::Minus => self.parse_unary_op(leading_trivia, root),
             TokenKind::Break if in_loop => self.parse_break(leading_trivia, in_loop),
             TokenKind::Continue if in_loop => self.parse_node(NodeKind::Continue, leading_trivia),
-            TokenKind::Yield if self.in_fn => self.parse_yield(leading_trivia, in_loop),
+            // Placement is validated later (HIR/compiler), not here, so the diagnostic is reachable.
+            TokenKind::Yield => self.parse_yield(leading_trivia, in_loop),
             TokenKind::Colon => self.parse_symbol(leading_trivia),
             TokenKind::Eof => {
                 self.advance();
@@ -891,9 +887,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let outer_in_fn = std::mem::replace(&mut self.in_fn, true);
         let (mut program, _, _) = self.parse_program(false, false);
-        self.in_fn = outer_in_fn;
 
         children.append(&mut program);
 
@@ -919,9 +913,7 @@ impl<'a> Parser<'a> {
 
         self.push_colon_or_do_token_if_present(&mut children)?;
 
-        let outer_in_fn = std::mem::replace(&mut self.in_fn, true);
         let (mut program, _, _) = self.parse_program(false, in_loop);
-        self.in_fn = outer_in_fn;
 
         children.append(&mut program);
 

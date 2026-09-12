@@ -278,19 +278,11 @@ mod tests {
         assert!(hir.errors().is_empty());
     }
 
-    // CST already blocks a bare top-level `yield`, so this moves a valid one into module scope
-    // to exercise the HIR-level check directly.
     #[test]
     fn test_yield_outside_a_function_is_an_error() {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
-        let _ = hir.add_code(None, "def g(): yield: 1;");
-        let module_scope_id = *hir.source_scopes.values().next().unwrap();
-        for (_, symbol) in hir.symbols.iter_mut() {
-            if symbol.value.as_deref() == Some("yield") {
-                symbol.scope = module_scope_id;
-            }
-        }
+        let _ = hir.add_code(None, "yield: 1");
 
         let errors = hir.errors();
         assert_eq!(errors.len(), 1);

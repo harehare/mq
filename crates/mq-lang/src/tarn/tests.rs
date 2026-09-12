@@ -3034,6 +3034,46 @@ fn dropping_a_self_referencing_suspended_coroutine_releases_its_frames() {
     );
 }
 
+#[rstest]
+#[case::reassigned_to_none("s = None", RuntimeValue::None)]
+#[case::reassigned_to_a_number("s = 42", RuntimeValue::Number(42.into()))]
+#[case::reassigned_to_a_string("s = \"done\"", RuntimeValue::from("done"))]
+fn outer_write_to_a_captured_self_reference_is_visible_after_resume(
+    #[case] reassign: &str,
+    #[case] expected: RuntimeValue,
+) {
+    let code = format!(
+        "var s = None | let g = fn(): yield: 0 | yield: s; | s = g() | next(s) | let saved = s | {reassign} | next(saved)"
+    );
+    let result = run(&code);
+    assert_eq!(
+        dict_field(&result, "value"),
+        expected,
+        "the resumed generator must observe the outer scope's reassignment of its captured `s`"
+    );
+}
+
+#[rstest]
+#[case::array("[s]")]
+#[case::dict(r#"{"s": s}"#)]
+fn dropping_a_coroutine_nested_in_a_captured_container_releases_its_frames(#[case] container: &str) {
+    let code = format!(
+        "var s = None | var holder = [] | let g = fn(): yield: 0 | holder; | s = g() | holder = {container} | next(s) | s"
+    );
+    let value = run(&code);
+    let RuntimeValue::Coroutine(handle) = &value else {
+        panic!("expected a coroutine, got {value:?}");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(value);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "suspended coroutine retained a self-reference cycle through a captured container"
+    );
+}
+
 // End-to-end generator tests compiled from real `yield`/`next()` source (Phase 4: lexer, CST,
 // AST, HIR-free compiler wiring all land together so every commit stays green).
 
