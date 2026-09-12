@@ -131,7 +131,7 @@ impl Hir {
             };
             match &scope.kind {
                 ScopeKind::Function(_) => return false,
-                ScopeKind::Module(_) => return true,
+                ScopeKind::Module(_) | ScopeKind::DefaultParam(_) => return true,
                 _ => match scope.parent_id {
                     Some(parent_id) => scope_id = parent_id,
                     None => return true,
@@ -174,6 +174,8 @@ impl Hir {
 }
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
     #[test]
@@ -283,6 +285,19 @@ mod tests {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;
         let _ = hir.add_code(None, "yield: 1");
+
+        let errors = hir.errors();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], HirError::YieldOutsideFunction { .. }));
+    }
+
+    #[rstest]
+    #[case::def("def f(x = yield: 1): x;")]
+    #[case::fn_("let f = fn(x = yield: 1): x; | f()")]
+    fn test_yield_in_a_default_param_is_an_error(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, code);
 
         let errors = hir.errors();
         assert_eq!(errors.len(), 1);

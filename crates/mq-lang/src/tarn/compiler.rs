@@ -61,6 +61,9 @@ type CompileResult<T> = Result<T, CompileError>;
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledProgram {
     pub(crate) chunks: Shared<Vec<Chunk>>,
+    /// Arena `chunks`' token IDs resolve against; carried by coroutines so cross-engine resume
+    /// still resolves errors correctly.
+    pub(crate) token_arena: TokenArena,
     /// Source metadata captured from the same module loader that assigned every token's
     /// module ID. The debugger must not reconstruct this through a fresh loader instance.
     #[cfg(feature = "debugger")]
@@ -766,6 +769,7 @@ fn compile_program_impl<R: ModuleResolver>(
     Ok((
         CompiledProgram {
             chunks: Shared::new(compiler.chunks),
+            token_arena: Shared::clone(&compiler.token_arena),
             #[cfg(feature = "debugger")]
             debug_sources,
         },

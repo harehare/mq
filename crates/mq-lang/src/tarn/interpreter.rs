@@ -152,7 +152,7 @@ pub(crate) fn run_with_globals_and_pools(
     global_bindings: &[(Ident, RuntimeValue)],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(global_bindings);
+    let env = VmEnv::from_bindings(global_bindings, Shared::clone(&compiled.token_arena));
     run_with_env_and_pools(
         compiled,
         input,
@@ -208,7 +208,7 @@ pub(crate) fn run_with_globals_capturing_locals(
     capture_names: &[Ident],
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     run_with_env_capturing_locals(compiled, input, bindings, options, &env, capture_names, pools)
 }
 
@@ -304,7 +304,7 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
         call_stack: Vec::new(),
         current_node: None,
     };
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
     let (result, captured, _) = run_impl_capturing_locals_with_env(
         compiled,
@@ -327,7 +327,7 @@ fn run_impl(
     pools: ExecutionPools,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
-    let env = VmEnv::from_bindings(options.global_bindings);
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
     run_impl_with_env(
         compiled,
         input,
@@ -372,7 +372,7 @@ pub(crate) fn run_debug_expression(
         call_stack: Vec::new(),
         current_node: None,
     };
-    let env = VmEnv::from_bindings(&[]);
+    let env = VmEnv::from_bindings(&[], Shared::clone(&compiled.token_arena));
     run_impl_with_bindings(
         compiled,
         input,
@@ -787,7 +787,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 };
                 // May be the callee's own now-fully-bound frame; needs generator detection too.
                 let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
-                match frame_or_coroutine(next, &next_chunks) {
+                match frame_or_coroutine(next, &next_chunks, &execution.env.token_arena) {
                     CallStep::Value(coroutine) => {
                         operand_stack.push(coroutine);
                     }
@@ -1430,7 +1430,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     execution,
                 )?;
                 if chunks[*chunk_index as usize].is_generator {
-                    stack.push(generator_coroutine(new_frame, chunks));
+                    stack.push(generator_coroutine(new_frame, chunks, &execution.env.token_arena));
                 } else {
                     break 'dispatch FrameOutcome::Enter(new_frame);
                 }

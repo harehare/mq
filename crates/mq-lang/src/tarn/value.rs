@@ -77,17 +77,24 @@ fn clear_self_reference(value: &mut RuntimeValue, handle: &CoroutineHandle) {
     }
 }
 
-/// Clears any nested self-reference (see [`clear_self_reference`]) out of `cell`'s current
-/// value, in place, without disturbing the cell's identity.
-pub(crate) fn clear_nested_self_reference_in_cell(cell: &Cell, handle: &CoroutineHandle) {
-    #[cfg(not(feature = "sync"))]
-    let mut value = cell.borrow_mut();
-    #[cfg(feature = "sync")]
-    let mut value = cell.write().unwrap();
-
-    if let StackValue::Value(value) = &mut *value {
-        clear_self_reference(value, handle);
+/// Detaches a frame-local reference to `cell` from `handle`'s own coroutine nested inside a
+/// captured array/dict, without mutating `cell` itself: `cell` may still be the caller's own
+/// binding, and clearing the self-reference there would corrupt data the caller reads later.
+/// Returns a new, privately-owned cell holding a sanitized copy (the nested self-reference
+/// cleared to `None`) for the frame to use instead, or `None` if `cell` holds no such
+/// self-reference. Callers must downgrade a reference to the original `cell` before installing
+/// the replacement, so `resume`'s `pending_resyncs` handling can restore whatever the caller
+/// later writes.
+pub(crate) fn sanitize_nested_self_reference(cell: &Cell, handle: &CoroutineHandle) -> Option<Cell> {
+    let mut sanitized = read_cell(cell);
+    let StackValue::Value(value) = &mut sanitized else {
+        return None;
+    };
+    if !value_contains_self_reference(value, handle) {
+        return None;
     }
+    clear_self_reference(value, handle);
+    Some(new_cell(sanitized))
 }
 
 /// A closure on the VM operand stack.
@@ -344,7 +351,11 @@ impl Locals {
         }
     }
 
-    pub(crate) fn downgrade_coroutine_references(&mut self, handle: &CoroutineHandle) {
+    /// Breaks self-reference cycles in every captured cell this frame's locals hold, returning
+    /// `(replacement_cell, weak_original)` pairs for `resume` to resync on next entry (see
+    /// [`sanitize_nested_self_reference`] and [`weak_coroutine_cell`]).
+    pub(crate) fn downgrade_coroutine_references(&mut self, handle: &CoroutineHandle) -> Vec<(Cell, WeakCell)> {
+        let mut resyncs = Vec::new();
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
@@ -357,9 +368,11 @@ impl Locals {
                 for (slot, cell) in slots.iter_mut().zip(captured) {
                     if let Some(cell) = cell {
                         if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
+                            resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(cell)));
                             *cell = weak_cell;
-                        } else {
-                            clear_nested_self_reference_in_cell(cell, handle);
+                        } else if let Some(sanitized) = sanitize_nested_self_reference(cell, handle) {
+                            resyncs.push((Shared::clone(&sanitized), Shared::downgrade(cell)));
+                            *cell = sanitized;
                         }
                     } else {
                         slot.downgrade_coroutine_reference(handle);
@@ -369,13 +382,16 @@ impl Locals {
             Locals::Boxed(slots) => {
                 for cell in slots {
                     if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
+                        resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(cell)));
                         *cell = weak_cell;
-                    } else {
-                        clear_nested_self_reference_in_cell(cell, handle);
+                    } else if let Some(sanitized) = sanitize_nested_self_reference(cell, handle) {
+                        resyncs.push((Shared::clone(&sanitized), Shared::downgrade(cell)));
+                        *cell = sanitized;
                     }
                 }
             }
         }
+        resyncs
     }
 
     /// Appends to an array stored in a local slot.

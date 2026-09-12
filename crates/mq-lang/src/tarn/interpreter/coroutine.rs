@@ -2,7 +2,9 @@
 //! from the trampoline instead of letting it recycle them, resumed by `OpCode::Resume`.
 //!
 //! Holds no borrows of `VmEnv`/`HostFunctions`/`ExecutionContext` — `resume` takes those fresh
-//! from the caller, so a coroutine can be resumed by an unrelated later evaluation.
+//! from the caller, so a coroutine can be resumed by an unrelated later evaluation. It does keep
+//! its own owned `TokenArena` (see `CoroutineState::token_arena`), since that evaluation's arena
+//! is the wrong one to blame a failure on.
 #[cfg(feature = "debugger")]
 use super::DebugRuntime;
 use super::errors::{VmError, VmResult};
@@ -13,9 +15,9 @@ use crate::ast::node::Node;
 use crate::runtime::runtime_value::{DictMap, RuntimeValue};
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{
-    Cell, StackValue, WeakCell, clear_nested_self_reference_in_cell, read_cell, weak_coroutine_cell, write_cell,
+    Cell, StackValue, WeakCell, read_cell, sanitize_nested_self_reference, weak_coroutine_cell, write_cell,
 };
-use crate::{Ident, Shared, SharedCell};
+use crate::{Ident, Shared, SharedCell, TokenArena};
 
 /// A coroutine's lifecycle.
 pub(crate) enum CoroutineStatus {
@@ -36,6 +38,10 @@ pub(crate) struct CoroutineState {
     pub(super) frames: Vec<Frame>,
     pub(super) operand_stack: Vec<StackValue>,
     pub(super) chunks: Shared<Vec<Chunk>>,
+    /// The arena `chunks`' token IDs resolve against, from whichever evaluation created this
+    /// coroutine. Kept so a failure is diagnosed against its own source even when a later
+    /// `next()`/`send()` resumes it under a different evaluation's arena.
+    pub(super) token_arena: TokenArena,
     /// Frames retained at suspension still count against recursion while the coroutine runs,
     /// but must not consume depth in an unrelated caller between resumes.
     pub(super) suspended_call_depth: u32,
@@ -73,12 +79,13 @@ pub(crate) fn same_handle(left: &CoroutineHandle, right: &CoroutineHandle) -> bo
 }
 
 impl CoroutineState {
-    pub(super) fn new_handle(frame: Frame, chunks: Shared<Vec<Chunk>>) -> CoroutineHandle {
+    pub(super) fn new_handle(frame: Frame, chunks: Shared<Vec<Chunk>>, token_arena: TokenArena) -> CoroutineHandle {
         Shared::new(SharedCell::new(CoroutineState {
             status: CoroutineStatus::Created,
             frames: vec![frame],
             operand_stack: Vec::new(),
             chunks,
+            token_arena,
             // A created coroutine already owns its generator frame. Count it as soon as it
             // starts running so recursively resuming child generators cannot bypass the VM's
             // recursion limit before any of them reaches a `yield`.
@@ -167,7 +174,12 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         match &state.status {
             CoroutineStatus::Running => return Err(VmError::CoroutineReentrant),
             CoroutineStatus::Completed => return Ok(done_result(RuntimeValue::None, true)),
-            CoroutineStatus::Failed(err) => return Err(VmError::CoroutineFailed(Shared::clone(err))),
+            CoroutineStatus::Failed(err) => {
+                return Err(VmError::CoroutineFailed(
+                    Shared::clone(err),
+                    Shared::clone(&state.token_arena),
+                ));
+            }
             CoroutineStatus::Created | CoroutineStatus::Suspended => {
                 let caller_depth = execution
                     .limits
@@ -255,20 +267,23 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
             );
             let stored = Shared::new(e);
             state.status = CoroutineStatus::Failed(Shared::clone(&stored));
+            let token_arena = Shared::clone(&state.token_arena);
             drop(state);
-            Err(VmError::CoroutineFailed(stored))
+            Err(VmError::CoroutineFailed(stored, token_arena))
         }
     }
 }
 
 /// Breaks self-reference cycles in `frames`/`operand_stack` before a coroutine suspends.
 ///
-/// A captured upvalue that directly holds this coroutine's own handle can't be weakened in
-/// place: it shares its cell with the caller's binding, and weakening that cell would sever the
-/// caller's own strong reference too. Instead its cell is swapped for a new one holding a weak
-/// handle, and the swap is recorded so the next resume can pull in whatever the caller wrote to
-/// the original cell in the meantime (see `resume`'s `pending_resyncs` handling). A handle
-/// nested inside an array/dict has no such aliasing concern, so it's cleared in place instead.
+/// A captured cell that holds this coroutine's own handle, directly or nested in an array/dict,
+/// can't be edited in place: it shares its allocation with the caller's binding, and mutating it
+/// would corrupt data the caller reads later. Instead the frame's reference is swapped for a new
+/// cell holding a sanitized copy (a weak-and-upgradable handle for the direct case, see
+/// `weak_coroutine_cell`; the nested self-reference cleared to `None` otherwise, see
+/// `sanitize_nested_self_reference`), and the swap is recorded so the next resume can pull in
+/// whatever the caller wrote to the original cell in the meantime (see `resume`'s
+/// `pending_resyncs` handling).
 fn downgrade_self_references(
     frames: &mut [Frame],
     operand_stack: &mut [StackValue],
@@ -276,14 +291,15 @@ fn downgrade_self_references(
 ) -> Vec<(Cell, WeakCell)> {
     let mut resyncs = Vec::new();
     for frame in frames {
-        frame.locals.downgrade_coroutine_references(handle);
+        resyncs.extend(frame.locals.downgrade_coroutine_references(handle));
         if let Some(upvalues) = &mut frame.upvalues {
             for upvalue in Shared::make_mut(upvalues) {
                 if let Some(weak_cell) = weak_coroutine_cell(upvalue, handle) {
                     resyncs.push((Shared::clone(&weak_cell), Shared::downgrade(upvalue)));
                     *upvalue = weak_cell;
-                } else {
-                    clear_nested_self_reference_in_cell(upvalue, handle);
+                } else if let Some(sanitized) = sanitize_nested_self_reference(upvalue, handle) {
+                    resyncs.push((Shared::clone(&sanitized), Shared::downgrade(upvalue)));
+                    *upvalue = sanitized;
                 }
             }
         }
