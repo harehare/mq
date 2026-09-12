@@ -370,17 +370,33 @@ fn direct_coroutine_neighbors(frames: &[Frame], operand_stack: &[StackValue]) ->
     out
 }
 
-/// Whether `peer`'s own current frames directly hold `target`.
-fn peer_directly_references(peer: &CoroutineHandle, target: &CoroutineHandle) -> bool {
-    let state = borrow(peer);
-    direct_coroutine_neighbors(&state.frames, &state.operand_stack)
-        .iter()
-        .any(|h| same_handle(h, target))
+/// Whether `peer` can reach `target` transitively through direct coroutine references, detecting
+/// cycles of any length. Never borrows `target`: the caller already holds it borrowed.
+fn peer_can_reach(peer: &CoroutineHandle, target: &CoroutineHandle) -> bool {
+    let mut visited = vec![Shared::clone(peer)];
+    let mut frontier = vec![Shared::clone(peer)];
+
+    while let Some(current) = frontier.pop() {
+        let neighbors = {
+            let state = borrow(&current);
+            direct_coroutine_neighbors(&state.frames, &state.operand_stack)
+        };
+        for neighbor in neighbors {
+            if same_handle(&neighbor, target) {
+                return true;
+            }
+            if visited.iter().any(|seen| same_handle(seen, &neighbor)) {
+                continue;
+            }
+            visited.push(Shared::clone(&neighbor));
+            frontier.push(neighbor);
+        }
+    }
+    false
 }
 
-/// Handles `handle` directly captures that also directly capture `handle` back (a 2-coroutine
-/// cycle). Only pairwise cycles are detected, not longer chains, and not cycles formed purely
-/// through uncaptured locals (requires a shared, captured variable on both sides).
+/// Handles `handle` directly captures that can transitively reach `handle` again (a cycle of any
+/// length, not just direct pairwise ones).
 fn mutually_capturing_peers(
     handle: &CoroutineHandle,
     frames: &[Frame],
@@ -393,7 +409,7 @@ fn mutually_capturing_peers(
     }
     direct_coroutine_neighbors(frames, operand_stack)
         .into_iter()
-        .filter(|peer| !same_handle(peer, handle) && peer_directly_references(peer, handle))
+        .filter(|peer| !same_handle(peer, handle) && peer_can_reach(peer, handle))
         .collect()
 }
 
