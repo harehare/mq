@@ -3267,6 +3267,25 @@ fn generator_closure_mutates_captured_state_across_suspensions() {
 }
 
 #[test]
+fn suspended_generator_with_a_captured_self_reference_is_released() {
+    // Suspending `g` captures `s`, whose value is the coroutine itself. The suspension path
+    // must downgrade that back-edge; otherwise the coroutine state, frame, and captured cell
+    // keep one another alive after the program drops its last external reference.
+    let stream = run("var s = None | let g = fn(): yield: s; | s = g() | next(s) | s");
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the suspended coroutine must not retain itself"
+    );
+}
+
+#[test]
 fn calling_a_generator_does_not_execute_it() {
     // Calling `g()` alone (no `next()`) must produce a coroutine, not run the body, so `marker`
     // stays unset.
