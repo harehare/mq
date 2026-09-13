@@ -21,7 +21,7 @@ use crate::ident::all_symbols;
 #[cfg(feature = "http")]
 use crate::io::HttpRequestSpec;
 #[cfg(feature = "file-io")]
-use crate::io::Io;
+use crate::io::{FileKind, Io};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
 #[cfg(not(feature = "tarn"))]
@@ -5228,17 +5228,36 @@ fn load_gitignore(io: &dyn Io, dir: &std::path::Path) -> Option<ignore::gitignor
     builder.build().ok()
 }
 
+/// Shared recursive directory walker backing both `collection` and `walk_files`: handles
+/// symlink-cycle detection (via `ancestors`, keyed by canonical path), `.gitignore`/hidden-file
+/// filtering, and the choice of whether to descend into a *symlinked* directory
+/// (`follow_symlink_dirs`; `collection` always passes `true` to keep its prior behavior,
+/// `walk_files` passes its `follow_symlinks` option). Every non-directory entry that survives
+/// gitignore filtering and an existence check (guarding against broken symlinks) is reported to
+/// `visit_file` as `(path, rel_path)`, where `path` is the full path as read from `io.read_dir`
+/// (dir-joined, matching `collection`'s existing `path` field) and `rel_path` is relative to the
+/// original `dir` this walk started from (what `walk_files` returns). Callers apply their own
+/// inclusion predicate (extension check, glob pattern) from inside `visit_file`.
 #[cfg(feature = "file-io")]
-fn collect_markdown_files(
+#[allow(clippy::too_many_arguments)]
+fn walk_dir(
     io: &dyn Io,
     dir: &std::path::Path,
+    rel_dir: &std::path::Path,
     ancestors: &mut FxHashSet<std::path::PathBuf>,
     gitignore_stack: &mut Vec<ignore::gitignore::Gitignore>,
     respect_gitignore: bool,
-) -> Result<Vec<std::path::PathBuf>, Error> {
+    follow_symlink_dirs: bool,
+    visit_file: &mut dyn FnMut(&std::path::Path, &std::path::Path),
+) -> Result<(), Error> {
+    // Also rejects a symlinked root, not just a symlinked subdirectory found during recursion.
+    if !follow_symlink_dirs && matches!(io.metadata(dir).map(|m| m.kind), Ok(FileKind::Symlink)) {
+        return Ok(());
+    }
+
     let canonical = io.canonicalize(dir);
     if !ancestors.insert(canonical.clone()) {
-        return Ok(Vec::new());
+        return Ok(());
     }
 
     let pushed_gitignore = respect_gitignore && load_gitignore(io, dir).map(|gi| gitignore_stack.push(gi)).is_some();
@@ -5247,34 +5266,38 @@ fn collect_markdown_files(
         .read_dir(dir)
         .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir.display(), e)))?;
 
-    let mut paths = Vec::new();
-
     for (path, is_dir) in entries {
+        // Keep as `OsStr`: a non-UTF-8 filename is valid on Unix and must still be walked.
+        let Some(file_name) = path.file_name() else {
+            continue;
+        };
+
         if respect_gitignore {
-            let is_hidden = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with('.'));
+            let is_hidden = file_name.to_string_lossy().starts_with('.');
             if is_hidden || is_gitignored(gitignore_stack, &path, is_dir) {
                 continue;
             }
         }
 
+        let rel_path = if rel_dir.as_os_str().is_empty() {
+            std::path::PathBuf::from(file_name)
+        } else {
+            rel_dir.join(file_name)
+        };
+
         if is_dir {
-            paths.extend(collect_markdown_files(
+            walk_dir(
                 io,
                 &path,
+                &rel_path,
                 ancestors,
                 gitignore_stack,
                 respect_gitignore,
-            )?);
-        } else if io.exists(&path).unwrap_or(false)
-            && path
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
-        {
-            paths.push(path);
+                follow_symlink_dirs,
+                visit_file,
+            )?;
+        } else if io.exists(&path).unwrap_or(false) {
+            visit_file(&path, &rel_path);
         }
     }
 
@@ -5282,7 +5305,7 @@ fn collect_markdown_files(
         gitignore_stack.pop();
     }
     ancestors.remove(&canonical);
-    Ok(paths)
+    Ok(())
 }
 
 #[cfg(feature = "file-io")]
@@ -5290,12 +5313,25 @@ fn collection_impl_inner(dir: &str, respect_gitignore: bool) -> Result<RuntimeVa
     let io = io_context::current();
     let mut ancestors = FxHashSet::default();
     let mut gitignore_stack = Vec::new();
-    let mut paths = collect_markdown_files(
+    let mut paths = Vec::new();
+
+    walk_dir(
         io.as_ref(),
         std::path::Path::new(dir),
+        std::path::Path::new(""),
         &mut ancestors,
         &mut gitignore_stack,
         respect_gitignore,
+        true, // `collection` has always followed symlinked directories.
+        &mut |path, _rel| {
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+            {
+                paths.push(path.to_path_buf());
+            }
+        },
     )?;
     paths.sort();
 
@@ -5332,6 +5368,99 @@ fn collection_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("collection should always receive one or two arguments"),
+    }
+}
+
+#[cfg(feature = "file-io")]
+fn walk_files_impl_inner(
+    root: &str,
+    pattern: &str,
+    respect_gitignore: bool,
+    follow_symlinks: bool,
+) -> Result<RuntimeValue, Error> {
+    let glob_pattern = glob::Pattern::new(pattern)
+        .map_err(|e| Error::Runtime(format!("walk_files: invalid pattern {:?}: {}", pattern, e)))?;
+    let match_options = glob::MatchOptions {
+        require_literal_separator: true,
+        ..glob::MatchOptions::new()
+    };
+
+    let io = io_context::current();
+    let mut ancestors = FxHashSet::default();
+    let mut gitignore_stack = Vec::new();
+    let mut out = Vec::new();
+
+    walk_dir(
+        io.as_ref(),
+        std::path::Path::new(root),
+        std::path::Path::new(""),
+        &mut ancestors,
+        &mut gitignore_stack,
+        respect_gitignore,
+        follow_symlinks,
+        &mut |_path, rel| {
+            let rel_str = rel.to_string_lossy().replace('\\', "/");
+            if glob_pattern.matches_with(&rel_str, match_options) {
+                out.push(rel_str);
+            }
+        },
+    )?;
+
+    out.sort();
+
+    Ok(RuntimeValue::Array(Shared::new(
+        out.into_iter().map(|p| RuntimeValue::String(p.into())).collect(),
+    )))
+}
+
+/// Recursively enumerates filesystem entries under `root` whose root-relative path (using
+/// `/` as the separator regardless of platform) matches the glob `pattern` (default
+/// `"**"`, i.e. every file), returning a stable-sorted array of those relative path
+/// strings. Unlike `collection`, this reads neither file contents nor Markdown — it is a
+/// general-purpose enumeration primitive for reports that mix non-Markdown files,
+/// size/mtime-based inventories, or incremental processing, without escaping to a shell
+/// `find`. Requires the ambient [`Io`]'s read permission (see [`io_context`]).
+///
+/// An optional third argument is a dict of options:
+/// - `respect_gitignore` (default `false`): skip dotfiles/dot-directories and any path
+///   matched by a `.gitignore`, same semantics as `collection`.
+/// - `follow_symlinks` (default `false`): whether to descend into symlinked directories.
+///   A symlinked *file* is always included if it matches the pattern; only directory
+///   traversal is affected, and symlink cycles are always broken regardless of this
+///   option.
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "walk_files", params = Range(1, 3))]
+fn walk_files_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(root)] => walk_files_impl_inner(root.as_str(), "**", false, false),
+        [RuntimeValue::String(root), RuntimeValue::String(pattern)] => {
+            walk_files_impl_inner(root.as_str(), pattern.as_str(), false, false)
+        }
+        [
+            RuntimeValue::String(root),
+            RuntimeValue::String(pattern),
+            RuntimeValue::Dict(options),
+        ] => {
+            let respect_gitignore = matches!(
+                options.get(&Ident::new("respect_gitignore")),
+                Some(RuntimeValue::Boolean(true))
+            );
+            let follow_symlinks = matches!(
+                options.get(&Ident::new("follow_symlinks")),
+                Some(RuntimeValue::Boolean(true))
+            );
+            walk_files_impl_inner(root.as_str(), pattern.as_str(), respect_gitignore, follow_symlinks)
+        }
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        [a, b, c] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
+        )),
+        _ => unreachable!("walk_files should always receive one to three arguments"),
     }
 }
 
@@ -5595,6 +5724,8 @@ mq_macros::builtin_dispatch! {
     READ_FILE_BYTES,
     #[cfg(feature = "file-io")]
     COLLECTION,
+    #[cfg(feature = "file-io")]
+    WALK_FILES,
     #[cfg(feature = "file-io")]
     WRITE_FILE,
     #[cfg(feature = "file-io")]
@@ -8908,6 +9039,18 @@ x
             description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. `respect_gitignore` is optional (default `false`); when `true`, dotfiles/dot-directories and any path matched by a `.gitignore` in `dir` or a subdirectory are skipped, with closer `.gitignore` files taking precedence, same as `git`. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["dir", "respect_gitignore?"],
             param_types: &["string", "boolean"],
+            returns: "array",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("walk_files"),
+        BuiltinFunctionDoc {
+            description: "Recursively enumerates filesystem entries under `root` whose root-relative path (using `/` as the separator regardless of platform) matches the glob `pattern` (default `\"**\"`, i.e. every file), returning a stable-sorted array of those relative path strings. Unlike `collection`, this reads neither file contents nor Markdown. An optional third argument is a dict of options: `respect_gitignore` (default `false`, same semantics as `collection`) and `follow_symlinks` (default `false`; a symlinked file is always included if it matches, only directory traversal is affected). Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["root", "pattern?", "options?"],
+            param_types: &["string", "string", "dict"],
             returns: "array",
             examples: &[],
             capability: Some("file-io"),
@@ -14740,6 +14883,297 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[cfg(feature = "file-io")]
+    fn walk_files_paths(result: RuntimeValue) -> Vec<String> {
+        match result {
+            RuntimeValue::Array(entries) => entries
+                .iter()
+                .map(|e| match e {
+                    RuntimeValue::String(s) => s.to_string(),
+                    other => panic!("expected String, got {other:?}"),
+                })
+                .collect(),
+            other => panic!("expected Array, got {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "file-io")]
+    fn walk_files_options(entries: &[(&str, bool)]) -> RuntimeValue {
+        let mut map = BTreeMap::new();
+        for (key, value) in entries {
+            map.insert(Ident::new(key), RuntimeValue::Boolean(*value));
+        }
+        RuntimeValue::Dict(Shared::new(map))
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_walk_files_requires_allow_read() {
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("a.md"), "a").expect("failed to write");
+
+        // No ambient Io guard installed: the default is all-denied.
+        assert!(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned()
+                ))],
+            )
+            .is_err(),
+            "walk_files should be blocked when read access is not allowed"
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_walk_files_enumerates_all_file_types_sorted() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("b.txt"), "b").expect("failed to write");
+        std::fs::write(dir.path().join("a.md"), "a").expect("failed to write");
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).expect("failed to create subdir");
+        std::fs::write(sub.join("c.png"), "c").expect("failed to write");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned(),
+                ))],
+            )
+            .expect("walk_files should succeed"),
+        );
+        assert_eq!(paths, vec!["a.md", "b.txt", "sub/c.png"]);
+    }
+
+    #[cfg(feature = "file-io")]
+    #[rstest]
+    // Default pattern ("**") matches every non-directory entry, Markdown or not.
+    #[case("**", vec!["a.md", "b.txt", "sub/c.md"])]
+    // A narrower glob restricts matches to a root-relative subset.
+    #[case("**/*.md", vec!["a.md", "sub/c.md"])]
+    fn test_walk_files_pattern(#[case] pattern: &str, #[case] expected: Vec<&str>) {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("a.md"), "a").expect("failed to write");
+        std::fs::write(dir.path().join("b.txt"), "b").expect("failed to write");
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).expect("failed to create subdir");
+        std::fs::write(sub.join("c.md"), "c").expect("failed to write");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![
+                    RuntimeValue::String(Shared::new(dir.path().to_string_lossy().into_owned())),
+                    RuntimeValue::String(Shared::new(pattern.into())),
+                ],
+            )
+            .expect("walk_files should succeed"),
+        );
+        assert_eq!(paths, expected);
+    }
+
+    #[cfg(feature = "file-io")]
+    #[rstest]
+    // Defaults to false: dotfiles/.gitignore matches are kept, same as `collection`.
+    #[case(None, vec![".gitignore", ".hidden/secret.txt", "ignored.txt", "kept.txt"])]
+    // true: skips dotfiles/dot-directories and any path a .gitignore matches.
+    #[case(Some(true), vec!["kept.txt"])]
+    fn test_walk_files_respect_gitignore(#[case] respect_gitignore: Option<bool>, #[case] expected: Vec<&str>) {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join(".gitignore"), "ignored.txt\n").expect("failed to write");
+        std::fs::write(dir.path().join("ignored.txt"), "x").expect("failed to write");
+        std::fs::write(dir.path().join("kept.txt"), "x").expect("failed to write");
+        let hidden_dir = dir.path().join(".hidden");
+        std::fs::create_dir(&hidden_dir).expect("failed to create hidden dir");
+        std::fs::write(hidden_dir.join("secret.txt"), "x").expect("failed to write");
+
+        let mut args = vec![RuntimeValue::String(Shared::new(
+            dir.path().to_string_lossy().into_owned(),
+        ))];
+        if let Some(respect_gitignore) = respect_gitignore {
+            args.push(RuntimeValue::String(Shared::new("**".into())));
+            args.push(walk_files_options(&[("respect_gitignore", respect_gitignore)]));
+        }
+
+        let paths = walk_files_paths(call("walk_files", args).expect("walk_files should succeed"));
+        assert_eq!(paths, expected);
+    }
+
+    #[cfg(all(feature = "file-io", unix))]
+    #[rstest]
+    // Defaults to false: a symlinked file is still included, but a symlinked
+    // directory is not descended into (so it contributes no entries at all).
+    #[case(None, vec!["linked.txt", "real.txt", "real_sub/inside.txt"])]
+    // true: descends into symlinked directories too.
+    #[case(
+        Some(true),
+        vec!["linked.txt", "linked_dir/inside.txt", "real.txt", "real_sub/inside.txt"]
+    )]
+    fn test_walk_files_follow_symlinks(#[case] follow_symlinks: Option<bool>, #[case] expected: Vec<&str>) {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("real.txt"), "x").expect("failed to write");
+        let real_sub = dir.path().join("real_sub");
+        std::fs::create_dir(&real_sub).expect("failed to create subdir");
+        std::fs::write(real_sub.join("inside.txt"), "x").expect("failed to write");
+        std::os::unix::fs::symlink(dir.path().join("real.txt"), dir.path().join("linked.txt"))
+            .expect("failed to create file symlink");
+        std::os::unix::fs::symlink(&real_sub, dir.path().join("linked_dir")).expect("failed to create dir symlink");
+
+        let mut args = vec![RuntimeValue::String(Shared::new(
+            dir.path().to_string_lossy().into_owned(),
+        ))];
+        if let Some(follow_symlinks) = follow_symlinks {
+            args.push(RuntimeValue::String(Shared::new("**".into())));
+            args.push(walk_files_options(&[("follow_symlinks", follow_symlinks)]));
+        }
+
+        let paths = walk_files_paths(call("walk_files", args).expect("walk_files should succeed"));
+        assert_eq!(paths, expected);
+    }
+
+    #[cfg(all(feature = "file-io", unix))]
+    #[test]
+    fn test_walk_files_detects_symlink_cycles_even_with_follow_symlinks() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("root.txt"), "x").expect("failed to write");
+        let sub = dir.path().join("sub");
+        std::fs::create_dir(&sub).expect("failed to create subdir");
+        std::os::unix::fs::symlink(dir.path(), sub.join("back_to_root")).expect("failed to create dir symlink");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![
+                    RuntimeValue::String(Shared::new(dir.path().to_string_lossy().into_owned())),
+                    RuntimeValue::String(Shared::new("**".into())),
+                    walk_files_options(&[("follow_symlinks", true)]),
+                ],
+            )
+            .expect("walk_files should succeed despite the symlink cycle"),
+        );
+        assert_eq!(paths, vec!["root.txt"]);
+    }
+
+    #[cfg(all(feature = "file-io", unix))]
+    #[test]
+    fn test_walk_files_skips_broken_symlinks() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(dir.path().join("root.txt"), "x").expect("failed to write");
+        std::os::unix::fs::symlink(dir.path().join("does_not_exist"), dir.path().join("broken"))
+            .expect("failed to create broken symlink");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned(),
+                ))],
+            )
+            .expect("walk_files should succeed despite the broken symlink"),
+        );
+        assert_eq!(paths, vec!["root.txt"]);
+    }
+
+    // macOS/APFS rejects non-UTF-8 filenames outright, so this is only exercisable on Linux.
+    #[cfg(all(feature = "file-io", target_os = "linux"))]
+    #[test]
+    fn test_walk_files_includes_non_utf8_filenames() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let name = OsStr::from_bytes(b"report\xff.md");
+        std::fs::write(dir.path().join(name), "x").expect("failed to write");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned(),
+                ))],
+            )
+            .expect("walk_files should succeed"),
+        );
+        assert_eq!(paths.len(), 1, "non-UTF-8 filename should not be dropped");
+    }
+
+    #[cfg(all(feature = "file-io", unix))]
+    #[test]
+    fn test_walk_files_rejects_symlink_escape_outside_allowed_paths() {
+        let allowed = tempfile::tempdir().expect("failed to create temp dir");
+        let outside = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(outside.path().join("secret.md"), "secret").expect("failed to write");
+        std::os::unix::fs::symlink(outside.path(), allowed.path().join("escape")).expect("failed to create symlink");
+
+        let _guard = io_context::scoped(Shared::new(
+            SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.path().to_path_buf()]),
+        ));
+
+        assert!(
+            call(
+                "walk_files",
+                vec![
+                    RuntimeValue::String(Shared::new(allowed.path().to_string_lossy().into_owned())),
+                    RuntimeValue::String(Shared::new("**".into())),
+                    walk_files_options(&[("follow_symlinks", true)]),
+                ],
+            )
+            .is_err(),
+            "walking into a symlink that resolves outside the allowed paths must be denied"
+        );
+
+        // Calling walk_files directly on the escaping symlink is denied the same way.
+        assert!(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    allowed.path().join("escape").to_string_lossy().into_owned(),
+                ))],
+            )
+            .is_err()
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[rstest]
+    // Invalid root argument type.
+    #[case(|_dir: &str| vec![RuntimeValue::Number(42.into())])]
+    // Nonexistent directory.
+    #[case(|_dir: &str| vec![RuntimeValue::String(Shared::new("/nonexistent/path/no_such_dir".into()))])]
+    // Invalid glob pattern syntax.
+    #[case(|dir: &str| vec![
+        RuntimeValue::String(Shared::new(dir.to_string())),
+        RuntimeValue::String(Shared::new("[".into())),
+    ])]
+    // Invalid pattern argument type.
+    #[case(|dir: &str| vec![
+        RuntimeValue::String(Shared::new(dir.to_string())),
+        RuntimeValue::Number(42.into()),
+    ])]
+    fn test_walk_files_errors(#[case] build_args: fn(&str) -> Vec<RuntimeValue>) {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let args = build_args(&dir.path().to_string_lossy());
+        assert!(call("walk_files", args).is_err());
     }
 
     #[cfg(feature = "file-io")]

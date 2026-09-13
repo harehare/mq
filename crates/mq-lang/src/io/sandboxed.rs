@@ -122,6 +122,39 @@ impl<Inner: Io> SandboxedIo<Inner> {
     pub fn is_env_allowed(&self) -> bool {
         !self.allow_env.is_denied()
     }
+
+    /// Resolves `path`'s real, symlink-free location. Falls back to canonicalizing the parent
+    /// when `path` itself doesn't exist yet (e.g. a write target).
+    fn real_path(&self, path: &Path) -> PathBuf {
+        let canonical = self.inner.canonicalize(path);
+        if canonical != path {
+            return canonical;
+        }
+        match (path.parent(), path.file_name()) {
+            (Some(parent), Some(name)) if !parent.as_os_str().is_empty() => {
+                let mut real_parent = self.inner.canonicalize(parent);
+                real_parent.push(name);
+                real_parent
+            }
+            _ => path.to_path_buf(),
+        }
+    }
+
+    /// Like [`PathAccess::permits`], but for an allowlist also checks `path`'s real
+    /// (symlink-resolved) location against each allowed root's real location, so a symlink
+    /// under an allowed directory can't redirect access outside every grant.
+    fn permits_real(&self, access: &PathAccess, path: &Path) -> bool {
+        if !access.permits(path) {
+            return false;
+        }
+        match access {
+            PathAccess::AllowedPaths(allowed) => {
+                let real = self.real_path(path);
+                allowed.iter().any(|root| real.starts_with(self.real_path(root)))
+            }
+            _ => true,
+        }
+    }
 }
 
 fn denied(what: &'static str) -> IoError {
@@ -158,7 +191,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.read_to_string(path)
@@ -168,7 +201,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.read_bytes(path)
@@ -178,7 +211,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_write.is_denied() {
             return Err(denied("filesystem writes are disabled"));
         }
-        if !self.allow_write.permits(path) {
+        if !self.permits_real(&self.allow_write, path) {
             return Err(denied_path("write", path));
         }
         self.inner.write(path, content)
@@ -188,7 +221,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.exists(path)
@@ -198,7 +231,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.file_size(path)
@@ -208,7 +241,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.metadata(path)
@@ -218,7 +251,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         if self.allow_read.is_denied() {
             return Err(denied("filesystem reads are disabled"));
         }
-        if !self.allow_read.permits(path) {
+        if !self.permits_real(&self.allow_read, path) {
             return Err(denied_path("read", path));
         }
         self.inner.read_dir(path)
@@ -563,5 +596,46 @@ mod tests {
         assert!(io.is_net_allowed());
         assert!(io.is_run_allowed());
         assert!(io.is_env_allowed());
+    }
+
+    /// A symlink lexically inside the allowed directory but resolving outside it must be
+    /// rejected, while a real file inside stays readable.
+    #[cfg(unix)]
+    #[test]
+    fn test_read_allowlist_rejects_symlink_escape() {
+        let allowed = tempfile::tempdir().expect("failed to create temp dir");
+        let outside = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(outside.path().join("secret.txt"), "secret").expect("failed to write");
+
+        let link = allowed.path().join("escape");
+        std::os::unix::fs::symlink(outside.path(), &link).expect("failed to create symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.path().to_path_buf()]);
+
+        assert!(matches!(
+            io.read_to_string(&link.join("secret.txt")),
+            Err(IoError::PermissionDenied(_))
+        ));
+        assert!(matches!(io.read_dir(&link), Err(IoError::PermissionDenied(_))));
+
+        std::fs::write(allowed.path().join("ok.txt"), "ok").expect("failed to write");
+        assert_eq!(io.read_to_string(&allowed.path().join("ok.txt")).unwrap(), "ok");
+    }
+
+    /// The grant itself may be a symlink (e.g. `/tmp` on macOS) and must keep working, since
+    /// the caller who wrote that path explicitly authorized it.
+    #[cfg(unix)]
+    #[test]
+    fn test_read_allowlist_grant_may_itself_be_a_symlink() {
+        let real = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(real.path().join("ok.txt"), "ok").expect("failed to write");
+
+        let parent = tempfile::tempdir().expect("failed to create temp dir");
+        let link_root = parent.path().join("link_root");
+        std::os::unix::fs::symlink(real.path(), &link_root).expect("failed to create symlink");
+
+        let io = SandboxedIo::new(NativeIo::default()).allow_read(vec![link_root.clone()]);
+
+        assert_eq!(io.read_to_string(&link_root.join("ok.txt")).unwrap(), "ok");
     }
 }

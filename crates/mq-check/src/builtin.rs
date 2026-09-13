@@ -1387,6 +1387,23 @@ fn register_file_io(ctx: &mut InferenceContext) {
         Type::array(Type::dict(Type::Var(k), Type::Var(v))),
     );
 
+    // walk_files: string (root) -> [string] (root-relative paths)
+    register_unary(ctx, "walk_files", Type::String, Type::array(Type::String));
+
+    // walk_files: (string, string) (root, pattern) -> [string]
+    register_binary(ctx, "walk_files", Type::String, Type::String, Type::array(Type::String));
+
+    // walk_files: (string, string, dict) (root, pattern, options) -> [string]
+    let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
+    register_ternary(
+        ctx,
+        "walk_files",
+        Type::String,
+        Type::String,
+        Type::dict(Type::Var(k), Type::Var(v)),
+        Type::array(Type::String),
+    );
+
     // Path manipulation: string -> string
     register_many(
         ctx,
