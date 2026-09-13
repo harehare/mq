@@ -158,7 +158,7 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
                 let _ = write!(
                     trace,
                     "\n  at {name} ({}:{})",
-                    token.range.start.line + 1,
+                    token.range.start.line,
                     token.range.start.column + 1
                 );
             }

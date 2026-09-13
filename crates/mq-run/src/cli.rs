@@ -92,6 +92,10 @@ pub struct Cli {
     #[arg(long, value_name = "SECONDS")]
     timeout: Option<f64>,
 
+    /// Include VM frames in uncaught runtime errors.
+    #[arg(long, default_value_t = false)]
+    stack_trace: bool,
+
     /// Enter the interactive debugger when an uncaught error occurs (mq-dbg only).
     #[cfg(feature = "debugger")]
     #[arg(long = "stop-on-error", default_value_t = false)]
@@ -1796,6 +1800,7 @@ impl Cli {
             }
             engine.set_timeout(std::time::Duration::from_secs_f64(secs));
         }
+        engine.set_capture_stack_trace(self.stack_trace);
 
         #[cfg(feature = "debugger")]
         {
@@ -3525,6 +3530,31 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[rstest]
+    #[case::default(false)]
+    #[case::enabled(true)]
+    fn test_stack_trace_flag(#[case] enabled: bool) {
+        let cli = if enabled {
+            Cli::try_parse_from(["mq", "--stack-trace", "self"]).unwrap()
+        } else {
+            Cli::try_parse_from(["mq", "self"]).unwrap()
+        };
+        let error = cli
+            .create_engine()
+            .unwrap()
+            .eval(
+                "def inner(): 1 / 0; def outer(): inner(); outer()",
+                std::iter::once(mq_lang::RuntimeValue::None),
+            )
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error.contains("stack trace:"), enabled);
+        if enabled {
+            assert!(error.contains("at inner (1:"), "{error}");
+        }
     }
 
     #[test]
