@@ -860,6 +860,15 @@ enum HelpFormat {
     Markdown,
 }
 
+/// Returns `true` if `value` is a coroutine, or an array/dict containing one at any depth.
+fn value_contains_coroutine(value: &mq_lang::RuntimeValue) -> bool {
+    match value {
+        mq_lang::RuntimeValue::Array(items) => items.iter().any(value_contains_coroutine),
+        mq_lang::RuntimeValue::Dict(map) => map.values().any(value_contains_coroutine),
+        value => value.is_coroutine(),
+    }
+}
+
 impl Cli {
     /// Reserved `mq help` topic name for general CLI usage examples (not a function,
     /// selector, or module).
@@ -1993,13 +2002,14 @@ impl Cli {
     ///
     /// Query evaluation keeps coroutines lazy so operations such as `first` and `take` can
     /// short-circuit. A suspended coroutine is not useful output, though, so `mq-run` consumes
-    /// each top-level coroutine with the standard `collect()` builtin before rendering it.
+    /// each coroutine (including ones nested inside arrays and dicts) with the standard
+    /// `collect()` builtin before rendering it.
     fn collect_output_coroutines(
         &self,
         engine: &mut mq_lang::DefaultEngine,
         runtime_values: mq_lang::RuntimeValues,
     ) -> miette::Result<mq_lang::RuntimeValues> {
-        if !runtime_values.values().iter().any(mq_lang::RuntimeValue::is_coroutine) {
+        if !runtime_values.values().iter().any(value_contains_coroutine) {
             return Ok(runtime_values);
         }
 
@@ -2007,25 +2017,57 @@ impl Cli {
         let mut materialized = Vec::with_capacity(runtime_values.len());
 
         for value in runtime_values {
-            if value.is_coroutine() {
-                let collected = engine
-                    .eval_compiled(&collector, std::iter::once(value))
-                    .map_err(|error| *error)?;
-                if collected.len() != 1 {
-                    return Err(miette!(
-                        "internal error: collect() must produce exactly one output value"
-                    ));
-                }
-                let Some(value) = collected.into_iter().next() else {
-                    return Err(miette!("internal error: collect() produced no output value"));
-                };
-                materialized.push(value);
-            } else {
-                materialized.push(value);
-            }
+            materialized.push(self.materialize_coroutines(engine, &collector, value)?);
         }
 
         Ok(materialized.into())
+    }
+
+    /// Recursively materializes coroutines within a single value, rebuilding arrays and dicts
+    /// that contain them.
+    fn materialize_coroutines(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        collector: &mq_lang::CompiledProgram,
+        value: mq_lang::RuntimeValue,
+    ) -> miette::Result<mq_lang::RuntimeValue> {
+        if value.is_coroutine() {
+            let collected = engine
+                .eval_compiled(collector, std::iter::once(value))
+                .map_err(|error| *error)?;
+            if collected.len() != 1 {
+                return Err(miette!(
+                    "internal error: collect() must produce exactly one output value"
+                ));
+            }
+            return collected
+                .into_iter()
+                .next()
+                .ok_or_else(|| miette!("internal error: collect() produced no output value"));
+        }
+
+        match value {
+            mq_lang::RuntimeValue::Array(items) if items.iter().any(value_contains_coroutine) => {
+                let items = Shared::try_unwrap(items).unwrap_or_else(|shared| (*shared).clone());
+                let materialized = items
+                    .into_iter()
+                    .map(|item| self.materialize_coroutines(engine, collector, item))
+                    .collect::<miette::Result<Vec<_>>>()?;
+                Ok(mq_lang::RuntimeValue::Array(Shared::new(materialized)))
+            }
+            mq_lang::RuntimeValue::Dict(map) if map.values().any(value_contains_coroutine) => {
+                let map = Shared::try_unwrap(map).unwrap_or_else(|shared| (*shared).clone());
+                let materialized = map
+                    .into_iter()
+                    .map(|(key, value)| {
+                        self.materialize_coroutines(engine, collector, value)
+                            .map(|value| (key, value))
+                    })
+                    .collect::<miette::Result<DictMap>>()?;
+                Ok(mq_lang::RuntimeValue::Dict(Shared::new(materialized)))
+            }
+            value => Ok(value),
+        }
     }
 
     fn emit_results(
@@ -3218,6 +3260,35 @@ mod tests {
 
         cli.run().unwrap();
         assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[10, 20, 30]");
+    }
+
+    #[test]
+    fn test_cli_collects_nested_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_collects_nested_coroutine_output.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("def g(): yield: 1 | yield: 2; | [g()]".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[[1, 2]]");
     }
 
     #[test]
