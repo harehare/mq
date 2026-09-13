@@ -55,6 +55,8 @@ use crate::{Debugger, DebuggerHandler, SharedCell, Source};
 pub(crate) struct Options {
     pub(crate) max_call_stack_depth: u32,
     pub(crate) timeout: Option<Duration>,
+    /// Captures frames for uncaught runtime errors.
+    pub(crate) capture_stack_trace: bool,
 }
 
 impl Default for Options {
@@ -64,6 +66,7 @@ impl Default for Options {
             // can safely accommodate practical non-tail recursion in release builds.
             max_call_stack_depth: if cfg!(debug_assertions) { 256 } else { 10_000 },
             timeout: None,
+            capture_stack_trace: false,
         }
     }
 }
@@ -447,6 +450,7 @@ pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
     pub(crate) host_functions: &'a HostFunctions,
     pub(crate) timeout: Option<Duration>,
     pub(crate) max_call_stack_depth: u32,
+    pub(crate) capture_stack_trace: bool,
     pub(crate) token_arena: TokenArena,
     pub(crate) module_loader: ModuleLoader<R>,
     pub(crate) global_bindings: &'a [(crate::Ident, RuntimeValue)],
@@ -464,6 +468,7 @@ impl<'a, R: ModuleResolver> EngineRunContext<'a, R> {
             host_functions: self.host_functions,
             timeout: self.timeout,
             max_call_stack_depth: self.max_call_stack_depth,
+            capture_stack_trace: self.capture_stack_trace,
             token_arena: Shared::clone(&self.token_arena),
             module_loader: self.module_loader.with_same_resolver(),
             global_bindings: self.global_bindings,
@@ -478,6 +483,7 @@ impl<'a, R: ModuleResolver> EngineRunContext<'a, R> {
             host_functions: self.host_functions,
             timeout,
             max_call_stack_depth: self.max_call_stack_depth,
+            capture_stack_trace: self.capture_stack_trace,
             global_bindings: self.global_bindings,
         }
     }
@@ -634,6 +640,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
             host_functions,
             timeout: remaining_timeout(deadline),
             max_call_stack_depth,
+            capture_stack_trace: false,
             global_bindings,
         },
         &var_names,
@@ -837,6 +844,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 self.engine.host_functions,
                 deadline,
                 self.engine.max_call_stack_depth,
+                self.engine.capture_stack_trace,
                 self.engine.global_bindings,
                 self.environment_key,
             );
@@ -1368,6 +1376,10 @@ where
         return run_with_session(program, inputs, &context, session, &global_names, deadline);
     }
     let Some((before, after)) = split_at_nodes(program) else {
+        let host_functions = context.host_functions;
+        let max_call_stack_depth = context.max_call_stack_depth;
+        let capture_stack_trace = context.capture_stack_trace;
+        let global_bindings = context.global_bindings;
         let compiled = compiler::compile_program_for_engine(
             program,
             context.token_arena,
@@ -1376,13 +1388,16 @@ where
             &context.preresolved_module_vars,
         )?;
         return run_inputs(inputs, |value| {
-            interpreter::run_with_globals(
+            interpreter::run_with_global_options(
                 &compiled,
                 value,
-                context.host_functions,
-                remaining_timeout(deadline),
-                context.max_call_stack_depth,
-                context.global_bindings,
+                interpreter::RunOptions {
+                    host_functions,
+                    timeout: remaining_timeout(deadline),
+                    max_call_stack_depth,
+                    capture_stack_trace,
+                    global_bindings,
+                },
             )
         })
         .map_err(Error::from);
@@ -1398,14 +1413,7 @@ where
     let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
         run_inputs(inputs, |value| {
-            interpreter::run_with_globals(
-                &compiled,
-                value,
-                context.host_functions,
-                remaining_timeout(deadline),
-                context.max_call_stack_depth,
-                context.global_bindings,
-            )
+            interpreter::run_with_global_options(&compiled, value, context.run_options(remaining_timeout(deadline)))
         })
         .map_err(Error::from)?
     } else {
@@ -1475,10 +1483,7 @@ where
             interpreter::run_with_debug_hook_and_globals(
                 &compiled,
                 value,
-                context.engine.host_functions,
-                remaining_timeout(deadline),
-                context.engine.max_call_stack_depth,
-                context.engine.global_bindings,
+                context.engine.run_options(remaining_timeout(deadline)),
                 &mut hook,
             )
         })
@@ -1510,10 +1515,7 @@ where
             interpreter::run_with_debug_hook_and_globals(
                 &compiled,
                 value,
-                context.engine.host_functions,
-                remaining_timeout(deadline),
-                context.engine.max_call_stack_depth,
-                context.engine.global_bindings,
+                context.engine.run_options(remaining_timeout(deadline)),
                 &mut hook,
             )
         })
@@ -1552,6 +1554,7 @@ where
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
     let result = if let_names.is_empty() {
+        let run_options = context.engine.run_options(remaining_timeout(deadline));
         let aggregate_compiled = compiler::compile_program_for_engine(
             &program,
             context.engine.token_arena,
@@ -1560,15 +1563,7 @@ where
             &context.engine.preresolved_module_vars,
         )?;
         hook.set_sources(aggregate_compiled.debug_sources.clone());
-        interpreter::run_with_debug_hook_and_globals(
-            &aggregate_compiled,
-            input,
-            context.engine.host_functions,
-            remaining_timeout(deadline),
-            context.engine.max_call_stack_depth,
-            context.engine.global_bindings,
-            &mut hook,
-        )
+        interpreter::run_with_debug_hook_and_globals(&aggregate_compiled, input, run_options, &mut hook)
     } else {
         let let_values = binding_values(&let_bindings);
         let run_options = context.engine.run_options(remaining_timeout(deadline));

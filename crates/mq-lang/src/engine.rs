@@ -243,6 +243,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.options.timeout = Some(timeout);
     }
 
+    /// Enables traces for uncaught VM errors.
+    pub fn set_capture_stack_trace(&mut self, enabled: bool) {
+        self.vm.options.capture_stack_trace = enabled;
+    }
+
     /// Makes top-level `let`/`var`/`def` bindings from one `eval()` call visible to the next
     /// (e.g. a REPL). Opt-in since it costs a capture/reseed pass per call.
     pub fn enable_query_session(&mut self) {
@@ -536,7 +541,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
 
-        let (timeout, max_call_stack_depth) = (self.vm.options.timeout, self.vm.options.max_call_stack_depth);
+        let (timeout, max_call_stack_depth, capture_stack_trace) = (
+            self.vm.options.timeout,
+            self.vm.options.max_call_stack_depth,
+            self.vm.options.capture_stack_trace,
+        );
         let module_loader = self.vm.module_loader.with_same_resolver();
 
         let vm = tarn::TarnVm {
@@ -544,6 +553,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 host_functions: &host_functions,
                 timeout,
                 max_call_stack_depth,
+                capture_stack_trace,
                 token_arena: Shared::clone(&self.token_arena),
                 module_loader,
                 global_bindings: &global_bindings,
@@ -748,6 +758,28 @@ mod tests {
         let timeout = std::time::Duration::from_secs(1);
         engine.set_timeout(timeout);
         assert_eq!(engine.vm.options.timeout, Some(timeout));
+    }
+
+    #[rstest]
+    #[case::default(false, false)]
+    #[case::enabled(true, true)]
+    fn test_stack_trace_is_opt_in(#[case] enabled: bool, #[case] expected_trace: bool) {
+        let mut engine = DefaultEngine::default();
+        engine.set_capture_stack_trace(enabled);
+
+        let error = engine
+            .eval(
+                "def inner(): 1 / 0; def outer(): inner(); outer()",
+                std::iter::once(RuntimeValue::None),
+            )
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error.contains("stack trace:"), expected_trace);
+        if expected_trace {
+            assert!(error.contains("at inner"), "{error}");
+            assert!(error.contains("at outer"), "{error}");
+        }
     }
 
     #[rstest]

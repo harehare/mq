@@ -1631,6 +1631,7 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1704,6 +1705,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1738,6 +1740,7 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
                 host_functions: &HostFunctions::default(),
                 timeout: None,
                 max_call_stack_depth: Options::default().max_call_stack_depth,
+                capture_stack_trace: false,
                 token_arena,
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
@@ -1769,6 +1772,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1795,6 +1799,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1829,6 +1834,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1851,6 +1857,7 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
             host_functions: &HostFunctions::default(),
             timeout: None,
             max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -2027,10 +2034,13 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut recorder,
     )
     .unwrap();
@@ -2082,10 +2092,13 @@ fn debugger_hook_exposes_closure_bindings() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut recorder,
     )
     .unwrap();
@@ -2186,10 +2199,13 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -2275,10 +2291,13 @@ fn vm_debugger_hook_applies_live_frame_writes(
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -2334,10 +2353,13 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -2411,10 +2433,13 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();

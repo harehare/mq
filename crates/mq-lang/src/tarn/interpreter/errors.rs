@@ -10,8 +10,16 @@ use crate::{Ident, Shared};
 use std::fmt;
 use std::time::Duration;
 
+/// One active VM frame captured for an opt-in uncaught-error stack trace.
+#[derive(Debug, Clone)]
+pub(crate) struct StackTraceFrame {
+    pub(crate) function_name: Option<Ident>,
+    pub(crate) token_id: Option<TokenId>,
+}
+
 #[derive(Debug)]
 pub(crate) enum VmError {
+    StackTrace(Box<VmError>, Box<[StackTraceFrame]>),
     Builtin(builtin::Error),
     Host(Ident, String),
     ZeroDivision,
@@ -45,6 +53,7 @@ pub(crate) enum VmError {
 impl fmt::Display for VmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            VmError::StackTrace(inner, _) => write!(f, "{inner}"),
             VmError::Builtin(e) => write!(f, "{e}"),
             VmError::Host(name, msg) => write!(f, "error in host function \"{name}\": {msg}"),
             VmError::ZeroDivision => write!(f, "division by zero"),
@@ -73,6 +82,7 @@ impl fmt::Display for VmError {
 impl VmError {
     pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
+            VmError::StackTrace(inner, _) => inner.token_id(),
             VmError::Located(_, token_id) => Some(*token_id),
             _ => None,
         }
@@ -88,6 +98,10 @@ impl VmError {
     ) -> crate::error::runtime::RuntimeError {
         use crate::error::runtime::RuntimeError;
         match self {
+            VmError::StackTrace(inner, frames) => crate::error::runtime::RuntimeError::WithStackTrace {
+                source: Box::new(inner.to_runtime_error(token, token_id, Shared::clone(&token_arena))),
+                trace: format_stack_trace(frames, token_arena).into_boxed_str(),
+            },
             VmError::Builtin(e) => e.to_runtime_error(token_id, token_arena),
             VmError::Host(name, msg) => {
                 RuntimeError::HostFunctionError(token, name.to_string().into_boxed_str(), msg.clone().into_boxed_str())
@@ -126,6 +140,34 @@ impl VmError {
             }
         }
     }
+}
+
+#[cold]
+fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena) -> String {
+    use std::fmt::Write;
+
+    let mut trace = String::from("stack trace:");
+    for frame in frames {
+        let name = frame
+            .function_name
+            .map(|name| name.to_string())
+            .unwrap_or_else(|| "<main>".to_string());
+        match frame.token_id {
+            Some(token_id) => {
+                let token = resolve_token(&token_arena, token_id);
+                let _ = write!(
+                    trace,
+                    "\n  at {name} ({}:{})",
+                    token.range.start.line + 1,
+                    token.range.start.column + 1
+                );
+            }
+            None => {
+                let _ = write!(trace, "\n  at {name}");
+            }
+        }
+    }
+    trace
 }
 
 /// Resolves `token_id` in `token_arena`, falling back to a placeholder token if out of range.
@@ -343,6 +385,7 @@ mod tests {
     #[allow(dead_code)]
     fn all_vm_error_variants_are_covered(e: VmError) {
         match e {
+            VmError::StackTrace(_, _) => {}
             #[cfg(feature = "debugger")]
             VmError::Debugger(_) => {}
             VmError::Builtin(_)

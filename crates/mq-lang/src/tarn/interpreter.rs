@@ -35,6 +35,7 @@ use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
 use crate::vm_profile;
 use crate::{Ident, Shared};
+use errors::StackTraceFrame;
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
 pub(crate) use frame::ExecutionPools;
@@ -97,6 +98,7 @@ pub(crate) struct RunOptions<'a> {
     pub(crate) host_functions: &'a HostFunctions,
     pub(crate) timeout: Option<Duration>,
     pub(crate) max_call_stack_depth: u32,
+    pub(crate) capture_stack_trace: bool,
     pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
 }
 
@@ -105,6 +107,12 @@ pub(crate) struct RunOptions<'a> {
 /// The compiler may retain multiple source declarations for the same name. The slot is resolved
 /// when bytecode is compiled so repeated evaluations can read it directly.
 pub(crate) type CaptureSlot = (Ident, u16);
+
+struct CapturingRun<'a> {
+    input: RuntimeValue,
+    bindings: &'a [RuntimeValue],
+    slots: &'a [CaptureSlot],
+}
 
 /// Resolves names to their final top-level slots, preserving the compiler's last-declaration
 /// lookup semantics.
@@ -142,6 +150,16 @@ pub(crate) fn run_with_globals(
     .0
 }
 
+/// Runs a compiled program with explicit VM options.
+pub(crate) fn run_with_global_options(
+    compiled: &CompiledProgram,
+    input: RuntimeValue,
+    options: RunOptions<'_>,
+) -> VmResult<RuntimeValue> {
+    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
+    run_with_env_and_pools(compiled, input, options, &env, ExecutionPools::default()).0
+}
+
 /// Runs a compiled program and returns reusable execution pools.
 pub(crate) fn run_with_globals_and_pools(
     compiled: &CompiledProgram,
@@ -156,9 +174,13 @@ pub(crate) fn run_with_globals_and_pools(
     run_with_env_and_pools(
         compiled,
         input,
-        host_functions,
-        timeout,
-        max_call_stack_depth,
+        RunOptions {
+            host_functions,
+            timeout,
+            max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &env,
         pools,
     )
@@ -171,9 +193,7 @@ pub(crate) fn run_with_globals_and_pools(
 pub(crate) fn run_with_env_and_pools(
     compiled: &CompiledProgram,
     input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
+    options: RunOptions<'_>,
     env: &VmEnv,
     pools: ExecutionPools,
 ) -> (VmResult<RuntimeValue>, ExecutionPools) {
@@ -186,12 +206,7 @@ pub(crate) fn run_with_env_and_pools(
     run_impl_with_env(
         compiled,
         input,
-        RunOptions {
-            host_functions,
-            timeout,
-            max_call_stack_depth,
-            global_bindings: &[],
-        },
+        options,
         env,
         pools,
         #[cfg(feature = "debugger")]
@@ -247,12 +262,14 @@ pub(crate) fn run_with_env_capturing_slots(
     };
     run_impl_capturing_locals_with_env(
         compiled,
-        input,
-        bindings,
+        CapturingRun {
+            input,
+            bindings,
+            slots: capture_slots,
+        },
         options,
         env,
         pools,
-        capture_slots,
         #[cfg(feature = "debugger")]
         &mut debug,
     )
@@ -263,10 +280,7 @@ pub(crate) fn run_with_env_capturing_slots(
 pub(crate) fn run_with_debug_hook_and_globals(
     compiled: &CompiledProgram,
     input: RuntimeValue,
-    host_functions: &HostFunctions,
-    timeout: Option<Duration>,
-    max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
+    options: RunOptions<'_>,
     hook: &mut dyn DebugHook,
 ) -> VmResult<RuntimeValue> {
     let mut debug = DebugRuntime {
@@ -274,19 +288,7 @@ pub(crate) fn run_with_debug_hook_and_globals(
         call_stack: Vec::new(),
         current_node: None,
     };
-    run_impl(
-        compiled,
-        input,
-        RunOptions {
-            host_functions,
-            timeout,
-            max_call_stack_depth,
-            global_bindings,
-        },
-        ExecutionPools::default(),
-        &mut debug,
-    )
-    .0
+    run_impl(compiled, input, options, ExecutionPools::default(), &mut debug).0
 }
 
 /// Captures locals while reporting debugger events.
@@ -308,12 +310,14 @@ pub(crate) fn run_with_debug_hook_and_globals_capturing_locals(
     let capture_slots = capture_slots(&compiled.chunks[0], capture_names);
     let (result, captured, _) = run_impl_capturing_locals_with_env(
         compiled,
-        input,
-        bindings,
+        CapturingRun {
+            input,
+            bindings,
+            slots: &capture_slots,
+        },
         options,
         &env,
         ExecutionPools::default(),
-        &capture_slots,
         &mut debug,
     );
     (result, captured)
@@ -381,6 +385,7 @@ pub(crate) fn run_debug_expression(
             host_functions,
             timeout: None,
             max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             global_bindings: &[],
         },
         &env,
@@ -420,6 +425,7 @@ fn run_impl_with_bindings(
         env,
         limits: &mut limits,
         host_functions: options.host_functions,
+        capture_stack_trace: options.capture_stack_trace,
     };
     let result = run_chunk(
         0,
@@ -435,17 +441,19 @@ fn run_impl_with_bindings(
 
 /// Like [`run_impl_with_bindings`], but captures precomputed local slots' final values. Bypasses
 /// `run_chunk`'s pooling wrapper to keep `locals` readable.
-#[allow(clippy::too_many_arguments)] // The separate pools, capture list, and debugger are independent services.
 fn run_impl_capturing_locals_with_env(
     compiled: &CompiledProgram,
-    input: RuntimeValue,
-    bindings: &[RuntimeValue],
+    capture: CapturingRun<'_>,
     options: RunOptions<'_>,
     env: &VmEnv,
     pools: ExecutionPools,
-    capture_slots: &[CaptureSlot],
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> (VmResult<RuntimeValue>, Vec<(Ident, RuntimeValue)>, ExecutionPools) {
+    let CapturingRun {
+        input,
+        bindings,
+        slots: capture_slots,
+    } = capture;
     let mut limits = ExecutionLimits::new(options.timeout, options.max_call_stack_depth, pools);
     let chunks = &compiled.chunks;
     let top_level_chunk = &chunks[0];
@@ -470,6 +478,7 @@ fn run_impl_capturing_locals_with_env(
         env,
         limits: &mut limits,
         host_functions: options.host_functions,
+        capture_stack_trace: options.capture_stack_trace,
     };
     let initial = Frame::new(0, None, locals, None, reusable_locals, Continuation::Push);
     let (raw_result, locals) = run_frames(
@@ -841,8 +850,16 @@ fn unwind_frames(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> Result<(), (VmError, Locals)> {
+    let capture_trace = execution.capture_stack_trace
+        && !frames
+            .iter()
+            .any(|frame| matches!(&frame.on_complete, Continuation::TryBody(_)));
+    let mut stack_trace = capture_trace.then(|| capture_stack_trace(frames, root_chunks));
     loop {
         if frames.len() == 1 {
+            if let Some(stack_trace) = stack_trace.take() {
+                e = VmError::StackTrace(Box::new(e), stack_trace);
+            }
             let finished = frames.pop().expect("just checked len() == 1");
             return Err((e, finished.locals));
         }
@@ -936,6 +953,23 @@ fn unwind_frames(
     }
 }
 
+/// Captures active frames for an uncaught-error trace.
+#[cold]
+fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Box<[StackTraceFrame]> {
+    frames
+        .iter()
+        .rev()
+        .map(|frame| {
+            let chunks = frame.chunks.as_ref().unwrap_or(root_chunks);
+            let chunk = &chunks[frame.chunk_index as usize];
+            StackTraceFrame {
+                function_name: chunk.function_name,
+                token_id: chunk.token_at(frame.ip.saturating_sub(1)),
+            }
+        })
+        .collect()
+}
+
 fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     frame: &mut Frame,
     root_chunks: &Shared<Vec<Chunk>>,
@@ -951,10 +985,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
 
     macro_rules! pop {
         () => {{
-            if stack.len() <= frame.stack_base {
-                return Err(locate(chunk, ip, VmError::Corrupt("stack underflow")));
-            }
-            // SAFETY: the length check above proves the stack is non-empty.
+            debug_assert!(
+                stack.len() > frame.stack_base,
+                "verified bytecode underflowed the stack"
+            );
+            // SAFETY: `verify_chunks` proves this opcode has an operand.
             unsafe { stack.pop().unwrap_unchecked() }
         }};
     }
@@ -1072,10 +1107,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
             OpCode::TeeLocal(slot) => {
-                let top = stack
-                    .last()
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in TeeLocal")))?
-                    .clone();
+                debug_assert!(
+                    stack.len() > frame.stack_base,
+                    "verified bytecode underflowed the stack"
+                );
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let top = unsafe { stack.last().unwrap_unchecked() }.clone();
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*slot, top) };
             }
@@ -1109,10 +1146,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 pop!();
             }
             OpCode::Dup => {
-                let top = stack
-                    .last()
-                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in Dup")))?
-                    .clone();
+                debug_assert!(
+                    stack.len() > frame.stack_base,
+                    "verified bytecode underflowed the stack"
+                );
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let top = unsafe { stack.last().unwrap_unchecked() }.clone();
                 stack.push(top);
             }
             OpCode::Jump(offset) => {
