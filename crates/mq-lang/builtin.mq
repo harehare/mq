@@ -357,6 +357,71 @@ def _take_coroutine(stream, n):
     end
 end
 
+# Lazily skips the first `n` values yielded by `stream`.
+def _skip_coroutine(stream, n):
+  var i = 0
+  | var step = next(stream)
+  | while (i < n && !step["done"]):
+      step = next(stream)
+      | i += 1
+    end
+  | while (!step["done"]):
+      yield: step["value"]
+      | step = next(stream)
+    end
+end
+
+# Lazily skips values while `f` returns true, then yields every remaining value.
+def _skip_while_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"] && f(step["value"])):
+      step = next(stream)
+    end
+  | while (!step["done"]):
+      yield: step["value"]
+      | step = next(stream)
+    end
+end
+
+# Lazily yields values while `f` returns true.
+def _take_while_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"] && f(step["value"])):
+      yield: step["value"]
+      | step = next(stream)
+    end
+end
+
+# Lazily applies `f` and omits None results.
+def _compact_map_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"]):
+      let mapped = f(step["value"])
+      | if (!is_none(mapped)):
+          yield: mapped
+      | step = next(stream)
+    end
+end
+
+# Lazily applies `f` and yields each flattened result.
+def _flat_map_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"]):
+      let flattened = flatten(f(step["value"]))
+      | if (is_array(flattened)):
+          do
+            var i = 0
+            | while (i < len(flattened)):
+                yield: flattened[i]
+                | i += 1
+              end
+          end
+        else:
+          yield: flattened
+      | step = next(stream)
+    end
+end
+
 # Applies a given function to each element of the provided array and returns a new array with the results.
 # A coroutine input instead returns a coroutine and applies the function only as
 # its values are requested.
@@ -382,7 +447,8 @@ def map(v, f):
     foreach (x, v): f(x);
 end
 
-# Applies a function to each element and flattens the result into a single array
+# Applies a function to each element and flattens the result into a single array.
+# A coroutine input is flattened lazily and returns a coroutine.
 #
 # Example:
 # ```
@@ -392,7 +458,9 @@ end
 #
 # Returns: array
 def flat_map(v, f):
-  if (is_none(v)):
+  if (is_coroutine(v)):
+    _flat_map_coroutine(v, f)
+  elif (is_none(v)):
     None
   else:
     foreach (x, v): f(x); | flatten()
@@ -478,7 +546,7 @@ def collect(stream):
     stream
 end
 
-# Returns the last element of an array
+# Returns the last element of an array, or consumes a coroutine to its last value.
 #
 # Example:
 # ```
@@ -487,7 +555,20 @@ end
 # ```
 #
 # Returns: dynamic
-def last(arr): arr[len(arr) - 1];
+def last(arr):
+  if (is_coroutine(arr)):
+    do
+      var value = None
+      | var step = next(arr)
+      | while (!step["done"]):
+          value = step["value"]
+          | step = next(arr)
+        end
+      | value
+    end
+  else:
+    arr[len(arr) - 1]
+end
 
 # Returns the second element of an array
 #
@@ -797,7 +878,8 @@ def count_by(arr, f):
     filter(arr, f) | len()
 end
 
-# Skips the first n elements of an array and returns the rest
+# Skips the first n elements of an array and returns the rest. A coroutine input
+# returns a coroutine after discarding the first `n` yielded values.
 #
 # Example:
 # ```
@@ -809,6 +891,8 @@ end
 def skip(arr, n):
   if (n < 0):
     error("n must be non-negative")
+  elif (is_coroutine(arr)):
+    _skip_coroutine(arr, n)
   elif (n > len(arr)): []
   else:
     slice(arr, n, len(arr))
@@ -858,7 +942,8 @@ def top_by(arr, f, n, group_f = None):
     with_entries(group_by(arr, group_f), fn(e): [e[0], take(reverse(sort_by(e[1], f)), n)];)
 end
 
-# Returns the index of the first element in an array that satisfies the provided function.
+# Returns the index of the first element in an array or coroutine that satisfies
+# the provided function.
 #
 # Example:
 # ```
@@ -876,13 +961,24 @@ def find_index(arr, f):
       else:
         _find_index_impl(arr, f, idx + 1);
 
-  | if (not(is_array(arr))):
+  | if (is_coroutine(arr)):
+      do
+        var idx = 0
+        | var step = next(arr)
+        | while (!step["done"] && !f(step["value"])):
+            step = next(arr)
+            | idx += 1
+          end
+        | if (step["done"]): -1 else: idx
+      end
+    elif (not(is_array(arr))):
       error("first argument must be an array")
     else:
       _find_index_impl(arr, f, 0)
 end
 
-# Skips elements from the beginning of an array while the provided function returns true
+# Skips elements from the beginning of an array while the provided function returns true.
+# A coroutine input performs the same operation lazily.
 #
 # Example:
 # ```
@@ -892,7 +988,9 @@ end
 #
 # Returns: array
 def skip_while(arr, f):
-  if (!is_array(arr)):
+  if (is_coroutine(arr)):
+    _skip_while_coroutine(arr, f)
+  elif (!is_array(arr)):
     error("first argument must be an array")
   elif (is_empty(arr)):
     []
@@ -906,7 +1004,8 @@ def skip_while(arr, f):
     end
 end
 
-# Takes elements from the beginning of an array while the provided function returns true
+# Takes elements from the beginning of an array while the provided function returns true.
+# A coroutine input performs the same operation lazily.
 #
 # Example:
 # ```
@@ -916,7 +1015,9 @@ end
 #
 # Returns: array
 def take_while(arr, f):
-  if (not(is_array(arr))):
+  if (is_coroutine(arr)):
+    _take_while_coroutine(arr, f)
+  elif (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
     []
@@ -993,7 +1094,7 @@ end
 # Returns: dict
 def tally(arr): frequencies_by(arr, identity);
 
-# Returns true if any element in the array satisfies the provided function.
+# Returns true if any element in the array or coroutine satisfies the provided function.
 #
 # Example:
 # ```
@@ -1002,9 +1103,26 @@ def tally(arr): frequencies_by(arr, identity);
 # ```
 #
 # Returns: bool
-def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
+def any(v, f):
+  if (is_coroutine(v)):
+    do
+      var step = next(v)
+      | var found = false
+      | while (!step["done"] && !found):
+          if (f(step["value"])):
+            found = true
+          else:
+            step = next(v)
+        end
+      | found
+    end
+  elif (is_empty(v)):
+    false
+  else:
+    len(filter(v, f)) != 0
+end
 
-# Returns true if all element in the array satisfies the provided function.
+# Returns true if all elements in the array or coroutine satisfy the provided function.
 #
 # Example:
 # ```
@@ -1013,7 +1131,24 @@ def any(v, f): if (is_empty(v)): false else: len(filter(v, f)) != 0;
 # ```
 #
 # Returns: bool
-def all(v, f): if (is_empty(v)): true else: len(filter(v, f)) == len(v);
+def all(v, f):
+  if (is_coroutine(v)):
+    do
+      var step = next(v)
+      | var matches = true
+      | while (!step["done"] && matches):
+          if (!f(step["value"])):
+            matches = false
+          else:
+            step = next(v)
+        end
+      | matches
+    end
+  elif (is_empty(v)):
+    true
+  else:
+    len(filter(v, f)) == len(v)
+end
 
 # Returns true if the element is in the array.
 #
@@ -1044,7 +1179,17 @@ end
 #
 # Returns: dynamic
 def fold(arr, init, f):
-  if (not(is_array(arr))):
+  if (is_coroutine(arr)):
+    do
+      var acc = init
+      | var step = next(arr)
+      | while (!step["done"]):
+          acc = f(acc, step["value"])
+          | step = next(arr)
+        end
+      | acc
+    end
+  elif (not(is_array(arr))):
     error("first argument must be an array")
   elif (is_empty(arr)):
     init
@@ -1218,7 +1363,8 @@ def pluck(pluck_obj, selector):
   end
 end
 
-# Maps over an array and removes None values from the result.
+# Maps over an array and removes None values from the result. A coroutine input
+# returns a coroutine and performs both operations lazily.
 #
 # Example:
 # ```
@@ -1227,9 +1373,15 @@ end
 # ```
 #
 # Returns: array
-def compact_map(arr, f): map(arr, f) | compact();
+def compact_map(arr, f):
+  if (is_coroutine(arr)):
+    _compact_map_coroutine(arr, f)
+  else:
+    map(arr, f) | compact()
+end
 
-# Filters out elements that match the condition (opposite of filter).
+# Filters out elements that match the condition (opposite of filter). Coroutine
+# inputs return a lazily filtered coroutine.
 #
 # Example:
 # ```
