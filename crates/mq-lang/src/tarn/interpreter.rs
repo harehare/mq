@@ -423,6 +423,7 @@ fn run_impl_with_bindings(
     }
     let mut execution = ExecutionContext {
         env,
+        token_arena: Shared::clone(&env.token_arena),
         limits: &mut limits,
         host_functions: options.host_functions,
         capture_stack_trace: options.capture_stack_trace,
@@ -476,6 +477,7 @@ fn run_impl_capturing_locals_with_env(
 
     let mut execution = ExecutionContext {
         env,
+        token_arena: Shared::clone(&env.token_arena),
         limits: &mut limits,
         host_functions: options.host_functions,
         capture_stack_trace: options.capture_stack_trace,
@@ -797,7 +799,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 };
                 // May be the callee's own now-fully-bound frame; needs generator detection too.
                 let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
-                match frame_or_coroutine(next, &next_chunks, &execution.env.token_arena) {
+                match frame_or_coroutine(next, &next_chunks, &execution.token_arena) {
                     CallStep::Value(coroutine) => {
                         operand_stack.push(coroutine);
                     }
@@ -1470,7 +1472,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     execution,
                 )?;
                 if chunks[*chunk_index as usize].is_generator {
-                    stack.push(generator_coroutine(new_frame, chunks, &execution.env.token_arena));
+                    stack.push(generator_coroutine(new_frame, chunks, &execution.token_arena));
                 } else {
                     break 'dispatch FrameOutcome::Enter(new_frame);
                 }

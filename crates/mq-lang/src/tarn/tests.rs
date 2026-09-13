@@ -3517,6 +3517,40 @@ fn generator_reads_its_own_coroutine_back_through_a_captured_container(
     );
 }
 
+#[test]
+fn child_coroutine_created_during_cross_evaluation_resume_keeps_its_own_arena() {
+    let a_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let a_program = crate::parse(
+        "def child(): yield: 9 | 1 / 0; | def parent(): yield: 1 | let c = child() | next(c) | next(c); | parent()",
+        Shared::clone(&a_arena),
+    )
+    .unwrap();
+    let parent_coroutine = compile_and_run(&a_program, Shared::clone(&a_arena)).unwrap();
+    assert!(matches!(parent_coroutine, RuntimeValue::Coroutine(_)));
+
+    let b_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let b_program = crate::parse("let c = self | next(c) | next(c)", Shared::clone(&b_arena)).unwrap();
+    let err = compile_and_run_with_input(&b_program, parent_coroutine, Shared::clone(&b_arena)).unwrap_err();
+
+    fn deepest_coroutine_arena(err: &interpreter::VmError) -> Option<TokenArena> {
+        match err {
+            interpreter::VmError::Located(inner, _) => deepest_coroutine_arena(inner),
+            interpreter::VmError::CoroutineFailed(inner, arena) => {
+                deepest_coroutine_arena(inner).or_else(|| Some(Shared::clone(arena)))
+            }
+            _ => None,
+        }
+    }
+    let Error::Vm(vm_err) = err else {
+        panic!("expected a VM error, got {err:?}");
+    };
+    let child_arena = deepest_coroutine_arena(&vm_err).expect("expected a nested CoroutineFailed");
+    assert!(
+        Shared::ptr_eq(&child_arena, &a_arena),
+        "the failing child generator's arena must be evaluation A's, not evaluation B's"
+    );
+}
+
 #[rstest]
 #[case::unstarted(
     "var a = None | var b = None \

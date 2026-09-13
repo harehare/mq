@@ -243,7 +243,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
         },
     )
     .map_err(|e| locate(call_site.chunk, call_site.ip, e))?;
-    Ok(frame_or_coroutine(frame, callee_chunks, &execution.env.token_arena))
+    Ok(frame_or_coroutine(frame, callee_chunks, &execution.token_arena))
 }
 
 fn resume_arity_mismatch(name: &str, expected: u8, actual: usize) -> VmError {
@@ -321,7 +321,7 @@ pub(super) fn call_self_chunk_from_stack(
         chunks,
         execution,
     )?;
-    Ok(frame_or_coroutine(frame, chunks, &execution.env.token_arena))
+    Ok(frame_or_coroutine(frame, chunks, &execution.token_arena))
 }
 
 fn call_fixed_chunk_from_stack(

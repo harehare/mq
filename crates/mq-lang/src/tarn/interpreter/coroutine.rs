@@ -87,9 +87,7 @@ impl CoroutineState {
             operand_stack: Vec::new(),
             chunks,
             token_arena,
-            // A created coroutine already owns its generator frame. Count it as soon as it
-            // starts running so recursively resuming child generators cannot bypass the VM's
-            // recursion limit before any of them reaches a `yield`.
+            // A created coroutine already owns its generator frame.
             suspended_call_depth: 1,
             pending_resyncs: Vec::new(),
             #[cfg(feature = "debugger")]
@@ -191,7 +189,7 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> VmResult<RuntimeValue> {
-    let (mut frames, mut operand_stack, chunks, caller_depth, pending_resyncs) = {
+    let (mut frames, mut operand_stack, chunks, token_arena, caller_depth, pending_resyncs) = {
         let mut state = borrow_mut(handle);
         match &state.status {
             CoroutineStatus::Running => return Err(VmError::CoroutineReentrant),
@@ -217,6 +215,7 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
                     std::mem::take(&mut state.frames),
                     operand_stack,
                     Shared::clone(&state.chunks),
+                    Shared::clone(&state.token_arena),
                     caller_depth,
                     std::mem::take(&mut state.pending_resyncs),
                 )
@@ -224,13 +223,6 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         }
     };
 
-    // Pull in whatever the outer scope wrote to a captured self-reference while this coroutine
-    // was suspended, so the resumed body observes it instead of the stale downgraded snapshot.
-    // A pull that turns up this same coroutine again (the outer binding still holds it, e.g. it
-    // was never resumed before this write-time downgrade) is written back downgraded rather than
-    // literally, and the pairing is kept in `carried_resyncs` for the next resume: applying it
-    // only once would let `original` diverge from `downgraded_cell` forever the moment this
-    // resume's own suspension-time scan finds nothing left to downgrade there.
     let mut carried_resyncs = Vec::new();
     for (downgraded_cell, original) in pending_resyncs {
         if let Some(original) = original.upgrade() {
@@ -254,11 +246,19 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
         )
     };
 
+    // Drive under this coroutine's own arena, not the resuming evaluation's.
+    let mut resumed_execution = ExecutionContext {
+        env: execution.env,
+        token_arena,
+        limits: &mut *execution.limits,
+        host_functions: execution.host_functions,
+        capture_stack_trace: execution.capture_stack_trace,
+    };
     let outcome = super::drive_frames::<CHECK_TIMEOUT>(
         &chunks,
         &mut frames,
         &mut operand_stack,
-        execution,
+        &mut resumed_execution,
         #[cfg(feature = "debugger")]
         debug,
     );
@@ -317,15 +317,6 @@ pub(super) fn resume<const CHECK_TIMEOUT: bool>(
 }
 
 /// Breaks self-reference cycles in `frames`/`operand_stack` before a coroutine suspends.
-///
-/// A captured cell that holds this coroutine's own handle, directly or nested in an array/dict,
-/// can't be edited in place: it shares its allocation with the caller's binding, and mutating it
-/// would corrupt data the caller reads later. Instead the frame's reference is swapped for a new
-/// cell holding a sanitized copy (a weak-and-upgradable handle for the direct case, see
-/// `weak_coroutine_cell`; the nested self-reference cleared to `None` otherwise, see
-/// `sanitize_nested_self_reference`), and the swap is recorded so the next resume can pull in
-/// whatever the caller wrote to the original cell in the meantime (see `resume`'s
-/// `pending_resyncs` handling).
 fn downgrade_self_references(
     frames: &mut [Frame],
     operand_stack: &mut [StackValue],

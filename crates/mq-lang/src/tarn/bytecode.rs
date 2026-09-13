@@ -386,8 +386,6 @@ pub(crate) enum OpCode {
     Return,
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
-    /// `next(stream)`: drives a coroutine one step, pushing a `{ value, done }` dict. The `u8`
-    /// argument count is always `1` for now; reserved for a future `send`.
     Resume(u8),
 }
 

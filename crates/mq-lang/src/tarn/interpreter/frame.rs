@@ -405,6 +405,9 @@ fn fresh_locals(count: usize, captured_slots: &[u16]) -> Locals {
 /// Mutable services shared by all frames of one VM evaluation.
 pub(super) struct ExecutionContext<'a> {
     pub(super) env: &'a VmEnv,
+    /// Arena the currently active chunk pool resolves tokens against; `coroutine::resume`
+    /// overrides this to the resumed coroutine's own arena while driving its frames.
+    pub(super) token_arena: crate::TokenArena,
     pub(super) limits: &'a mut ExecutionLimits,
     pub(super) host_functions: &'a HostFunctions,
     /// Read only on the uncaught-error path by `unwind_frames`.
