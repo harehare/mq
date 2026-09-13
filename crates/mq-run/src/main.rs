@@ -4,6 +4,13 @@ use clap::Parser;
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
-fn main() -> miette::Result<()> {
-    mq_run::Cli::parse().run()
+fn main() -> std::process::ExitCode {
+    let cli = mq_run::Cli::parse();
+    match cli.run() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(err) => {
+            cli.report_error(&err);
+            std::process::ExitCode::FAILURE
+        }
+    }
 }

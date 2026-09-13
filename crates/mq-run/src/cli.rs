@@ -96,6 +96,10 @@ pub struct Cli {
     #[arg(long, default_value_t = false)]
     stack_trace: bool,
 
+    /// Format for the final uncaught error. Combines with `--stack-trace`.
+    #[arg(long, value_enum, default_value_t = ErrorFormat::Human)]
+    error_format: ErrorFormat,
+
     /// Enter the interactive debugger when an uncaught error occurs (mq-dbg only).
     #[cfg(feature = "debugger")]
     #[arg(long = "stop-on-error", default_value_t = false)]
@@ -273,6 +277,16 @@ impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
             OptimizeLevel::Full => mq_lang::OptimizationLevel::Full,
         }
     }
+}
+
+/// How the final uncaught error is rendered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, clap::ValueEnum)]
+pub enum ErrorFormat {
+    /// Colored, human-readable diagnostic (default).
+    #[default]
+    Human,
+    /// Single-line JSON object via `miette::JSONReportHandler`, for CI/tooling.
+    Json,
 }
 
 /// Preset combination of `--allow-*` flags, set via `--sandbox`.
@@ -1534,6 +1548,24 @@ impl Cli {
         out
     }
 
+    /// Prints an uncaught error to stderr per `--error-format`.
+    pub fn report_error(&self, err: &miette::Report) {
+        match self.error_format {
+            ErrorFormat::Human => eprintln!("Error: {err:?}"),
+            ErrorFormat::Json => match Self::render_error_json(err) {
+                Some(json) => eprintln!("{json}"),
+                None => eprintln!("Error: {err:?}"),
+            },
+        }
+    }
+
+    /// Renders `err` as a single-line JSON diagnostic object (`None` on a render failure).
+    fn render_error_json(err: &miette::Report) -> Option<String> {
+        let mut json = String::new();
+        miette::JSONReportHandler::new().render_report(&mut json, &**err).ok()?;
+        Some(json)
+    }
+
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();
@@ -2246,7 +2278,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn run_once_watch(&self) {
         if let Err(err) = self.execute_once() {
-            eprintln!("{:?}", err);
+            self.report_error(&err);
         }
     }
 
@@ -3631,6 +3663,38 @@ mod tests {
         if enabled {
             assert!(error.contains("at inner (1:"), "{error}");
         }
+    }
+
+    #[rstest]
+    #[case::default_is_human(&["mq", "self"], ErrorFormat::Human)]
+    #[case::explicit_human(&["mq", "--error-format", "human", "self"], ErrorFormat::Human)]
+    #[case::json(&["mq", "--error-format", "json", "self"], ErrorFormat::Json)]
+    fn test_error_format_flag(#[case] args: &[&str], #[case] expected: ErrorFormat) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.error_format, expected);
+    }
+
+    #[rstest]
+    #[case::without_stack_trace(false)]
+    #[case::with_stack_trace(true)]
+    fn test_render_error_json(#[case] stack_trace: bool) {
+        let args: &[&str] = if stack_trace {
+            &["mq", "--stack-trace", "self"]
+        } else {
+            &["mq", "self"]
+        };
+        let cli = Cli::try_parse_from(args).unwrap();
+        let err: mq_lang::Error = *cli
+            .create_engine()
+            .unwrap()
+            .eval("1 / 0", std::iter::once(mq_lang::RuntimeValue::None))
+            .unwrap_err();
+        let json = Cli::render_error_json(&err.into()).unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let message = value["message"].as_str().unwrap();
+        assert!(message.contains("Division by zero"), "{message}");
+        assert_eq!(message.contains("stack trace:"), stack_trace);
     }
 
     #[test]
