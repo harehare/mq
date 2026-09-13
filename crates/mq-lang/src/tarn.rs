@@ -838,16 +838,7 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     cached
                 }
             };
-            return cache::run_cached(
-                &cached,
-                input,
-                self.engine.host_functions,
-                deadline,
-                self.engine.max_call_stack_depth,
-                self.engine.capture_stack_trace,
-                self.engine.global_bindings,
-                self.environment_key,
-            );
+            return cache::run_cached(&cached, input, &self.engine, deadline, self.environment_key);
         }
         #[cfg(feature = "debugger")]
         {

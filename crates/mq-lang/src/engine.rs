@@ -2641,6 +2641,42 @@ mod tests {
     }
 
     #[test]
+    fn builtin_coroutine_combinators_are_lazy_and_collectable() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let result = engine
+            .eval(
+                "var pulls = 0 \
+                 | def source(): pulls += 1 | yield: pulls | pulls += 1 | yield: pulls | pulls += 1 | yield: pulls; \
+                 | let stream = source() \
+                 | let mapped = map(stream, fn(x): x * 10;) \
+                 | let limited = take(mapped, 2) \
+                 | [collect(limited), pulls]",
+                crate::null_input().into_iter(),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.values(),
+            &[RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Array(Shared::new(vec![10.into(), 20.into()])),
+                2.into(),
+            ]))]
+        );
+
+        let first = engine
+            .eval(
+                "def source(): yield: 10 | yield: 20; | first(map(source(), fn(x): x + 1;))",
+                crate::null_input().into_iter(),
+            )
+            .unwrap();
+        assert_eq!(first.values(), &[11.into()]);
+    }
+
+    #[test]
     fn test_register_fn_shadowed_by_user_def() {
         use crate::RuntimeValue;
 

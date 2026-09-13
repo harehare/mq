@@ -1957,6 +1957,45 @@ impl Cli {
         Ok(current_values.update_with(results))
     }
 
+    /// Materializes coroutines at the CLI output boundary.
+    ///
+    /// Query evaluation keeps coroutines lazy so operations such as `first` and `take` can
+    /// short-circuit. A suspended coroutine is not useful output, though, so `mq-run` consumes
+    /// each top-level coroutine with the standard `collect()` builtin before rendering it.
+    fn collect_output_coroutines(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        runtime_values: mq_lang::RuntimeValues,
+    ) -> miette::Result<mq_lang::RuntimeValues> {
+        if !runtime_values.values().iter().any(mq_lang::RuntimeValue::is_coroutine) {
+            return Ok(runtime_values);
+        }
+
+        let collector = engine.compile("collect()").map_err(|error| *error)?;
+        let mut materialized = Vec::with_capacity(runtime_values.len());
+
+        for value in runtime_values {
+            if value.is_coroutine() {
+                let collected = engine
+                    .eval_compiled(&collector, std::iter::once(value))
+                    .map_err(|error| *error)?;
+                if collected.len() != 1 {
+                    return Err(miette!(
+                        "internal error: collect() must produce exactly one output value"
+                    ));
+                }
+                let Some(value) = collected.into_iter().next() else {
+                    return Err(miette!("internal error: collect() produced no output value"));
+                };
+                materialized.push(value);
+            } else {
+                materialized.push(value);
+            }
+        }
+
+        Ok(materialized.into())
+    }
+
     fn emit_results(
         &self,
         runtime_values: mq_lang::RuntimeValues,
@@ -2043,17 +2082,20 @@ impl Cli {
                 .map_err(|error| *error)?;
             #[cfg(not(feature = "debug-trace"))]
             let results = engine.eval(query, input.clone().into_iter()).map_err(|error| *error)?;
+            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
             #[cfg(feature = "debug-trace")]
             {
-                engine
+                let results = engine
                     .eval_compiled(&program, input.into_iter())
-                    .map_err(|error| *error)?
+                    .map_err(|error| *error)?;
+                self.collect_output_coroutines(engine, results)?
             }
             #[cfg(not(feature = "debug-trace"))]
             {
-                engine.eval(query, input.into_iter()).map_err(|error| *error)?
+                let results = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+                self.collect_output_coroutines(engine, results)?
             }
         };
 
@@ -2071,6 +2113,7 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
+            let separator = self.collect_output_coroutines(engine, separator)?;
             self.print(separator)?;
         }
 
@@ -2407,6 +2450,7 @@ impl Cli {
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
             .map_err(|error| *error)?;
+        let runtime_values = self.collect_output_coroutines(&mut engine, runtime_values)?;
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
@@ -2447,9 +2491,11 @@ impl Cli {
             let results = engine
                 .eval_compiled(program, input.clone().into_iter())
                 .map_err(|e| *e)?;
+            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
-            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
+            let results = engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?;
+            self.collect_output_coroutines(engine, results)?
         };
 
         #[cfg(feature = "vm-profile")]
@@ -2493,6 +2539,7 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+        let runtime_values = self.collect_output_coroutines(engine, runtime_values)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
@@ -3110,6 +3157,35 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_collects_final_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_collects_final_coroutine_output.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("def source(): yield: 1 | yield: 2 | yield: 3; | source() | map(fn(x): x * 10;)".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[10, 20, 30]");
     }
 
     #[test]

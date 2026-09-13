@@ -322,7 +322,44 @@ def scalars(v): select(v, !(is_array(v) || is_dict(v)));
 # Returns: string
 def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 
+# Lazily applies `f` to every value yielded by `stream`.
+#
+# This is an implementation detail of `map`; keeping the `yield` in this separate
+# function is what lets `map` retain its eager array and dictionary behaviour.
+def _map_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"]):
+      yield: f(step["value"])
+      | step = next(stream)
+    end
+end
+
+# Lazily yields only values from `stream` for which `f` returns true.
+def _filter_coroutine(stream, f):
+  var step = next(stream)
+  | while (!step["done"]):
+      if (f(step["value"])):
+        yield: step["value"]
+      | step = next(stream)
+    end
+end
+
+# Lazily yields at most `n` values from `stream`, without pulling an extra value.
+def _take_coroutine(stream, n):
+  var i = 0
+  | while (i < n):
+      let step = next(stream)
+      | if (step["done"]):
+          break
+        else:
+          yield: step["value"]
+          | i += 1
+    end
+end
+
 # Applies a given function to each element of the provided array and returns a new array with the results.
+# A coroutine input instead returns a coroutine and applies the function only as
+# its values are requested.
 #
 # Example:
 # ```
@@ -332,7 +369,9 @@ def to_date_iso8601(d): to_date(d, "%Y-%m-%dT%H:%M:%SZ");
 #
 # Returns: array
 def map(v, f):
-  if (is_dict(v)):
+  if (is_coroutine(v)):
+    _map_coroutine(v, f)
+  elif (is_dict(v)):
     do
       let map_dict = fn(v, f): let mapped = foreach (x, entries(v)): f(x); | dict(mapped);
       | map_dict(v, f)
@@ -360,6 +399,7 @@ def flat_map(v, f):
 end
 
 # Filters the elements of an array based on a provided callback function.
+# A coroutine input is filtered lazily and returns a coroutine.
 #
 # Example:
 # ```
@@ -369,7 +409,9 @@ end
 #
 # Returns: array
 def filter(v, f):
-  if (is_dict(v)):
+  if (is_coroutine(v)):
+    _filter_coroutine(v, f)
+  elif (is_dict(v)):
     do
       let filter_dict = fn(v, f): let fileted = foreach (x, entries(v)): select(x, f(x)); | dict(compact(fileted));
       | filter_dict(v, f)
@@ -398,7 +440,7 @@ def each(v, f):
   | v
 end
 
-# Returns the first element of an array
+# Returns the first element of an array, or consumes one value from a coroutine.
 #
 # Example:
 # ```
@@ -407,7 +449,34 @@ end
 # ```
 #
 # Returns: dynamic
-def first(arr): arr[0];
+def first(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];
+
+# Consumes a coroutine to completion and returns its yielded values as an array.
+# Non-coroutine values are returned unchanged, making this safe as an output
+# boundary when a query may produce either eager or lazy values.
+#
+# Example:
+# ```
+# def range(n): var i = 0 | while (i < n): yield: i | i += 1;;
+# | range(3) | collect()
+# #=> [0, 1, 2]
+# ```
+#
+# Returns: dynamic
+def collect(stream):
+  if (is_coroutine(stream)):
+    do
+      var values = []
+      | var step = next(stream)
+      | while (!step["done"]):
+          values += [step["value"]]
+          | step = next(stream)
+        end
+      | values
+    end
+  else:
+    stream
+end
 
 # Returns the last element of an array
 #
@@ -745,7 +814,8 @@ def skip(arr, n):
     slice(arr, n, len(arr))
 end
 
-# Takes the first n elements of an array
+# Takes the first n elements of an array. A coroutine input returns a coroutine
+# that yields at most `n` values and does not pull an additional value upstream.
 #
 # Example:
 # ```
@@ -757,6 +827,8 @@ end
 def take(arr, n):
   if (n < 0):
     error("n must be non-negative")
+  elif (is_coroutine(arr)):
+    _take_coroutine(arr, n)
   elif (n > len(arr)):
     arr
   else:

@@ -113,4 +113,8 @@ same as reentrant `next()`.
   running) is a runtime error.
 - A nested `def`/`fn`'s `yield` only makes that nested function a generator; it does not affect
   the enclosing function.
+- `map`, `filter`, `take`, and `first` accept coroutines in addition to their existing eager
+  collection inputs. `map`, `filter`, and `take` return a coroutine; `first` consumes one value.
+  Use `collect()` to consume a coroutine completely into an array. `mq-run` applies `collect()`
+  automatically when a query's final output value is a coroutine.
 - `foreach`, selectors, and pipelines do not yet consume streams lazily. That is future work.

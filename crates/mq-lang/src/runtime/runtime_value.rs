@@ -501,6 +501,15 @@ impl RuntimeValue {
         matches!(self, RuntimeValue::VmClosure(_))
     }
 
+    /// Returns `true` if this value is a resumable coroutine.
+    ///
+    /// Weak coroutine references exist only while the VM breaks internal capture cycles and
+    /// cannot be resumed by callers, so they deliberately return `false` here.
+    #[inline(always)]
+    pub fn is_coroutine(&self) -> bool {
+        matches!(self, RuntimeValue::Coroutine(_))
+    }
+
     /// Returns `true` if this value is a native (built-in) function.
     #[inline(always)]
     pub fn is_native_function(&self) -> bool {
