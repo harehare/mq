@@ -5250,6 +5250,11 @@ fn walk_dir(
     follow_symlink_dirs: bool,
     visit_file: &mut dyn FnMut(&std::path::Path, &std::path::Path),
 ) -> Result<(), Error> {
+    // Also rejects a symlinked root, not just a symlinked subdirectory found during recursion.
+    if !follow_symlink_dirs && matches!(io.metadata(dir).map(|m| m.kind), Ok(FileKind::Symlink)) {
+        return Ok(());
+    }
+
     let canonical = io.canonicalize(dir);
     if !ancestors.insert(canonical.clone()) {
         return Ok(());
@@ -5262,27 +5267,25 @@ fn walk_dir(
         .map_err(|e| Error::Runtime(format!("Failed to read directory {}: {}", dir.display(), e)))?;
 
     for (path, is_dir) in entries {
-        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        // Keep as `OsStr`: a non-UTF-8 filename is valid on Unix and must still be walked.
+        let Some(file_name) = path.file_name() else {
             continue;
         };
 
         if respect_gitignore {
-            let is_hidden = name.starts_with('.');
+            let is_hidden = file_name.to_string_lossy().starts_with('.');
             if is_hidden || is_gitignored(gitignore_stack, &path, is_dir) {
                 continue;
             }
         }
 
         let rel_path = if rel_dir.as_os_str().is_empty() {
-            std::path::PathBuf::from(name)
+            std::path::PathBuf::from(file_name)
         } else {
-            rel_dir.join(name)
+            rel_dir.join(file_name)
         };
 
         if is_dir {
-            if !follow_symlink_dirs && matches!(io.metadata(&path).map(|m| m.kind), Ok(FileKind::Symlink)) {
-                continue;
-            }
             walk_dir(
                 io,
                 &path,
@@ -15085,6 +15088,68 @@ mod tests {
             .expect("walk_files should succeed despite the broken symlink"),
         );
         assert_eq!(paths, vec!["root.txt"]);
+    }
+
+    // macOS/APFS rejects non-UTF-8 filenames outright, so this is only exercisable on Linux.
+    #[cfg(all(feature = "file-io", target_os = "linux"))]
+    #[test]
+    fn test_walk_files_includes_non_utf8_filenames() {
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+
+        let dir = tempfile::tempdir().expect("failed to create temp dir");
+        let name = OsStr::from_bytes(b"report\xff.md");
+        std::fs::write(dir.path().join(name), "x").expect("failed to write");
+
+        let paths = walk_files_paths(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    dir.path().to_string_lossy().into_owned(),
+                ))],
+            )
+            .expect("walk_files should succeed"),
+        );
+        assert_eq!(paths.len(), 1, "non-UTF-8 filename should not be dropped");
+    }
+
+    #[cfg(all(feature = "file-io", unix))]
+    #[test]
+    fn test_walk_files_rejects_symlink_escape_outside_allowed_paths() {
+        let allowed = tempfile::tempdir().expect("failed to create temp dir");
+        let outside = tempfile::tempdir().expect("failed to create temp dir");
+        std::fs::write(outside.path().join("secret.md"), "secret").expect("failed to write");
+        std::os::unix::fs::symlink(outside.path(), allowed.path().join("escape")).expect("failed to create symlink");
+
+        let _guard = io_context::scoped(Shared::new(
+            SandboxedIo::new(NativeIo::default()).allow_read(vec![allowed.path().to_path_buf()]),
+        ));
+
+        assert!(
+            call(
+                "walk_files",
+                vec![
+                    RuntimeValue::String(Shared::new(allowed.path().to_string_lossy().into_owned())),
+                    RuntimeValue::String(Shared::new("**".into())),
+                    walk_files_options(&[("follow_symlinks", true)]),
+                ],
+            )
+            .is_err(),
+            "walking into a symlink that resolves outside the allowed paths must be denied"
+        );
+
+        // Calling walk_files directly on the escaping symlink is denied the same way.
+        assert!(
+            call(
+                "walk_files",
+                vec![RuntimeValue::String(Shared::new(
+                    allowed.path().join("escape").to_string_lossy().into_owned(),
+                ))],
+            )
+            .is_err()
+        );
     }
 
     #[cfg(feature = "file-io")]
