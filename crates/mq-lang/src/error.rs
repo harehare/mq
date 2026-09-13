@@ -208,6 +208,7 @@ impl Diagnostic for Error {
     #[cold]
     fn help<'a>(&'a self) -> Option<Box<dyn std::fmt::Display + 'a>> {
         let msg: Option<Cow<'static, str>> = match &self.cause {
+            InnerError::Runtime(RuntimeError::WithStackTrace { .. }) => None,
             InnerError::Syntax(SyntaxError::EnvNotFound(_, env)) => Some(Cow::Owned(format!(
                 "Environment variable '{env}' not found. Did you forget to set it?"
             ))),

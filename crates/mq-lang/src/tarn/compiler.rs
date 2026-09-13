@@ -1088,6 +1088,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.chunks.push(Chunk::default());
         let new_index = (self.chunks.len() - 1) as u16;
+        self.chunks[new_index as usize].function_name = name_for_shadow;
         self.current = new_index as usize;
 
         let mut scope = FunctionScope::default();

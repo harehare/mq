@@ -407,4 +407,6 @@ pub(super) struct ExecutionContext<'a> {
     pub(super) env: &'a VmEnv,
     pub(super) limits: &'a mut ExecutionLimits,
     pub(super) host_functions: &'a HostFunctions,
+    /// Read only on the uncaught-error path by `unwind_frames`.
+    pub(super) capture_stack_trace: bool,
 }

@@ -536,6 +536,8 @@ pub(crate) struct Chunk {
     #[cfg(feature = "debugger")]
     pub(crate) debug_symbols: DebugSymbolTable,
     pub(crate) param_shape: ParamShape,
+    /// Source-level name for stack traces.
+    pub(crate) function_name: Option<Ident>,
     /// Sorted local slots whose cells are captured by a nested closure or default expression.
     /// All remaining slots can stay as direct values in the interpreter frame.
     captured_local_slots: Vec<u16>,
@@ -719,6 +721,12 @@ pub(crate) enum BytecodeError {
         pc: usize,
         target: u16,
     },
+    StackUnderflow {
+        chunk: usize,
+        pc: usize,
+        required: usize,
+        available: usize,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -774,6 +782,17 @@ impl fmt::Display for BytecodeError {
             }
             Self::StaticCallTargetInvalid { chunk, pc, target } => {
                 write!(f, "chunk {chunk} pc {pc} directly calls invalid static chunk {target}")
+            }
+            Self::StackUnderflow {
+                chunk,
+                pc,
+                required,
+                available,
+            } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
+                )
             }
         }
     }
@@ -1535,8 +1554,161 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 verify_closure_capture_count(chunks, chunk_index, pc, *default_chunk, sources.len())?;
             }
         }
+        verify_stack_effects(chunk, chunk_index)?;
     }
     Ok(())
+}
+
+/// Verifies stack depth through a chunk's control-flow graph.
+fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
+    let mut heights = vec![None; chunk.code.len()];
+    let mut pending = std::collections::VecDeque::from([(0usize, 0usize)]);
+
+    while let Some((pc, height)) = pending.pop_front() {
+        match heights[pc] {
+            // Stack-polymorphic branches are safe when their minimum height is safe.
+            Some(previous) if previous <= height => continue,
+            Some(_) | None => heights[pc] = Some(height),
+        }
+
+        let op = &chunk.code[pc];
+        let (required, produced) = stack_effect(op);
+        if height < required {
+            return Err(BytecodeError::StackUnderflow {
+                chunk: chunk_index,
+                pc,
+                required,
+                available: height,
+            });
+        }
+        let next_height = height - required + produced;
+
+        let mut enqueue = |target: usize, stack_height: usize| {
+            pending.push_back((target, stack_height));
+        };
+        match op {
+            OpCode::Return
+            | OpCode::ReturnLocal(_)
+            | OpCode::ReturnBinaryLocalLocal { .. }
+            | OpCode::ReturnBinaryLocalConst { .. }
+            | OpCode::FlowBreak(_)
+            | OpCode::FlowContinue
+            | OpCode::RaiseDestructuringFailed => {}
+            OpCode::Jump(offset) => enqueue(jump_target(pc, *offset).expect("verified jump target"), next_height),
+            OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfFalseLocalLocal { offset, .. }
+            | OpCode::JumpIfFalseLocalConst { offset, .. } => {
+                enqueue(pc + 1, next_height);
+                enqueue(jump_target(pc, *offset).expect("verified jump target"), next_height);
+            }
+            OpCode::ForeachNext { exit_offset, .. } => {
+                enqueue(pc + 1, next_height);
+                enqueue(
+                    jump_target(pc, *exit_offset).expect("verified foreach exit target"),
+                    next_height,
+                );
+            }
+            OpCode::TryCatch(info) => {
+                enqueue(pc + 1, next_height);
+                let unwind_height = height - 2;
+                if let Some(offset) = info.break_offset {
+                    enqueue(
+                        jump_target(pc, offset).expect("verified try break target"),
+                        unwind_height,
+                    );
+                }
+                if let Some(offset) = info.continue_offset {
+                    enqueue(
+                        jump_target(pc, offset).expect("verified try continue target"),
+                        unwind_height,
+                    );
+                }
+            }
+            _ => enqueue(pc + 1, next_height),
+        }
+    }
+    Ok(())
+}
+
+/// Returns `(required, produced)` for an opcode's operand-stack transition.
+fn stack_effect(op: &OpCode) -> (usize, usize) {
+    match op {
+        #[cfg(feature = "debugger")]
+        OpCode::StmtBoundary(_) | OpCode::Breakpoint(_) => (0, 0),
+        OpCode::Const(_)
+        | OpCode::PushNone
+        | OpCode::GetLocal(_)
+        | OpCode::GetUpvalue(_)
+        | OpCode::MakeClosure(_)
+        | OpCode::MakeStaticClosure(_)
+        | OpCode::ArrayNew
+        | OpCode::ArrayLenLocal(_)
+        | OpCode::ArrayGetLocalAt { .. }
+        | OpCode::DictGetLocalOrFail { .. }
+        | OpCode::GetEnvVar(_)
+        | OpCode::GetExternalGlobal(_) => (0, 1),
+        OpCode::SetLocal(_) | OpCode::SetUpvalue(_) | OpCode::Pop | OpCode::ForeachCollect(_) => (1, 0),
+        OpCode::TeeLocal(_) | OpCode::Dup => (1, 2),
+        OpCode::SetLocalConst { .. }
+        | OpCode::CopyLocal { .. }
+        | OpCode::Jump(_)
+        | OpCode::ForeachNext { .. }
+        | OpCode::UpdateLocalConst { .. }
+        | OpCode::UpdateLocalLocal { .. }
+        | OpCode::JumpIfFalseLocalLocal { .. }
+        | OpCode::JumpIfFalseLocalConst { .. } => (0, 0),
+        OpCode::JumpIfFalse(_) => (1, 0),
+        OpCode::Add
+        | OpCode::Sub
+        | OpCode::Mul
+        | OpCode::Div
+        | OpCode::Mod
+        | OpCode::Eq
+        | OpCode::Ne
+        | OpCode::Lt
+        | OpCode::Le
+        | OpCode::Gt
+        | OpCode::Ge
+        | OpCode::ArrayPush
+        | OpCode::ArraySpread
+        | OpCode::DictSpread
+        | OpCode::ArrayGetAt
+        | OpCode::ArraySliceFrom => (2, 1),
+        OpCode::BinaryLocalLocal { .. } | OpCode::BinaryLocalConst { .. } => (0, 1),
+        OpCode::Neg
+        | OpCode::Not
+        | OpCode::ToForeachIterable
+        | OpCode::ArrayLen
+        | OpCode::TypeCheck(_)
+        | OpCode::SelectorMatch(_)
+        | OpCode::SelectorMatchKind(_)
+        | OpCode::SelectorMatchHeading(_)
+        | OpCode::MaybeAutoCall
+        | OpCode::Yield => (1, 1),
+        OpCode::InterpString(count) => (*count as usize, 1),
+        OpCode::SelectorMatchWithArgs(payload) => (payload.1 as usize + 1, 1),
+        OpCode::CallBuiltin(_, count)
+        | OpCode::CallStatic(_, count)
+        | OpCode::CallStaticExact(_, count)
+        | OpCode::CallStaticImplicitSelf(_, count)
+        | OpCode::CallSelf(count)
+        | OpCode::CallSelfExact(count)
+        | OpCode::CallSelfImplicitSelf(count)
+        | OpCode::CallLocal(_, count)
+        | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
+        OpCode::Resume(count) => (*count as usize, 1),
+        OpCode::CallStaticExact0(_) | OpCode::CallSelfExact0 => (0, 1),
+        OpCode::CallStaticExact1(_) | OpCode::CallSelfExact1 => (1, 1),
+        OpCode::CallStaticExact2(_) | OpCode::CallSelfExact2 => (2, 1),
+        OpCode::CallValue(count) => (*count as usize + 1, 1),
+        OpCode::TryCatch(_) => (2, 1),
+        OpCode::FlowBreak(has_value) => (usize::from(*has_value), 0),
+        OpCode::FlowContinue | OpCode::RaiseDestructuringFailed => (0, 0),
+        OpCode::Return => (1, 0),
+        OpCode::ReturnLocal(_) | OpCode::ReturnBinaryLocalLocal { .. } | OpCode::ReturnBinaryLocalConst { .. } => {
+            (0, 0)
+        }
+    }
 }
 
 fn verify_upvalue_sources(
@@ -1933,6 +2105,55 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[invalid_static_closure]),
             Err(BytecodeError::StaticClosureOutOfBounds { .. })
+        ));
+    }
+
+    #[rstest]
+    #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0)]
+    #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1)]
+    #[case::call_builtin(vec![OpCode::CallBuiltin(Ident::new("f"), 1), OpCode::Return], 0, 1, 0)]
+    fn verifier_rejects_stack_underflow(
+        #[case] code: Vec<OpCode>,
+        #[case] pc: usize,
+        #[case] required: usize,
+        #[case] available: usize,
+    ) {
+        let chunk = Chunk {
+            code,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::StackUnderflow {
+                chunk: 0,
+                pc: actual_pc,
+                required: actual_required,
+                available: actual_available,
+            }) if actual_pc == pc && actual_required == required && actual_available == available
+        ));
+    }
+
+    #[test]
+    fn verifier_uses_the_lowest_height_at_a_stack_polymorphic_join() {
+        let chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::JumpIfFalse(2),
+                OpCode::PushNone,
+                OpCode::Jump(0),
+                OpCode::Pop,
+                OpCode::Return,
+            ],
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::StackUnderflow {
+                pc: 4,
+                available: 0,
+                ..
+            })
         ));
     }
 

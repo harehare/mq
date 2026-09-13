@@ -235,6 +235,7 @@ pub(super) fn run_cached<I>(
     host_functions: &HostFunctions,
     deadline: Option<Instant>,
     max_call_stack_depth: u32,
+    capture_stack_trace: bool,
     global_bindings: &[(crate::Ident, RuntimeValue)],
     environment_key: VmEnvCacheKey,
 ) -> Result<Vec<RuntimeValue>, Error>
@@ -257,9 +258,13 @@ where
                     let (result, next_pools) = interpreter::run_with_env_and_pools(
                         &compiled.program,
                         value,
-                        host_functions,
-                        remaining_timeout(deadline),
-                        max_call_stack_depth,
+                        interpreter::RunOptions {
+                            host_functions,
+                            timeout: remaining_timeout(deadline),
+                            max_call_stack_depth,
+                            capture_stack_trace,
+                            global_bindings,
+                        },
                         &env,
                         execution_pools,
                     );
@@ -274,6 +279,7 @@ where
                             host_functions,
                             timeout: remaining_timeout(deadline),
                             max_call_stack_depth,
+                            capture_stack_trace,
                             global_bindings,
                         },
                         &env,
@@ -300,9 +306,13 @@ where
             let (result, next_pools) = interpreter::run_with_env_and_pools(
                 after,
                 input,
-                host_functions,
-                remaining_timeout(deadline),
-                max_call_stack_depth,
+                interpreter::RunOptions {
+                    host_functions,
+                    timeout: remaining_timeout(deadline),
+                    max_call_stack_depth,
+                    capture_stack_trace,
+                    global_bindings,
+                },
                 &env,
                 std::mem::take(&mut pools),
             );
@@ -318,6 +328,7 @@ where
                     host_functions,
                     timeout: remaining_timeout(deadline),
                     max_call_stack_depth,
+                    capture_stack_trace,
                     global_bindings,
                 },
                 &env,
