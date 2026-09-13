@@ -1648,7 +1648,8 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::GetEnvVar(_)
         | OpCode::GetExternalGlobal(_) => (0, 1),
         OpCode::SetLocal(_) | OpCode::SetUpvalue(_) | OpCode::Pop | OpCode::ForeachCollect(_) => (1, 0),
-        OpCode::TeeLocal(_) | OpCode::Dup => (1, 2),
+        OpCode::TeeLocal(_) => (1, 1),
+        OpCode::Dup => (1, 2),
         OpCode::SetLocalConst { .. }
         | OpCode::CopyLocal { .. }
         | OpCode::Jump(_)
@@ -2109,17 +2110,27 @@ mod tests {
     }
 
     #[rstest]
-    #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0)]
-    #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1)]
-    #[case::call_builtin(vec![OpCode::CallBuiltin(Ident::new("f"), 1), OpCode::Return], 0, 1, 0)]
+    #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0, 0)]
+    #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1, 0)]
+    #[case::call_builtin(vec![OpCode::CallBuiltin(Ident::new("f"), 1), OpCode::Return], 0, 1, 0, 0)]
+    // TeeLocal peeks, it doesn't duplicate: a second Pop should underflow.
+    #[case::tee_local_does_not_duplicate(
+        vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Pop, OpCode::Return],
+        3,
+        1,
+        0,
+        1,
+    )]
     fn verifier_rejects_stack_underflow(
         #[case] code: Vec<OpCode>,
         #[case] pc: usize,
         #[case] required: usize,
         #[case] available: usize,
+        #[case] local_count: u16,
     ) {
         let chunk = Chunk {
             code,
+            local_count,
             ..Default::default()
         };
         assert!(matches!(
