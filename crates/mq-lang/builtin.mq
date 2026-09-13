@@ -493,19 +493,33 @@ def filter(v, f):
     end
 end
 
-# Executes a provided function once for each element in an array or each key-value pair in a dictionary.
+# Executes a provided function once for each element in an array, each key-value
+# pair in a dictionary, or each value yielded by a coroutine (consumed to
+# completion).
 #
 # Returns: dynamic
 def each(v, f):
-  let target = if (is_dict(v)): entries(v) else: v
-  | var i = 0
-  | loop:
-      if (i >= len(target)): break
-      | f(target[i])
-      | i += 1
-      | None
+  if (is_coroutine(v)):
+    do
+      var step = next(v)
+      | while (!step["done"]):
+          f(step["value"])
+          | step = next(v)
+        end
+      | v
     end
-  | v
+  else:
+    do
+      let target = if (is_dict(v)): entries(v) else: v
+      | var i = 0
+      | loop:
+          if (i >= len(target)): break
+          | f(target[i])
+          | i += 1
+          | None
+        end
+      | v
+    end
 end
 
 # Returns the first element of an array, or consumes one value from a coroutine.

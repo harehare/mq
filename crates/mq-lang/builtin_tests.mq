@@ -813,6 +813,15 @@ def test_each():
   | assert_eq(i, 6)
 end
 
+def test_each_coroutine():
+  var i = 0
+  | let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | let stream = source()
+  | let result = each(stream, fn(x): i += x;)
+  | assert_eq(i, 6)
+  | assert_eq(next(result)["done"], true)
+end
+
 # @parametrize([["test", 6, "0", "00test"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "  abc"]])
 def test_lpad(value, n, pad, expected):
   let result = lpad(value, n, pad)

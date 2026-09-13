@@ -136,9 +136,10 @@ same as reentrant `next()`.
 - `map`, `flat_map`, `filter`, `reject`, `compact_map`, `skip`, `skip_while`, `take`, and
   `take_while` accept coroutines in addition to their existing eager collection inputs and return
   a coroutine. They evaluate upstream values only when the returned coroutine is advanced.
-- `first`, `last`, `find_index`, `any`, `all`, and `fold` consume coroutine inputs. `any`, `all`,
-  and `find_index` stop advancing the upstream coroutine as soon as their result is known. Since
-  `sum` and `sum_by` use `fold`, they also accept coroutine inputs.
+- `first`, `last`, `find_index`, `any`, `all`, `fold`, and `each` consume coroutine inputs. `any`,
+  `all`, and `find_index` stop advancing the upstream coroutine as soon as their result is known.
+  `each` and `fold` drive the coroutine to completion. Since `sum` and `sum_by` use `fold`, they
+  also accept coroutine inputs.
 - Use `collect()` to consume a coroutine completely into an array. `mq-run` applies `collect()`
   automatically when a query's final output value is a coroutine.
 - `foreach`, selectors, and pipelines do not yet consume streams lazily. That is future work.
