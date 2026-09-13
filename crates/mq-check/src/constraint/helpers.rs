@@ -244,14 +244,11 @@ pub(super) fn build_piped_call_args(
     }
 }
 
-/// Resolves a builtin function call using overload resolution.
+/// Resolves a builtin function call using overload resolution and returns the
+/// type assigned to `symbol_id`.
 ///
 /// If `defer_error` is true (e.g., the call might receive piped input later),
 /// no error is generated on mismatch — only a fresh type variable is assigned.
-///
-/// Returns the type assigned to `symbol_id` so callers that fuse trailing
-/// bracket-access keys onto the call (see `resolve_builtin_call_with_brackets`)
-/// can chain further field accesses onto it.
 pub(super) fn resolve_builtin_call(
     ctx: &mut InferenceContext,
     symbol_id: SymbolId,
@@ -318,27 +315,15 @@ pub(super) fn resolve_builtin_call(
 }
 
 /// Splits off trailing String/Symbol children that are bracket-access keys rather
-/// than real arguments to `func_name`, the same ambiguity handled for user-defined
-/// calls: the CST lowers `next(x)["value"]` as `Call(next, [x, "value"])`, so a
-/// builtin call whose explicit argument count matches no registered overload looks,
-/// structurally, exactly like a call followed by one or more bracket accesses on
-/// its return value.
+/// than real arguments: the CST lowers `next(x)["value"]` as `Call(next, [x,
+/// "value"])`. Only applies when a shorter overload's params are fully generic
+/// (`dynamic()`/`Var`) — such an overload can only mismatch on arg count, never
+/// on type, so excess trailing keys must be bracket access. A concretely-typed
+/// overload (e.g. `replace`'s `(string, string, string)`) is left alone, so a
+/// real wrong-arity call still reports an overload error.
 ///
-/// Unlike user-defined functions (which have one fixed arity), a builtin can have
-/// several overloads of different concrete argument types, so treating every
-/// arity mismatch as a bracket access would hide real mistakes: `replace(a, b, c,
-/// d)` (one argument too many for `replace`'s `(string, string, string)` overload)
-/// is structurally identical to `next(x)["value"]` (one argument too many for
-/// `next`'s `(dynamic()) -> dynamic()` overload). The two are distinguished by
-/// whether the shorter overload's parameters are fully unconstrained
-/// (`dynamic()`/type variables): such a parameter list can only ever fail to match
-/// on argument *count*, never on an argument's type, so an excess of trailing
-/// String/Symbol children can only mean bracket-access keys. A concretely-typed
-/// overload like `replace`'s can fail to match on a real type or arity mistake, so
-/// its excess arguments are left alone and reported as a normal overload error.
-///
-/// Returns how many trailing children should be treated as bracket keys (0 when the
-/// explicit argument count already matches an overload, or no such split exists).
+/// Returns the number of trailing bracket keys (0 if the arg count already
+/// matches an overload, or no generic-overload split applies).
 pub(super) fn trailing_bracket_key_count(
     hir: &Hir,
     ctx: &InferenceContext,
@@ -384,11 +369,8 @@ pub(super) fn trailing_bracket_key_count(
         .unwrap_or(0)
 }
 
-/// Resolves a builtin call whose explicit arguments (`explicit_arg_tys`/`children`)
-/// may include trailing bracket-access keys fused on by the CST (see
-/// `trailing_bracket_key_count`). Handles piped-input prepending and error
-/// deferral the same way as a plain builtin call, then chains any trailing keys
-/// onto the call's return type via `DeferredCallReturnAccess`.
+/// Resolves a builtin call, splitting off and chaining any trailing bracket-access
+/// keys via `trailing_bracket_key_count`/`DeferredCallReturnAccess`.
 pub(super) fn resolve_builtin_call_with_brackets(
     hir: &Hir,
     ctx: &mut InferenceContext,

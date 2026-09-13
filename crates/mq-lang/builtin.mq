@@ -554,6 +554,29 @@ def collect(stream):
     stream
 end
 
+# Converts an array or dictionary into a coroutine that lazily yields its
+# elements. A coroutine input is returned unchanged. A dictionary yields its
+# `[key, value]` entry pairs (matching `entries()`).
+#
+# Example:
+# ```
+# to_coroutine([1, 2, 3]) | collect()
+# #=> [1, 2, 3]
+# ```
+#
+# Returns: dynamic
+def to_coroutine(v): if (is_coroutine(v)): v else: _to_coroutine_impl(v);
+
+# Lazily yields each element of `v` (or its entries, if `v` is a dictionary).
+def _to_coroutine_impl(v):
+  var target = if (is_dict(v)): entries(v) else: v
+  | var i = 0
+  | while (i < len(target)):
+      yield: target[i]
+      | i += 1
+    end
+end
+
 # Returns the last element of an array, or consumes a coroutine to its last value.
 #
 # Example:

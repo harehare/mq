@@ -261,6 +261,27 @@ def test_collect():
   | assert_eq(collect([1, 2]), [1, 2])
 end
 
+def test_to_coroutine_array():
+  let stream = to_coroutine([1, 2, 3])
+  | assert(is_coroutine(stream))
+  | assert_eq(collect(stream), [1, 2, 3])
+end
+
+def test_to_coroutine_dict():
+  assert_eq(collect(to_coroutine({"a": 1, "b": 2})), [["a", 1], ["b", 2]])
+end
+
+def test_to_coroutine_passthrough():
+  let source = fn(): yield: 1 | yield: 2;
+  | let stream = to_coroutine(source())
+  | assert_eq(next(stream)["value"], 1)
+  | assert_eq(next(stream)["value"], 2)
+end
+
+def test_to_coroutine_with_take():
+  assert_eq(collect(take(to_coroutine([1, 2, 3, 4, 5]), 2)), [1, 2])
+end
+
 # @parametrize([[[1, 2, 3], 3], [[42], 42]])
 def test_last(value, expected):
   let result = last(value)

@@ -86,6 +86,26 @@ def g(): yield: 1;
 - `status(stream)` returns the coroutine's lifecycle state as a symbol: `:created`,
   `:suspended`, `:running`, `:completed`, or `:failed`.
 
+## Creating a coroutine from a value
+
+`to_coroutine(value)` wraps an array or dictionary in a coroutine that lazily yields its elements
+(a dictionary yields its `[key, value]` entry pairs, matching `entries()`). A coroutine input is
+returned unchanged, so `to_coroutine` is safe to use as an input boundary when a value may already
+be lazy:
+
+```mq
+to_coroutine([1, 2, 3]) | collect()
+# Output: [1, 2, 3]
+```
+
+It composes with the coroutine-aware combinators below, so an eager array can be fed through them
+lazily without writing a generator function by hand:
+
+```mq
+to_coroutine([1, 2, 3, 4, 5]) | take(2) | collect()
+# Output: [1, 2]
+```
+
 ## Closing early
 
 `close(stream)` forces a coroutine straight to completion, releasing its suspended state without
