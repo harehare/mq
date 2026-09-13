@@ -14538,7 +14538,7 @@ mod tests {
 
     #[cfg(feature = "file-io")]
     fn walk_files_options(entries: &[(&str, bool)]) -> RuntimeValue {
-        let mut map = BTreeMap::new();
+        let mut map = DictMap::default();
         for (key, value) in entries {
             map.insert(Ident::new(key), RuntimeValue::Boolean(*value));
         }
