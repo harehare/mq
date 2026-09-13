@@ -517,7 +517,15 @@ end
 # ```
 #
 # Returns: dynamic
-def first(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];
+def first(arr):
+  if (is_coroutine(arr)):
+    do
+      let step = next(arr)
+      | step["value"]
+    end
+  else:
+    arr[0]
+end
 
 # Consumes a coroutine to completion and returns its yielded values as an array.
 # Non-coroutine values are returned unchanged, making this safe as an output
