@@ -2059,3 +2059,17 @@ fn test_builtin_call_bracket_access_does_not_leak_key_into_overload(#[case] code
     let errors = check_types(code);
     assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
 }
+
+/// Regression: `print(1, "x")` was silently reinterpreted as `print(1)["x"]`
+/// since the bracket-fusion heuristic wasn't limited to `next`/`send`.
+#[rstest]
+#[case(r#"print(1, "x")"#)]
+#[case(r#"print(1, 2, 3)"#)]
+fn test_generic_builtin_extra_argument_is_not_treated_as_bracket_key(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(
+        !errors.is_empty(),
+        "Code: {}\nExpected a wrong-arity error, got none",
+        code
+    );
+}

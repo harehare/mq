@@ -314,16 +314,8 @@ pub(super) fn resolve_builtin_call(
     }
 }
 
-/// Splits off trailing String/Symbol children that are bracket-access keys rather
-/// than real arguments: the CST lowers `next(x)["value"]` as `Call(next, [x,
-/// "value"])`. Only applies when a shorter overload's params are fully generic
-/// (`dynamic()`/`Var`) — such an overload can only mismatch on arg count, never
-/// on type, so excess trailing keys must be bracket access. A concretely-typed
-/// overload (e.g. `replace`'s `(string, string, string)`) is left alone, so a
-/// real wrong-arity call still reports an overload error.
-///
-/// Returns the number of trailing bracket keys (0 if the arg count already
-/// matches an overload, or no generic-overload split applies).
+const BRACKET_FUSABLE_BUILTINS: &[&str] = &["next", "send"];
+
 pub(super) fn trailing_bracket_key_count(
     hir: &Hir,
     ctx: &InferenceContext,
@@ -331,6 +323,10 @@ pub(super) fn trailing_bracket_key_count(
     explicit_arg_tys: &[Type],
     children: &[SymbolId],
 ) -> usize {
+    if !BRACKET_FUSABLE_BUILTINS.contains(&func_name) {
+        return 0;
+    }
+
     let overloads = match ctx.get_builtin_overloads(func_name) {
         Some(overloads) => overloads,
         None => return 0,
