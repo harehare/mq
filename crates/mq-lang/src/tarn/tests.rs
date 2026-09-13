@@ -134,6 +134,12 @@ fn run(code: &str) -> RuntimeValue {
     compile_and_run(&program, token_arena).unwrap()
 }
 
+fn run_result(code: &str) -> Result<RuntimeValue, Error> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    compile_and_run(&program, token_arena)
+}
+
 fn run_with_input(code: &str, input: RuntimeValue) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
@@ -1195,6 +1201,27 @@ fn implicit_self_and_default_parameter_match_previous_evaluator_semantics() {
     "def f(a = 3, *rest): a * 10 + len(rest); | f()",
     30.0
 )]
+#[case::one_explicit_required_argument_does_not_consume_implicit_self_when_it_is_already_satisfied(
+    9.0,
+    "def f(a, b = 2): a * 10 + b; | f(4)",
+    42.0
+)]
+#[case::implicit_self_fills_exactly_one_remaining_required_slot(
+    9.0,
+    "def f(a, b, c): a * 100 + b * 10 + c; | f(1, 2)",
+    912.0
+)]
+#[case::all_explicit_required_arguments_do_not_consume_implicit_self(
+    9.0,
+    "def f(a, b, c): a * 100 + b * 10 + c; | f(1, 2, 3)",
+    123.0
+)]
+#[case::explicit_optional_argument_does_not_consume_implicit_self(9.0, "def f(a = 1, b = 2): a * 10 + b; | f(4)", 42.0)]
+#[case::an_omitted_optional_parameter_uses_the_preceding_explicit_argument(
+    9.0,
+    "def f(a, b = a): a + b; | f(40)",
+    80.0
+)]
 #[case::default_expression_preserves_the_callers_self(10.0, "def f(a, b = . + a): a + b; | f()", 30.0)]
 #[case::dynamic_closure_call_uses_the_same_implicit_self_and_default_binding(
     10.0,
@@ -1216,6 +1243,59 @@ fn parameter_binding_matrix(#[case] input: f64, #[case] code: &str, #[case] expe
     assert_eq!(
         run_with_input(code, RuntimeValue::Number(input.into())),
         RuntimeValue::Number(expected.into()),
+    );
+}
+
+/// A pipeline value may fill one missing required parameter, but it must not make an otherwise
+/// invalid call appear valid. This is the boundary complementary to the success cases above.
+#[rstest]
+#[case::no_explicit_arguments_cannot_fill_two_required_parameters("def f(a, b): a + b; | 9 | f()", 2, 0)]
+#[case::one_explicit_argument_cannot_fill_two_remaining_required_parameters(
+    "def f(a, b, c): a + b + c; | 9 | f(1)",
+    3,
+    1
+)]
+fn parameter_binding_rejects_calls_with_more_than_one_required_gap(
+    #[case] code: &str,
+    #[case] expected: usize,
+    #[case] actual: usize,
+) {
+    let err = run_result(code).unwrap_err();
+    assert!(
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual)),
+        "unexpected error for {code}"
+    );
+}
+
+/// Parameter defaults execute in the callee frame. An error there must unwind through the call
+/// and be visible to an enclosing `try`, just like an error from the function body.
+#[test]
+fn error_in_a_default_parameter_is_caught_by_the_callers_try() {
+    assert_eq!(
+        run("def f(value = 1 / 0): value; | try: f() catch: 42;"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[rstest]
+#[case::array_merges_multiple_sources("len([0, ...[1, 2], ...[3, 4], 5])", 6.0)]
+#[case::array_none_is_an_empty_source("len([...None, 1])", 1.0)]
+#[case::dict_later_entries_override_spread_entries(
+    r#"let base = {x: 1, y: 2} | let merged = {...base, y: 99, z: 3} | merged["y"] + merged["z"]"#,
+    102.0
+)]
+#[case::dict_none_is_an_empty_source(r#"let merged = {...None, x: 7} | merged["x"]"#, 7.0)]
+fn spread_instructions_preserve_literal_semantics(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::array(r#"[...42]"#)]
+#[case::dict(r#"{...42}"#)]
+fn spread_instructions_reject_non_collection_sources(#[case] code: &str) {
+    assert!(
+        matches!(run_result(code), Err(Error::Vm(_))),
+        "{code} should fail in the VM"
     );
 }
 
