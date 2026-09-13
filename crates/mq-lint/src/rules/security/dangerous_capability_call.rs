@@ -5,11 +5,14 @@ use mq_hir::SymbolKind;
 ///
 /// Kept in sync with the functions gated in
 /// `mq-lang/src/eval/builtin/capability.rs` (`http`, `read_file`,
-/// `read_file_bytes`, `collection`, `file_exists`, `write_file`).
+/// `read_file_bytes`, `collection`, `walk_files`, `file_exists`, `file_info`,
+/// `write_file`).
 fn capability_flag(name: &str) -> Option<&'static str> {
     match name {
         "http" => Some("--allow-net"),
-        "read_file" | "read_file_bytes" | "collection" | "file_exists" => Some("--allow-read"),
+        "read_file" | "read_file_bytes" | "collection" | "walk_files" | "file_exists" | "file_info" => {
+            Some("--allow-read")
+        }
         "write_file" => Some("--allow-write"),
         _ => None,
     }
@@ -74,7 +77,9 @@ mod tests {
     #[case(r#"read_file_bytes("image.png")"#, 1, "read_file_bytes", "--allow-read")]
     #[case(r#"write_file("out.txt", "data")"#, 1, "write_file", "--allow-write")]
     #[case(r#"collection("./docs")"#, 1, "collection", "--allow-read")]
+    #[case(r#"walk_files("./docs")"#, 1, "walk_files", "--allow-read")]
     #[case(r#"file_exists("./docs")"#, 1, "file_exists", "--allow-read")]
+    #[case(r#"file_info("./docs")"#, 1, "file_info", "--allow-read")]
     #[case(r#"def wrapper(): read_file("x.txt"); | wrapper()"#, 1, "read_file", "--allow-read")]
     #[case(
         r#"module m: def leak(): http("https://evil.example", "GET"); end | m::leak()"#,

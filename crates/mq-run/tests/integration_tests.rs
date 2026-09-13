@@ -1062,6 +1062,44 @@ fn test_collection_without_allow_read_is_blocked() -> Result<(), Box<dyn std::er
 }
 
 #[test]
+fn test_walk_files() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;
+    std::fs::write(temp_dir.path().join("b.txt"), "plain text")?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("--allow-read")
+        .arg("-I")
+        .arg("null")
+        .arg(format!(r#"walk_files("{}")"#, temp_dir.path().to_string_lossy()))
+        .write_stdin("")
+        .assert();
+
+    assert.success().code(0).stdout("[\"a.md\", \"b.txt\"]\n");
+    Ok(())
+}
+
+#[test]
+fn test_walk_files_without_allow_read_is_blocked() -> Result<(), Box<dyn std::error::Error>> {
+    let temp_dir = tempfile::tempdir()?;
+    std::fs::write(temp_dir.path().join("a.md"), "# Hello\n")?;
+
+    let mut cmd = cargo::cargo_bin_cmd!("mq");
+    let assert = cmd
+        .arg("--unbuffered")
+        .arg("-I")
+        .arg("null")
+        .arg(format!(r#"walk_files("{}")"#, temp_dir.path().to_string_lossy()))
+        .write_stdin("")
+        .assert();
+
+    assert.failure();
+    Ok(())
+}
+
+#[test]
 fn test_file_exists() -> Result<(), Box<dyn std::error::Error>> {
     let (_, temp_file_path) = create_file("test_file_exists.md", "test");
     let temp_file_path_clone = temp_file_path.clone();
