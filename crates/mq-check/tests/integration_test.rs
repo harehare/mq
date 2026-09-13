@@ -2045,3 +2045,20 @@ fn test_recursive_selector(#[case] code: &str, #[case] should_succeed: bool, #[c
         result
     );
 }
+
+/// Regression test: the CST lowers `f(x)["key"]` as `Call(f, [x, "key"])`, fusing
+/// the bracket key into the callee's argument list. User-defined calls already
+/// strip trailing bracket keys before overload/arity checking; builtin calls did
+/// not, so `next(arr)["value"]` was type-checked as a 2-argument call to `next`
+/// (which only has 0- and 1-argument overloads) and spuriously failed.
+#[rstest]
+#[case(r#"def myfirst(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];"#)]
+#[case(r#"def myfirst(arr): next(arr)["value"];"#)]
+#[case(r#"next(1)["value"]"#)]
+#[case(r#"let x = next(1) | x["value"]"#)]
+#[case(r#"def myfirst(arr): get(next(arr), "value");"#)]
+#[case(r#"next(1)"#)]
+fn test_builtin_call_bracket_access_does_not_leak_key_into_overload(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
