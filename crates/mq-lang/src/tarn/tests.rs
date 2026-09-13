@@ -1150,6 +1150,50 @@ fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
     assert_eq!(run(code), RuntimeValue::Number(expected.into()));
 }
 
+/// Nested inline-module members are ordinary values once resolved. Exercise aliases at each
+/// boundary so qualified bindings, closure captures, and calls through local aliases stay
+/// coherent when module scopes are combined.
+#[rstest]
+#[case::nested_function_is_callable_through_a_let_alias(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let add_from_inner = outer::inner::add | add_from_inner(2)",
+    42.0
+)]
+#[case::nested_let_is_readable_through_a_let_alias(
+    "module outer: module inner: let base = 40 end end | let base_from_inner = outer::inner::base | base_from_inner + 2",
+    42.0
+)]
+#[case::nested_let_can_be_transformed_by_a_pipeline_inside_a_do_binding(
+    "module outer: module inner: let base = 40 end end | let transformed = do outer::inner::base | . + 2 end | transformed",
+    42.0
+)]
+#[case::nested_function_result_can_be_transformed_inside_a_do_binding(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | let transformed = do outer::inner::add(19) | . * 2 end | transformed",
+    42.0
+)]
+#[case::aliased_inner_function_keeps_its_modules_let_capture(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | let add_from_inner = outer::inner::add | let twice = fn(value): add_from_inner(add_from_inner(value)); | twice(38)",
+    42.0
+)]
+#[case::alias_chain_preserves_a_nested_functions_identity(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let first = outer::inner::add | let second = first | second(2)",
+    42.0
+)]
+#[case::another_inline_module_captures_an_aliased_inner_function(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | module consumer: let add_from_outer = outer::inner::add | def execute(value): add_from_outer(value); end | consumer::execute(40)",
+    42.0
+)]
+#[case::separately_aliased_members_share_the_nested_modules_environment(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let base_from_inner = outer::inner::base | let add_from_inner = outer::inner::add | base_from_inner + add_from_inner(1)",
+    81.0
+)]
+#[case::same_named_inner_modules_remain_qualified_by_their_outer_module(
+    "module left: module inner: let value = 40 end end | module right: module inner: let value = 2 end end | let left_value = left::inner::value | let right_value = right::inner::value | left_value + right_value",
+    42.0
+)]
+fn nested_inline_module_aliases_preserve_resolved_values(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
 /// This carries the former evaluator's `test_default_params_with_self` semantics
 /// through the compiled VM. (Its test constructed a parameter named `self` directly
 /// in the AST; `self` is reserved in source syntax.) The first parameter receives the
