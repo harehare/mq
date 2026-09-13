@@ -1697,7 +1697,9 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::CallSelfImplicitSelf(count)
         | OpCode::CallLocal(_, count)
         | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
-        OpCode::Resume(count) => (*count as usize, 1),
+        // The interpreter treats `argc == 2` as `send` (pops 2) and anything else as `next`
+        // (pops 1), regardless of the declared count; mirror that exactly here.
+        OpCode::Resume(count) => (if *count == 2 { 2 } else { 1 }, 1),
         OpCode::CallStaticExact0(_) | OpCode::CallSelfExact0 => (0, 1),
         OpCode::CallStaticExact1(_) | OpCode::CallSelfExact1 => (1, 1),
         OpCode::CallStaticExact2(_) | OpCode::CallSelfExact2 => (2, 1),
@@ -2121,6 +2123,8 @@ mod tests {
         0,
         1,
     )]
+    // The interpreter always pops one operand for `Resume`, even when `argc` is 0.
+    #[case::resume_zero_argc_still_pops_one(vec![OpCode::Resume(0), OpCode::Return], 0, 1, 0, 0)]
     fn verifier_rejects_stack_underflow(
         #[case] code: Vec<OpCode>,
         #[case] pc: usize,
