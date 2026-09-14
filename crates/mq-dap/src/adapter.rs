@@ -1609,4 +1609,84 @@ mod tests {
         let result = adapter.handle_request(req, &mut server);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn test_breakpoint_inside_coroutine_body_hits_on_each_resume() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        // line 2: `yield: 1 |`, line 3: `yield: 2;`
+        adapter.engine.debugger().write().unwrap().add_breakpoint(2, None, None);
+        adapter.engine.debugger().write().unwrap().add_breakpoint(3, None, None);
+
+        for _ in 0..32 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code = "def g():\nyield: 1 |\nyield: 2;\n|\nlet s = g() |\nlet first = next(s) |\nlet second = next(s) |\n[get(first, \"value\"), get(second, \"value\")]";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(
+            values[0],
+            mq_lang::RuntimeValue::Array(Shared::new(vec![
+                mq_lang::RuntimeValue::Number(1.into()),
+                mq_lang::RuntimeValue::Number(2.into()),
+            ]))
+        );
+
+        let hit_lines = adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .filter_map(|message| match message {
+                DebuggerMessage::BreakpointHit { line, .. } => Some(line),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        // Both yields must be observed, in order, though each may be reported more than once.
+        let mut distinct_in_order = hit_lines.clone();
+        distinct_in_order.dedup();
+        assert_eq!(
+            distinct_in_order,
+            vec![2, 3],
+            "expected a breakpoint hit on each yield, in resume order; got {hit_lines:?}"
+        );
+    }
+
+    #[test]
+    fn test_variables_inside_resumed_coroutine_see_the_sent_value() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        // line 3: `yield: value;`, reached only after `send(s, 99)` resumes the coroutine and
+        // binds `value` from the first `yield`.
+        adapter.engine.debugger().write().unwrap().add_breakpoint(3, None, None);
+        for _ in 0..32 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code =
+            "def g():\nlet value = yield: 1 |\nyield: value;\n|\nlet s = g() |\nnext(s) |\nget(send(s, 99), \"value\")";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(99.into()));
+
+        let context = adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .find_map(|message| match message {
+                DebuggerMessage::BreakpointHit { line: 3, context, .. } => Some(context),
+                _ => None,
+            })
+            .expect("the coroutine should stop at the breakpoint on `yield: value;`");
+
+        assert!(
+            context
+                .local_variables()
+                .iter()
+                .any(|variable| variable.name == "value" && variable.value == "99"),
+            "expected the coroutine's own `value` local (from send()) to be visible while paused, got {:?}",
+            context.local_variables()
+        );
+    }
 }

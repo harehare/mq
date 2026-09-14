@@ -30,6 +30,7 @@ Once connected to a DAP client:
 8. **Inspect Variables**: Hover over variables or view them in the variables pane
 9. **Watch Expressions**: Add mq expressions to your editor's watch pane to re-evaluate them against the current scope every time execution stops
 10. **View Call Stack**: See the current execution stack in the call stack pane
+11. **Debug Coroutines**: Breakpoints and stepping work inside generator (`def`/`yield`) bodies. Each `next()`/`send()` resume stops independently, and the variables pane reflects that coroutine's own suspended locals (e.g. a value just delivered by `send()`), not the caller's
 
 ### Example Debug Session
 
