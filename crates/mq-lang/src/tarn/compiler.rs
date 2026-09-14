@@ -2380,6 +2380,17 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
 
+        // `[...]`/`{...}` literals parse to a `Call` on `ARRAY_LITERAL`/`DICT_LITERAL` (see
+        // `ast::constants::builtins`), never on the callable `array`/`dict` builtins below.
+        // Checked first, ahead of any user-defined function resolution, so literal syntax
+        // always constructs a literal regardless of what's in scope.
+        if ident == builtins::ARRAY_LITERAL.into() {
+            return self.compile_array_call(args);
+        }
+        if ident == builtins::DICT_LITERAL.into() {
+            return self.compile_dict_call(args, call_token_id);
+        }
+
         #[cfg(feature = "debugger")]
         if ident == builtins::BREAKPOINT.into() {
             self.emit(OpCode::Breakpoint(call_token_id));
@@ -2510,6 +2521,11 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
             return Ok(());
         }
+        // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
+        // `direct_self_call`/`resolve()` checks above already returned for any call a
+        // user-defined function of that name should handle instead. Equivalent to, but cheaper
+        // than, falling through to `CallBuiltin` and dispatching to the native `array`/`dict`
+        // builtins.
         if ident == builtins::ARRAY.into() {
             return self.compile_array_call(args);
         }

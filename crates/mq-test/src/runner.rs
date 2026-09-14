@@ -11,11 +11,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crate::coverage::{self, CoverageData, CoverageFormat, CoverageHandler, FileCoverage};
 use crate::snapshot;
 
+/// Number of iterations a `# @property(generators)` test runs when no count is given.
+const DEFAULT_PROPERTY_CASES: &str = "100";
+
 /// Parsed test annotation from a leading comment.
 #[derive(Debug, PartialEq)]
 enum TestAnnotation {
     Test,
-    Parametrize { params_expr: String },
+    Parametrize {
+        params_expr: String,
+    },
+    /// `# @property(count, generators)` (or `# @property(generators)`, defaulting `count`
+    /// to [`DEFAULT_PROPERTY_CASES`]). `generators` must evaluate to an array of one
+    /// `gen::`-style generator (see `gen.mq`) per test parameter.
+    Property {
+        count_expr: String,
+        generators_expr: String,
+    },
     Tags(Vec<String>),
 }
 
@@ -32,6 +44,16 @@ enum DiscoveredTest {
         arity: usize,
         tags: Vec<String>,
     },
+    /// A `# @property(count, generators)` test. Kept distinct from `Parametrized` since each
+    /// generated case needs its own shrink search on failure. See
+    /// `TestRunner::build_property_case_expr`.
+    Property {
+        name: String,
+        count_expr: String,
+        generators_expr: String,
+        arity: usize,
+        tags: Vec<String>,
+    },
 }
 
 impl DiscoveredTest {
@@ -39,6 +61,7 @@ impl DiscoveredTest {
         match self {
             DiscoveredTest::Simple { name, .. } => name,
             DiscoveredTest::Parametrized { name, .. } => name,
+            DiscoveredTest::Property { name, .. } => name,
         }
     }
 
@@ -46,6 +69,7 @@ impl DiscoveredTest {
         match self {
             DiscoveredTest::Simple { tags, .. } => tags,
             DiscoveredTest::Parametrized { tags, .. } => tags,
+            DiscoveredTest::Property { tags, .. } => tags,
         }
     }
 }
@@ -386,6 +410,19 @@ impl TestRunner {
                         tags: Self::collect_tags(&node.leading_trivia),
                     });
                 }
+                Some(TestAnnotation::Property {
+                    count_expr,
+                    generators_expr,
+                }) => {
+                    let arity = Self::get_arity(node);
+                    tests.push(DiscoveredTest::Property {
+                        name: func_name.clone(),
+                        count_expr,
+                        generators_expr,
+                        arity,
+                        tags: Self::collect_tags(&node.leading_trivia),
+                    });
+                }
                 _ if func_name.starts_with("test_") => {
                     tests.push(DiscoveredTest::Simple {
                         name: func_name.clone(),
@@ -420,6 +457,16 @@ impl TestRunner {
 
         match name {
             "parametrize" => Some(TestAnnotation::Parametrize { params_expr: args }),
+            "property" => {
+                let (count_expr, generators_expr) = match Self::split_top_level_comma(&args) {
+                    Some((count, generators)) => (count.trim().to_string(), generators.trim().to_string()),
+                    None => (DEFAULT_PROPERTY_CASES.to_string(), args),
+                };
+                Some(TestAnnotation::Property {
+                    count_expr,
+                    generators_expr,
+                })
+            }
             "tags" | "tag" => Some(TestAnnotation::Tags(
                 args.split(',')
                     .map(|tag| tag.trim().to_string())
@@ -428,6 +475,36 @@ impl TestRunner {
             )),
             _ => None,
         }
+    }
+
+    /// Splits `s` at its first comma that isn't nested inside `()`/`[]`/`{}` — used to pull
+    /// `@property(count, generators)`'s two arguments apart even though `generators` is
+    /// itself an array literal full of commas. Returns `None` if there's no such comma (the
+    /// single-argument `@property(generators)` form).
+    fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
+        let mut depth = 0i32;
+        let mut in_string = false;
+        let mut chars = s.char_indices();
+        while let Some((i, c)) = chars.next() {
+            if in_string {
+                match c {
+                    '\\' => {
+                        chars.next();
+                    }
+                    '"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match c {
+                '"' => in_string = true,
+                '(' | '[' | '{' => depth += 1,
+                ')' | ']' | '}' => depth -= 1,
+                ',' if depth == 0 => return Some((&s[..i], &s[i + 1..])),
+                _ => {}
+            }
+        }
+        None
     }
 
     /// Finds the first `@test`/`[test]`/`@parametrize(...)` annotation among `trivia`,
@@ -482,6 +559,44 @@ impl TestRunner {
         merged
     }
 
+    /// Builds the array-of-`test_case`s expression for a `# @property(count, generators)` test.
+    /// Each iteration generates args via `gen::tuple(generators)` seeded with its index, then
+    /// runs `_property_case_result` (see `test.mq`), which shrinks a failing case before
+    /// reporting it. `generators_expr`'s length is checked against `arity` so a mismatch fails
+    /// loudly instead of silently passing `None` for missing parameters.
+    fn build_property_case_expr(
+        display: &str,
+        name: &str,
+        count_expr: &str,
+        generators_expr: &str,
+        arity: usize,
+    ) -> String {
+        let arg_list = (0..arity)
+            .map(|i| format!("__property_arg[{i}]"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // `range` is inclusive and auto-descends, so `range(0, count - 1)` for count <= 0
+        // would still yield seeds instead of an empty case list; guard it explicitly.
+        format!(
+            "do \
+               let __property_generators = ({generators_expr}) \
+               | let __property_count = ({count_expr}) \
+               | if (len(__property_generators) != {arity}): \
+                   error(\"@property: expected {arity} generator(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len(__property_generators))) \
+                 elif (__property_count <= 0): [] \
+                 else: map(range(0, __property_count - 1), fn(__property_seed): \
+                   do \
+                     let __property_args = (gen::tuple(__property_generators))(__property_seed) \
+                     | test_case( \
+                         \"{display}[\" + to_string(__property_seed) + \"]\", \
+                         fn(): _property_case_result(__property_args, fn(__property_arg): {name}({arg_list});) ; \
+                       ) \
+                   end \
+                 ;) \
+             end"
+        )
+    }
+
     /// Returns the number of positional parameters of a `def` node.
     fn get_arity(node: &mq_lang::Shared<mq_lang::CstNode>) -> usize {
         let (sig, _) = node.split_cond_and_program();
@@ -514,6 +629,19 @@ impl TestRunner {
                             zip(range(0, len({params_expr})), {params_expr}), \
                             fn(__ic): test_case(\"{display}[\" + to_string(__ic[0]) + \"]\", \
                             fn(): {name}({arg_list}) ;) ;)"
+                    )
+                }
+                DiscoveredTest::Property {
+                    name,
+                    count_expr,
+                    generators_expr,
+                    arity,
+                    ..
+                } => {
+                    let display = Self::display_name(name);
+                    format!(
+                        "  {}",
+                        Self::build_property_case_expr(display, name, count_expr, generators_expr, *arity)
                     )
                 }
             })
@@ -582,13 +710,103 @@ mod tests {
     )]
     #[case("@tag(slow)", Some(TestAnnotation::Tags(vec!["slow".to_string()])))]
     #[case("@tags()", Some(TestAnnotation::Tags(vec![])))]
+    #[case(
+        "@property(100, [gen::int(0, 10)])",
+        Some(TestAnnotation::Property {
+            count_expr: "100".to_string(),
+            generators_expr: "[gen::int(0, 10)]".to_string(),
+        })
+    )]
+    #[case(
+        "@property([gen::int(0, 10)])",
+        Some(TestAnnotation::Property {
+            count_expr: DEFAULT_PROPERTY_CASES.to_string(),
+            generators_expr: "[gen::int(0, 10)]".to_string(),
+        })
+    )]
+    #[case(
+        "  @property(  50 ,  [gen::int(0, 10)]  )  ",
+        Some(TestAnnotation::Property {
+            count_expr: "50".to_string(),
+            generators_expr: "[gen::int(0, 10)]".to_string(),
+        })
+    )]
+    #[case(
+        // A comma inside a nested string/array must not be mistaken for the count/generators
+        // separator.
+        "@property(10, [gen::int(0, 10), gen::string(\"a,b\", 3)])",
+        Some(TestAnnotation::Property {
+            count_expr: "10".to_string(),
+            generators_expr: "[gen::int(0, 10), gen::string(\"a,b\", 3)]".to_string(),
+        })
+    )]
+    #[case(
+        // `]` inside a string must not fool the bracket-depth scanner into treating the next
+        // comma as the count/generators separator.
+        "@property([gen::string(\"]\", 3), gen::int(0, 1)])",
+        Some(TestAnnotation::Property {
+            count_expr: DEFAULT_PROPERTY_CASES.to_string(),
+            generators_expr: "[gen::string(\"]\", 3), gen::int(0, 1)]".to_string(),
+        })
+    )]
     #[case("@unknown(foo)", None)]
     #[case("@skip", None)]
     #[case("not an annotation", None)]
     #[case("@", None)]
     #[case("@parametrize", None)]
+    #[case("@property", None)]
     fn test_parse_annotation(#[case] input: &str, #[case] expected: Option<TestAnnotation>) {
         assert_eq!(TestRunner::parse_annotation(input), expected);
+    }
+
+    #[rstest]
+    #[case("100, [gen::int(0, 10)]", Some(("100", " [gen::int(0, 10)]")))]
+    #[case("[gen::int(0, 10)]", None)]
+    #[case(
+        "10, [gen::int(0, 10), gen::string(\"a,b\", 3)]",
+        Some(("10", " [gen::int(0, 10), gen::string(\"a,b\", 3)]"))
+    )]
+    #[case("", None)]
+    fn test_split_top_level_comma(#[case] input: &str, #[case] expected: Option<(&str, &str)>) {
+        assert_eq!(TestRunner::split_top_level_comma(input), expected);
+    }
+
+    #[test]
+    fn test_build_property_case_expr() {
+        let case_expr = TestRunner::build_property_case_expr("range", "test_range", "100", "[gen::int(0, 10)]", 1);
+        assert!(
+            case_expr.contains("let __property_generators = ([gen::int(0, 10)])"),
+            "missing generators binding: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("len(__property_generators) != 1"),
+            "missing arity check: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("let __property_count = (100)"),
+            "missing count binding: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("__property_count <= 0"),
+            "missing zero-count guard: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("range(0, __property_count - 1)"),
+            "missing count range: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("(gen::tuple(__property_generators))(__property_seed)"),
+            "missing generator call: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("test_range(__property_arg[0])"),
+            "missing unpacked call: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("_property_case_result(__property_args,"),
+            "missing shrink wiring: {case_expr}"
+        );
+        assert!(case_expr.contains("\"range[\""), "missing display label: {case_expr}");
     }
 
     #[test]
@@ -757,6 +975,40 @@ mod tests {
             }
             other => panic!("expected Parametrized, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_discover_tests_property_is_discovered_as_a_property_test() {
+        let content = "# @property(50, [gen::int(0, 10)])\ndef test_range(n):\n  None\nend\n";
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 1);
+        match &tests[0] {
+            DiscoveredTest::Property {
+                name,
+                count_expr,
+                generators_expr,
+                arity,
+                ..
+            } => {
+                assert_eq!(name, "test_range");
+                assert_eq!(*arity, 1);
+                assert_eq!(count_expr, "50");
+                assert_eq!(generators_expr, "[gen::int(0, 10)]");
+            }
+            other => panic!("expected Property, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_discover_tests_property_without_count_uses_the_default() {
+        let content = "# @property([gen::int(0, 10)])\ndef test_range(n):\n  None\nend\n";
+        let tests = TestRunner::discover_tests(content);
+        assert_eq!(tests.len(), 1);
+        assert!(matches!(
+            &tests[0],
+            DiscoveredTest::Property { count_expr, .. }
+                if count_expr == DEFAULT_PROPERTY_CASES
+        ));
     }
 
     #[rstest]
@@ -1055,6 +1307,133 @@ mod tests {
         assert!(TestRunner::new(vec![test_file]).run().unwrap());
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_executes_a_property_test_over_generated_cases() {
+        let dir = temp_project_dir("property_commutative");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "| import \"gen\"\n",
+                "|\n",
+                "# @property(30, [gen::int(-1000, 1000), gen::int(-1000, 1000)])\n",
+                "def test_addition_is_commutative(a, b):\n",
+                "  assert_eq(a + b, b + a)\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_a_property_test_without_a_count_defaults_to_100_cases() {
+        let dir = temp_project_dir("property_default_count");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "| import \"gen\"\n",
+                "|\n",
+                "# @property([gen::int(0, 1000)])\n",
+                "def test_is_non_negative(n):\n",
+                "  assert_true(n >= 0)\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(TestRunner::new(vec![test_file]).run().unwrap());
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_a_failing_property_case_is_labeled_with_its_seed_and_fails_the_run() {
+        let dir = temp_project_dir("property_failure");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "| import \"gen\"\n",
+                "|\n",
+                "# A deliberately false property: every generated int is < 5.\n",
+                "# @property(20, [gen::int(0, 20)])\n",
+                "def test_deliberately_false(n):\n",
+                "  assert_true(n < 5)\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            !TestRunner::new(vec![test_file]).run().unwrap(),
+            "a genuinely false property must fail the run"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_a_property_with_too_few_generators_fails_the_run() {
+        let dir = temp_project_dir("property_generator_arity_mismatch");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "| import \"gen\"\n",
+                "|\n",
+                "# @property([gen::const(1)])\n",
+                "def test_pair(a, b):\n",
+                "  assert_true(is_none(b))\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            !TestRunner::new(vec![test_file]).run().unwrap(),
+            "one generator for two parameters must fail, not silently pass b = None"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
+        // Calls `_property_case_result` (from `test.mq`) directly with args `[500]`, bypassing
+        // `gen::tuple` entirely so the starting point is deterministic: the smallest `n` for
+        // which `n < 5` is false is `5`, so a working shrink search must report exactly that.
+        let query = concat!(
+            "include \"test\"\n",
+            "|\n",
+            "def test_less_than_five(n):\n",
+            "  assert_true(n < 5)\n",
+            "end\n",
+            "| _property_case_result([500], fn(__a): test_less_than_five(__a[0]);)",
+        );
+        let mut engine = mq_lang::Engine::with_io(
+            mq_lang::DefaultModuleResolver::default(),
+            mq_lang::Shared::new(mq_lang::MemIo::default()),
+        );
+        engine.load_builtin_module();
+
+        let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
+        let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
+
+        assert!(
+            rendered.contains("Shrunk from [500] to [5]"),
+            "unexpected result: {rendered}"
+        );
     }
 
     #[test]

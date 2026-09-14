@@ -1,6 +1,8 @@
 # Testing framework for mq
 # A simple testing framework to execute test functions and output results
 
+import "gen"
+
 # Verifies that a condition is true and raises an error if it's false.
 #
 # Example:
@@ -414,6 +416,50 @@ def test_case(name, func):
     "name": name,
     "func": func
   }
+end
+
+# `gen::shrink`'s `is_interesting` predicate for a `# @property(...)` case: re-runs `adapter`
+# (see `_property_case_result`) on shrink candidate `a` and reports whether it still fails.
+# Treats a thrown error as "not interesting" instead of letting it propagate, so a shrink
+# candidate outside the generators' actual domain (e.g. a divisor shrunk down to `0`) can't
+# abort the whole shrink search.
+def _property_case_still_fails(adapter, a):
+  try:
+    do
+      let r = adapter(a)
+      | is_dict(r) && contains(r, "error")
+    end
+  catch:
+    false;
+
+# Runs a single `# @property(...)` case. `adapter` wraps the property function as a
+# `fn(args): result` taking one array argument instead of one per parameter (see
+# `TestRunner::build_test_query` in `mq-test`). `args` is that iteration's generated arguments,
+# from `gen::tuple(generators)(seed)`.
+#
+# On failure, searches for a smaller failing `args` with `gen::shrink` before reporting, so the
+# failure message shows a minimal counterexample. The case name still reports the original seed
+# (`name[seed]`), so the unshrunk case stays reproducible via `gen::tuple(generators)(seed)`.
+#
+# Returns: dict
+def _property_case_result(args, adapter):
+  let result = adapter(args)
+  | if (is_dict(result) && contains(result, "error")):
+      do
+        let shrunk = gen::shrink(args, fn(a): _property_case_still_fails(adapter, a);)
+        | if (shrunk == args):
+            result
+          else:
+            do
+              let shrunk_result = adapter(shrunk)
+              | {
+                  "error": true,
+                  "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
+                }
+            end
+      end
+    else:
+      result
 end
 
 

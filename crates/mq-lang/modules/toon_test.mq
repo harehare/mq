@@ -1,4 +1,5 @@
 import "toon"
+| import "gen"
 | include "test"
 
 # -- TOON Tests --
@@ -22,4 +23,10 @@ def test_toon_round_trip():
   let original = toon::toon_parse(toon_input)
   | let round_tripped = toon::toon_parse(toon::toon_stringify(original))
   | assert_eq(original, round_tripped)
+end
+
+# @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 8), gen::int(-1000000, 1000000), gen::bool()])
+def test_toon_stringify_parse_round_trip(s, n, b):
+  let data = {"s": s, "n": n, "b": b}
+  | assert_eq(toon::toon_parse(toon::toon_stringify(data)), data)
 end

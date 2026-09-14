@@ -18,11 +18,19 @@ def xml_parse(input):
 end
 
 def _xml_stringify(data):
+  def _escape_text(str):
+    replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+  end
+
+  def _escape_attr(str):
+    replace(_escape_text(str), "\"", "&quot;")
+  end
+
   def _format_attributes(attributes):
     if (is_empty(keys(attributes))):
       ""
     else:
-      " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + last(entry) + "\"";), " ")
+      " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + _escape_attr(last(entry)) + "\"";), " ")
   end
 
   def _format_xml_element(element):
@@ -39,7 +47,7 @@ def _xml_stringify(data):
 
   def _format_xml_element_with_content(tag, attr_str, children, text):
     let content = if (!is_none(text)):
-      text
+      _escape_text(text)
     else:
       ""
     | let child_content = if (!is_empty(children)):

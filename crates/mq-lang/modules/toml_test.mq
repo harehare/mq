@@ -1,5 +1,6 @@
 import "toml"
 | import "json"
+| import "gen"
 | include "test"
 
 # -- TOML Tests --
@@ -31,6 +32,16 @@ end
 def test_toml_stringify_array_round_trips(input):
   let result = toml::toml_stringify(input)
   | assert_eq(toml::toml_parse(result), input)
+end
+
+# `s` deliberately draws from a charset including quotes/backslashes/newlines/tabs to exercise
+# `_toml_stringify_value`'s string escaping. Keys stay top-level scalars/arrays (no nested dict)
+# so a `[section]` header is never emitted, matching the flat-value case `_add_toml_lines`
+# handles above.
+# @property(50, [gen::string("abc XYZ012\"\\\n\t", 8), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
+def test_toml_stringify_parse_round_trip(s, n, b, arr):
+  let data = {"s": s, "n": n, "b": b, "arr": arr}
+  | assert_eq(toml::toml_parse(toml::toml_stringify(data)), data)
 end
 
 # @parametrize([[{"title": "title", "draft": false}], [{"count": 3}]])

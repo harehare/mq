@@ -1,0 +1,338 @@
+# Generator combinators for property-based testing.
+#
+# A generator is a plain function `fn(seed): value;` — a deterministic mapping from an integer
+# seed to a generated value. Combinators derive a distinct sub-seed per part so nested generators
+# don't correlate.
+#
+# Pairs with `mq-test`'s `# @property(count, generators)`: each of `count` iterations calls
+# `gen::tuple(generators)` with the iteration index as seed. A failing case is reproduced by
+# calling `gen::tuple(generators)(seed)` with the reported index.
+
+# Prime modulus for `_sub_seed`. Keeps products under f64's exact-integer range (2^53).
+def _sub_seed_modulus():
+  4294967291
+end
+
+# Fold width for `_sub_seed`'s hi/lo split, `round(sqrt(_sub_seed_modulus()))`.
+def _sub_seed_fold_k():
+  65536
+end
+
+# Derives a well-spread sub-seed for position `i` under a parent `seed`, so e.g. `tuple`'s
+# per-parameter generators don't all draw from the same seed.
+#
+# Splits the mix into hi/lo halves before the final round instead of a plain affine mix: a purely
+# affine mixer always has some `(i, j)` pair that aliases `[i][j]` with `[i+1][0]` (this is how the
+# old two-multiplier version collided), and the hi/lo split breaks that algebraic identity.
+def _sub_seed(seed, i):
+  let m = _sub_seed_modulus()
+  | let k = _sub_seed_fold_k()
+  | let idx = i + 1
+  | let mixed = (seed % m * 1000003 + idx * 999983) % m
+  | let lo = mixed % k
+  | let hi = trunc(mixed / k)
+  | let folded = (lo * 999983 + hi * 1000003 + idx) % m
+  | (folded * 1000003 + idx * 999983) % m
+end
+
+# A generator producing a uniformly random integer in `[min, max]` (inclusive).
+#
+# Example:
+# ```
+# import "gen" | (gen::int(1, 10))(42)
+# #=> 6
+# ```
+#
+# Returns: function
+def int(min, max):
+  fn(seed): rand_int(min, max, seed);
+end
+
+# A generator producing a uniformly random float in `[0, 1)`.
+#
+# Example:
+# ```
+# import "gen" | is_number((gen::float())(42))
+# #=> true
+# ```
+#
+# Returns: function
+def float():
+  fn(seed): rand(seed);
+end
+
+# A generator producing a random boolean.
+#
+# Example:
+# ```
+# import "gen" | is_bool((gen::bool())(42))
+# #=> true
+# ```
+#
+# Returns: function
+def bool():
+  fn(seed): rand_int(0, 1, seed) == 1;
+end
+
+# A generator producing a random string of `len` characters drawn (with replacement) from
+# `charset`.
+#
+# Example:
+# ```
+# import "gen" | (gen::string("abc", 5))(42)
+# #=> ababc
+# ```
+#
+# Returns: function
+def string(charset, len):
+  fn(seed): random_string(len, charset, seed);
+end
+
+# A generator that always produces `value`, ignoring the seed. Useful alongside generated fields
+# in `tuple`/`array`/`one_of` for a value that should stay fixed across every iteration.
+#
+# Example:
+# ```
+# import "gen" | (gen::const("literal"))(42)
+# #=> literal
+# ```
+#
+# Returns: function
+def const(value):
+  fn(seed): value;
+end
+
+# A generator that picks a uniformly random element from `values`.
+#
+# Example:
+# ```
+# import "gen" | (gen::element(["a", "b", "c"]))(42)
+# #=> b
+# ```
+#
+# Returns: function
+def element(values):
+  fn(seed): values[rand_int(0, len(values) - 1, seed)];
+end
+
+# A generator that picks one of `gens` (an array of generators) and runs it.
+#
+# Example:
+# ```
+# import "gen" | (gen::one_of([gen::const(1), gen::const(2), gen::const(3)]))(42)
+# #=> 2
+# ```
+#
+# Returns: function
+def one_of(gens):
+  fn(seed): gens[rand_int(0, len(gens) - 1, seed)](_sub_seed(seed, 1));
+end
+
+# A generator producing a fixed-length array of `len` values, each independently drawn from
+# `gen`.
+#
+# Example:
+# ```
+# import "gen" | (gen::array(gen::int(0, 9), 5))(42)
+# #=> [1, 0, 3, 4, 5]
+# ```
+#
+# Returns: function
+def array(gen, len):
+  if (len < 0):
+    error("gen::array: len must be nonnegative, got " + to_string(len))
+  else:
+    fn(seed): if (len == 0): [] else: map(range(0, len - 1), fn(i): gen(_sub_seed(seed, i)););
+end
+
+# A generator producing a variable-length array (`min_len` to `max_len`, inclusive) of values,
+# each independently drawn from `gen`.
+#
+# Example:
+# ```
+# import "gen" | let arr = (gen::array_of(gen::int(0, 9), 1, 5))(42) | len(arr) >= 1 && len(arr) <= 5
+# #=> true
+# ```
+#
+# Returns: function
+def array_of(gen, min_len, max_len):
+  if (min_len < 0 || max_len < 0):
+    error("gen::array_of: min_len and max_len must be nonnegative, got " + to_string(min_len) + ", " + to_string(max_len))
+  elif (min_len > max_len):
+    error("gen::array_of: min_len must be <= max_len, got " + to_string(min_len) + ", " + to_string(max_len))
+  else:
+    fn(seed):
+      let n = rand_int(min_len, max_len, _sub_seed(seed, 999983))
+      | if (n == 0): [] else: map(range(0, n - 1), fn(i): gen(_sub_seed(seed, i)););
+end
+
+# A generator that transforms the value `gen` produces through `mapper`. Named `transform`
+# rather than `map` to avoid shadowing the built-in `map`.
+#
+# Example:
+# ```
+# import "gen" | (gen::transform(gen::int(1, 1), fn(n): n + 100;))(42)
+# #=> 101
+# ```
+#
+# Returns: function
+def transform(gen, mapper):
+  fn(seed): mapper(gen(seed));
+end
+
+# A generator producing an array with one value per generator in `gens`, each independently
+# seeded. This is what `# @property(count, generators)` calls under the hood to turn an array of
+# per-parameter generators into a single argument list per iteration.
+#
+# Example:
+# ```
+# import "gen" | (gen::tuple([gen::const(1), gen::const(2)]))(42)
+# #=> [1, 2]
+# ```
+#
+# Returns: function
+def tuple(gens):
+  fn(seed): map(zip(range(0, len(gens)), gens), fn(p): p[1](_sub_seed(seed, p[0])););
+end
+
+# ---------------------------------------------------------------------------
+# Shrinking
+# ---------------------------------------------------------------------------
+#
+# Searches for a smaller, simpler failing example once a property test has found one. Called
+# automatically by `mq-test`'s `# @property(...)` runner on every failing case.
+
+# Safety valve so a pathological value can't run away searching forever.
+def _shrink_max_rounds():
+  100
+end
+
+# One step of "smaller" candidates for a number, ordered most-aggressive first: straight to
+# zero, halfway to zero, or one step closer to zero.
+def _shrink_number(n):
+  if (n == 0):
+    []
+  else:
+    do
+      let sign = if (n < 0): 0 - 1 else: 1
+      | let half = trunc(n / 2)
+      | let step = n - sign
+      | uniq(filter([0, half, step], fn(c): c != n;))
+    end
+end
+
+# One step of "smaller" candidates for a string or array `seq`, ordered most-aggressive first:
+# empty, half-length prefix, or one element/char shorter. `empty` is `""` or `[]` to match
+# `seq`'s type.
+def _shrink_seq(seq, empty):
+  let n = len(seq)
+  | if (n == 0):
+      []
+    else:
+      do
+        let half = slice(seq, 0, trunc(n / 2))
+        | let drop_last = slice(seq, 0, n - 1)
+        | uniq(filter([empty, half, drop_last], fn(c): c != seq;))
+      end
+end
+
+# One candidate array per index of `arr` per candidate `shrink_value` offers for that index.
+# Uses `fold`/`+`, not `flatten`, to flatten only the outer per-index list.
+def _shrink_array_elements(arr):
+  if (is_empty(arr)):
+    []
+  else:
+    fold(
+      map(range(0, len(arr) - 1), fn(i):
+        map(shrink_value(arr[i]), fn(c): set(arr, i, c););
+      ),
+      [],
+      fn(acc, candidates): acc + candidates;
+    )
+end
+
+# One candidate dict per key of `d` per candidate `shrink_value` offers for that key's value.
+# See `_shrink_array_elements` for why every candidate is kept.
+def _shrink_dict_values(d):
+  fold(
+    map(keys(d), fn(k):
+      map(shrink_value(d[k]), fn(c): set(d, k, c););
+    ),
+    [],
+    fn(acc, candidates): acc + candidates;
+  )
+end
+
+# One step of "smaller" candidate values for `value`, dispatched on its runtime type: numbers
+# shrink toward `0`, booleans toward `false`, strings and arrays toward shorter/empty (and, for
+# arrays, toward simpler elements), dicts toward simpler values (same keys). Anything else
+# (`None`, markdown nodes, functions) has no smaller form and shrinks to `[]`.
+#
+# Example:
+# ```
+# import "gen" | gen::shrink_value(10)
+# #=> [0, 5, 9]
+# ```
+#
+# Returns: array
+def shrink_value(value):
+  if (is_number(value)):
+    _shrink_number(value)
+  elif (is_bool(value)):
+    if (value): [false] else: []
+  elif (is_string(value)):
+    _shrink_seq(value, "")
+  elif (is_array(value)):
+    _shrink_seq(value, []) + _shrink_array_elements(value)
+  elif (is_dict(value)):
+    _shrink_dict_values(value)
+  else:
+    []
+end
+
+# Every one-step neighbor of `args`: for each position, one candidate array per value
+# `shrink_value` offers for that position, every other position held fixed. Uses `fold`/`+`
+# instead of `flatten`, which would also tear apart a candidate that's itself an array.
+def _shrink_neighbors(args):
+  if (is_empty(args)):
+    []
+  else:
+    fold(
+      map(range(0, len(args) - 1), fn(i):
+        map(shrink_value(args[i]), fn(v): set(args, i, v););
+      ),
+      [],
+      fn(acc, candidates): acc + candidates;
+    )
+end
+
+def _shrink_rounds(args, is_interesting, rounds_left):
+  if (rounds_left <= 0):
+    args
+  else:
+    do
+      let smaller = filter(_shrink_neighbors(args), is_interesting)
+      | if (is_empty(smaller)):
+          args
+        else:
+          _shrink_rounds(smaller[0], is_interesting, rounds_left - 1)
+    end
+end
+
+# Searches `args` for a smaller array still "interesting" per `is_interesting` (a
+# `fn(args): bool`, typically "the property still fails for these args"). Returns `args`
+# unchanged if nothing smaller was interesting.
+#
+# `is_interesting` should not throw on an out-of-domain candidate; wrap it in `try: ... catch:
+# false;` if it might.
+#
+# Example:
+# ```
+# import "gen" | gen::shrink([10], fn(a): a[0] > 3;)
+# #=> [4]
+# ```
+#
+# Returns: array
+def shrink(args, is_interesting):
+  _shrink_rounds(args, is_interesting, _shrink_max_rounds())
+end

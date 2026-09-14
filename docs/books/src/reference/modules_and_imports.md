@@ -222,6 +222,60 @@ document. Pass an explicit index built from a different set of nodes to resolve 
 got separated from their definitions — for example when a document is split or a section is moved
 into another file — which is exactly the case where a reference legitimately comes back unresolved.
 
+## Property-Based Test Generators (`gen`)
+
+The `gen` module provides generator combinators for `mq-test`'s
+`# @property(count, generators)` annotation (see the `mq-test` crate's README for the annotation
+itself). A generator is a plain function `fn(seed): value;` built on top of the seeded `rand`/`rand_int`/
+`random_string` builtins, so the same seed always produces the same value. Combinators build
+bigger generators out of smaller ones, deriving an independent sub-seed for each part so nested
+generators don't correlate with one another.
+
+```mq
+import "gen"
+| (gen::int(1, 10))(42)
+```
+
+| Function                          | Description                                                             |
+| --------------------------------- | ------------------------------------------------------------------------ |
+| `gen::int(min, max)`               | A uniformly random integer in `[min, max]`                              |
+| `gen::float()`                     | A uniformly random float in `[0, 1)`                                    |
+| `gen::bool()`                      | A random boolean                                                        |
+| `gen::string(charset, len)`        | A random string of `len` characters drawn from `charset`                |
+| `gen::const(value)`                | Always `value`, ignoring the seed                                       |
+| `gen::element(values)`             | A uniformly random element of `values`                                  |
+| `gen::one_of(gens)`                | Picks one of `gens` and runs it                                         |
+| `gen::array(gen, len)`             | A fixed-length array of `len` values from `gen`                         |
+| `gen::array_of(gen, min_len, max_len)` | A variable-length array (`min_len` to `max_len`) of values from `gen` |
+| `gen::transform(gen, mapper)`      | Transforms the value `gen` produces through `mapper`                    |
+| `gen::tuple(gens)`                 | One value per generator in `gens`, independently seeded                 |
+
+`gen::tuple` is what `# @property(...)` calls under the hood to turn an array of per-parameter
+generators into one argument list per iteration — a failing iteration's reported index doubles as
+the seed to reproduce it with, by calling `gen::tuple(generators)(seed)` again with the same
+`generators` array.
+
+### Shrinking (`gen::shrink_value`, `gen::shrink`)
+
+When a `# @property(...)` case fails, `mq-test` automatically searches for a smaller, simpler
+failing example before reporting it. The failure message shows both the shrunk arguments and
+the original ones, so the report stays easy to reason about even when the raw seed produced a
+large or convoluted value:
+
+| Function                                | Description                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `gen::shrink_value(value)`               | One step of "smaller" candidates for `value` (numbers toward `0`, strings/arrays toward shorter, dicts toward simpler values) |
+| `gen::shrink(args, is_interesting)`      | Searches the array `args` for a smaller array that's still `is_interesting` (a `fn(args): bool`) |
+
+```mq
+import "gen"
+| gen::shrink([10], fn(a): a[0] > 3;)
+# => [4]
+```
+
+Both are also usable directly (not just through `# @property(...)`) by hand-written property
+tests.
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs

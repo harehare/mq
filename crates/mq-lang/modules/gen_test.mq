@@ -1,0 +1,180 @@
+import "gen"
+| include "test"
+
+# @parametrize([[0], [1], [42], [1000]])
+def test_int_within_bounds(seed):
+  let v = (gen::int(-10, 10))(seed)
+  | assert_true(v >= -10 && v <= 10)
+end
+
+def test_int_deterministic_for_same_seed():
+  assert_eq((gen::int(0, 1000000))(42), (gen::int(0, 1000000))(42))
+end
+
+def test_float_within_unit_range():
+  let v = (gen::float())(7)
+  | assert_true(v >= 0.0 && v < 1.0)
+end
+
+def test_bool_is_boolean():
+  assert_true(is_bool((gen::bool())(7)))
+end
+
+def test_string_has_requested_length():
+  assert_eq(len((gen::string("abc", 12))(7)), 12)
+end
+
+def test_string_uses_only_charset_chars():
+  let s = (gen::string("xy", 30))(7)
+  | assert_true(len(filter(to_array(s), fn(c): c != "x" && c != "y";)) == 0)
+end
+
+def test_const_ignores_seed():
+  assert_eq((gen::const("fixed"))(1), "fixed")
+  | assert_eq((gen::const("fixed"))(2), "fixed")
+end
+
+def test_element_returns_a_member_of_the_input():
+  assert_contains(["a", "b", "c"], (gen::element(["a", "b", "c"]))(7))
+end
+
+def test_one_of_returns_one_of_the_generators_values():
+  let v = (gen::one_of([gen::const(1), gen::const(2), gen::const(3)]))(7)
+  | assert_contains([1, 2, 3], v)
+end
+
+def test_array_has_requested_length():
+  assert_eq(len((gen::array(gen::int(0, 9), 5))(7)), 5)
+end
+
+def test_array_of_length_within_bounds():
+  let arr = (gen::array_of(gen::int(0, 9), 1, 5))(7)
+  | assert_true(len(arr) >= 1 && len(arr) <= 5)
+end
+
+def test_transform_applies_the_mapper():
+  assert_eq((gen::transform(gen::const(1), fn(n): n + 100;))(7), 101)
+end
+
+def test_tuple_has_one_value_per_generator():
+  assert_eq(len((gen::tuple([gen::int(0, 9), gen::int(0, 9), gen::int(0, 9)]))(7)), 3)
+end
+
+def test_tuple_derives_a_distinct_seed_per_position():
+  # Same generator repeated twice: if positions shared one seed, every slot would come out
+  # identical every time. With independent sub-seeds, at least one pair differs across a
+  # handful of outer seeds.
+  let results = map(range(0, 9), fn(seed): (gen::tuple([gen::int(0, 1000000), gen::int(0, 1000000)]))(seed);)
+  | assert_true(len(filter(results, fn(pair): pair[0] != pair[1];)) > 0)
+end
+
+def test_tuple_is_deterministic_for_the_same_seed():
+  let gens = [gen::int(0, 1000000), gen::string("abcdefg", 8)]
+  | assert_eq((gen::tuple(gens))(42), (gen::tuple(gens))(42))
+end
+
+def test_nested_array_does_not_collide_across_the_index_97_boundary():
+  # `[0][97]` and `[1][0]` used to alias under the old radix-97 `_sub_seed`. Check over a few
+  # seeds since a single pair could coincidentally match.
+  let pairs = map(range(0, 4), fn(seed):
+    let grid = (gen::array(gen::array(gen::int(0, 1000000), 98), 2))(seed)
+    | [grid[0][97], grid[1][0]];
+  )
+  | assert_true(len(filter(pairs, fn(p): p[0] != p[1];)) > 0)
+end
+
+def test_sub_seed_nested_does_not_collide_at_the_1000003_boundary():
+  # `_sub_seed(_sub_seed(seed, 0), 1000003)` used to alias `_sub_seed(_sub_seed(seed, 1), 0)`
+  # under the old affine `_sub_seed`. Called directly since `gen::array`'s `range` refuses
+  # lengths over 1000000.
+  let pairs = map(range(0, 4), fn(seed):
+    [gen::_sub_seed(gen::_sub_seed(seed, 0), 1000003), gen::_sub_seed(gen::_sub_seed(seed, 1), 0)];
+  )
+  | assert_true(len(filter(pairs, fn(p): p[0] != p[1];)) > 0)
+end
+
+# `assert_contains` is avoided below for non-scalar values (arrays/dicts): its `in()`-based
+# membership check is unreliable for compound values on this branch, so candidate membership is
+# checked with a plain `filter`/`len` instead.
+def _has_candidate(candidates, expected):
+  len(filter(candidates, fn(c): c == expected;)) > 0
+end
+
+def test_shrink_value_number_shrinks_toward_zero():
+  assert_eq(gen::shrink_value(10), [0, 5, 9])
+end
+
+def test_shrink_value_negative_number_shrinks_toward_zero():
+  assert_eq(gen::shrink_value(-10), [0, -5, -9])
+end
+
+def test_shrink_value_zero_has_no_smaller_form():
+  assert_eq(gen::shrink_value(0), [])
+end
+
+def test_shrink_value_true_shrinks_to_false():
+  assert_eq(gen::shrink_value(true), [false])
+end
+
+def test_shrink_value_false_has_no_smaller_form():
+  assert_eq(gen::shrink_value(false), [])
+end
+
+def test_shrink_value_string_shrinks_toward_empty():
+  let candidates = gen::shrink_value("hello world")
+  | assert_true(_has_candidate(candidates, ""))
+end
+
+def test_shrink_value_empty_string_has_no_smaller_form():
+  assert_eq(gen::shrink_value(""), [])
+end
+
+def test_shrink_value_array_shrinks_toward_empty():
+  let candidates = gen::shrink_value([1, 2, 3, 4, 5])
+  | assert_true(_has_candidate(candidates, []))
+end
+
+def test_shrink_value_array_shrinks_elements_too():
+  let candidates = gen::shrink_value([10, 20])
+  | assert_true(_has_candidate(candidates, [0, 20]))
+end
+
+def test_shrink_value_empty_array_has_no_smaller_form():
+  assert_eq(gen::shrink_value([]), [])
+end
+
+def test_shrink_value_dict_shrinks_each_value():
+  let candidates = gen::shrink_value({"a": 10, "b": 20})
+  | assert_true(_has_candidate(candidates, {"a": 0, "b": 20}))
+end
+
+def test_shrink_value_of_none_has_no_smaller_form():
+  assert_eq(gen::shrink_value(None), [])
+end
+
+def test_shrink_finds_the_boundary_of_a_simple_property():
+  # The smallest `n` for which `n > 3` is still true is `4`.
+  assert_eq(gen::shrink([10], fn(a): a[0] > 3;), [4])
+end
+
+def test_shrink_leaves_an_already_minimal_example_alone():
+  assert_eq(gen::shrink([5], fn(a): a[0] == 5;), [5])
+end
+
+def test_shrink_shrinks_every_position_independently():
+  let result = gen::shrink([10, "hello world"], fn(a): a[0] > 3 && len(a[1]) > 2;)
+  | assert_true(result[0] > 3 && len(result[1]) > 2)
+  | assert_true(result[0] < 10 || len(result[1]) < len("hello world"))
+end
+
+def test_shrink_reaches_an_intermediate_candidate_when_the_most_aggressive_one_is_not_interesting():
+  # `[10]`'s most aggressive shrink (element -> 0) isn't interesting; `4` must still be reachable.
+  assert_eq(gen::shrink([[10]], fn(a): a[0][0] > 3;), [[4]])
+end
+
+def test_shrink_is_bounded_when_the_predicate_stays_interesting_forever():
+  # A pathological predicate that's "interesting" for every candidate: `shrink` must still
+  # terminate (via its round budget) rather than looping forever.
+  let result = gen::shrink([0.9999], fn(a): true;)
+  | assert_true(is_number(result[0]))
+end

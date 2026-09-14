@@ -1,5 +1,6 @@
 import "html"
 | import "json"
+| import "gen"
 | include "test"
 
 # -- HTML Tests --
@@ -52,6 +53,20 @@ def test_html_stringify_escapes_text_and_attributes():
   assert_eq(
     html::html_stringify({"tag": "p", "attributes": {"title": "a \"quote\""}, "children": [], "text": "<b> & </b>"}),
     "<p title=\"a &quot;quote&quot;\">&lt;b&gt; &amp; &lt;/b&gt;</p>")
+end
+
+# Unlike xml_test.mq's equivalent property, `_escape_text`/`_escape_attr` here do escape
+# `&`/`<`/`>`/`"`, so those characters are deliberately included in the charset. No spaces, to
+# avoid depending on whether the underlying HTML parser normalizes surrounding whitespace in
+# text nodes.
+# @property(50, [gen::string("abcXYZ01&<>\"'", 6), gen::string("abcXYZ01&<>\"'", 6)])
+def test_html_stringify_parse_round_trip(text, attr_value):
+  let el = {"tag": "p", "attributes": {"title": attr_value}, "children": [], "text": text}
+  | let doc = html::html_parse(html::html_stringify(el))
+  | let body = last(doc["children"])
+  | let p = first(body["children"])
+  | assert_eq(p["text"], text)
+  | assert_eq(p["attributes"]["title"], attr_value)
 end
 
 # @parametrize([["p", 1], ["img", 1], ["div", 1], ["nope", 0]])

@@ -1,4 +1,5 @@
 import "json"
+| import "gen"
 | include "test"
 
 # -- JSON Tests --
@@ -40,4 +41,10 @@ def test_json_to_frontmatter(input):
   | assert(ends_with(result, "\n;;;"))
   | let body = result[4:len(result) - 4]
   | assert_eq(json::json_parse(body), input)
+end
+
+# @property(100, [gen::string("abc XYZ012\"\\\n\t", 10), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
+def test_json_parse_stringify_round_trip(s, n, b, arr):
+  let data = {"s": s, "n": n, "b": b, "arr": arr, "nested": {"x": n, "y": b, "z": s}}
+  | assert_eq(json::json_parse(json::json_stringify(data)), data)
 end
