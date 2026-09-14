@@ -4,6 +4,7 @@
 //! stack ops into superinstructions, drops dead `Push`/`Pop` pairs, and collapses no-op jumps.
 
 use super::bytecode::{Chunk, LineEntry, OpCode, StaticExactCallTarget, TryCatchInfo, jump_target};
+use crate::ast::TokenId;
 
 /// Applies local bytecode rewrites.
 pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
@@ -281,12 +282,12 @@ fn old_to_new_pc_map(keep: &[bool]) -> Vec<usize> {
     map
 }
 
-fn token_at(lines: &[LineEntry], pc: usize) -> crate::ast::TokenId {
+fn token_at(lines: &[LineEntry], pc: usize) -> TokenId {
     lines
         .partition_point(|entry| entry.pc_start <= pc)
         .checked_sub(1)
         .map(|index| lines[index].token_id)
-        .unwrap_or_else(|| crate::ast::TokenId::new(0))
+        .unwrap_or_else(|| TokenId::new(0))
 }
 
 fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> OpCode {
