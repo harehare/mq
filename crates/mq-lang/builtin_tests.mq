@@ -371,6 +371,36 @@ def test_top_by_non_array_errors():
 end
 
 # @parametrize([
+#   [[1, 2, 3, 4, 5], fn(x): x == 3;, 3],
+#   [[1, 2, 3, 4, 5], fn(x): x > 10;, None],
+#   [[10, 20, 30], fn(x): x == 10;, 10],
+# ])
+def test_find(value, f, expected):
+  let result = find(value, f)
+  | assert_eq(result, expected)
+end
+
+def test_find_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(find(source(), fn(x): x == 3;), 3)
+end
+
+def test_find_coroutine_no_match():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(find(source(), fn(x): x > 10;), None)
+end
+
+def test_find_non_array_errors():
+  let result = try: find("nope", fn(x): x == 1;) catch(e): e["message"]
+  | assert(contains(result, "first argument must be an array"))
+end
+
+def test_find_propagates_predicate_error():
+  let result = try: find([1, 2, 3], fn(x): error("boom");) catch(e): e["message"]
+  | assert(contains(result, "boom"))
+end
+
+# @parametrize([
 #   [[1, 2, 3, 4, 5], fn(x): x == 3;, 2],
 #   [[1, 2, 3, 4, 5], fn(x): x > 10;, -1],
 #   [[10, 20, 30], fn(x): x == 10;, 0],

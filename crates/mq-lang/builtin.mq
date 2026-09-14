@@ -987,6 +987,40 @@ def top_by(arr, f, n, group_f = None):
     with_entries(group_by(arr, group_f), fn(e): [e[0], take(reverse(sort_by(e[1], f)), n)];)
 end
 
+# Returns the first element in an array or coroutine that satisfies the
+# provided function, or `None` if no element matches. Stops at the first
+# match instead of scanning the whole input.
+#
+# Example:
+# ```
+# find([1, 2, 3], fn(x): x == 2;)
+# #=> 2
+# ```
+#
+# Returns: dynamic
+def find(arr, f):
+  let _find_impl = fn(arr, f, idx):
+      if (idx == len(arr)):
+        None
+      elif (f(get(arr, idx))):
+        get(arr, idx)
+      else:
+        _find_impl(arr, f, idx + 1);
+
+  | if (is_coroutine(arr)):
+      do
+        var step = next(arr)
+        | while (!step["done"] && !f(step["value"])):
+            step = next(arr)
+          end
+        | if (step["done"]): None else: step["value"]
+      end
+    elif (not(is_array(arr))):
+      error("first argument must be an array")
+    else:
+      _find_impl(arr, f, 0)
+end
+
 # Returns the index of the first element in an array or coroutine that satisfies
 # the provided function.
 #
