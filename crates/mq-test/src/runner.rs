@@ -44,6 +44,16 @@ enum DiscoveredTest {
         arity: usize,
         tags: Vec<String>,
     },
+    /// A `# @property(count, generators)` test. Kept distinct from `Parametrized` since each
+    /// generated case needs its own shrink search on failure. See
+    /// `TestRunner::build_property_case_expr`.
+    Property {
+        name: String,
+        count_expr: String,
+        generators_expr: String,
+        arity: usize,
+        tags: Vec<String>,
+    },
 }
 
 impl DiscoveredTest {
@@ -51,6 +61,7 @@ impl DiscoveredTest {
         match self {
             DiscoveredTest::Simple { name, .. } => name,
             DiscoveredTest::Parametrized { name, .. } => name,
+            DiscoveredTest::Property { name, .. } => name,
         }
     }
 
@@ -58,6 +69,7 @@ impl DiscoveredTest {
         match self {
             DiscoveredTest::Simple { tags, .. } => tags,
             DiscoveredTest::Parametrized { tags, .. } => tags,
+            DiscoveredTest::Property { tags, .. } => tags,
         }
     }
 }
@@ -403,9 +415,10 @@ impl TestRunner {
                     generators_expr,
                 }) => {
                     let arity = Self::get_arity(node);
-                    tests.push(DiscoveredTest::Parametrized {
+                    tests.push(DiscoveredTest::Property {
                         name: func_name.clone(),
-                        params_expr: Self::build_property_params_expr(&count_expr, &generators_expr),
+                        count_expr,
+                        generators_expr,
                         arity,
                         tags: Self::collect_tags(&node.leading_trivia),
                     });
@@ -533,15 +546,33 @@ impl TestRunner {
         merged
     }
 
-    /// Builds the `@parametrize`-equivalent `params_expr` for a `# @property(count, generators)`
-    /// test: `count` iterations, each calling `gen::tuple(generators)` (see `gen.mq`) with the
-    /// iteration index as the seed. A failing iteration is reported as `name[i]`, same as
-    /// `@parametrize`, and `i` doubles as the seed a failing case can be replayed with — e.g.
-    /// calling the same generator expressions by hand with that same seed.
-    fn build_property_params_expr(count_expr: &str, generators_expr: &str) -> String {
+    /// Builds the array-of-`test_case`s expression for a `# @property(count, generators)` test.
+    /// Each of `count` iterations generates its arguments via `gen::tuple(generators)` (see
+    /// `gen.mq`) seeded with the iteration index, then runs through `_property_case_result`
+    /// (see `test.mq`), which shrinks a failing case with `gen::shrink` before reporting it.
+    /// Failing iterations stay labeled `name[i]`, same as `# @parametrize`, so the original
+    /// (unshrunk) case is reproducible via `gen::tuple(generators)(i)`.
+    fn build_property_case_expr(
+        display: &str,
+        name: &str,
+        count_expr: &str,
+        generators_expr: &str,
+        arity: usize,
+    ) -> String {
+        let arg_list = (0..arity)
+            .map(|i| format!("__property_arg[{i}]"))
+            .collect::<Vec<_>>()
+            .join(", ");
         format!(
-            "map(range(0, ({count_expr}) - 1), \
-                fn(__property_seed): (gen::tuple({generators_expr}))(__property_seed);)"
+            "map(range(0, ({count_expr}) - 1), fn(__property_seed): \
+                do \
+                  let __property_args = (gen::tuple({generators_expr}))(__property_seed) \
+                  | test_case( \
+                      \"{display}[\" + to_string(__property_seed) + \"]\", \
+                      fn(): _property_case_result(__property_args, fn(__property_arg): {name}({arg_list});) ; \
+                    ) \
+                end \
+              ;)"
         )
     }
 
@@ -577,6 +608,19 @@ impl TestRunner {
                             zip(range(0, len({params_expr})), {params_expr}), \
                             fn(__ic): test_case(\"{display}[\" + to_string(__ic[0]) + \"]\", \
                             fn(): {name}({arg_list}) ;) ;)"
+                    )
+                }
+                DiscoveredTest::Property {
+                    name,
+                    count_expr,
+                    generators_expr,
+                    arity,
+                    ..
+                } => {
+                    let display = Self::display_name(name);
+                    format!(
+                        "  {}",
+                        Self::build_property_case_expr(display, name, count_expr, generators_expr, *arity)
                     )
                 }
             })
@@ -698,12 +742,25 @@ mod tests {
     }
 
     #[test]
-    fn test_build_property_params_expr() {
-        let params_expr = TestRunner::build_property_params_expr("100", "[gen::int(0, 10)]");
-        assert_eq!(
-            params_expr,
-            "map(range(0, (100) - 1), fn(__property_seed): (gen::tuple([gen::int(0, 10)]))(__property_seed);)"
+    fn test_build_property_case_expr() {
+        let case_expr = TestRunner::build_property_case_expr("range", "test_range", "100", "[gen::int(0, 10)]", 1);
+        assert!(
+            case_expr.contains("range(0, (100) - 1)"),
+            "missing count range: {case_expr}"
         );
+        assert!(
+            case_expr.contains("(gen::tuple([gen::int(0, 10)]))(__property_seed)"),
+            "missing generator call: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("test_range(__property_arg[0])"),
+            "missing unpacked call: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("_property_case_result(__property_args,"),
+            "missing shrink wiring: {case_expr}"
+        );
+        assert!(case_expr.contains("\"range[\""), "missing display label: {case_expr}");
     }
 
     #[test]
@@ -875,26 +932,24 @@ mod tests {
     }
 
     #[test]
-    fn test_discover_tests_property_becomes_a_parametrized_test() {
+    fn test_discover_tests_property_is_discovered_as_a_property_test() {
         let content = "# @property(50, [gen::int(0, 10)])\ndef test_range(n):\n  None\nend\n";
         let tests = TestRunner::discover_tests(content);
         assert_eq!(tests.len(), 1);
         match &tests[0] {
-            DiscoveredTest::Parametrized {
+            DiscoveredTest::Property {
                 name,
-                params_expr,
+                count_expr,
+                generators_expr,
                 arity,
                 ..
             } => {
                 assert_eq!(name, "test_range");
                 assert_eq!(*arity, 1);
-                assert_eq!(
-                    params_expr,
-                    "map(range(0, (50) - 1), fn(__property_seed): \
-                        (gen::tuple([gen::int(0, 10)]))(__property_seed);)"
-                );
+                assert_eq!(count_expr, "50");
+                assert_eq!(generators_expr, "[gen::int(0, 10)]");
             }
-            other => panic!("expected Parametrized, got {other:?}"),
+            other => panic!("expected Property, got {other:?}"),
         }
     }
 
@@ -905,8 +960,8 @@ mod tests {
         assert_eq!(tests.len(), 1);
         assert!(matches!(
             &tests[0],
-            DiscoveredTest::Parametrized { params_expr, .. }
-                if params_expr.contains(&format!("range(0, ({DEFAULT_PROPERTY_CASES}) - 1)"))
+            DiscoveredTest::Property { count_expr, .. }
+                if count_expr == DEFAULT_PROPERTY_CASES
         ));
     }
 
@@ -1279,6 +1334,34 @@ mod tests {
         );
 
         fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_a_failing_property_case_is_shrunk_to_a_minimal_counterexample() {
+        // Calls `_property_case_result` (from `test.mq`) directly with args `[500]`, bypassing
+        // `gen::tuple` entirely so the starting point is deterministic: the smallest `n` for
+        // which `n < 5` is false is `5`, so a working shrink search must report exactly that.
+        let query = concat!(
+            "include \"test\"\n",
+            "|\n",
+            "def test_less_than_five(n):\n",
+            "  assert_true(n < 5)\n",
+            "end\n",
+            "| _property_case_result([500], fn(__a): test_less_than_five(__a[0]);)",
+        );
+        let mut engine = mq_lang::Engine::with_io(
+            mq_lang::DefaultModuleResolver::default(),
+            mq_lang::Shared::new(mq_lang::MemIo::default()),
+        );
+        engine.load_builtin_module();
+
+        let result = engine.eval(query, mq_lang::null_input().into_iter()).unwrap();
+        let rendered = result.values().first().map(ToString::to_string).unwrap_or_default();
+
+        assert!(
+            rendered.contains("Shrunk from [500] to [5]"),
+            "unexpected result: {rendered}"
+        );
     }
 
     #[test]

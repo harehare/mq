@@ -208,7 +208,13 @@ Like `@parametrize`, generated cases are reported as `name[0]`, `name[1]`, etc.,
 doubles as the seed that produced it: a failing `name[42]` can be reproduced deterministically by
 calling `gen::tuple(generators)(42)` with the exact same `generators` array from the annotation
 (not by calling an individual generator directly — `gen::tuple` derives each parameter's actual
-seed from the one passed in). There is no shrinking — the failing seed is the reproduction case.
+seed from the one passed in).
+
+Before reporting a failure, the runner automatically searches for a smaller, simpler failing
+example with `gen::shrink` (see `gen.mq` for the search algorithm and `gen::shrink_value`, the
+generic per-value shrinker it's built on). The failure message shows the shrunk arguments
+alongside the original ones; the case name still reports the original seed, so
+`gen::tuple(generators)(42)` remains the way to reproduce the *unshrunk* case exactly.
 
 ### Tags
 

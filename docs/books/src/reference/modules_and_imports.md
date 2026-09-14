@@ -255,6 +255,27 @@ generators into one argument list per iteration — a failing iteration's report
 the seed to reproduce it with, by calling `gen::tuple(generators)(seed)` again with the same
 `generators` array.
 
+### Shrinking (`gen::shrink_value`, `gen::shrink`)
+
+When a `# @property(...)` case fails, `mq-test` automatically searches for a smaller, simpler
+failing example before reporting it. The failure message shows both the shrunk arguments and
+the original ones, so the report stays easy to reason about even when the raw seed produced a
+large or convoluted value:
+
+| Function                                | Description                                                                 |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `gen::shrink_value(value)`               | One step of "smaller" candidates for `value` (numbers toward `0`, strings/arrays toward shorter, dicts toward simpler values) |
+| `gen::shrink(args, is_interesting)`      | Searches the array `args` for a smaller array that's still `is_interesting` (a `fn(args): bool`) |
+
+```mq
+import "gen"
+| gen::shrink([10], fn(a): a[0] > 3;)
+# => [4]
+```
+
+Both are also usable directly (not just through `# @property(...)`) by hand-written property
+tests.
+
 ## HTTP Imports
 
 When `mq` is built with the `http-import` feature, `import` and `include` accept HTTP/HTTPS URLs

@@ -172,3 +172,153 @@ end
 def tuple(gens):
   fn(seed): map(zip(range(0, len(gens)), gens), fn(p): p[1](_sub_seed(seed, p[0])););
 end
+
+# ---------------------------------------------------------------------------
+# Shrinking
+# ---------------------------------------------------------------------------
+#
+# Shrinking searches for a smaller, simpler failing example once a property test has already
+# found *a* failing one, so the reported counterexample is easier to reason about than whatever
+# the raw random seed happened to produce. `mq-test`'s `# @property(...)` runner calls `shrink`
+# automatically on every failing case; the functions below are also usable directly by
+# hand-written property tests that don't go through `# @property(...)`.
+
+# Safety valve on the total number of shrink rounds `shrink` performs, so a pathological value
+# (or a property that stays "interesting" for an unbounded chain of ever-smaller candidates)
+# can't run away.
+def _shrink_max_rounds():
+  100
+end
+
+# One step of "smaller" candidates for a number, ordered most-aggressive first: straight to
+# zero, halfway to zero, or one step closer to zero.
+def _shrink_number(n):
+  if (n == 0):
+    []
+  else:
+    do
+      let sign = if (n < 0): 0 - 1 else: 1
+      | let half = trunc(n / 2)
+      | let step = n - sign
+      | uniq(filter([0, half, step], fn(c): c != n;))
+    end
+end
+
+# One step of "smaller" candidates for a string or array `seq`, ordered most-aggressive first:
+# empty, half-length prefix, or one element/char shorter. `empty` is `""` or `[]` to match
+# `seq`'s type.
+def _shrink_seq(seq, empty):
+  let n = len(seq)
+  | if (n == 0):
+      []
+    else:
+      do
+        let half = slice(seq, 0, trunc(n / 2))
+        | let drop_last = slice(seq, 0, n - 1)
+        | uniq(filter([empty, half, drop_last], fn(c): c != seq;))
+      end
+end
+
+# One candidate array per index of `arr`, each with that single element replaced by the first
+# (most aggressive) shrink candidate of its own value. Lets `shrink` simplify elements, not
+# just the array's length.
+def _shrink_array_elements(arr):
+  if (is_empty(arr)):
+    []
+  else:
+    filter(
+      map(range(0, len(arr) - 1), fn(i):
+        let candidates = shrink_value(arr[i])
+        | if (is_empty(candidates)): None else: set(arr, i, candidates[0]);
+      ),
+      fn(c): not(is_none(c));
+    )
+end
+
+# One candidate dict per key of `d`, each with that single value replaced by the first (most
+# aggressive) shrink candidate of its own value.
+def _shrink_dict_values(d):
+  filter(
+    map(keys(d), fn(k):
+      let candidates = shrink_value(d[k])
+      | if (is_empty(candidates)): None else: set(d, k, candidates[0]);
+    ),
+    fn(c): not(is_none(c));
+  )
+end
+
+# One step of "smaller" candidate values for `value`, dispatched on its runtime type: numbers
+# shrink toward `0`, booleans toward `false`, strings and arrays toward shorter/empty (and, for
+# arrays, toward simpler elements), dicts toward simpler values (same keys). Anything else
+# (`None`, markdown nodes, functions) has no smaller form and shrinks to `[]`.
+#
+# Example:
+# ```
+# import "gen" | gen::shrink_value(10)
+# #=> [0, 5, 9]
+# ```
+#
+# Returns: array
+def shrink_value(value):
+  if (is_number(value)):
+    _shrink_number(value)
+  elif (is_bool(value)):
+    if (value): [false] else: []
+  elif (is_string(value)):
+    _shrink_seq(value, "")
+  elif (is_array(value)):
+    _shrink_seq(value, []) + _shrink_array_elements(value)
+  elif (is_dict(value)):
+    _shrink_dict_values(value)
+  else:
+    []
+end
+
+# Every one-step neighbor of `args` (an array of values, e.g. the arguments a failing
+# `# @property(...)` case was called with): for each position, one candidate array per value
+# `shrink_value` offers for that position, every other position held fixed.
+#
+# Uses `fold`/`+` instead of `flatten`: `flatten` recurses all the way down, so it would tear
+# apart a candidate that's itself an array, or a length-1 `args`'s one-element wrapper array.
+def _shrink_neighbors(args):
+  fold(
+    map(range(0, len(args) - 1), fn(i):
+      map(shrink_value(args[i]), fn(v): set(args, i, v););
+    ),
+    [],
+    fn(acc, candidates): acc + candidates;
+  )
+end
+
+def _shrink_rounds(args, is_interesting, rounds_left):
+  if (rounds_left <= 0):
+    args
+  else:
+    do
+      let smaller = filter(_shrink_neighbors(args), is_interesting)
+      | if (is_empty(smaller)):
+          args
+        else:
+          _shrink_rounds(smaller[0], is_interesting, rounds_left - 1)
+    end
+end
+
+# Searches `args` (an array of values) for a smaller array still "interesting" per
+# `is_interesting` (a `fn(args): bool`, typically "the property still fails for these args").
+# Replaces one position at a time with a smaller candidate, stopping at a local minimum or after
+# `_shrink_max_rounds()` rounds. Returns `args` unchanged if nothing smaller was interesting.
+#
+# `is_interesting` should not throw on an out-of-domain candidate (e.g. a value a hand-written
+# generator would never actually produce). Wrap it in `try: ... catch: false;` if it might, so a
+# stray shrink candidate can't abort the whole search.
+#
+# Example:
+# ```
+# import "gen" | gen::shrink([10], fn(a): a[0] > 3;)
+# #=> [4]
+# ```
+#
+# Returns: array
+def shrink(args, is_interesting):
+  _shrink_rounds(args, is_interesting, _shrink_max_rounds())
+end

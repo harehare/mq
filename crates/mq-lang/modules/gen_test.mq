@@ -72,3 +72,84 @@ def test_tuple_is_deterministic_for_the_same_seed():
   let gens = [gen::int(0, 1000000), gen::string("abcdefg", 8)]
   | assert_eq((gen::tuple(gens))(42), (gen::tuple(gens))(42))
 end
+
+# `assert_contains` is avoided below for non-scalar values (arrays/dicts): its `in()`-based
+# membership check is unreliable for compound values on this branch, so candidate membership is
+# checked with a plain `filter`/`len` instead.
+def _has_candidate(candidates, expected):
+  len(filter(candidates, fn(c): c == expected;)) > 0
+end
+
+def test_shrink_value_number_shrinks_toward_zero():
+  assert_eq(gen::shrink_value(10), [0, 5, 9])
+end
+
+def test_shrink_value_negative_number_shrinks_toward_zero():
+  assert_eq(gen::shrink_value(-10), [0, -5, -9])
+end
+
+def test_shrink_value_zero_has_no_smaller_form():
+  assert_eq(gen::shrink_value(0), [])
+end
+
+def test_shrink_value_true_shrinks_to_false():
+  assert_eq(gen::shrink_value(true), [false])
+end
+
+def test_shrink_value_false_has_no_smaller_form():
+  assert_eq(gen::shrink_value(false), [])
+end
+
+def test_shrink_value_string_shrinks_toward_empty():
+  let candidates = gen::shrink_value("hello world")
+  | assert_true(_has_candidate(candidates, ""))
+end
+
+def test_shrink_value_empty_string_has_no_smaller_form():
+  assert_eq(gen::shrink_value(""), [])
+end
+
+def test_shrink_value_array_shrinks_toward_empty():
+  let candidates = gen::shrink_value([1, 2, 3, 4, 5])
+  | assert_true(_has_candidate(candidates, []))
+end
+
+def test_shrink_value_array_shrinks_elements_too():
+  let candidates = gen::shrink_value([10, 20])
+  | assert_true(_has_candidate(candidates, [0, 20]))
+end
+
+def test_shrink_value_empty_array_has_no_smaller_form():
+  assert_eq(gen::shrink_value([]), [])
+end
+
+def test_shrink_value_dict_shrinks_each_value():
+  let candidates = gen::shrink_value({"a": 10, "b": 20})
+  | assert_true(_has_candidate(candidates, {"a": 0, "b": 20}))
+end
+
+def test_shrink_value_of_none_has_no_smaller_form():
+  assert_eq(gen::shrink_value(None), [])
+end
+
+def test_shrink_finds_the_boundary_of_a_simple_property():
+  # The smallest `n` for which `n > 3` is still true is `4`.
+  assert_eq(gen::shrink([10], fn(a): a[0] > 3;), [4])
+end
+
+def test_shrink_leaves_an_already_minimal_example_alone():
+  assert_eq(gen::shrink([5], fn(a): a[0] == 5;), [5])
+end
+
+def test_shrink_shrinks_every_position_independently():
+  let result = gen::shrink([10, "hello world"], fn(a): a[0] > 3 && len(a[1]) > 2;)
+  | assert_true(result[0] > 3 && len(result[1]) > 2)
+  | assert_true(result[0] < 10 || len(result[1]) < len("hello world"))
+end
+
+def test_shrink_is_bounded_when_the_predicate_stays_interesting_forever():
+  # A pathological predicate that's "interesting" for every candidate: `shrink` must still
+  # terminate (via its round budget) rather than looping forever.
+  let result = gen::shrink([0.9999], fn(a): true;)
+  | assert_true(is_number(result[0]))
+end
