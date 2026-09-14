@@ -86,6 +86,27 @@ impl Node {
                 format_args(args, buf, indent);
                 buf.push(')');
             }
+            Expr::Array(args) => {
+                buf.push('[');
+                format_args(args, buf, indent);
+                buf.push(']');
+            }
+            Expr::Dict(pairs) => {
+                buf.push('{');
+                for (i, pair) in pairs.iter().enumerate() {
+                    if i > 0 {
+                        buf.push_str(", ");
+                    }
+                    if let Expr::Array(kv) = &pair.expr {
+                        kv[0].format_to_code(buf, indent);
+                        buf.push_str(": ");
+                        kv[1].format_to_code(buf, indent);
+                    } else {
+                        pair.format_to_code(buf, indent);
+                    }
+                }
+                buf.push('}');
+            }
             Expr::CallDynamic(func, args) => {
                 func.format_to_code(buf, indent);
                 buf.push('(');
@@ -591,6 +612,75 @@ mod tests {
         "add(1, 2)"
     )]
     fn test_to_code_call(#[case] expr: Expr, #[case] expected: &str) {
+        let node = create_node(expr);
+        assert_eq!(node.to_code(), expected);
+    }
+
+    #[rstest]
+    #[case::empty_array(Expr::Array(smallvec![]), "[]")]
+    #[case::single_element(
+        Expr::Array(smallvec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]),
+        "[1]"
+    )]
+    #[case::multiple_elements(
+        Expr::Array(smallvec![
+            Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
+            Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0))))),
+            Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(3.0))))),
+        ]),
+        "[1, 2, 3]"
+    )]
+    #[case::nested_array(
+        Expr::Array(smallvec![
+            Shared::new(create_node(Expr::Array(smallvec![
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
+            ]))),
+            Shared::new(create_node(Expr::Array(smallvec![
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
+            ]))),
+        ]),
+        "[[1], [2]]"
+    )]
+    #[case::mixed_elements(
+        Expr::Array(smallvec![
+            Shared::new(create_node(Expr::Literal(Literal::String("text".to_string())))),
+            Shared::new(create_node(Expr::Literal(Literal::Bool(true)))),
+            Shared::new(create_node(Expr::Literal(Literal::None))),
+        ]),
+        r#"["text", true, none]"#
+    )]
+    #[case::empty_dict(Expr::Dict(smallvec![]), "{}")]
+    #[case::single_pair(
+        Expr::Dict(smallvec![Shared::new(create_node(Expr::Array(smallvec![
+            Shared::new(create_node(Expr::Literal(Literal::Symbol(Ident::new("key"))))),
+            Shared::new(create_node(Expr::Literal(Literal::String("value".to_string())))),
+        ])))]),
+        r#"{:key: "value"}"#
+    )]
+    #[case::multiple_pairs(
+        Expr::Dict(smallvec![
+            Shared::new(create_node(Expr::Array(smallvec![
+                Shared::new(create_node(Expr::Literal(Literal::Symbol(Ident::new("a"))))),
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
+            ]))),
+            Shared::new(create_node(Expr::Array(smallvec![
+                Shared::new(create_node(Expr::Literal(Literal::Symbol(Ident::new("b"))))),
+                Shared::new(create_node(Expr::Literal(Literal::Bool(true)))),
+            ]))),
+        ]),
+        "{:a: 1, :b: true}"
+    )]
+    #[case::dict_with_array_value(
+        Expr::Dict(smallvec![Shared::new(create_node(Expr::Array(smallvec![
+            Shared::new(create_node(Expr::Literal(Literal::Symbol(Ident::new("items"))))),
+            Shared::new(create_node(Expr::Array(smallvec![
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
+                Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0))))),
+            ]))),
+        ])))]),
+        "{:items: [1, 2]}"
+    )]
+    fn test_to_code_array_dict(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
     }

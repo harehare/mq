@@ -3843,6 +3843,36 @@ fn resume_arity_errors_name_the_builtin(
 }
 
 #[rstest]
+// `is_array`/`is_string`/`is_number` are soft builtins (defined in `builtin.mq`, not native),
+// only compiled into the prelude when referenced. A fresh engine (no `load_builtin_module`)
+// must still find these calls nested inside an array/dict literal.
+#[case::array_literal("get([is_array([1, 2])], 0)", RuntimeValue::Boolean(true))]
+#[case::dict_literal(r#"get({"a": is_string("x")}, "a")"#, RuntimeValue::Boolean(true))]
+#[case::array_nested_in_dict(r#"get(get({"items": [is_number(1)]}, "items"), 0)"#, RuntimeValue::Boolean(true))]
+fn soft_builtin_resolves_inside_array_or_dict_literal(#[case] program: &str, #[case] expected: RuntimeValue) {
+    let mut engine = DefaultEngine::default();
+    let result = engine.eval(program, std::iter::once(RuntimeValue::None));
+    assert_eq!(result, Ok(vec![expected].into()));
+}
+
+#[rstest]
+// A module function referenced only inside an array/dict literal must not be pruned from the
+// compiled module — `reachable_module_functions` walks call graphs via `collect_referenced_names`.
+#[case::include(
+    r#"include "json" | get([json_stringify({"a": 1})], 0)"#,
+    RuntimeValue::String(Shared::new(r#"{"a": 1}"#.to_string()))
+)]
+#[case::import(
+    r#"import "json" | get({"v": json::json_stringify({"a": 1})}, "v")"#,
+    RuntimeValue::String(Shared::new(r#"{"a": 1}"#.to_string()))
+)]
+fn module_function_used_only_inside_array_or_dict_is_not_pruned(#[case] program: &str, #[case] expected: RuntimeValue) {
+    let mut engine = DefaultEngine::default();
+    let result = engine.eval(program, std::iter::once(RuntimeValue::None));
+    assert_eq!(result, Ok(vec![expected].into()));
+}
+
+#[rstest]
 #[case::one(1)]
 #[case::four(4)]
 #[case::eight(8)]
