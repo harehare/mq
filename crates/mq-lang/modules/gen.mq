@@ -18,15 +18,35 @@ def _sub_seed_modulus():
   4294967291
 end
 
+# Fold width for `_sub_seed`'s hi/lo split. Chosen as `round(sqrt(_sub_seed_modulus()))` so both
+# halves land back in roughly `[0, _sub_seed_fold_k())`.
+def _sub_seed_fold_k():
+  65536
+end
+
 # Derives a well-spread sub-seed for position `i` under a parent `seed`. Not itself a generator —
 # a helper used by every combinator below so that e.g. `tuple`'s per-parameter generators, or
 # `array`'s per-element generator, don't all draw from the exact same seed.
 #
-# Mixes with two prime multipliers and reduces mod `_sub_seed_modulus()`, instead of the old
-# `seed * 97 + i`: that radix-97 arithmetic aliased `array(array(gen, 98), 2)`'s `[0][97]` with
-# `[1][0]`, since `97*i + j` isn't injective once `j` reaches 97.
+# Two rounds of affine mixing (`seed * A + i * B mod M`) compose into another affine map, so
+# nesting `_sub_seed` twice is still affine overall: `_sub_seed(_sub_seed(seed, i), j) = seed*A^2
+# + i*B*A + j*B (mod M)`. That let `j` reaching `A` alias `[i][j]` with `[i+1][0]`, since bumping
+# the outer index by one and bumping the inner index by `A` add the same `B*A` to the product —
+# this is exactly how the old two-multiplier version (`* 1000003 + i * 999983`) aliased
+# `array(array(gen, 1000004), 2)`'s `[0][1000003]` with `[1][0]`. A purely affine mixer always has
+# some such pair, so instead of re-tuning the constants, this splits the intermediate value into
+# hi/lo halves (via `trunc`/`%`) and swaps their significance before the final mix: that split
+# is not an affine function of `seed`, which breaks the algebraic identity a composed-affine
+# collision needs.
 def _sub_seed(seed, i):
-  mod(mod(seed, _sub_seed_modulus()) * 1000003 + (i + 1) * 999983, _sub_seed_modulus())
+  let m = _sub_seed_modulus()
+  | let k = _sub_seed_fold_k()
+  | let idx = i + 1
+  | let mixed = (seed % m * 1000003 + idx * 999983) % m
+  | let lo = mixed % k
+  | let hi = trunc(mixed / k)
+  | let folded = (lo * 999983 + hi * 1000003 + idx) % m
+  | (folded * 1000003 + idx * 999983) % m
 end
 
 # A generator producing a uniformly random integer in `[min, max]` (inclusive).
@@ -128,7 +148,7 @@ end
 # Example:
 # ```
 # import "gen" | (gen::array(gen::int(0, 9), 5))(42)
-# #=> [1, 0, 3, 3, 9]
+# #=> [1, 0, 3, 4, 5]
 # ```
 #
 # Returns: function
