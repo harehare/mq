@@ -5,6 +5,7 @@
 
 use super::bytecode::{Chunk, LineEntry, OpCode, StaticExactCallTarget, TryCatchInfo, jump_target};
 use crate::ast::TokenId;
+use crate::runtime::runtime_value::RuntimeValue;
 
 /// Applies local bytecode rewrites.
 pub(crate) fn optimize_chunks(chunks: &mut [Chunk]) {
@@ -52,21 +53,28 @@ fn optimize_chunk(chunk: &mut Chunk) {
     }
 
     let has_rewrite = chunk.code.iter().enumerate().any(|(pc, op)| {
-        is_fusable_compare_jump(op, chunk.code.get(pc + 1)) || {
-            matches!(
-                (op, chunk.code.get(pc + 1)),
-                (OpCode::Const(_), Some(OpCode::Pop))
-                    | (OpCode::Const(_), Some(OpCode::SetLocal(_)))
-                    | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
-                    | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
-                    | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
-                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
-                    | (OpCode::GetLocal(_), Some(OpCode::Return))
-                    | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::Return))
-                    | (OpCode::BinaryLocalConst { .. }, Some(OpCode::Return))
-                    | (OpCode::Jump(0), _)
+        matches!(op, OpCode::BinaryLocalConst { constant, .. } if numeric_constant(&chunk.constants, *constant).is_some())
+            || is_fusable_compare_jump(op, chunk.code.get(pc + 1))
+            || {
+                matches!(
+                    (op, chunk.code.get(pc + 1)),
+                    (OpCode::Const(_), Some(OpCode::Pop))
+                        | (OpCode::Const(_), Some(OpCode::SetLocal(_)))
+                        | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
+                        | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
+                        | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
+                        | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
+                        | (OpCode::GetLocal(_), Some(OpCode::Return))
+                        | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::Return))
+                        | (OpCode::BinaryLocalConst { .. }, Some(OpCode::Return))
+                        | (OpCode::ForeachCollect(_), Some(OpCode::Jump(_)))
+                        | (OpCode::Jump(0), _)
+                )
+            }
+            || matches!(
+                (op, chunk.code.get(pc + 1), chunk.code.get(pc + 2)),
+                (OpCode::SetLocal(source), Some(OpCode::GetLocal(read)), Some(OpCode::SetLocal(_))) if source == read
             )
-        }
     });
     if !has_rewrite {
         return;
@@ -79,6 +87,43 @@ fn optimize_chunk(chunk: &mut Chunk) {
 
     let mut pc = 0;
     while pc < old_code.len() {
+        if let (
+            OpCode::BinaryLocalConst { op, local, constant },
+            Some(OpCode::ForeachCollect(accumulator_slot)),
+            Some(OpCode::Jump(offset)),
+        ) = (&old_code[pc], old_code.get(pc + 1), old_code.get(pc + 2))
+            && let Some(constant) = numeric_constant(&chunk.constants, *constant)
+            && !targets.contains(&(pc + 1))
+            && !targets.contains(&(pc + 2))
+        {
+            old_code[pc] = OpCode::ForeachBinaryLocalNumberConstAndJump {
+                op: *op,
+                local: *local,
+                constant,
+                accumulator_slot: *accumulator_slot,
+                // The fused op moves two pcs before the old jump.
+                offset: *offset + 2,
+            };
+            keep[pc + 1] = false;
+            keep[pc + 2] = false;
+            pc += 3;
+            continue;
+        }
+        if let (OpCode::SetLocal(source), Some(OpCode::GetLocal(read)), Some(OpCode::SetLocal(destination))) =
+            (&old_code[pc], old_code.get(pc + 1), old_code.get(pc + 2))
+            && source == read
+            && !targets.contains(&(pc + 1))
+            && !targets.contains(&(pc + 2))
+        {
+            old_code[pc] = OpCode::SetLocalAndCopy {
+                source: *source,
+                destination: *destination,
+            };
+            keep[pc + 1] = false;
+            keep[pc + 2] = false;
+            pc += 3;
+            continue;
+        }
         // A fused instruction stays at the first instruction's pc, so a branch that enters
         // there still observes the same combined operation. The second instruction must not be
         // a target: entering there can depend on an intermediate operand-stack value.
@@ -122,11 +167,18 @@ fn optimize_chunk(chunk: &mut Chunk) {
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::SetLocal(destination)))
                 if local == destination && !targets.contains(&(pc + 1)) =>
             {
-                old_code[pc] = OpCode::UpdateLocalConst {
-                    op: *op,
-                    local: *local,
-                    constant: *constant,
-                };
+                old_code[pc] = numeric_constant(&chunk.constants, *constant).map_or(
+                    OpCode::UpdateLocalConst {
+                        op: *op,
+                        local: *local,
+                        constant: *constant,
+                    },
+                    |constant| OpCode::UpdateLocalNumberConst {
+                        op: *op,
+                        local: *local,
+                        constant,
+                    },
+                );
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -158,11 +210,18 @@ fn optimize_chunk(chunk: &mut Chunk) {
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::Return))
                 if !targets.contains(&(pc + 1)) =>
             {
-                old_code[pc] = OpCode::ReturnBinaryLocalConst {
-                    op: *op,
-                    local: *local,
-                    constant: *constant,
-                };
+                old_code[pc] = numeric_constant(&chunk.constants, *constant).map_or(
+                    OpCode::ReturnBinaryLocalConst {
+                        op: *op,
+                        local: *local,
+                        constant: *constant,
+                    },
+                    |constant| OpCode::ReturnBinaryLocalNumberConst {
+                        op: *op,
+                        local: *local,
+                        constant,
+                    },
+                );
                 keep[pc + 1] = false;
                 pc += 2;
             }
@@ -187,16 +246,44 @@ fn optimize_chunk(chunk: &mut Chunk) {
             (OpCode::BinaryLocalConst { op, local, constant }, Some(OpCode::JumpIfFalse(offset)))
                 if op.is_comparison() && !targets.contains(&(pc + 1)) =>
             {
-                old_code[pc] = OpCode::JumpIfFalseLocalConst {
-                    op: *op,
-                    local: *local,
-                    constant: *constant,
+                old_code[pc] = numeric_constant(&chunk.constants, *constant).map_or(
+                    OpCode::JumpIfFalseLocalConst {
+                        op: *op,
+                        local: *local,
+                        constant: *constant,
+                        offset: *offset + 1,
+                    },
+                    |constant| OpCode::JumpIfFalseLocalNumberConst {
+                        op: *op,
+                        local: *local,
+                        constant,
+                        offset: *offset + 1,
+                    },
+                );
+                keep[pc + 1] = false;
+                pc += 2;
+            }
+            (OpCode::ForeachCollect(slot), Some(OpCode::Jump(offset))) if !targets.contains(&(pc + 1)) => {
+                old_code[pc] = OpCode::ForeachCollectAndJump {
+                    slot: *slot,
+                    // The fused instruction stays one pc earlier than the old jump.
                     offset: *offset + 1,
                 };
                 keep[pc + 1] = false;
                 pc += 2;
             }
-            _ => pc += 1,
+            _ => {
+                if let OpCode::BinaryLocalConst { op, local, constant } = &old_code[pc]
+                    && let Some(constant) = numeric_constant(&chunk.constants, *constant)
+                {
+                    old_code[pc] = OpCode::BinaryLocalNumberConst {
+                        op: *op,
+                        local: *local,
+                        constant,
+                    };
+                }
+                pc += 1;
+            }
         }
     }
 
@@ -221,6 +308,13 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
+fn numeric_constant(constants: &[RuntimeValue], index: u16) -> Option<crate::number::Number> {
+    match constants.get(index as usize) {
+        Some(RuntimeValue::Number(number)) => Some(*number),
+        _ => None,
+    }
+}
+
 /// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse`,
 /// the shape every `if`/`while`/`until` condition compiles to, and so can fuse into a single
 /// compare-and-branch instruction with no boolean ever pushed to the operand stack.
@@ -241,7 +335,10 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
             OpCode::Jump(offset)
             | OpCode::JumpIfFalse(offset)
             | OpCode::JumpIfFalseLocalLocal { offset, .. }
-            | OpCode::JumpIfFalseLocalConst { offset, .. } => {
+            | OpCode::JumpIfFalseLocalConst { offset, .. }
+            | OpCode::JumpIfFalseLocalNumberConst { offset, .. }
+            | OpCode::ForeachCollectAndJump { offset, .. }
+            | OpCode::ForeachBinaryLocalNumberConstAndJump { offset, .. } => {
                 if let Some(target) = jump_target(pc, *offset) {
                     targets.insert(target);
                 }
@@ -320,6 +417,17 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
             constant,
             offset: rewrite(offset),
         },
+        OpCode::JumpIfFalseLocalNumberConst {
+            op,
+            local,
+            constant,
+            offset,
+        } => OpCode::JumpIfFalseLocalNumberConst {
+            op,
+            local,
+            constant,
+            offset: rewrite(offset),
+        },
         OpCode::ForeachNext {
             array_slot,
             index_slot,
@@ -330,6 +438,23 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
             index_slot,
             value_slot,
             exit_offset: rewrite(exit_offset),
+        },
+        OpCode::ForeachCollectAndJump { slot, offset } => OpCode::ForeachCollectAndJump {
+            slot,
+            offset: rewrite(offset),
+        },
+        OpCode::ForeachBinaryLocalNumberConstAndJump {
+            op,
+            local,
+            constant,
+            accumulator_slot,
+            offset,
+        } => OpCode::ForeachBinaryLocalNumberConstAndJump {
+            op,
+            local,
+            constant,
+            accumulator_slot,
+            offset: rewrite(offset),
         },
         OpCode::TryCatch(info) => OpCode::TryCatch(Box::new(TryCatchInfo {
             break_offset: info.break_offset.map(rewrite),
@@ -445,12 +570,40 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [OpCode::ReturnBinaryLocalConst {
+            [OpCode::ReturnBinaryLocalNumberConst {
                 op: BinaryOp::Mul,
                 local: 0,
-                constant: 0,
+                constant: _,
             }]
         ));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[rstest::rstest]
+    #[case::number(RuntimeValue::Number(2.into()), true)]
+    #[case::string(RuntimeValue::String(crate::Shared::new("two".to_string())), false)]
+    fn peephole_inlines_only_numeric_local_constants(#[case] constant: RuntimeValue, #[case] inline: bool) {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Add,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::SetLocal(0),
+                OpCode::Return,
+            ],
+            constants: vec![constant],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert_eq!(
+            matches!(chunk.code.first(), Some(OpCode::UpdateLocalNumberConst { .. })),
+            inline
+        );
         assert_eq!(verify_chunks(&[chunk]), Ok(()));
     }
 
@@ -547,10 +700,10 @@ mod tests {
         assert!(matches!(
             chunk.code.as_slice(),
             [
-                OpCode::JumpIfFalseLocalConst {
+                OpCode::JumpIfFalseLocalNumberConst {
                     op: BinaryOp::Gt,
                     local: 0,
-                    constant: 0,
+                    constant: _,
                     offset: 2,
                 },
                 OpCode::Jump(-2),
@@ -559,6 +712,101 @@ mod tests {
                 OpCode::Return,
             ]
         ));
+    }
+
+    #[test]
+    fn peephole_fuses_a_store_followed_by_a_local_copy() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::SetLocal(1),
+                OpCode::GetLocal(1),
+                OpCode::Return,
+            ],
+            local_count: 2,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::PushNone,
+                OpCode::SetLocalAndCopy {
+                    source: 0,
+                    destination: 1,
+                },
+                OpCode::ReturnLocal(1),
+            ]
+        ));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_fuses_a_foreach_collect_backedge() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::ForeachCollect(0),
+                OpCode::Jump(-3),
+                OpCode::Return,
+            ],
+            local_count: 1,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::PushNone,
+                OpCode::ForeachCollectAndJump { slot: 0, offset: -2 },
+                OpCode::Return,
+            ]
+        ));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[rstest::rstest]
+    #[case::number(RuntimeValue::Number(1.into()), true)]
+    #[case::string(RuntimeValue::String(crate::Shared::new("item".to_string())), false)]
+    fn peephole_inlines_numeric_foreach_body_constants(#[case] constant: RuntimeValue, #[case] inline: bool) {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::BinaryLocalConst {
+                    op: BinaryOp::Add,
+                    local: 0,
+                    constant: 0,
+                },
+                OpCode::ForeachCollect(1),
+                OpCode::Jump(-3),
+                OpCode::Return,
+            ],
+            constants: vec![constant],
+            local_count: 2,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert_eq!(
+            matches!(
+                chunk.code.first(),
+                Some(OpCode::ForeachBinaryLocalNumberConstAndJump {
+                    op: BinaryOp::Add,
+                    local: 0,
+                    accumulator_slot: 1,
+                    offset: -1,
+                    ..
+                })
+            ),
+            inline
+        );
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
     }
 
     #[test]

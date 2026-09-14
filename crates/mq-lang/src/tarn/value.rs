@@ -374,8 +374,8 @@ impl Locals {
     ///
     /// # Safety
     /// `slot` must be `< self.len()` (guaranteed by `bytecode::verify_chunks` for any
-    /// GetLocal/SetLocal/TeeLocal/BinaryLocalLocal/BinaryLocalConst/UpdateLocalConst/UpdateLocalLocal/ArrayLenLocal/
-    /// ArrayGetLocalAt opcode slot).
+    /// GetLocal/SetLocal/TeeLocal/BinaryLocalLocal/BinaryLocalConst/UpdateLocalConst/
+    /// UpdateLocalNumberConst/UpdateLocalLocal/ArrayLenLocal/ArrayGetLocalAt opcode slot).
     #[inline(always)]
     pub(crate) unsafe fn get_unchecked(&self, slot: u16) -> StackValue {
         match self {

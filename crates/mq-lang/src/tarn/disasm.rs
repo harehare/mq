@@ -147,6 +147,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::PushNone => "PushNone".to_string(),
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
+        bytecode::OpCode::SetLocalAndCopy { source, destination } => {
+            format!("SetLocalAndCopy {} -> {}", local(*source), local(*destination))
+        }
         bytecode::OpCode::SetLocalConst { local: slot, constant } => {
             format!("SetLocalConst {} {constant}", local(*slot))
         }
@@ -185,6 +188,11 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("BinaryLocalConst {op:?} {}, const {constant}", local(*slot))
         }
+        bytecode::OpCode::BinaryLocalNumberConst {
+            op,
+            local: slot,
+            constant,
+        } => format!("BinaryLocalNumberConst {op:?} {}, {constant}", local(*slot)),
         bytecode::OpCode::UpdateLocalConst {
             op,
             local: slot,
@@ -192,6 +200,11 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("UpdateLocalConst {op:?} {}, const {constant}", local(*slot))
         }
+        bytecode::OpCode::UpdateLocalNumberConst {
+            op,
+            local: slot,
+            constant,
+        } => format!("UpdateLocalNumberConst {op:?} {}, {constant}", local(*slot)),
         bytecode::OpCode::UpdateLocalLocal {
             op,
             local: destination,
@@ -224,9 +237,24 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
                 jump_ref(pc, *offset)
             )
         }
+        bytecode::OpCode::JumpIfFalseLocalNumberConst {
+            op,
+            local: slot,
+            constant,
+            offset,
+        } => {
+            format!(
+                "JumpIfFalseLocalNumberConst {op:?} {}, {constant} -> {}",
+                local(*slot),
+                jump_ref(pc, *offset)
+            )
+        }
         bytecode::OpCode::Neg => "Neg".to_string(),
         bytecode::OpCode::Not => "Not".to_string(),
         bytecode::OpCode::ArrayNew => "ArrayNew".to_string(),
+        bytecode::OpCode::ArrayNewWithCapacityLocal(slot) => {
+            format!("ArrayNewWithCapacityLocal {}", local(*slot))
+        }
         bytecode::OpCode::ArrayPush => "ArrayPush".to_string(),
         bytecode::OpCode::ArraySpread => "ArraySpread".to_string(),
         bytecode::OpCode::DictSpread => "DictSpread".to_string(),
@@ -250,6 +278,21 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
             jump_ref(pc, *exit_offset)
         ),
         bytecode::OpCode::ForeachCollect(slot) => format!("ForeachCollect {}", local(*slot)),
+        bytecode::OpCode::ForeachCollectAndJump { slot, offset } => {
+            format!("ForeachCollectAndJump {} -> {}", local(*slot), jump_ref(pc, *offset))
+        }
+        bytecode::OpCode::ForeachBinaryLocalNumberConstAndJump {
+            op,
+            local: value_slot,
+            constant,
+            accumulator_slot,
+            offset,
+        } => format!(
+            "ForeachBinaryLocalNumberConstAndJump {op:?} {}, {constant}, collect {} -> {}",
+            local(*value_slot),
+            local(*accumulator_slot),
+            jump_ref(pc, *offset)
+        ),
         bytecode::OpCode::ArraySliceFrom => "ArraySliceFrom".to_string(),
         bytecode::OpCode::DictGetLocalOrFail {
             subject_slot,
@@ -270,6 +313,7 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::SelectorMatchWithArgs(payload) => {
             format!("SelectorMatchWithArgs {:?}, argc={}", payload.0, payload.1)
         }
+        bytecode::OpCode::CallBuiltinLocal { ident, local } => format!("CallBuiltinLocal {ident}, local={local}"),
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
         bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
         bytecode::OpCode::CallStaticExact(chunk, argc) => {
@@ -330,6 +374,11 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         } => {
             format!("ReturnBinaryLocalConst {op:?} {} {constant}", local(*slot))
         }
+        bytecode::OpCode::ReturnBinaryLocalNumberConst {
+            op,
+            local: slot,
+            constant,
+        } => format!("ReturnBinaryLocalNumberConst {op:?} {} {constant}", local(*slot)),
         bytecode::OpCode::Return => "Return".to_string(),
         bytecode::OpCode::Yield => "Yield".to_string(),
         bytecode::OpCode::Resume(argc) => format!("Resume argc={argc}"),

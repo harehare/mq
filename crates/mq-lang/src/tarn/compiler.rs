@@ -2527,6 +2527,14 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
             return Ok(());
         }
+        if args.len() == 1
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let Some(local) = self.current_local_slot(&args[0])
+        {
+            self.emit(OpCode::CallBuiltinLocal { ident, local });
+            return Ok(());
+        }
         // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
         // `direct_self_call`/`resolve()` checks above already returned for any call a
         // user-defined function of that name should handle instead. Equivalent to, but cheaper
@@ -2856,13 +2864,12 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_foreach(&mut self, ident: crate::Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
-        self.emit(OpCode::ArrayNew);
-        self.emit(OpCode::SetLocal(acc_slot));
-
         let array_slot = self.scope_mut().declare_synthetic();
         self.compile_expr(iterable)?;
         self.emit(OpCode::ToForeachIterable);
         self.emit(OpCode::SetLocal(array_slot));
+        self.emit(OpCode::ArrayNewWithCapacityLocal(array_slot));
+        self.emit(OpCode::SetLocal(acc_slot));
 
         let index_slot = self.scope_mut().declare_synthetic();
         let zero = self.chunk_mut().push_const(RuntimeValue::Number(0.0.into()));
