@@ -124,7 +124,10 @@ end
 #
 # Returns: function
 def array(gen, len):
-  fn(seed): if (len == 0): [] else: map(range(0, len - 1), fn(i): gen(_sub_seed(seed, i)););
+  if (len < 0):
+    error("gen::array: len must be nonnegative, got " + to_string(len))
+  else:
+    fn(seed): if (len == 0): [] else: map(range(0, len - 1), fn(i): gen(_sub_seed(seed, i)););
 end
 
 # A generator producing a variable-length array (`min_len` to `max_len`, inclusive) of values,
@@ -138,9 +141,14 @@ end
 #
 # Returns: function
 def array_of(gen, min_len, max_len):
-  fn(seed):
-    let n = rand_int(min_len, max_len, _sub_seed(seed, 999983))
-    | if (n == 0): [] else: map(range(0, n - 1), fn(i): gen(_sub_seed(seed, i)););
+  if (min_len < 0 || max_len < 0):
+    error("gen::array_of: min_len and max_len must be nonnegative, got " + to_string(min_len) + ", " + to_string(max_len))
+  elif (min_len > max_len):
+    error("gen::array_of: min_len must be <= max_len, got " + to_string(min_len) + ", " + to_string(max_len))
+  else:
+    fn(seed):
+      let n = rand_int(min_len, max_len, _sub_seed(seed, 999983))
+      | if (n == 0): [] else: map(range(0, n - 1), fn(i): gen(_sub_seed(seed, i)););
 end
 
 # A generator that transforms the value `gen` produces through `mapper`. Named `transform`
@@ -281,13 +289,16 @@ end
 # Uses `fold`/`+` instead of `flatten`: `flatten` recurses all the way down, so it would tear
 # apart a candidate that's itself an array, or a length-1 `args`'s one-element wrapper array.
 def _shrink_neighbors(args):
-  fold(
-    map(range(0, len(args) - 1), fn(i):
-      map(shrink_value(args[i]), fn(v): set(args, i, v););
-    ),
-    [],
-    fn(acc, candidates): acc + candidates;
-  )
+  if (is_empty(args)):
+    []
+  else:
+    fold(
+      map(range(0, len(args) - 1), fn(i):
+        map(shrink_value(args[i]), fn(v): set(args, i, v););
+      ),
+      [],
+      fn(acc, candidates): acc + candidates;
+    )
 end
 
 def _shrink_rounds(args, is_interesting, rounds_left):

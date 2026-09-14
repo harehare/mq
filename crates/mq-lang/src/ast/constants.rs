@@ -1,12 +1,11 @@
 pub mod builtins {
     pub const ARRAY: &str = "array";
     pub const DICT: &str = "dict";
-    /// Ident the parser uses for an `[...]` array literal's desugared `Call` node. Kept distinct
-    /// from `ARRAY` (the callable `array(...)` builtin) so a user-defined function named `array`
-    /// can never intercept `[...]` literal construction. See `Compiler::compile_call`.
-    pub const ARRAY_LITERAL: &str = "_array";
-    /// Same reasoning as `ARRAY_LITERAL`, for `{...}` dict literals vs. the callable `dict(...)` builtin.
-    pub const DICT_LITERAL: &str = "_dict";
+    /// Ident for an `[...]` array literal's desugared `Call` node. Not a valid identifier, so
+    /// user source can never produce it. See `Compiler::compile_call`.
+    pub const ARRAY_LITERAL: &str = "[]";
+    /// Same as `ARRAY_LITERAL`, for `{...}` dict literals.
+    pub const DICT_LITERAL: &str = "{}";
     /// Marker ident for `...expr` spread elements; not a valid identifier, so it can't collide with user code.
     pub const SPREAD: &str = "...";
 

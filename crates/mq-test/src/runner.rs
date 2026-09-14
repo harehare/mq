@@ -483,8 +483,21 @@ impl TestRunner {
     /// single-argument `@property(generators)` form).
     fn split_top_level_comma(s: &str) -> Option<(&str, &str)> {
         let mut depth = 0i32;
-        for (i, c) in s.char_indices() {
+        let mut in_string = false;
+        let mut chars = s.char_indices();
+        while let Some((i, c)) = chars.next() {
+            if in_string {
+                match c {
+                    '\\' => {
+                        chars.next();
+                    }
+                    '"' => in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
             match c {
+                '"' => in_string = true,
                 '(' | '[' | '{' => depth += 1,
                 ')' | ']' | '}' => depth -= 1,
                 ',' if depth == 0 => return Some((&s[..i], &s[i + 1..])),
@@ -563,16 +576,21 @@ impl TestRunner {
             .map(|i| format!("__property_arg[{i}]"))
             .collect::<Vec<_>>()
             .join(", ");
+        // `range` is inclusive and auto-descends, so `range(0, count - 1)` for count <= 0
+        // would still yield seeds instead of an empty case list; guard it explicitly.
         format!(
-            "map(range(0, ({count_expr}) - 1), fn(__property_seed): \
-                do \
-                  let __property_args = (gen::tuple({generators_expr}))(__property_seed) \
-                  | test_case( \
-                      \"{display}[\" + to_string(__property_seed) + \"]\", \
-                      fn(): _property_case_result(__property_args, fn(__property_arg): {name}({arg_list});) ; \
-                    ) \
-                end \
-              ;)"
+            "do \
+               let __property_count = ({count_expr}) \
+               | if (__property_count <= 0): [] else: map(range(0, __property_count - 1), fn(__property_seed): \
+                   do \
+                     let __property_args = (gen::tuple({generators_expr}))(__property_seed) \
+                     | test_case( \
+                         \"{display}[\" + to_string(__property_seed) + \"]\", \
+                         fn(): _property_case_result(__property_args, fn(__property_arg): {name}({arg_list});) ; \
+                       ) \
+                   end \
+                 ;) \
+             end"
         )
     }
 
@@ -719,6 +737,15 @@ mod tests {
             generators_expr: "[gen::int(0, 10), gen::string(\"a,b\", 3)]".to_string(),
         })
     )]
+    #[case(
+        // `]` inside a string must not fool the bracket-depth scanner into treating the next
+        // comma as the count/generators separator.
+        "@property([gen::string(\"]\", 3), gen::int(0, 1)])",
+        Some(TestAnnotation::Property {
+            count_expr: DEFAULT_PROPERTY_CASES.to_string(),
+            generators_expr: "[gen::string(\"]\", 3), gen::int(0, 1)]".to_string(),
+        })
+    )]
     #[case("@unknown(foo)", None)]
     #[case("@skip", None)]
     #[case("not an annotation", None)]
@@ -745,7 +772,15 @@ mod tests {
     fn test_build_property_case_expr() {
         let case_expr = TestRunner::build_property_case_expr("range", "test_range", "100", "[gen::int(0, 10)]", 1);
         assert!(
-            case_expr.contains("range(0, (100) - 1)"),
+            case_expr.contains("let __property_count = (100)"),
+            "missing count binding: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("__property_count <= 0"),
+            "missing zero-count guard: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("range(0, __property_count - 1)"),
             "missing count range: {case_expr}"
         );
         assert!(
