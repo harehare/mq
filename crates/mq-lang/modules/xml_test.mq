@@ -1,5 +1,6 @@
 import "xml"
 | import "json"
+| import "gen"
 | include "test"
 
 # -- XML Tests --
@@ -29,4 +30,14 @@ end
 
 def test_xml_to_json_simple():
   assert_eq(xml::xml_to_json({"tag": "a"}), "{\"tag\": \"a\"}")
+end
+
+# `_xml_stringify` now escapes text/attribute content (mirroring `html::html_stringify`), so
+# `&`/`<`/`>`/`"` are deliberately included in the charset to exercise that escaping.
+# @property(50, [gen::string("abcXYZ01&<>\"'", 6), gen::string("abcXYZ01&<>\"'", 6)])
+def test_xml_stringify_parse_round_trip(text, attr_value):
+  let el = {"tag": "item", "attributes": {"id": attr_value}, "children": [], "text": text}
+  | let result = xml::xml_parse(xml::xml_stringify(el))
+  | assert_eq(result["text"], text)
+  | assert_eq(result["attributes"]["id"], attr_value)
 end

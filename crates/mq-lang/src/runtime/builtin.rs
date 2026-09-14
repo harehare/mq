@@ -4233,6 +4233,38 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                             }
                         }
                     }
+                    Ok(quick_xml::events::Event::GeneralRef(e)) => {
+                        // quick-xml tokenizes `&name;`/`&#NNN;` references out of surrounding
+                        // text as their own event rather than leaving them embedded in
+                        // `Event::Text`, so they must be resolved and appended here or every
+                        // entity reference (e.g. `&lt;`, `&amp;`) silently vanishes from the
+                        // parsed text instead of decoding to the character it represents.
+                        if let Some(parent) = stack.last_mut() {
+                            let resolved = e
+                                .resolve_char_ref()
+                                .map_err(|e| {
+                                    Error::Runtime(format!(
+                                        "XML parse error at position {}: invalid character reference: {}",
+                                        reader.buffer_position(),
+                                        e
+                                    ))
+                                })?
+                                .map(String::from)
+                                .or_else(|| quick_xml::escape::resolve_predefined_entity(e.as_ref()).map(String::from))
+                                .ok_or_else(|| {
+                                    Error::Runtime(format!(
+                                        "XML parse error at position {}: unknown entity reference &{};",
+                                        reader.buffer_position(),
+                                        e.as_ref()
+                                    ))
+                                })?;
+
+                            match &mut parent.3 {
+                                Some(t) => t.push_str(&resolved),
+                                None => parent.3 = Some(resolved),
+                            }
+                        }
+                    }
                     Ok(quick_xml::events::Event::Eof) => break,
                     Err(e) => {
                         return Err(Error::Runtime(format!(
@@ -12979,6 +13011,21 @@ mod tests {
                 RuntimeValue::Dict(Shared::new(child)),
             ])));
             root.insert(Ident::new("text"), RuntimeValue::NONE);
+            Ok(RuntimeValue::Dict(Shared::new(root)))
+        }
+    )]
+    #[case::entity_references(
+        // `x` (rather than whitespace) separates the references: `trim_text(true)` (a
+        // deliberate, pre-existing config for ignoring pretty-printed indentation) trims a
+        // whitespace-only text run to empty even when it sits between two entity references,
+        // which would make this case about that interaction instead of about entity resolution.
+        "<root>&lt;b&gt;x&amp;x&quot;q&quot;x&apos;s&apos;x&#65;&#x42;</root>",
+        {
+            let mut root = DictMap::default();
+            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
+            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
+            root.insert(Ident::new("children"), RuntimeValue::empty_array());
+            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("<b>x&x\"q\"x's'xAB".to_string())));
             Ok(RuntimeValue::Dict(Shared::new(root)))
         }
     )]
