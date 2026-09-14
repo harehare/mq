@@ -73,6 +73,16 @@ def test_tuple_is_deterministic_for_the_same_seed():
   | assert_eq((gen::tuple(gens))(42), (gen::tuple(gens))(42))
 end
 
+def test_nested_array_does_not_collide_across_the_index_97_boundary():
+  # `[0][97]` and `[1][0]` used to alias under the old radix-97 `_sub_seed`. Check over a few
+  # seeds since a single pair could coincidentally match.
+  let pairs = map(range(0, 4), fn(seed):
+    let grid = (gen::array(gen::array(gen::int(0, 1000000), 98), 2))(seed)
+    | [grid[0][97], grid[1][0]];
+  )
+  | assert_true(len(filter(pairs, fn(p): p[0] != p[1];)) > 0)
+end
+
 # `assert_contains` is avoided below for non-scalar values (arrays/dicts): its `in()`-based
 # membership check is unreliable for compound values on this branch, so candidate membership is
 # checked with a plain `filter`/`len` instead.
@@ -145,6 +155,11 @@ def test_shrink_shrinks_every_position_independently():
   let result = gen::shrink([10, "hello world"], fn(a): a[0] > 3 && len(a[1]) > 2;)
   | assert_true(result[0] > 3 && len(result[1]) > 2)
   | assert_true(result[0] < 10 || len(result[1]) < len("hello world"))
+end
+
+def test_shrink_reaches_an_intermediate_candidate_when_the_most_aggressive_one_is_not_interesting():
+  # `[10]`'s most aggressive shrink (element -> 0) isn't interesting; `4` must still be reachable.
+  assert_eq(gen::shrink([[10]], fn(a): a[0][0] > 3;), [[4]])
 end
 
 def test_shrink_is_bounded_when_the_predicate_stays_interesting_forever():

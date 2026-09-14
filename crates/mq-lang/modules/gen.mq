@@ -13,11 +13,20 @@
 # reported index as `seed` — not by calling an individual generator directly, since `tuple`
 # derives each parameter's actual seed from it.
 
+# Prime modulus for `_sub_seed`. Keeps products under f64's exact-integer range (2^53).
+def _sub_seed_modulus():
+  4294967291
+end
+
 # Derives a well-spread sub-seed for position `i` under a parent `seed`. Not itself a generator —
 # a helper used by every combinator below so that e.g. `tuple`'s per-parameter generators, or
 # `array`'s per-element generator, don't all draw from the exact same seed.
+#
+# Mixes with two prime multipliers and reduces mod `_sub_seed_modulus()`, instead of the old
+# `seed * 97 + i`: that radix-97 arithmetic aliased `array(array(gen, 98), 2)`'s `[0][97]` with
+# `[1][0]`, since `97*i + j` isn't injective once `j` reaches 97.
 def _sub_seed(seed, i):
-  seed * 97 + i
+  mod(mod(seed, _sub_seed_modulus()) * 1000003 + (i + 1) * 999983, _sub_seed_modulus())
 end
 
 # A generator producing a uniformly random integer in `[min, max]` (inclusive).
@@ -227,31 +236,32 @@ def _shrink_seq(seq, empty):
       end
 end
 
-# One candidate array per index of `arr`, each with that single element replaced by the first
-# (most aggressive) shrink candidate of its own value. Lets `shrink` simplify elements, not
-# just the array's length.
+# One candidate array per index of `arr` per candidate `shrink_value` offers for that index's
+# value (not just the most aggressive one, so a non-interesting round still leaves later rounds
+# a path to a smaller interesting value). Uses `fold`/`+`, not `flatten`, to flatten only the
+# outer per-index list.
 def _shrink_array_elements(arr):
   if (is_empty(arr)):
     []
   else:
-    filter(
+    fold(
       map(range(0, len(arr) - 1), fn(i):
-        let candidates = shrink_value(arr[i])
-        | if (is_empty(candidates)): None else: set(arr, i, candidates[0]);
+        map(shrink_value(arr[i]), fn(c): set(arr, i, c););
       ),
-      fn(c): not(is_none(c));
+      [],
+      fn(acc, candidates): acc + candidates;
     )
 end
 
-# One candidate dict per key of `d`, each with that single value replaced by the first (most
-# aggressive) shrink candidate of its own value.
+# One candidate dict per key of `d` per candidate `shrink_value` offers for that key's value.
+# See `_shrink_array_elements` for why every candidate is kept.
 def _shrink_dict_values(d):
-  filter(
+  fold(
     map(keys(d), fn(k):
-      let candidates = shrink_value(d[k])
-      | if (is_empty(candidates)): None else: set(d, k, candidates[0]);
+      map(shrink_value(d[k]), fn(c): set(d, k, c););
     ),
-    fn(c): not(is_none(c));
+    [],
+    fn(acc, candidates): acc + candidates;
   )
 end
 

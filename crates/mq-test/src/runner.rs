@@ -565,6 +565,10 @@ impl TestRunner {
     /// (see `test.mq`), which shrinks a failing case with `gen::shrink` before reporting it.
     /// Failing iterations stay labeled `name[i]`, same as `# @parametrize`, so the original
     /// (unshrunk) case is reproducible via `gen::tuple(generators)(i)`.
+    ///
+    /// `generators_expr` is evaluated once into `__property_generators` and its length checked
+    /// against `arity`, so a mismatched generator count fails loudly instead of silently
+    /// passing `None` for missing parameters.
     fn build_property_case_expr(
         display: &str,
         name: &str,
@@ -580,10 +584,14 @@ impl TestRunner {
         // would still yield seeds instead of an empty case list; guard it explicitly.
         format!(
             "do \
-               let __property_count = ({count_expr}) \
-               | if (__property_count <= 0): [] else: map(range(0, __property_count - 1), fn(__property_seed): \
+               let __property_generators = ({generators_expr}) \
+               | let __property_count = ({count_expr}) \
+               | if (len(__property_generators) != {arity}): \
+                   error(\"@property: expected {arity} generator(s) for '{name}' ({arity} parameter(s)), got \" + to_string(len(__property_generators))) \
+                 elif (__property_count <= 0): [] \
+                 else: map(range(0, __property_count - 1), fn(__property_seed): \
                    do \
-                     let __property_args = (gen::tuple({generators_expr}))(__property_seed) \
+                     let __property_args = (gen::tuple(__property_generators))(__property_seed) \
                      | test_case( \
                          \"{display}[\" + to_string(__property_seed) + \"]\", \
                          fn(): _property_case_result(__property_args, fn(__property_arg): {name}({arg_list});) ; \
@@ -772,6 +780,14 @@ mod tests {
     fn test_build_property_case_expr() {
         let case_expr = TestRunner::build_property_case_expr("range", "test_range", "100", "[gen::int(0, 10)]", 1);
         assert!(
+            case_expr.contains("let __property_generators = ([gen::int(0, 10)])"),
+            "missing generators binding: {case_expr}"
+        );
+        assert!(
+            case_expr.contains("len(__property_generators) != 1"),
+            "missing arity check: {case_expr}"
+        );
+        assert!(
             case_expr.contains("let __property_count = (100)"),
             "missing count binding: {case_expr}"
         );
@@ -784,7 +800,7 @@ mod tests {
             "missing count range: {case_expr}"
         );
         assert!(
-            case_expr.contains("(gen::tuple([gen::int(0, 10)]))(__property_seed)"),
+            case_expr.contains("(gen::tuple(__property_generators))(__property_seed)"),
             "missing generator call: {case_expr}"
         );
         assert!(
@@ -1366,6 +1382,32 @@ mod tests {
         assert!(
             !TestRunner::new(vec![test_file]).run().unwrap(),
             "a genuinely false property must fail the run"
+        );
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_a_property_with_too_few_generators_fails_the_run() {
+        let dir = temp_project_dir("property_generator_arity_mismatch");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "| import \"gen\"\n",
+                "|\n",
+                "# @property([gen::const(1)])\n",
+                "def test_pair(a, b):\n",
+                "  assert_true(is_none(b))\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            !TestRunner::new(vec![test_file]).run().unwrap(),
+            "one generator for two parameters must fail, not silently pass b = None"
         );
 
         fs::remove_dir_all(&dir).ok();
