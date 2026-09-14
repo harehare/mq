@@ -1,4 +1,5 @@
 import "gron"
+| import "gen"
 | include "test"
 
 # -- gron Tests --
@@ -36,4 +37,12 @@ end
 def test_gron_stringify_round_trips_with_parse(value):
   let result = gron::gron_stringify(value)
   | assert_eq(gron::gron_parse(result), value)
+end
+
+# Leaf values go through `json::json_stringify`, so the charset here mirrors json_test.mq's
+# round-trip property (quotes/backslashes/newlines/tabs included) to exercise that escaping too.
+# @property(50, [gen::string("abc XYZ012\"\\\n\t", 8), gen::int(-1000000, 1000000), gen::bool()])
+def test_gron_stringify_parse_round_trip(s, n, b):
+  let value = {"s": s, "n": n, "b": b, "nested": {"arr": [n, b], "s2": s}}
+  | assert_eq(gron::gron_parse(gron::gron_stringify(value)), value)
 end

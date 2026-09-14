@@ -1,4 +1,5 @@
 import "yaml"
+| import "gen"
 | include "test"
 
 # -- YAML Tests --
@@ -29,4 +30,13 @@ def test_to_frontmatter():
   let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
   | let result = yaml::to_frontmatter(input)
   | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
+end
+
+# `s` is letters-only (no digits/spaces): a plain YAML scalar trims surrounding whitespace and a
+# purely numeric string would round-trip back as a number instead of a string, so both would
+# break equality against the original dict.
+# @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 8), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
+def test_yaml_stringify_parse_round_trip(s, n, b, arr):
+  let data = {"s": s, "n": n, "b": b, "arr": arr}
+  | assert_eq(yaml::yaml_parse(yaml::yaml_stringify(data)), data)
 end

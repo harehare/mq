@@ -1,4 +1,5 @@
 import "table"
+| import "gen"
 | include "test"
 
 | let table_md = "| Name | Age | City |\n| --- | --- | --- |\n| Alice | 30 | Tokyo |\n| Bob | 25 | Osaka |\n"
@@ -203,6 +204,26 @@ def test_table_set_cell():
   let t = first(table::tables(table_nodes))
   | let result = table::set_cell(t, 0, 1, "31")
   | assert_eq(table::to_csv(result), "Name,Age,City\nAlice,31,Tokyo\nBob,25,Osaka")
+end
+
+# Cell content avoids `|`/newline (would corrupt the Markdown table `to_markdown` re-parses).
+# @property(50, [gen::string("abcXYZ012", 5), gen::string("abcXYZ012", 5)])
+def test_table_set_cell_then_get_cell_round_trips(a, b):
+  let t = first(table::tables(table_nodes))
+  | let result = table::set_cell(table::set_cell(t, 0, 0, a), 1, 0, b)
+  | assert_eq(table::get_cell(result, 0, 0), a)
+  | assert_eq(table::get_cell(result, 1, 0), b)
+end
+
+# @property(50, [gen::string("abcXYZ012", 5), gen::int(0, 200), gen::string("abcXYZ012", 5)])
+def test_table_add_row_increases_num_rows_and_holds_the_new_values(name, age, city):
+  let t = first(table::tables(table_nodes))
+  | let before = table::num_rows(t)
+  | let result = table::add_row(t, [name, to_string(age), city])
+  | assert_eq(table::num_rows(result), before + 1)
+  | assert_eq(table::get_cell(result, before, 0), name)
+  | assert_eq(table::get_cell(result, before, 1), to_string(age))
+  | assert_eq(table::get_cell(result, before, 2), city)
 end
 
 # @parametrize([[0, ["Alice", "Bob"]], [1, ["30", "25"]], [2, ["Tokyo", "Osaka"]]])
