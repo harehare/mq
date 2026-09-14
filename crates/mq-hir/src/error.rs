@@ -54,7 +54,8 @@ impl Hir {
                     }
                 }
                 SymbolKind::Keyword
-                    if symbol.value.as_deref() == Some("yield")
+                    if !self.is_builtin_symbol(symbol)
+                        && symbol.value.as_deref() == Some("yield")
                         && (self.is_outside_function(symbol.scope) || self.crosses_module_boundary(symbol)) =>
                 {
                     Some(HirError::YieldOutsideFunction { symbol: symbol.clone() })
@@ -349,6 +350,18 @@ mod tests {
         let _ = hir.add_code(None, "module a: def b(): yield: 1; end");
 
         assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_builtin_yield_symbols_are_not_flagged() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "let x = 1");
+
+        assert!(
+            hir.errors()
+                .iter()
+                .all(|error| !matches!(error, HirError::YieldOutsideFunction { .. }))
+        );
     }
 
     #[test]
