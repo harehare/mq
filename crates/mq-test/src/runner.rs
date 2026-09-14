@@ -560,15 +560,10 @@ impl TestRunner {
     }
 
     /// Builds the array-of-`test_case`s expression for a `# @property(count, generators)` test.
-    /// Each of `count` iterations generates its arguments via `gen::tuple(generators)` (see
-    /// `gen.mq`) seeded with the iteration index, then runs through `_property_case_result`
-    /// (see `test.mq`), which shrinks a failing case with `gen::shrink` before reporting it.
-    /// Failing iterations stay labeled `name[i]`, same as `# @parametrize`, so the original
-    /// (unshrunk) case is reproducible via `gen::tuple(generators)(i)`.
-    ///
-    /// `generators_expr` is evaluated once into `__property_generators` and its length checked
-    /// against `arity`, so a mismatched generator count fails loudly instead of silently
-    /// passing `None` for missing parameters.
+    /// Each iteration generates args via `gen::tuple(generators)` seeded with its index, then
+    /// runs `_property_case_result` (see `test.mq`), which shrinks a failing case before
+    /// reporting it. `generators_expr`'s length is checked against `arity` so a mismatch fails
+    /// loudly instead of silently passing `None` for missing parameters.
     fn build_property_case_expr(
         display: &str,
         name: &str,

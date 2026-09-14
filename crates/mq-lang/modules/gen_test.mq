@@ -84,11 +84,9 @@ def test_nested_array_does_not_collide_across_the_index_97_boundary():
 end
 
 def test_sub_seed_nested_does_not_collide_at_the_1000003_boundary():
-  # `_sub_seed(_sub_seed(seed, 0), 1000003)` and `_sub_seed(_sub_seed(seed, 1), 0)` used to alias
-  # under the old two-multiplier affine `_sub_seed`, since bumping the outer index by one and the
-  # inner index by 1000003 (one of the mixer's own multipliers) added the same amount to the
-  # product. Called directly (not via `gen::array`, whose `range` refuses lengths over 1000000)
-  # and over a few seeds since a single pair could coincidentally match.
+  # `_sub_seed(_sub_seed(seed, 0), 1000003)` used to alias `_sub_seed(_sub_seed(seed, 1), 0)`
+  # under the old affine `_sub_seed`. Called directly since `gen::array`'s `range` refuses
+  # lengths over 1000000.
   let pairs = map(range(0, 4), fn(seed):
     [gen::_sub_seed(gen::_sub_seed(seed, 0), 1000003), gen::_sub_seed(gen::_sub_seed(seed, 1), 0)];
   )

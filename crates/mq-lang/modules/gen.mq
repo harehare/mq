@@ -1,43 +1,29 @@
 # Generator combinators for property-based testing.
 #
-# A generator is a plain function `fn(seed): value;` — a pure, deterministic mapping from an
-# integer seed to a generated value, built on top of the seeded `rand`/`rand_int`/`random_string`
-# builtins. Combinators below build bigger generators out of smaller ones, deriving a distinct
-# sub-seed for each part so nested generators never accidentally correlate with one another.
+# A generator is a plain function `fn(seed): value;` — a deterministic mapping from an integer
+# seed to a generated value. Combinators derive a distinct sub-seed per part so nested generators
+# don't correlate.
 #
-# Pairs with `mq-test`'s `# @property(count, generators)` annotation: `generators` is an array
-# with one generator per test parameter, and each of the `count` iterations calls
-# `gen::tuple(generators)` with the iteration index as the seed. A failing iteration's index is
-# reported the same way `# @parametrize(...)` reports case indices, so it can be reproduced by
-# calling `gen::tuple(generators)(seed)` again with that same `generators` array and the
-# reported index as `seed` — not by calling an individual generator directly, since `tuple`
-# derives each parameter's actual seed from it.
+# Pairs with `mq-test`'s `# @property(count, generators)`: each of `count` iterations calls
+# `gen::tuple(generators)` with the iteration index as seed. A failing case is reproduced by
+# calling `gen::tuple(generators)(seed)` with the reported index.
 
 # Prime modulus for `_sub_seed`. Keeps products under f64's exact-integer range (2^53).
 def _sub_seed_modulus():
   4294967291
 end
 
-# Fold width for `_sub_seed`'s hi/lo split. Chosen as `round(sqrt(_sub_seed_modulus()))` so both
-# halves land back in roughly `[0, _sub_seed_fold_k())`.
+# Fold width for `_sub_seed`'s hi/lo split, `round(sqrt(_sub_seed_modulus()))`.
 def _sub_seed_fold_k():
   65536
 end
 
-# Derives a well-spread sub-seed for position `i` under a parent `seed`. Not itself a generator —
-# a helper used by every combinator below so that e.g. `tuple`'s per-parameter generators, or
-# `array`'s per-element generator, don't all draw from the exact same seed.
+# Derives a well-spread sub-seed for position `i` under a parent `seed`, so e.g. `tuple`'s
+# per-parameter generators don't all draw from the same seed.
 #
-# Two rounds of affine mixing (`seed * A + i * B mod M`) compose into another affine map, so
-# nesting `_sub_seed` twice is still affine overall: `_sub_seed(_sub_seed(seed, i), j) = seed*A^2
-# + i*B*A + j*B (mod M)`. That let `j` reaching `A` alias `[i][j]` with `[i+1][0]`, since bumping
-# the outer index by one and bumping the inner index by `A` add the same `B*A` to the product —
-# this is exactly how the old two-multiplier version (`* 1000003 + i * 999983`) aliased
-# `array(array(gen, 1000004), 2)`'s `[0][1000003]` with `[1][0]`. A purely affine mixer always has
-# some such pair, so instead of re-tuning the constants, this splits the intermediate value into
-# hi/lo halves (via `trunc`/`%`) and swaps their significance before the final mix: that split
-# is not an affine function of `seed`, which breaks the algebraic identity a composed-affine
-# collision needs.
+# Splits the mix into hi/lo halves before the final round instead of a plain affine mix: a purely
+# affine mixer always has some `(i, j)` pair that aliases `[i][j]` with `[i+1][0]` (this is how the
+# old two-multiplier version collided), and the hi/lo split breaks that algebraic identity.
 def _sub_seed(seed, i):
   let m = _sub_seed_modulus()
   | let k = _sub_seed_fold_k()
@@ -181,8 +167,7 @@ def array_of(gen, min_len, max_len):
 end
 
 # A generator that transforms the value `gen` produces through `mapper`. Named `transform`
-# rather than `map` so it doesn't shadow the built-in `map` used internally by the other
-# combinators in this module.
+# rather than `map` to avoid shadowing the built-in `map`.
 #
 # Example:
 # ```
@@ -214,15 +199,10 @@ end
 # Shrinking
 # ---------------------------------------------------------------------------
 #
-# Shrinking searches for a smaller, simpler failing example once a property test has already
-# found *a* failing one, so the reported counterexample is easier to reason about than whatever
-# the raw random seed happened to produce. `mq-test`'s `# @property(...)` runner calls `shrink`
-# automatically on every failing case; the functions below are also usable directly by
-# hand-written property tests that don't go through `# @property(...)`.
+# Searches for a smaller, simpler failing example once a property test has found one. Called
+# automatically by `mq-test`'s `# @property(...)` runner on every failing case.
 
-# Safety valve on the total number of shrink rounds `shrink` performs, so a pathological value
-# (or a property that stays "interesting" for an unbounded chain of ever-smaller candidates)
-# can't run away.
+# Safety valve so a pathological value can't run away searching forever.
 def _shrink_max_rounds():
   100
 end
@@ -256,10 +236,8 @@ def _shrink_seq(seq, empty):
       end
 end
 
-# One candidate array per index of `arr` per candidate `shrink_value` offers for that index's
-# value (not just the most aggressive one, so a non-interesting round still leaves later rounds
-# a path to a smaller interesting value). Uses `fold`/`+`, not `flatten`, to flatten only the
-# outer per-index list.
+# One candidate array per index of `arr` per candidate `shrink_value` offers for that index.
+# Uses `fold`/`+`, not `flatten`, to flatten only the outer per-index list.
 def _shrink_array_elements(arr):
   if (is_empty(arr)):
     []
@@ -312,12 +290,9 @@ def shrink_value(value):
     []
 end
 
-# Every one-step neighbor of `args` (an array of values, e.g. the arguments a failing
-# `# @property(...)` case was called with): for each position, one candidate array per value
-# `shrink_value` offers for that position, every other position held fixed.
-#
-# Uses `fold`/`+` instead of `flatten`: `flatten` recurses all the way down, so it would tear
-# apart a candidate that's itself an array, or a length-1 `args`'s one-element wrapper array.
+# Every one-step neighbor of `args`: for each position, one candidate array per value
+# `shrink_value` offers for that position, every other position held fixed. Uses `fold`/`+`
+# instead of `flatten`, which would also tear apart a candidate that's itself an array.
 def _shrink_neighbors(args):
   if (is_empty(args)):
     []
@@ -344,14 +319,12 @@ def _shrink_rounds(args, is_interesting, rounds_left):
     end
 end
 
-# Searches `args` (an array of values) for a smaller array still "interesting" per
-# `is_interesting` (a `fn(args): bool`, typically "the property still fails for these args").
-# Replaces one position at a time with a smaller candidate, stopping at a local minimum or after
-# `_shrink_max_rounds()` rounds. Returns `args` unchanged if nothing smaller was interesting.
+# Searches `args` for a smaller array still "interesting" per `is_interesting` (a
+# `fn(args): bool`, typically "the property still fails for these args"). Returns `args`
+# unchanged if nothing smaller was interesting.
 #
-# `is_interesting` should not throw on an out-of-domain candidate (e.g. a value a hand-written
-# generator would never actually produce). Wrap it in `try: ... catch: false;` if it might, so a
-# stray shrink candidate can't abort the whole search.
+# `is_interesting` should not throw on an out-of-domain candidate; wrap it in `try: ... catch:
+# false;` if it might.
 #
 # Example:
 # ```
