@@ -12,7 +12,7 @@ impl Node {
     }
 
     fn format_to_code(&self, buf: &mut String, indent: usize) {
-        match &*self.expr {
+        match &self.expr {
             Expr::Literal(lit) => {
                 format_literal(lit, buf);
             }
@@ -51,6 +51,13 @@ impl Node {
             }
             Expr::Continue => {
                 buf.push_str("continue");
+            }
+            Expr::Yield(None) => {
+                buf.push_str("yield");
+            }
+            Expr::Yield(Some(value)) => {
+                buf.push_str("yield: ");
+                value.format_to_code(buf, indent);
             }
             Expr::Paren(node) => {
                 buf.push('(');
@@ -461,7 +468,7 @@ mod tests {
     fn create_node(expr: Expr) -> Node {
         Node {
             token_id: ArenaId::new(0),
-            expr: Shared::new(expr),
+            expr,
         }
     }
 

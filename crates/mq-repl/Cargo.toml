@@ -34,4 +34,3 @@ scopeguard = {workspace = true}
 [features]
 clipboard = ["arboard"]
 default = ["clipboard"]
-tarn = ["mq-lang/tarn"]

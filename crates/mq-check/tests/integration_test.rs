@@ -2045,3 +2045,31 @@ fn test_recursive_selector(#[case] code: &str, #[case] should_succeed: bool, #[c
         result
     );
 }
+
+/// Regression: `next(arr)["value"]` was type-checked as a 2-argument call to
+/// `next` (which only has 0/1-argument overloads) and spuriously failed.
+#[rstest]
+#[case(r#"def myfirst(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];"#)]
+#[case(r#"def myfirst(arr): next(arr)["value"];"#)]
+#[case(r#"next(1)["value"]"#)]
+#[case(r#"let x = next(1) | x["value"]"#)]
+#[case(r#"def myfirst(arr): get(next(arr), "value");"#)]
+#[case(r#"next(1)"#)]
+fn test_builtin_call_bracket_access_does_not_leak_key_into_overload(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+/// Regression: `print(1, "x")` was silently reinterpreted as `print(1)["x"]`
+/// since the bracket-fusion heuristic wasn't limited to `next`/`send`.
+#[rstest]
+#[case(r#"print(1, "x")"#)]
+#[case(r#"print(1, 2, 3)"#)]
+fn test_generic_builtin_extra_argument_is_not_treated_as_bracket_key(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(
+        !errors.is_empty(),
+        "Code: {}\nExpected a wrong-arity error, got none",
+        code
+    );
+}

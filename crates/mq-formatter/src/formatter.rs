@@ -282,6 +282,7 @@ impl Formatter {
             | mq_lang::CstNodeKind::Do
             | mq_lang::CstNodeKind::Continue => self.format_keyword(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Break => self.format_break(&node, indent_level_consider_new_line),
+            mq_lang::CstNodeKind::Yield => self.format_break(&node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelectorCall | mq_lang::CstNodeKind::SelfAttr => {
                 self.format_selector(&node, indent_level_consider_new_line)
             }
@@ -2909,6 +2910,26 @@ end
 ))
 "
     )]
+    #[case::yield_oneline("def g(): yield: 1;", "def g(): yield:1;")]
+    #[case::yield_bare("def g(): yield;", "def g(): yield;")]
+    #[case::yield_multiline(
+        "def g():
+        yield: 1
+        | yield: 2;",
+        "def g():
+  yield:1
+  | yield:2;
+"
+    )]
+    #[case::def_with_comment_before_yield(
+        "def g():
+        # a comment
+        yield: 1;",
+        "def g():
+  # a comment
+  yield:1;
+"
+    )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
@@ -3034,5 +3055,14 @@ def func_a(): test;
         let code = "select(\"h1\") | upcase() | add_class(\"title\") | trim() | to_text() | replace(\"a\", \"b\") | join(\",\")";
         let result = Formatter::default().format(code);
         assert_eq!(result.unwrap(), code);
+    }
+
+    #[test]
+    fn test_format_yield_is_idempotent() {
+        for code in ["def g(): yield: 1;", "def g(): yield: 1 | yield: 2;"] {
+            let once = Formatter::new(None).format(code).unwrap();
+            let twice = Formatter::new(None).format(&once).unwrap();
+            assert_eq!(once, twice, "not idempotent for {code:?}");
+        }
     }
 }

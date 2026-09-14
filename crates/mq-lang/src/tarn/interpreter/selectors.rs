@@ -1,10 +1,10 @@
 //! Applies a compiled `Selector` to a runtime value: dispatches to `mq_markdown`'s selector
 //! evaluator for `Markdown` values and recurses through `Array`/`Dict` for the rest.
+use crate::DictMap;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
 use crate::{Ident, Shared};
-use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
 fn type_ident() -> &'static Ident {
@@ -91,7 +91,7 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
             if args.is_none() && matches!(selector, Selector::Recursive) {
                 return RuntimeValue::Array(Shared::new(collect_recursive(value)));
             }
-            let new_map: BTreeMap<_, _> = map
+            let new_map: DictMap = map
                 .iter()
                 .map(|(k, v)| {
                     let new_v = if k == type_ident() {
@@ -149,27 +149,38 @@ fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> R
 }
 
 fn collect_recursive(value: &RuntimeValue) -> Vec<RuntimeValue> {
-    let mut result = vec![value.clone()];
+    let mut result = Vec::new();
+    collect_recursive_into(value, &mut result);
+    result
+}
+
+/// Appends a pre-order recursive walk without allocating an intermediate vector per child.
+///
+/// Recursive selectors are often used on nested data converted from frontmatter. Building a
+/// separate `Vec` for every child made the traversal allocation-heavy and repeatedly copied
+/// partial results into its parent. A single output buffer preserves the selector's order while
+/// making allocation scale with the complete result instead.
+fn collect_recursive_into(value: &RuntimeValue, result: &mut Vec<RuntimeValue>) {
+    result.push(value.clone());
     match value {
         RuntimeValue::Array(items) => {
             for item in items.iter() {
-                result.extend(collect_recursive(item));
+                collect_recursive_into(item, result);
             }
         }
         RuntimeValue::Dict(map) => {
             for v in map.values() {
-                result.extend(collect_recursive(v));
+                collect_recursive_into(v, result);
             }
         }
         _ => {}
     }
-    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
+    use crate::DictMap;
 
     #[test]
     fn list_selector_maps_an_array_without_changing_element_order() {
@@ -188,7 +199,7 @@ mod tests {
 
     #[test]
     fn recursive_selector_flattens_dict_results_inside_an_array() {
-        let dict = RuntimeValue::Dict(Shared::new(BTreeMap::from([(
+        let dict = RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
             Ident::new("key"),
             RuntimeValue::Number(1.into()),
         )])));
@@ -202,6 +213,31 @@ mod tests {
                 RuntimeValue::None
             ])),
             "recursive dict results must remain flattened when selected through an array"
+        );
+    }
+
+    #[test]
+    fn collect_recursive_preserves_preorder_for_nested_values() {
+        let input = RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
+                Ident::new("nested"),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+            )]))),
+        ]));
+
+        assert_eq!(
+            collect_recursive(&input),
+            vec![
+                input.clone(),
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
+                    Ident::new("nested"),
+                    RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+                )]))),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(2.into())])),
+                RuntimeValue::Number(2.into()),
+            ]
         );
     }
 }

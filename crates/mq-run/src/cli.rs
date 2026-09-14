@@ -3,9 +3,10 @@ use colored::Colorize;
 use miette::IntoDiagnostic;
 use miette::miette;
 use mq_lang::DefaultEngine;
+use mq_lang::DictMap;
 use mq_lang::Shared;
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::fmt::Write as _;
 use std::io::BufRead;
@@ -91,6 +92,14 @@ pub struct Cli {
     #[arg(long, value_name = "SECONDS")]
     timeout: Option<f64>,
 
+    /// Include VM frames in uncaught runtime errors.
+    #[arg(long, default_value_t = false)]
+    stack_trace: bool,
+
+    /// Format for the final uncaught error. Combines with `--stack-trace`.
+    #[arg(long, value_enum, default_value_t = ErrorFormat::Human)]
+    error_format: ErrorFormat,
+
     /// Enter the interactive debugger when an uncaught error occurs (mq-dbg only).
     #[cfg(feature = "debugger")]
     #[arg(long = "stop-on-error", default_value_t = false)]
@@ -100,6 +109,11 @@ pub struct Cli {
     #[cfg(feature = "debug-trace")]
     #[arg(long = "dump-stack", default_value_t = false)]
     dump_stack: bool,
+
+    /// Print Tarn VM instruction execution counts to stderr (mq-dbg profile builds only).
+    #[cfg(feature = "vm-profile")]
+    #[arg(long = "vm-profile", default_value_t = false)]
+    vm_profile: bool,
 
     /// Print the Tarn VM bytecode to stderr before execution (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
@@ -263,6 +277,16 @@ impl From<OptimizeLevel> for mq_lang::OptimizationLevel {
             OptimizeLevel::Full => mq_lang::OptimizationLevel::Full,
         }
     }
+}
+
+/// How the final uncaught error is rendered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, clap::ValueEnum)]
+pub enum ErrorFormat {
+    /// Colored, human-readable diagnostic (default).
+    #[default]
+    Human,
+    /// Single-line JSON object via `miette::JSONReportHandler`, for CI/tooling.
+    Json,
 }
 
 /// Preset combination of `--allow-*` flags, set via `--sandbox`.
@@ -834,6 +858,15 @@ enum HelpFormat {
     Human,
     Json,
     Markdown,
+}
+
+/// Returns `true` if `value` is a coroutine, or an array/dict containing one at any depth.
+fn value_contains_coroutine(value: &mq_lang::RuntimeValue) -> bool {
+    match value {
+        mq_lang::RuntimeValue::Array(items) => items.iter().any(value_contains_coroutine),
+        mq_lang::RuntimeValue::Dict(map) => map.values().any(value_contains_coroutine),
+        value => value.is_coroutine(),
+    }
 }
 
 impl Cli {
@@ -1524,6 +1557,24 @@ impl Cli {
         out
     }
 
+    /// Prints an uncaught error to stderr per `--error-format`.
+    pub fn report_error(&self, err: &miette::Report) {
+        match self.error_format {
+            ErrorFormat::Human => eprintln!("Error: {err:?}"),
+            ErrorFormat::Json => match Self::render_error_json(err) {
+                Some(json) => eprintln!("{json}"),
+                None => eprintln!("Error: {err:?}"),
+            },
+        }
+    }
+
+    /// Renders `err` as a single-line JSON diagnostic object (`None` on a render failure).
+    fn render_error_json(err: &miette::Report) -> Option<String> {
+        let mut json = String::new();
+        miette::JSONReportHandler::new().render_report(&mut json, &**err).ok()?;
+        Some(json)
+    }
+
     pub fn run(&self) -> miette::Result<()> {
         if self.list {
             return self.list_commands();
@@ -1682,7 +1733,7 @@ impl Cli {
             || self.input.argjson.is_some()
             || self.input.slurp_file.is_some()
         {
-            let mut named: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = BTreeMap::new();
+            let mut named: DictMap = DictMap::default();
             if let Some(args) = &self.input.args {
                 for v in args.chunks(2) {
                     engine.define_string_value(&v[0], &v[1]);
@@ -1697,7 +1748,7 @@ impl Cli {
                 for v in argjson.chunks(2) {
                     let json_value: serde_json::Value = serde_json::from_str(&v[1]).into_diagnostic()?;
                     let runtime_value: mq_lang::RuntimeValue = json_value.into();
-                    engine.define_value(&v[0], runtime_value.clone());
+                    engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
             }
@@ -1718,7 +1769,7 @@ impl Cli {
                     let runtime_value = mq_lang::RuntimeValue::Array(mq_lang::Shared::new(
                         json_values.into_iter().map(Into::into).collect(),
                     ));
-                    engine.define_value(&v[0], runtime_value.clone());
+                    engine.define_value(&v[0], runtime_value.clone()).into_diagnostic()?;
                     named.insert(mq_lang::Ident::new(&v[0]), runtime_value);
                 }
             }
@@ -1730,7 +1781,7 @@ impl Cli {
                 .iter()
                 .map(|s| mq_lang::RuntimeValue::String(Shared::new(s.clone())))
                 .collect();
-            let args_map: BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue> = [
+            let args_map: DictMap = [
                 (
                     mq_lang::Ident::new("positional"),
                     mq_lang::RuntimeValue::Array(Shared::new(positional)),
@@ -1742,7 +1793,9 @@ impl Cli {
             ]
             .into_iter()
             .collect();
-            engine.define_value("ARGS", mq_lang::RuntimeValue::Dict(Shared::new(args_map)));
+            engine
+                .define_value("ARGS", mq_lang::RuntimeValue::Dict(Shared::new(args_map)))
+                .into_diagnostic()?;
         }
 
         if let Some(raw_file) = &self.input.raw_file {
@@ -1788,6 +1841,7 @@ impl Cli {
             }
             engine.set_timeout(std::time::Duration::from_secs_f64(secs));
         }
+        engine.set_capture_stack_trace(self.stack_trace);
 
         #[cfg(feature = "debugger")]
         {
@@ -1944,6 +1998,78 @@ impl Cli {
         Ok(current_values.update_with(results))
     }
 
+    /// Materializes coroutines at the CLI output boundary.
+    ///
+    /// Query evaluation keeps coroutines lazy so operations such as `first` and `take` can
+    /// short-circuit. A suspended coroutine is not useful output, though, so `mq-run` consumes
+    /// each coroutine (including ones nested inside arrays and dicts) with the standard
+    /// `collect()` builtin before rendering it.
+    fn collect_output_coroutines(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        runtime_values: mq_lang::RuntimeValues,
+    ) -> miette::Result<mq_lang::RuntimeValues> {
+        if !runtime_values.values().iter().any(value_contains_coroutine) {
+            return Ok(runtime_values);
+        }
+
+        let collector = engine.compile("collect()").map_err(|error| *error)?;
+        let mut materialized = Vec::with_capacity(runtime_values.len());
+
+        for value in runtime_values {
+            materialized.push(self.materialize_coroutines(engine, &collector, value)?);
+        }
+
+        Ok(materialized.into())
+    }
+
+    /// Recursively materializes coroutines within a single value, rebuilding arrays and dicts
+    /// that contain them.
+    fn materialize_coroutines(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        collector: &mq_lang::CompiledProgram,
+        value: mq_lang::RuntimeValue,
+    ) -> miette::Result<mq_lang::RuntimeValue> {
+        if value.is_coroutine() {
+            let collected = engine
+                .eval_compiled(collector, std::iter::once(value))
+                .map_err(|error| *error)?;
+            if collected.len() != 1 {
+                return Err(miette!(
+                    "internal error: collect() must produce exactly one output value"
+                ));
+            }
+            return collected
+                .into_iter()
+                .next()
+                .ok_or_else(|| miette!("internal error: collect() produced no output value"));
+        }
+
+        match value {
+            mq_lang::RuntimeValue::Array(items) if items.iter().any(value_contains_coroutine) => {
+                let items = Shared::try_unwrap(items).unwrap_or_else(|shared| (*shared).clone());
+                let materialized = items
+                    .into_iter()
+                    .map(|item| self.materialize_coroutines(engine, collector, item))
+                    .collect::<miette::Result<Vec<_>>>()?;
+                Ok(mq_lang::RuntimeValue::Array(Shared::new(materialized)))
+            }
+            mq_lang::RuntimeValue::Dict(map) if map.values().any(value_contains_coroutine) => {
+                let map = Shared::try_unwrap(map).unwrap_or_else(|shared| (*shared).clone());
+                let materialized = map
+                    .into_iter()
+                    .map(|(key, value)| {
+                        self.materialize_coroutines(engine, collector, value)
+                            .map(|value| (key, value))
+                    })
+                    .collect::<miette::Result<DictMap>>()?;
+                Ok(mq_lang::RuntimeValue::Dict(Shared::new(materialized)))
+            }
+            value => Ok(value),
+        }
+    }
+
     fn emit_results(
         &self,
         runtime_values: mq_lang::RuntimeValues,
@@ -2020,6 +2146,9 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             #[cfg(feature = "debug-trace")]
             let results = engine
@@ -2027,19 +2156,25 @@ impl Cli {
                 .map_err(|error| *error)?;
             #[cfg(not(feature = "debug-trace"))]
             let results = engine.eval(query, input.clone().into_iter()).map_err(|error| *error)?;
+            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
             #[cfg(feature = "debug-trace")]
             {
-                engine
+                let results = engine
                     .eval_compiled(&program, input.into_iter())
-                    .map_err(|error| *error)?
+                    .map_err(|error| *error)?;
+                self.collect_output_coroutines(engine, results)?
             }
             #[cfg(not(feature = "debug-trace"))]
             {
-                engine.eval(query, input.into_iter()).map_err(|error| *error)?
+                let results = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+                self.collect_output_coroutines(engine, results)?
             }
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2052,6 +2187,7 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
+            let separator = self.collect_output_coroutines(engine, separator)?;
             self.print(separator)?;
         }
 
@@ -2184,7 +2320,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn run_once_watch(&self) {
         if let Err(err) = self.execute_once() {
-            eprintln!("{:?}", err);
+            self.report_error(&err);
         }
     }
 
@@ -2307,10 +2443,33 @@ impl Cli {
         // Keep --append sequential: parallel files racing the same read-then-rename
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
-            files.par_iter().try_for_each(|(file, content)| {
-                let mut engine = self.create_engine()?;
-                self.execute(&mut engine, &query, file, content)
-            })?;
+            // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
+            let can_compile_per_worker = self.all_files_same_prefix(&files) && self.output.separator.is_none();
+            #[cfg(feature = "debug-trace")]
+            // Preserve per-file bytecode diagnostics.
+            let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
+
+            if can_compile_per_worker {
+                let effective_query = self.effective_query(&query, &files[0].0);
+                files.par_iter().try_for_each_init(
+                    || {
+                        let mut engine = self.create_engine()?;
+                        let program = engine.compile(&effective_query).map_err(|error| *error)?;
+                        Ok::<_, miette::Error>((engine, program))
+                    },
+                    |prepared, (file, content)| {
+                        let (engine, program) = prepared
+                            .as_mut()
+                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                        self.execute_compiled(engine, program, file, content)
+                    },
+                )?;
+            } else {
+                files.par_iter().try_for_each(|(file, content)| {
+                    let mut engine = self.create_engine()?;
+                    self.execute(&mut engine, &query, file, content)
+                })?;
+            }
         } else {
             let mut engine = self.create_engine()?;
 
@@ -2351,6 +2510,8 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| combined_input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(&effective_query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2363,6 +2524,10 @@ impl Cli {
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
             .map_err(|error| *error)?;
+        let runtime_values = self.collect_output_coroutines(&mut engine, runtime_values)?;
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, &None);
 
         self.emit_results(runtime_values, grep_input, &None)
     }
@@ -2393,14 +2558,22 @@ impl Cli {
         let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
         let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
 
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
+
         let runtime_values = if self.output.update {
             let results = engine
                 .eval_compiled(program, input.clone().into_iter())
                 .map_err(|e| *e)?;
+            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
-            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
+            let results = engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?;
+            self.collect_output_coroutines(engine, results)?
         };
+
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
 
         if self.output.update && self.output.diff {
             return self.emit_diff(&runtime_values, file, content);
@@ -2427,6 +2600,8 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        #[cfg(feature = "vm-profile")]
+        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
         #[cfg(feature = "debug-trace")]
         let program = engine.compile(query).map_err(|error| *error)?;
         #[cfg(feature = "debug-trace")]
@@ -2438,7 +2613,21 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
+        let runtime_values = self.collect_output_coroutines(engine, runtime_values)?;
+        #[cfg(feature = "vm-profile")]
+        self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
+    }
+
+    #[cfg(feature = "vm-profile")]
+    fn emit_vm_profile(&self, scope: Option<mq_lang::vm_profile::VmProfileScope>, file: &Option<PathBuf>) {
+        let Some(scope) = scope else {
+            return;
+        };
+        let target = file
+            .as_ref()
+            .map_or_else(|| "stdin".to_string(), |path| path.display().to_string());
+        eprintln!("Tarn VM profile ({target})\n{}", scope.finish());
     }
 
     fn process_batch_count(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
@@ -2700,7 +2889,7 @@ impl Cli {
     }
 
     /// Returns `true` if the dict is a known expandable typed dict (has `type: :symbol`).
-    fn is_typed_dict(map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>) -> bool {
+    fn is_typed_dict(map: &DictMap) -> bool {
         let type_key = mq_lang::Ident::new("type");
         matches!(
             map.get(&type_key),
@@ -2712,9 +2901,7 @@ impl Cli {
     ///
     /// Returns `None` if the dict is not a known expandable type.
     /// To add support for a new type, add a match arm for the type name.
-    fn expand_typed_dict(
-        map: &std::collections::BTreeMap<mq_lang::Ident, mq_lang::RuntimeValue>,
-    ) -> Option<Vec<mq_markdown::Node>> {
+    fn expand_typed_dict(map: &DictMap) -> Option<Vec<mq_markdown::Node>> {
         let type_key = mq_lang::Ident::new("type");
         match map.get(&type_key) {
             Some(mq_lang::RuntimeValue::Symbol(s)) => match s.as_str().as_str() {
@@ -3044,6 +3231,64 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[test]
+    fn test_cli_collects_final_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_collects_final_coroutine_output.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("def source(): yield: 1 | yield: 2 | yield: 3; | source() | map(fn(x): x * 10;)".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[10, 20, 30]");
+    }
+
+    #[test]
+    fn test_cli_collects_nested_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_collects_nested_coroutine_output.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("def g(): yield: 1 | yield: 2; | [g()]".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[[1, 2]]");
     }
 
     #[test]
@@ -3464,6 +3709,63 @@ mod tests {
         };
 
         assert!(cli.run().is_ok());
+    }
+
+    #[rstest]
+    #[case::default(false)]
+    #[case::enabled(true)]
+    fn test_stack_trace_flag(#[case] enabled: bool) {
+        let cli = if enabled {
+            Cli::try_parse_from(["mq", "--stack-trace", "self"]).unwrap()
+        } else {
+            Cli::try_parse_from(["mq", "self"]).unwrap()
+        };
+        let error = cli
+            .create_engine()
+            .unwrap()
+            .eval(
+                "def inner(): 1 / 0; def outer(): inner(); outer()",
+                std::iter::once(mq_lang::RuntimeValue::None),
+            )
+            .unwrap_err()
+            .to_string();
+
+        assert_eq!(error.contains("stack trace:"), enabled);
+        if enabled {
+            assert!(error.contains("at inner (1:"), "{error}");
+        }
+    }
+
+    #[rstest]
+    #[case::default_is_human(&["mq", "self"], ErrorFormat::Human)]
+    #[case::explicit_human(&["mq", "--error-format", "human", "self"], ErrorFormat::Human)]
+    #[case::json(&["mq", "--error-format", "json", "self"], ErrorFormat::Json)]
+    fn test_error_format_flag(#[case] args: &[&str], #[case] expected: ErrorFormat) {
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.error_format, expected);
+    }
+
+    #[rstest]
+    #[case::without_stack_trace(false)]
+    #[case::with_stack_trace(true)]
+    fn test_render_error_json(#[case] stack_trace: bool) {
+        let args: &[&str] = if stack_trace {
+            &["mq", "--stack-trace", "self"]
+        } else {
+            &["mq", "self"]
+        };
+        let cli = Cli::try_parse_from(args).unwrap();
+        let err: mq_lang::Error = *cli
+            .create_engine()
+            .unwrap()
+            .eval("1 / 0", std::iter::once(mq_lang::RuntimeValue::None))
+            .unwrap_err();
+        let json = Cli::render_error_json(&err.into()).unwrap();
+
+        let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let message = value["message"].as_str().unwrap();
+        assert!(message.contains("Division by zero"), "{message}");
+        assert_eq!(message.contains("stack trace:"), stack_trace);
     }
 
     #[test]
@@ -6030,9 +6332,7 @@ mod tests {
 
         assert!(cli.run().is_ok());
         let result = fs::read_to_string(&output_file).expect("Failed to read output");
-        // `named` is backed by a `BTreeMap<Ident, _>`, whose key order depends on the
-        // global string interner's symbol assignment order rather than the key text,
-        // so compare parsed JSON values instead of the raw serialized string.
+        // Compare parsed JSON values (rather than the raw string) so key order doesn't matter.
         let actual: serde_json::Value = serde_json::from_str(result.trim()).expect("output should be valid JSON");
         let expected: serde_json::Value = serde_json::from_str(r#"{"count": 42, "name": "Alice"}"#).unwrap();
         assert_eq!(actual, expected);

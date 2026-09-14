@@ -244,7 +244,8 @@ pub(super) fn build_piped_call_args(
     }
 }
 
-/// Resolves a builtin function call using overload resolution.
+/// Resolves a builtin function call using overload resolution and returns the
+/// type assigned to `symbol_id`.
 ///
 /// If `defer_error` is true (e.g., the call might receive piped input later),
 /// no error is generated on mismatch — only a fresh type variable is assigned.
@@ -255,7 +256,7 @@ pub(super) fn resolve_builtin_call(
     arg_tys: &[Type],
     range: Option<mq_lang::Range>,
     defer_error: bool,
-) {
+) -> Type {
     let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
     let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
     let has_unresolved_args = resolved_arg_tys.iter().any(|ty| ty.is_var());
@@ -266,14 +267,15 @@ pub(super) fn resolve_builtin_call(
         let overload_count = ctx.get_builtin_overloads(func_name).map(|o| o.len()).unwrap_or(0);
         if overload_count > 1 {
             let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            let result_ty = Type::Var(ty_var);
+            ctx.set_symbol_type(symbol_id, result_ty.clone());
             ctx.add_deferred_overload(DeferredOverload {
                 symbol_id,
                 op_name: SmolStr::new(func_name),
                 operand_tys: arg_tys.to_vec(),
                 range,
             });
-            return;
+            return result_ty;
         }
     }
 
@@ -290,19 +292,120 @@ pub(super) fn resolve_builtin_call(
                     },
                 ));
             }
-            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
+            let result_ty = ret_ty.as_ref().clone();
+            ctx.set_symbol_type(symbol_id, result_ty.clone());
+            result_ty
         } else {
             let ty_var = ctx.fresh_var();
-            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+            let result_ty = Type::Var(ty_var);
+            ctx.set_symbol_type(symbol_id, result_ty.clone());
+            result_ty
         }
     } else if is_builtin && !defer_error {
         ctx.report_no_matching_overload(func_name, &resolved_arg_tys, range);
         let ty_var = ctx.fresh_var();
-        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        let result_ty = Type::Var(ty_var);
+        ctx.set_symbol_type(symbol_id, result_ty.clone());
+        result_ty
     } else {
         let ret_ty = Type::Var(ctx.fresh_var());
-        ctx.set_symbol_type(symbol_id, ret_ty);
+        ctx.set_symbol_type(symbol_id, ret_ty.clone());
+        ret_ty
     }
+}
+
+const BRACKET_FUSABLE_BUILTINS: &[&str] = &["next", "send"];
+
+pub(super) fn trailing_bracket_key_count(
+    hir: &Hir,
+    ctx: &InferenceContext,
+    func_name: &str,
+    explicit_arg_tys: &[Type],
+    children: &[SymbolId],
+) -> usize {
+    if !BRACKET_FUSABLE_BUILTINS.contains(&func_name) {
+        return 0;
+    }
+
+    let overloads = match ctx.get_builtin_overloads(func_name) {
+        Some(overloads) => overloads,
+        None => return 0,
+    };
+
+    let is_fully_generic = |params: &[Type]| params.iter().all(|p| matches!(p, Type::Dynamic | Type::Var(_)));
+
+    let arities: Vec<usize> = overloads
+        .iter()
+        .filter_map(|ty| match ty {
+            Type::Function(params, _) => Some(params.len()),
+            _ => None,
+        })
+        .collect();
+
+    if arities.contains(&explicit_arg_tys.len()) {
+        return 0;
+    }
+
+    overloads
+        .iter()
+        .filter_map(|ty| match ty {
+            Type::Function(params, _) if params.len() < explicit_arg_tys.len() && is_fully_generic(params) => {
+                Some(params.len())
+            }
+            _ => None,
+        })
+        .filter(|&arity| {
+            children[arity..].iter().all(|&child_id| {
+                hir.symbol(child_id)
+                    .is_some_and(|s| matches!(s.kind, SymbolKind::String | SymbolKind::Symbol))
+            })
+        })
+        .max()
+        .map(|arity| explicit_arg_tys.len() - arity)
+        .unwrap_or(0)
+}
+
+/// Resolves a builtin call, splitting off and chaining any trailing bracket-access
+/// keys via `trailing_bracket_key_count`/`DeferredCallReturnAccess`.
+pub(super) fn resolve_builtin_call_with_brackets(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+    symbol_id: SymbolId,
+    func_name: &str,
+    explicit_arg_tys: &[Type],
+    children: &[SymbolId],
+    range: Option<mq_lang::Range>,
+) {
+    let trailing_bracket_count = trailing_bracket_key_count(hir, ctx, func_name, explicit_arg_tys, children);
+
+    if trailing_bracket_count == 0 {
+        let arg_tys = build_piped_call_args(ctx, symbol_id, explicit_arg_tys, func_name);
+        let defer = might_receive_piped_input(hir, symbol_id);
+        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+        return;
+    }
+
+    let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
+    let arg_tys = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
+    let defer = might_receive_piped_input(hir, symbol_id);
+    let mut current_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+
+    for i in 0..trailing_bracket_count {
+        let key_child_id = children[explicit_arg_tys.len() - trailing_bracket_count + i];
+        let field_name = hir
+            .symbol(key_child_id)
+            .and_then(|s| s.value.as_ref().map(|v| v.to_string()))
+            .unwrap_or_default();
+        let result_ty = Type::Var(ctx.fresh_var());
+        ctx.add_deferred_call_return_access(crate::infer::DeferredCallReturnAccess {
+            call_symbol_id: symbol_id,
+            return_type: current_ty,
+            field_name,
+            range,
+        });
+        current_ty = result_ty;
+    }
+    ctx.set_symbol_type(symbol_id, current_ty);
 }
 
 /// Returns the type if the pattern matches an entire type class (safe to subtract cross-arm).

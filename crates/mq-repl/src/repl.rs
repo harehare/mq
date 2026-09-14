@@ -99,20 +99,56 @@ fn format_markdown_node(node: &mq_markdown::Node) -> String {
     }
 }
 
-/// Format a runtime value with type-appropriate colors.
-fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
-    if value.is_empty() {
-        return None;
+/// Stringifies a value for REPL display without changing the runtime value.
+fn display_value_to_string(value: &RuntimeValue) -> String {
+    if !contains_none(value) {
+        return value.to_string();
     }
 
+    match value {
+        RuntimeValue::None => "None".to_string(),
+        RuntimeValue::String(value) => format!("\"{}\"", value),
+        RuntimeValue::Array(values) => format!(
+            "[{}]",
+            values
+                .iter()
+                .map(display_value_to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        RuntimeValue::Dict(values) => format!(
+            "{{{}}}",
+            values
+                .iter()
+                .map(|(key, value)| format!("\"{}\": {}", key, display_value_to_string(value)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        _ => value.to_string(),
+    }
+}
+
+/// Returns whether a value contains `None` at any depth.
+fn contains_none(value: &RuntimeValue) -> bool {
+    match value {
+        RuntimeValue::None => true,
+        RuntimeValue::Array(values) => values.iter().any(contains_none),
+        RuntimeValue::Dict(values) => values.values().any(contains_none),
+        _ => false,
+    }
+}
+
+/// Format a runtime value with type-appropriate colors.
+fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
     let s = match value {
         RuntimeValue::None => return Some("None".dimmed().to_string()),
+        _ if value.is_empty() => return None,
         RuntimeValue::Number(n) => n.to_string().bright_magenta().to_string(),
         RuntimeValue::Boolean(b) => b.to_string().bright_yellow().to_string(),
         RuntimeValue::String(s) => format!("\"{}\"", s).bright_green().to_string(),
         RuntimeValue::Markdown(node, _) => format_markdown_node(node),
         _ => {
-            let s = value.to_string();
+            let s = display_value_to_string(value);
             if s.is_empty() {
                 return None;
             }
@@ -350,9 +386,7 @@ impl Repl {
     }
 
     /// Creates a REPL from a pre-configured engine (e.g. with capabilities already set).
-    #[cfg_attr(not(feature = "tarn"), allow(unused_mut))]
     pub fn with_engine(mut engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
-        #[cfg(feature = "tarn")]
         engine.enable_query_session();
 
         Self {
@@ -360,33 +394,10 @@ impl Repl {
         }
     }
 
-    /// Label for the currently compiled execution engine, shown next to the
-    /// version so it's clear at a glance which binary is running. `None` for
-    /// the default tree-walking interpreter; the VM is opt-in behind the
-    /// `tarn` feature and slated for removal, so it's called out explicitly.
-    fn engine_label() -> Option<&'static str> {
-        #[cfg(feature = "tarn")]
-        {
-            Some("tarn")
-        }
-        #[cfg(not(feature = "tarn"))]
-        {
-            None
-        }
-    }
-
     fn print_welcome() {
         let version = mq_lang::DefaultEngine::version();
-        let engine_suffix = Self::engine_label()
-            .map(|label| format!(" ({label})"))
-            .unwrap_or_default();
         let lines = [
-            format!(
-                "{} {}{}",
-                logo_primary("mq").bold(),
-                text_muted(&format!("v{version}")),
-                text_muted(&engine_suffix)
-            ),
+            format!("{} {}", logo_primary("mq").bold(), text_muted(&format!("v{version}")),),
             text_muted("Query. Filter. Transform Markdown.").to_string(),
             format!("Type {} to see available commands.", logo_primary("/help")),
         ];
@@ -594,7 +605,23 @@ mod tests {
     #[test]
     fn test_format_runtime_value_none() {
         let v = mq_lang::RuntimeValue::None;
+        assert_eq!(format_runtime_value(&v).as_deref(), Some("None"));
+    }
+
+    #[test]
+    fn test_format_runtime_value_empty_string_stays_hidden() {
+        let v = mq_lang::RuntimeValue::String("".to_string().into());
         assert!(format_runtime_value(&v).is_none());
+    }
+
+    #[test]
+    fn test_format_runtime_value_displays_nested_none() {
+        let v = mq_lang::RuntimeValue::Dict(mq_lang::Shared::new(mq_lang::DictMap::from_iter([(
+            mq_lang::Ident::new("value"),
+            mq_lang::RuntimeValue::None,
+        )])));
+
+        assert!(format_runtime_value(&v).unwrap().contains("\"value\": None"));
     }
 
     #[test]

@@ -11,10 +11,10 @@ pub(crate) use helpers::{
 
 use categories::categorize_symbols;
 use helpers::{
-    build_piped_call_args, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
+    collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
     find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, merge_loop_types,
-    might_receive_piped_input, resolve_builtin_call, resolve_pattern_type, resolve_whole_type_pattern,
-    spread_element_type,
+    might_receive_piped_input, resolve_builtin_call, resolve_builtin_call_with_brackets, resolve_pattern_type,
+    resolve_whole_type_pattern, spread_element_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -1231,19 +1231,32 @@ pub(super) fn generate_symbol_constraints(
                                 }
                             }
                         } else {
-                            // Resolved to a builtin - handle via overload resolution
-                            // If there's piped input, prepend it as the implicit first argument
-                            let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                            // Defer error if call might receive piped input later (inside a Block).
-                            let defer = might_receive_piped_input(hir, symbol_id);
-                            resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+                            // Resolved to a builtin - handle via overload resolution. CST lowers
+                            // `next(x)["value"]` as `Call(next, [x, "value"])`, so trailing
+                            // String/Symbol children beyond the builtin's arity are bracket
+                            // accesses on its return value, not extra arguments (mirrors the
+                            // user-defined call handling above).
+                            resolve_builtin_call_with_brackets(
+                                hir,
+                                ctx,
+                                symbol_id,
+                                func_name,
+                                &explicit_arg_tys,
+                                &children,
+                                range,
+                            );
                         }
                     } else {
                         // No HIR resolution - try builtin overload resolution
-                        // If there's piped input, prepend it as the implicit first argument
-                        let arg_tys = build_piped_call_args(ctx, symbol_id, &explicit_arg_tys, func_name);
-                        let defer = might_receive_piped_input(hir, symbol_id);
-                        resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+                        resolve_builtin_call_with_brackets(
+                            hir,
+                            ctx,
+                            symbol_id,
+                            func_name,
+                            &explicit_arg_tys,
+                            &children,
+                            range,
+                        );
                     }
                 } else {
                     let ty_var = ctx.fresh_var();
@@ -2097,11 +2110,11 @@ pub(super) fn generate_symbol_constraints(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
 
-        // `break: value` carries the type of its value expression.
-        // Bare `break` (no value child) gets a fresh type variable.
+        // `break: value` / `yield: value` carry the type of their value expression.
+        // Bare `break`/`yield` (no value child) get a fresh type variable.
         SymbolKind::Keyword => {
             let symbol = hir.symbol(symbol_id);
-            if symbol.is_some_and(|s| s.value.as_deref() == Some("break")) {
+            if symbol.is_some_and(|s| matches!(s.value.as_deref(), Some("break") | Some("yield"))) {
                 let children = get_children(children_index, symbol_id);
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);

@@ -867,6 +867,7 @@ fn register_type_checks(ctx: &mut InferenceContext) {
         "is_number",
         "is_bool",
         "is_bytes",
+        "is_coroutine",
     ] {
         let a = ctx.fresh_var();
         register_unary(ctx, name, Type::Var(a), Type::Bool);
@@ -1341,10 +1342,6 @@ fn register_markdown(ctx: &mut InferenceContext) {
 /// Variable/symbol management functions
 fn register_variable(ctx: &mut InferenceContext) {
     register_nullary(ctx, "all_symbols", Type::array(Type::Symbol));
-    // Deprecated: tree-walker only (see `mq-lang`'s `runtime::builtin`), scheduled for
-    // removal in the next release.
-    register_unary(ctx, "get_variable", Type::String, Type::String);
-    register_binary(ctx, "set_variable", Type::String, Type::String, Type::None);
     register_unary(ctx, "intern", Type::String, Type::Symbol);
 }
 
@@ -1352,6 +1349,16 @@ fn register_variable(ctx: &mut InferenceContext) {
 fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "is_debug_mode", Type::Bool);
     register_nullary(ctx, "breakpoint", Type::None);
+
+    // `next()`/`send()` may take their coroutine from the pipeline or explicitly as the first
+    // argument. Coroutines and their `{ value, done }` records are runtime-only VM types for
+    // now, so the checker models both sides as dynamic while still resolving the builtin name.
+    register_nullary(ctx, "next", Type::Dynamic);
+    register_unary(ctx, "next", Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "send", Type::Dynamic, Type::Dynamic);
+    register_binary(ctx, "send", Type::Dynamic, Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "close", Type::Dynamic, Type::Dynamic);
+    register_unary(ctx, "status", Type::Dynamic, Type::Symbol);
 
     let a = ctx.fresh_var();
     register_unary(ctx, "assert", Type::Var(a), Type::Var(a));
@@ -2390,8 +2397,6 @@ mod tests {
     #[case::error_func("error(\"message\")", true)]
     #[case::halt_func("halt(1)", true)]
     #[case::all_symbols("all_symbols()", true)]
-    #[case::get_variable("get_variable(\"key\")", true)]
-    #[case::set_variable("set_variable(\"key\", \"value\")", true)]
     #[case::intern("intern(\"symbol\")", true)]
     #[case::is_debug_mode("is_debug_mode()", true)]
     #[case::breakpoint("breakpoint()", true)]

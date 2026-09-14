@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn test_colorize_object_empty() {
         let theme = plain_theme();
-        let values = vec![RuntimeValue::Dict(Shared::new(std::collections::BTreeMap::new()))];
+        let values = vec![RuntimeValue::Dict(Shared::new(mq_lang::DictMap::default()))];
         let result = runtime_values_to_json(&values, Some(&theme), false, "  ").unwrap();
         assert_eq!(result, "{}");
     }
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_colorize_object_non_empty() {
         let theme = plain_theme();
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(
             mq_lang::Ident::new("key"),
             RuntimeValue::String(Shared::new("val".to_string())),
@@ -261,7 +261,7 @@ mod tests {
 
     #[test]
     fn test_compact_no_theme() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
         map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn test_compact_with_theme() {
         let theme = plain_theme();
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(mq_lang::Ident::new("a"), RuntimeValue::from(1usize));
         map.insert(mq_lang::Ident::new("b"), RuntimeValue::from(2usize));
         let values = vec![RuntimeValue::Dict(Shared::new(map))];

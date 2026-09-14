@@ -17,7 +17,7 @@ fn default_token_id() -> mq_lang::ArenaId<Shared<mq_lang::Token>> {
 fn make_node(expr: AstExpr) -> Shared<AstNode> {
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: Shared::new(expr),
+        expr,
     })
 }
 
@@ -247,7 +247,7 @@ proptest! {
 
         prop_assert!(!program.is_empty(), "Parsed program is empty");
 
-        if let AstExpr::Literal(parsed_lit) = &*program[0].expr {
+        if let AstExpr::Literal(parsed_lit) = &program[0].expr {
             prop_assert!(
                 assertions::literals_equal(&lit, parsed_lit),
                 "Literals differ: {:?} vs {:?}", lit, parsed_lit
@@ -263,7 +263,7 @@ proptest! {
         let program = assertions::assert_parses(&code)?;
         prop_assert!(!program.is_empty());
 
-        if let AstExpr::Ident(parsed_ident) = &*program[0].expr {
+        if let AstExpr::Ident(parsed_ident) = &program[0].expr {
             prop_assert_eq!(ident.name, parsed_ident.name);
         }
     }
@@ -285,7 +285,7 @@ proptest! {
         let program = assertions::assert_parses(&code1)?;
 
         prop_assert!(!program.is_empty());
-        prop_assert!(matches!(&*program[0].expr, AstExpr::Let(_, _)));
+        prop_assert!(matches!(&program[0].expr, AstExpr::Let(_, _)));
 
         let code2 = program[0].to_code();
         prop_assert_eq!(code1, code2, "Code roundtrip failed for let expression");
@@ -297,7 +297,7 @@ proptest! {
         let program = assertions::assert_parses(&code1)?;
 
         prop_assert!(!program.is_empty());
-        prop_assert!(matches!(&*program[0].expr, AstExpr::Var(_, _)));
+        prop_assert!(matches!(&program[0].expr, AstExpr::Var(_, _)));
 
         let code2 = program[0].to_code();
         prop_assert_eq!(code1, code2, "Code roundtrip failed for var expression");
@@ -324,7 +324,7 @@ proptest! {
         let program = assertions::assert_parses(&code1)?;
 
         prop_assert!(!program.is_empty());
-        prop_assert!(matches!(&*program[0].expr, AstExpr::If(_)));
+        prop_assert!(matches!(&program[0].expr, AstExpr::If(_)));
 
         let code2 = program[0].to_code();
         prop_assert_eq!(code1, code2, "Code roundtrip failed for if expression");
@@ -433,7 +433,7 @@ proptest! {
         let program = assertions::assert_parses(&code1)?;
 
         prop_assert!(!program.is_empty());
-        prop_assert!(matches!(&*program[0].expr, AstExpr::Assign(_, _)));
+        prop_assert!(matches!(&program[0].expr, AstExpr::Assign(_, _)));
 
         let code2 = program[0].to_code();
         prop_assert_eq!(code1, code2, "Code roundtrip failed for assignment expression");
@@ -456,7 +456,7 @@ proptest! {
         let program = assertions::assert_parses(&code1)?;
 
         prop_assert!(!program.is_empty());
-        prop_assert!(matches!(&*program[0].expr, AstExpr::If(_)));
+        prop_assert!(matches!(&program[0].expr, AstExpr::If(_)));
 
         let code2 = program[0].to_code();
         prop_assert_eq!(code1, code2, "Code roundtrip failed for complex if expression");
@@ -544,10 +544,10 @@ proptest! {
         prop_assert!(!program.is_empty());
 
         let matches_expected = match keyword {
-            "self" => matches!(&*program[0].expr, AstExpr::Self_),
-            "nodes" => matches!(&*program[0].expr, AstExpr::Nodes),
-            "break" => matches!(&*program[0].expr, AstExpr::Break(_)),
-            "continue" => matches!(&*program[0].expr, AstExpr::Continue),
+            "self" => matches!(&program[0].expr, AstExpr::Self_),
+            "nodes" => matches!(&program[0].expr, AstExpr::Nodes),
+            "break" => matches!(&program[0].expr, AstExpr::Break(_)),
+            "continue" => matches!(&program[0].expr, AstExpr::Continue),
             _ => false,
         };
 
@@ -560,7 +560,7 @@ proptest! {
         let code = node.to_code();
         let program = assertions::assert_parses(&code)?;
 
-        if let AstExpr::Literal(AstLiteral::Bool(parsed)) = &*program[0].expr {
+        if let AstExpr::Literal(AstLiteral::Bool(parsed)) = &program[0].expr {
             prop_assert_eq!(b, *parsed);
         } else {
             prop_assert!(false, "Expected bool literal");

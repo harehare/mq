@@ -36,6 +36,14 @@ def test_is_dict(value, expected):
   | assert_eq(result, expected)
 end
 
+def test_is_coroutine():
+  let g = fn(): yield: 1;
+  | let result1 = is_coroutine(g())
+  | assert_eq(result1, true)
+  | let result2 = is_coroutine(1)
+  | assert_eq(result2, false)
+end
+
 def test_is_mdx():
   let result1 = do "import Component from './Component'\n\n# Hello\n\n<Component />" | to_mdx() | get(2) | is_mdx();
   | assert_eq(result1, true)
@@ -199,6 +207,12 @@ def test_map(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_map_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | let result = collect(map(source(), fn(x): x * 2;))
+  | assert_eq(result, [2, 4, 6])
+end
+
 # @parametrize([
 #   [[1, 2, 3], fn(x): [x, x * 2];, [1, 2, 2, 4, 3, 6]],
 #   [[[1, 2], [3, 4]], fn(x): x;, [1, 2, 3, 4]],
@@ -207,6 +221,11 @@ end
 def test_flat_map(value, f, expected):
   let result = flat_map(value, f)
   | assert_eq(result, expected)
+end
+
+def test_flat_map_coroutine():
+  let source = fn(): yield: 1 | yield: 2;
+  | assert_eq(collect(flat_map(source(), fn(x): [x, x * 10];)), [1, 10, 2, 20])
 end
 
 # @parametrize([
@@ -219,16 +238,59 @@ def test_filter(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_filter_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | let result = collect(filter(source(), fn(x): x % 2 == 0;))
+  | assert_eq(result, [2, 4])
+end
+
 # @parametrize([[[1, 2, 3], 1], [[], None]])
 def test_first(value, expected):
   let result = first(value)
   | assert_eq(result, expected)
 end
 
+def test_first_coroutine():
+  let source = fn(): yield: 10 | yield: 20;
+  | assert_eq(first(source()), 10)
+end
+
+def test_collect():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(collect(source()), [1, 2, 3])
+  | assert_eq(collect([1, 2]), [1, 2])
+end
+
+def test_to_coroutine_array():
+  let stream = to_coroutine([1, 2, 3])
+  | assert(is_coroutine(stream))
+  | assert_eq(collect(stream), [1, 2, 3])
+end
+
+def test_to_coroutine_dict():
+  assert_eq(collect(to_coroutine({"a": 1, "b": 2})), [["a", 1], ["b", 2]])
+end
+
+def test_to_coroutine_passthrough():
+  let source = fn(): yield: 1 | yield: 2;
+  | let stream = to_coroutine(source())
+  | assert_eq(next(stream)["value"], 1)
+  | assert_eq(next(stream)["value"], 2)
+end
+
+def test_to_coroutine_with_take():
+  assert_eq(collect(take(to_coroutine([1, 2, 3, 4, 5]), 2)), [1, 2])
+end
+
 # @parametrize([[[1, 2, 3], 3], [[42], 42]])
 def test_last(value, expected):
   let result = last(value)
   | assert_eq(result, expected)
+end
+
+def test_last_coroutine():
+  let source = fn(): yield: 10 | yield: 20 | yield: 30;
+  | assert_eq(last(source()), 30)
 end
 
 # @parametrize([[[1, 2, 3], 2], [[42], None]])
@@ -259,10 +321,23 @@ def test_skip(value, n, expected):
   | assert_eq(result, expected)
 end
 
+def test_skip_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(collect(skip(source(), 2)), [3, 4])
+end
+
 # @parametrize([[[1, 2, 3, 4, 5], 3, [1, 2, 3]], [[1, 2, 3], 0, []], [[1, 2, 3], 5, [1, 2, 3]]])
 def test_take(value, n, expected):
   let result = take(value, n)
   | assert_eq(result, expected)
+end
+
+def test_take_coroutine_does_not_pull_past_the_limit():
+  var pulls = 0
+  | let source = fn(): pulls += 1 | yield: pulls | pulls += 1 | yield: pulls | pulls += 1 | yield: pulls;
+  | let result = collect(take(source(), 2))
+  | assert_eq(result, [1, 2])
+  | assert_eq(pulls, 2)
 end
 
 # @parametrize([
@@ -305,6 +380,11 @@ def test_find_index(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_find_index_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(find_index(source(), fn(x): x == 3;), 2)
+end
+
 # @parametrize([
 #   [[1, 2, 3, 4, 5], fn(x): x < 3;, [3, 4, 5]],
 #   [[1, 2, 3], fn(x): x > 10;, [1, 2, 3]],
@@ -315,10 +395,20 @@ def test_skip_while(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_skip_while_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(collect(skip_while(source(), fn(x): x < 3;)), [3, 4])
+end
+
 # @parametrize([[[1, 2, 3, 4, 5], fn(x): x < 4;, [1, 2, 3]], [[1, 2, 3], fn(x): x > 10;, []], [[], fn(x): x < 5;, []]])
 def test_take_while(value, f, expected):
   let result = take_while(value, f)
   | assert_eq(result, expected)
+end
+
+def test_take_while_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(collect(take_while(source(), fn(x): x < 3;)), [1, 2])
 end
 
 # @parametrize([[[1, 2, 3, 4, 5, 6], fn(x): x % 2;, {"0": [2, 4, 6], "1": [1, 3, 5]}], [[], fn(x): x;, dict()]])
@@ -337,6 +427,27 @@ end
 def test_tally(value, expected):
   let result = tally(value)
   | assert_eq(result, expected)
+end
+
+def test_any_coroutine_short_circuits():
+  var pulls = 0
+  | let source = fn(): pulls += 1 | yield: pulls | pulls += 1 | yield: pulls | pulls += 1 | yield: pulls;
+  | assert_eq(any(source(), fn(x): x == 2;), true)
+  | assert_eq(pulls, 2)
+end
+
+def test_all_coroutine_short_circuits():
+  var pulls = 0
+  | let source = fn(): pulls += 1 | yield: pulls | pulls += 1 | yield: pulls | pulls += 1 | yield: pulls;
+  | assert_eq(all(source(), fn(x): x < 2;), false)
+  | assert_eq(pulls, 2)
+end
+
+def test_fold_and_sum_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(fold(source(), 10, fn(acc, x): acc + x;), 16)
+  | let sum_source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(sum(sum_source()), 6)
 end
 
 # @parametrize([
@@ -520,6 +631,11 @@ def test_compact_map(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_compact_map_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(collect(compact_map(source(), fn(x): if (x % 2 == 0): x * 10;)), [20])
+end
+
 # @parametrize([
 #   [[1, 2, 3, 4, 5], fn(x): x > 3;, [1, 2, 3]],
 #   [[1, 2, 3, 4], fn(x): x % 2 == 0;, [1, 3]],
@@ -529,6 +645,11 @@ end
 def test_reject(value, f, expected):
   let result = reject(value, f)
   | assert_eq(result, expected)
+end
+
+def test_reject_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(collect(reject(source(), fn(x): x % 2 == 0;)), [1, 3])
 end
 
 # @parametrize([
@@ -690,6 +811,15 @@ def test_each():
   var i = 0
   | each([1, 2, 3], fn(x): i += x;)
   | assert_eq(i, 6)
+end
+
+def test_each_coroutine():
+  var i = 0
+  | let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | let stream = source()
+  | let result = each(stream, fn(x): i += x;)
+  | assert_eq(i, 6)
+  | assert_eq(next(result)["done"], true)
 end
 
 # @parametrize([["test", 6, "0", "00test"], ["hello", 3, "x", "hello"], ["abc", 5, " ", "  abc"]])

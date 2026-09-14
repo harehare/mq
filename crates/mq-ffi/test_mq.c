@@ -288,7 +288,7 @@ void test_set_max_call_stack_depth() {
     mq_context_t *engine = mq_create();
     mq_set_max_call_stack_depth(engine, 2);
 
-    struct mq_result_t result = mq_eval(engine, "def rec(): rec(); rec()", "test", "text");
+    struct mq_result_t result = mq_eval(engine, "def rec(): 1 + rec(); rec()", "test", "text");
     assert_not_null(result.error_msg, "Should have error due to stack depth limit");
     mq_free_result(result);
 

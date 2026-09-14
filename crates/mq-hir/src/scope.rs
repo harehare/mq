@@ -20,6 +20,9 @@ pub enum ScopeKind {
     Block(SymbolId),
     Loop(SymbolId),
     MatchArm(SymbolId),
+    /// A parameter's default-value expression. Runs before the function body starts, so it is
+    /// not itself "inside" the enclosing `Function` scope (see `is_outside_function`).
+    DefaultParam(SymbolId),
 }
 
 impl Scope {
@@ -48,6 +51,7 @@ impl Scope {
             ScopeKind::Block(symbol_id) => Some(symbol_id),
             ScopeKind::Loop(symbol_id) => Some(symbol_id),
             ScopeKind::MatchArm(symbol_id) => Some(symbol_id),
+            ScopeKind::DefaultParam(symbol_id) => Some(symbol_id),
             ScopeKind::Module(_) => None,
         }
     }

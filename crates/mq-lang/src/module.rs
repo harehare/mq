@@ -68,7 +68,6 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     builtin_module_cache: Option<(TokenArena, Module)>,
     /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
     /// parsed by this loader instead of reparsing its cached source.
-    #[cfg(feature = "tarn")]
     module_ast_cache: FxHashMap<SmolStr, Module>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
@@ -135,7 +134,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             source_code: None,
             source_cache: FxHashMap::default(),
             builtin_module_cache: None,
-            #[cfg(feature = "tarn")]
             module_ast_cache: FxHashMap::default(),
             resolver,
             #[cfg(feature = "http-import")]
@@ -143,7 +141,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
-    #[cfg(feature = "tarn")]
     pub(crate) fn with_same_resolver(&self) -> Self {
         let mut loader = Self::new(self.resolver.clone());
         loader.builtin_module_cache = self.builtin_module_cache.clone();
@@ -197,7 +194,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let module = Self::classify_module(module_name, program)?;
         self.loaded_modules.alloc(module_name.into());
-        #[cfg(feature = "tarn")]
         self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
         Ok(module)
     }
@@ -207,7 +203,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .iter()
             .filter(|node| {
                 matches!(
-                    *node.expr,
+                    &node.expr,
                     ast::Expr::Include(_) | ast::Expr::Module(_, _) | ast::Expr::Import(_, _)
                 )
             })
@@ -216,13 +212,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
         let functions = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Def(..)))
+            .filter(|node| matches!(&node.expr, ast::Expr::Def(..)))
             .cloned()
             .collect::<Vec<_>>();
 
         let vars = program
             .iter()
-            .filter(|node| matches!(*node.expr, ast::Expr::Let(..)))
+            .filter(|node| matches!(&node.expr, ast::Expr::Let(..)))
             .cloned()
             .collect::<Vec<_>>();
 
@@ -240,7 +236,6 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         })
     }
 
-    #[cfg(feature = "tarn")]
     pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         let name = self.resolver.canonical_name(module_path).to_owned();
         // Already parsed by this same loader (e.g. a prelude pre-pass ran ahead of the real
@@ -417,12 +412,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             }
         };
 
-        let program = Parser::new(
-            tokens.into_iter().map(Shared::new).collect::<Vec<_>>().iter(),
-            &mut token_arena,
-            module_id,
-        )
-        .parse()?;
+        let program = Parser::new(tokens.iter(), &mut token_arena, module_id).parse()?;
 
         Ok(program)
     }
@@ -513,20 +503,20 @@ mod tests {
         functions: Vec::new(),
         modules: Vec::new(),
         vars: vec![
-            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Let(
+            Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Let(
                 ast::Pattern::Ident(IdentWithToken::new_with_token("test", Some(Shared::new(Token{
                     kind: TokenKind::Ident(SmolStr::new("test")),
                     range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                     module_id: 1.into()
                 })))),
-                Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::String("value".to_string())))})
-            ))})],
+                Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::String("value".to_string()))})
+            )})],
     }))]
     #[case::load3("def test(): 1;".to_string(), Ok(Module{
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
-            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
+            Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
             IdentWithToken::new_with_token("test", Some(Shared::new(Token{
                 kind: TokenKind::Ident(SmolStr::new("test")),
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
@@ -534,36 +524,36 @@ mod tests {
             }))),
             SmallVec::new(),
             vec![
-                Shared::new(ast::Node{token_id: 2.into(), expr: Shared::new(ast::Expr::Literal(ast::Literal::Number(1.into())))})
+                Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::Number(1.into()))})
             ]
-            ))})],
+            )})],
         vars: Vec::new(),
     }))]
     #[case::load4("def test(a, b): add(a, b);".to_string(), Ok(Module{
         name: "test".to_string(),
         modules: Vec::new(),
         functions: vec![
-            Shared::new(ast::Node{token_id: 0.into(), expr: Shared::new(ast::Expr::Def(
+            Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
                 IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
                 smallvec![
                     Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
                     Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
                 ],
                 vec![
-                    Shared::new(ast::Node{token_id: 4.into(), expr: Shared::new(ast::Expr::Call(
+                    Shared::new(ast::Node{token_id: 4.into(), expr: ast::Expr::Call(
                     IdentWithToken::new_with_token("add", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("add")), range: Range{start: Position{line: 1, column: 17}, end: Position{line: 1, column: 20}}, module_id: 1.into()}))),
                     smallvec![
                         Shared::new(ast::Node{token_id: 2.into(),
-                            expr: Shared::new(
+                            expr:
                                 ast::Expr::Ident(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 21}, end: Position{line: 1, column: 22}}, module_id: 1.into()}))))
-                                )}),
+                                }),
                         Shared::new(ast::Node{token_id: 3.into(),
-                            expr: Shared::new(
+                            expr:
                                 ast::Expr::Ident(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 24}, end: Position{line: 1, column: 25}}, module_id: 1.into()}))))
-                            )})
+                            })
                     ],
-                ))})]
-            ))})],
+                )})]
+            )})],
         vars: Vec::new(),
     }))]
     fn test_load(
@@ -629,7 +619,6 @@ mod tests {
         ));
     }
 
-    #[cfg(feature = "tarn")]
     #[test]
     fn test_load_builtin_reuses_ast_for_the_same_token_arena() {
         let token_arena = token_arena();

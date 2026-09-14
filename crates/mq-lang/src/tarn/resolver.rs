@@ -13,6 +13,10 @@ pub(crate) struct FunctionScope {
     next_block: u32,
     upvalues: Vec<(Ident, UpvalueSource)>,
     immutable: std::collections::HashSet<u16>,
+    /// Capture-free, fixed-arity function chunks bound to immutable local slots.
+    ///
+    /// Calls through these slots can bypass materializing and loading a closure.
+    static_functions: std::collections::HashMap<u16, u16>,
     pub(crate) shadowed_builtin: Option<Ident>,
 }
 
@@ -25,6 +29,7 @@ impl Default for FunctionScope {
             next_block: ROOT_BLOCK + 1,
             upvalues: Vec::new(),
             immutable: std::collections::HashSet::new(),
+            static_functions: std::collections::HashMap::new(),
             shadowed_builtin: None,
         }
     }
@@ -64,6 +69,19 @@ impl FunctionScope {
 
     pub(crate) fn unmark_immutable(&mut self, slot: u16) {
         self.immutable.remove(&slot);
+        self.static_functions.remove(&slot);
+    }
+
+    pub(crate) fn set_static_function(&mut self, slot: u16, chunk: u16) {
+        self.static_functions.insert(slot, chunk);
+    }
+
+    pub(crate) fn clear_static_function(&mut self, slot: u16) {
+        self.static_functions.remove(&slot);
+    }
+
+    pub(crate) fn static_function(&self, slot: u16) -> Option<u16> {
+        self.static_functions.get(&slot).copied()
     }
 
     /// Reuses `name`'s slot if one is currently visible (an existing loop counter, e.g.

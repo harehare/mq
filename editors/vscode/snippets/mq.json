@@ -34,6 +34,13 @@
         ],
         "description": "Run body when condition is false"
     },
+    "yield": {
+        "prefix": "yield",
+        "body": [
+            "yield: ${0:value}"
+        ],
+        "description": "Suspend the enclosing function, producing a value (makes it a generator)"
+    },
     "def": {
         "prefix": "def",
         "body": [

@@ -37,6 +37,7 @@ impl LintRule for DeeplyNested {
                 | ScopeKind::Block(sym_id)
                 | ScopeKind::Loop(sym_id)
                 | ScopeKind::MatchArm(sym_id)
+                | ScopeKind::DefaultParam(sym_id)
                 | ScopeKind::Let(sym_id) => ctx.hir.symbol(*sym_id).and_then(|s| s.source.text_range),
                 ScopeKind::Module(_) => None,
             };

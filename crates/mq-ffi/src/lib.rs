@@ -1339,7 +1339,9 @@ mod tests {
         let engine = mq_create();
         mq_set_max_call_stack_depth(engine, 2);
 
-        let code = make_c_string("def rec(): rec(); rec()");
+        // The recursive call must not be in tail position: tail calls deliberately reuse a
+        // frame, while this test verifies enforcement of the configured stack-depth limit.
+        let code = make_c_string("def rec(): 1 + rec(); | rec()");
         let input = make_c_string("test");
         let format = make_c_string("text");
         let result = unsafe { mq_eval(engine, code, input, format) };

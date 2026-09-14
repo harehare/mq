@@ -25,6 +25,7 @@ chrono = {workspace = true}
 dirs = {workspace = true}
 glob = {workspace = true}
 ignore = {workspace = true, optional = true}
+indexmap = {workspace = true}
 itertools = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["json", "obsidian"]}
@@ -66,17 +67,14 @@ web-time = {workspace = true}
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
-# Routes `Engine::eval`/`eval_compiled` through Tarn, the bytecode VM (`src/tarn.rs`),
-# instead of the tree-walking evaluator (`src/eval.rs`). Opt-in for now while Tarn is
-# validated against real usage; the tree-walker stays the default until it's dropped.
-tarn = []
 # Captures VM operand-stack snapshots at debugger statement boundaries. Intended for
-# `mq-dbg` diagnosis; disabled in regular Tarn builds to avoid snapshot allocations.
-debug-trace = ["tarn"]
+# `mq-dbg` diagnosis; disabled by default to avoid snapshot allocations.
+debug-trace = []
+# Enables execution-count profiling for Tarn bytecode instructions. This is intended for
+# development diagnostics and is deliberately excluded from normal builds.
+vm-profile = []
 cst = ["dep:ropey"]
 css-selector = ["dep:ego-tree", "dep:scraper"]
-# The tree-walker debugger is independent of Tarn. VM operand-stack tracing remains opt-in
-# through `debug-trace`, which enables Tarn for debugger frontends that need it.
 debugger = ["sync"]
 default = ["std", "html-to-markdown"]
 file-io = ["dep:ignore"]
@@ -92,6 +90,7 @@ tiktoken = ["dep:tiktoken-rs"]
 
 [dev-dependencies]
 divan = {workspace = true}
+mimalloc = {workspace = true, features = ["v3"]}
 proptest = {workspace = true}
 rstest = {workspace = true}
 scopeguard = {workspace = true}

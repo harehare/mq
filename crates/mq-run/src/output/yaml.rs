@@ -61,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_dict_value() {
-        let mut map = std::collections::BTreeMap::new();
+        let mut map = mq_lang::DictMap::default();
         map.insert(
             mq_lang::Ident::new("name"),
             RuntimeValue::String(Shared::new("Alice".to_string())),

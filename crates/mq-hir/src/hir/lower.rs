@@ -213,6 +213,9 @@ impl Hir {
             mq_lang::CstNodeKind::Break => {
                 self.add_break_expr(node, source_id, scope_id, parent);
             }
+            mq_lang::CstNodeKind::Yield => {
+                self.add_yield_expr(node, source_id, scope_id, parent);
+            }
             mq_lang::CstNodeKind::Self_
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
@@ -1166,7 +1169,7 @@ impl Hir {
                     is_variadic,
                 });
 
-                self.add_symbol(Symbol {
+                let param_symbol_id = self.add_symbol(Symbol {
                     value: Some(param_name),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
@@ -1176,10 +1179,17 @@ impl Hir {
                     insertion_order: 0,
                 });
 
-                // If has default, also analyze the default expression
+                // The default expression gets its own scope: it runs before the function body
+                // starts, so `yield` isn't valid there even though earlier params/outer names
+                // still resolve (its scope's parent is the function scope).
                 if has_default && child.children.len() >= 3 {
                     let default_expr = &child.children[2];
-                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
+                    let default_scope_id = self.add_scope(Scope::new(
+                        SourceInfo::new(Some(source_id), Some(default_expr.range())),
+                        ScopeKind::DefaultParam(param_symbol_id),
+                        Some(scope_id),
+                    ));
+                    self.add_expr(default_expr, source_id, default_scope_id, Some(symbol_id));
                 }
             });
 
@@ -1252,7 +1262,7 @@ impl Hir {
                     is_variadic,
                 });
 
-                self.add_symbol(Symbol {
+                let param_symbol_id = self.add_symbol(Symbol {
                     value: Some(param_name),
                     kind: SymbolKind::Parameter,
                     source: SourceInfo::new(Some(source_id), Some(child.range())),
@@ -1262,10 +1272,17 @@ impl Hir {
                     insertion_order: 0,
                 });
 
-                // If has default, also analyze the default expression
+                // The default expression gets its own scope: it runs before the function body
+                // starts, so `yield` isn't valid there even though earlier params/outer names
+                // still resolve (its scope's parent is the function scope).
                 if has_default && child.children.len() >= 3 {
                     let default_expr = &child.children[2];
-                    self.add_expr(default_expr, source_id, scope_id, Some(symbol_id));
+                    let default_scope_id = self.add_scope(Scope::new(
+                        SourceInfo::new(Some(source_id), Some(default_expr.range())),
+                        ScopeKind::DefaultParam(param_symbol_id),
+                        Some(scope_id),
+                    ));
+                    self.add_expr(default_expr, source_id, default_scope_id, Some(symbol_id));
                 }
             });
 
@@ -1413,6 +1430,28 @@ impl Hir {
             insertion_order: 0,
         });
         // Process break value expression (if present) as a child of this symbol.
+        for child in node.children_without_token() {
+            self.add_expr(&child, source_id, scope_id, Some(symbol_id));
+        }
+    }
+
+    /// Mirrors `add_break_expr`.
+    fn add_yield_expr(
+        &mut self,
+        node: &mq_lang::Shared<mq_lang::CstNode>,
+        source_id: SourceId,
+        scope_id: ScopeId,
+        parent: Option<SymbolId>,
+    ) {
+        let symbol_id = self.add_symbol(Symbol {
+            value: node.name(),
+            kind: SymbolKind::Keyword,
+            source: SourceInfo::new(Some(source_id), Some(node.range())),
+            scope: scope_id,
+            doc: node.comments(),
+            parent,
+            insertion_order: 0,
+        });
         for child in node.children_without_token() {
             self.add_expr(&child, source_id, scope_id, Some(symbol_id));
         }

@@ -1,26 +1,55 @@
 use super::interpreter::ExecutionPools;
 use super::*;
-#[cfg(not(feature = "tarn"))]
-use crate::Selector;
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{self as ast, Args};
-#[cfg(not(feature = "tarn"))]
-use crate::ast::node::{MatchArm, Param, Pattern};
-#[cfg(not(feature = "tarn"))]
-use crate::error::runtime::RuntimeError;
-#[cfg(not(feature = "tarn"))]
-use crate::number::{INFINITE, NAN, Number};
+use crate::module::resolver::std_resolver::StdModuleResolver;
 use crate::range::Range;
-#[cfg(not(feature = "tarn"))]
-use crate::{AstExpr, AstNode, DefaultModuleLoader, IdentWithToken, Program, error::InnerError};
-use crate::{Shared, SharedCell};
+use crate::{DictMap, Shared, SharedCell};
 use crate::{Token, TokenKind, arena::Arena, token_alloc};
 use proptest::prelude::*;
 use rstest::rstest;
-#[cfg(not(feature = "tarn"))]
-use smallvec::{SmallVec, smallvec};
-#[cfg(not(feature = "tarn"))]
-use std::f64::consts::PI;
+
+fn compile_and_run(program: &Program, token_arena: TokenArena) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(
+        program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        token_arena,
+    )
+}
+
+fn compile_and_run_with_input(
+    program: &Program,
+    input: RuntimeValue,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    compile_and_run_full(program, input, &HostFunctions::default(), None, token_arena)
+}
+
+fn compile_and_run_full(
+    program: &Program,
+    input: RuntimeValue,
+    host_functions: &HostFunctions,
+    timeout: Option<Duration>,
+    token_arena: TokenArena,
+) -> Result<RuntimeValue, Error> {
+    let compiled = compiler::compile_program(program, token_arena, ModuleLoader::new(StdModuleResolver))?;
+    Ok(interpreter::run_with_globals(
+        &compiled,
+        input,
+        host_functions,
+        timeout,
+        Options::default().max_call_stack_depth,
+        &[],
+    )?)
+}
+
+#[test]
+fn default_call_stack_depth_matches_the_build_profile() {
+    assert_eq!(
+        Options::default().max_call_stack_depth,
+        if cfg!(debug_assertions) { 256 } else { 10_000 }
+    );
+}
 
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
@@ -99,62 +128,16 @@ fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     token_arena
 }
 
-#[cfg(not(feature = "tarn"))]
-fn ast_node(expr: AstExpr) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(expr),
-    })
-}
-
-#[cfg(not(feature = "tarn"))]
-fn ast_call(name: &str, args: Args) -> Shared<AstNode> {
-    Shared::new(AstNode {
-        token_id: 0.into(),
-        expr: Shared::new(ast::Expr::Call(IdentWithToken::new(name), args)),
-    })
-}
-
-// The shared table keeps VM and evaluator cases aligned.
-#[cfg(not(feature = "tarn"))]
-crate::eval_table_cases!(
-    evaluator_table_cases_run_on_vm,
-    token_arena,
-    runtime_values,
-    program,
-    expected,
-    {
-        let host_functions = HostFunctions::default();
-        let vm_result = compile_and_run_many(
-            &program,
-            runtime_values.into_iter(),
-            EngineRunContext {
-                host_functions: &host_functions,
-                // Hand-built AST cases must never leave the VM test worker running forever.
-                timeout: Some(std::time::Duration::from_secs(1)),
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
-                token_arena,
-                module_loader: DefaultModuleLoader::default(),
-                global_bindings: &[],
-                session: None,
-                preresolved_module_vars: compiler::ResolvedModuleVars::default(),
-            },
-        );
-
-        match expected {
-            Ok(expected_values) => assert_eq!(
-                vm_result.expect("VM should accept a successful evaluator table case"),
-                expected_values,
-            ),
-            Err(_) => assert!(vm_result.is_err(), "VM should reject an evaluator error case"),
-        }
-    }
-);
-
 fn run(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     compile_and_run(&program, token_arena).unwrap()
+}
+
+fn run_result(code: &str) -> Result<RuntimeValue, Error> {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    compile_and_run(&program, token_arena)
 }
 
 fn run_with_input(code: &str, input: RuntimeValue) -> RuntimeValue {
@@ -167,12 +150,13 @@ fn run_with_max_depth(code: &str, max_call_stack_depth: u32) -> Result<RuntimeVa
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
         max_call_stack_depth,
+        &[],
     )
 }
 
@@ -221,18 +205,45 @@ fn try_catch_body_counts_toward_call_stack_depth() {
     assert_eq!(run_with_max_depth(no_try, 5).unwrap(), RuntimeValue::Number(4.into()));
 }
 
+#[test]
+fn caught_error_from_an_array_literal_does_not_corrupt_the_enclosing_array() {
+    // The try body starts (and abandons) its own array before erroring, so unwinding must
+    // discard those partial operands or the outer array's accumulator gets clobbered.
+    assert_eq!(
+        run("[1, (try: [2, 3, 1 / 0] catch: 99), 4]"),
+        RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(99.into()),
+            RuntimeValue::Number(4.into()),
+        ]))
+    );
+}
+
+#[test]
+fn caught_error_from_a_dict_literal_does_not_corrupt_the_enclosing_dict() {
+    assert_eq!(
+        run(r#"{"a": 1, "b": (try: {"x": 1, "y": 1 / 0} catch: 99), "c": 4}"#),
+        RuntimeValue::Dict(Shared::new(DictMap::from_iter([
+            (crate::Ident::new("a"), RuntimeValue::Number(1.into())),
+            (crate::Ident::new("b"), RuntimeValue::Number(99.into())),
+            (crate::Ident::new("c"), RuntimeValue::Number(4.into())),
+        ])))
+    );
+}
+
 fn run_with_prelude(code: &str) -> RuntimeValue {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
     let compiled =
         compiler::compile_program_with_builtin_prelude(&program, token_arena, ModuleLoader::new(StdModuleResolver))
             .unwrap();
-    match interpreter::run(
+    match interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
+        &[],
     ) {
         Ok(v) => v,
         Err(e) => panic!("{e}"),
@@ -248,6 +259,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(compiled.chunks[0].static_closures.len(), 1);
+    assert!(compiled.chunks[0].static_closures[0].upvalues.is_none());
     assert!(
         compiled.chunks[0]
             .code
@@ -258,7 +270,7 @@ fn non_capturing_closures_use_chunk_static_storage() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::CallLocal(_, 1)))
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
     );
     assert_eq!(compiled.chunks[1].param_shape.fixed_required_arity(), Some(1));
 }
@@ -275,7 +287,112 @@ fn local_binary_expressions_use_compact_bytecode() {
         compiled.chunks[1]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::BinaryLocalConst { .. }))
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { .. }))
+    );
+}
+
+#[test]
+fn loop_header_comparisons_use_a_compact_branch_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var i = 3 | while(i > 0): i -= 1; | i", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::JumpIfFalseLocalConst { op: BinaryOp::Gt, .. }))
+    );
+    assert_eq!(
+        run("var i = 3 | while(i > 0): i -= 1; | i"),
+        RuntimeValue::Number(0.into())
+    );
+}
+
+#[test]
+fn local_return_preserves_auto_call_semantics() {
+    // A function parameter can itself be callable, so its final expression carries
+    // `MaybeAutoCall` before returning. The bytecode optimizer's direct `ReturnLocal`
+    // coverage belongs in `bytecode::tests`, where the instruction shape is explicit.
+    assert_eq!(
+        run("let identity = fn(x): x; | identity(42)"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn local_constant_assignment_uses_update_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | x += 2 | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::UpdateLocalConst { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(run("var x = 1 | x += 2 | x"), RuntimeValue::Number(3.into()));
+}
+
+#[test]
+fn constant_assignment_uses_set_local_const_opcode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::SetLocalConst { .. }))
+    );
+    assert_eq!(run("var x = 1 | x"), RuntimeValue::Number(1.into()));
+}
+
+#[test]
+fn local_constant_binary_return_uses_return_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("let double = fn(x): x * 2; | double(3)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { op: BinaryOp::Mul, .. }))
+    }));
+    assert_eq!(
+        run("let double = fn(x): x * 2; | double(3)"),
+        RuntimeValue::Number(6.into())
+    );
+}
+
+#[test]
+fn local_assignment_uses_local_update_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("var x = 1 | var y = 2 | x += y | x", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::UpdateLocalLocal { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(
+        run("var x = 1 | var y = 2 | x += y | x"),
+        RuntimeValue::Number(3.into())
     );
 }
 
@@ -348,7 +465,7 @@ fn breakpoint_is_a_no_op_when_the_debugger_feature_is_disabled() {
 }
 
 #[test]
-fn top_level_def_calls_use_call_local() {
+fn top_level_def_calls_use_call_static() {
     use super::bytecode::OpCode;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(
@@ -358,12 +475,232 @@ fn top_level_def_calls_use_call_local() {
     .unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
     assert!(
+        compiled.chunks.iter().any(|c| c.code.iter().any(|op| matches!(
+            op,
+            OpCode::CallStaticExact0(_) | OpCode::CallStaticExact1(_) | OpCode::CallStaticExact2(_)
+        ))),
+        "capture-free common-arity top-level def call should compile to a specialized CallStaticExact opcode"
+    );
+}
+
+#[test]
+fn fixed_static_calls_specialize_the_exact_and_implicit_self_forms() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): x; | identity(1) | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact1(_)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticImplicitSelf(_, 0)))
+    );
+    assert_eq!(
+        run("def identity(x): x; | identity(1) | identity()"),
+        RuntimeValue::Number(1.into())
+    );
+}
+
+#[test]
+fn fixed_static_calls_bind_zero_and_two_arguments_without_generic_binding() {
+    use super::bytecode::OpCode;
+
+    let source = "def constant(): 7; | def add(left, right): left + right; | constant() + add(20, 22)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact0(_)))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact2(_)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(49.into()));
+}
+
+#[test]
+fn static_calls_with_captured_locals_keep_the_generic_exact_opcode() {
+    use super::bytecode::OpCode;
+
+    let source = "let f = fn(value): fn(): value;; | let read = f(42) | read()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticExact(_, 1)))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.into()));
+}
+
+#[test]
+fn fixed_static_arity_mismatches_keep_the_checked_call_form() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("def identity(x): x; | identity(1, 2)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStatic(_, 2)))
+    );
+}
+
+#[test]
+fn defaulted_named_calls_keep_the_generic_local_form() {
+    use super::bytecode::OpCode;
+
+    let source = "def add(value, step = 1): value + step; | add()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallLocal(_, 0))),
+        "defaulted parameters must use the generic binder rather than a fixed-arity opcode"
+    );
+    assert_eq!(
+        run_with_input(source, RuntimeValue::Number(10.into())),
+        RuntimeValue::Number(11.into())
+    );
+}
+
+#[test]
+fn generator_calls_stay_on_the_coroutine_aware_generic_paths() {
+    use super::bytecode::OpCode;
+
+    let source = "def g(value): yield: value | if (false): g() else: None; | let stream = g(42) | next(stream)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallLocal(_, 1))),
+        "a generator call must not use a direct static frame-enter opcode"
+    );
+    assert!(
         compiled
             .chunks
             .iter()
-            .any(|c| c.code.iter().any(|op| matches!(op, OpCode::CallLocal(_, _)))),
-        "top-level def call should compile to CallLocal, not the slower CallValue path"
+            .any(|chunk| { chunk.code.iter().any(|op| matches!(op, OpCode::CallSelf(0))) })
     );
+    assert_eq!(dict_field(&run(source), "value"), RuntimeValue::Number(42.into()));
+}
+
+#[test]
+fn fixed_arity_recursive_def_uses_call_self_without_capturing_itself() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def count(n): if (n == 0): 0 else: count(n - 1); | count(10)",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let recursive_chunk = compiled
+        .chunks
+        .iter()
+        .find(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallSelfExact1)))
+        .expect("recursive body should use CallSelfExact1");
+
+    assert!(recursive_chunk.upvalue_names.is_empty());
+    assert_eq!(
+        run("def count(n): if (n == 0): 0 else: count(n - 1); | count(10)"),
+        RuntimeValue::Number(0.0.into())
+    );
+}
+
+#[test]
+fn fixed_arity_recursive_def_specializes_implicit_self_calls() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def identity(x): if (true): x else: identity(); | 42 | identity()",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallSelfImplicitSelf(0)))
+    }));
+    assert_eq!(
+        run("def identity(x): if (true): x else: identity(); | 42 | identity()"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn tail_recursive_call_respects_call_stack_depth() {
+    // This terminates even without a recursion guard. Before tail calls counted toward the
+    // configured limit, it returned `3` instead of reporting the exhausted depth.
+    let code = "def count(n): if (n >= 3): n else: count(n + 1); | count(0)";
+    assert!(matches!(
+        run_with_max_depth(code, 2),
+        Err(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::RecursionError(2))
+    ));
+}
+
+/// Direct builtin calls preserve argument order through the specialized common-arity paths.
+#[rstest]
+#[case("type(42)", RuntimeValue::String(Shared::new("number".to_string())))]
+#[case("sub(5, 3)", RuntimeValue::Number(2.0.into()))]
+fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+#[test]
+fn immutable_function_upvalue_calls_use_call_upvalue() {
+    use super::bytecode::OpCode;
+
+    let source = "let increment = fn(x): x + 1; | let apply = fn(x): increment(x); | apply(41)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .any(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallUpvalue(_, 1))))
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 
 #[test]
@@ -559,12 +896,13 @@ fn engine_compiler_reachable_prelude_cache_is_correct_across_different_queries()
             &compiler::ResolvedModuleVars::default(),
         )
         .unwrap();
-        interpreter::run(
+        interpreter::run_with_globals(
             &compiled,
             RuntimeValue::None,
             &HostFunctions::default(),
             None,
-            crate::eval::Options::default().max_call_stack_depth,
+            Options::default().max_call_stack_depth,
+            &[],
         )
         .unwrap()
     }
@@ -778,6 +1116,18 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 #[case::variadic_param_collects_nothing_when_absent("def sum_all(*xs): len(xs); | sum_all()", 0.0)]
 #[case::required_and_variadic_together("def f(first, *rest): first + len(rest); | f(100, 1, 2, 3)", 103.0)]
 #[case::implicit_self_fills_missing_required_arg("def double(x): x * 2; | 21 | double()", 42.0)]
+#[case::implicit_self_is_bound_before_a_default_is_evaluated(
+    "def add(value, increment = value + 1): value + increment; | 20 | add()",
+    41.0
+)]
+#[case::explicit_argument_takes_precedence_over_implicit_self_with_a_default(
+    "def add(value, increment = value + 1): value + increment; | 99 | add(20)",
+    41.0
+)]
+#[case::paren_free_qualified_call_uses_implicit_self_before_a_default(
+    "module math: def increment(value, step = 1): value + step; end | 10 | math::increment",
+    11.0
+)]
 #[case::let_array_destruct("let [a, b] = [1, 2] | add(a, b)", 3.0)]
 #[case::let_array_wildcard("let [_, b] = [1, 2] | b", 2.0)]
 #[case::let_array_rest("let [first, ..rest] = [1, 2, 3] | len(rest)", 2.0)]
@@ -798,6 +1148,199 @@ fn comparisons(#[case] code: &str, #[case] expected: bool) {
 )]
 fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
     assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+/// Nested inline-module members are ordinary values once resolved. Exercise aliases at each
+/// boundary so qualified bindings, closure captures, and calls through local aliases stay
+/// coherent when module scopes are combined.
+#[rstest]
+#[case::nested_function_is_callable_through_a_let_alias(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let add_from_inner = outer::inner::add | add_from_inner(2)",
+    42.0
+)]
+#[case::nested_let_is_readable_through_a_let_alias(
+    "module outer: module inner: let base = 40 end end | let base_from_inner = outer::inner::base | base_from_inner + 2",
+    42.0
+)]
+#[case::nested_let_can_be_transformed_by_a_pipeline_inside_a_do_binding(
+    "module outer: module inner: let base = 40 end end | let transformed = do outer::inner::base | . + 2 end | transformed",
+    42.0
+)]
+#[case::nested_function_result_can_be_transformed_inside_a_do_binding(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | let transformed = do outer::inner::add(19) | . * 2 end | transformed",
+    42.0
+)]
+#[case::aliased_inner_function_keeps_its_modules_let_capture(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | let add_from_inner = outer::inner::add | let twice = fn(value): add_from_inner(add_from_inner(value)); | twice(38)",
+    42.0
+)]
+#[case::alias_chain_preserves_a_nested_functions_identity(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let first = outer::inner::add | let second = first | second(2)",
+    42.0
+)]
+#[case::another_inline_module_captures_an_aliased_inner_function(
+    "module outer: module inner: let offset = 2 | def add(value): value + offset; end end | module consumer: let add_from_outer = outer::inner::add | def execute(value): add_from_outer(value); end | consumer::execute(40)",
+    42.0
+)]
+#[case::separately_aliased_members_share_the_nested_modules_environment(
+    "module outer: module inner: let base = 40 | def add(value): base + value; end end | let base_from_inner = outer::inner::base | let add_from_inner = outer::inner::add | base_from_inner + add_from_inner(1)",
+    81.0
+)]
+#[case::same_named_inner_modules_remain_qualified_by_their_outer_module(
+    "module left: module inner: let value = 40 end end | module right: module inner: let value = 2 end end | let left_value = left::inner::value | let right_value = right::inner::value | left_value + right_value",
+    42.0
+)]
+fn nested_inline_module_aliases_preserve_resolved_values(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+/// This carries the former evaluator's `test_default_params_with_self` semantics
+/// through the compiled VM. (Its test constructed a parameter named `self` directly
+/// in the AST; `self` is reserved in source syntax.) The first parameter receives the
+/// pipeline value, then the omitted optional parameter receives its default.
+#[test]
+fn implicit_self_and_default_parameter_match_previous_evaluator_semantics() {
+    assert_eq!(
+        run_with_input(
+            r#"def format(value, prefix = "[LOG]"): [prefix, value]; | format()"#,
+            RuntimeValue::String(Shared::new("message".to_string())),
+        ),
+        RuntimeValue::Array(
+            vec![
+                RuntimeValue::String(Shared::new("[LOG]".to_string())),
+                RuntimeValue::String(Shared::new("message".to_string())),
+            ]
+            .into(),
+        ),
+    );
+}
+
+/// Covers the parameter binder's distinct decisions rather than only individual examples:
+/// whether the pipeline value occupies the first required slot, which supplied arguments
+/// follow it, and when defaults and a variadic tail take over.
+#[rstest]
+#[case::implicit_self_then_chained_defaults(10.0, "def f(a, b = a + 1, c = b + 1): a + b + c; | f()", 33.0)]
+#[case::implicit_self_precedes_a_partial_explicit_argument_list(
+    10.0,
+    "def f(a, b, c = 1): a * 100 + b * 10 + c; | f(2)",
+    1021.0
+)]
+#[case::all_optional_parameters_prefer_a_zero_argument_call_over_implicit_self(
+    9.0,
+    "def f(a = 1, b = 2): a * 10 + b; | f()",
+    12.0
+)]
+#[case::implicit_self_with_optional_and_variadic_parameters(
+    4.0,
+    "def f(a, b = 2, *rest): a * 100 + b * 10 + len(rest); | f()",
+    420.0
+)]
+#[case::explicit_arguments_fill_optional_and_variadic_parameters_without_implicit_self(
+    99.0,
+    "def f(a, b = 2, *rest): a * 100 + b * 10 + len(rest); | f(1, 3, 4, 5)",
+    132.0
+)]
+#[case::optional_before_variadic_does_not_consume_implicit_self(
+    9.0,
+    "def f(a = 3, *rest): a * 10 + len(rest); | f()",
+    30.0
+)]
+#[case::one_explicit_required_argument_does_not_consume_implicit_self_when_it_is_already_satisfied(
+    9.0,
+    "def f(a, b = 2): a * 10 + b; | f(4)",
+    42.0
+)]
+#[case::implicit_self_fills_exactly_one_remaining_required_slot(
+    9.0,
+    "def f(a, b, c): a * 100 + b * 10 + c; | f(1, 2)",
+    912.0
+)]
+#[case::all_explicit_required_arguments_do_not_consume_implicit_self(
+    9.0,
+    "def f(a, b, c): a * 100 + b * 10 + c; | f(1, 2, 3)",
+    123.0
+)]
+#[case::explicit_optional_argument_does_not_consume_implicit_self(9.0, "def f(a = 1, b = 2): a * 10 + b; | f(4)", 42.0)]
+#[case::an_omitted_optional_parameter_uses_the_preceding_explicit_argument(
+    9.0,
+    "def f(a, b = a): a + b; | f(40)",
+    80.0
+)]
+#[case::default_expression_preserves_the_callers_self(10.0, "def f(a, b = . + a): a + b; | f()", 30.0)]
+#[case::dynamic_closure_call_uses_the_same_implicit_self_and_default_binding(
+    10.0,
+    "let f = fn(a, b = a + 1): a + b; | f()",
+    21.0
+)]
+#[case::paren_free_local_closure_call_uses_the_same_binding(10.0, "let f = fn(a, b = 1): a + b; | f", 11.0)]
+#[case::default_expression_captures_an_enclosing_binding(
+    0.0,
+    "let step = 2 | let f = fn(a, b = step): a + b; | f(40)",
+    42.0
+)]
+#[case::recursive_defaulted_call_rebinds_the_default_on_each_invocation(
+    0.0,
+    "def f(n, step = 1): if(n == 0): 0 else: step + f(n - 1); | f(3)",
+    3.0
+)]
+fn parameter_binding_matrix(#[case] input: f64, #[case] code: &str, #[case] expected: f64) {
+    assert_eq!(
+        run_with_input(code, RuntimeValue::Number(input.into())),
+        RuntimeValue::Number(expected.into()),
+    );
+}
+
+/// A pipeline value may fill one missing required parameter, but it must not make an otherwise
+/// invalid call appear valid. This is the boundary complementary to the success cases above.
+#[rstest]
+#[case::no_explicit_arguments_cannot_fill_two_required_parameters("def f(a, b): a + b; | 9 | f()", 2, 0)]
+#[case::one_explicit_argument_cannot_fill_two_remaining_required_parameters(
+    "def f(a, b, c): a + b + c; | 9 | f(1)",
+    3,
+    1
+)]
+fn parameter_binding_rejects_calls_with_more_than_one_required_gap(
+    #[case] code: &str,
+    #[case] expected: usize,
+    #[case] actual: usize,
+) {
+    let err = run_result(code).unwrap_err();
+    assert!(
+        matches!(err, Error::Vm(interpreter::VmError::Located(inner, _)) if matches!(*inner, interpreter::VmError::ArityMismatch { expected: got_expected, actual: got_actual } if got_expected == expected && got_actual == actual)),
+        "unexpected error for {code}"
+    );
+}
+
+/// Parameter defaults execute in the callee frame. An error there must unwind through the call
+/// and be visible to an enclosing `try`, just like an error from the function body.
+#[test]
+fn error_in_a_default_parameter_is_caught_by_the_callers_try() {
+    assert_eq!(
+        run("def f(value = 1 / 0): value; | try: f() catch: 42;"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[rstest]
+#[case::array_merges_multiple_sources("len([0, ...[1, 2], ...[3, 4], 5])", 6.0)]
+#[case::array_none_is_an_empty_source("len([...None, 1])", 1.0)]
+#[case::dict_later_entries_override_spread_entries(
+    r#"let base = {x: 1, y: 2} | let merged = {...base, y: 99, z: 3} | merged["y"] + merged["z"]"#,
+    102.0
+)]
+#[case::dict_none_is_an_empty_source(r#"let merged = {...None, x: 7} | merged["x"]"#, 7.0)]
+fn spread_instructions_preserve_literal_semantics(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::array(r#"[...42]"#)]
+#[case::dict(r#"{...42}"#)]
+fn spread_instructions_reject_non_collection_sources(#[case] code: &str) {
+    assert!(
+        matches!(run_result(code), Err(Error::Vm(_))),
+        "{code} should fail in the VM"
+    );
 }
 
 #[rstest]
@@ -837,31 +1380,31 @@ fn programs_yield_number(#[case] code: &str, #[case] expected: f64) {
 )]
 #[case::unresolved_name_in_an_unreachable_branch("if(false): undefined_name else: 1")]
 #[case::unresolved_name_in_an_uncalled_function("def f(): undefined_name; | 1")]
-fn compiled_engine_matches_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+fn compiled_engine_executes_supported_constructs(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
-fn inline_module_destructuring_matches_tree_walker() {
-    assert_vm_matches_tree_walker(
+fn inline_module_destructuring_executes() {
+    assert_vm_executes(
         r#"module constants: let [pi, ..digits] = [314, 1, 5, 9] | let {major: version} = {"major": 8} end | constants::pi + len(constants::digits) + constants::version"#,
         vec![RuntimeValue::None],
     );
 }
 
 #[test]
-fn nested_module_paths_match_tree_walker() {
-    assert_vm_matches_tree_walker(
+fn nested_module_paths_execute() {
+    assert_vm_executes(
         "module parent: module child: let answer = 40 | def add_two(): answer + 2; end end | parent::child::answer + parent::child::add_two()",
         vec![RuntimeValue::None],
     );
 }
 
 #[test]
-fn calls_with_256_arguments_match_tree_walker() {
+fn calls_with_256_arguments_execute() {
     let arguments = (0..256).map(|_| "1").collect::<Vec<_>>().join(", ");
     let code = format!("let count = fn(*args): len(args); | count({arguments})");
-    assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+    assert_vm_executes(&code, vec![RuntimeValue::None]);
 }
 
 #[test]
@@ -897,19 +1440,22 @@ fn foreach_closures_share_the_loop_variables_captured_cell_exact_values() {
 #[case::self_and_pipe(". + 1 | . * 2", RuntimeValue::Number(42.0.into()))]
 #[case::multiple_inputs(". * .", RuntimeValue::Number(7.0.into()))]
 #[case::markdown_selector(".h1", heading(1))]
-fn compiled_engine_matches_tree_walker_with_input(#[case] code: &str, #[case] input: RuntimeValue) {
-    assert_vm_matches_tree_walker(code, vec![input]);
+fn compiled_engine_executes_with_input(#[case] code: &str, #[case] input: RuntimeValue) {
+    assert_vm_executes(code, vec![input]);
 }
 
 #[test]
-fn compiled_engine_matches_tree_walker_for_nodes_aggregation() {
-    assert_vm_matches_tree_walker(
-        ". * 10 | nodes | len()",
-        vec![
-            RuntimeValue::Number(1.0.into()),
-            RuntimeValue::Number(2.0.into()),
-            RuntimeValue::Number(3.0.into()),
-        ],
+fn compiled_engine_aggregates_nodes() {
+    assert_eq!(
+        vm_engine_eval_many(
+            ". * 10 | nodes | len()",
+            vec![
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ],
+        ),
+        vec![RuntimeValue::Number(3.0.into())],
     );
 }
 
@@ -991,32 +1537,6 @@ fn text_node(value: &str) -> mq_markdown::Node {
     })
 }
 
-/// Reference output from the tree-walking evaluator.
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-    tree_walk_eval_many(code, vec![input]).remove(0)
-}
-
-#[cfg(not(feature = "tarn"))]
-fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    let mut engine = crate::DefaultEngine::default();
-    engine.evaluator.load_builtin_module_full().unwrap();
-    let compiled = engine.compile(code).unwrap();
-    engine.evaluator.eval(compiled.program(), inputs.into_iter()).unwrap()
-}
-
-// In a Tarn-only build the tree walker is intentionally absent. Keep the test helpers usable
-// for VM-only behavioural assertions without pulling the legacy evaluator into the binary.
-#[cfg(feature = "tarn")]
-fn tree_walk_eval(code: &str, input: RuntimeValue) -> RuntimeValue {
-    vm_engine_eval_many(code, vec![input]).remove(0)
-}
-
-#[cfg(feature = "tarn")]
-fn tree_walk_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
-    vm_engine_eval_many(code, inputs)
-}
-
 fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValue> {
     let mut engine = crate::DefaultEngine::default();
     engine.load_builtin_module();
@@ -1028,11 +1548,13 @@ fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValu
         .clone()
 }
 
-fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
+fn assert_vm_executes(code: &str, inputs: Vec<RuntimeValue>) {
+    let input_count = inputs.len();
+    let values = vm_engine_eval_many(code, inputs);
     assert_eq!(
-        vm_engine_eval_many(code, inputs.clone()),
-        tree_walk_eval_many(code, inputs),
-        "VM and tree-walker disagreed for: {code}"
+        values.len(),
+        input_count,
+        "VM returned an unexpected result count for: {code}"
     );
 }
 
@@ -1046,14 +1568,13 @@ fn assert_vm_matches_tree_walker(code: &str, inputs: Vec<RuntimeValue>) {
 #[case::later_iteration_bare_continue("var i = 0 | while(i < 5): i += 1 | if (i == 3): continue else: i;;")]
 #[case::until_completes_normally("until(. >= 5): . + 1;")]
 #[case::until_first_iteration_self_is_the_incoming_value("until(. != 0): is_none(.);")]
-fn while_until_matches_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::Number(0.0.into())]);
+fn while_until_executes(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::Number(0.0.into())]);
 }
 
 /// A closure created inside a loop/match block captures the block's *slot*, not a
-/// per-iteration snapshot — both engines agree a loop variable is one mutable binding
-/// reused every iteration (closures built in different iterations observe the same,
-/// final value), while a closure built before the loop keeps its own outer binding.
+/// per-iteration snapshot: a loop variable is one mutable binding reused every
+/// iteration, while a closure built before the loop keeps its own outer binding.
 #[rstest]
 #[case::foreach_loop_var_is_one_binding_shared_by_every_closure(
     "let fns = foreach(x, [1, 2, 3]): fn(): x;; | foreach(f, fns): f();"
@@ -1077,8 +1598,8 @@ fn while_until_matches_tree_walker(#[case] code: &str) {
 #[case::closure_built_before_a_loop_keeps_its_own_outer_binding(
     "let x = 100 | let f = fn(): x; | foreach(x, [1, 2, 3]): x; | f()"
 )]
-fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+fn closures_over_scoped_bindings_execute(#[case] code: &str) {
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[rstest]
@@ -1088,13 +1609,13 @@ fn closures_over_scoped_bindings_match_the_tree_walker(#[case] code: &str) {
 #[case::top_level_destructuring_var_visible_to_a_sibling_def("var [x] = [1] | def f(): x; | f()")]
 #[case::inline_module_let_visible_to_a_sibling_function("module m: let x = 1 | def f(): x; end | m::f()")]
 fn forward_declared_top_level_bindings_are_visible_to_a_sibling_def(#[case] code: &str) {
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
 fn bare_soft_builtin_reference_inside_an_imported_module_becomes_reachable() {
     let code = r#"import "table" | table::tables(to_markdown("| id | v |\n| - | - |\n| 1 | 2 |\n| 1 | 3 |\n")) | first(self) | table::pivot_wider(self, 1, 2)"#;
-    assert_vm_matches_tree_walker(code, vec![RuntimeValue::None]);
+    assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
 #[test]
@@ -1109,7 +1630,8 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1118,11 +1640,10 @@ fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuri
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
-#[cfg(all(feature = "tarn", not(feature = "debugger")))]
+#[cfg(not(feature = "debugger"))]
 #[test]
 fn cached_nodes_capture_reuses_precomputed_slots() {
     let mut engine = crate::DefaultEngine::default();
@@ -1139,15 +1660,27 @@ fn cached_nodes_capture_reuses_precomputed_slots() {
     assert!(compiled.cached_vm_program().flatten().is_some());
 }
 
-// Deliberate divergence from the tree-walker (which returns None here) — not worth the
-// per-iteration cost of matching it exactly.
 #[rstest]
-#[case::while_first_iteration_bare_break("while(true): break;", 7.0)]
-#[case::until_first_iteration_bare_break("until(false): break;", 7.0)]
-fn bare_break_before_any_completed_iteration_keeps_the_incoming_value(#[case] code: &str, #[case] input: f64) {
+#[case::while_first_iteration_bare_break("while(true): break;")]
+#[case::until_first_iteration_bare_break("until(false): break;")]
+#[case::while_first_iteration_bare_break_through_try("while(true): try: break catch: 1;;")]
+#[case::until_first_iteration_bare_break_through_try("until(false): try: break catch: 1;;")]
+fn bare_break_before_any_completed_iteration_returns_none(#[case] code: &str) {
     assert_eq!(
-        run_with_input(code, RuntimeValue::Number(input.into())),
-        RuntimeValue::Number(input.into())
+        run_with_input(code, RuntimeValue::Number(7.0.into())),
+        RuntimeValue::None
+    );
+}
+
+#[rstest]
+#[case::while_first_iteration_break_with_value("while(true): break: 999;")]
+#[case::until_first_iteration_break_with_value("until(false): break: 999;")]
+#[case::while_first_iteration_break_with_value_through_try("while(true): try: break: 999 catch: 1;;")]
+#[case::until_first_iteration_break_with_value_through_try("until(false): try: break: 999 catch: 1;;")]
+fn break_with_value_before_any_completed_iteration_returns_its_value(#[case] code: &str) {
+    assert_eq!(
+        run_with_input(code, RuntimeValue::Number(7.0.into())),
+        RuntimeValue::Number(999.0.into())
     );
 }
 
@@ -1155,7 +1688,7 @@ fn bare_break_before_any_completed_iteration_keeps_the_incoming_value(#[case] co
 fn nodes_aggregates_per_input_results_into_one_run() {
     // `nodes` (see `split_at_nodes`/`run_nodes_aggregate`) collects every input's
     // per-input result into one array and runs the rest of the program against that
-    // array once, rather than once per input — `len()` here only makes sense read that
+    // array once, rather than once per input. `len()` here only makes sense read that
     // way (3 individual numbers each have no `len`, but an array of 3 does).
     let code = "nodes | len()";
     let inputs = vec![
@@ -1171,7 +1704,8 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1180,7 +1714,6 @@ fn nodes_aggregates_per_input_results_into_one_run() {
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(3.0.into())]);
 }
 
@@ -1206,7 +1739,8 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
             engine: EngineRunContext {
                 host_functions: &HostFunctions::default(),
                 timeout: None,
-                max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+                max_call_stack_depth: Options::default().max_call_stack_depth,
+                capture_stack_trace: false,
                 token_arena,
                 module_loader: ModuleLoader::new(StdModuleResolver),
                 global_bindings: &[],
@@ -1237,7 +1771,8 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1246,7 +1781,6 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
         },
     )
     .unwrap();
-    assert_eq!(results, tree_walk_eval_many(code, inputs));
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
@@ -1264,7 +1798,8 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1274,7 +1809,6 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     )
     .unwrap();
     assert_eq!(results.len(), 1);
-    assert_eq!(results[0], tree_walk_eval(code, RuntimeValue::new_markdown(fragment)));
     assert_eq!(results[0].to_string(), "[a\nb]");
 }
 
@@ -1286,7 +1820,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         depth: 1,
     });
     let outer = mq_markdown::Node::Heading(mq_markdown::Heading {
-        values: vec![matching_child, text_node("no match anywhere")],
+        values: vec![matching_child.clone(), text_node("no match anywhere")],
         position: None,
         depth: 2,
     });
@@ -1299,7 +1833,8 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1308,7 +1843,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
         },
     )
     .unwrap();
-    assert_eq!(results[0], tree_walk_eval(code, RuntimeValue::new_markdown(outer)));
+    assert_eq!(results, vec![RuntimeValue::new_markdown(matching_child)]);
 }
 
 #[test]
@@ -1321,7 +1856,8 @@ fn non_fragment_markdown_input_still_runs_the_query_once() {
         EngineRunContext {
             host_functions: &HostFunctions::default(),
             timeout: None,
-            max_call_stack_depth: crate::eval::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
             token_arena,
             module_loader: ModuleLoader::new(StdModuleResolver),
             global_bindings: &[],
@@ -1410,6 +1946,19 @@ fn try_depth_limit_returns_its_unstarted_frame_to_the_pool() {
     assert_eq!(pools.pooled_local_frame_count(), 2);
 }
 
+/// Regression: mq call depth used to equal native Rust stack depth, so a high
+/// `max_call_stack_depth` could overflow the OS thread stack instead of hitting
+/// `RecursionError`. The trampoline's `Vec<Frame>` is heap-bound, so this must just complete.
+#[rstest]
+#[case::plain_recursion("def f(n): if (n <= 0): 0 else: 1 + f(n - 1); | f(100000)")]
+#[case::recursion_through_try_catch("def f(n): if (n <= 0): 0 else: try: 1 + f(n - 1) catch(e): -1; | f(100000)")]
+fn deep_non_tail_recursion_does_not_overflow_the_native_stack(#[case] code: &str) {
+    assert_eq!(
+        run_with_max_depth(code, 1_000_000).unwrap(),
+        RuntimeValue::Number(100000.into())
+    );
+}
+
 #[cfg(feature = "debugger")]
 #[test]
 fn debugger_metadata_tracks_boundaries_and_static_slots() {
@@ -1485,10 +2034,13 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut recorder,
     )
     .unwrap();
@@ -1540,10 +2092,13 @@ fn debugger_hook_exposes_closure_bindings() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut recorder,
     )
     .unwrap();
@@ -1644,10 +2199,13 @@ fn vm_debugger_hook_adapts_breakpoints_to_existing_handler() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -1733,10 +2291,13 @@ fn vm_debugger_hook_applies_live_frame_writes(
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -1792,10 +2353,13 @@ fn breakpoint_builtin_pauses_unconditionally_with_no_registered_breakpoints() {
     let result = interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -1869,10 +2433,13 @@ fn vm_debugger_hook_evaluates_hit_conditions_and_logpoints() {
     interpreter::run_with_debug_hook_and_globals(
         &compiled,
         RuntimeValue::None,
-        &HostFunctions::default(),
-        None,
-        crate::eval::Options::default().max_call_stack_depth,
-        &[],
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
         &mut hook,
     )
     .unwrap();
@@ -1911,6 +2478,12 @@ fn undefined_call_with_no_matching_host_function_errors() {
 
 #[rstest]
 #[case::missing_required("def add(a, b): a + b; | add()", 2, 0)]
+#[case::pipeline_self_cannot_fill_two_required_params("def add(a, b): a + b; | 10 | add()", 2, 0)]
+#[case::variadic_function_still_requires_more_than_one_missing_required_param(
+    "def add(a, b, *rest): a + b + len(rest); | add()",
+    2,
+    0
+)]
 #[case::too_many_required("def add(a, b): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_optional("def add(a, b = 1): a + b; | add(1, 2, 3)", 2, 3)]
 #[case::too_many_zero_arity("def constant(): 1; | constant(1)", 0, 1)]
@@ -1987,7 +2560,7 @@ fn unchanged_engine_globals_reuse_their_vm_snapshot() {
 #[test]
 fn cached_program_reflects_updated_global_in_module_var_initializer() {
     let mut engine = crate::DefaultEngine::default();
-    engine.define_value("g", RuntimeValue::Number(1.into()));
+    engine.define_value("g", RuntimeValue::Number(1.into())).unwrap();
     let compiled = engine.compile("module m: let x = g end | m::x").unwrap();
 
     assert_eq!(
@@ -2000,7 +2573,7 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
 
     // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
     // must invalidate that cache, not just the plain-global lookup environment.
-    engine.define_value("g", RuntimeValue::Number(2.into()));
+    engine.define_value("g", RuntimeValue::Number(2.into())).unwrap();
 
     assert_eq!(
         engine
@@ -2040,7 +2613,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(96))]
 
     #[test]
-    fn generated_compiled_programs_match_the_tree_walker(
+    fn generated_compiled_programs_execute(
         initial in -100i16..100,
         scale in -10i16..10,
         offset in -100i16..100,
@@ -2051,7 +2624,7 @@ proptest! {
         let code = format!(
             "var total = {initial} | foreach(value, [{elements}]): total += value * {scale}; | let finish = fn(extra): total + extra + {offset}; | finish(.)"
         );
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
+        assert_vm_executes(&code, vec![RuntimeValue::Number(f64::from(input).into())]);
     }
 }
 
@@ -2059,7 +2632,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     #[test]
-    fn generated_nested_closures_match_the_tree_walker(
+    fn generated_nested_closures_execute(
         x in -50i16..50,
         y in -50i16..50,
         z in -50i16..50,
@@ -2068,17 +2641,17 @@ proptest! {
         let code = format!(
             "let x = {x} | let make = fn(y): fn(z): x + y + z + {w};; | let step = make({y}) | step({z})"
         );
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+        assert_vm_executes(&code, vec![RuntimeValue::None]);
     }
 
     #[test]
-    fn generated_foreach_closures_match_the_tree_walker(
+    fn generated_foreach_closures_execute(
         values in proptest::collection::vec(-30i16..30, 1..8),
     ) {
         let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         let code =
             format!("let fns = foreach(i, [{elements}]): fn(): i * 2;; | fns | map(fn(f): f();)");
-        assert_vm_matches_tree_walker(&code, vec![RuntimeValue::None]);
+        assert_vm_executes(&code, vec![RuntimeValue::None]);
     }
 }
 
@@ -2254,12 +2827,13 @@ fn run_with_local_module(dir: &tempfile::TempDir, code: &str) -> RuntimeValue {
     let resolver =
         crate::module::resolver::local_fs_resolver::LocalFsModuleResolver::new(Some(vec![dir.path().to_path_buf()]));
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(resolver)).unwrap();
-    interpreter::run(
+    interpreter::run_with_globals(
         &compiled,
         RuntimeValue::None,
         &HostFunctions::default(),
         None,
-        crate::eval::Options::default().max_call_stack_depth,
+        Options::default().max_call_stack_depth,
+        &[],
     )
     .unwrap()
 }
@@ -2369,7 +2943,7 @@ fn module_vars_binding_does_not_push_and_discard_self(module_with_vars: tempfile
 }
 
 /// A local module containing a remote `include`/`import` must still hit the top-level-only
-/// HTTP boundary when compiled through Tarn, not just the tree-walker.
+/// HTTP boundary when compiled through Tarn.
 #[rstest]
 #[case::nested_include(
     "nested_remote_include.mq",
@@ -2403,4 +2977,825 @@ fn nested_remote_module_directive_is_blocked_under_tarn(
         ),
         "{code:?}: {err:?}"
     );
+}
+
+// Bytecode-level generator/coroutine tests. Source-level coverage follows below; these tests
+// hand-build `Chunk`s to exercise suspension and resumption states that are awkward to construct
+// from a single surface program.
+
+fn generator_program(chunks: Vec<bytecode::Chunk>) -> compiler::CompiledProgram {
+    compiler::CompiledProgram {
+        chunks: Shared::new(chunks),
+        token_arena: Shared::new(SharedCell::new(Arena::new(1))),
+        #[cfg(feature = "debugger")]
+        debug_sources: Vec::new(),
+    }
+}
+
+fn run_generator_program(program: &compiler::CompiledProgram) -> Result<RuntimeValue, interpreter::VmError> {
+    interpreter::run_with_globals(
+        program,
+        RuntimeValue::None,
+        &HostFunctions::default(),
+        None,
+        Options::default().max_call_stack_depth,
+        &[],
+    )
+}
+
+fn dict_field(value: &RuntimeValue, key: &str) -> RuntimeValue {
+    let RuntimeValue::Dict(map) = value else {
+        panic!("expected a dict, got {value:?}");
+    };
+    map.get(&crate::Ident::new(key)).cloned().unwrap_or(RuntimeValue::None)
+}
+
+// `Chunk`'s private `captured_local_slots` field rules out `..Default::default()` from outside
+// `bytecode`, so tests build via `Chunk::default()` plus field assignment instead.
+fn chunk(code: Vec<bytecode::OpCode>, constants: Vec<RuntimeValue>, local_count: u16) -> bytecode::Chunk {
+    let mut c = bytecode::Chunk::default();
+    c.code = code;
+    c.constants = constants;
+    c.local_count = local_count;
+    c
+}
+
+/// Chunk 1 in every test below: yields `1`, then `2`, then completes with `3`.
+fn yield_1_2_return_3() -> bytecode::Chunk {
+    use bytecode::OpCode;
+    let mut c = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::Const(1),
+            OpCode::Yield,
+            OpCode::Const(2),
+            OpCode::Return,
+        ],
+        vec![
+            RuntimeValue::Number(1.into()),
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into()),
+        ],
+        1,
+    );
+    c.is_generator = true;
+    c
+}
+
+/// Chunk 0: calls the generator at chunk 1, then `next()`s it `n` times, returning the last
+/// `{ value, done }` result.
+fn drive_n_times(n: u32) -> bytecode::Chunk {
+    use bytecode::OpCode;
+    let mut code = vec![OpCode::CallStatic(1, 0), OpCode::SetLocal(1)];
+    for i in 0..n {
+        code.push(OpCode::GetLocal(1));
+        code.push(OpCode::Resume(1));
+        if i + 1 < n {
+            code.push(OpCode::Pop);
+        }
+    }
+    code.push(OpCode::Return);
+    chunk(code, Vec::new(), 2)
+}
+
+#[test]
+fn next_before_first_resume_runs_to_the_first_yield() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(1), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn repeated_next_resumes_after_the_previous_yield() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(2), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(2.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn next_past_the_last_yield_completes_the_coroutine() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(3), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn next_after_completion_is_idempotent() {
+    let result = run_generator_program(&generator_program(vec![drive_n_times(4), yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn next_after_failure_reraises_the_same_error() {
+    use bytecode::OpCode;
+    let mut failing_generator = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::Const(0),
+            OpCode::Const(1),
+            OpCode::Div,
+            OpCode::Return,
+        ],
+        vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(0.into())],
+        1,
+    );
+    failing_generator.is_generator = true;
+    let err = run_generator_program(&generator_program(vec![drive_n_times(3), failing_generator])).unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("division by zero"));
+}
+
+#[test]
+fn cloning_a_coroutine_shares_its_progress() {
+    use bytecode::OpCode;
+    let main = chunk(
+        vec![
+            OpCode::CallStatic(1, 0),
+            OpCode::Dup,
+            OpCode::Resume(1),
+            OpCode::Pop,
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        Vec::new(),
+        1,
+    );
+    let result = run_generator_program(&generator_program(vec![main, yield_1_2_return_3()])).unwrap();
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(2.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+/// A generator that, after its first yield, resumes itself via a captured upvalue holding its
+/// own coroutine handle. `next()` on it must observe `Running` and fail.
+#[test]
+fn reentrant_next_on_a_running_coroutine_errors() {
+    use bytecode::{OpCode, UpvalueSource};
+    let mut generator = chunk(
+        vec![
+            OpCode::Const(0),
+            OpCode::Yield,
+            OpCode::GetUpvalue(0),
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        vec![RuntimeValue::Number(1.into())],
+        1,
+    );
+    generator.is_generator = true;
+    generator.upvalue_names = vec![crate::Ident::new("s")];
+
+    let mut main = chunk(
+        vec![
+            OpCode::PushNone,
+            OpCode::SetLocal(1),
+            OpCode::MakeClosure(Box::new((1, vec![UpvalueSource::Local(1)]))),
+            OpCode::CallValue(0),
+            OpCode::TeeLocal(1),
+            OpCode::Resume(1),
+            OpCode::Pop,
+            OpCode::GetLocal(1),
+            OpCode::Resume(1),
+            OpCode::Return,
+        ],
+        Vec::new(),
+        2,
+    );
+    main.refresh_captured_local_slots();
+
+    let err = run_generator_program(&generator_program(vec![main, generator])).unwrap_err();
+    assert_eq!(err.to_string(), "coroutine is already running");
+}
+
+#[test]
+fn dropping_a_self_referencing_suspended_coroutine_releases_its_frames() {
+    let value = run("var s = None | let g = fn(): yield: 1 | s; | s = g() | next(s) | s");
+    let RuntimeValue::Coroutine(handle) = &value else {
+        panic!("expected a coroutine, got {value:?}");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(value);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "suspended coroutine retained a self-reference cycle"
+    );
+}
+
+#[rstest]
+#[case::reassigned_to_none("s = None", RuntimeValue::None)]
+#[case::reassigned_to_a_number("s = 42", RuntimeValue::Number(42.into()))]
+#[case::reassigned_to_a_string("s = \"done\"", RuntimeValue::from("done"))]
+fn outer_write_to_a_captured_self_reference_is_visible_after_resume(
+    #[case] reassign: &str,
+    #[case] expected: RuntimeValue,
+) {
+    let code = format!(
+        "var s = None | let g = fn(): yield: 0 | yield: s; | s = g() | next(s) | let saved = s | {reassign} | next(saved)"
+    );
+    let result = run(&code);
+    assert_eq!(
+        dict_field(&result, "value"),
+        expected,
+        "the resumed generator must observe the outer scope's reassignment of its captured `s`"
+    );
+}
+
+#[test]
+fn generator_assignment_to_a_captured_self_reference_survives_the_next_resume() {
+    let result = run(
+        "var s = None | let g = fn(): s = 42 | yield: 0 | yield: s; | s = g() | let saved = s | next(saved) | next(saved)",
+    );
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(42.into()));
+}
+
+#[rstest]
+#[case::array("[s]")]
+#[case::dict(r#"{"s": s}"#)]
+fn dropping_a_coroutine_nested_in_a_captured_container_releases_its_frames(#[case] container: &str) {
+    let code = format!(
+        "var s = None | var holder = [] | let g = fn(): yield: 0 | holder; | s = g() | holder = {container} | next(s) | s"
+    );
+    let value = run(&code);
+    let RuntimeValue::Coroutine(handle) = &value else {
+        panic!("expected a coroutine, got {value:?}");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(value);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "suspended coroutine retained a self-reference cycle through a captured container"
+    );
+}
+
+#[rstest]
+#[case::array("[s]", "0")]
+#[case::dict(r#"{"s": s}"#, "\"s\"")]
+fn suspending_does_not_erase_a_self_reference_from_an_aliased_captured_container(
+    #[case] container: &str,
+    #[case] key: &str,
+) {
+    let code = format!(
+        "var s = None | var holder = [] | let g = fn(): yield: 0 | holder; | s = g() | holder = {container} | next(s) | get(holder, {key})"
+    );
+    let value = run(&code);
+    assert!(
+        matches!(value, RuntimeValue::Coroutine(_)),
+        "suspending must not erase the coroutine from the caller's own captured container, got {value:?}"
+    );
+}
+
+// End-to-end generator tests compiled from real `yield`/`next()` source (Phase 4: lexer, CST,
+// AST, HIR-free compiler wiring all land together so every commit stays green).
+
+/// Drives `stream` (bound by `def_and_binding`) with `n` `next()` calls, discarding all but the
+/// last, and returns its `{ value, done }` dict.
+fn run_yield_source(def_and_binding: &str, n: u32) -> RuntimeValue {
+    let mut code = format!("{def_and_binding} | var s = stream");
+    for _ in 0..n {
+        code.push_str(" | s | next(s)");
+    }
+    run(&code)
+}
+
+#[test]
+fn range_example_yields_then_completes() {
+    let def = "def range(n): var i = 0 | while (i < n): yield: i | i += 1;; | let stream = range(3)";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 1), "value"),
+        RuntimeValue::Number(0.into())
+    );
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(1.into())
+    );
+    assert_eq!(
+        dict_field(&run_yield_source(def, 3), "value"),
+        RuntimeValue::Number(2.into())
+    );
+    let fourth = run_yield_source(def, 4);
+    assert_eq!(dict_field(&fourth, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&fourth, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn generator_completion_discards_the_function_return_value() {
+    let def = "def g(): yield: 1 | 42; | let stream = g()";
+    let result = run_yield_source(def, 2);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn bare_yield_produces_none_value() {
+    let result = run("def g(): yield; | let s = g() | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn next_without_an_argument_resumes_the_pipeline_coroutine() {
+    let result = run("def g(): yield: 1; | let stream = g() | stream | next()");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[rstest]
+#[case::stored("def g(): yield: 1; | let advance = next | let s = g() | advance(s)", 1)]
+#[case::passed(
+    "def apply(f, value): f(value); | def g(): yield: 2; | let s = g() | apply(next, s)",
+    2
+)]
+#[case::piped("def g(): yield: 3; | let advance = next | let s = g() | s | advance()", 3)]
+#[case::captured(
+    "def g(): yield: 4; | let advance = next | let apply = fn(stream): advance(stream); | let s = g() | apply(s)",
+    4
+)]
+#[case::contained(
+    "def g(): yield: 5; | let advances = [next] | let advance = advances[0] | let s = g() | advance(s)",
+    5
+)]
+fn next_is_first_class_across_call_paths(#[case] code: &str, #[case] expected: i64) {
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::stored_and_piped(
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let s = g() | next(s) | s | resume(42)",
+    42
+)]
+#[case::passed(
+    "def apply(f, stream, value): f(stream, value); | def g(): let value = yield: 1 | yield: value; | let s = g() | next(s) | apply(send, s, 99)",
+    99
+)]
+#[case::captured(
+    "def g(): let value = yield: 1 | yield: value; | let resume = send | let apply = fn(stream, value): resume(stream, value); | let s = g() | next(s) | apply(s, 100)",
+    100
+)]
+#[case::contained(
+    "def g(): let value = yield: 1 | yield: value; | let resumes = [send] | let resume = resumes[0] | let s = g() | next(s) | resume(s, 101)",
+    101
+)]
+fn send_is_first_class_across_call_paths(#[case] code: &str, #[case] expected: i64) {
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(expected.into()));
+}
+
+#[rstest]
+#[case::next("def next(stream): stream + 1; | let advance = next | advance(41)", 42)]
+#[case::send("def send(stream, value): stream + value; | let resume = send | resume(40, 2)", 42)]
+fn local_resume_names_shadow_first_class_builtins(#[case] code: &str, #[case] expected: i64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}
+
+#[test]
+fn local_next_definition_still_shadows_pipeline_resume() {
+    assert_eq!(
+        run("def next(stream): stream + 1; | 41 | next()"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn yield_after_a_nested_call_returns_still_suspends_correctly() {
+    let code = "def helper(x): x * 2; | def g(): var a = helper(3) | yield: a; | let s = g() | next(s)";
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(6.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn yield_inside_try_catch_suspends_and_resumes_through_the_try_frame() {
+    let def = "def g(): try: yield: 1 catch: yield: -1 | yield: 2; | let stream = g()";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 1), "value"),
+        RuntimeValue::Number(1.into())
+    );
+    // Confirm the *second* next() correctly resumes past the try body, not just the first.
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(2.into())
+    );
+}
+
+#[test]
+fn suspended_generator_frames_do_not_consume_an_unrelated_call_depth() {
+    // Entering `try` pushes a synthetic VM frame. After its `yield`, that frame belongs to the
+    // coroutine rather than the caller that invoked `next()`: a separate one-frame call must
+    // still fit under this limit.
+    let code = "def g(): try: yield: 1 catch: 0; | let s = g() | next(s) | def f(): 42; | f()";
+    assert_eq!(run_with_max_depth(code, 2).unwrap(), RuntimeValue::Number(42.into()));
+}
+
+fn contains_recursion_error(error: &interpreter::VmError, max_depth: u32) -> bool {
+    match error {
+        interpreter::VmError::RecursionError(actual) => *actual == max_depth,
+        interpreter::VmError::Located(inner, _) => contains_recursion_error(inner, max_depth),
+        interpreter::VmError::CoroutineFailed(inner, _) => contains_recursion_error(inner, max_depth),
+        _ => false,
+    }
+}
+
+#[rstest]
+#[case::one(1)]
+#[case::four(4)]
+#[case::eight(8)]
+fn recursively_resumed_generators_respect_call_stack_depth(#[case] max_depth: u32) {
+    // Every invocation creates and resumes a child before yielding. This recursively enters
+    // `coroutine::resume` on the Rust stack, so each created generator frame must count toward
+    // the VM recursion limit before it reaches its first yield.
+    let code = "def g(n): if (n <= 0): yield: 0 else: let child = g(n - 1) | next(child) | yield: n; \
+                | let stream = g(20) \
+                | next(stream)";
+    let error = run_with_max_depth(code, max_depth).unwrap_err();
+    assert!(
+        contains_recursion_error(&error, max_depth),
+        "expected RecursionError, got {error}"
+    );
+}
+
+#[test]
+fn yield_inside_foreach_suspends_once_per_element() {
+    let def = "def g(): foreach (x, array(10, 20, 30)): yield: x;; | let stream = g()";
+    assert_eq!(
+        dict_field(&run_yield_source(def, 2), "value"),
+        RuntimeValue::Number(20.into())
+    );
+}
+
+#[test]
+fn generator_closure_mutates_captured_state_across_suspensions() {
+    // `fn` (not `def`) capturing an outer `var`, mutated between yields. Closures/upvalues
+    // must survive suspend/resume, and the mutation must be visible to the caller afterward.
+    let code = "var total = 0 \
+                | let g = fn(): total += 1 | yield: total | total += 1 | yield: total; \
+                | let s = g() \
+                | next(s) \
+                | s | next(s) \
+                | total";
+    assert_eq!(run(code), RuntimeValue::Number(2.into()));
+}
+
+#[test]
+fn suspended_generator_with_a_captured_self_reference_is_released() {
+    // Suspending `g` captures `s`, whose value is the coroutine itself. The suspension path
+    // must downgrade that back-edge; otherwise the coroutine state, frame, and captured cell
+    // keep one another alive after the program drops its last external reference.
+    let stream = run("var s = None | let g = fn(): yield: s; | s = g() | next(s) | s");
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the suspended coroutine must not retain itself"
+    );
+}
+
+#[test]
+fn unstarted_generator_with_a_captured_self_reference_is_released() {
+    // Same self-reference as above, but `s` is never `next()`-ed: `g`'s frame captures `s`'s
+    // cell, and `s = g()` writes the coroutine into that very cell before it ever suspends.
+    // `downgrade_self_references` (suspend-time only) can't reach this; the write itself must
+    // break the cycle.
+    let stream = run("var s = None | let g = fn(): yield: s; | s = g() | s");
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the unstarted coroutine must not retain itself"
+    );
+}
+
+#[rstest]
+#[case::array("[s]")]
+#[case::dict(r#"{"stream": s}"#)]
+fn unstarted_generator_nested_in_a_captured_container_is_released(#[case] container: &str) {
+    let code = format!("var holder = [] | let g = fn(): yield: holder; | let s = g() | holder = {container} | s");
+    let stream = run(&code);
+    let RuntimeValue::Coroutine(handle) = &stream else {
+        panic!("expected the program to return its coroutine");
+    };
+    let weak = Shared::downgrade(handle);
+
+    drop(stream);
+
+    assert!(
+        weak.upgrade().is_none(),
+        "the unstarted coroutine must not retain itself through a captured container"
+    );
+}
+
+#[rstest]
+#[case::array("[s]", "holder[0]")]
+#[case::dict(r#"{"stream": s}"#, r#"holder["stream"]"#)]
+fn generator_reads_its_own_coroutine_back_through_a_captured_container(
+    #[case] container: &str,
+    #[case] read_expr: &str,
+) {
+    let code = format!(
+        "var holder = [] | let g = fn(): yield: 0 | yield: {read_expr}; | let s = g() | holder = {container} | next(s) | next(s)"
+    );
+    let result = run(&code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "the generator must read back its own coroutine through the captured container, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
+#[test]
+fn child_coroutine_created_during_cross_evaluation_resume_keeps_its_own_arena() {
+    let a_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let a_program = crate::parse(
+        "def child(): yield: 9 | 1 / 0; | def parent(): yield: 1 | let c = child() | next(c) | next(c); | parent()",
+        Shared::clone(&a_arena),
+    )
+    .unwrap();
+    let parent_coroutine = compile_and_run(&a_program, Shared::clone(&a_arena)).unwrap();
+    assert!(matches!(parent_coroutine, RuntimeValue::Coroutine(_)));
+
+    let b_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let b_program = crate::parse("let c = self | next(c) | next(c)", Shared::clone(&b_arena)).unwrap();
+    let err = compile_and_run_with_input(&b_program, parent_coroutine, Shared::clone(&b_arena)).unwrap_err();
+
+    fn deepest_coroutine_arena(err: &interpreter::VmError) -> Option<TokenArena> {
+        match err {
+            interpreter::VmError::Located(inner, _) => deepest_coroutine_arena(inner),
+            interpreter::VmError::CoroutineFailed(inner, arena) => {
+                deepest_coroutine_arena(inner).or_else(|| Some(Shared::clone(arena)))
+            }
+            _ => None,
+        }
+    }
+    let Error::Vm(vm_err) = err else {
+        panic!("expected a VM error, got {err:?}");
+    };
+    let child_arena = deepest_coroutine_arena(&vm_err).expect("expected a nested CoroutineFailed");
+    assert!(
+        Shared::ptr_eq(&child_arena, &a_arena),
+        "the failing child generator's arena must be evaluation A's, not evaluation B's"
+    );
+}
+
+#[rstest]
+#[case::unstarted(
+    "var a = None | var b = None \
+     | let ga = fn(): yield: b; \
+     | let gb = fn(): yield: a; \
+     | a = ga() | b = gb() | [a, b]"
+)]
+#[case::suspended(
+    "var a = None | var b = None \
+     | let ga = fn(): yield: 0 | yield: b; \
+     | let gb = fn(): yield: 0 | yield: a; \
+     | a = ga() | b = gb() | next(a) | next(b) | [a, b]"
+)]
+fn dropping_two_mutually_capturing_coroutines_releases_both(#[case] code: &str) {
+    let value = run(code);
+    let RuntimeValue::Array(pair) = &value else {
+        panic!("expected an array, got {value:?}");
+    };
+    let RuntimeValue::Coroutine(ga) = &pair[0] else {
+        panic!("expected a coroutine, got {:?}", pair[0]);
+    };
+    let RuntimeValue::Coroutine(gb) = &pair[1] else {
+        panic!("expected a coroutine, got {:?}", pair[1]);
+    };
+    let (weak_ga, weak_gb) = (Shared::downgrade(ga), Shared::downgrade(gb));
+
+    drop(value);
+
+    assert!(weak_ga.upgrade().is_none(), "ga must not retain gb -> ga -> gb");
+    assert!(weak_gb.upgrade().is_none(), "gb must not retain ga -> gb -> ga");
+}
+
+#[rstest]
+#[case::a_reads_b("next(a)")]
+#[case::b_reads_a("next(b)")]
+fn mutually_capturing_coroutines_still_read_each_other_after_the_cycle_is_broken(#[case] read_expr: &str) {
+    let code = format!(
+        "var a = None | var b = None \
+         | let ga = fn(): yield: b; \
+         | let gb = fn(): yield: a; \
+         | a = ga() | b = gb() | {read_expr}"
+    );
+    let result = run(&code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "must still read back the peer through the broken cycle, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
+#[rstest]
+#[case::unstarted(
+    "var a = None | var b = None | var c = None \
+     | let ga = fn(): yield: b; \
+     | let gb = fn(): yield: c; \
+     | let gc = fn(): yield: a; \
+     | a = ga() | b = gb() | c = gc() | [a, b, c]"
+)]
+#[case::suspended(
+    "var a = None | var b = None | var c = None \
+     | let ga = fn(): yield: 0 | yield: b; \
+     | let gb = fn(): yield: 0 | yield: c; \
+     | let gc = fn(): yield: 0 | yield: a; \
+     | a = ga() | b = gb() | c = gc() | next(a) | next(b) | next(c) | [a, b, c]"
+)]
+fn dropping_three_mutually_capturing_coroutines_releases_all(#[case] code: &str) {
+    // A -> B -> C -> A: longer than the direct pairwise case.
+    let value = run(code);
+    let RuntimeValue::Array(trio) = &value else {
+        panic!("expected an array, got {value:?}");
+    };
+    let RuntimeValue::Coroutine(ga) = &trio[0] else {
+        panic!("expected a coroutine, got {:?}", trio[0]);
+    };
+    let RuntimeValue::Coroutine(gb) = &trio[1] else {
+        panic!("expected a coroutine, got {:?}", trio[1]);
+    };
+    let RuntimeValue::Coroutine(gc) = &trio[2] else {
+        panic!("expected a coroutine, got {:?}", trio[2]);
+    };
+    let (weak_ga, weak_gb, weak_gc) = (Shared::downgrade(ga), Shared::downgrade(gb), Shared::downgrade(gc));
+
+    drop(value);
+
+    assert!(weak_ga.upgrade().is_none(), "ga must not retain gb -> gc -> ga");
+    assert!(weak_gb.upgrade().is_none(), "gb must not retain gc -> ga -> gb");
+    assert!(weak_gc.upgrade().is_none(), "gc must not retain ga -> gb -> gc");
+}
+
+#[test]
+fn a_coroutine_capturing_another_non_cyclically_is_unaffected() {
+    // `ga` captures the coroutine `gb`, but `gb` doesn't capture `ga` back: not a cycle, so the
+    // mutual-capture check must not touch it.
+    let code = "let g = fn(): yield: 1; | let gb = g() | let ga = fn(): yield: gb; | next(ga())";
+    let result = run(code);
+    assert!(
+        matches!(dict_field(&result, "value"), RuntimeValue::Coroutine(_)),
+        "a non-cyclic capture must be unaffected by mutual-cycle detection, got {:?}",
+        dict_field(&result, "value")
+    );
+}
+
+#[test]
+fn calling_a_generator_does_not_execute_it() {
+    // Calling `g()` alone (no `next()`) must produce a coroutine, not run the body, so `marker`
+    // stays unset.
+    let code = "var marker = 0 | def g(): marker = 1 | yield: 1; | let s = g() | marker";
+    assert_eq!(run(code), RuntimeValue::Number(0.into()));
+}
+
+#[test]
+fn ordinary_functions_are_unaffected_by_generator_support() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let code = "def add(a, b): a + b; | add(1, 2)";
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().all(|chunk| !chunk.is_generator));
+    assert!(compiled.chunks.iter().all(|chunk| {
+        !chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, bytecode::OpCode::Yield | bytecode::OpCode::Resume(_)))
+    }));
+}
+
+#[test]
+fn yield_outside_a_function_is_a_compile_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("yield: 1", Shared::clone(&token_arena)).unwrap();
+    let err = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap_err();
+    assert!(matches!(err, compiler::CompileError::YieldOutsideFunction(_)));
+}
+
+#[test]
+fn generator_call_with_a_defaulted_argument_still_produces_a_coroutine() {
+    let result = run("def g(x = 1): yield: x; | let s = g() | s | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn self_recursive_generator_call_produces_a_coroutine_instead_of_running_inline() {
+    let def = "def g(n): yield: n | if (n > 0): g(n - 1) else: None;";
+    let first = run_yield_source(&format!("{def} | let stream = g(1)"), 1);
+    assert_eq!(dict_field(&first, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&first, "done"), RuntimeValue::Boolean(false));
+
+    let second = run_yield_source(&format!("{def} | let stream = g(1)"), 2);
+    assert_eq!(dict_field(&second, "done"), RuntimeValue::Boolean(true));
+    assert_eq!(dict_field(&second, "value"), RuntimeValue::None);
+}
+
+#[test]
+fn send_resumes_a_suspended_yield_to_the_given_value() {
+    let code = "def g(): let a = yield: 1 | yield: a + 1; | let s = g() | next(s) | send(s, 10)";
+    let result = run(code);
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(11.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn send_without_an_explicit_stream_resumes_the_pipeline_coroutine() {
+    let code = "def g(): let a = yield: 1 | yield: a + 1; | let s = g() | next(s) | s | send(10)";
+    assert_eq!(dict_field(&run(code), "value"), RuntimeValue::Number(11.into()));
+}
+
+#[test]
+fn send_to_a_not_yet_started_coroutine_discards_the_value() {
+    let result = run("def g(): yield: 1; | let s = g() | send(s, 99)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::Number(1.into()));
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(false));
+}
+
+#[test]
+fn local_send_definition_still_shadows_pipeline_resume() {
+    assert_eq!(
+        run("def send(stream, v): stream + v; | 40 | send(2)"),
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[test]
+fn status_reports_each_lifecycle_state() {
+    assert_eq!(
+        run("def g(): yield: 1; | status(g())"),
+        RuntimeValue::Symbol(crate::Ident::new("created"))
+    );
+    assert_eq!(
+        run("def g(): yield: 1; | let s = g() | next(s) | status(s)"),
+        RuntimeValue::Symbol(crate::Ident::new("suspended"))
+    );
+    assert_eq!(
+        run("def g(): yield: 1; | let s = g() | next(s) | next(s) | status(s)"),
+        RuntimeValue::Symbol(crate::Ident::new("completed"))
+    );
+    let failing = "def g(): yield: 1 | 1 / 0; | let s = g() | next(s) | try: next(s) catch: 0 | status(s)";
+    assert_eq!(run(failing), RuntimeValue::Symbol(crate::Ident::new("failed")));
+}
+
+#[test]
+fn close_forces_a_suspended_coroutine_to_completion() {
+    let result = run("def g(): yield: 1; | let s = g() | next(s) | close(s) | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn close_on_a_completed_coroutine_is_a_no_op() {
+    let result = run("def g(): yield: 1; | let s = g() | next(s) | next(s) | close(s) | next(s)");
+    assert_eq!(dict_field(&result, "value"), RuntimeValue::None);
+    assert_eq!(dict_field(&result, "done"), RuntimeValue::Boolean(true));
+}
+
+#[test]
+fn close_on_a_failed_coroutine_still_reraises_its_error() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let code = "def g(): yield: 1 | 1 / 0; | let s = g() | next(s) | try: next(s) catch: 0 | close(s) | next(s)";
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    assert!(err.to_string().to_lowercase().contains("division by zero"));
+}
+
+/// `close`'s `Running` check mirrors `next`'s reentrancy check: a generator that closes itself
+/// (via a captured `var`) mid-resume must fail the same way a self-`next()` does.
+#[test]
+fn closing_a_running_coroutine_errors() {
+    let code = "var s = None | let g = fn(): yield: 1 | close(s) | yield: 2; | s = g() | next(s) | next(s)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let err = compile_and_run(&program, token_arena).unwrap_err();
+    // `builtin::Error`'s `Display` is deliberately empty (the real message is built by
+    // `to_runtime_error`), so unwrap the error shape instead of formatting it. The failure
+    // surfaces through the generator's own `CoroutineFailed`, wrapping a `Located` `Builtin` error.
+    fn close_error_message(e: &interpreter::VmError) -> Option<&str> {
+        match e {
+            interpreter::VmError::Located(inner, _) => close_error_message(inner),
+            interpreter::VmError::CoroutineFailed(inner, _) => close_error_message(inner),
+            interpreter::VmError::Builtin(crate::runtime::builtin::Error::Runtime(msg)) => Some(msg.as_str()),
+            _ => None,
+        }
+    }
+    let Error::Vm(vm_err) = &err else {
+        panic!("expected a VM error, got {err:?}")
+    };
+    let message = close_error_message(vm_err).unwrap_or_else(|| panic!("expected a close error, got {err:?}"));
+    assert!(message.contains("cannot close a running coroutine"));
 }

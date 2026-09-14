@@ -9,11 +9,11 @@
 //! resolution filtered to publicly routable addresses so a hostname can't be rebound to
 //! an internal address after the initial check.
 
-use std::collections::BTreeMap;
+use crate::DictMap;
 
 use super::Error;
 use super::io_context;
-use crate::{Ident, RuntimeValue};
+use crate::RuntimeValue;
 
 /// Builds an `Error::Runtime` with the `http: ` prefix shared by every error in this module.
 fn err(msg: impl std::fmt::Display) -> Error {
@@ -36,7 +36,7 @@ fn parse_method(value: &RuntimeValue) -> Result<String, Error> {
 }
 
 /// Extracts `(name, value)` pairs from `headers`, requiring every value to be a string.
-fn extract_headers(headers: Option<&BTreeMap<Ident, RuntimeValue>>) -> Result<Vec<(String, String)>, Error> {
+fn extract_headers(headers: Option<&DictMap>) -> Result<Vec<(String, String)>, Error> {
     let Some(headers) = headers else {
         return Ok(Vec::new());
     };
@@ -56,7 +56,7 @@ pub(super) fn request(
     method: &RuntimeValue,
     url: &str,
     body: Option<&str>,
-    headers: Option<&BTreeMap<Ident, RuntimeValue>>,
+    headers: Option<&DictMap>,
 ) -> Result<RuntimeValue, Error> {
     let method = parse_method(method)?;
     let headers = extract_headers(headers)?;
@@ -180,7 +180,7 @@ mod tests {
                 &symbol("get"),
                 "https://this-domain-should-not-exist-mq-test.invalid",
                 None,
-                Some(&BTreeMap::from([(
+                Some(&DictMap::from_iter([(
                     Ident::new("Authorization"),
                     RuntimeValue::String(Shared::new("Bearer token".into()))
                 )]))
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_extract_headers_accepts_string_values() {
-        let headers = BTreeMap::from([
+        let headers = DictMap::from_iter([
             (Ident::new("X-Test"), RuntimeValue::String(Shared::new("value".into()))),
             (
                 Ident::new("Content-Type"),
@@ -217,7 +217,7 @@ mod tests {
 
     #[test]
     fn test_extract_headers_rejects_non_string_values() {
-        let headers = BTreeMap::from([(Ident::new("X-Test"), RuntimeValue::from(1usize))]);
+        let headers = DictMap::from_iter([(Ident::new("X-Test"), RuntimeValue::from(1usize))]);
         assert!(extract_headers(Some(&headers)).is_err());
     }
 

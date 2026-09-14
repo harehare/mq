@@ -13,6 +13,9 @@ type ErrorToken = Token;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum RuntimeError {
+    /// An uncaught runtime error annotated with the VM frames active at the failure point.
+    #[error("{source}\n{trace}")]
+    WithStackTrace { source: Box<RuntimeError>, trace: Box<str> },
     #[error("{}", message)]
     UserDefined { message: String, token: ErrorToken },
     #[error("Invalid base64 string")]
@@ -85,6 +88,7 @@ impl RuntimeError {
     #[cold]
     pub fn token(&self) -> Option<&Token> {
         match self {
+            RuntimeError::WithStackTrace { source, .. } => source.token(),
             RuntimeError::UserDefined { token, .. } => Some(token),
             RuntimeError::InvalidBase64String(token, _) => Some(token),
             RuntimeError::NotDefined(token, _, _) => Some(token),

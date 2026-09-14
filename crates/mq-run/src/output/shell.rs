@@ -88,9 +88,9 @@ fn is_safe_unquoted_char(c: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mq_lang::DictMap;
     use mq_lang::Shared;
     use rstest::rstest;
-    use std::collections::BTreeMap;
 
     #[rstest]
     #[case("", "foo", "foo")]
@@ -128,7 +128,7 @@ mod tests {
     #[case(vec![mq_lang::RuntimeValue::Number(3i64.into())], "value=3\n")]
     #[case(vec![mq_lang::RuntimeValue::None], "value=\n")]
     #[case(vec![mq_lang::RuntimeValue::Array(Shared::new(vec![]))], "")]
-    #[case(vec![mq_lang::RuntimeValue::Dict(Shared::new(BTreeMap::new()))], "")]
+    #[case(vec![mq_lang::RuntimeValue::Dict(Shared::new(DictMap::default()))], "")]
     #[case(
         vec![mq_lang::RuntimeValue::Array(Shared::new(vec![
             mq_lang::RuntimeValue::String(Shared::new("x".to_string())),
@@ -142,12 +142,12 @@ mod tests {
 
     #[test]
     fn test_shell_nested_dict() {
-        let mut inner = BTreeMap::new();
+        let mut inner = DictMap::default();
         inner.insert(
             mq_lang::Ident::new("color"),
             mq_lang::RuntimeValue::String(Shared::new("turquoise".to_string())),
         );
-        let mut outer = BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(
             mq_lang::Ident::new("eyes"),
             mq_lang::RuntimeValue::Dict(Shared::new(inner)),
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn test_shell_dict_key_needing_sanitization() {
-        let mut m = BTreeMap::new();
+        let mut m = DictMap::default();
         m.insert(
             mq_lang::Ident::new("weird key!"),
             mq_lang::RuntimeValue::String(Shared::new("v".to_string())),
@@ -169,12 +169,12 @@ mod tests {
 
     #[test]
     fn test_shell_array_under_dict_key_has_no_double_underscore() {
-        let mut friend = BTreeMap::new();
+        let mut friend = DictMap::default();
         friend.insert(
             mq_lang::Ident::new("name"),
             mq_lang::RuntimeValue::String(Shared::new("James P. Sullivan".to_string())),
         );
-        let mut outer = BTreeMap::new();
+        let mut outer = DictMap::default();
         outer.insert(
             mq_lang::Ident::new("friends"),
             mq_lang::RuntimeValue::Array(Shared::new(vec![mq_lang::RuntimeValue::Dict(Shared::new(friend))])),

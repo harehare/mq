@@ -10,7 +10,7 @@
 //!
 //! Gated at compile time by the `css-selector` feature.
 
-use std::collections::BTreeMap;
+use crate::DictMap;
 
 use ego_tree::NodeRef;
 use scraper::{Html, Node, Selector};
@@ -27,7 +27,7 @@ fn err(msg: impl std::fmt::Display) -> Error {
 // Same `{tag, attributes, children, text}` shape as `_xml_parse`; whitespace-only text is dropped.
 fn build_element(node: NodeRef<'_, Node>) -> RuntimeValue {
     let element = node.value().as_element().expect("node is an element");
-    let mut attributes = BTreeMap::new();
+    let mut attributes = DictMap::default();
 
     for (name, value) in element.attrs() {
         attributes.insert(Ident::new(name), RuntimeValue::String(Shared::new(value.to_string())));
@@ -55,7 +55,7 @@ fn build_element(node: NodeRef<'_, Node>) -> RuntimeValue {
         }
     }
 
-    let mut dict = BTreeMap::new();
+    let mut dict = DictMap::default();
     dict.insert(
         Ident::new("tag"),
         RuntimeValue::String(Shared::new(element.name().to_string())),

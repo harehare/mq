@@ -1,9 +1,9 @@
+use crate::DictMap;
 use crate::Ident;
 use crate::Shared;
 use crate::runtime::runtime_value::RuntimeValue;
 use regex::{Regex, RegexBuilder};
 use rustc_hash::{FxBuildHasher, FxHashMap};
-use std::collections::BTreeMap;
 use std::sync::{LazyLock, RwLock};
 
 use super::Error;
@@ -68,7 +68,7 @@ pub(super) fn is_match_re(input: &str, pattern: &str) -> Result<RuntimeValue, Er
 pub(super) fn capture_re_inner(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
     match (re.capture_names(), re.captures(input)) {
         (names, Some(caps)) => {
-            let mut result = BTreeMap::new();
+            let mut result = DictMap::default();
             for name in names.flatten() {
                 if let Some(m) = caps.name(name) {
                     result.insert(

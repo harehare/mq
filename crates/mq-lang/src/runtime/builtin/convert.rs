@@ -559,7 +559,9 @@ pub(super) fn from_hex(input: &str) -> Result<RuntimeValue, Error> {
     }
     let bytes = input
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| {
             let s = std::str::from_utf8(chunk)
                 .map_err(|_| Error::Runtime("from_hex: invalid hex byte (non-ASCII)".to_string()))?;
