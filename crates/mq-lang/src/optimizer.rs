@@ -314,6 +314,26 @@ impl Optimizer {
                     expr: ast::Expr::Call(ident.clone(), subst_args),
                 })
             }
+            ast::Expr::Array(args) => {
+                let subst_args: Args = args
+                    .iter()
+                    .map(|a| self.substitute_literals(Shared::clone(a), env))
+                    .collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Array(subst_args),
+                })
+            }
+            ast::Expr::Dict(args) => {
+                let subst_args: Args = args
+                    .iter()
+                    .map(|a| self.substitute_literals(Shared::clone(a), env))
+                    .collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Dict(subst_args),
+                })
+            }
             ast::Expr::CallDynamic(callable, args) => {
                 let subst_callable = self.substitute_literals(Shared::clone(callable), env);
                 let subst_args: Args = args
@@ -510,6 +530,20 @@ impl Optimizer {
                     expr: ast::Expr::SelectorCall(sel.clone(), opt_args),
                 })
             }
+            ast::Expr::Array(args) => {
+                let opt_args: Args = args.iter().map(|a| self.apply_inline(Shared::clone(a), fns)).collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Array(opt_args),
+                })
+            }
+            ast::Expr::Dict(args) => {
+                let opt_args: Args = args.iter().map(|a| self.apply_inline(Shared::clone(a), fns)).collect();
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Dict(opt_args),
+                })
+            }
             // Scope-creating and leaf nodes are left unchanged.
             _ => node,
         }
@@ -535,6 +569,32 @@ impl Optimizer {
                 Shared::new(ast::Node {
                     token_id,
                     expr: ast::Expr::Call(ident.clone(), opt_args),
+                })
+            }
+            ast::Expr::Array(args) => {
+                let opt_args: Args = args
+                    .iter()
+                    .map(|a| self.optimize_node(Shared::clone(a), user_defs))
+                    .collect();
+                if args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Array(opt_args),
+                })
+            }
+            ast::Expr::Dict(args) => {
+                let opt_args: Args = args
+                    .iter()
+                    .map(|a| self.optimize_node(Shared::clone(a), user_defs))
+                    .collect();
+                if args.iter().zip(opt_args.iter()).all(|(orig, opt)| ptr_eq(orig, opt)) {
+                    return node;
+                }
+                Shared::new(ast::Node {
+                    token_id,
+                    expr: ast::Expr::Dict(opt_args),
                 })
             }
             ast::Expr::If(branches) => self.optimize_if(token_id, branches, user_defs),
@@ -1193,7 +1253,9 @@ fn has_recursion(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
             cond.as_ref().is_some_and(|c| has_recursion(c, fn_name)) || has_recursion(body, fn_name)
         }),
         ast::Expr::Try(t, _, c) => has_recursion(t, fn_name) || has_recursion(c, fn_name),
-        ast::Expr::SelectorCall(_, args) => args.iter().any(|a| has_recursion(a, fn_name)),
+        ast::Expr::SelectorCall(_, args) | ast::Expr::Array(args) | ast::Expr::Dict(args) => {
+            args.iter().any(|a| has_recursion(a, fn_name))
+        }
         ast::Expr::Paren(inner) => has_recursion(inner, fn_name),
         _ => false,
     }
@@ -1213,7 +1275,9 @@ fn has_free_vars(node: &Shared<ast::Node>, params: &[Ident]) -> bool {
             // A parameter used as a callee cannot be inlined (callee is IdentWithToken, not Expr).
             params.contains(&callee.name) || args.iter().any(|a| has_free_vars(a, params))
         }
-        ast::Expr::SelectorCall(_, args) => args.iter().any(|a| has_free_vars(a, params)),
+        ast::Expr::SelectorCall(_, args) | ast::Expr::Array(args) | ast::Expr::Dict(args) => {
+            args.iter().any(|a| has_free_vars(a, params))
+        }
         ast::Expr::And(ops) | ast::Expr::Or(ops) => ops.iter().any(|o| has_free_vars(o, params)),
         ast::Expr::If(branches) => branches
             .iter()
@@ -1261,6 +1325,26 @@ fn substitute_params(
             Shared::new(ast::Node {
                 token_id,
                 expr: ast::Expr::SelectorCall(sel.clone(), subst),
+            })
+        }
+        ast::Expr::Array(call_args) => {
+            let subst: Args = call_args
+                .iter()
+                .map(|a| substitute_params(Shared::clone(a), params, args, call_token_id))
+                .collect();
+            Shared::new(ast::Node {
+                token_id,
+                expr: ast::Expr::Array(subst),
+            })
+        }
+        ast::Expr::Dict(call_args) => {
+            let subst: Args = call_args
+                .iter()
+                .map(|a| substitute_params(Shared::clone(a), params, args, call_token_id))
+                .collect();
+            Shared::new(ast::Node {
+                token_id,
+                expr: ast::Expr::Dict(subst),
             })
         }
         ast::Expr::And(ops) => Shared::new(ast::Node {
@@ -1394,7 +1478,9 @@ fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
             cond.as_ref().is_some_and(|c| contains_self_call(c, fn_name)) || contains_self_call(body, fn_name)
         }),
         ast::Expr::Try(t, _, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
-        ast::Expr::SelectorCall(_, args) => args.iter().any(|a| contains_self_call(a, fn_name)),
+        ast::Expr::SelectorCall(_, args) | ast::Expr::Array(args) | ast::Expr::Dict(args) => {
+            args.iter().any(|a| contains_self_call(a, fn_name))
+        }
         ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) => contains_self_call(inner, fn_name),
         ast::Expr::Block(prog) => prog.iter().any(|n| contains_self_call(n, fn_name)),
         _ => false,
@@ -1485,6 +1571,11 @@ fn collect_called_fns_node(node: &Shared<ast::Node>, set: &mut FxHashSet<Ident>)
     match &node.expr {
         ast::Expr::Call(ident, args) => {
             set.insert(ident.name);
+            for a in args {
+                collect_called_fns_node(a, set);
+            }
+        }
+        ast::Expr::Array(args) | ast::Expr::Dict(args) => {
             for a in args {
                 collect_called_fns_node(a, set);
             }
@@ -2735,6 +2826,33 @@ mod tests {
         assert!(
             prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
             "Full: Def called only inside the branch/loop body must be preserved for query {query:?}"
+        );
+
+        let mut engine = DefaultEngine::default();
+        engine.set_optimization_level(OptimizationLevel::Full);
+        let result = engine.eval(query, vec![crate::RuntimeValue::NONE].into_iter());
+        assert_eq!(
+            result,
+            Ok(vec![crate::RuntimeValue::Number(expected.into())].into()),
+            "Full: eval must not crash with NotDefined for query {query:?}"
+        );
+    }
+
+    #[rstest]
+    // `let`'s value isn't visited by `apply_inline`, so `helper` stays un-inlined inside the
+    // array/dict — `eliminate_dead_defs` must still see it as used via `collect_called_fns_node`.
+    #[case::array_literal("def helper(x): x + 1; | let arr = [helper(5)] | get(arr, 0)", 6)]
+    #[case::dict_literal(r#"def helper(x): x + 1; | let d = {"v": helper(5)} | get(d, "v")"#, 6)]
+    #[case::dict_nested_in_array(r#"def helper(x): x + 1; | let arr = [{"v": helper(5)}] | get(get(arr, 0), "v")"#, 6)]
+    #[case::array_nested_in_dict(
+        r#"def helper(x): x + 1; | let d = {"items": [helper(5)]} | get(get(d, "items"), 0)"#,
+        6
+    )]
+    fn def_called_only_inside_array_or_dict_not_eliminated(#[case] query: &str, #[case] expected: i64) {
+        let prog = ast_full(query);
+        assert!(
+            prog.iter().any(|n| matches!(&n.expr, Expr::Def(..))),
+            "Full: Def called only inside an array/dict literal must be preserved for query {query:?}"
         );
 
         let mut engine = DefaultEngine::default();

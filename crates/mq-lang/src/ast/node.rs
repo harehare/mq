@@ -106,7 +106,7 @@ impl Node {
                     .unwrap_or_default();
                 Range { start, end }
             }
-            Expr::Call(_, args) => {
+            Expr::Call(_, args) | Expr::Array(args) | Expr::Dict(args) => {
                 let start = args
                     .first()
                     .map(|node| node.range(Shared::clone(&arena)).start)
@@ -327,6 +327,12 @@ pub enum Expr {
     As(IdentWithToken, Shared<Node>),
     Block(Program),
     Call(IdentWithToken, Args),
+    /// An `[...]` array literal. Each spread element (`...expr`) remains a nested
+    /// `Call` on `constants::builtins::SPREAD`.
+    Array(Args),
+    /// A `{...}` dict literal. Each entry is a nested `Array` of `[key, value]`,
+    /// except spread entries (`...expr`), which remain a nested `Call` on `SPREAD`.
+    Dict(Args),
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),

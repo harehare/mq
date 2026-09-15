@@ -440,6 +440,11 @@ fn collect_soft_builtin_names(
                 collect_soft_builtin_names(arg, shadowed, names);
             }
         }
+        Expr::Array(args) | Expr::Dict(args) => {
+            for arg in args {
+                collect_soft_builtin_names(arg, shadowed, names);
+            }
+        }
         Expr::CallDynamic(callee, args) => {
             collect_soft_builtin_names(callee, shadowed, names);
             for arg in args {
@@ -545,6 +550,11 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Id
         }
         Expr::Call(ident, args) => {
             names.insert(ident.name);
+            for arg in args {
+                collect_referenced_names(arg, names);
+            }
+        }
+        Expr::Array(args) | Expr::Dict(args) => {
             for arg in args {
                 collect_referenced_names(arg, names);
             }
@@ -657,7 +667,9 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         // not part of the enclosing function body. A nested module checks its own boundary when
         // it is compiled below.
         Expr::Module(_, _) => false,
-        Expr::Call(_, args) | Expr::SelectorCall(_, args) => args.iter().any(node_contains_direct_yield),
+        Expr::Call(_, args) | Expr::SelectorCall(_, args) | Expr::Array(args) | Expr::Dict(args) => {
+            args.iter().any(node_contains_direct_yield)
+        }
         Expr::CallDynamic(callee, args) => {
             node_contains_direct_yield(callee) || args.iter().any(node_contains_direct_yield)
         }
@@ -2210,6 +2222,11 @@ impl<R: ModuleResolver> Compiler<R> {
                 Ok(())
             }
             Expr::Call(ident, args) => self.compile_call(ident.name, args),
+            Expr::Array(args) => self.compile_array_call(args),
+            Expr::Dict(args) => {
+                let call_token_id = self.current_token_id;
+                self.compile_dict_call(args, call_token_id)
+            }
             Expr::CallDynamic(callee, args) => {
                 self.compile_expr(callee)?;
                 for arg in args {
@@ -2379,17 +2396,6 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
-
-        // `[...]`/`{...}` literals parse to a `Call` on `ARRAY_LITERAL`/`DICT_LITERAL` (see
-        // `ast::constants::builtins`), never on the callable `array`/`dict` builtins below.
-        // Checked first, ahead of any user-defined function resolution, so literal syntax
-        // always constructs a literal regardless of what's in scope.
-        if ident == builtins::ARRAY_LITERAL.into() {
-            return self.compile_array_call(args);
-        }
-        if ident == builtins::DICT_LITERAL.into() {
-            return self.compile_dict_call(args, call_token_id);
-        }
 
         #[cfg(feature = "debugger")]
         if ident == builtins::BREAKPOINT.into() {

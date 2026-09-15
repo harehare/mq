@@ -782,13 +782,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
             pairs.push(Shared::new(Node {
                 token_id,
-                expr: Expr::Call(
-                    IdentWithToken::new_with_token(
-                        constants::builtins::ARRAY_LITERAL,
-                        Some(self.shared_token(key_token)),
-                    ),
-                    smallvec![key_node, value_node],
-                ),
+                expr: Expr::Array(smallvec![key_node, value_node]),
             }));
 
             if self.parse_dict_separator(&opening)? {
@@ -798,13 +792,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Expr::Call(
-                IdentWithToken::new_with_token(
-                    constants::builtins::DICT_LITERAL,
-                    Some(self.shared_token(lbrace_token)),
-                ),
-                pairs,
-            ),
+            expr: Expr::Dict(pairs),
         }))
     }
 
@@ -1000,10 +988,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let array_node = Shared::new(Node {
             token_id,
-            expr: Expr::Call(
-                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(self.shared_token(token))),
-                elements,
-            ),
+            expr: Expr::Array(elements),
         });
 
         // Handle postfix bracket access: [1,2,3][0], [1,2,3][0:2], etc.
@@ -4984,10 +4969,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
-                            SmallVec::new(),
-                        ),
+                        expr: Expr::Array(SmallVec::new()),
                     })
                 ]))]
     #[case::array_with_elements(
@@ -5002,8 +4984,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                        expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
@@ -5031,8 +5012,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                        expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
@@ -5066,13 +5046,11 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                        expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
-                                    expr: Expr::Call(
-                                        IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                                    expr: Expr::Array(
                                         smallvec![
                                             Shared::new(Node {
                                                 token_id: 2.into(),
@@ -5083,8 +5061,7 @@ mod tests {
                                 }),
                                 Shared::new(Node {
                                     token_id: 3.into(),
-                                    expr: Expr::Call(
-                                        IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                                    expr: Expr::Array(
                                         smallvec![
                                             Shared::new(Node {
                                                 token_id: 4.into(),
@@ -5108,8 +5085,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                        expr: Expr::Array(
                             smallvec![
                                 Shared::new(Node {
                                     token_id: 1.into(),
@@ -5155,8 +5131,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                            expr: Expr::Array(
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
@@ -5804,10 +5779,7 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Expr::Call(
-                                    IdentWithToken::new_with_token(constants::builtins::DICT_LITERAL, Some(Shared::new(token(TokenKind::LBrace)))),
-                                    SmallVec::new(),
-                                ),
+                                expr: Expr::Dict(SmallVec::new()),
                             })
                         ]))]
     #[case::dict_single_pair(
@@ -5822,13 +5794,11 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Expr::Call(
-                                    IdentWithToken::new_with_token(constants::builtins::DICT_LITERAL, Some(Shared::new(token(TokenKind::LBrace)))),
+                                expr: Expr::Dict(
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Expr::Call(
-                                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("key")))))),
+                                            expr: Expr::Array(
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
@@ -5861,13 +5831,11 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Expr::Call(
-                                    IdentWithToken::new_with_token(constants::builtins::DICT_LITERAL, Some(Shared::new(token(TokenKind::LBrace)))),
+                                expr: Expr::Dict(
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Expr::Call(
-                                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a")))))),
+                                            expr: Expr::Array(
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
@@ -5882,8 +5850,7 @@ mod tests {
                                         }),
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Expr::Call(
-                                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::StringLiteral("b".to_owned()))))),
+                                            expr: Expr::Array(
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 3.into(),
@@ -5913,13 +5880,11 @@ mod tests {
                         Ok(vec![
                             Shared::new(Node {
                                 token_id: 0.into(),
-                                expr: Expr::Call(
-                                    IdentWithToken::new_with_token(constants::builtins::DICT_LITERAL, Some(Shared::new(token(TokenKind::LBrace)))),
+                                expr: Expr::Dict(
                                     smallvec![
                                         Shared::new(Node {
                                             token_id: 0.into(),
-                                            expr: Expr::Call(
-                                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x")))))),
+                                            expr: Expr::Array(
                                                 smallvec![
                                                     Shared::new(Node {
                                                         token_id: 1.into(),
@@ -7457,8 +7422,7 @@ mod tests {
                     smallvec![
                         Shared::new(Node {
                             token_id: 0.into(),
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::ARRAY_LITERAL, Some(Shared::new(token(TokenKind::LBracket)))),
+                            expr: Expr::Array(
                                 smallvec![
                                     Shared::new(Node {
                                         token_id: 1.into(),
