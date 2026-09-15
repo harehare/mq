@@ -13,8 +13,9 @@ mod selectors;
 use self::calls::{
     CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
     call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
-    call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value,
-    call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine, generator_coroutine, negate_ident,
+    call_fixed_closure_from_local, call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack,
+    call_self_chunk_from_stack, call_stack_value, call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine,
+    generator_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -1913,7 +1914,31 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 call_upvalue!('dispatch, *index, *argc);
             }
             OpCode::CallUpvalueLocal { index, local } => {
-                stack.push(locals.get(*local));
+                let argument = locals.get(*local);
+                // SAFETY: `verify_chunks` validates every upvalue index before execution.
+                let callee = read_cell(unsafe { upvalues.get_unchecked(*index as usize) });
+                if let StackValue::Closure(closure) = &callee
+                    && chunks[closure.chunk_index as usize]
+                        .param_shape
+                        .fixed_required_arity()
+                        .is_some()
+                    && !chunks[closure.chunk_index as usize].is_generator
+                {
+                    let new_frame = call_fixed_closure_from_local(
+                        closure,
+                        argument,
+                        CallSite {
+                            locals,
+                            chunk,
+                            ip,
+                            frame_chunks: frame.chunks.clone(),
+                        },
+                        chunks,
+                        execution,
+                    )?;
+                    break 'dispatch FrameOutcome::Enter(new_frame);
+                }
+                stack.push(argument);
                 call_upvalue!('dispatch, *index, 1);
             }
             OpCode::CallValue(argc) => {
