@@ -308,11 +308,8 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
-fn numeric_constant(constants: &[RuntimeValue], index: u16) -> Option<crate::number::Number> {
-    match constants.get(index as usize) {
-        Some(RuntimeValue::Number(number)) => Some(*number),
-        _ => None,
-    }
+fn numeric_constant(constants: &[RuntimeValue], index: u16) -> Option<u16> {
+    matches!(constants.get(index as usize), Some(RuntimeValue::Number(_))).then_some(index)
 }
 
 /// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse`,
@@ -582,7 +579,7 @@ mod tests {
     #[rstest::rstest]
     #[case::number(RuntimeValue::Number(2.into()), true)]
     #[case::string(RuntimeValue::String(crate::Shared::new("two".to_string())), false)]
-    fn peephole_inlines_only_numeric_local_constants(#[case] constant: RuntimeValue, #[case] inline: bool) {
+    fn peephole_keeps_numeric_local_constant_fusion(#[case] constant: RuntimeValue, #[case] numeric: bool) {
         let mut chunk = Chunk {
             code: vec![
                 OpCode::BinaryLocalConst {
@@ -591,7 +588,7 @@ mod tests {
                     constant: 0,
                 },
                 OpCode::SetLocal(0),
-                OpCode::Return,
+                OpCode::ReturnLocal(0),
             ],
             constants: vec![constant],
             local_count: 1,
@@ -602,7 +599,7 @@ mod tests {
 
         assert_eq!(
             matches!(chunk.code.first(), Some(OpCode::UpdateLocalNumberConst { .. })),
-            inline
+            numeric
         );
         assert_eq!(verify_chunks(&[chunk]), Ok(()));
     }

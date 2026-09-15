@@ -377,7 +377,7 @@ fn local_constant_assignment_uses_update_opcode() {
 #[case::subtract("-=", 3.0)]
 #[case::multiply("*=", 18.0)]
 #[case::divide("/=", 2.0)]
-#[case::modulo("%=", 1.0)]
+#[case::modulo("%=", 0.0)]
 fn numeric_local_constant_updates_preserve_results(#[case] operator: &str, #[case] expected: f64) {
     assert_eq!(
         run(&format!("var value = 6 | value {operator} 3 | value")),

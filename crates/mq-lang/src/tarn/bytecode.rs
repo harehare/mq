@@ -6,7 +6,6 @@ use crate::Shared;
 use crate::ast::TokenId;
 #[cfg(feature = "debugger")]
 use crate::ast::node::Node;
-use crate::number::Number;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
 use std::fmt;
@@ -272,7 +271,7 @@ pub(crate) enum OpCode {
     BinaryLocalNumberConst {
         op: BinaryOp,
         local: u16,
-        constant: Number,
+        constant: u16,
     },
     /// Applies a binary operation between a local and a constant, then stores the result back
     /// into that same local without materializing the value on the operand stack.
@@ -286,7 +285,7 @@ pub(crate) enum OpCode {
     UpdateLocalNumberConst {
         op: BinaryOp,
         local: u16,
-        constant: Number,
+        constant: u16,
     },
     /// Updates a local from another local without using the operand stack.
     UpdateLocalLocal {
@@ -315,7 +314,7 @@ pub(crate) enum OpCode {
     JumpIfFalseLocalNumberConst {
         op: BinaryOp,
         local: u16,
-        constant: Number,
+        constant: u16,
         offset: i32,
     },
     Neg,
@@ -351,7 +350,7 @@ pub(crate) enum OpCode {
     ForeachBinaryLocalNumberConstAndJump {
         op: BinaryOp,
         local: u16,
-        constant: Number,
+        constant: u16,
         accumulator_slot: u16,
         offset: i32,
     },
@@ -438,7 +437,7 @@ pub(crate) enum OpCode {
     ReturnBinaryLocalNumberConst {
         op: BinaryOp,
         local: u16,
-        constant: Number,
+        constant: u16,
     },
     Return,
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
@@ -966,6 +965,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::ForeachBinaryLocalNumberConstAndJump {
                     local,
                     accumulator_slot,
+                    constant,
                     offset,
                     ..
                 } => {
@@ -977,6 +977,13 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                                 slot: *slot,
                             });
                         }
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
                     }
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
@@ -1016,7 +1023,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::SetLocalConst { local, constant }
                 | OpCode::BinaryLocalConst { local, constant, .. }
                 | OpCode::UpdateLocalConst { local, constant, .. }
-                | OpCode::ReturnBinaryLocalConst { local, constant, .. } => {
+                | OpCode::ReturnBinaryLocalConst { local, constant, .. }
+                | OpCode::BinaryLocalNumberConst { local, constant, .. }
+                | OpCode::UpdateLocalNumberConst { local, constant, .. }
+                | OpCode::ReturnBinaryLocalNumberConst { local, constant, .. } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -1029,33 +1039,6 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             chunk: chunk_index,
                             pc,
                             index: *constant,
-                        });
-                    }
-                }
-                OpCode::BinaryLocalNumberConst { local, .. } => {
-                    if *local >= chunk.local_count {
-                        return Err(BytecodeError::LocalOutOfBounds {
-                            chunk: chunk_index,
-                            pc,
-                            slot: *local,
-                        });
-                    }
-                }
-                OpCode::UpdateLocalNumberConst { local, .. } => {
-                    if *local >= chunk.local_count {
-                        return Err(BytecodeError::LocalOutOfBounds {
-                            chunk: chunk_index,
-                            pc,
-                            slot: *local,
-                        });
-                    }
-                }
-                OpCode::ReturnBinaryLocalNumberConst { local, .. } => {
-                    if *local >= chunk.local_count {
-                        return Err(BytecodeError::LocalOutOfBounds {
-                            chunk: chunk_index,
-                            pc,
-                            slot: *local,
                         });
                     }
                 }
@@ -1095,12 +1078,24 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     }
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
-                OpCode::JumpIfFalseLocalNumberConst { local, offset, .. } => {
+                OpCode::JumpIfFalseLocalNumberConst {
+                    local,
+                    constant,
+                    offset,
+                    ..
+                } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
                             pc,
                             slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
                         });
                     }
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
@@ -1628,7 +1623,7 @@ mod tests {
 
     #[test]
     fn opcode_stays_compact() {
-        assert_eq!(std::mem::size_of::<OpCode>(), 24);
+        assert!(std::mem::size_of::<OpCode>() <= 16);
     }
 
     #[test]
@@ -1788,7 +1783,7 @@ mod tests {
         OpCode::ForeachBinaryLocalNumberConstAndJump {
             op: BinaryOp::Add,
             local: 0,
-            constant: 1.into(),
+            constant: 0,
             accumulator_slot: 0,
             offset: 1,
         },
@@ -1816,7 +1811,7 @@ mod tests {
         OpCode::Return,
     ])]
     #[case::binary_local_number_const(vec![
-        OpCode::BinaryLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 1.into() },
+        OpCode::BinaryLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Pop,
         OpCode::Return,
     ])]
@@ -1825,14 +1820,14 @@ mod tests {
         OpCode::Return,
     ])]
     #[case::update_local_number_const(vec![
-        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 1.into() },
+        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
     #[case::jump_if_false_local_number_const(vec![
         OpCode::JumpIfFalseLocalNumberConst {
             op: BinaryOp::Eq,
             local: 0,
-            constant: 1.into(),
+            constant: 0,
             offset: 1,
         },
         OpCode::Return,
@@ -1846,7 +1841,7 @@ mod tests {
     #[case::return_binary_local_number_const(vec![OpCode::ReturnBinaryLocalNumberConst {
         op: BinaryOp::Add,
         local: 0,
-        constant: 1.into(),
+        constant: 0,
     }])]
     #[case::array_get_local_at(vec![
         OpCode::ArrayGetLocalAt { array_slot: 0, index_slot: 0 },
@@ -1901,7 +1896,7 @@ mod tests {
         OpCode::Return,
     ])]
     #[case::update_local_number_const(vec![
-        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 1.into() },
+        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
     #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
@@ -2135,6 +2130,6 @@ mod tests {
     #[test]
     fn widened_call_counts_keep_opcode_size() {
         // Identifier-carrying instructions determine the enum's 64-bit layout.
-        assert_eq!(std::mem::size_of::<OpCode>(), 24);
+        assert!(std::mem::size_of::<OpCode>() <= 16);
     }
 }
