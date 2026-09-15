@@ -221,6 +221,11 @@ pub(crate) enum OpCode {
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
+    /// Clones the top operand into one local, then pops it into another local.
+    SetLocalAndCopy {
+        source: u16,
+        destination: u16,
+    },
     /// Stores a constant directly in a local without using the operand stack.
     SetLocalConst {
         local: u16,
@@ -262,9 +267,22 @@ pub(crate) enum OpCode {
         local: u16,
         constant: u16,
     },
+    /// Evaluates a local/numeric-constant binary expression without a constant-table lookup.
+    BinaryLocalNumberConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
     /// Applies a binary operation between a local and a constant, then stores the result back
     /// into that same local without materializing the value on the operand stack.
     UpdateLocalConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
+    /// Updates a local from an inline numeric constant, retaining the generic fallback when
+    /// the local is not numeric.
+    UpdateLocalNumberConst {
         op: BinaryOp,
         local: u16,
         constant: u16,
@@ -292,6 +310,13 @@ pub(crate) enum OpCode {
         constant: u16,
         offset: i32,
     },
+    /// Branches on a local/numeric-constant comparison without loading the constant pool.
+    JumpIfFalseLocalNumberConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+        offset: i32,
+    },
     Neg,
     Not,
     ArrayNew,
@@ -314,6 +339,19 @@ pub(crate) enum OpCode {
         exit_offset: i32,
     },
     ForeachCollect(u16),
+    /// Appends the top operand to a foreach accumulator, then takes the loop backedge.
+    ForeachCollectAndJump {
+        slot: u16,
+        offset: i32,
+    },
+    /// Evaluates a local/numeric-constant expression, collects it, then takes the loop backedge.
+    ForeachBinaryLocalNumberConstAndJump {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+        accumulator_slot: u16,
+        offset: i32,
+    },
     ArraySliceFrom,
     /// Dict-pattern key test: if present, stores the value in `value_slot` and pushes `true`;
     /// else pushes `false`. Fuses what used to be separate `has` + `get` builtin calls.
@@ -331,6 +369,11 @@ pub(crate) enum OpCode {
     SelectorMatchKind(NodeSelectorKind),
     SelectorMatchHeading(u8),
     SelectorMatchWithArgs(Box<(Selector, u16)>),
+    /// Calls a registered unary builtin with a local argument without stack materialization.
+    CallBuiltinLocal {
+        builtin: Ident,
+        local: u16,
+    },
     CallBuiltin(Ident, u16),
     /// Calls a capture-free fixed-arity chunk through the checked fallback path.
     CallStatic(u16, u16),
@@ -359,6 +402,11 @@ pub(crate) enum OpCode {
     CallLocal(u16, u16),
     /// Calls an immutable upvalue without first placing its closure on the operand stack.
     CallUpvalue(u16, u16),
+    /// Calls an immutable upvalue with one local argument without a separate GetLocal.
+    CallUpvalueLocal {
+        index: u16,
+        local: u16,
+    },
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
@@ -383,6 +431,12 @@ pub(crate) enum OpCode {
         local: u16,
         constant: u16,
     },
+    /// Evaluates a local/numeric-constant binary expression and returns it without a constant lookup.
+    ReturnBinaryLocalNumberConst {
+        op: BinaryOp,
+        local: u16,
+        constant: u16,
+    },
     Return,
     /// Suspends the current chunk. Handled as `FrameOutcome::Suspend`, not the unwind path.
     Yield,
@@ -402,6 +456,7 @@ impl OpCode {
             Self::PushNone => "PushNone",
             Self::GetLocal(_) => "GetLocal",
             Self::SetLocal(_) => "SetLocal",
+            Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
             Self::SetLocalConst { .. } => "SetLocalConst",
             Self::TeeLocal(_) => "TeeLocal",
             Self::CopyLocal { .. } => "CopyLocal",
@@ -426,10 +481,13 @@ impl OpCode {
             Self::Ge => "Ge",
             Self::BinaryLocalLocal { .. } => "BinaryLocalLocal",
             Self::BinaryLocalConst { .. } => "BinaryLocalConst",
+            Self::BinaryLocalNumberConst { .. } => "BinaryLocalNumberConst",
             Self::UpdateLocalConst { .. } => "UpdateLocalConst",
+            Self::UpdateLocalNumberConst { .. } => "UpdateLocalNumberConst",
             Self::UpdateLocalLocal { .. } => "UpdateLocalLocal",
             Self::JumpIfFalseLocalLocal { .. } => "JumpIfFalseLocalLocal",
             Self::JumpIfFalseLocalConst { .. } => "JumpIfFalseLocalConst",
+            Self::JumpIfFalseLocalNumberConst { .. } => "JumpIfFalseLocalNumberConst",
             Self::Neg => "Neg",
             Self::Not => "Not",
             Self::ArrayNew => "ArrayNew",
@@ -443,6 +501,8 @@ impl OpCode {
             Self::ArrayGetLocalAt { .. } => "ArrayGetLocalAt",
             Self::ForeachNext { .. } => "ForeachNext",
             Self::ForeachCollect(_) => "ForeachCollect",
+            Self::ForeachCollectAndJump { .. } => "ForeachCollectAndJump",
+            Self::ForeachBinaryLocalNumberConstAndJump { .. } => "ForeachBinaryLocalNumberConstAndJump",
             Self::ArraySliceFrom => "ArraySliceFrom",
             Self::DictGetLocalOrFail { .. } => "DictGetLocalOrFail",
             Self::TypeCheck(_) => "TypeCheck",
@@ -453,6 +513,7 @@ impl OpCode {
             Self::SelectorMatchKind(_) => "SelectorMatchKind",
             Self::SelectorMatchHeading(_) => "SelectorMatchHeading",
             Self::SelectorMatchWithArgs(_) => "SelectorMatchWithArgs",
+            Self::CallBuiltinLocal { .. } => "CallBuiltinLocal",
             Self::CallBuiltin(_, _) => "CallBuiltin",
             Self::CallStatic(_, _) => "CallStatic",
             Self::CallStaticExact(_, _) => "CallStaticExact",
@@ -468,6 +529,7 @@ impl OpCode {
             Self::CallSelfImplicitSelf(_) => "CallSelfImplicitSelf",
             Self::CallLocal(_, _) => "CallLocal",
             Self::CallUpvalue(_, _) => "CallUpvalue",
+            Self::CallUpvalueLocal { .. } => "CallUpvalueLocal",
             Self::CallValue(_) => "CallValue",
             Self::MaybeAutoCall => "MaybeAutoCall",
             Self::TryCatch(_) => "TryCatch",
@@ -477,6 +539,7 @@ impl OpCode {
             Self::ReturnLocal(_) => "ReturnLocal",
             Self::ReturnBinaryLocalLocal { .. } => "ReturnBinaryLocalLocal",
             Self::ReturnBinaryLocalConst { .. } => "ReturnBinaryLocalConst",
+            Self::ReturnBinaryLocalNumberConst { .. } => "ReturnBinaryLocalNumberConst",
             Self::Return => "Return",
             Self::Yield => "Yield",
             Self::Resume(_) => "Resume",
@@ -818,6 +881,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     | OpCode::ReturnLocal(_)
                     | OpCode::ReturnBinaryLocalLocal { .. }
                     | OpCode::ReturnBinaryLocalConst { .. }
+                    | OpCode::ReturnBinaryLocalNumberConst { .. }
             )
         ) {
             return Err(BytecodeError::MissingReturn(chunk_index));
@@ -873,6 +937,52 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
+                OpCode::SetLocalAndCopy { source, destination } => {
+                    for slot in [source, destination] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                }
+                OpCode::ForeachCollectAndJump { slot, offset } => {
+                    if *slot >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *slot,
+                        });
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
+                OpCode::ForeachBinaryLocalNumberConstAndJump {
+                    local,
+                    accumulator_slot,
+                    constant,
+                    offset,
+                    ..
+                } => {
+                    for slot in [local, accumulator_slot] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
                 OpCode::CopyLocal { source, destination } => {
                     for slot in [source, destination] {
                         if *slot >= chunk.local_count {
@@ -909,7 +1019,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::SetLocalConst { local, constant }
                 | OpCode::BinaryLocalConst { local, constant, .. }
                 | OpCode::UpdateLocalConst { local, constant, .. }
-                | OpCode::ReturnBinaryLocalConst { local, constant, .. } => {
+                | OpCode::ReturnBinaryLocalConst { local, constant, .. }
+                | OpCode::BinaryLocalNumberConst { local, constant, .. }
+                | OpCode::UpdateLocalNumberConst { local, constant, .. }
+                | OpCode::ReturnBinaryLocalNumberConst { local, constant, .. } => {
                     if *local >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -940,6 +1053,28 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
                 OpCode::JumpIfFalseLocalConst {
+                    local,
+                    constant,
+                    offset,
+                    ..
+                } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
+                OpCode::JumpIfFalseLocalNumberConst {
                     local,
                     constant,
                     offset,
@@ -1255,13 +1390,22 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecod
             | OpCode::ReturnLocal(_)
             | OpCode::ReturnBinaryLocalLocal { .. }
             | OpCode::ReturnBinaryLocalConst { .. }
+            | OpCode::ReturnBinaryLocalNumberConst { .. }
             | OpCode::FlowBreak(_)
             | OpCode::FlowContinue
             | OpCode::RaiseDestructuringFailed => {}
             OpCode::Jump(offset) => enqueue(jump_target(pc, *offset).expect("verified jump target"), next_height),
+            OpCode::ForeachCollectAndJump { offset, .. }
+            | OpCode::ForeachBinaryLocalNumberConstAndJump { offset, .. } => {
+                enqueue(
+                    jump_target(pc, *offset).expect("verified foreach collect target"),
+                    next_height,
+                );
+            }
             OpCode::JumpIfFalse(offset)
             | OpCode::JumpIfFalseLocalLocal { offset, .. }
-            | OpCode::JumpIfFalseLocalConst { offset, .. } => {
+            | OpCode::JumpIfFalseLocalConst { offset, .. }
+            | OpCode::JumpIfFalseLocalNumberConst { offset, .. } => {
                 enqueue(pc + 1, next_height);
                 enqueue(jump_target(pc, *offset).expect("verified jump target"), next_height);
             }
@@ -1311,7 +1455,12 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::DictGetLocalOrFail { .. }
         | OpCode::GetEnvVar(_)
         | OpCode::GetExternalGlobal(_) => (0, 1),
-        OpCode::SetLocal(_) | OpCode::SetUpvalue(_) | OpCode::Pop | OpCode::ForeachCollect(_) => (1, 0),
+        OpCode::SetLocal(_)
+        | OpCode::SetLocalAndCopy { .. }
+        | OpCode::SetUpvalue(_)
+        | OpCode::Pop
+        | OpCode::ForeachCollect(_)
+        | OpCode::ForeachCollectAndJump { .. } => (1, 0),
         OpCode::TeeLocal(_) => (1, 1),
         OpCode::Dup => (1, 2),
         OpCode::SetLocalConst { .. }
@@ -1319,9 +1468,12 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::Jump(_)
         | OpCode::ForeachNext { .. }
         | OpCode::UpdateLocalConst { .. }
+        | OpCode::UpdateLocalNumberConst { .. }
         | OpCode::UpdateLocalLocal { .. }
         | OpCode::JumpIfFalseLocalLocal { .. }
-        | OpCode::JumpIfFalseLocalConst { .. } => (0, 0),
+        | OpCode::JumpIfFalseLocalConst { .. }
+        | OpCode::JumpIfFalseLocalNumberConst { .. }
+        | OpCode::ForeachBinaryLocalNumberConstAndJump { .. } => (0, 0),
         OpCode::JumpIfFalse(_) => (1, 0),
         OpCode::Add
         | OpCode::Sub
@@ -1339,7 +1491,9 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::DictSpread
         | OpCode::ArrayGetAt
         | OpCode::ArraySliceFrom => (2, 1),
-        OpCode::BinaryLocalLocal { .. } | OpCode::BinaryLocalConst { .. } => (0, 1),
+        OpCode::BinaryLocalLocal { .. } | OpCode::BinaryLocalConst { .. } | OpCode::BinaryLocalNumberConst { .. } => {
+            (0, 1)
+        }
         OpCode::Neg
         | OpCode::Not
         | OpCode::ToForeachIterable
@@ -1350,6 +1504,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::SelectorMatchHeading(_)
         | OpCode::MaybeAutoCall
         | OpCode::Yield => (1, 1),
+        OpCode::CallBuiltinLocal { .. } => (0, 1),
         OpCode::InterpString(count) => (*count as usize, 1),
         OpCode::SelectorMatchWithArgs(payload) => (payload.1 as usize + 1, 1),
         OpCode::CallBuiltin(_, count)
@@ -1361,6 +1516,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::CallSelfImplicitSelf(count)
         | OpCode::CallLocal(_, count)
         | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
+        OpCode::CallUpvalueLocal { .. } => (0, 1),
         // The interpreter treats `argc == 2` as `send` (pops 2) and anything else as `next`
         // (pops 1), regardless of the declared count; mirror that exactly here.
         OpCode::Resume(count) => (if *count == 2 { 2 } else { 1 }, 1),
@@ -1372,9 +1528,10 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         OpCode::FlowBreak(has_value) => (usize::from(*has_value), 0),
         OpCode::FlowContinue | OpCode::RaiseDestructuringFailed => (0, 0),
         OpCode::Return => (1, 0),
-        OpCode::ReturnLocal(_) | OpCode::ReturnBinaryLocalLocal { .. } | OpCode::ReturnBinaryLocalConst { .. } => {
-            (0, 0)
-        }
+        OpCode::ReturnLocal(_)
+        | OpCode::ReturnBinaryLocalLocal { .. }
+        | OpCode::ReturnBinaryLocalConst { .. }
+        | OpCode::ReturnBinaryLocalNumberConst { .. } => (0, 0),
     }
 }
 
@@ -1461,7 +1618,7 @@ mod tests {
 
     #[test]
     fn opcode_stays_compact() {
-        assert_eq!(std::mem::size_of::<OpCode>(), 16);
+        assert!(std::mem::size_of::<OpCode>() <= 16);
     }
 
     #[test]
@@ -1591,6 +1748,11 @@ mod tests {
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::return_local(vec![OpCode::ReturnLocal(0)])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
+    #[case::set_local_and_copy(vec![
+        OpCode::PushNone,
+        OpCode::SetLocalAndCopy { source: 0, destination: 0 },
+        OpCode::Return,
+    ])]
     #[case::set_local_const(vec![OpCode::SetLocalConst { local: 0, constant: 0 }, OpCode::Return])]
     #[case::tee_local(vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::copy_local(vec![
@@ -1602,6 +1764,22 @@ mod tests {
     ])]
     #[case::call_local(vec![OpCode::CallLocal(0, 0), OpCode::Pop, OpCode::Return])]
     #[case::foreach_collect(vec![OpCode::ForeachCollect(0), OpCode::Return])]
+    #[case::foreach_collect_and_jump(vec![
+        OpCode::ForeachCollectAndJump { slot: 0, offset: 1 },
+        OpCode::Return,
+        OpCode::Return,
+    ])]
+    #[case::foreach_binary_local_number_const_and_jump(vec![
+        OpCode::ForeachBinaryLocalNumberConstAndJump {
+            op: BinaryOp::Add,
+            local: 0,
+            constant: 0,
+            accumulator_slot: 0,
+            offset: 1,
+        },
+        OpCode::Return,
+        OpCode::Return,
+    ])]
     #[case::array_len_local(vec![OpCode::ArrayLenLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::binary_local_local(vec![
         OpCode::BinaryLocalLocal { op: BinaryOp::Add, left: 0, right: 0 },
@@ -1622,11 +1800,35 @@ mod tests {
         OpCode::Pop,
         OpCode::Return,
     ])]
+    #[case::binary_local_number_const(vec![
+        OpCode::BinaryLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
     #[case::update_local_const(vec![
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
+    #[case::update_local_number_const(vec![
+        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
+        OpCode::Return,
+    ])]
+    #[case::jump_if_false_local_number_const(vec![
+        OpCode::JumpIfFalseLocalNumberConst {
+            op: BinaryOp::Eq,
+            local: 0,
+            constant: 0,
+            offset: 1,
+        },
+        OpCode::Return,
+        OpCode::Return,
+    ])]
     #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
+        op: BinaryOp::Add,
+        local: 0,
+        constant: 0,
+    }])]
+    #[case::return_binary_local_number_const(vec![OpCode::ReturnBinaryLocalNumberConst {
         op: BinaryOp::Add,
         local: 0,
         constant: 0,
@@ -1681,6 +1883,10 @@ mod tests {
     ])]
     #[case::update_local_const(vec![
         OpCode::UpdateLocalConst { op: BinaryOp::Add, local: 0, constant: 0 },
+        OpCode::Return,
+    ])]
+    #[case::update_local_number_const(vec![
+        OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, local: 0, constant: 0 },
         OpCode::Return,
     ])]
     #[case::return_binary_local_const(vec![OpCode::ReturnBinaryLocalConst {
@@ -1913,8 +2119,7 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn widened_call_counts_keep_opcode_size() {
-        // `CallBuiltin(Ident, ..)` already determines the enum's 64-bit layout, so widening
-        // call counts from `u8` to `u16` must not inflate the instruction stream.
-        assert_eq!(std::mem::size_of::<OpCode>(), 16);
+        // Identifier-carrying instructions determine the enum's 64-bit layout.
+        assert!(std::mem::size_of::<OpCode>() <= 16);
     }
 }

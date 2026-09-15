@@ -275,6 +275,55 @@ pub(super) fn call_fixed_closure_from_stack(
     )
 }
 
+/// Builds a fixed-arity closure frame from one local argument without using the operand stack.
+pub(super) fn call_fixed_closure_from_local(
+    closure: &Closure,
+    argument: StackValue,
+    call_site: CallSite<'_>,
+    chunks: &Shared<Vec<Chunk>>,
+    execution: &mut ExecutionContext<'_>,
+) -> VmResult<Frame> {
+    let callee_chunk = &chunks[closure.chunk_index as usize];
+    let Some(arity) = callee_chunk.param_shape.fixed_required_arity() else {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::Corrupt("fixed call has non-fixed parameters"),
+        ));
+    };
+    if arity != 1 && arity != 2 {
+        return Err(locate(
+            call_site.chunk,
+            call_site.ip,
+            VmError::ArityMismatch {
+                expected: arity,
+                actual: 1,
+            },
+        ));
+    }
+    let mut callee_locals = execution.limits.take_locals_with_initialized_prefix(
+        callee_chunk.local_count,
+        SELF_SLOT as usize + 1 + arity,
+        callee_chunk.captured_local_slots(),
+    );
+    let self_value = call_site.locals.get(SELF_SLOT);
+    callee_locals.set(SELF_SLOT, self_value.clone());
+    if arity == 2 {
+        callee_locals.set(SELF_SLOT + 1, self_value);
+        callee_locals.set(SELF_SLOT + 2, argument);
+    } else {
+        callee_locals.set(SELF_SLOT + 1, argument);
+    }
+    Ok(Frame::new(
+        closure.chunk_index,
+        call_site.frame_chunks,
+        callee_locals,
+        closure.upvalues.clone(),
+        !callee_chunk.captures_local_slots(),
+        Continuation::Push,
+    ))
+}
+
 /// Builds a frame for a capture-free fixed-arity chunk. `CallStatic` uses this path so it does
 /// not need to load or clone the closure stored in the defining local slot.
 pub(super) fn call_static_chunk_from_stack(

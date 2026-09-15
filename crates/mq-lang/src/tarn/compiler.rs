@@ -2470,6 +2470,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 return Ok(());
             }
             if let Resolved::Upvalue { index, immutable: true } = resolved {
+                if args.len() == 1
+                    && let Some(local) = self.current_local_slot(&args[0])
+                {
+                    self.emit(OpCode::CallUpvalueLocal { index, local });
+                    return Ok(());
+                }
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
@@ -2525,6 +2531,14 @@ impl<R: ModuleResolver> Compiler<R> {
                 (self.current_local_slot(&args[0]), self.current_local_slot(&args[1]))
         {
             self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
+            return Ok(());
+        }
+        if args.len() == 1
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let Some(local) = self.current_local_slot(&args[0])
+        {
+            self.emit(OpCode::CallBuiltinLocal { builtin: ident, local });
             return Ok(());
         }
         // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
@@ -2856,13 +2870,12 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_foreach(&mut self, ident: crate::Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
-        self.emit(OpCode::ArrayNew);
-        self.emit(OpCode::SetLocal(acc_slot));
-
         let array_slot = self.scope_mut().declare_synthetic();
         self.compile_expr(iterable)?;
         self.emit(OpCode::ToForeachIterable);
         self.emit(OpCode::SetLocal(array_slot));
+        self.emit(OpCode::ArrayNew);
+        self.emit(OpCode::SetLocal(acc_slot));
 
         let index_slot = self.scope_mut().declare_synthetic();
         let zero = self.chunk_mut().push_const(RuntimeValue::Number(0.0.into()));

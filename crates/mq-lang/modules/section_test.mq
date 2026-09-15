@@ -61,6 +61,12 @@ def test_section_level():
   | assert_eq(lvl, 1)
 end
 
+# @parametrize([["# H", 1], ["## H", 2], ["### H", 3], ["#### H", 4], ["##### H", 5], ["###### H", 6]])
+def test_section_level_all_heading_depths(markdown, expected_level):
+  let sections = section::sections(to_markdown(markdown))
+  | assert_eq(section::level(first(sections)), expected_level)
+end
+
 def test_section_nth():
   let sections = do test_sections | section::split(1);
   | let second = section::nth(sections, 1)

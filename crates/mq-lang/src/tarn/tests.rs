@@ -114,6 +114,33 @@ fn node_selectors_use_compact_bytecode_instructions() {
     );
 }
 
+#[test]
+fn unary_builtin_calls_with_local_arguments_use_compact_bytecode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def name(node): to_md_name(node); name(to_h(\"title\", 2))",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::CallBuiltinLocal { .. })),
+        "unary builtin local calls should use compact bytecode: {:?}",
+        compiled.chunks
+    );
+    assert_eq!(
+        run_with_prelude("def name(node): to_md_name(node); name(to_h(\"title\", 2))"),
+        "h2".into()
+    );
+}
+
 #[rstest::fixture]
 fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
@@ -287,7 +314,7 @@ fn local_binary_expressions_use_compact_bytecode() {
         compiled.chunks[1]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { .. }))
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalNumberConst { .. }))
     );
 }
 
@@ -303,7 +330,13 @@ fn loop_header_comparisons_use_a_compact_branch_opcode() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::JumpIfFalseLocalConst { op: BinaryOp::Gt, .. }))
+            .any(|op| matches!(op, OpCode::JumpIfFalseLocalNumberConst { op: BinaryOp::Gt, .. }))
+    );
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::SetLocalAndCopy { .. }))
     );
     assert_eq!(
         run("var i = 3 | while(i > 0): i -= 1; | i"),
@@ -334,9 +367,87 @@ fn local_constant_assignment_uses_update_opcode() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::UpdateLocalConst { op: BinaryOp::Add, .. }))
+            .any(|op| matches!(op, OpCode::UpdateLocalNumberConst { op: BinaryOp::Add, .. }))
     );
     assert_eq!(run("var x = 1 | x += 2 | x"), RuntimeValue::Number(3.into()));
+}
+
+#[rstest]
+#[case::add("+=", 9.0)]
+#[case::subtract("-=", 3.0)]
+#[case::multiply("*=", 18.0)]
+#[case::divide("/=", 2.0)]
+#[case::modulo("%=", 0.0)]
+fn numeric_local_constant_updates_preserve_results(#[case] operator: &str, #[case] expected: f64) {
+    assert_eq!(
+        run(&format!("var value = 6 | value {operator} 3 | value")),
+        RuntimeValue::Number(expected.into())
+    );
+}
+
+#[rstest]
+#[case::equal("==", true)]
+#[case::not_equal("!=", false)]
+#[case::less_than("<", false)]
+#[case::less_than_or_equal("<=", true)]
+#[case::greater_than(">", false)]
+#[case::greater_than_or_equal(">=", true)]
+fn numeric_local_constant_comparisons_preserve_results(#[case] operator: &str, #[case] expected: bool) {
+    assert_eq!(
+        run(&format!("var value = 3 | if (value {operator} 3): true else: false")),
+        RuntimeValue::Boolean(expected)
+    );
+}
+
+#[test]
+fn numeric_constant_opcodes_fall_back_to_generic_values() {
+    let input = RuntimeValue::String(Shared::new("item".to_string()));
+    assert_eq!(
+        run_with_input("var value = . | value += 1 | value", input.clone(),),
+        RuntimeValue::String(Shared::new("item1".to_string()))
+    );
+    assert_eq!(
+        run_with_input("var value = . | if (value == 1): \"wrong\" else: value", input.clone()),
+        input
+    );
+    assert_eq!(
+        run("foreach(value, [\"item\"]): value + 1;"),
+        RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new(
+            "item1".to_string()
+        ))]))
+    );
+    assert_eq!(
+        run_with_input("let add_one = fn(value): value + 1; | add_one(.)", input.clone()),
+        RuntimeValue::String(Shared::new("item1".to_string()))
+    );
+    assert_eq!(
+        run_with_input("let value = . | let result = value + 1 | result", input),
+        RuntimeValue::String(Shared::new("item1".to_string()))
+    );
+}
+
+#[test]
+fn numeric_local_constant_expressions_use_the_inline_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "let value = 2 | let result = value + 3 | result",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::BinaryLocalNumberConst { op: BinaryOp::Add, .. }))
+    );
+    assert_eq!(
+        run("let value = 2 | let result = value + 3 | result"),
+        RuntimeValue::Number(5.into())
+    );
 }
 
 #[test]
@@ -368,7 +479,7 @@ fn local_constant_binary_return_uses_return_opcode() {
         chunk
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::ReturnBinaryLocalConst { op: BinaryOp::Mul, .. }))
+            .any(|op| matches!(op, OpCode::ReturnBinaryLocalNumberConst { op: BinaryOp::Mul, .. }))
     }));
     assert_eq!(
         run("let double = fn(x): x * 2; | double(3)"),
@@ -694,12 +805,12 @@ fn immutable_function_upvalue_calls_use_call_upvalue() {
     let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    assert!(
-        compiled
-            .chunks
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
             .iter()
-            .any(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallUpvalue(_, 1))))
-    );
+            .any(|op| matches!(op, OpCode::CallUpvalueLocal { .. }))
+    }));
     assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 
@@ -747,17 +858,39 @@ fn foreach_uses_the_specialized_iteration_opcode() {
             .iter()
             .any(|op| matches!(op, OpCode::ForeachNext { .. }))
     );
+    assert!(compiled.chunks[0].code.iter().any(|op| matches!(op, OpCode::ArrayNew)));
     assert!(
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::ForeachCollect(_)))
+            .any(|op| matches!(op, OpCode::ForeachCollectAndJump { .. }))
     );
     assert!(
         !compiled.chunks[0]
             .code
             .iter()
             .any(|op| matches!(op, OpCode::ArrayLen | OpCode::ArrayGetAt))
+    );
+}
+
+#[test]
+fn foreach_numeric_local_constant_body_uses_combined_opcode() {
+    use super::bytecode::{BinaryOp, OpCode};
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("foreach(x, [1, 2]): x + 1;", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks[0].code.iter().any(|op| matches!(
+        op,
+        OpCode::ForeachBinaryLocalNumberConstAndJump { op: BinaryOp::Add, .. }
+    )));
+    assert_eq!(
+        run("foreach(x, [1, 2]): x + 1;"),
+        RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Number(2.into()),
+            RuntimeValue::Number(3.into())
+        ]))
     );
 }
 
@@ -2588,6 +2721,33 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(64))]
 
     #[test]
+    fn generated_numeric_local_constant_operations_preserve_semantics(
+        left in -1_000i16..1_000,
+        right in -1_000i16..1_000,
+        nonzero_right in prop_oneof![-1_000i16..0, 1i16..1_000],
+    ) {
+        let left = f64::from(left);
+        let right = f64::from(right);
+        let nonzero_right = f64::from(nonzero_right);
+
+        for (operator, expected) in [
+            ("+=", left + right),
+            ("-=", left - right),
+            ("*=", left * right),
+            ("/=", left / nonzero_right),
+            ("%=", left % nonzero_right),
+        ] {
+            let operand = if matches!(operator, "/=" | "%=") {
+                nonzero_right
+            } else {
+                right
+            };
+            let code = format!("var value = {left} | value {operator} {operand} | value");
+            prop_assert_eq!(run(&code), RuntimeValue::Number(expected.into()), "{:?}", code);
+        }
+    }
+
+    #[test]
     fn generated_programs_preserve_arithmetic_closure_and_foreach_semantics(
         left in -100i16..100,
         right in -100i16..100,
@@ -2598,14 +2758,35 @@ proptest! {
         let arithmetic_expected = (i32::from(left) + i32::from(right)) * i32::from(scale);
         prop_assert_eq!(run(&arithmetic), RuntimeValue::Number(f64::from(arithmetic_expected).into()));
 
+        let local_expression = format!("let value = {left} | let result = value + {right} | result");
+        prop_assert_eq!(
+            run(&local_expression),
+            RuntimeValue::Number((f64::from(left) + f64::from(right)).into())
+        );
+
         let closure = format!("let base = {left} | let add_base = fn(value): base + value; | add_base({right})");
         let closure_expected = i32::from(left) + i32::from(right);
         prop_assert_eq!(run(&closure), RuntimeValue::Number(f64::from(closure_expected).into()));
+
+        let local_constant_return = format!("let add_scale = fn(value): value + {scale}; | add_scale({left})");
+        prop_assert_eq!(
+            run(&local_constant_return),
+            RuntimeValue::Number((f64::from(left) + f64::from(scale)).into())
+        );
 
         let elements = values.iter().map(ToString::to_string).collect::<Vec<_>>().join(", ");
         let foreach = format!("var total = 0 | foreach(value, [{elements}]): total += value; | total");
         let foreach_expected: i32 = values.iter().map(|value| i32::from(*value)).sum();
         prop_assert_eq!(run(&foreach), RuntimeValue::Number(f64::from(foreach_expected).into()));
+
+        let mapped = format!("foreach(value, [{elements}]): value + {scale};");
+        let mapped_expected = RuntimeValue::Array(Shared::new(
+            values
+                .iter()
+                .map(|value| RuntimeValue::Number((f64::from(*value) + f64::from(scale)).into()))
+                .collect(),
+        ));
+        prop_assert_eq!(run(&mapped), mapped_expected);
     }
 }
 

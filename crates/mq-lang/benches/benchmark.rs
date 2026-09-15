@@ -53,6 +53,18 @@ fn eval_compiled_while(bencher: divan::Bencher) {
     );
 }
 
+/// Measures a local/numeric-constant expression whose result is stored in another local.
+#[divan::bench]
+fn eval_compiled_local_numeric_expression(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "var source = 0 | var destination = 0 | while(source < 10000): destination = source + 1 | source += 1; | destination",
+        || vec![mq_lang::RuntimeValue::Number(1.into())],
+    );
+}
+
 /// Measures the VM's specialized `foreach` control path with per-iteration arithmetic.
 ///
 /// Keep this workload aligned with the long-standing regression benchmark so historical
