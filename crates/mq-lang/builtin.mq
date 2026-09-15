@@ -179,6 +179,22 @@ end
 # Returns: bool
 def test(s, pattern): is_regex_match(s, pattern);
 
+# Returns true if the string is empty or contains only Unicode whitespace.
+#
+# Example:
+# ```
+# is_blank("   ")
+# #=> true
+# ```
+#
+# Returns: bool
+def is_blank(s):
+  if (!is_string(s)):
+    error("is_blank: argument must be a string")
+  else:
+    do trim(s) | is_empty();
+end
+
 # Removes ANSI escape sequences (e.g. color codes) from a string
 #
 # Example:
@@ -1834,6 +1850,41 @@ def slugify(s, separator = "-"):
   | gsub("^-+|-+$", "")
 end
 
+# Converts a string into a filesystem-safe filename by replacing characters that are
+# invalid or reserved on common filesystems (control characters and `<>:"/\|?*`),
+# trimming trailing dots and spaces, renaming Windows reserved device names (e.g. `CON`),
+# and truncating to `max_length` characters while preserving the file extension.
+#
+# Example:
+# ```
+# safe_filename("My: Report? <2024>.pdf")
+# #=> My_ Report_ _2024_.pdf
+# ```
+#
+# Returns: string
+def safe_filename(name, max_length = 255):
+  if (!is_string(name)):
+    error("safe_filename: first argument must be a string")
+  else:
+    do
+      let cleaned = gsub(gsub(name, "[\x00-\x1f\x7f<>:\"/\\\\|?*]", "_"), "[. ]+$", "")
+      | let cleaned = if (is_empty(cleaned)): "_" else: cleaned
+      | let chars = explode(cleaned)
+      | let n = len(chars)
+      | let rev_dot = find_index(reverse(chars), fn(c): c == 46;)
+      | let dot_idx = if (rev_dot == -1): -1 else: n - 1 - rev_dot
+      | let has_ext = dot_idx > 0
+      | let stem = if (has_ext): implode(slice(chars, 0, dot_idx)) else: cleaned
+      | let ext = if (has_ext): implode(slice(chars, dot_idx, n)) else: ""
+      | let reserved = ["CON", "PRN", "AUX", "NUL",
+          "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+          "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
+      | let stem = if (in(reserved, upcase(stem))): stem + "_" else: stem
+      | let max_stem_len = max(max_length - len(ext), 1)
+      | truncate(stem, max_stem_len, "") + ext
+    end
+end
+
 # Quotes a string for safe use as a POSIX shell argument (like jq's `@sh` format).
 #
 # Example:
@@ -2530,6 +2581,28 @@ def dedent(s):
           end
         else:
           s
+    end
+end
+
+# Normalizes line endings in a string to either `"\n"` (`"lf"`) or `"\r\n"` (`"crlf"`).
+# Any mix of `"\r\n"`, `"\r"`, and `"\n"` in the input is treated as a line break.
+#
+# Example:
+# ```
+# normalize_newlines("a\r\nb\rc", "lf")
+# #=> a\nb\nc
+# ```
+#
+# Returns: string
+def normalize_newlines(text, mode):
+  if (!is_string(text)):
+    error("normalize_newlines: first argument must be a string")
+  elif (mode != "lf" && mode != "crlf"):
+    error("normalize_newlines: mode must be \"lf\" or \"crlf\"")
+  else:
+    do
+      let lf = gsub(text, "\r\n|\r", "\n")
+      | if (mode == "crlf"): gsub(lf, "\n", "\r\n") else: lf
     end
 end
 

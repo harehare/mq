@@ -135,6 +135,18 @@ def test_is_empty(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["", true],
+#   ["   ", true],
+#   ["\t\n  \t", true],
+#   ["a", false],
+#   ["  a  ", false],
+# ])
+def test_is_blank(value, expected):
+  let result = is_blank(value)
+  | assert_eq(result, expected)
+end
+
 # Selector tests
 # @parametrize([[42, true, 42], [42, false, None]])
 def test_select(value, cond, expected):
@@ -881,6 +893,29 @@ def test_slugify(value, expected):
 end
 
 # @parametrize([
+#   ["My: Report? <2024>.pdf", "My_ Report_ _2024_.pdf"],
+#   ["plain-name.txt", "plain-name.txt"],
+#   ["no_extension", "no_extension"],
+#   ["archive.tar.gz", "archive.tar.gz"],
+#   [".gitignore", ".gitignore"],
+#   ["con.txt", "con_.txt"],
+#   ["  trailing dots..  ", "  trailing dots"],
+#   ["", "_"],
+# ])
+def test_safe_filename(value, expected):
+  let result = safe_filename(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
+#   ["abcdefghij.txt", 8, "abcd.txt"],
+# ])
+def test_safe_filename_max_length(value, max_length, expected):
+  let result = safe_filename(value, max_length)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
 #   [[1, 2, 3, 4, 5], 2, [[1, 2], [3, 4], [5]]],
 #   [[1, 2, 3, 4], 3, [[1, 2, 3], [4]]],
 #   [[], 2, []],
@@ -1167,6 +1202,17 @@ end
 # ])
 def test_dedent(value, expected):
   let result = dedent(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
+#   ["a\r\nb\rc\nd", "lf", "a\nb\nc\nd"],
+#   ["a\r\nb\rc\nd", "crlf", "a\r\nb\r\nc\r\nd"],
+#   ["already lf\n", "lf", "already lf\n"],
+#   ["", "lf", ""],
+# ])
+def test_normalize_newlines(value, mode, expected):
+  let result = normalize_newlines(value, mode)
   | assert_eq(result, expected)
 end
 

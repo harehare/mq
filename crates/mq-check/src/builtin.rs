@@ -448,6 +448,17 @@ fn register_string(ctx: &mut InferenceContext) {
     // slugify: (string) -> string
     register_binary(ctx, "slugify", Type::String, Type::String, Type::String);
 
+    // is_blank: (string) -> bool
+    register_unary(ctx, "is_blank", Type::String, Type::Bool);
+
+    // normalize_newlines: (string, string) -> string
+    register_binary(ctx, "normalize_newlines", Type::String, Type::String, Type::String);
+
+    // safe_filename: (string) -> string
+    register_unary(ctx, "safe_filename", Type::String, Type::String);
+    // safe_filename: (string, number) -> string
+    register_binary(ctx, "safe_filename", Type::String, Type::Number, Type::String);
+
     // md5: a -> string
     let a = ctx.fresh_var();
     register_unary(ctx, "md5", Type::Var(a), Type::String);
