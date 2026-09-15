@@ -33,7 +33,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onDebug"
+    "onDebug",
+    "workspaceContains:**/*.mq"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -126,6 +127,12 @@
           "type": "string",
           "default": "",
           "description": "Path to the mq-dbg executable"
+        },
+        "mq.testPath": {
+          "title": "Test Runner Path",
+          "type": "string",
+          "default": "",
+          "description": "Path to the mq-test executable, used by the Test Explorer integration. Falls back to mq-test on PATH."
         },
         "mq.showExamplesInNewFile": {
           "title": "Show examples in new file",
