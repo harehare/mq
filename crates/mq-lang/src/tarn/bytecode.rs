@@ -374,7 +374,7 @@ pub(crate) enum OpCode {
     SelectorMatchWithArgs(Box<(Selector, u16)>),
     /// Calls a registered unary builtin with a local argument without stack materialization.
     CallBuiltinLocal {
-        ident: Ident,
+        builtin: u16,
         local: u16,
     },
     CallBuiltin(Ident, u16),
@@ -405,6 +405,11 @@ pub(crate) enum OpCode {
     CallLocal(u16, u16),
     /// Calls an immutable upvalue without first placing its closure on the operand stack.
     CallUpvalue(u16, u16),
+    /// Calls an immutable upvalue with one local argument without a separate GetLocal.
+    CallUpvalueLocal {
+        index: u16,
+        local: u16,
+    },
     CallValue(u16),
     /// Invokes a pipeline value only when it is callable without explicit arguments.
     MaybeAutoCall,
@@ -528,6 +533,7 @@ impl OpCode {
             Self::CallSelfImplicitSelf(_) => "CallSelfImplicitSelf",
             Self::CallLocal(_, _) => "CallLocal",
             Self::CallUpvalue(_, _) => "CallUpvalue",
+            Self::CallUpvalueLocal { .. } => "CallUpvalueLocal",
             Self::CallValue(_) => "CallValue",
             Self::MaybeAutoCall => "MaybeAutoCall",
             Self::TryCatch(_) => "TryCatch",
@@ -911,7 +917,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         }
         for (pc, op) in chunk.code.iter().enumerate() {
             match op {
-                OpCode::Const(index) | OpCode::GetEnvVar(index) => {
+                OpCode::Const(index) | OpCode::GetEnvVar(index) | OpCode::CallBuiltinLocal { builtin: index, .. } => {
                     if *index as usize >= chunk.constants.len() {
                         return Err(BytecodeError::ConstantOutOfBounds {
                             chunk: chunk_index,
@@ -1520,6 +1526,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::CallSelfImplicitSelf(count)
         | OpCode::CallLocal(_, count)
         | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
+        OpCode::CallUpvalueLocal { .. } => (0, 1),
         // The interpreter treats `argc == 2` as `send` (pops 2) and anything else as `next`
         // (pops 1), regardless of the declared count; mirror that exactly here.
         OpCode::Resume(count) => (if *count == 2 { 2 } else { 1 }, 1),
@@ -1621,7 +1628,7 @@ mod tests {
 
     #[test]
     fn opcode_stays_compact() {
-        assert_eq!(std::mem::size_of::<OpCode>(), 16);
+        assert_eq!(std::mem::size_of::<OpCode>(), 24);
     }
 
     #[test]
@@ -2127,8 +2134,7 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn widened_call_counts_keep_opcode_size() {
-        // `CallBuiltin(Ident, ..)` already determines the enum's 64-bit layout, so widening
-        // call counts from `u8` to `u16` must not inflate the instruction stream.
-        assert_eq!(std::mem::size_of::<OpCode>(), 16);
+        // Identifier-carrying instructions determine the enum's 64-bit layout.
+        assert_eq!(std::mem::size_of::<OpCode>(), 24);
     }
 }

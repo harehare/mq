@@ -1003,6 +1003,62 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             return Err(locate(chunk, ip, $e))
         };
     }
+    macro_rules! call_upvalue {
+        ($label:lifetime, $index:expr, $argc:expr) => {{
+            // SAFETY: `verify_chunks` validates every upvalue index before execution.
+            let callee = read_cell(unsafe { upvalues.get_unchecked($index as usize) });
+            if let StackValue::Closure(closure) = &callee
+                && chunks[closure.chunk_index as usize]
+                    .param_shape
+                    .fixed_required_arity()
+                    .is_some()
+                && !chunks[closure.chunk_index as usize].is_generator
+            {
+                let new_frame = call_fixed_closure_from_stack(
+                    FixedClosureCall {
+                        closure,
+                        argc: $argc,
+                        remove_callee: false,
+                    },
+                    stack,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                )?;
+                break $label FrameOutcome::Enter(new_frame);
+            } else {
+                let mut args = execution.limits.take_stack();
+                for _ in 0..$argc {
+                    args.push(pop!());
+                }
+                args.reverse();
+                let step = call_stack_value::<CHECK_TIMEOUT>(
+                    callee,
+                    &mut args,
+                    CallSite {
+                        locals,
+                        chunk,
+                        ip,
+                        frame_chunks: frame.chunks.clone(),
+                    },
+                    chunks,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+                execution.limits.recycle_stack(args);
+                match step? {
+                    CallStep::Value(v) => stack.push(v),
+                    CallStep::Enter(new_frame) => break $label FrameOutcome::Enter(new_frame),
+                }
+            }
+        }};
+    }
 
     let outcome = 'dispatch: loop {
         if ip >= chunk.code.len() {
@@ -1513,7 +1569,16 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     Selector::Heading((*level != 0).then_some(*level)),
                 )));
             }
-            OpCode::CallBuiltinLocal { ident, local } => {
+            OpCode::CallBuiltinLocal { builtin, local } => {
+                // SAFETY: `verify_chunks` validates every constant index before execution.
+                let RuntimeValue::NativeFunction(ident) = (unsafe { chunk.constants.get_unchecked(*builtin as usize) })
+                else {
+                    return Err(locate(
+                        chunk,
+                        ip,
+                        VmError::Corrupt("CallBuiltinLocal constant is not a builtin"),
+                    ));
+                };
                 let value = local_runtime_value(locals, *local, chunks)?;
                 let result = call_builtin(
                     ident,
@@ -1845,58 +1910,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
             }
             OpCode::CallUpvalue(index, argc) => {
-                // SAFETY: `verify_chunks` validates every upvalue index before execution.
-                let callee = read_cell(unsafe { upvalues.get_unchecked(*index as usize) });
-                if let StackValue::Closure(closure) = &callee
-                    && chunks[closure.chunk_index as usize]
-                        .param_shape
-                        .fixed_required_arity()
-                        .is_some()
-                    && !chunks[closure.chunk_index as usize].is_generator
-                {
-                    let new_frame = call_fixed_closure_from_stack(
-                        FixedClosureCall {
-                            closure,
-                            argc: *argc,
-                            remove_callee: false,
-                        },
-                        stack,
-                        CallSite {
-                            locals,
-                            chunk,
-                            ip,
-                            frame_chunks: frame.chunks.clone(),
-                        },
-                        chunks,
-                        execution,
-                    )?;
-                    break 'dispatch FrameOutcome::Enter(new_frame);
-                } else {
-                    let mut args = execution.limits.take_stack();
-                    for _ in 0..*argc {
-                        args.push(pop!());
-                    }
-                    args.reverse();
-                    let step = call_stack_value::<CHECK_TIMEOUT>(
-                        callee,
-                        &mut args,
-                        CallSite {
-                            locals,
-                            chunk,
-                            ip,
-                            frame_chunks: frame.chunks.clone(),
-                        },
-                        chunks,
-                        execution,
-                        #[cfg(feature = "debugger")]
-                        debug,
-                    );
-                    execution.limits.recycle_stack(args);
-                    match step? {
-                        CallStep::Value(v) => stack.push(v),
-                        CallStep::Enter(new_frame) => break 'dispatch FrameOutcome::Enter(new_frame),
-                    }
-                }
+                call_upvalue!('dispatch, *index, *argc);
+            }
+            OpCode::CallUpvalueLocal { index, local } => {
+                stack.push(locals.get(*local));
+                call_upvalue!('dispatch, *index, 1);
             }
             OpCode::CallValue(argc) => {
                 let callee_index = stack

@@ -805,12 +805,12 @@ fn immutable_function_upvalue_calls_use_call_upvalue() {
     let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
-    assert!(
-        compiled
-            .chunks
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
             .iter()
-            .any(|chunk| chunk.code.iter().any(|op| matches!(op, OpCode::CallUpvalue(_, 1))))
-    );
+            .any(|op| matches!(op, OpCode::CallUpvalueLocal { .. }))
+    }));
     assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
 }
 

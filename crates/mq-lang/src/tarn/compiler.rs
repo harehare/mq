@@ -2470,6 +2470,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 return Ok(());
             }
             if let Resolved::Upvalue { index, immutable: true } = resolved {
+                if args.len() == 1
+                    && let Some(local) = self.current_local_slot(&args[0])
+                {
+                    self.emit(OpCode::CallUpvalueLocal { index, local });
+                    return Ok(());
+                }
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
@@ -2532,7 +2538,8 @@ impl<R: ModuleResolver> Compiler<R> {
             && builtin::get_builtin_functions(&ident).is_some()
             && let Some(local) = self.current_local_slot(&args[0])
         {
-            self.emit(OpCode::CallBuiltinLocal { ident, local });
+            let builtin = self.chunk_mut().push_const(RuntimeValue::NativeFunction(ident));
+            self.emit(OpCode::CallBuiltinLocal { builtin, local });
             return Ok(());
         }
         // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
