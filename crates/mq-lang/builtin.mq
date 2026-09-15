@@ -2590,7 +2590,9 @@ end
 # Example:
 # ```
 # normalize_newlines("a\r\nb\rc", "lf")
-# #=> a\nb\nc
+# #=> a
+# b
+# c
 # ```
 #
 # Returns: string
