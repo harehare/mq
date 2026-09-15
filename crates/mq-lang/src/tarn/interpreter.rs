@@ -1392,18 +1392,6 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::ArrayNew => {
                 stack.push(StackValue::Value(RuntimeValue::empty_array()));
             }
-            OpCode::ArrayNewWithCapacityLocal(slot) => {
-                let RuntimeValue::Array(iterable) = local_runtime_value(locals, *slot, chunks)? else {
-                    return Err(locate(
-                        chunk,
-                        ip,
-                        VmError::Corrupt("ArrayNewWithCapacityLocal input is not an array"),
-                    ));
-                };
-                stack.push(StackValue::Value(RuntimeValue::Array(Shared::new(Vec::with_capacity(
-                    iterable.len(),
-                )))));
-            }
             OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
                 array_misc_op(op, stack, chunks, chunk, ip)?;
             }
@@ -1575,18 +1563,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 )));
             }
             OpCode::CallBuiltinLocal { builtin, local } => {
-                // SAFETY: `verify_chunks` validates every constant index before execution.
-                let RuntimeValue::NativeFunction(ident) = (unsafe { chunk.constants.get_unchecked(*builtin as usize) })
-                else {
-                    return Err(locate(
-                        chunk,
-                        ip,
-                        VmError::Corrupt("CallBuiltinLocal constant is not a builtin"),
-                    ));
-                };
                 let value = local_runtime_value(locals, *local, chunks)?;
                 let result = call_builtin(
-                    ident,
+                    builtin,
                     &[value],
                     &current_self(locals, chunks),
                     execution.env,

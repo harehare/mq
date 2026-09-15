@@ -2538,8 +2538,7 @@ impl<R: ModuleResolver> Compiler<R> {
             && builtin::get_builtin_functions(&ident).is_some()
             && let Some(local) = self.current_local_slot(&args[0])
         {
-            let builtin = self.chunk_mut().push_const(RuntimeValue::NativeFunction(ident));
-            self.emit(OpCode::CallBuiltinLocal { builtin, local });
+            self.emit(OpCode::CallBuiltinLocal { builtin: ident, local });
             return Ok(());
         }
         // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
@@ -2875,7 +2874,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_expr(iterable)?;
         self.emit(OpCode::ToForeachIterable);
         self.emit(OpCode::SetLocal(array_slot));
-        self.emit(OpCode::ArrayNewWithCapacityLocal(array_slot));
+        self.emit(OpCode::ArrayNew);
         self.emit(OpCode::SetLocal(acc_slot));
 
         let index_slot = self.scope_mut().declare_synthetic();

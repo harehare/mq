@@ -320,8 +320,6 @@ pub(crate) enum OpCode {
     Neg,
     Not,
     ArrayNew,
-    /// Creates an array preallocated for the length of an iterable stored in a local slot.
-    ArrayNewWithCapacityLocal(u16),
     ArrayPush,
     ArraySpread,
     DictSpread,
@@ -373,7 +371,7 @@ pub(crate) enum OpCode {
     SelectorMatchWithArgs(Box<(Selector, u16)>),
     /// Calls a registered unary builtin with a local argument without stack materialization.
     CallBuiltinLocal {
-        builtin: u16,
+        builtin: Ident,
         local: u16,
     },
     CallBuiltin(Ident, u16),
@@ -493,7 +491,6 @@ impl OpCode {
             Self::Neg => "Neg",
             Self::Not => "Not",
             Self::ArrayNew => "ArrayNew",
-            Self::ArrayNewWithCapacityLocal(_) => "ArrayNewWithCapacityLocal",
             Self::ArrayPush => "ArrayPush",
             Self::ArraySpread => "ArraySpread",
             Self::DictSpread => "DictSpread",
@@ -916,7 +913,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         }
         for (pc, op) in chunk.code.iter().enumerate() {
             match op {
-                OpCode::Const(index) | OpCode::GetEnvVar(index) | OpCode::CallBuiltinLocal { builtin: index, .. } => {
+                OpCode::Const(index) | OpCode::GetEnvVar(index) => {
                     if *index as usize >= chunk.constants.len() {
                         return Err(BytecodeError::ConstantOutOfBounds {
                             chunk: chunk_index,
@@ -931,8 +928,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
                 | OpCode::ForeachCollect(slot)
-                | OpCode::ArrayLenLocal(slot)
-                | OpCode::ArrayNewWithCapacityLocal(slot) => {
+                | OpCode::ArrayLenLocal(slot) => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -1454,7 +1450,6 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::MakeClosure(_)
         | OpCode::MakeStaticClosure(_)
         | OpCode::ArrayNew
-        | OpCode::ArrayNewWithCapacityLocal(_)
         | OpCode::ArrayLenLocal(_)
         | OpCode::ArrayGetLocalAt { .. }
         | OpCode::DictGetLocalOrFail { .. }
@@ -1769,11 +1764,6 @@ mod tests {
     ])]
     #[case::call_local(vec![OpCode::CallLocal(0, 0), OpCode::Pop, OpCode::Return])]
     #[case::foreach_collect(vec![OpCode::ForeachCollect(0), OpCode::Return])]
-    #[case::array_new_with_capacity_local(vec![
-        OpCode::ArrayNewWithCapacityLocal(0),
-        OpCode::Pop,
-        OpCode::Return,
-    ])]
     #[case::foreach_collect_and_jump(vec![
         OpCode::ForeachCollectAndJump { slot: 0, offset: 1 },
         OpCode::Return,

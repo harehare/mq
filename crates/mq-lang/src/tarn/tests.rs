@@ -858,12 +858,7 @@ fn foreach_uses_the_specialized_iteration_opcode() {
             .iter()
             .any(|op| matches!(op, OpCode::ForeachNext { .. }))
     );
-    assert!(
-        compiled.chunks[0]
-            .code
-            .iter()
-            .any(|op| matches!(op, OpCode::ArrayNewWithCapacityLocal(_)))
-    );
+    assert!(compiled.chunks[0].code.iter().any(|op| matches!(op, OpCode::ArrayNew)));
     assert!(
         compiled.chunks[0]
             .code
