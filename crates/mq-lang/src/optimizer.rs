@@ -4,7 +4,7 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use smallvec::SmallVec;
 
 use crate::{
-    Ident, IdentWithToken, Shared,
+    Ident, Shared,
     ast::{
         Program, TokenId,
         node::{self as ast, Args, Branches, Literal, MatchArm, MatchArms, Params, Pattern, StringSegment},
@@ -48,7 +48,7 @@ fn ptr_eq<T: ?Sized>(a: &Shared<T>, b: &Shared<T>) -> bool {
 ///
 /// - `None` (default): no transformations; the AST is returned unchanged.
 /// - `Basic`: constant folding, dead-branch elimination, and selector-chain merging.
-/// - `Full`: all passes — `Basic` plus let-literal propagation, function inlining, and tail-call optimization.
+/// - `Full`: all passes — `Basic` plus let-literal propagation and function inlining.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OptimizationLevel {
     #[default]
@@ -83,7 +83,9 @@ where
     result.unwrap_or(program)
 }
 
-/// AST optimizer that applies safe, semantics-preserving transformations before evaluation.
+/// AST-to-AST optimizer; bytecode-level rewrites live in `tarn::peephole`.
+///
+/// Applies safe, semantics-preserving transformations before evaluation.
 #[derive(Default)]
 pub struct Optimizer {
     level: OptimizationLevel,
@@ -178,7 +180,6 @@ impl Optimizer {
                 } else {
                     program.into_iter().map(|n| self.apply_inline(n, &inlinable)).collect()
                 };
-                let program = apply_tco_transforms(program);
                 // Dead-def elimination is safe only at the top level where all call sites
                 // are visible. In nested scopes, external callers are not in scope.
                 let program = if top_level {
@@ -1412,152 +1413,6 @@ fn literal_eq(a: Literal, b: Literal) -> bool {
     }
 }
 
-/// Scan `program` and rewrite self-tail-recursive `def` functions to use a loop.
-fn apply_tco_transforms(program: Program) -> Program {
-    program
-        .into_iter()
-        .map(|node| {
-            let ast::Expr::Def(ident, params, body) = &node.expr else {
-                return node;
-            };
-            let param_names: Vec<Ident> = params.iter().map(|p| p.ident.name).collect();
-            match try_tco_transform(ident.name, &param_names, body, node.token_id) {
-                Some(new_body) => Shared::new(ast::Node {
-                    token_id: node.token_id,
-                    expr: ast::Expr::Def(ident.clone(), params.clone(), new_body),
-                }),
-                None => node,
-            }
-        })
-        .collect()
-}
-
-/// Returns `Some(new_body)` if `body` matches the TCO pattern:
-/// - Single `If` node whose branches are either non-recursive base cases or direct self-calls.
-/// - At least one base case and at least one recursive call.
-fn try_tco_transform(fn_name: Ident, param_names: &[Ident], body: &Program, token_id: TokenId) -> Option<Program> {
-    if body.len() != 1 {
-        return None;
-    }
-    let ast::Expr::If(branches) = &body[0].expr else {
-        return None;
-    };
-
-    let mut has_recursive = false;
-    let mut has_base = false;
-
-    for (_, branch_body) in branches {
-        if is_direct_self_call(branch_body, fn_name) {
-            has_recursive = true;
-        } else if !contains_self_call(branch_body, fn_name) {
-            has_base = true;
-        } else {
-            return None;
-        }
-    }
-
-    if !has_recursive || !has_base {
-        return None;
-    }
-
-    Some(build_tco_loop(fn_name, param_names, branches, token_id))
-}
-
-/// Returns `true` if `node` is exactly `Call(fn_name, args)`.
-fn is_direct_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
-    matches!(&node.expr, ast::Expr::Call(ident, _) if ident.name == fn_name)
-}
-
-/// Returns `true` if `node` contains any call to `fn_name` at any depth.
-fn contains_self_call(node: &Shared<ast::Node>, fn_name: Ident) -> bool {
-    match &node.expr {
-        ast::Expr::Call(ident, args) => ident.name == fn_name || args.iter().any(|a| contains_self_call(a, fn_name)),
-        ast::Expr::Ident(ident) => ident.name == fn_name,
-        ast::Expr::And(ops) | ast::Expr::Or(ops) => ops.iter().any(|o| contains_self_call(o, fn_name)),
-        ast::Expr::If(branches) | ast::Expr::Unless(branches) => branches.iter().any(|(cond, body)| {
-            cond.as_ref().is_some_and(|c| contains_self_call(c, fn_name)) || contains_self_call(body, fn_name)
-        }),
-        ast::Expr::Try(t, _, c) => contains_self_call(t, fn_name) || contains_self_call(c, fn_name),
-        ast::Expr::SelectorCall(_, args) | ast::Expr::Array(args) | ast::Expr::Dict(args) => {
-            args.iter().any(|a| contains_self_call(a, fn_name))
-        }
-        ast::Expr::Paren(inner) | ast::Expr::Break(Some(inner)) => contains_self_call(inner, fn_name),
-        ast::Expr::Block(prog) => prog.iter().any(|n| contains_self_call(n, fn_name)),
-        _ => false,
-    }
-}
-
-/// Build the loop-based body that replaces a tail-recursive function.
-///
-/// For `def f(a, b): if (cond): base else: f(new_a, new_b);` generates:
-/// ```text
-/// var __tco_a = a;
-/// var __tco_b = b;
-/// loop {
-///   let a = __tco_a;
-///   let b = __tco_b;
-///   if (cond): break base
-///   else: { __tco_a = new_a; __tco_b = new_b; continue }
-/// }
-/// ```
-fn build_tco_loop(fn_name: Ident, param_names: &[Ident], branches: &Branches, token_id: TokenId) -> Program {
-    let syn = |expr: ast::Expr| -> Shared<ast::Node> { Shared::new(ast::Node { token_id, expr }) };
-
-    let tco_ident = |p: Ident| IdentWithToken::new(&format!("__tco_{}", p.as_str()));
-
-    // var __tco_p = p;
-    let var_decls: Program = param_names
-        .iter()
-        .map(|p| {
-            syn(ast::Expr::Var(
-                Pattern::Ident(tco_ident(*p)),
-                syn(ast::Expr::Ident(IdentWithToken::new(&p.as_str()))),
-            ))
-        })
-        .collect();
-
-    // let p = __tco_p;  (re-bind at the top of each loop iteration)
-    let let_rebinds: Program = param_names
-        .iter()
-        .map(|p| {
-            syn(ast::Expr::Let(
-                Pattern::Ident(IdentWithToken::new(&p.as_str())),
-                syn(ast::Expr::Ident(tco_ident(*p))),
-            ))
-        })
-        .collect();
-
-    // Transform each If branch
-    let new_branches: Branches = branches
-        .iter()
-        .map(|(cond, body)| {
-            let new_body = if is_direct_self_call(body, fn_name) {
-                let ast::Expr::Call(_, rec_args) = &body.expr else {
-                    unreachable!()
-                };
-                // __tco_p = new_p; continue
-                let mut block: Program = param_names
-                    .iter()
-                    .zip(rec_args.iter())
-                    .map(|(p, new_val)| syn(ast::Expr::Assign(tco_ident(*p), Shared::clone(new_val))))
-                    .collect();
-                block.push(syn(ast::Expr::Continue));
-                syn(ast::Expr::Block(block))
-            } else {
-                syn(ast::Expr::Break(Some(Shared::clone(body))))
-            };
-            (cond.clone(), new_body)
-        })
-        .collect();
-
-    let mut loop_body = let_rebinds;
-    loop_body.push(syn(ast::Expr::If(new_branches)));
-
-    let mut result = var_decls;
-    result.push(syn(ast::Expr::Loop(loop_body)));
-    result
-}
-
 /// Collect the names of every function directly called in `program` (recursively).
 fn collect_called_fns(program: &Program) -> FxHashSet<Ident> {
     let mut set = FxHashSet::default();
@@ -1769,23 +1624,6 @@ mod tests {
             matches!(&prog[0].expr, Expr::InterpolatedString(_)),
             "None: expected InterpolatedString, got {:?}",
             prog[0].expr
-        );
-    }
-
-    #[test]
-    fn none_def_body_stays_as_if_no_tco() {
-        let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        assert_eq!(prog.len(), 1);
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "None: must not apply TCO; Loop found in body"
-        );
-        assert!(
-            body.iter().any(|n| matches!(&n.expr, Expr::If(_))),
-            "None: original If must remain in body"
         );
     }
 
@@ -2289,72 +2127,6 @@ mod tests {
             last.expr
         );
         assert_literal(last, "8", "Full: mul2(add1(3))");
-    }
-
-    #[test]
-    fn tco_tail_recursive_def_gets_loop_in_full() {
-        let prog = ast_full("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "Full: TCO-transformed Def must contain a Loop node"
-        );
-        // The original top-level If must be replaced — not left alongside the Loop.
-        assert!(
-            !body.iter().any(|n| matches!(&n.expr, Expr::If(_))),
-            "Full: original If must be replaced by Loop after TCO"
-        );
-    }
-
-    #[test]
-    fn tco_not_applied_in_basic() {
-        let prog = ast_basic("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "Basic must not apply TCO; Loop found unexpectedly"
-        );
-    }
-
-    #[test]
-    fn tco_not_applied_in_none() {
-        let prog = ast_none("def countdown(n): if (n == 0): \"done\" else: countdown(n - 1);");
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "None must not apply TCO"
-        );
-    }
-
-    #[test]
-    fn tco_not_applied_to_non_tail_call() {
-        // `n * fact(n-1)` is a binary op wrapping the recursive call — NOT a tail call.
-        let prog = ast_full("def fact(n): if (n == 0): 1 else: n * fact(n - 1);");
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            !body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "Full: non-tail-recursive function must not be TCO-transformed"
-        );
-    }
-
-    #[test]
-    fn tco_multi_param_def_gets_loop() {
-        let prog = ast_full("def loop2(a, b): if (a == 0): b else: loop2(a - 1, b + 1);");
-        let Expr::Def(_, _, body) = &prog[0].expr else {
-            panic!("expected Def");
-        };
-        assert!(
-            body.iter().any(|n| matches!(&n.expr, Expr::Loop(_))),
-            "Full: multi-param tail-recursive Def must contain Loop"
-        );
     }
 
     #[test]
@@ -2863,27 +2635,6 @@ mod tests {
             Ok(vec![crate::RuntimeValue::Number(expected.into())].into()),
             "Full: eval must not crash with NotDefined for query {query:?}"
         );
-    }
-
-    #[test]
-    fn tco_only_in_full() {
-        let query = "def sum(n): if (n == 0): 0 else: sum(n - 1);";
-        let none_prog = ast_none(query);
-        let basic_prog = ast_basic(query);
-        let full_prog = ast_full(query);
-
-        let has_loop = |prog: &crate::ast::Program| {
-            prog.iter().any(|n| {
-                if let Expr::Def(_, _, body) = &n.expr {
-                    body.iter().any(|b| matches!(&b.expr, Expr::Loop(_)))
-                } else {
-                    false
-                }
-            })
-        };
-        assert!(!has_loop(&none_prog), "None: no TCO");
-        assert!(!has_loop(&basic_prog), "Basic: no TCO");
-        assert!(has_loop(&full_prog), "Full: TCO must apply");
     }
 
     #[test]

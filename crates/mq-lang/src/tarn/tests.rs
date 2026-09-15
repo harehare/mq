@@ -3012,6 +3012,7 @@ fn dict_field(value: &RuntimeValue, key: &str) -> RuntimeValue {
 
 // `Chunk`'s private `captured_local_slots` field rules out `..Default::default()` from outside
 // `bytecode`, so tests build via `Chunk::default()` plus field assignment instead.
+#[allow(clippy::field_reassign_with_default)]
 fn chunk(code: Vec<bytecode::OpCode>, constants: Vec<RuntimeValue>, local_count: u16) -> bytecode::Chunk {
     let mut c = bytecode::Chunk::default();
     c.code = code;

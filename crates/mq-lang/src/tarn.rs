@@ -18,6 +18,7 @@ mod debugger;
 mod disasm;
 pub(crate) mod interpreter;
 mod nodes_split;
+mod peephole;
 mod resolver;
 pub(crate) mod value;
 
