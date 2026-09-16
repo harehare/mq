@@ -3031,6 +3031,14 @@ fn engine() -> DefaultEngine {
 // html_unescape
 #[case::html_unescape_tags(r#"html_unescape("&lt;b&gt;hi&lt;/b&gt;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("<b>hi</b>".to_string()))].into()))]
 #[case::html_unescape_numeric(r#"html_unescape("&#65;&#x42;")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("AB".to_string()))].into()))]
+// markdown_escape
+#[case::markdown_escape_text(r#"markdown_escape("**bold** [x](y)", "text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"\*\*bold\*\* \[x\](y)".to_string()))].into()))]
+#[case::markdown_escape_heading(r#"markdown_escape("Q1 * Results\nline2", "heading")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"Q1 \* Results line2".to_string()))].into()))]
+#[case::markdown_escape_link_label(r#"markdown_escape("a [b] c", "link_label")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"a \[b\] c".to_string()))].into()))]
+#[case::markdown_escape_table_cell(r#"markdown_escape("a | b", "table_cell")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"a \| b".to_string()))].into()))]
+#[case::markdown_escape_code(r#"markdown_escape("a `b` c", "code")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a `b` c".to_string()))].into()))]
+#[case::markdown_escape_markdown_type(r#"to_md_text("**bold**") | markdown_escape("text") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+#[case::markdown_escape_markdown_value(r#"to_md_text("**bold**") | markdown_escape("text") | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"\*\*bold\*\*".to_string()))].into()))]
 // strip_tags
 #[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello world!".to_string()))].into()))]
 #[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]
@@ -3374,6 +3382,8 @@ fn engine() -> DefaultEngine {
 #[case::strip_tags_none("strip_tags(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // sanitize_html: None input → None
 #[case::sanitize_html_none("sanitize_html(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
+// markdown_escape: None input → None
+#[case::markdown_escape_none(r#"markdown_escape(None, "text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // ltrim: None input → None
 #[case::ltrim_none("ltrim(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // rtrim: None input → None
@@ -3745,6 +3755,10 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::strip_tags_non_string("strip_tags(42)", vec![RuntimeValue::None],)]
 // sanitize_html: non-string/non-markdown/non-none → type error
 #[case::sanitize_html_non_string("sanitize_html(42)", vec![RuntimeValue::None],)]
+// markdown_escape: non-string/non-markdown/non-none text → type error
+#[case::markdown_escape_non_string(r#"markdown_escape(42, "text")"#, vec![RuntimeValue::None],)]
+// markdown_escape: unknown context → runtime error
+#[case::markdown_escape_unknown_context(r#"markdown_escape("a", "unknown")"#, vec![RuntimeValue::None],)]
 // token_count: non-string/non-markdown text → type error
 #[case::token_count_non_string(r#"token_count(42, "gpt-4")"#, vec![RuntimeValue::None],)]
 #[case::token_count_no_model_non_string(r#"token_count(42)"#, vec![RuntimeValue::None],)]

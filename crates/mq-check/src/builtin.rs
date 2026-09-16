@@ -380,6 +380,9 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
     );
 
+    // markdown_escape: (string, context) -> string
+    register_binary(ctx, "markdown_escape", Type::String, Type::String, Type::String);
+
     // Capture: (string, pattern) -> {k: v}
     let k = ctx.fresh_var();
     let v = ctx.fresh_var();
@@ -428,6 +431,9 @@ fn register_string(ctx: &mut InferenceContext) {
     // word_wrap/truncate: none propagation
     register_binary(ctx, "word_wrap", Type::None, Type::Number, Type::None);
     register_ternary(ctx, "truncate", Type::None, Type::Number, Type::String, Type::None);
+
+    // markdown_escape: none propagation
+    register_binary(ctx, "markdown_escape", Type::None, Type::String, Type::None);
 
     // lines: (string) -> [string]
     register_unary(ctx, "lines", Type::String, Type::array(Type::String));
@@ -1737,6 +1743,9 @@ mod tests {
     #[case::strip_tags_number("strip_tags(42)", false)] // Should fail: wrong type
     #[case::sanitize_html("sanitize_html(\"<script>alert(1)</script>\")", true)]
     #[case::sanitize_html_number("sanitize_html(42)", false)] // Should fail: wrong type
+    #[case::markdown_escape("markdown_escape(\"**bold**\", \"text\")", true)]
+    #[case::markdown_escape_number("markdown_escape(42, \"text\")", false)] // Should fail: wrong type
+    #[case::markdown_escape_context_number("markdown_escape(\"a\", 42)", false)] // Should fail: wrong type
     fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(

@@ -468,6 +468,174 @@ pub(super) fn html_unescape(input: &str) -> Result<RuntimeValue, Error> {
     )))
 }
 
+/// The output position `markdown_escape` is escaping for. Each variant escapes only the
+/// characters that could form unintended Markdown structure at that position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum MarkdownEscapeContext {
+    /// Body text: paragraph, list item, or blockquote content. Line breaks are kept, but the
+    /// start of each line is guarded against being read as a heading, blockquote, list item,
+    /// thematic break, or Setext heading underline.
+    Text,
+    /// Heading text. Must be a single line, so line breaks are collapsed to spaces.
+    Heading,
+    /// Text inside a link/image label (`[label]`). Must be a single line.
+    LinkLabel,
+    /// A GFM table cell. `|` is escaped and line breaks are collapsed to spaces, since a
+    /// literal pipe or line break would otherwise split the cell.
+    TableCell,
+    /// Content meant to render as literal code (inline code span or code block). Left
+    /// unmodified: backslash escapes have no effect inside code, so the caller must instead
+    /// pick a backtick-fence length longer than any backtick run already in the content.
+    Code,
+}
+
+impl TryFrom<&str> for MarkdownEscapeContext {
+    type Error = Error;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "text" => Ok(Self::Text),
+            "heading" => Ok(Self::Heading),
+            "link_label" => Ok(Self::LinkLabel),
+            "table_cell" => Ok(Self::TableCell),
+            "code" => Ok(Self::Code),
+            _ => Err(Error::Runtime(format!(
+                "unknown markdown_escape context {:?}, expected \"text\", \"heading\", \"link_label\", \"table_cell\", or \"code\"",
+                s
+            ))),
+        }
+    }
+}
+
+/// Escapes `input` so it renders as literal text at the given output `context`, without
+/// introducing unintended Markdown structure (headings, lists, links, emphasis, tables, ...).
+/// This is not HTML sanitization or URL-encoding; use `html_escape`, `sanitize_html`, or
+/// `url_encode` for those.
+#[inline(always)]
+pub(super) fn markdown_escape(input: &str, context: MarkdownEscapeContext) -> Result<RuntimeValue, Error> {
+    let escaped = match context {
+        MarkdownEscapeContext::Text => escape_markdown_text(input),
+        MarkdownEscapeContext::Heading | MarkdownEscapeContext::LinkLabel => escape_markdown_inline_singleline(input),
+        MarkdownEscapeContext::TableCell => escape_markdown_table_cell(input),
+        MarkdownEscapeContext::Code => input.to_string(),
+    };
+    Ok(RuntimeValue::String(Shared::new(escaped)))
+}
+
+/// Escapes a character with inline Markdown significance (emphasis, strikethrough, code
+/// spans, links/images, raw HTML/autolinks). The backslash itself is escaped first, since
+/// it is the escape character.
+#[inline(always)]
+fn escape_markdown_inline_char(c: char, out: &mut String) {
+    match c {
+        '\\' | '`' | '*' | '_' | '~' | '[' | ']' | '<' => {
+            out.push('\\');
+            out.push(c);
+        }
+        _ => out.push(c),
+    }
+}
+
+/// Escapes inline Markdown-significant characters, collapsing line breaks to spaces since
+/// the result must stay on a single line.
+fn escape_markdown_inline_singleline(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '\n' | '\r' => out.push(' '),
+            c => escape_markdown_inline_char(c, &mut out),
+        }
+    }
+    out
+}
+
+/// Escapes inline Markdown-significant characters and `|` for a GFM table cell, collapsing
+/// line breaks to spaces since a cell cannot contain either.
+fn escape_markdown_table_cell(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for c in input.chars() {
+        match c {
+            '\n' | '\r' => out.push(' '),
+            '|' => out.push_str("\\|"),
+            c => escape_markdown_inline_char(c, &mut out),
+        }
+    }
+    out
+}
+
+/// Escapes body text line by line, keeping line breaks but guarding each line's start
+/// against being read as block-level syntax.
+fn escape_markdown_text(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut lines = input.split('\n');
+    if let Some(first) = lines.next() {
+        out.push_str(&escape_markdown_text_line(first));
+    }
+    for line in lines {
+        out.push('\n');
+        out.push_str(&escape_markdown_text_line(line));
+    }
+    out
+}
+
+/// Escapes a single line of body text: defuses a leading block marker (if any), then
+/// escapes inline Markdown-significant characters in the remainder. CommonMark tolerates up
+/// to 3 leading spaces before a block marker; a line with 4+ leading spaces would form an
+/// indented code block, which this function does not guard against.
+fn escape_markdown_text_line(line: &str) -> String {
+    let indent_len = (line.len() - line.trim_start_matches(' ').len()).min(3);
+    let rest = &line[indent_len..];
+
+    let mut out = String::with_capacity(line.len() + 1);
+    out.push_str(&line[..indent_len]);
+
+    match markdown_block_marker_len(rest) {
+        Some(marker_len) => {
+            out.push_str(&rest[..marker_len]);
+            out.push('\\');
+            for c in rest[marker_len..].chars() {
+                escape_markdown_inline_char(c, &mut out);
+            }
+        }
+        None => {
+            for c in rest.chars() {
+                escape_markdown_inline_char(c, &mut out);
+            }
+        }
+    }
+    out
+}
+
+/// Returns the byte length of the prefix of `rest` that can be kept as-is before inserting a
+/// backslash to defuse a leading block marker (ATX heading, blockquote, list item, thematic
+/// break, or Setext heading underline), or `None` if `rest` does not start one.
+fn markdown_block_marker_len(rest: &str) -> Option<usize> {
+    let is_boundary_after =
+        |byte_offset: usize| matches!(rest[byte_offset..].chars().next(), None | Some(' ') | Some('\t'));
+    let first = rest.chars().next()?;
+
+    match first {
+        '#' => {
+            let hashes = rest.chars().take_while(|&c| c == '#').count();
+            (hashes <= 6 && is_boundary_after(hashes)).then_some(0)
+        }
+        '>' => Some(0),
+        '-' | '+' if is_boundary_after(first.len_utf8()) => Some(0),
+        c if c.is_ascii_digit() => {
+            let digits = rest.chars().take_while(char::is_ascii_digit).count();
+            match rest[digits..].chars().next() {
+                Some(d @ ('.' | ')')) if digits <= 9 && is_boundary_after(digits + d.len_utf8()) => Some(digits),
+                _ => None,
+            }
+        }
+        '-' | '=' => {
+            let trimmed = rest.trim_end_matches(' ');
+            (!trimmed.is_empty() && trimmed.chars().all(|c| c == first)).then_some(0)
+        }
+        _ => None,
+    }
+}
+
 /// Strip HTML tags from a string, keeping the surrounding text content
 #[inline(always)]
 pub(super) fn strip_tags(input: &str) -> Result<RuntimeValue, Error> {
@@ -826,6 +994,112 @@ mod tests {
         };
         let unescaped = html_unescape(&escaped).unwrap();
         assert_eq!(unescaped, RuntimeValue::String(Shared::new(input.to_string())));
+    }
+
+    // Test markdown_escape: text context
+    #[rstest]
+    #[case("plain text", "plain text")]
+    #[case("**bold** and _em_", r"\*\*bold\*\* and \_em\_")]
+    #[case("a ~b~ `c` <d>", r"a \~b\~ \`c\` \<d>")]
+    #[case(r"back\slash", r"back\\slash")]
+    #[case("[label](url)", r"\[label\](url)")]
+    #[case("![alt](url)", r"!\[alt\](url)")]
+    #[case("# Not a heading", r"\# Not a heading")]
+    #[case("###### Not a heading", r"\###### Not a heading")]
+    #[case("####### still text", "####### still text")] // 7 hashes: not a valid ATX marker
+    #[case("> Not a quote", r"\> Not a quote")]
+    #[case("- Not a list item", r"\- Not a list item")]
+    #[case("+ Not a list item", r"\+ Not a list item")]
+    #[case("1. Not a list item", r"1\. Not a list item")]
+    #[case("42) Not a list item", r"42\) Not a list item")]
+    #[case("not-a-list.item", "not-a-list.item")]
+    #[case("---", r"\---")]
+    #[case("===", r"\===")]
+    #[case("- - -", r"\- - -")]
+    #[case("Title\n===\nBody", "Title\n\\===\nBody")]
+    #[case("   - indented list", "   \\- indented list")]
+    fn test_markdown_escape_text(#[case] input: &str, #[case] expected: &str) {
+        let result = markdown_escape(input, MarkdownEscapeContext::Text).unwrap();
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
+    }
+
+    // Test markdown_escape: heading and link_label contexts collapse newlines to spaces
+    #[rstest]
+    #[case(MarkdownEscapeContext::Heading, "Q1 * Results", r"Q1 \* Results")]
+    #[case(MarkdownEscapeContext::Heading, "line1\nline2", "line1 line2")]
+    #[case(MarkdownEscapeContext::LinkLabel, "a [nested] link", r"a \[nested\] link")]
+    #[case(MarkdownEscapeContext::LinkLabel, "line1\nline2", "line1 line2")]
+    fn test_markdown_escape_singleline(
+        #[case] context: MarkdownEscapeContext,
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        let result = markdown_escape(input, context).unwrap();
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
+    }
+
+    // Test markdown_escape: table_cell context
+    #[rstest]
+    #[case("a | b", r"a \| b")]
+    #[case("line1\nline2", "line1 line2")]
+    #[case("**bold**", r"\*\*bold\*\*")]
+    #[case(r"back\|slash", r"back\\\|slash")]
+    #[case("plain", "plain")]
+    fn test_markdown_escape_table_cell(#[case] input: &str, #[case] expected: &str) {
+        let result = markdown_escape(input, MarkdownEscapeContext::TableCell).unwrap();
+        assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
+    }
+
+    // Test markdown_escape: code context is left unmodified (no backslash-escape mechanism
+    // exists inside a code span/block; the caller must pick a longer fence instead)
+    #[rstest]
+    #[case("plain")]
+    #[case("`nested`")]
+    #[case("``` fence ```")]
+    #[case("a | b\n* c *")]
+    fn test_markdown_escape_code(#[case] input: &str) {
+        let result = markdown_escape(input, MarkdownEscapeContext::Code).unwrap();
+        assert_eq!(result, RuntimeValue::String(Shared::new(input.to_string())));
+    }
+
+    #[rstest]
+    #[case("text", MarkdownEscapeContext::Text)]
+    #[case("heading", MarkdownEscapeContext::Heading)]
+    #[case("link_label", MarkdownEscapeContext::LinkLabel)]
+    #[case("table_cell", MarkdownEscapeContext::TableCell)]
+    #[case("code", MarkdownEscapeContext::Code)]
+    fn test_markdown_escape_context_try_from_valid(#[case] input: &str, #[case] expected: MarkdownEscapeContext) {
+        assert_eq!(MarkdownEscapeContext::try_from(input).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("Text")]
+    #[case("paragraph")]
+    fn test_markdown_escape_context_try_from_invalid(#[case] input: &str) {
+        assert!(MarkdownEscapeContext::try_from(input).is_err());
+    }
+
+    // Round-trip: escaping a value and embedding it in a table row keeps the table's
+    // column count and doesn't turn the value into a link/emphasis/heading.
+    #[rstest]
+    #[case("a | b\nc", "a \\| b c")]
+    #[case("no special chars", "no special chars")]
+    fn test_markdown_escape_table_cell_round_trip_fixture(#[case] input: &str, #[case] expected_cell: &str) {
+        let escaped = markdown_escape(input, MarkdownEscapeContext::TableCell).unwrap();
+        let RuntimeValue::String(escaped) = escaped else {
+            panic!("Expected String")
+        };
+        assert_eq!(escaped.as_str(), expected_cell);
+        let row = format!("| {} |", escaped);
+        let unescaped_pipes = row
+            .char_indices()
+            .filter(|&(i, c)| c == '|' && !row[..i].ends_with('\\'))
+            .count();
+        assert_eq!(
+            unescaped_pipes, 2,
+            "row should have exactly 2 column delimiters: {row:?}"
+        );
     }
 
     // Test strip_tags
