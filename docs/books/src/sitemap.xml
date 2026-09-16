@@ -133,6 +133,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/find-section-containing-a-node</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/extract-tables</loc>
     <priority>1.0</priority>
   </url>

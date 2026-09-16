@@ -31,6 +31,7 @@
   - [Split a document into chunks at a heading level](cookbook/split-document-by-heading.md)
   - [Delete a section by its heading](cookbook/delete-section-by-heading.md)
   - [Find sections that have no content](cookbook/filter-empty-sections.md)
+  - [Find which section a node belongs to](cookbook/find-section-containing-a-node.md)
   - [Extract all tables from a document](cookbook/extract-tables.md)
   - [Add a row to a table](cookbook/add-row-to-table.md)
   - [Convert a Markdown table to CSV](cookbook/convert-table-to-csv.md)
