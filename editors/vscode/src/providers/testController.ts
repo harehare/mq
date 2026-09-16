@@ -190,14 +190,7 @@ async function runHandler(
     return;
   }
 
-  // A run can include file items, individual test items, or (when nothing is included) every
-  // known file — resolve all of that down to the set of file items actually invoked, since
-  // `mq-test` runs a whole file at a time.
-  const included = request.include ?? [...fileItems.values()];
-  const filesToRun = new Set<vscode.TestItem>();
-  for (const item of included) {
-    filesToRun.add(item.parent ?? item);
-  }
+  const filesToRun = resolveFilesToRun(request, fileItems);
 
   for (const fileItem of filesToRun) {
     if (token.isCancellationRequested) {
@@ -207,92 +200,132 @@ async function runHandler(
       continue;
     }
 
-    const childItems = [...fileItem.children].map(([, child]) => child);
-    const runnableChildren = childItems.filter((child) => !request.exclude?.includes(child));
-    for (const child of runnableChildren) {
-      run.enqueued(child);
-    }
-
-    const folder = vscode.workspace.getWorkspaceFolder(fileItem.uri);
-    const cwd = folder?.uri.fsPath ?? workspaceFolders[0].uri.fsPath;
-
-    for (const child of runnableChildren) {
-      run.started(child);
-    }
-
-    let report: RunReport;
-    try {
-      const { stdout } = await execFileAsync(
-        testPath,
-        [fileItem.uri.fsPath, "--format", "json"],
-        { cwd, encoding: "utf8" },
-      );
-      report = JSON.parse(stdout);
-    } catch (error) {
-      // `mq-test` exits non-zero when any test in the file fails, so a failing (but
-      // otherwise healthy) run still needs its JSON report read from the rejected
-      // promise's `stdout`, not treated as `mq-test` itself having errored.
-      const execError = error as ExecError;
-      const parsed = execError.stdout ? tryParseJson<RunReport>(execError.stdout) : null;
-      if (parsed) {
-        report = parsed;
-      } else {
-        const message = new vscode.TestMessage(execError.message);
-        for (const child of runnableChildren) {
-          run.errored(child, message);
-        }
-        continue;
-      }
-    }
-
-    const fileResult = report.files.find(
-      (f) => path.resolve(cwd, f.file) === fileItem.uri?.fsPath,
-    );
-    if (!fileResult) {
-      continue;
-    }
-
-    if (fileResult.error) {
-      const message = new vscode.TestMessage(fileResult.error);
-      for (const child of runnableChildren) {
-        run.errored(child, message);
-      }
-      continue;
-    }
-
-    // Group by base name so a parametrized/property test's several `name[i]` cases all
-    // report onto the one TestItem `discoverTests` created for the function (see
-    // `baseTestName`).
-    const resultsByBaseName = new Map<string, RunTestResult[]>();
-    for (const testResult of fileResult.tests ?? []) {
-      const key = baseTestName(testResult.name);
-      const cases = resultsByBaseName.get(key) ?? [];
-      cases.push(testResult);
-      resultsByBaseName.set(key, cases);
-    }
-
-    for (const child of runnableChildren) {
-      const cases = resultsByBaseName.get(child.label);
-      if (!cases) {
-        continue;
-      }
-
-      const totalDuration = cases.reduce((sum, c) => sum + c.duration, 0);
-      const failures = cases.filter((c) => c.status === "failed");
-      if (failures.length === 0) {
-        run.passed(child, totalDuration);
-      } else {
-        const message = new vscode.TestMessage(
-          failures
-            .map((f) => (f.name === child.label ? f.error : `${f.name}: ${f.error}`))
-            .join("\n\n"),
-        );
-        run.failed(child, message, totalDuration);
-      }
-    }
+    await runFile(testPath, fileItem, fileItem.uri, request, workspaceFolders, run);
   }
 
   run.end();
+}
+
+// A run can include file items, individual test items, or (when nothing is included) every
+// known file — resolve all of that down to the set of file items actually invoked, since
+// `mq-test` runs a whole file at a time.
+function resolveFilesToRun(
+  request: vscode.TestRunRequest,
+  fileItems: Map<string, vscode.TestItem>,
+): Set<vscode.TestItem> {
+  const included = request.include ?? [...fileItems.values()];
+  const filesToRun = new Set<vscode.TestItem>();
+  for (const item of included) {
+    filesToRun.add(item.parent ?? item);
+  }
+  return filesToRun;
+}
+
+async function runFile(
+  testPath: string,
+  fileItem: vscode.TestItem,
+  fileUri: vscode.Uri,
+  request: vscode.TestRunRequest,
+  workspaceFolders: readonly vscode.WorkspaceFolder[],
+  run: vscode.TestRun,
+) {
+  const childItems = [...fileItem.children].map(([, child]) => child);
+  const runnableChildren = childItems.filter((child) => !request.exclude?.includes(child));
+  for (const child of runnableChildren) {
+    run.enqueued(child);
+  }
+
+  const folder = vscode.workspace.getWorkspaceFolder(fileUri);
+  const cwd = folder?.uri.fsPath ?? workspaceFolders[0].uri.fsPath;
+
+  for (const child of runnableChildren) {
+    run.started(child);
+  }
+
+  const execution = await executeMqTest(testPath, fileUri.fsPath, cwd);
+  if ("errorMessage" in execution) {
+    const message = new vscode.TestMessage(execution.errorMessage);
+    for (const child of runnableChildren) {
+      run.errored(child, message);
+    }
+    return;
+  }
+
+  const fileResult = execution.report.files.find(
+    (f) => path.resolve(cwd, f.file) === fileUri.fsPath,
+  );
+  if (!fileResult) {
+    return;
+  }
+
+  if (fileResult.error) {
+    const message = new vscode.TestMessage(fileResult.error);
+    for (const child of runnableChildren) {
+      run.errored(child, message);
+    }
+    return;
+  }
+
+  reportFileResults(fileResult, runnableChildren, run);
+}
+
+type MqTestExecution = { report: RunReport } | { errorMessage: string };
+
+async function executeMqTest(
+  testPath: string,
+  filePath: string,
+  cwd: string,
+): Promise<MqTestExecution> {
+  try {
+    const { stdout } = await execFileAsync(testPath, [filePath, "--format", "json"], {
+      cwd,
+      encoding: "utf8",
+    });
+    return { report: JSON.parse(stdout) };
+  } catch (error) {
+    // `mq-test` exits non-zero when any test in the file fails, so a failing (but
+    // otherwise healthy) run still needs its JSON report read from the rejected
+    // promise's `stdout`, not treated as `mq-test` itself having errored.
+    const execError = error as ExecError;
+    const parsed = execError.stdout ? tryParseJson<RunReport>(execError.stdout) : null;
+    return parsed ? { report: parsed } : { errorMessage: execError.message };
+  }
+}
+
+// Group by base name so a parametrized/property test's several `name[i]` cases all report
+// onto the one TestItem `discoverTests` created for the function (see `baseTestName`).
+function reportFileResults(
+  fileResult: RunFileResult,
+  runnableChildren: vscode.TestItem[],
+  run: vscode.TestRun,
+) {
+  const resultsByBaseName = new Map<string, RunTestResult[]>();
+  for (const testResult of fileResult.tests ?? []) {
+    const key = baseTestName(testResult.name);
+    const cases = resultsByBaseName.get(key) ?? [];
+    cases.push(testResult);
+    resultsByBaseName.set(key, cases);
+  }
+
+  for (const child of runnableChildren) {
+    const cases = resultsByBaseName.get(child.label);
+    if (!cases) {
+      continue;
+    }
+
+    const totalDuration = cases.reduce((sum, c) => sum + c.duration, 0);
+    const failures = cases.filter((c) => c.status === "failed");
+    if (failures.length === 0) {
+      run.passed(child, totalDuration);
+    } else {
+      const message = new vscode.TestMessage(
+        failures
+          .map((f) => (f.name === child.label ? f.error : `${f.name}: ${f.error}`))
+          .join("\n\n"),
+      );
+      run.failed(child, message, totalDuration);
+    }
+  }
 }
 
 function tryParseJson<T>(text: string): T | null {
