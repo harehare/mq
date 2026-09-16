@@ -2209,7 +2209,16 @@ impl Node {
     }
 
     /// Returns the value of the specified attribute, if present.
+    ///
+    /// `line`/`end_line` are handled here, not per-variant below, since `position` is common
+    /// to every node.
     pub fn attr(&self, attr: &str) -> Option<AttrValue> {
+        match attr {
+            attr_keys::LINE => return self.position().map(|p| AttrValue::Integer(p.start.line as i64)),
+            attr_keys::END_LINE => return self.position().map(|p| AttrValue::Integer(p.end.line as i64)),
+            _ => {}
+        }
+
         match self {
             Node::Footnote(Footnote { ident, values, .. }) => match attr {
                 attr_keys::IDENT => Some(AttrValue::String(ident.clone())),
@@ -5824,6 +5833,55 @@ mod tests {
         Some(AttrValue::Array(vec![]))
         )]
     fn test_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
+        assert_eq!(node.attr(attr), expected);
+    }
+
+    #[rstest]
+    #[case::heading_with_position(
+        Node::Heading(Heading {
+            depth: 1,
+            values: vec![],
+            position: Some(Position {
+                start: Point { line: 3, column: 1 },
+                end: Point { line: 5, column: 4 },
+            }),
+        }),
+        attr_keys::LINE,
+        Some(AttrValue::Integer(3))
+    )]
+    #[case::code_end_line(
+        Node::Code(Code {
+            value: "x".to_string(),
+            lang: None,
+            meta: None,
+            fence: true,
+            position: Some(Position {
+                start: Point { line: 3, column: 1 },
+                end: Point { line: 5, column: 4 },
+            }),
+        }),
+        attr_keys::END_LINE,
+        Some(AttrValue::Integer(5))
+    )]
+    #[case::synthetic_node_has_no_line(
+        Node::Heading(Heading {
+            depth: 1,
+            values: vec![],
+            position: None,
+        }),
+        attr_keys::LINE,
+        None
+    )]
+    #[case::synthetic_node_has_no_end_line(
+        Node::Heading(Heading {
+            depth: 1,
+            values: vec![],
+            position: None,
+        }),
+        attr_keys::END_LINE,
+        None
+    )]
+    fn test_line_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
     }
 
