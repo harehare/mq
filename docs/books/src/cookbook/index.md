@@ -31,6 +31,7 @@ Every recipe follows the same four parts:
 - [Split a document into chunks at a heading level](split-document-by-heading.md)
 - [Delete a section by its heading](delete-section-by-heading.md)
 - [Find sections that have no content](filter-empty-sections.md)
+- [Find which section a node belongs to](find-section-containing-a-node.md)
 
 ## Working with tables
 

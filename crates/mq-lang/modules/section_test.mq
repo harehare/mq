@@ -96,6 +96,29 @@ def test_section_section_no_match():
   | assert_eq(secs, [])
 end
 
+def test_section_find_match():
+  let s = do test_sections | section::find("Introduction");
+  | assert(not(is_none(s)))
+  | assert_eq(section::title(s), "Introduction")
+end
+
+def test_section_find_no_match():
+  let s = do test_sections | section::find("NonExistent");
+  | assert(is_none(s))
+end
+
+# @parametrize([["Introduction", 1], ["Intro", 0]])
+def test_section_by_title_exact_match_only(text, expected_len):
+  let secs = do test_sections | section::by_title(text);
+  | assert_eq(len(secs), expected_len)
+end
+
+# @parametrize([["Introduction", 1], ["Intro", 0]])
+def test_section_title_is_exact_only(text, expected_len):
+  let secs = do test_sections | section::sections();
+  | assert_eq(len(section::title_is(secs, text)), expected_len)
+end
+
 def test_section_section_depth_h1():
   let secs = do test_sections | section::section(., "Introduction", true);
   | assert_eq(len(secs), 1)
@@ -255,6 +278,26 @@ end
 
 def test_section_subsections_non_section():
   assert_eq(section::subsections("not a section"), [])
+end
+
+def test_section_containing_header_node():
+  let a1_header = first(filter(nested_sections, is_h2))
+  | let s = section::containing(nested_sections, a1_header)
+  | assert(not(is_none(s)))
+  | assert_eq(section::title(s), "A1")
+end
+
+def test_section_containing_body_node():
+  let body_node = first(filter(nested_sections, is_text))
+  | let s = section::containing(nested_sections, body_node)
+  | assert(not(is_none(s)))
+  | assert_eq(section::title(s), "A")
+end
+
+def test_section_containing_no_match():
+  let foreign = first(to_markdown("# Elsewhere\n"))
+  | let s = section::containing(nested_sections, foreign)
+  | assert(is_none(s))
 end
 
 # @parametrize([

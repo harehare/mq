@@ -66,3 +66,6 @@ Run the following command.
 
 - Want the body without the `##` heading itself? Add `| section::bodies | first`.
 - Need every section instead of one by name? Use `section::sections`, optionally filtered with `section::by_level(2)`.
+- `section::section(...)` always returns an array (it matches by substring, so more than one heading could match). If you just want the one section and `None` when there isn't a match, use `section::find(...)` instead — it's `first(section::section(...))`.
+- `section::section`/`section::find` match titles by substring, so `"Installation"` also matches a heading like `"Installation Guide"`. For an exact title match, use `section::by_title(...)` (returns an array) or filter an existing list of sections with `section::title_is(sections, text)`.
+- Have a node instead of a title (e.g. a code block you found with `.code`) and want to know which section it's in? See [Find which section a node belongs to](find-section-containing-a-node.md).

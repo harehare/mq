@@ -302,6 +302,20 @@ fn cookbook_find_raw_html_blocks() {
 }
 
 #[test]
+fn cookbook_find_section_containing_a_node() {
+    let path = write_temp(
+        "cookbook_find_section_containing_a_node.md",
+        "# Introduction\n\nWelcome.\n\n## Installation\n\n```bash\nnpm install\n```\n\n## Usage\n\nRun it.\n",
+    );
+    let out = run(&[
+        "-A",
+        r#"let n = first(compact(.code)) | section::title(section::containing(., n))"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(out.trim(), "Installation");
+}
+
+#[test]
 fn cookbook_generate_document_statistics() {
     let path = write_temp(
         "cookbook_generate_document_statistics.md",

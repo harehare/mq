@@ -55,6 +55,35 @@ def section(md_nodes, pattern, depth = false):
   sections(md_nodes, depth) | title_contains(pattern)
 end
 
+# Returns the first section whose title contains the specified pattern, or `None`
+# if no section matches. Shorthand for `first(section::section(md_nodes, pattern, depth))`,
+# for the common case of wanting exactly one section rather than an array of matches.
+#
+# Example:
+# ```
+# import "section" | section::title(section::find(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), "A1"))
+# #=> A1
+# ```
+#
+# Returns: dynamic
+def find(md_nodes, pattern, depth = false):
+  first(section(md_nodes, pattern, depth))
+end
+
+# Returns sections whose title matches exactly (see `section::title_is`), unlike
+# `section::section`/`section::find`, which match substrings via `section::title_contains`.
+#
+# Example:
+# ```
+# import "section" | len(section::by_title(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B"), "A"))
+# #=> 1
+# ```
+#
+# Returns: array
+def by_title(md_nodes, text, depth = false):
+  sections(md_nodes, depth) | title_is(text)
+end
+
 # Splits markdown nodes into sections based on headers.
 # If depth is true, each section's body extends to the next heading at the same or higher
 # level as that section's own heading, so nested subheadings' content is included in their
@@ -247,6 +276,33 @@ def title_contains(sections, text):
     end
 end
 
+# Filters the given list of sections, returning only those whose title is exactly
+# the specified text (unlike `title_contains`, which matches substrings).
+#
+# Example:
+# ```
+# import "section" | len(section::title_is(section::sections(to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B")), "A"))
+# #=> 1
+# ```
+#
+# Returns: array
+def title_is(sections, text):
+  if (is_empty(sections)):
+    []
+  else:
+    do
+      let section_eq = fn(section):
+              if (_is_section(section)):
+                do
+                  section[:header] | to_text() == text
+                end
+              else:
+                false
+            end
+      | filter(sections, section_eq)
+    end
+end
+
 # Filters sections by a pattern match in the title text.
 #
 # Example:
@@ -338,6 +394,30 @@ def subsections(section):
     get_or(section, :subsections, [])
   else:
     []
+end
+
+# Returns the section from `md_nodes` that contains `node` (matched against the
+# section's `header` or membership in its `children`), or `None` if no section
+# contains it. The reverse of picking a section apart: useful when you already
+# have a single node in hand, e.g. from `filter`/`is_h1` or a plain selector, and
+# want to know which section it belongs to.
+# Note: nodes are matched by structural equality, so a document with duplicate
+# content (e.g. two identical headings) resolves to the first matching section.
+#
+# Example:
+# ```
+# import "section" | let md = to_markdown("# A\n\nBody A\n\n## A1\n\nSub A\n\n# B\n\nBody B") | let h = first(filter(md, is_h2)) | section::title(section::containing(md, h))
+# #=> A1
+# ```
+#
+# Returns: dynamic
+def containing(md_nodes, node, depth = false):
+  first(filter(sections(md_nodes, depth), fn(section):
+    if (_is_section(section)):
+      node == section[:header] || contains(section[:children], node)
+    else:
+      false
+  end))
 end
 
 # Filters sections by heading level. l can be a number (exact level) or a range array (e.g. 1..2).
