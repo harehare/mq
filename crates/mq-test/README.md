@@ -63,6 +63,15 @@ mq-test --parallel-threshold 4
 
 # Accept the current output of every assert_snapshot(...) call as the new golden snapshot
 mq-test --update-snapshots
+
+# List discovered tests without running them (respects --filter/--tag)
+mq-test --list
+
+# List discovered tests as JSON, e.g. for an editor integration
+mq-test --list --format json
+
+# Run tests and print per-test results as JSON instead of a Markdown report
+mq-test --format json
 ```
 
 ## Coverage
@@ -270,9 +279,11 @@ Tests use the built-in `assert_eq` and related helpers from the `test` module:
 | `assert(cond)`                   | Fails if `cond` is not `true`  |
 | `assert_snapshot(name, actual)`  | Fails if `actual` doesn't match the golden snapshot `name` |
 | `test_case(name, fn)`            | Registers a named test case    |
-| `run_tests(cases)`               | Runs all registered test cases |
+| `run_tests(cases)`               | Runs all registered test cases, printing a Markdown report |
+| `run_tests_data(cases)`          | Like `run_tests`, but returns per-test result dicts instead of printing |
 
-The runner automatically generates a `run_tests(flatten([...]))` call from all
+The runner automatically generates a `run_tests(flatten([...]))` call (or,
+under `--format json`, a `run_tests_data(flatten([...]))` call) from all
 discovered test functions — test files do not need to maintain a manual list.
 
 ### Snapshot Testing
@@ -361,6 +372,57 @@ def verify_string_empty():
   assert_eq(length(""), 0)
 end
 ```
+
+## JSON Output
+
+`--format json` switches both `--list` and a normal run from the default human-readable text
+to a single JSON document printed to stdout, meant for editor and CI integrations (e.g. the
+VS Code extension's Test Explorer) rather than a terminal.
+
+### `--list --format json`
+
+Discovers tests (honoring `--filter`/`--tag`) without running them:
+
+```json
+{
+  "files": [
+    {
+      "file": "tests.mq",
+      "tests": [
+        { "name": "add", "kind": "simple", "tags": [] },
+        { "name": "len", "kind": "parametrized", "tags": [] },
+        { "name": "addition_is_commutative", "kind": "property", "tags": ["math"] }
+      ]
+    }
+  ]
+}
+```
+
+`kind` is one of `simple`, `parametrized`, or `property`. A `# @parametrize(...)`/
+`# @property(...)` test is listed once as its own function — the individual generated
+cases (`name[0]`, `name[1]`, ...) only exist once the test actually runs.
+
+### `--format json` (run)
+
+Runs tests as usual, but prints per-test results instead of a Markdown report:
+
+```json
+{
+  "files": [
+    {
+      "file": "tests.mq",
+      "tests": [
+        { "name": "add", "status": "passed", "duration": 0, "error": null },
+        { "name": "fails", "status": "failed", "duration": 0, "error": "Assertion failed\n\n- 2\n+ 1" }
+      ]
+    }
+  ]
+}
+```
+
+A file that fails to read or evaluate (e.g. a syntax error) is reported as
+`{"file": "...", "error": "..."}` instead of a `tests` array, mirroring the
+`# ❌ Failed to ...` message `mq-test` still also prints to stderr in both formats.
 
 ## Development
 

@@ -337,6 +337,25 @@ def _format_duration(duration_ms):
   | duration_str + "s"
 end
 
+# Runs each test in `tests` (dicts with `name`/`func`, as built by `test_case`) and returns
+# one result dict per test: `name`, `status` ("passed"/"failed"), `duration` (ms), `error`
+# (failure message, or None), and `row` (the pre-rendered Markdown report row used by
+# `run_tests`). Shared by `run_tests` (Markdown report) and `run_tests_data` (raw results).
+def _run_tests_results(tests):
+  foreach (test, tests):
+      if (is_dict(test) && contains(test, "name") && contains(test, "func")):
+        do
+          let result = _run_test(get(test, "name"), get(test, "func"))
+          | let duration_str = _format_duration(result["duration"])
+          | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
+          | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
+          | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
+        end
+      else:
+        error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
+    end
+end
+
 # Executes multiple test functions.
 #
 # The whole report is built as a single string and printed with one `print`
@@ -351,21 +370,7 @@ def run_tests(tests):
   | let file_name = try: TEST_FILE catch: ""
   | let header = "# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n\n" +
       "| Status | Duration | Test Name |\n| :--- | :--- | :--- |"
-
-  # Run each test and build its report row
-  | let test_results = foreach (test, tests):
-      if (is_dict(test) && contains(test, "name") && contains(test, "func")):
-        do
-          let result = _run_test(get(test, "name"), get(test, "func"))
-          | let duration_str = _format_duration(result["duration"])
-          | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
-          | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
-          | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
-        end
-      else:
-        error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
-    end
-
+  | let test_results = _run_tests_results(tests)
   | let rows = join(map(test_results, fn(r): r["row"];), "\n")
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
   | let passed_count = final_test_count - final_failed_count
@@ -400,6 +405,21 @@ def run_tests(tests):
   | let _ = print(header + "\n" + rows + "\n" + failures_section + summary)
 
   | final_failed_count == 0
+end
+
+# Like `run_tests`, but returns the per-test result dicts (`name`, `status`, `duration`,
+# `error`) instead of printing a Markdown report. Used by `mq-test --format json` so the
+# caller can build its own machine-readable report.
+#
+# Example:
+# ```
+# None | include "test" | run_tests_data([test_case("t", fn(): true;)])[0]["status"]
+# #=> passed
+# ```
+#
+# Returns: array<dict>
+def run_tests_data(tests):
+  map(_run_tests_results(tests), fn(r): {"name": r["name"], "status": r["status"], "duration": r["duration"], "error": r["error"]};)
 end
 
 # Helper function to create a test case
