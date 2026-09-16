@@ -360,6 +360,7 @@ fn register_string(ctx: &mut InferenceContext) {
     );
     register_binary(ctx, "is_regex_match", Type::String, Type::String, Type::Bool);
     register_binary(ctx, "is_not_regex_match", Type::String, Type::String, Type::Bool);
+    register_unary(ctx, "regex_escape", Type::String, Type::String);
 
     // Encoding functions
     register_many(
@@ -1813,6 +1814,8 @@ mod tests {
 
     #[rstest]
     #[case::regex_match("regex_match(\"hello123\", \"[0-9]+\")", true)]
+    #[case::regex_escape("regex_escape(\"a.b*c?\")", true)]
+    #[case::regex_escape_number("regex_escape(42)", false)] // Should fail: wrong type
     #[case::base64("base64(\"hello\")", true)]
     #[case::base64d("base64d(\"aGVsbG8=\")", true)]
     #[case::url_encode("url_encode(\"hello world\")", true)]

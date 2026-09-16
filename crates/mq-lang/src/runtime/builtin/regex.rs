@@ -135,6 +135,15 @@ pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error>
     Ok(scan_re_inner(&re, input))
 }
 
+/// Escapes `text` so it can be inserted literally into a regex *pattern*.
+///
+/// This is unrelated to escaping a *replacement* string (e.g. for `gsub`),
+/// where the special character is `$` rather than the regex metacharacters
+/// escaped here.
+pub(super) fn regex_escape(text: &str) -> RuntimeValue {
+    RuntimeValue::String(Shared::new(regex::escape(text)))
+}
+
 #[inline(always)]
 pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
     if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
@@ -321,5 +330,36 @@ mod tests {
     #[test]
     fn test_scan_re_invalid_pattern() {
         assert!(scan_re("text", "[invalid").is_err());
+    }
+
+    #[rstest]
+    #[case("", "")]
+    #[case("hello", "hello")]
+    #[case("a-b", r"a\-b")]
+    #[case("[abc]", r"\[abc\]")]
+    #[case(r"a\b", r"a\\b")]
+    #[case("a.b*c?", r"a\.b\*c\?")]
+    #[case("こんにちは", "こんにちは")]
+    #[case("café", "café")]
+    fn test_regex_escape(#[case] input: &str, #[case] expected: &str) {
+        assert_eq!(
+            regex_escape(input),
+            RuntimeValue::String(Shared::new(expected.to_string()))
+        );
+    }
+
+    #[test]
+    fn test_regex_escape_roundtrips_as_literal_match() {
+        let literal = "a.b*c?[d]-e\\f";
+        let pattern = regex_escape(literal);
+        let pattern = match pattern {
+            RuntimeValue::String(s) => (*s).clone(),
+            other => panic!("expected String, got {:?}", other),
+        };
+        assert_eq!(is_match_re(literal, &pattern).unwrap(), RuntimeValue::Boolean(true));
+        assert_eq!(
+            is_match_re("axbxcxdxe", &pattern).unwrap(),
+            RuntimeValue::Boolean(false)
+        );
     }
 }
