@@ -320,6 +320,8 @@ pub(crate) enum OpCode {
     Neg,
     Not,
     ArrayNew,
+    /// Creates an empty array with capacity taken from an array-valued local.
+    ArrayNewWithCapacityLocal(u16),
     ArrayPush,
     ArraySpread,
     DictSpread,
@@ -491,6 +493,7 @@ impl OpCode {
             Self::Neg => "Neg",
             Self::Not => "Not",
             Self::ArrayNew => "ArrayNew",
+            Self::ArrayNewWithCapacityLocal(_) => "ArrayNewWithCapacityLocal",
             Self::ArrayPush => "ArrayPush",
             Self::ArraySpread => "ArraySpread",
             Self::DictSpread => "DictSpread",
@@ -928,7 +931,8 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
                 | OpCode::ForeachCollect(slot)
-                | OpCode::ArrayLenLocal(slot) => {
+                | OpCode::ArrayLenLocal(slot)
+                | OpCode::ArrayNewWithCapacityLocal(slot) => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
                             chunk: chunk_index,
@@ -1450,6 +1454,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::MakeClosure(_)
         | OpCode::MakeStaticClosure(_)
         | OpCode::ArrayNew
+        | OpCode::ArrayNewWithCapacityLocal(_)
         | OpCode::ArrayLenLocal(_)
         | OpCode::ArrayGetLocalAt { .. }
         | OpCode::DictGetLocalOrFail { .. }
@@ -1781,6 +1786,11 @@ mod tests {
         OpCode::Return,
     ])]
     #[case::array_len_local(vec![OpCode::ArrayLenLocal(0), OpCode::Pop, OpCode::Return])]
+    #[case::array_new_with_capacity_local(vec![
+        OpCode::ArrayNewWithCapacityLocal(0),
+        OpCode::Pop,
+        OpCode::Return,
+    ])]
     #[case::binary_local_local(vec![
         OpCode::BinaryLocalLocal { op: BinaryOp::Add, left: 0, right: 0 },
         OpCode::Pop,
