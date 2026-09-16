@@ -457,6 +457,12 @@ impl RuntimeValue {
         RuntimeValue::Array(Shared::new(Vec::new()))
     }
 
+    /// Returns a new empty array with enough storage for `capacity` values.
+    #[inline(always)]
+    pub(crate) fn array_with_capacity(capacity: usize) -> RuntimeValue {
+        RuntimeValue::Array(Shared::new(Vec::with_capacity(capacity)))
+    }
+
     /// Creates a new empty dictionary.
     #[inline(always)]
     pub fn new_dict() -> RuntimeValue {

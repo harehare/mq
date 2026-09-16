@@ -1392,6 +1392,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             OpCode::ArrayNew => {
                 stack.push(StackValue::Value(RuntimeValue::empty_array()));
             }
+            OpCode::ArrayNewWithCapacityLocal(slot) => {
+                let capacity = match local_runtime_value(locals, *slot, chunks)? {
+                    RuntimeValue::Array(array) => array.len(),
+                    _ => 0,
+                };
+                stack.push(StackValue::Value(RuntimeValue::array_with_capacity(capacity)));
+            }
             OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
                 array_misc_op(op, stack, chunks, chunk, ip)?;
             }
