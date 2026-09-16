@@ -2533,6 +2533,18 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(OpCode::ArrayGetLocalAt { array_slot, index_slot });
             return Ok(());
         }
+        if args.len() == 2
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let (Some(first), Some(second)) = (self.current_local_slot(&args[0]), self.current_local_slot(&args[1]))
+        {
+            self.emit(OpCode::CallBuiltinLocal2 {
+                builtin: ident,
+                first,
+                second,
+            });
+            return Ok(());
+        }
         if args.len() == 1
             && !shadowed
             && builtin::get_builtin_functions(&ident).is_some()
@@ -2584,6 +2596,49 @@ impl<R: ModuleResolver> Compiler<R> {
         // Might be a soft prelude builtin. Cannot tell without the prelude loaded.
         if builtin::get_builtin_functions(&ident).is_none() {
             self.unresolved_call_names.insert(ident);
+        }
+
+        if args.len() == 2
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let (Some(first), Some(second)) = (self.current_local_slot(&args[0]), self.current_local_slot(&args[1]))
+        {
+            self.emit(OpCode::CallBuiltinLocal2 {
+                builtin: ident,
+                first,
+                second,
+            });
+            return Ok(());
+        }
+        if args.len() == 2
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let Some(local) = self.current_local_slot(&args[0])
+            && let Expr::Literal(literal) = &args[1].expr
+        {
+            let constant = self.chunk_mut().push_const(literal_to_runtime_value(literal));
+            self.emit(OpCode::CallBuiltinLocalConst {
+                builtin: ident,
+                local,
+                constant,
+            });
+            return Ok(());
+        }
+        if args.len() == 3
+            && !shadowed
+            && builtin::get_builtin_functions(&ident).is_some()
+            && let Some(local) = self.current_local_slot(&args[0])
+            && let (Expr::Literal(first), Expr::Literal(second)) = (&args[1].expr, &args[2].expr)
+        {
+            let first = self.chunk_mut().push_const(literal_to_runtime_value(first));
+            let second = self.chunk_mut().push_const(literal_to_runtime_value(second));
+            self.emit(OpCode::CallBuiltinLocalConst2 {
+                builtin: ident,
+                local,
+                first,
+                second,
+            });
+            return Ok(());
         }
 
         for arg in args {

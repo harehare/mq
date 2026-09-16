@@ -141,6 +141,83 @@ fn unary_builtin_calls_with_local_arguments_use_compact_bytecode() {
     );
 }
 
+#[test]
+fn binary_builtin_calls_with_local_arguments_use_compact_bytecode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def has_prefix(value, prefix): starts_with(value, prefix); has_prefix(\"alpha\", \"a\")",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::CallBuiltinLocal2 { .. })),
+        "binary builtin local calls should use compact bytecode: {:?}",
+        compiled.chunks
+    );
+    assert_eq!(
+        run_with_prelude("def has_prefix(value, prefix): starts_with(value, prefix); has_prefix(\"alpha\", \"a\")"),
+        true.into()
+    );
+}
+
+#[test]
+fn binary_builtin_calls_with_local_and_constant_use_compact_bytecode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def has_prefix(value): starts_with(value, \"a\"); has_prefix(\"alpha\")",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::CallBuiltinLocalConst { .. }))
+    );
+    assert_eq!(
+        run_with_prelude("def has_prefix(value): starts_with(value, \"a\"); has_prefix(\"alpha\")"),
+        true.into()
+    );
+}
+
+#[test]
+fn ternary_builtin_calls_with_local_and_constants_use_compact_bytecode() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(
+        "def rewrite(value): replace(value, \"a\", \"b\"); rewrite(\"alpha\")",
+        Shared::clone(&token_arena),
+    )
+    .unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(|op| matches!(op, OpCode::CallBuiltinLocalConst2 { .. }))
+    );
+    assert_eq!(
+        run_with_prelude("def rewrite(value): replace(value, \"a\", \"b\"); rewrite(\"alpha\")"),
+        "blphb".into()
+    );
+}
+
 #[rstest::fixture]
 fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(10)));

@@ -374,6 +374,25 @@ pub(crate) enum OpCode {
         builtin: Ident,
         local: u16,
     },
+    /// Calls a registered binary builtin with two local arguments without stack materialization.
+    CallBuiltinLocal2 {
+        builtin: Ident,
+        first: u16,
+        second: u16,
+    },
+    /// Calls a registered binary builtin with a local and a constant argument.
+    CallBuiltinLocalConst {
+        builtin: Ident,
+        local: u16,
+        constant: u16,
+    },
+    /// Calls a registered ternary builtin with a local and two constant arguments.
+    CallBuiltinLocalConst2 {
+        builtin: Ident,
+        local: u16,
+        first: u16,
+        second: u16,
+    },
     CallBuiltin(Ident, u16),
     /// Calls a capture-free fixed-arity chunk through the checked fallback path.
     CallStatic(u16, u16),
@@ -514,6 +533,9 @@ impl OpCode {
             Self::SelectorMatchHeading(_) => "SelectorMatchHeading",
             Self::SelectorMatchWithArgs(_) => "SelectorMatchWithArgs",
             Self::CallBuiltinLocal { .. } => "CallBuiltinLocal",
+            Self::CallBuiltinLocal2 { .. } => "CallBuiltinLocal2",
+            Self::CallBuiltinLocalConst { .. } => "CallBuiltinLocalConst",
+            Self::CallBuiltinLocalConst2 { .. } => "CallBuiltinLocalConst2",
             Self::CallBuiltin(_, _) => "CallBuiltin",
             Self::CallStatic(_, _) => "CallStatic",
             Self::CallStaticExact(_, _) => "CallStaticExact",
@@ -920,6 +942,42 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             pc,
                             index: *index,
                         });
+                    }
+                }
+                OpCode::CallBuiltinLocalConst { local, constant, .. } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    if *constant as usize >= chunk.constants.len() {
+                        return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *constant,
+                        });
+                    }
+                }
+                OpCode::CallBuiltinLocalConst2 {
+                    local, first, second, ..
+                } => {
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                    for index in [first, second] {
+                        if *index as usize >= chunk.constants.len() {
+                            return Err(BytecodeError::ConstantOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                index: *index,
+                            });
+                        }
                     }
                 }
                 OpCode::GetLocal(slot)
@@ -1504,7 +1562,10 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::SelectorMatchHeading(_)
         | OpCode::MaybeAutoCall
         | OpCode::Yield => (1, 1),
-        OpCode::CallBuiltinLocal { .. } => (0, 1),
+        OpCode::CallBuiltinLocal { .. }
+        | OpCode::CallBuiltinLocal2 { .. }
+        | OpCode::CallBuiltinLocalConst { .. }
+        | OpCode::CallBuiltinLocalConst2 { .. } => (0, 1),
         OpCode::InterpString(count) => (*count as usize, 1),
         OpCode::SelectorMatchWithArgs(payload) => (payload.1 as usize + 1, 1),
         OpCode::CallBuiltin(_, count)

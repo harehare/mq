@@ -313,6 +313,28 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::CallBuiltinLocal { builtin, local: slot } => {
             format!("CallBuiltinLocal {builtin}, local={}", local(*slot))
         }
+        bytecode::OpCode::CallBuiltinLocal2 { builtin, first, second } => format!(
+            "CallBuiltinLocal2 {builtin}, first={}, second={}",
+            local(*first),
+            local(*second)
+        ),
+        bytecode::OpCode::CallBuiltinLocalConst {
+            builtin,
+            local: slot,
+            constant,
+        } => format!(
+            "CallBuiltinLocalConst {builtin}, local={}, const={constant}",
+            local(*slot)
+        ),
+        bytecode::OpCode::CallBuiltinLocalConst2 {
+            builtin,
+            local: slot,
+            first,
+            second,
+        } => format!(
+            "CallBuiltinLocalConst2 {builtin}, local={}, first={first}, second={second}",
+            local(*slot)
+        ),
         bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
         bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
         bytecode::OpCode::CallStaticExact(chunk, argc) => {

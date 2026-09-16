@@ -1564,9 +1564,70 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::CallBuiltinLocal { builtin, local } => {
                 let value = local_runtime_value(locals, *local, chunks)?;
-                let result = call_builtin(
+                let mut args = Args::new();
+                args.push(value);
+                let result = call_builtin_args(
                     builtin,
-                    &[value],
+                    args,
+                    &current_self(locals, chunks),
+                    execution.env,
+                    execution.host_functions,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
+            }
+            OpCode::CallBuiltinLocal2 { builtin, first, second } => {
+                let first = local_runtime_value(locals, *first, chunks)?;
+                let second = local_runtime_value(locals, *second, chunks)?;
+                let mut args = Args::new();
+                args.push(first);
+                args.push(second);
+                let result = call_builtin_args(
+                    builtin,
+                    args,
+                    &current_self(locals, chunks),
+                    execution.env,
+                    execution.host_functions,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
+            }
+            OpCode::CallBuiltinLocalConst {
+                builtin,
+                local,
+                constant,
+            } => {
+                let local = local_runtime_value(locals, *local, chunks)?;
+                let constant = builtin_constant(chunk, *constant)?;
+                let mut args = Args::new();
+                args.push(local);
+                args.push(constant);
+                let result = call_builtin_args(
+                    builtin,
+                    args,
+                    &current_self(locals, chunks),
+                    execution.env,
+                    execution.host_functions,
+                )
+                .map_err(|e| locate(chunk, ip, e))?;
+                stack.push(StackValue::Value(result));
+            }
+            OpCode::CallBuiltinLocalConst2 {
+                builtin,
+                local,
+                first,
+                second,
+            } => {
+                let local = local_runtime_value(locals, *local, chunks)?;
+                let first = builtin_constant(chunk, *first)?;
+                let second = builtin_constant(chunk, *second)?;
+                let mut args = Args::with_capacity(3);
+                args.push(local);
+                args.push(first);
+                args.push(second);
+                let result = call_builtin_args(
+                    builtin,
+                    args,
                     &current_self(locals, chunks),
                     execution.env,
                     execution.host_functions,
@@ -2443,6 +2504,15 @@ fn eval_binary_op(
         return cmp_op(op, a, b, locals, chunks, env, host_functions);
     }
     binop(op, a, b, locals, chunks, env, host_functions)
+}
+
+#[inline(always)]
+fn builtin_constant(chunk: &Chunk, index: u16) -> VmResult<RuntimeValue> {
+    chunk
+        .constants
+        .get(index as usize)
+        .cloned()
+        .ok_or(VmError::Corrupt("builtin opcode constant is out of bounds"))
 }
 
 #[inline(always)]

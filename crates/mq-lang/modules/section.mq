@@ -117,9 +117,10 @@ def sections(md_nodes, depth = false):
           | while (i < start_index_len):
               let start = start_indices[i]
               | let lvl = _h_level_num(agg_nodes[start])
-              | let boundaries = do foreach (j, range(n - 1)): let candidate_level = _h_level_num(agg_nodes[j]) | if (candidate_level > 0 && candidate_level <= lvl): j; | compact();
-              | let boundaries_with_end = boundaries + n
-              | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
+              # Only headings can close a depth-aware section. Scanning this compact index
+              # avoids revisiting every body node for every heading.
+              | let end_candidates = do foreach (j, range(i + 1, start_index_len - 1)): let candidate = start_indices[j] | if (_h_level_num(agg_nodes[candidate]) <= lvl): candidate; | compact();
+              | let end_node = first(end_candidates + n)
               | result += [{type: :section, header: agg_nodes[start], children: agg_nodes[start + 1:end_node]}]
               | i += 1
               | result
