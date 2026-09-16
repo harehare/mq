@@ -627,6 +627,23 @@ def test_regex_match(value, pattern, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["a.b*c?", "a\\.b\\*c\\?"],
+#   ["hello", "hello"],
+#   ["", ""],
+#   ["[abc]-d", "\\[abc\\]\\-d"],
+# ])
+def test_regex_escape(value, expected):
+  let result = regex_escape(value)
+  | assert_eq(result, expected)
+end
+
+def test_regex_escape_matches_literal_input():
+  let pattern = regex_escape("1.2")
+  | assert_eq(is_regex_match("1.2", pattern), true)
+  | assert_eq(is_regex_match("1x2", pattern), false)
+end
+
 def test_tap():
   let result1 = tap(1, print("tap"))
   | assert_eq(result1, 1)

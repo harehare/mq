@@ -48,7 +48,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
-use self::regex::{capture_re, is_match_re, match_re, replace_re, scan_re, split_re};
+use self::regex::{capture_re, is_match_re, match_re, regex_escape, replace_re, scan_re, split_re};
 use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
 use mq_markdown;
@@ -1347,6 +1347,23 @@ fn scan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("scan should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "regex_escape", params = Fixed(1))]
+fn regex_escape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => Ok(regex_escape(s)),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| match regex_escape(md.value().as_str()) {
+                RuntimeValue::String(escaped) => Ok(node.update_markdown_value(&escaped)),
+                _ => unreachable!("regex_escape always returns a String"),
+            })
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("regex_escape should always receive exactly one argument"),
     }
 }
 
@@ -5499,6 +5516,7 @@ mq_macros::builtin_dispatch! {
     IS_NOT_REGEX_MATCH,
     CAPTURE,
     SCAN,
+    REGEX_ESCAPE,
     DOWNCASE,
     ASCII_DOWNCASE,
     CASEFOLD,
@@ -7566,6 +7584,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             param_types: &["string", "string"],
             returns: "array",
             examples: &[BuiltinExample { code: r#"scan("a1b2", "[0-9]")"#, expected: r#"["1", "2"]"# }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("regex_escape"),
+        BuiltinFunctionDoc {
+            description: "Escapes regular expression metacharacters in the given string so it can be used literally in a regex pattern (e.g. with `regex_match`, `is_regex_match`, `capture`, `scan`, `gsub`, or `split`). This is for building patterns from dynamic input, not for escaping replacement strings.",
+            params: &["string"],
+            param_types: &["string"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"regex_escape("a.b*c?")"#,
+                expected: r#"a\.b\*c\?"#,
+            }],
             capability: None,
         },
     );

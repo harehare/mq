@@ -2170,6 +2170,21 @@ fn engine() -> DefaultEngine {
 #[case::is_regex_match_markdown(r#"is_regex_match(., "hello")"#,
     vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }))],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
+#[case::regex_escape_metacharacters(r#"regex_escape("a.b*c?")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String(Shared::new(r"a\.b\*c\?".to_string()))].into()))]
+#[case::regex_escape_no_metacharacters(r#"regex_escape("hello")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
+#[case::regex_escape_none_input(r#"regex_escape(.)"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::None].into()))]
+#[case::regex_escape_as_literal_pattern(r#"let pattern = regex_escape("1.2") | is_regex_match("1.2", pattern)"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::regex_escape_rejects_similar_but_unescaped(r#"let pattern = regex_escape("1.2") | is_regex_match("1x2", pattern)"#,
+    vec![RuntimeValue::None],
+    Ok(vec![false.into()].into()))]
 #[case::regex_op(r#""test1" =~ "[a-z0-9]+""#,
     vec![RuntimeValue::None],
     Ok(vec![true.into()].into()))]
