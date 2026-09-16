@@ -175,7 +175,7 @@ vim.lsp.inlay_hint.enable(true)   -- enable
 | `:MqStopLSP`      | Stop the mq LSP server                      |
 | `:MqRestartLSP`   | Restart the mq LSP server                   |
 | `:MqRunSelected`  | Run selected text as mq query (visual mode) |
-| `:MqExecuteQuery` | Execute mq query on current file            |
+| `:MqExecuteQuery` | Execute mq query on current file (recent queries offered first) |
 | `:MqExecuteFile`  | Execute mq file on current file             |
 | `:MqDebugFile`    | Debug current mq file (requires nvim-dap)   |
 

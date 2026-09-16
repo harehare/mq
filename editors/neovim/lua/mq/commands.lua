@@ -2,6 +2,7 @@ local M = {}
 local lsp = require("mq.lsp")
 local utils = require("mq.utils")
 local dap = require("mq.dap")
+local history = require("mq.history")
 
 function M.start_lsp()
   lsp.start()
@@ -94,17 +95,43 @@ function M.execute_query()
   local filepath = vim.api.nvim_buf_get_name(bufnr)
   local input_format = utils.get_input_format(filepath)
 
-  -- Prompt for query
-  vim.ui.input({
-    prompt = "Enter mq query: ",
-    default = ".[]",
-  }, function(query)
+  local function run_query(query)
     if not query or query == "" then
       utils.error("No query entered")
       return
     end
 
+    history.add(query)
     lsp.execute_command("mq/run", query, content, input_format)
+  end
+
+  local function prompt_new_query()
+    vim.ui.input({
+      prompt = "Enter mq query: ",
+      default = ".[]",
+    }, run_query)
+  end
+
+  local recent = history.load()
+  if #recent == 0 then
+    prompt_new_query()
+    return
+  end
+
+  local new_query_choice = "New query..."
+  local choices = { new_query_choice }
+  vim.list_extend(choices, recent)
+
+  vim.ui.select(choices, {
+    prompt = "Select a recent query or enter a new one:",
+  }, function(choice)
+    if not choice then
+      return
+    elseif choice == new_query_choice then
+      prompt_new_query()
+    else
+      run_query(choice)
+    end
   end)
 end
 
