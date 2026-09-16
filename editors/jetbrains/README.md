@@ -41,7 +41,7 @@ All actions live under the **Tools > mq** menu:
 | ----------------------- | ---------------------------------------------------------------- |
 | `New mq File`          | Create a new `.mq` file (with example queries)                 |
 | `Run Selected Text`    | Run the current selection as an mq query against a chosen file |
-| `Execute Query`        | Run a typed mq query against the active editor's text          |
+| `Execute Query`        | Run a query (recent or typed) against the active editor's text |
 | `Execute mq File`      | Run a chosen `.mq` file's content against the active editor    |
 | `Debug Current File`   | Debug the active `.mq` file with `mq-dbg`                      |
 | `Install Servers`      | Download `mq-lsp` / `mq-dbg` from GitHub Releases               |

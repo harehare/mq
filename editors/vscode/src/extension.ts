@@ -9,6 +9,8 @@ import { MqCodeLensProvider } from "./providers/codelens";
 import { LspStatusBarManager } from "./providers/statusbar";
 
 const MQ_VERSION_KEY = "mq.version" as const;
+const QUERY_HISTORY_KEY = "mq.queryHistory" as const;
+const QUERY_HISTORY_MAX_SIZE = 20;
 const COMMANDS = ["mq/run"] as const;
 
 const EXAMPLES = `# To hide these examples, set mq.showExamplesInNewFile to false in settings
@@ -145,6 +147,57 @@ async function selectMarkdownFile(): Promise<{
   const inputFormat = getInputFormatFromExtension(extension);
 
   return { document, inputFormat };
+}
+
+function getQueryHistory(context: vscode.ExtensionContext): string[] {
+  return context.globalState.get<string[]>(QUERY_HISTORY_KEY, []);
+}
+
+async function addQueryToHistory(
+  context: vscode.ExtensionContext,
+  query: string,
+): Promise<void> {
+  const history = [
+    query,
+    ...getQueryHistory(context).filter((q) => q !== query),
+  ].slice(0, QUERY_HISTORY_MAX_SIZE);
+  await context.globalState.update(QUERY_HISTORY_KEY, history);
+}
+
+async function promptForQuery(
+  context: vscode.ExtensionContext,
+): Promise<string | undefined> {
+  const history = getQueryHistory(context);
+  const toItems = (queries: string[]) =>
+    queries.map((query) => ({ label: query }));
+
+  const quickPick = vscode.window.createQuickPick();
+  quickPick.placeholder = "Enter mq query to execute";
+  quickPick.items = toItems(history);
+
+  quickPick.onDidChangeValue((value) => {
+    if (!value) {
+      quickPick.items = toItems(history);
+      return;
+    }
+    quickPick.items = [
+      { label: value, description: "New query" },
+      ...toItems(history.filter((query) => query !== value)),
+    ];
+  });
+
+  return new Promise<string | undefined>((resolve) => {
+    quickPick.onDidAccept(() => {
+      const query = quickPick.selectedItems[0]?.label ?? quickPick.value;
+      quickPick.hide();
+      resolve(query || undefined);
+    });
+    quickPick.onDidHide(() => {
+      quickPick.dispose();
+      resolve(undefined);
+    });
+    quickPick.show();
+  });
 }
 
 function getActiveEditorValidation(): vscode.TextEditor | null {
@@ -294,15 +347,14 @@ function registerMqExecutionCommands(context: vscode.ExtensionContext) {
         return;
       }
 
-      const query = await vscode.window.showInputBox({
-        prompt: "Enter mq query to execute",
-        placeHolder: "e.g. .[] | upcase()",
-      });
+      const query = await promptForQuery(context);
 
       if (!query) {
         vscode.window.showErrorMessage("No query entered");
         return;
       }
+
+      await addQueryToHistory(context, query);
 
       const extension = editor.document.uri.fsPath.split(".").pop() || "";
       const inputFormat = getInputFormatFromExtension(extension);
