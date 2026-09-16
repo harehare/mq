@@ -23,6 +23,8 @@ pub mod attr_keys {
     #[cfg(feature = "callout")]
     pub(crate) const KIND: &str = "kind";
     pub(crate) const ROW: &str = "row";
+    pub(crate) const LINE: &str = "line";
+    pub(crate) const END_LINE: &str = "end_line";
 }
 
 /// Represents a typed attribute value that can be returned from or passed to attr/set_attr methods.

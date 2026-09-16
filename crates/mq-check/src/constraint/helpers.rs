@@ -151,7 +151,7 @@ pub(super) fn is_foreach_iterable_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
 /// Maps a Markdown node attribute kind to its concrete return type.
 ///
 /// - String attributes: value, lang, meta, fence, url, alt, title, ident, label, align, name
-/// - Number attributes: depth, level, index, column, row
+/// - Number attributes: depth, level, index, column, row, line, end_line
 /// - Bool attributes: ordered, checked
 /// - Markdown array attributes: values, children
 pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
@@ -169,7 +169,13 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
         | AttrKind::Align
         | AttrKind::Name
         | AttrKind::Kind => Type::String,
-        AttrKind::Depth | AttrKind::Level | AttrKind::Index | AttrKind::Column | AttrKind::Row => Type::Number,
+        AttrKind::Depth
+        | AttrKind::Level
+        | AttrKind::Index
+        | AttrKind::Column
+        | AttrKind::Row
+        | AttrKind::Line
+        | AttrKind::EndLine => Type::Number,
         AttrKind::Ordered | AttrKind::Checked => Type::Bool,
         AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),
     }

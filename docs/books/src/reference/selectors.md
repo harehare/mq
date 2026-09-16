@@ -160,6 +160,19 @@ Most nodes support `value` to get the text content:
 .code.value    # Gets the code content
 ```
 
+#### `line`, `end_line`
+
+Every node supports `line`/`end_line` to get the 1-indexed source line it starts/ends on. Returns `none` for a node with no source position (e.g. built with `to_h`/`to_md_text` rather than parsed):
+
+```mq
+# Input:
+# # Title
+#
+# ## Sub
+
+.h.line    # Returns: [1, 3]
+```
+
 ### Heading Attributes
 
 Heading nodes support the following attributes:

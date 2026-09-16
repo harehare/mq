@@ -235,6 +235,11 @@ pub enum AttrKind {
     Name,
     /// The kind/type of an Obsidian callout (e.g. `"NOTE"`, `"WARNING"`).
     Kind,
+
+    /// The 1-indexed source line the node starts on (`None` if unparsed/synthetic).
+    Line,
+    /// The 1-indexed source line the node ends on (`None` if unparsed/synthetic).
+    EndLine,
 }
 
 impl Display for AttrKind {
@@ -261,6 +266,8 @@ impl Display for AttrKind {
             AttrKind::Align => write!(f, ".align"),
             AttrKind::Name => write!(f, ".name"),
             AttrKind::Kind => write!(f, ".kind"),
+            AttrKind::Line => write!(f, ".line"),
+            AttrKind::EndLine => write!(f, ".end_line"),
         }
     }
 }
@@ -335,6 +342,8 @@ impl Selector {
             ".align" => Some(Selector::Attr(AttrKind::Align)),
             ".name" => Some(Selector::Attr(AttrKind::Name)),
             ".kind" => Some(Selector::Attr(AttrKind::Kind)),
+            ".line" => Some(Selector::Attr(AttrKind::Line)),
+            ".end_line" => Some(Selector::Attr(AttrKind::EndLine)),
             _ => None,
         }
     }
@@ -571,6 +580,9 @@ mod tests {
     #[case::attr_align(".align", Selector::Attr(AttrKind::Align), ".align")]
     // Attribute selectors - MDX
     #[case::attr_name(".name", Selector::Attr(AttrKind::Name), ".name")]
+    // Attribute selectors - Position
+    #[case::attr_line(".line", Selector::Attr(AttrKind::Line), ".line")]
+    #[case::attr_end_line(".end_line", Selector::Attr(AttrKind::EndLine), ".end_line")]
     // Property selectors: quoted form (."key") – the only way to access dict keys
     #[case::property_quoted_h1(".\"h1\"", Selector::Property("h1".into()), ".\"h1\"")]
     #[case::property_quoted_url(".\"url\"", Selector::Property("url".into()), ".\"url\"")]
