@@ -322,16 +322,25 @@ fn eval_compiled_owned_markdown_tree_without_matches(bencher: divan::Bencher) {
     });
 }
 
+/// Parsed once; `bench_compiled`'s `input` closure runs inside the timed loop, so rebuilding
+/// and reparsing Markdown text there would measure parsing, not VM execution. Holds
+/// `mq_markdown::Node` rather than `RuntimeValue` because the latter's `Rc`-based variants
+/// aren't `Sync`, which a `LazyLock` static requires.
+static NODES_MARKDOWN_INPUT: LazyLock<Vec<mq_markdown::Node>> = LazyLock::new(|| {
+    mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
+        .unwrap()
+        .nodes
+});
+
 /// Covers selector dispatch plus the `nodes` module's tree traversal and a native builtin.
 #[divan::bench]
 fn eval_compiled_nodes(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     bench_compiled(bencher, &mut engine, ".h | nodes | map(upcase)", || {
-        mq_markdown::Markdown::from_markdown_str("# heading\n- item1\n- item2\n## heading2\n- item1\n- item2\n")
-            .unwrap()
-            .nodes
-            .into_iter()
+        NODES_MARKDOWN_INPUT
+            .iter()
+            .cloned()
             .map(mq_lang::RuntimeValue::from)
             .collect()
     });
@@ -351,7 +360,11 @@ fn eval_compiled_csv_parse(bencher: divan::Bencher) {
     });
 }
 
-fn section_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
+/// Parsed once; `bench_compiled`'s `input` closure runs inside the timed loop, so rebuilding
+/// and reparsing Markdown text there would measure parsing, not VM execution. Holds
+/// `mq_markdown::Node` rather than `RuntimeValue` because the latter's `Rc`-based variants
+/// aren't `Sync`, which a `LazyLock` static requires.
+static SECTION_MARKDOWN_INPUT: LazyLock<Vec<mq_markdown::Node>> = LazyLock::new(|| {
     let markdown_content = (0..30)
         .map(|i| {
             format!(
@@ -359,8 +372,17 @@ fn section_markdown_input() -> impl Iterator<Item = mq_lang::RuntimeValue> {
             )
         })
         .collect::<String>();
-    let markdown: mq_markdown::Markdown = mq_markdown::Markdown::from_markdown_str(&markdown_content).unwrap();
-    markdown.nodes.into_iter().map(mq_lang::RuntimeValue::from)
+    mq_markdown::Markdown::from_markdown_str(&markdown_content)
+        .unwrap()
+        .nodes
+});
+
+fn section_markdown_input() -> Vec<mq_lang::RuntimeValue> {
+    SECTION_MARKDOWN_INPUT
+        .iter()
+        .cloned()
+        .map(mq_lang::RuntimeValue::from)
+        .collect()
 }
 
 /// Covers a document-scale Markdown query through the cached standard `section` module.
@@ -369,9 +391,12 @@ fn eval_compiled_section_sections(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
     engine.load_builtin_module();
     engine.load_module("section").unwrap();
-    bench_compiled(bencher, &mut engine, "nodes | sections() | len()", || {
-        section_markdown_input().collect()
-    });
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "nodes | sections() | len()",
+        section_markdown_input,
+    );
 }
 
 #[divan::bench]
