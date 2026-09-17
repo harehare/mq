@@ -158,6 +158,19 @@ fn eval_compiled_function_call_overhead(bencher: divan::Bencher) {
     );
 }
 
+/// Covers nested helpers that capture a capture-free function from their defining scope.
+#[divan::bench]
+fn eval_compiled_captured_static_function_call(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"let normalize = fn(value): trim(value); | let apply = fn(value): normalize(upcase(value));
+            | foreach(i, range(0, 1000, 1)): apply(" value ");"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 /// Measures calls through a local holding a native function, which use the VM's generic call
 /// path instead of the fixed-arity closure fast path.
 #[divan::bench]
