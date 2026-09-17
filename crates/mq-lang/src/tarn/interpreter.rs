@@ -51,12 +51,6 @@ static SUB_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::SUB));
 static MUL_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MUL));
 static DIV_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::DIV));
 static MOD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MOD));
-static EQ_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::EQ));
-static NE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NE));
-static LT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LT));
-static LTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LTE));
-static GT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GT));
-static GTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GTE));
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSlot;
@@ -1253,10 +1247,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let Some(operation) = binary_op_from_opcode(op) else {
                     bail!(VmError::Corrupt("missing comparison binary operation"));
                 };
-                stack.push(StackValue::Value(
-                    cmp_op(operation, a, b, locals, chunks, execution.env, execution.host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?,
-                ));
+                stack.push(StackValue::Value(cmp_op(operation, &a, &b)));
             }
             OpCode::BinaryLocalLocal { op, left, right } => {
                 let a = local_runtime_value(locals, *left, chunks)?;
@@ -2440,7 +2431,7 @@ fn eval_binary_op(
         op,
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
     ) {
-        return cmp_op(op, a, b, locals, chunks, env, host_functions);
+        return Ok(cmp_op(op, &a, &b));
     }
     binop(op, a, b, locals, chunks, env, host_functions)
 }
@@ -2498,26 +2489,29 @@ fn binop(
     call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }
 
-fn cmp_op(
-    op: BinaryOp,
-    a: RuntimeValue,
-    b: RuntimeValue,
-    locals: &Locals,
-    chunks: &Shared<Vec<Chunk>>,
-    env: &VmEnv,
-    host_functions: &HostFunctions,
-) -> VmResult<RuntimeValue> {
-    if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {
-        return eval_number_binary_op(op, *n1, *n2);
+#[inline(always)]
+fn cmp_op(op: BinaryOp, left: &RuntimeValue, right: &RuntimeValue) -> RuntimeValue {
+    macro_rules! ordered_comparison {
+        ($operator:tt) => {
+            match (left, right) {
+                (RuntimeValue::String(left), RuntimeValue::String(right)) => left $operator right,
+                (RuntimeValue::Symbol(left), RuntimeValue::Symbol(right)) => left $operator right,
+                (RuntimeValue::Number(left), RuntimeValue::Number(right)) => left $operator right,
+                (RuntimeValue::Boolean(left), RuntimeValue::Boolean(right)) => left $operator right,
+                (RuntimeValue::Bytes(left), RuntimeValue::Bytes(right)) => left $operator right,
+                (RuntimeValue::Markdown(left, _), RuntimeValue::Markdown(right, _)) => left $operator right,
+                _ => false,
+            }
+        };
     }
-    let ident = match op {
-        BinaryOp::Eq => &EQ_IDENT,
-        BinaryOp::Ne => &NE_IDENT,
-        BinaryOp::Lt => &LT_IDENT,
-        BinaryOp::Le => &LTE_IDENT,
-        BinaryOp::Gt => &GT_IDENT,
-        BinaryOp::Ge => &GTE_IDENT,
-        _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
-    };
-    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
+
+    RuntimeValue::Boolean(match op {
+        BinaryOp::Eq => left == right,
+        BinaryOp::Ne => left != right,
+        BinaryOp::Lt => ordered_comparison!(<),
+        BinaryOp::Le => ordered_comparison!(<=),
+        BinaryOp::Gt => ordered_comparison!(>),
+        BinaryOp::Ge => ordered_comparison!(>=),
+        _ => false,
+    })
 }
