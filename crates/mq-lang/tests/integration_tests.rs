@@ -3039,6 +3039,7 @@ fn engine() -> DefaultEngine {
 #[case::markdown_escape_code(r#"markdown_escape("a `b` c", "code")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a `b` c".to_string()))].into()))]
 #[case::markdown_escape_markdown_type(r#"to_md_text("**bold**") | markdown_escape("text") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::markdown_escape_markdown_value(r#"to_md_text("**bold**") | markdown_escape("text") | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"\*\*bold\*\*".to_string()))].into()))]
+#[case::markdown_escape_parsed_markdown_no_double_escape(r#"to_markdown("a * b") | first() | markdown_escape("text") | to_string"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new(r"a \* b".to_string()))].into()))]
 // strip_tags
 #[case::strip_tags_basic(r#"strip_tags("<p>Hello <em>world</em>!</p>")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("Hello world!".to_string()))].into()))]
 #[case::strip_tags_no_tags(r#"strip_tags("plain text")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("plain text".to_string()))].into()))]

@@ -578,32 +578,70 @@ fn escape_markdown_text(input: &str) -> String {
     out
 }
 
-/// Escapes a single line of body text: defuses a leading block marker (if any), then
-/// escapes inline Markdown-significant characters in the remainder. CommonMark tolerates up
-/// to 3 leading spaces before a block marker; a line with 4+ leading spaces would form an
-/// indented code block, which this function does not guard against.
+/// Escapes a single line of body text: neutralizes leading indentation that would otherwise
+/// form an indented code block, defuses a leading block marker (if any), then escapes inline
+/// Markdown-significant characters in the remainder.
 fn escape_markdown_text_line(line: &str) -> String {
-    let indent_len = (line.len() - line.trim_start_matches(' ').len()).min(3);
-    let rest = &line[indent_len..];
+    let (indent_bytes, indent_columns) = leading_indent_whitespace(line);
 
+    if indent_columns >= 4 {
+        let mut out = String::with_capacity(line.len() + indent_bytes * 4);
+        for c in line[..indent_bytes].chars() {
+            match c {
+                ' ' => out.push_str("&#32;"),
+                '\t' => out.push_str("&#9;"),
+                _ => unreachable!("leading_indent_whitespace only consumes spaces and tabs"),
+            }
+        }
+        escape_markdown_text_line_body(&line[indent_bytes..], &mut out);
+        return out;
+    }
+
+    let rest = &line[indent_bytes..];
     let mut out = String::with_capacity(line.len() + 1);
-    out.push_str(&line[..indent_len]);
+    out.push_str(&line[..indent_bytes]);
+    escape_markdown_text_line_body(rest, &mut out);
+    out
+}
 
+/// Defuses a leading block marker in `rest` (if any) and escapes inline Markdown-significant
+/// characters, appending the result to `out`.
+fn escape_markdown_text_line_body(rest: &str, out: &mut String) {
     match markdown_block_marker_len(rest) {
         Some(marker_len) => {
             out.push_str(&rest[..marker_len]);
             out.push('\\');
             for c in rest[marker_len..].chars() {
-                escape_markdown_inline_char(c, &mut out);
+                escape_markdown_inline_char(c, out);
             }
         }
         None => {
             for c in rest.chars() {
-                escape_markdown_inline_char(c, &mut out);
+                escape_markdown_inline_char(c, out);
             }
         }
     }
-    out
+}
+
+/// Returns the byte length and effective column width of the leading run of spaces and tabs
+/// in `line`, expanding each tab to the next 4-column tab stop per CommonMark.
+fn leading_indent_whitespace(line: &str) -> (usize, usize) {
+    let mut bytes = 0;
+    let mut columns = 0;
+    for c in line.chars() {
+        match c {
+            ' ' => {
+                columns += 1;
+                bytes += 1;
+            }
+            '\t' => {
+                columns += 4 - (columns % 4);
+                bytes += 1;
+            }
+            _ => break,
+        }
+    }
+    (bytes, columns)
 }
 
 /// Returns the byte length of the prefix of `rest` that can be kept as-is before inserting a
@@ -1018,9 +1056,30 @@ mod tests {
     #[case("- - -", r"\- - -")]
     #[case("Title\n===\nBody", "Title\n\\===\nBody")]
     #[case("   - indented list", "   \\- indented list")]
+    #[case("    four spaces", "&#32;&#32;&#32;&#32;four spaces")]
+    #[case("\tone tab", "&#9;one tab")]
+    #[case("   \tspaces then tab", "&#32;&#32;&#32;&#9;spaces then tab")]
     fn test_markdown_escape_text(#[case] input: &str, #[case] expected: &str) {
         let result = markdown_escape(input, MarkdownEscapeContext::Text).unwrap();
         assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
+    }
+
+    #[rstest]
+    #[case("    customer value")]
+    #[case("\tcustomer value")]
+    #[case("   \tcustomer value")]
+    fn test_markdown_escape_text_indentation_does_not_become_code_block(#[case] input: &str) {
+        let escaped = match markdown_escape(input, MarkdownEscapeContext::Text).unwrap() {
+            RuntimeValue::String(s) => s.to_string(),
+            _ => panic!("Expected String"),
+        };
+        let md = mq_markdown::Markdown::from_markdown_str(&escaped).unwrap();
+        assert!(
+            !md.nodes.iter().any(|n| matches!(n, mq_markdown::Node::Code(_))),
+            "escaped text {:?} parsed back into a code block: {:?}",
+            escaped,
+            md.nodes
+        );
     }
 
     // Test markdown_escape: heading and link_label contexts collapse newlines to spaces

@@ -1087,7 +1087,11 @@ fn markdown_escape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
             node.markdown_node()
                 .map(|md| {
                     convert::markdown_escape(md.value().as_str(), context).and_then(|o| match o {
-                        RuntimeValue::String(s) => Ok(node.update_markdown_value(&s)),
+                        RuntimeValue::String(s) => {
+                            let mut updated = node.update_markdown_value(&s);
+                            updated.strip_positions();
+                            Ok(updated)
+                        }
                         a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
                     })
                 })

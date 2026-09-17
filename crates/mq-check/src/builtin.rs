@@ -383,6 +383,9 @@ fn register_string(ctx: &mut InferenceContext) {
     // markdown_escape: (string, context) -> string
     register_binary(ctx, "markdown_escape", Type::String, Type::String, Type::String);
 
+    // markdown_escape: (markdown, context) -> markdown
+    register_binary(ctx, "markdown_escape", Type::Markdown, Type::String, Type::Markdown);
+
     // Capture: (string, pattern) -> {k: v}
     let k = ctx.fresh_var();
     let v = ctx.fresh_var();
@@ -1746,6 +1749,7 @@ mod tests {
     #[case::markdown_escape("markdown_escape(\"**bold**\", \"text\")", true)]
     #[case::markdown_escape_number("markdown_escape(42, \"text\")", false)] // Should fail: wrong type
     #[case::markdown_escape_context_number("markdown_escape(\"a\", 42)", false)] // Should fail: wrong type
+    #[case::markdown_escape_markdown_input("to_code(\"value\", \"text\") | markdown_escape(\"text\")", true)]
     fn test_string_case_functions(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
