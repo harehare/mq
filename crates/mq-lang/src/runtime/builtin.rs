@@ -1075,6 +1075,37 @@ fn html_unescape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
     }
 }
 
+#[mq_macros::mq_fn(name = "markdown_escape", params = Fixed(2))]
+fn markdown_escape_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s), RuntimeValue::String(context)] => {
+            convert::MarkdownEscapeContext::try_from(context.as_str())
+                .and_then(|context| convert::markdown_escape(s, context))
+        }
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(context)] => {
+            let context = convert::MarkdownEscapeContext::try_from(context.as_str())?;
+            node.markdown_node()
+                .map(|md| {
+                    convert::markdown_escape(md.value().as_str(), context).and_then(|o| match o {
+                        RuntimeValue::String(s) => {
+                            let mut updated = node.update_markdown_value(&s);
+                            updated.strip_updated_text_position();
+                            Ok(updated)
+                        }
+                        a => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
+                    })
+                })
+                .unwrap_or_else(|| Ok(RuntimeValue::NONE))
+        }
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("markdown_escape should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "sanitize_html", params = Fixed(1))]
 fn sanitize_html_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5487,6 +5518,7 @@ mq_macros::builtin_dispatch! {
     TO_HTML,
     HTML_ESCAPE,
     HTML_UNESCAPE,
+    MARKDOWN_ESCAPE,
     STRIP_TAGS,
     SANITIZE_HTML,
     TO_MARKDOWN_STRING,
@@ -7110,6 +7142,26 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             param_types: &["string"],
             returns: "string",
             examples: &[BuiltinExample { code: r#"html_unescape("&lt;a&gt;")"#, expected: r#"<a>"# }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("markdown_escape"),
+        BuiltinFunctionDoc {
+            description: "Escapes the given string so it renders as literal text at the given output position (\"text\", \"heading\", \"link_label\", \"table_cell\", or \"code\"), without introducing unintended Markdown structure. Not for HTML sanitization or URL-encoding; use `html_escape`, `sanitize_html`, or `url_encode` for those.",
+            params: &["string", "context"],
+            param_types: &["string", "string"],
+            returns: "string",
+            examples: &[
+                BuiltinExample {
+                    code: r#"markdown_escape("**bold**", "text")"#,
+                    expected: r#"\*\*bold\*\*"#,
+                },
+                BuiltinExample {
+                    code: r#"markdown_escape("a | b", "table_cell")"#,
+                    expected: r#"a \| b"#,
+                },
+            ],
             capability: None,
         },
     );

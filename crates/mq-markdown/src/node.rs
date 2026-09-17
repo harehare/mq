@@ -1744,6 +1744,34 @@ impl Node {
         }
     }
 
+    fn clear_position_at(values: &mut [Node], index: usize) {
+        if let Some(slot) = values.get_mut(index) {
+            slot.clear_text_position_at(0);
+        }
+    }
+
+    /// Clears the position of just the `Text` leaf that `into_with_value` /
+    /// `into_with_children_value` would write into at `index`, leaving this node and other
+    /// descendants untouched. Used to stop the renderer re-escaping an already-escaped leaf.
+    pub fn clear_text_position_at(&mut self, index: usize) {
+        match self {
+            Self::Blockquote(v) => Self::clear_position_at(&mut v.values, index),
+            Self::Delete(v) => Self::clear_position_at(&mut v.values, index),
+            Self::Emphasis(v) => Self::clear_position_at(&mut v.values, index),
+            Self::List(v) => Self::clear_position_at(&mut v.values, index),
+            Self::TableCell(v) => Self::clear_position_at(&mut v.values, index),
+            Self::Strong(v) => Self::clear_position_at(&mut v.values, index),
+            Self::Heading(v) => Self::clear_position_at(&mut v.values, index),
+            Self::LinkRef(v) => Self::clear_position_at(&mut v.values, index),
+            Self::MdxJsxFlowElement(v) => Self::clear_position_at(&mut v.children, index),
+            Self::MdxJsxTextElement(v) => Self::clear_position_at(&mut v.children, index),
+            #[cfg(feature = "callout")]
+            Self::Callout(v) => Self::clear_position_at(&mut v.values, index),
+            Self::Text(text) => text.position = None,
+            _ => {}
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         matches!(self, Self::Empty)
     }
@@ -5540,6 +5568,55 @@ mod tests {
         let strong = &node.children()[0];
         assert_eq!(strong.position(), None);
         assert_eq!(strong.children()[0].position(), None);
+    }
+
+    #[test]
+    fn test_clear_text_position_at_leaf_only() {
+        let mut node = Node::Heading(Heading {
+            depth: 1,
+            values: vec![Node::Text(Text {
+                value: "title".to_string(),
+                position: some_position(),
+            })],
+            position: some_position(),
+        });
+
+        node.clear_text_position_at(0);
+
+        assert_eq!(node.position(), some_position(), "outer node keeps its position");
+        assert_eq!(node.children()[0].position(), None, "escaped leaf loses its position");
+    }
+
+    #[test]
+    fn test_clear_text_position_at_selected_index() {
+        let mut node = Node::List(List {
+            start: None,
+            spread: false,
+            index: 0,
+            level: 0,
+            checked: None,
+            ordered: false,
+            values: vec![
+                Node::Text(Text {
+                    value: "a".to_string(),
+                    position: some_position(),
+                }),
+                Node::Text(Text {
+                    value: "b".to_string(),
+                    position: some_position(),
+                }),
+            ],
+            position: some_position(),
+        });
+
+        node.clear_text_position_at(1);
+
+        assert_eq!(
+            node.children()[0].position(),
+            some_position(),
+            "untouched sibling keeps its position"
+        );
+        assert_eq!(node.children()[1].position(), None, "selected leaf loses its position");
     }
 
     #[rstest]
