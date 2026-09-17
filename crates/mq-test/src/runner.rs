@@ -31,6 +31,16 @@ enum TestAnnotation {
     Tags(Vec<String>),
 }
 
+/// Output format for `--list` and for a normal test run.
+#[derive(clap::ValueEnum, Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// Human-readable text, suitable for a terminal.
+    #[default]
+    Text,
+    /// Machine-readable JSON, suitable for editor/CI integrations.
+    Json,
+}
+
 /// A test function discovered in a `.mq` file.
 #[derive(Debug, PartialEq)]
 enum DiscoveredTest {
@@ -72,6 +82,15 @@ impl DiscoveredTest {
             DiscoveredTest::Property { tags, .. } => tags,
         }
     }
+
+    /// Machine-readable test kind, used by `mq-test --list --format json`.
+    fn kind(&self) -> &'static str {
+        match self {
+            DiscoveredTest::Simple { .. } => "simple",
+            DiscoveredTest::Parametrized { .. } => "parametrized",
+            DiscoveredTest::Property { .. } => "property",
+        }
+    }
 }
 
 /// Discovers and runs mq test functions from `.mq` files.
@@ -89,6 +108,8 @@ pub struct TestRunner {
     tags: Vec<String>,
     parallel_threshold: usize,
     update_snapshots: bool,
+    list: bool,
+    format: OutputFormat,
 }
 
 impl TestRunner {
@@ -105,6 +126,8 @@ impl TestRunner {
             tags: Vec::new(),
             parallel_threshold: usize::MAX,
             update_snapshots: false,
+            list: false,
+            format: OutputFormat::default(),
         }
     }
 
@@ -160,6 +183,18 @@ impl TestRunner {
         self
     }
 
+    /// When `true`, discovers and reports tests without running them.
+    pub fn with_list(mut self, list: bool) -> Self {
+        self.list = list;
+        self
+    }
+
+    /// Sets the report format for `--list` and for a normal test run.
+    pub fn with_format(mut self, format: OutputFormat) -> Self {
+        self.format = format;
+        self
+    }
+
     /// Discovers and executes all test functions.
     ///
     /// A file that fails to read, parse, or evaluate is reported in place but does not
@@ -175,6 +210,11 @@ impl TestRunner {
         } else {
             self.files.clone()
         };
+
+        if self.list {
+            return self.run_list(&test_files);
+        }
+
         // Merged across all test files, so a shared module gets combined coverage.
         let coverage_data = CoverageData::default();
         // Resolved module-name -> file path, filled in as each engine resolves imports.
@@ -183,6 +223,10 @@ impl TestRunner {
         let any_failed = AtomicBool::new(false);
         // Files that failed to read/parse/evaluate, reported as a rollup at the end.
         let file_errors: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+        // Per-file JSON test results, only populated (and only printed) when `format` is
+        // `Json` — kept separate from `file_errors` because it needs the full per-test
+        // detail (name/status/duration/error), not just the failing file's path.
+        let json_results: Mutex<Vec<serde_json::Value>> = Mutex::new(Vec::new());
 
         let run_file = |file: &PathBuf| {
             let content = match fs::read_to_string(file) {
@@ -191,6 +235,12 @@ impl TestRunner {
                     any_failed.store(true, Ordering::Relaxed);
                     file_errors.lock().unwrap().push(file.clone());
                     eprintln!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display());
+                    if self.format == OutputFormat::Json {
+                        json_results.lock().unwrap().push(serde_json::json!({
+                            "file": file.display().to_string(),
+                            "error": e.to_string(),
+                        }));
+                    }
                     return;
                 }
             };
@@ -202,7 +252,10 @@ impl TestRunner {
                 return;
             }
 
-            let query = Self::build_test_query(&content, &tests);
+            let query = match self.format {
+                OutputFormat::Text => Self::build_test_query(&content, &tests),
+                OutputFormat::Json => Self::build_test_query_with_fn(&content, &tests, "run_tests_data"),
+            };
             let mut engine = mq_lang::Engine::with_io(
                 mq_lang::DefaultModuleResolver::default(),
                 mq_lang::Shared::new(mq_lang::MemIo::default()),
@@ -252,9 +305,36 @@ impl TestRunner {
             let input = mq_lang::null_input();
             match engine.eval(&query, input.into_iter()) {
                 Ok(result) => {
-                    let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
-                    if !passed {
-                        any_failed.store(true, Ordering::Relaxed);
+                    match self.format {
+                        OutputFormat::Text => {
+                            let passed = matches!(result.values().first(), Some(RuntimeValue::Boolean(true)));
+                            if !passed {
+                                any_failed.store(true, Ordering::Relaxed);
+                            }
+                        }
+                        OutputFormat::Json => {
+                            // `run_tests_data` returns an array of `{name, status, duration,
+                            // error}` dicts (see `test.mq`); `to_json_value` turns that
+                            // straight into the JSON shape the extension expects.
+                            let tests_json = result
+                                .values()
+                                .first()
+                                .cloned()
+                                .map(RuntimeValue::to_json_value)
+                                .unwrap_or_else(|| serde_json::Value::Array(Vec::new()));
+                            let file_failed = tests_json.as_array().is_some_and(|tests| {
+                                tests
+                                    .iter()
+                                    .any(|t| t.get("status").and_then(|s| s.as_str()) == Some("failed"))
+                            });
+                            if file_failed {
+                                any_failed.store(true, Ordering::Relaxed);
+                            }
+                            json_results.lock().unwrap().push(serde_json::json!({
+                                "file": file.display().to_string(),
+                                "tests": tests_json,
+                            }));
+                        }
                     }
 
                     if self.coverage {
@@ -275,6 +355,12 @@ impl TestRunner {
                 Err(e) => {
                     any_failed.store(true, Ordering::Relaxed);
                     file_errors.lock().unwrap().push(file.clone());
+                    if self.format == OutputFormat::Json {
+                        json_results.lock().unwrap().push(serde_json::json!({
+                            "file": file.display().to_string(),
+                            "error": e.to_string(),
+                        }));
+                    }
                     eprintln!("{}", Self::render_file_error(file, *e));
                 }
             }
@@ -336,7 +422,111 @@ impl TestRunner {
             );
         }
 
+        if self.format == OutputFormat::Json {
+            // Printed once at the end, after every (possibly parallel) file has finished,
+            // rather than incrementally per file — a single JSON document is much easier
+            // for a caller like the VS Code extension to parse than an interleaved stream.
+            println!("{}", Self::format_run_json_report(json_results.into_inner().unwrap()));
+        }
+
         Ok(!any_failed.load(Ordering::Relaxed))
+    }
+
+    /// Wraps the per-file JSON results (each already `{"file": ..., "tests": [...]}` or
+    /// `{"file": ..., "error": ...}`) collected while running in one `{"files": [...]}`
+    /// document. Pulled out of [`Self::run`] as a pure function so it can be tested directly.
+    fn format_run_json_report(json_results: Vec<serde_json::Value>) -> String {
+        let report = serde_json::json!({ "files": json_results });
+        serde_json::to_string_pretty(&report).expect("test report is always serializable")
+    }
+
+    /// Discovers tests (honoring `--filter`/`--tag`) without running them, and reports them in
+    /// the requested `--format`. A file that fails to read is reported to stderr and skipped;
+    /// listing itself always succeeds, since "no tests found" isn't a failure the way a failed
+    /// assertion is.
+    fn run_list(&self, test_files: &[PathBuf]) -> miette::Result<bool> {
+        let mut discovered: Vec<(PathBuf, Vec<DiscoveredTest>)> = Vec::new();
+
+        for file in test_files {
+            let content = match fs::read_to_string(file) {
+                Ok(content) => content,
+                Err(e) => {
+                    eprintln!("# {}\n\n❌ Failed to read file: {e}\n\n---\n", file.display());
+                    continue;
+                }
+            };
+            let tests: Vec<DiscoveredTest> = Self::discover_tests(&content)
+                .into_iter()
+                .filter(|test| self.matches(test))
+                .collect();
+            if tests.is_empty() {
+                continue;
+            }
+            discovered.push((file.clone(), tests));
+        }
+
+        println!("{}", Self::format_list_report(&discovered, self.format));
+
+        Ok(true)
+    }
+
+    /// Renders discovered tests in the given `format`. Pulled out of [`Self::run_list`] as a
+    /// pure function (no I/O) so it can be exercised directly in tests without capturing
+    /// stdout.
+    fn format_list_report(discovered: &[(PathBuf, Vec<DiscoveredTest>)], format: OutputFormat) -> String {
+        match format {
+            OutputFormat::Text => {
+                // A plain, greppable listing: one file per line, followed by its tests
+                // indented with their kind and (if any) tags — meant for a human at a
+                // terminal, not for parsing, so the exact spacing isn't a contract.
+                discovered
+                    .iter()
+                    .map(|(file, tests)| {
+                        let test_lines = tests
+                            .iter()
+                            .map(|test| {
+                                let display = Self::display_name(test.name());
+                                let tags = if test.tags().is_empty() {
+                                    String::new()
+                                } else {
+                                    format!(" [{}]", test.tags().join(", "))
+                                };
+                                format!("  {display} ({}){tags}", test.kind())
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("{}\n{test_lines}", file.display())
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            }
+            OutputFormat::Json => {
+                // One JSON document describing every discovered file and its tests, meant
+                // for an editor (e.g. the VS Code extension's Test Explorer integration) to
+                // build a test tree from without having to run anything first.
+                let files: Vec<serde_json::Value> = discovered
+                    .iter()
+                    .map(|(file, tests)| {
+                        let tests: Vec<serde_json::Value> = tests
+                            .iter()
+                            .map(|test| {
+                                serde_json::json!({
+                                    "name": Self::display_name(test.name()),
+                                    "kind": test.kind(),
+                                    "tags": test.tags(),
+                                })
+                            })
+                            .collect();
+                        serde_json::json!({
+                            "file": file.display().to_string(),
+                            "tests": tests,
+                        })
+                    })
+                    .collect();
+                let report = serde_json::json!({ "files": files });
+                serde_json::to_string_pretty(&report).expect("list report is always serializable")
+            }
+        }
     }
 
     fn render_file_error(file: &Path, mut error: mq_lang::Error) -> String {
@@ -606,6 +796,13 @@ impl TestRunner {
 
     /// Builds the `run_tests(flatten([...]))` call appended to the file content.
     fn build_test_query(content: &str, tests: &[DiscoveredTest]) -> String {
+        Self::build_test_query_with_fn(content, tests, "run_tests")
+    }
+
+    /// Like [`Self::build_test_query`], but calls `report_fn` (e.g. `run_tests_data`) instead
+    /// of `run_tests`, so the caller can get back structured results instead of a Markdown
+    /// report printed to stdout.
+    fn build_test_query_with_fn(content: &str, tests: &[DiscoveredTest], report_fn: &str) -> String {
         let cases = tests
             .iter()
             .map(|test| match test {
@@ -648,7 +845,7 @@ impl TestRunner {
             .collect::<Vec<_>>()
             .join(",\n");
 
-        format!("{content}\n| run_tests(flatten([\n{cases}\n]))")
+        format!("{content}\n| {report_fn}(flatten([\n{cases}\n]))")
     }
 }
 
@@ -1217,6 +1414,107 @@ mod tests {
         assert!(query.starts_with(content));
     }
 
+    #[test]
+    fn test_build_test_query_with_fn_uses_the_given_report_function() {
+        let tests = vec![DiscoveredTest::Simple {
+            name: "test_foo".to_string(),
+            tags: vec![],
+        }];
+        let query = TestRunner::build_test_query_with_fn("content", &tests, "run_tests_data");
+        assert!(query.contains("| run_tests_data(flatten(["));
+        assert!(!query.contains("| run_tests(flatten(["));
+    }
+
+    #[rstest]
+    #[case(DiscoveredTest::Simple { name: "test_foo".to_string(), tags: vec![] }, "simple")]
+    #[case(DiscoveredTest::Parametrized { name: "test_foo".to_string(), params_expr: "[]".to_string(), arity: 1, tags: vec![] }, "parametrized")]
+    #[case(DiscoveredTest::Property { name: "test_foo".to_string(), count_expr: "10".to_string(), generators_expr: "[]".to_string(), arity: 1, tags: vec![] }, "property")]
+    fn test_discovered_test_kind(#[case] test: DiscoveredTest, #[case] expected: &str) {
+        assert_eq!(test.kind(), expected);
+    }
+
+    #[test]
+    fn test_format_list_report_text_lists_files_tests_kind_and_tags() {
+        let discovered = vec![(
+            PathBuf::from("tests.mq"),
+            vec![
+                DiscoveredTest::Simple {
+                    name: "test_foo".to_string(),
+                    tags: vec!["smoke".to_string()],
+                },
+                DiscoveredTest::Parametrized {
+                    name: "test_bar".to_string(),
+                    params_expr: "[]".to_string(),
+                    arity: 1,
+                    tags: vec![],
+                },
+            ],
+        )];
+
+        let report = TestRunner::format_list_report(&discovered, OutputFormat::Text);
+
+        assert_eq!(report, "tests.mq\n  foo (simple) [smoke]\n  bar (parametrized)");
+    }
+
+    #[test]
+    fn test_format_list_report_json_matches_the_extension_facing_shape() {
+        let discovered = vec![(
+            PathBuf::from("tests.mq"),
+            vec![DiscoveredTest::Simple {
+                name: "test_foo".to_string(),
+                tags: vec!["smoke".to_string()],
+            }],
+        )];
+
+        let report = TestRunner::format_list_report(&discovered, OutputFormat::Json);
+        let parsed: serde_json::Value = serde_json::from_str(&report).expect("valid json");
+
+        assert_eq!(
+            parsed,
+            serde_json::json!({
+                "files": [{
+                    "file": "tests.mq",
+                    "tests": [{"name": "foo", "kind": "simple", "tags": ["smoke"]}],
+                }]
+            })
+        );
+    }
+
+    #[test]
+    fn test_format_run_json_report_wraps_per_file_results() {
+        let results = vec![serde_json::json!({
+            "file": "tests.mq",
+            "tests": [{"name": "foo", "status": "passed", "duration": 1, "error": null}],
+        })];
+
+        let report = TestRunner::format_run_json_report(results.clone());
+        let parsed: serde_json::Value = serde_json::from_str(&report).expect("valid json");
+
+        assert_eq!(parsed, serde_json::json!({ "files": results }));
+    }
+
+    #[test]
+    fn test_run_list_does_not_execute_tests_and_always_succeeds() {
+        let dir = temp_project_dir("list_does_not_execute");
+        let test_file = dir.join("tests.mq");
+        fs::write(
+            &test_file,
+            concat!(
+                "include \"test\"\n",
+                "|\n",
+                "def test_would_fail():\n",
+                "  assert(false)\n",
+                "end\n",
+            ),
+        )
+        .unwrap();
+
+        let ok = TestRunner::new(vec![test_file]).with_list(true).run().unwrap();
+        assert!(ok);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
     #[rstest]
     #[case("macos", "open", Vec::<&str>::new())]
     #[case("windows", "cmd", vec!["/C", "start", ""])]
@@ -1587,6 +1885,25 @@ mod tests {
 
         let passed = TestRunner::new(vec![failing, passing]).run().unwrap();
         assert!(!passed, "run() must report failure when any test fails");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_with_json_format_reports_failure_the_same_way_as_text() {
+        let dir = temp_project_dir("json_format_failure");
+        let failing = dir.join("failing.mq");
+        fs::write(
+            &failing,
+            "include \"test\"\n|\ndef test_fails():\n  assert_eq(1, 2)\nend\n",
+        )
+        .unwrap();
+
+        let passed = TestRunner::new(vec![failing])
+            .with_format(OutputFormat::Json)
+            .run()
+            .unwrap();
+        assert!(!passed, "run() with --format json must still report failure");
 
         fs::remove_dir_all(&dir).ok();
     }

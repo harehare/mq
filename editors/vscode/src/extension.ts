@@ -7,6 +7,7 @@ import which from "which";
 import { MqDebugConfigurationProvider } from "./providers/debugger";
 import { MqCodeLensProvider } from "./providers/codelens";
 import { LspStatusBarManager } from "./providers/statusbar";
+import { registerMqTestController } from "./providers/testController";
 
 const MQ_VERSION_KEY = "mq.version" as const;
 const QUERY_HISTORY_KEY = "mq.queryHistory" as const;
@@ -581,6 +582,7 @@ export async function activate(context: vscode.ExtensionContext) {
   registerLspCommands(context);
   registerDebugCommands(context);
   registerMqExecutionCommands(context);
+  registerMqTestController(context);
   await initializeLspServer(context);
 }
 

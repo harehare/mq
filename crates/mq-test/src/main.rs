@@ -6,6 +6,7 @@ mod snapshot;
 
 use clap::Parser;
 use coverage::CoverageFormat;
+use runner::OutputFormat;
 use std::{path::PathBuf, process::ExitCode};
 
 #[derive(Parser, Debug)]
@@ -36,7 +37,13 @@ use std::{path::PathBuf, process::ExitCode};
     ## Run test files in parallel once more than 4 files are discovered:\n\
     mq-test --parallel-threshold 4\n\n\
     ## Accept the current output of every assert_snapshot(...) call as the new golden snapshot:\n\
-    mq-test --update-snapshots")]
+    mq-test --update-snapshots\n\n\
+    ## List discovered tests without running them:\n\
+    mq-test --list\n\n\
+    ## List discovered tests as JSON, e.g. for an editor integration:\n\
+    mq-test --list --format json\n\n\
+    ## Run tests and print per-test results as JSON instead of a Markdown report:\n\
+    mq-test --format json")]
 struct Cli {
     /// Path(s) to mq test files.
     /// Defaults to **/*.mq in the current directory when omitted.
@@ -79,6 +86,14 @@ struct Cli {
     /// golden snapshot, instead of comparing against the existing one.
     #[arg(long)]
     update_snapshots: bool,
+
+    /// Discover and report tests (honoring --filter/--tag) without running them.
+    #[arg(long)]
+    list: bool,
+
+    /// Output format for both --list and a normal test run.
+    #[arg(long, value_enum, default_value = "text")]
+    format: OutputFormat,
 }
 
 fn main() -> ExitCode {
@@ -93,6 +108,8 @@ fn main() -> ExitCode {
         .with_tags(cli.tags)
         .with_parallel_threshold(cli.parallel_threshold.unwrap_or(usize::MAX))
         .with_update_snapshots(cli.update_snapshots)
+        .with_list(cli.list)
+        .with_format(cli.format)
         .run()
     {
         Ok(true) => ExitCode::SUCCESS,
