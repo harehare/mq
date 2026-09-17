@@ -196,6 +196,19 @@ fn eval_compiled_direct_builtin_calls(bencher: divan::Bencher) {
     );
 }
 
+/// Exercises a native unary builtin whose argument is already in a VM local.
+#[divan::bench]
+fn eval_compiled_local_builtin_call(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"foreach(i, range(0, 1000, 1)): let value = " value " | trim(value);"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 /// Isolates nested call-frame setup and teardown after bytecode compilation.
 #[divan::bench]
 fn eval_compiled_nested_function_calls(bencher: divan::Bencher) {

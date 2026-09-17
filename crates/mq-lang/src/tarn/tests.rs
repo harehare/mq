@@ -874,6 +874,22 @@ fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str,
 }
 
 #[test]
+fn specialized_builtin_calls_preserve_native_precedence_over_host_functions() {
+    let source = "def normalize(value): trim(value); | normalize(\" value \")";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let mut host_functions = HostFunctions::default();
+    host_functions.insert("trim", |_: &[RuntimeValue]| {
+        Ok(RuntimeValue::String(Shared::new("host".to_string())))
+    });
+
+    assert_eq!(
+        compile_and_run_full(&program, RuntimeValue::None, &host_functions, None, token_arena).unwrap(),
+        RuntimeValue::String(Shared::new("value".to_string()))
+    );
+}
+
+#[test]
 fn immutable_function_upvalue_calls_use_call_upvalue() {
     use super::bytecode::OpCode;
 

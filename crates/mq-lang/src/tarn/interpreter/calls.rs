@@ -866,6 +866,19 @@ pub(super) fn call_builtin_args(
     }
 }
 
+/// Calls a builtin that the compiler already proved exists in the native registry.
+///
+/// Host functions are only a fallback for unknown native names, so the specialized bytecode
+/// forms can skip their lookup without changing shadowing or error behavior.
+pub(super) fn call_known_builtin_args(
+    ident: &crate::Ident,
+    args: Args,
+    self_value: &RuntimeValue,
+    env: &VmEnv,
+) -> VmResult<RuntimeValue> {
+    builtin::eval_builtin(self_value, ident, args, env).map_err(VmError::Builtin)
+}
+
 pub(super) fn negate_ident() -> &'static crate::Ident {
     use std::sync::LazyLock;
     static NEGATE: LazyLock<crate::Ident> = LazyLock::new(|| crate::Ident::new(builtins::NEGATE));

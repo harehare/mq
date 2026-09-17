@@ -13,9 +13,9 @@ mod selectors;
 use self::calls::{
     CallSite, CallStep, ExactCallTarget, FixedClosureCall, KnownFixedChunkCall, apply_pending, call_builtin,
     call_builtin_args, call_exact_fixed_chunk_0, call_exact_fixed_chunk_1, call_exact_fixed_chunk_2,
-    call_fixed_closure_from_local, call_fixed_closure_from_stack, call_known_fixed_chunk_from_stack,
-    call_self_chunk_from_stack, call_stack_value, call_static_chunk_from_stack, capture_upvalues, frame_or_coroutine,
-    generator_coroutine, negate_ident,
+    call_fixed_closure_from_local, call_fixed_closure_from_stack, call_known_builtin_args,
+    call_known_fixed_chunk_from_stack, call_self_chunk_from_stack, call_stack_value, call_static_chunk_from_stack,
+    capture_upvalues, frame_or_coroutine, generator_coroutine, negate_ident,
 };
 use self::selectors::{eval_compact_selector_expr, eval_selector_expr, eval_selector_expr_with_args, type_check};
 use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
@@ -1573,14 +1573,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let value = local_runtime_value(locals, *local, chunks)?;
                 let mut args = Args::new();
                 args.push(value);
-                let result = call_builtin_args(
-                    builtin,
-                    args,
-                    &current_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+                let result = call_known_builtin_args(builtin, args, &current_self(locals, chunks), execution.env)
+                    .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallBuiltinLocal2 { builtin, first, second } => {
@@ -1589,14 +1583,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let mut args = Args::new();
                 args.push(first);
                 args.push(second);
-                let result = call_builtin_args(
-                    builtin,
-                    args,
-                    &current_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+                let result = call_known_builtin_args(builtin, args, &current_self(locals, chunks), execution.env)
+                    .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallBuiltinLocalConst {
@@ -1609,14 +1597,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let mut args = Args::new();
                 args.push(local);
                 args.push(constant);
-                let result = call_builtin_args(
-                    builtin,
-                    args,
-                    &current_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+                let result = call_known_builtin_args(builtin, args, &current_self(locals, chunks), execution.env)
+                    .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::CallBuiltinLocalConst2 {
@@ -1632,14 +1614,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 args.push(local);
                 args.push(first);
                 args.push(second);
-                let result = call_builtin_args(
-                    builtin,
-                    args,
-                    &current_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+                let result = call_known_builtin_args(builtin, args, &current_self(locals, chunks), execution.env)
+                    .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::GetEnvVar(name_idx) => {
