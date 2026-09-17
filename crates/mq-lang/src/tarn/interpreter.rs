@@ -2542,7 +2542,6 @@ fn binop(
     call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }
 
-#[inline(always)]
 fn cmp_op(op: BinaryOp, left: &RuntimeValue, right: &RuntimeValue) -> RuntimeValue {
     macro_rules! ordered_comparison {
         ($operator:tt) => {

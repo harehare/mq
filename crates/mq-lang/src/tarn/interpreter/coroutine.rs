@@ -404,13 +404,6 @@ fn mutually_capturing_peers(
         .collect()
 }
 
-/// Breaks a self-reference cycle the moment it's created, instead of waiting for `handle`'s
-/// first `Yield`: e.g. `s = g()` where `g`'s body captures `s` gives `handle`'s own frame an
-/// upvalue cell now holding `handle` itself, before the coroutine has ever suspended.
-/// `downgrade_self_references` only runs from `resume`'s `Suspended` arm, so an unstarted (or
-/// currently-suspended, if the caller writes into it again) coroutine would otherwise never reach
-/// that cleanup and leak the cycle for good. No-op while `Running`, `Completed`, or `Failed`:
-/// those either have their frames borrowed elsewhere or already released them.
 pub(crate) fn downgrade_self_references_before_resume(handle: &CoroutineHandle) {
     let mut state = borrow_mut(handle);
     if !matches!(state.status, CoroutineStatus::Created | CoroutineStatus::Suspended) {
