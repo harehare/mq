@@ -840,7 +840,11 @@ pub(super) fn call_builtin_args(
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    let host_args = host_functions.get(ident).map(|_| args.clone());
+    let host_args = if host_functions.is_empty() {
+        None
+    } else {
+        host_functions.get(ident).map(|_| args.clone())
+    };
     match builtin::eval_builtin(self_value, ident, args, env) {
         Ok(v) => Ok(v),
         Err(builtin::Error::NotDefined(_, _)) => match host_functions.get(ident) {
