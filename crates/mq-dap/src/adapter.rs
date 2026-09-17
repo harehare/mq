@@ -291,6 +291,76 @@ impl MqAdapter {
         }
     }
 
+    /// Build DAP stack frames from the current debug context's call stack
+    fn build_stack_frames(&self) -> Vec<types::StackFrame> {
+        let call_stack = if let Some(context) = &self.current_debug_context {
+            context.call_stack.clone()
+        } else {
+            Vec::new()
+        };
+
+        let source = self.get_source();
+
+        if !call_stack.is_empty() {
+            call_stack
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(i, frame)| {
+                    let (file_name, token_range) = if i == 0 {
+                        if let Some(context) = self.current_debug_context.as_ref() {
+                            (
+                                self.get_source_file_name(Some(context.token.module_id)),
+                                context.token.range,
+                            )
+                        } else {
+                            (
+                                self.get_source_file_name(None),
+                                self.engine.token_arena().read().unwrap()[frame.token_id].range,
+                            )
+                        }
+                    } else {
+                        (
+                            self.get_source_file_name(None),
+                            self.engine.token_arena().read().unwrap()[frame.token_id].range,
+                        )
+                    };
+                    types::StackFrame {
+                        id: i as i64 + 1,
+                        name: format!("{} ({}:{})", frame.expr, file_name, token_range.start.line,),
+                        line: token_range.start.line as i64,
+                        column: token_range.start.column as i64,
+                        source: source.clone(),
+                        ..Default::default()
+                    }
+                })
+                .collect::<Vec<_>>()
+        } else if let Some(ref context) = self.current_debug_context {
+            vec![types::StackFrame {
+                id: 0,
+                name: format!(
+                    "{} ({}:{})",
+                    context.current_node.expr,
+                    self.get_source_file_name(Some(context.token.module_id)),
+                    context.token.range.start.line
+                ),
+                line: context.token.range.start.line as i64,
+                column: context.token.range.start.column as i64,
+                source: source.clone(),
+                ..Default::default()
+            }]
+        } else {
+            vec![types::StackFrame {
+                id: 0,
+                name: "unknown".to_string(),
+                line: 1,
+                column: 1,
+                source: source.clone(),
+                ..Default::default()
+            }]
+        }
+    }
+
     /// Evaluate code in the current debug context
     fn eval(&mut self, code: &str) -> DynResult<mq_lang::RuntimeValues> {
         let Some(context) = self.current_debug_context.clone() else {
@@ -432,71 +502,7 @@ impl MqAdapter {
             Command::StackTrace(args) => {
                 debug!(?args, "Received StackTrace request");
 
-                let call_stack = if let Some(context) = &self.current_debug_context {
-                    context.call_stack.clone()
-                } else {
-                    Vec::new()
-                };
-
-                let source = self.get_source();
-                let stack_frames = if !call_stack.is_empty() {
-                    call_stack
-                        .iter()
-                        .rev()
-                        .enumerate()
-                        .map(|(i, frame)| {
-                            let (file_name, token_range) = if i == 0 {
-                                if let Some(context) = self.current_debug_context.as_ref() {
-                                    (
-                                        self.get_source_file_name(Some(context.token.module_id)),
-                                        context.token.range,
-                                    )
-                                } else {
-                                    (
-                                        self.get_source_file_name(None),
-                                        self.engine.token_arena().read().unwrap()[frame.token_id].range,
-                                    )
-                                }
-                            } else {
-                                (
-                                    self.get_source_file_name(None),
-                                    self.engine.token_arena().read().unwrap()[frame.token_id].range,
-                                )
-                            };
-                            types::StackFrame {
-                                id: i as i64 + 1,
-                                name: format!("{} ({}:{})", frame.expr, file_name, token_range.start.line,),
-                                line: token_range.start.line as i64,
-                                column: token_range.start.column as i64,
-                                source: source.clone(),
-                                ..Default::default()
-                            }
-                        })
-                        .collect::<Vec<_>>()
-                } else if let Some(ref context) = self.current_debug_context {
-                    vec![types::StackFrame {
-                        id: 0,
-                        name: format!(
-                            "{} ({}:{})",
-                            context.current_node.expr,
-                            self.get_source_file_name(Some(context.token.module_id)),
-                            context.token.range.start.line
-                        ),
-                        line: context.token.range.start.line as i64,
-                        column: context.token.range.start.column as i64,
-                        source: source.clone(),
-                        ..Default::default()
-                    }]
-                } else {
-                    vec![types::StackFrame {
-                        id: 0,
-                        name: "unknown".to_string(),
-                        line: 1,
-                        column: 1,
-                        source: source.clone(),
-                        ..Default::default()
-                    }]
-                };
+                let stack_frames = self.build_stack_frames();
 
                 let rsp = req.success(ResponseBody::StackTrace(StackTraceResponse {
                     stack_frames: stack_frames.clone(),
@@ -1299,6 +1305,320 @@ mod tests {
                 .iter()
                 .any(|variable| variable.name == "outer" && variable.value == "10"),
             "expected captured outer in GLOBAL scope, got {global_variables:?}"
+        );
+    }
+
+    fn find_breakpoint_context_with_local(adapter: &MqAdapter, local_name: &str) -> mq_lang::DebugContext {
+        adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .find_map(|message| match message {
+                DebuggerMessage::BreakpointHit { context, .. }
+                    if context.local_variables().iter().any(|v| v.name == local_name) =>
+                {
+                    Some(context)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no breakpoint hit exposed local `{local_name}`"))
+    }
+
+    #[test]
+    fn test_build_stack_frames_without_context() {
+        let adapter = MqAdapter::new();
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].id, 0);
+        assert_eq!(frames[0].name, "unknown");
+        assert_eq!(frames[0].line, 1);
+        assert_eq!(frames[0].column, 1);
+    }
+
+    #[test]
+    fn test_build_stack_frames_with_context_and_empty_call_stack() {
+        let mut adapter = MqAdapter::new();
+        let mut context = mq_lang::DebugContext::default();
+        context.current_node = Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("top_level"), Default::default()),
+            token_id: 0u32.into(),
+        });
+        context.token = Shared::new(mq_lang::Token {
+            kind: mq_lang::TokenKind::Eof,
+            range: mq_lang::Range {
+                start: mq_lang::Position::new(9, 2),
+                end: mq_lang::Position::new(9, 3),
+            },
+            module_id: mq_lang::ModuleId::new(0),
+        });
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].id, 0);
+        assert_eq!(frames[0].name, "top_level() (unknown:9)");
+        assert_eq!(frames[0].line, 9);
+        assert_eq!(frames[0].column, 2);
+    }
+
+    #[test]
+    fn test_build_stack_frames_with_single_call_stack_frame_uses_current_token_for_location() {
+        let mut adapter = MqAdapter::new();
+        let mut context = mq_lang::DebugContext::default();
+        context.token = Shared::new(mq_lang::Token {
+            kind: mq_lang::TokenKind::Eof,
+            range: mq_lang::Range {
+                start: mq_lang::Position::new(4, 7),
+                end: mq_lang::Position::new(4, 8),
+            },
+            module_id: mq_lang::ModuleId::new(0),
+        });
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("callee"), Default::default()),
+            token_id: 0u32.into(),
+        }));
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].id, 1);
+        assert_eq!(frames[0].name, "callee() (unknown:4)");
+        assert_eq!(frames[0].line, 4);
+        assert_eq!(frames[0].column, 7);
+    }
+
+    #[test]
+    fn test_build_stack_frames_orders_frames_innermost_first() {
+        let mut adapter = MqAdapter::new();
+
+        let outer_token_id = adapter
+            .engine
+            .token_arena()
+            .write()
+            .unwrap()
+            .alloc(Shared::new(mq_lang::Token {
+                kind: mq_lang::TokenKind::Eof,
+                range: mq_lang::Range {
+                    start: mq_lang::Position::new(10, 1),
+                    end: mq_lang::Position::new(10, 2),
+                },
+                module_id: mq_lang::ModuleId::new(0),
+            }));
+        let middle_token_id = adapter
+            .engine
+            .token_arena()
+            .write()
+            .unwrap()
+            .alloc(Shared::new(mq_lang::Token {
+                kind: mq_lang::TokenKind::Eof,
+                range: mq_lang::Range {
+                    start: mq_lang::Position::new(20, 3),
+                    end: mq_lang::Position::new(20, 4),
+                },
+                module_id: mq_lang::ModuleId::new(0),
+            }));
+
+        let mut context = mq_lang::DebugContext::default();
+        context.token = Shared::new(mq_lang::Token {
+            kind: mq_lang::TokenKind::Eof,
+            range: mq_lang::Range {
+                start: mq_lang::Position::new(30, 5),
+                end: mq_lang::Position::new(30, 6),
+            },
+            module_id: mq_lang::ModuleId::new(0),
+        });
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("outer"), Default::default()),
+            token_id: outer_token_id,
+        }));
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("middle"), Default::default()),
+            token_id: middle_token_id,
+        }));
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("inner"), Default::default()),
+            token_id: 0u32.into(),
+        }));
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 3);
+
+        assert_eq!(frames[0].id, 1);
+        assert_eq!(frames[0].name, "inner() (unknown:30)");
+        assert_eq!(frames[0].line, 30);
+        assert_eq!(frames[0].column, 5);
+
+        assert_eq!(frames[1].id, 2);
+        assert_eq!(frames[1].name, "middle() (unknown:20)");
+        assert_eq!(frames[1].line, 20);
+        assert_eq!(frames[1].column, 3);
+
+        assert_eq!(frames[2].id, 3);
+        assert_eq!(frames[2].name, "outer() (unknown:10)");
+        assert_eq!(frames[2].line, 10);
+        assert_eq!(frames[2].column, 1);
+    }
+
+    #[test]
+    fn test_build_stack_frames_uses_query_file_name_when_set() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/tmp/query.mq".to_string());
+        let mut context = mq_lang::DebugContext::default();
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("callee"), Default::default()),
+            token_id: 0u32.into(),
+        }));
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert!(frames[0].name.contains("query.mq"));
+        assert_eq!(
+            frames[0].source.as_ref().unwrap().path.as_deref(),
+            Some("/tmp/query.mq")
+        );
+    }
+
+    #[test]
+    fn test_stack_trace_reflects_single_level_call() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter
+            .engine
+            .debugger()
+            .write()
+            .unwrap()
+            .add_breakpoint_with_options(2, None, None, None, None, None);
+        for _ in 0..16 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code = "let f = fn(x):\n  x + 1; |\nf(1)";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(2.into()));
+
+        adapter.current_debug_context = Some(find_breakpoint_context_with_local(&adapter, "x"));
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0].id, 1);
+        assert_eq!(frames[0].name, "f(1) (unknown:2)");
+        assert_eq!(frames[0].line, 2);
+    }
+
+    #[test]
+    fn test_stack_trace_reflects_two_level_nested_call() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter
+            .engine
+            .debugger()
+            .write()
+            .unwrap()
+            .add_breakpoint_with_options(2, None, None, None, None, None);
+        for _ in 0..16 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code = "let g = fn(y):\n  y + 1; |\nlet f = fn(x):\n  g(x) + 1; |\nf(1)";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(3.into()));
+
+        adapter.current_debug_context = Some(find_breakpoint_context_with_local(&adapter, "y"));
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].id, 1);
+        assert_eq!(frames[0].name, "g(x) (unknown:2)");
+        assert_eq!(frames[0].line, 2);
+        assert_eq!(frames[1].id, 2);
+        assert_eq!(frames[1].name, "f(1) (unknown:5)");
+        assert_eq!(frames[1].line, 5);
+    }
+
+    #[test]
+    fn test_stack_trace_reflects_three_level_nested_call() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter
+            .engine
+            .debugger()
+            .write()
+            .unwrap()
+            .add_breakpoint_with_options(2, None, None, None, None, None);
+        for _ in 0..32 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code = "let h = fn(z):\n  z + 1; |\nlet g = fn(y):\n  h(y) + 1; |\nlet f = fn(x):\n  g(x) + 1; |\nf(1)";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(values[0], mq_lang::RuntimeValue::Number(4.into()));
+
+        adapter.current_debug_context = Some(find_breakpoint_context_with_local(&adapter, "z"));
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0].id, 1);
+        assert_eq!(frames[0].name, "h(y) (unknown:2)");
+        assert_eq!(frames[0].line, 2);
+        assert_eq!(frames[1].id, 2);
+        assert_eq!(frames[1].name, "g(x) (unknown:6)");
+        assert_eq!(frames[1].line, 6);
+        assert_eq!(frames[2].id, 3);
+        assert_eq!(frames[2].name, "f(1) (unknown:7)");
+        assert_eq!(frames[2].line, 7);
+    }
+
+    #[test]
+    fn test_stack_trace_call_stack_does_not_grow_across_coroutine_resumes() {
+        let mut adapter = MqAdapter::new();
+        adapter.engine.debugger().write().unwrap().activate();
+        adapter.engine.debugger().write().unwrap().add_breakpoint(2, None, None);
+        for _ in 0..32 {
+            adapter.send_debugger_command(DapCommand::Continue).unwrap();
+        }
+
+        let code = "def g():\nlet inc = fn(n): n + 1; |\nyield: inc(1) |\nyield: inc(2);\n|\nlet s = g() |\nlet first = next(s) |\nlet second = next(s) |\n[get(first, \"value\"), get(second, \"value\")]";
+        let values = adapter.engine.eval(code, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(
+            values[0],
+            mq_lang::RuntimeValue::Array(Shared::new(vec![
+                mq_lang::RuntimeValue::Number(2.into()),
+                mq_lang::RuntimeValue::Number(3.into()),
+            ]))
+        );
+
+        let call_stack_lengths: Vec<usize> = adapter
+            .debugger_message_rx
+            .as_ref()
+            .unwrap()
+            .try_iter()
+            .filter_map(|message| match message {
+                DebuggerMessage::BreakpointHit { context, .. }
+                    if context.local_variables().iter().any(|v| v.name == "n") =>
+                {
+                    Some(context.call_stack.len())
+                }
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(
+            call_stack_lengths.len(),
+            2,
+            "expected a breakpoint hit for each generator resume"
+        );
+        assert!(
+            call_stack_lengths.iter().all(|&len| len == 1),
+            "each pause inside inc() should show exactly one call-stack frame regardless of resume count, got {call_stack_lengths:?}"
         );
     }
 

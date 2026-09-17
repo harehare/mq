@@ -402,6 +402,9 @@ impl Display for Expr {
                 }
                 write!(f, ")")
             }
+            Expr::Literal(literal) => write!(f, "{}", literal),
+            Expr::Ident(ident) => write!(f, "{}", ident),
+            Expr::Self_ => write!(f, "self"),
             _ => write!(f, ""),
         }
     }
@@ -1093,8 +1096,29 @@ mod tests {
 
     #[cfg(feature = "debugger")]
     #[test]
-    fn test_expr_display_other_is_empty() {
+    fn test_expr_display_literal() {
         let lit = Expr::Literal(Literal::None);
-        assert_eq!(format!("{lit}"), "");
+        assert_eq!(format!("{lit}"), "none");
+        let lit = Expr::Literal(Literal::Number(crate::number::Number::from(42.0)));
+        assert_eq!(format!("{lit}"), "42");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_ident() {
+        let ident = Expr::Ident(IdentWithToken::new("x"));
+        assert_eq!(format!("{ident}"), "x");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_self() {
+        assert_eq!(format!("{}", Expr::Self_), "self");
+    }
+
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_expr_display_other_is_empty() {
+        assert_eq!(format!("{}", Expr::Continue), "");
     }
 }
