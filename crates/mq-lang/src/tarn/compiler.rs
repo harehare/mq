@@ -72,7 +72,12 @@ pub(crate) struct CompiledProgram {
 
 enum Resolved {
     Local(u16),
-    Upvalue { index: u16, immutable: bool },
+    Upvalue {
+        index: u16,
+        immutable: bool,
+        /// Capture-free fixed-arity function originating at the defining local, if known.
+        static_function: Option<u16>,
+    },
 }
 
 /// The parameter-binding path selected for a compile-time known fixed-arity call.
@@ -2107,6 +2112,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 Resolved::Upvalue {
                     index: idx,
                     immutable: false,
+                    static_function: None,
                 }
             }
             Resolved::Upvalue { index: inner_idx, .. } => {
@@ -2114,6 +2120,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 Resolved::Upvalue {
                     index: idx,
                     immutable: false,
+                    static_function: None,
                 }
             }
         }
@@ -2132,18 +2139,26 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         match self.resolve_at(depth - 1, name)? {
             Resolved::Local(slot) => {
+                let immutable = self.scopes[depth - 1].is_immutable(slot);
+                let static_function = self.scopes[depth - 1].static_function(slot);
                 let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::Local(slot));
                 Some(Resolved::Upvalue {
                     index: idx,
-                    immutable: self.scopes[depth - 1].is_immutable(slot),
+                    immutable,
+                    static_function,
                 })
             }
             Resolved::Upvalue {
                 index: up_idx,
                 immutable,
+                static_function,
             } => {
                 let idx = self.scopes[depth].add_upvalue(name, UpvalueSource::Upvalue(up_idx));
-                Some(Resolved::Upvalue { index: idx, immutable })
+                Some(Resolved::Upvalue {
+                    index: idx,
+                    immutable,
+                    static_function,
+                })
             }
         }
     }
@@ -2178,7 +2193,9 @@ impl<R: ModuleResolver> Compiler<R> {
                         self.emit(OpCode::SetLocal(slot));
                         self.emit(OpCode::GetLocal(SELF_SLOT));
                     }
-                    Some(Resolved::Upvalue { index: idx, immutable }) => {
+                    Some(Resolved::Upvalue {
+                        index: idx, immutable, ..
+                    }) => {
                         if immutable {
                             return Err(CompileError::AssignToImmutable(
                                 ident.name.to_string(),
@@ -2469,11 +2486,30 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 return Ok(());
             }
-            if let Resolved::Upvalue { index, immutable: true } = resolved {
+            if let Resolved::Upvalue {
+                index,
+                immutable: true,
+                static_function,
+            } = resolved
+            {
                 if args.len() == 1
                     && let Some(local) = self.current_local_slot(&args[0])
                 {
                     self.emit(OpCode::CallUpvalueLocal { index, local });
+                    return Ok(());
+                }
+                if let Some(chunk) = static_function {
+                    for arg in args {
+                        self.compile_expr(arg)?;
+                    }
+                    self.current_token_id = call_token_id;
+                    let argc = self.arg_count(args.len())?;
+                    let arity = self.chunks[chunk as usize].param_shape.required;
+                    self.emit(match Self::fixed_call_form(arity, argc) {
+                        FixedCallForm::Exact => OpCode::CallStaticExact(chunk, argc),
+                        FixedCallForm::ImplicitSelf => OpCode::CallStaticImplicitSelf(chunk, argc),
+                        FixedCallForm::Fallback => OpCode::CallStatic(chunk, argc),
+                    });
                     return Ok(());
                 }
                 for arg in args {

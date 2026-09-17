@@ -842,6 +842,42 @@ fn immutable_function_upvalue_calls_use_call_upvalue() {
 }
 
 #[test]
+fn captured_static_function_calls_use_direct_static_bytecode() {
+    use super::bytecode::OpCode;
+
+    let source = "let increment = fn(x): x + 1; | let apply = fn(a, b): increment(a + b); | apply(20, 21)";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled
+            .chunks
+            .iter()
+            .any(|chunk| { chunk.code.iter().any(|op| matches!(op, OpCode::CallStaticExact1(_))) })
+    );
+    assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
+}
+
+#[test]
+fn captured_static_function_calls_preserve_implicit_self() {
+    use super::bytecode::OpCode;
+
+    let source = "let identity = fn(value): value; | let apply = fn(): identity(); | 42 | apply()";
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(source, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(compiled.chunks.iter().any(|chunk| {
+        chunk
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallStaticImplicitSelf(_, 0)))
+    }));
+    assert_eq!(run(source), RuntimeValue::Number(42.0.into()));
+}
+
+#[test]
 fn local_array_accesses_use_compact_bytecode() {
     use super::bytecode::OpCode;
 
