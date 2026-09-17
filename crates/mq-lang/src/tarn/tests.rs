@@ -873,6 +873,33 @@ fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str,
     assert_eq!(run(code), expected);
 }
 
+#[rstest]
+#[case("\"a\" == \"a\"", true)]
+#[case("\"a\" != \"b\"", true)]
+#[case("\"a\" < \"b\"", true)]
+#[case("\"a\" <= \"a\"", true)]
+#[case("\"b\" > \"a\"", true)]
+#[case("\"b\" >= \"b\"", true)]
+#[case(":heading == :heading", true)]
+#[case("true > false", true)]
+#[case("\"1\" == 1", false)]
+#[case("\"1\" < 1", false)]
+fn direct_comparisons_preserve_builtin_semantics(#[case] code: &str, #[case] expected: bool) {
+    assert_eq!(run(code), RuntimeValue::Boolean(expected));
+}
+
+#[test]
+fn direct_markdown_comparisons_match_builtin_calls() {
+    assert_eq!(
+        run("to_h(\"a\", 1) == to_h(\"a\", 1)"),
+        run("eq(to_h(\"a\", 1), to_h(\"a\", 1))")
+    );
+    assert_eq!(
+        run("to_h(\"a\", 1) < to_h(\"b\", 1)"),
+        run("lt(to_h(\"a\", 1), to_h(\"b\", 1))")
+    );
+}
+
 #[test]
 fn specialized_builtin_calls_preserve_native_precedence_over_host_functions() {
     let source = "def normalize(value): trim(value); | normalize(\" value \")";

@@ -209,6 +209,19 @@ fn eval_compiled_local_builtin_call(bencher: divan::Bencher) {
     );
 }
 
+/// Exercises the local/string comparison-and-branch shape used by filters and section helpers.
+#[divan::bench]
+fn eval_compiled_string_comparison_branch(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"foreach(i, range(0, 1000, 1)): let name = "heading" | if (name == "heading"): name else: "";"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 /// Isolates nested call-frame setup and teardown after bytecode compilation.
 #[divan::bench]
 fn eval_compiled_nested_function_calls(bencher: divan::Bencher) {
