@@ -291,6 +291,41 @@ impl MqAdapter {
         }
     }
 
+    /// Get DAP `Source` for a given module, falling back to the query file for the top-level
+    /// module and to a path-less source (name only) when an imported module's path can't be
+    /// resolved.
+    fn get_source_for_module(&self, module_id: mq_lang::ModuleId) -> Option<types::Source> {
+        if module_id == mq_lang::Module::TOP_LEVEL_MODULE_ID {
+            return self.get_source();
+        }
+
+        let module_name = self.engine.get_module_name(module_id);
+        match self.engine.get_module_path(&module_name) {
+            Ok(path) => Some(types::Source {
+                name: PathBuf::from(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string()),
+                path: Some(path),
+                adapter_data: None,
+                source_reference: None,
+                presentation_hint: None,
+                origin: None,
+                checksums: None,
+                sources: None,
+            }),
+            Err(_) => Some(types::Source {
+                name: Some(format!("{module_name}.mq")),
+                path: None,
+                adapter_data: None,
+                source_reference: None,
+                presentation_hint: None,
+                origin: None,
+                checksums: None,
+                sources: None,
+            }),
+        }
+    }
+
     /// Build DAP stack frames from the current debug context's call stack
     fn build_stack_frames(&self) -> Vec<types::StackFrame> {
         let call_stack = if let Some(context) = &self.current_debug_context {
@@ -299,38 +334,29 @@ impl MqAdapter {
             Vec::new()
         };
 
-        let source = self.get_source();
-
         if !call_stack.is_empty() {
             call_stack
                 .iter()
                 .rev()
                 .enumerate()
                 .map(|(i, frame)| {
-                    let (file_name, token_range) = if i == 0 {
-                        if let Some(context) = self.current_debug_context.as_ref() {
-                            (
-                                self.get_source_file_name(Some(context.token.module_id)),
-                                context.token.range,
-                            )
-                        } else {
-                            (
-                                self.get_source_file_name(None),
-                                self.engine.token_arena().read().unwrap()[frame.token_id].range,
-                            )
-                        }
+                    let (module_id, token_range) = if i == 0
+                        && let Some(context) = self.current_debug_context.as_ref()
+                    {
+                        (context.token.module_id, context.token.range)
                     } else {
-                        (
-                            self.get_source_file_name(None),
-                            self.engine.token_arena().read().unwrap()[frame.token_id].range,
-                        )
+                        let arena = self.engine.token_arena();
+                        let guard = arena.read().unwrap();
+                        let token = &guard[frame.token_id];
+                        (token.module_id, token.range)
                     };
+                    let file_name = self.get_source_file_name(Some(module_id));
                     types::StackFrame {
                         id: i as i64 + 1,
                         name: format!("{} ({}:{})", frame.expr, file_name, token_range.start.line,),
                         line: token_range.start.line as i64,
                         column: token_range.start.column as i64,
-                        source: source.clone(),
+                        source: self.get_source_for_module(module_id),
                         ..Default::default()
                     }
                 })
@@ -346,7 +372,7 @@ impl MqAdapter {
                 ),
                 line: context.token.range.start.line as i64,
                 column: context.token.range.start.column as i64,
-                source: source.clone(),
+                source: self.get_source_for_module(context.token.module_id),
                 ..Default::default()
             }]
         } else {
@@ -355,7 +381,7 @@ impl MqAdapter {
                 name: "unknown".to_string(),
                 line: 1,
                 column: 1,
-                source: source.clone(),
+                source: self.get_source(),
                 ..Default::default()
             }]
         }
@@ -1484,6 +1510,79 @@ mod tests {
         assert_eq!(
             frames[0].source.as_ref().unwrap().path.as_deref(),
             Some("/tmp/query.mq")
+        );
+    }
+
+    #[test]
+    fn test_build_stack_frames_current_location_in_an_imported_module_does_not_use_the_query_file_source() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/tmp/query.mq".to_string());
+        let mut context = mq_lang::DebugContext::default();
+        context.token = Shared::new(mq_lang::Token {
+            kind: mq_lang::TokenKind::Eof,
+            range: mq_lang::Range {
+                start: mq_lang::Position::new(12, 1),
+                end: mq_lang::Position::new(12, 2),
+            },
+            module_id: mq_lang::ModuleId::new(1),
+        });
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 1);
+        assert_ne!(
+            frames[0].source.as_ref().unwrap().path.as_deref(),
+            Some("/tmp/query.mq"),
+            "a frame paused inside an imported module must not report the query file as its source"
+        );
+    }
+
+    #[test]
+    fn test_build_stack_frames_outer_call_stack_entry_from_an_imported_module_does_not_use_the_query_file_source() {
+        let mut adapter = MqAdapter::new();
+        adapter.query_file = Some("/tmp/query.mq".to_string());
+
+        let outer_token_id = adapter
+            .engine
+            .token_arena()
+            .write()
+            .unwrap()
+            .alloc(Shared::new(mq_lang::Token {
+                kind: mq_lang::TokenKind::Eof,
+                range: mq_lang::Range {
+                    start: mq_lang::Position::new(12, 1),
+                    end: mq_lang::Position::new(12, 2),
+                },
+                module_id: mq_lang::ModuleId::new(1),
+            }));
+
+        let mut context = mq_lang::DebugContext::default();
+        context.token = Shared::new(mq_lang::Token {
+            kind: mq_lang::TokenKind::Eof,
+            range: mq_lang::Range {
+                start: mq_lang::Position::new(3, 1),
+                end: mq_lang::Position::new(3, 2),
+            },
+            module_id: mq_lang::ModuleId::new(0),
+        });
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("helper"), Default::default()),
+            token_id: outer_token_id,
+        }));
+        context.call_stack.push(Shared::new(mq_lang::AstNode {
+            expr: mq_lang::AstExpr::Call(mq_lang::IdentWithToken::new("inner"), Default::default()),
+            token_id: 0u32.into(),
+        }));
+        adapter.current_debug_context = Some(context);
+
+        let frames = adapter.build_stack_frames();
+
+        assert_eq!(frames.len(), 2);
+        assert_ne!(
+            frames[1].source.as_ref().unwrap().path.as_deref(),
+            Some("/tmp/query.mq"),
+            "an outer call-stack frame belonging to an imported module must not report the query file as its source"
         );
     }
 

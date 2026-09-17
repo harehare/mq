@@ -214,6 +214,10 @@ pub(crate) enum OpCode {
     /// Debugger stop point.
     #[cfg(feature = "debugger")]
     StmtBoundary(TokenId),
+    /// Re-syncs the debugger's current node after a call's arguments compile, without
+    /// triggering breakpoint/hit-count handling like `StmtBoundary`.
+    #[cfg(feature = "debugger")]
+    SyncCallNode(TokenId),
     /// Unconditional debugger stop for `breakpoint()`.
     #[cfg(feature = "debugger")]
     Breakpoint(TokenId),
@@ -451,6 +455,8 @@ impl OpCode {
             #[cfg(feature = "debugger")]
             Self::StmtBoundary(_) => "StmtBoundary",
             #[cfg(feature = "debugger")]
+            Self::SyncCallNode(_) => "SyncCallNode",
+            #[cfg(feature = "debugger")]
             Self::Breakpoint(_) => "Breakpoint",
             Self::Const(_) => "Const",
             Self::PushNone => "PushNone",
@@ -552,7 +558,10 @@ impl OpCode {
     pub(crate) fn is_profiled_instruction(&self) -> bool {
         #[cfg(feature = "debugger")]
         {
-            !matches!(self, Self::StmtBoundary(_) | Self::Breakpoint(_))
+            !matches!(
+                self,
+                Self::StmtBoundary(_) | Self::SyncCallNode(_) | Self::Breakpoint(_)
+            )
         }
         #[cfg(not(feature = "debugger"))]
         {
@@ -1442,7 +1451,7 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecod
 fn stack_effect(op: &OpCode) -> (usize, usize) {
     match op {
         #[cfg(feature = "debugger")]
-        OpCode::StmtBoundary(_) | OpCode::Breakpoint(_) => (0, 0),
+        OpCode::StmtBoundary(_) | OpCode::SyncCallNode(_) | OpCode::Breakpoint(_) => (0, 0),
         OpCode::Const(_)
         | OpCode::PushNone
         | OpCode::GetLocal(_)

@@ -2228,10 +2228,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_dict_call(args, call_token_id)
             }
             Expr::CallDynamic(callee, args) => {
+                let call_token_id = self.current_token_id;
                 self.compile_expr(callee)?;
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
+                self.set_call_token_id(call_token_id);
                 let argc = self.arg_count(args.len())?;
                 self.emit(OpCode::CallValue(argc));
                 Ok(())
@@ -2395,13 +2397,12 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     /// Restores `current_token_id` to the call node's own token after its arguments have been
-    /// compiled. Each argument's `compile_expr` emits its own `StmtBoundary`, which otherwise
-    /// leaves the debugger's `current_node` pointing at the last-compiled argument instead of the
-    /// call itself once a callee frame is entered.
+    /// compiled, emitting `SyncCallNode` to resync the debugger's `current_node` too (without
+    /// triggering a breakpoint stop, unlike `StmtBoundary`).
     fn set_call_token_id(&mut self, call_token_id: crate::ast::TokenId) {
         self.current_token_id = call_token_id;
         #[cfg(feature = "debugger")]
-        self.emit(OpCode::StmtBoundary(call_token_id));
+        self.emit(OpCode::SyncCallNode(call_token_id));
     }
 
     fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
