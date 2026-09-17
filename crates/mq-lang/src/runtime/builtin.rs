@@ -3002,6 +3002,19 @@ fn to_md_name_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
     }
 }
 
+/// Returns a heading's depth (1-6), or 0 for any other node, without allocating a name string.
+#[mq_macros::mq_fn(name = "_md_heading_level", params = Fixed(1))]
+fn md_heading_level_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    let level = match args.as_slice() {
+        [RuntimeValue::Markdown(node, _)] => match &**node {
+            mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) => *depth,
+            _ => 0,
+        },
+        _ => 0,
+    };
+    Ok(RuntimeValue::Number(number::Number::from(level)))
+}
+
 #[mq_macros::mq_fn(name = "set_list_ordered", params = Fixed(2))]
 fn set_list_ordered_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5593,6 +5606,7 @@ mq_macros::builtin_dispatch! {
     TO_MATH,
     TO_MATH_INLINE,
     TO_MD_NAME,
+    _MD_HEADING_LEVEL,
     SET_LIST_ORDERED,
     TO_STRONG,
     TO_EM,
@@ -8393,6 +8407,17 @@ world"# }],
                 code: r#"to_md_name(to_h("t", 1))"#,
                 expected: r#"h1"#,
             }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("_md_heading_level"),
+        BuiltinFunctionDoc {
+            description: "Internal function returning a heading's depth (1-6), or 0 for any other node.",
+            params: &["markdown"],
+            param_types: &["markdown"],
+            returns: "number",
+            examples: &[],
             capability: None,
         },
     );
