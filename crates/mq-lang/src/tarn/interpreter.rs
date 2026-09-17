@@ -1114,6 +1114,16 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 apply_debug_updates(&vm_frame, locals, upvalues);
             }
             #[cfg(feature = "debugger")]
+            OpCode::SyncCallNode(token_id) => {
+                let node = chunk
+                    .debug_nodes
+                    .iter()
+                    .rfind(|(candidate, _)| *candidate == *token_id)
+                    .map(|(_, node)| Shared::clone(node))
+                    .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("missing debug node")))?;
+                debug.current_node = Some(node);
+            }
+            #[cfg(feature = "debugger")]
             OpCode::Breakpoint(token_id) => {
                 let node = chunk
                     .debug_nodes

@@ -142,6 +142,8 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         #[cfg(feature = "debugger")]
         bytecode::OpCode::StmtBoundary(_) => "StmtBoundary".to_string(),
         #[cfg(feature = "debugger")]
+        bytecode::OpCode::SyncCallNode(_) => "SyncCallNode".to_string(),
+        #[cfg(feature = "debugger")]
         bytecode::OpCode::Breakpoint(_) => "Breakpoint".to_string(),
         bytecode::OpCode::Const(index) => format!("Const {index}"),
         bytecode::OpCode::PushNone => "PushNone".to_string(),

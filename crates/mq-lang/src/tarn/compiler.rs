@@ -2228,10 +2228,12 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_dict_call(args, call_token_id)
             }
             Expr::CallDynamic(callee, args) => {
+                let call_token_id = self.current_token_id;
                 self.compile_expr(callee)?;
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
+                self.set_call_token_id(call_token_id);
                 let argc = self.arg_count(args.len())?;
                 self.emit(OpCode::CallValue(argc));
                 Ok(())
@@ -2394,6 +2396,15 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
+    /// Restores `current_token_id` to the call node's own token after its arguments have been
+    /// compiled, emitting `SyncCallNode` to resync the debugger's `current_node` too (without
+    /// triggering a breakpoint stop, unlike `StmtBoundary`).
+    fn set_call_token_id(&mut self, call_token_id: crate::ast::TokenId) {
+        self.current_token_id = call_token_id;
+        #[cfg(feature = "debugger")]
+        self.emit(OpCode::SyncCallNode(call_token_id));
+    }
+
     fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
 
@@ -2433,7 +2444,7 @@ impl<R: ModuleResolver> Compiler<R> {
             for arg in args {
                 self.compile_expr(arg)?;
             }
-            self.current_token_id = call_token_id;
+            self.set_call_token_id(call_token_id);
             let argc = self.arg_count(args.len())?;
             self.emit(match Self::fixed_call_form(arity, argc) {
                 // Fixed-call opcodes enter a frame directly; a generator's self-call must create
@@ -2455,7 +2466,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.current_token_id = call_token_id;
+                self.set_call_token_id(call_token_id);
                 let argc = self.arg_count(args.len())?;
                 if let Some(chunk) = self.scopes.last().and_then(|scope| scope.static_function(slot)) {
                     let arity = self.chunks[chunk as usize].param_shape.required;
@@ -2479,7 +2490,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 for arg in args {
                     self.compile_expr(arg)?;
                 }
-                self.current_token_id = call_token_id;
+                self.set_call_token_id(call_token_id);
                 self.emit(OpCode::CallUpvalue(index, self.arg_count(args.len())?));
                 return Ok(());
             }
@@ -2494,7 +2505,7 @@ impl<R: ModuleResolver> Compiler<R> {
             for arg in args {
                 self.compile_expr(arg)?;
             }
-            self.current_token_id = call_token_id;
+            self.set_call_token_id(call_token_id);
             let argc = self.arg_count(args.len())?;
             self.emit(OpCode::CallValue(argc));
             return Ok(());
@@ -2508,13 +2519,13 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             self.compile_expr(&args[0])?;
             self.compile_expr(&args[1])?;
-            self.current_token_id = call_token_id;
+            self.set_call_token_id(call_token_id);
             self.emit(binary_op_opcode(op));
             return Ok(());
         }
         if args.len() == 1 && ident == builtins::NEGATE.into() {
             self.compile_expr(&args[0])?;
-            self.current_token_id = call_token_id;
+            self.set_call_token_id(call_token_id);
             self.emit(OpCode::Neg);
             return Ok(());
         }
@@ -2559,7 +2570,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 } else {
                     self.emit(OpCode::GetLocal(SELF_SLOT));
                 }
-                self.current_token_id = call_token_id;
+                self.set_call_token_id(call_token_id);
                 self.emit(OpCode::Resume(1));
                 return Ok(());
             }
@@ -2574,7 +2585,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.emit(OpCode::GetLocal(SELF_SLOT));
                     self.compile_expr(&args[0])?;
                 }
-                self.current_token_id = call_token_id;
+                self.set_call_token_id(call_token_id);
                 self.emit(OpCode::Resume(2));
                 return Ok(());
             }
@@ -2589,7 +2600,7 @@ impl<R: ModuleResolver> Compiler<R> {
         for arg in args {
             self.compile_expr(arg)?;
         }
-        self.current_token_id = call_token_id;
+        self.set_call_token_id(call_token_id);
         let argc = self.arg_count(args.len())?;
         self.emit(OpCode::CallBuiltin(ident, argc));
         Ok(())
@@ -2606,7 +2617,7 @@ impl<R: ModuleResolver> Compiler<R> {
         for arg in args {
             self.compile_expr(arg)?;
         }
-        self.current_token_id = call_token_id;
+        self.set_call_token_id(call_token_id);
         self.emit(OpCode::CallValue(self.arg_count(args.len())?));
         Ok(())
     }
@@ -2695,7 +2706,7 @@ impl<R: ModuleResolver> Compiler<R> {
             for arg in args {
                 self.compile_expr(arg)?;
             }
-            self.current_token_id = call_token_id;
+            self.set_call_token_id(call_token_id);
             let argc = self.arg_count(args.len())?;
             self.emit(OpCode::CallBuiltin(builtins::DICT.into(), argc));
             return Ok(());
@@ -2712,7 +2723,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::ArrayPush);
             }
         }
-        self.current_token_id = call_token_id;
+        self.set_call_token_id(call_token_id);
         self.emit(OpCode::CallBuiltin(builtins::DICT.into(), 1));
         Ok(())
     }

@@ -2200,6 +2200,107 @@ fn debugger_hook_receives_live_bindings_and_call_stack() {
 
 #[cfg(feature = "debugger")]
 #[test]
+fn debugger_boundary_fires_once_per_call_with_a_literal_argument() {
+    use super::interpreter::{DebugEvent, DebugHook};
+
+    #[derive(Default)]
+    struct Recorder(Vec<DebugEvent>);
+
+    impl DebugHook for Recorder {
+        fn on_boundary(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+
+        fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+    }
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("let f = fn(x): x; | f(1)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let mut recorder = Recorder::default();
+
+    interpreter::run_with_debug_hook_and_globals(
+        &compiled,
+        RuntimeValue::None,
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
+        &mut recorder,
+    )
+    .unwrap();
+
+    let call_boundaries = recorder
+        .0
+        .iter()
+        .filter(|event| matches!(&event.node.expr, Expr::Call(ident, _) if ident.name == crate::Ident::new("f")))
+        .count();
+    assert_eq!(
+        call_boundaries, 1,
+        "resyncing current_node after a call's arguments must not re-trigger the debugger boundary"
+    );
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn dynamic_call_caller_node_is_the_call_expression_not_the_last_argument() {
+    use super::interpreter::{DebugEvent, DebugHook};
+
+    #[derive(Default)]
+    struct Recorder(Vec<DebugEvent>);
+
+    impl DebugHook for Recorder {
+        fn on_boundary(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+
+        fn on_explicit_breakpoint(&mut self, event: DebugEvent) -> Result<(), super::interpreter::VmError> {
+            self.0.push(event);
+            Ok(())
+        }
+    }
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse("let f = fn(x): x; | (f)(1)", Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let mut recorder = Recorder::default();
+
+    interpreter::run_with_debug_hook_and_globals(
+        &compiled,
+        RuntimeValue::None,
+        interpreter::RunOptions {
+            host_functions: &HostFunctions::default(),
+            timeout: None,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
+            capture_stack_trace: false,
+            global_bindings: &[],
+        },
+        &mut recorder,
+    )
+    .unwrap();
+
+    let inside_function = recorder
+        .0
+        .iter()
+        .find(|event| event.call_stack.len() == 1)
+        .expect("a boundary inside f's body should have one caller frame");
+    let caller = inside_function.call_stack.last().unwrap();
+    assert!(
+        matches!(caller.expr, Expr::CallDynamic(_, _)),
+        "caller node should be the dynamic call expression, not the last-compiled argument"
+    );
+}
+
+#[cfg(feature = "debugger")]
+#[test]
 fn debugger_hook_exposes_closure_bindings() {
     use super::interpreter::{DebugEvent, DebugHook};
 
