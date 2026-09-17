@@ -656,6 +656,17 @@ impl RuntimeValue {
         }
     }
 
+    /// Clears position only from the `Text` leaf written by a prior `update_markdown_value`
+    /// call, so the renderer won't re-escape it. Unlike `strip_positions`, leaves the rest of
+    /// the tree untouched.
+    #[inline(always)]
+    pub fn strip_updated_text_position(&mut self) {
+        if let RuntimeValue::Markdown(node, selector) = self {
+            let index = (*selector).map(Selector::index_value).unwrap_or(0);
+            markdown_mut(node).clear_text_position_at(index);
+        }
+    }
+
     #[inline(always)]
     fn string(&self) -> Cow<'_, str> {
         match self {
