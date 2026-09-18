@@ -2623,6 +2623,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mq-bench"
+version = "0.8.5"
+dependencies = [
+ "clap",
+ "glob",
+ "miette",
+ "mq-lang",
+ "rstest",
+ "rustc-hash",
+ "serde",
+ "serde_json",
+ "tabled",
+]
+
+[[package]]
 name = "mq-check"
 version = "0.8.5"
 dependencies = [
