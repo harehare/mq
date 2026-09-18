@@ -613,8 +613,8 @@ fn bind_params(
     let param_count = shape.bindings.len();
     let use_self_param = parameter_uses_implicit_self(shape, arg_count)?;
 
-    // `drain` (rather than `into_iter`) leaves `args`'s allocation for the caller to recycle.
-    let remaining_args: VecDeque<StackValue> = args.drain(..).collect();
+    // `VecDeque::from(Vec)` transfers the caller's pooled allocation without reallocating.
+    let remaining_args = VecDeque::from(std::mem::take(args));
     let mut start_index = 0;
     if use_self_param && let Some(binding) = shape.bindings.first() {
         let self_value = current_self(&callee_locals, context.chunks);
@@ -743,12 +743,10 @@ fn resume_bind_params(
             }
         }
     }
-    Ok(build_callee_frame(
-        callee_locals,
-        callee_upvalues,
-        callee_chunk_index,
-        context,
-    ))
+    let frame = build_callee_frame(callee_locals, callee_upvalues, callee_chunk_index, context);
+    // Convert back without reallocating so the dynamic-call argument buffer is reusable.
+    context.limits.recycle_stack(remaining_args.into());
+    Ok(frame)
 }
 
 fn build_callee_frame(
