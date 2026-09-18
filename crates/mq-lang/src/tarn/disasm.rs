@@ -150,6 +150,16 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::SetLocalAndCopy { source, destination } => {
             format!("SetLocalAndCopy {} -> {}", local(*source), local(*destination))
         }
+        bytecode::OpCode::SetLocalAndCopyAndJump {
+            source,
+            destination,
+            offset,
+        } => format!(
+            "SetLocalAndCopyAndJump {} -> {} {}",
+            local(*source),
+            local(*destination),
+            jump_ref(pc, *offset)
+        ),
         bytecode::OpCode::SetLocalConst { local: slot, constant } => {
             format!("SetLocalConst {} {constant}", local(*slot))
         }

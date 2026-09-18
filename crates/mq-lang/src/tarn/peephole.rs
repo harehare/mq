@@ -62,6 +62,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
                         | (OpCode::Const(_), Some(OpCode::SetLocal(_)))
                         | (OpCode::GetLocal(_), Some(OpCode::SetLocal(_)))
                         | (OpCode::SetLocal(_), Some(OpCode::GetLocal(_)))
+                        | (OpCode::SetLocalAndCopy { .. }, Some(OpCode::Jump(_)))
                         | (OpCode::BinaryLocalConst { .. }, Some(OpCode::SetLocal(_)))
                         | (OpCode::BinaryLocalLocal { .. }, Some(OpCode::SetLocal(_)))
                         | (OpCode::GetLocal(_), Some(OpCode::Return))
@@ -75,6 +76,10 @@ fn optimize_chunk(chunk: &mut Chunk) {
                 (op, chunk.code.get(pc + 1), chunk.code.get(pc + 2)),
                 (OpCode::SetLocal(source), Some(OpCode::GetLocal(read)), Some(OpCode::SetLocal(_))) if source == read
             )
+            || matches!(
+                (op, chunk.code.get(pc + 1), chunk.code.get(pc + 2), chunk.code.get(pc + 3)),
+                (OpCode::SetLocal(source), Some(OpCode::GetLocal(read)), Some(OpCode::SetLocal(_)), Some(OpCode::Jump(_))) if source == read
+            )
     });
     if !has_rewrite {
         return;
@@ -87,6 +92,33 @@ fn optimize_chunk(chunk: &mut Chunk) {
 
     let mut pc = 0;
     while pc < old_code.len() {
+        if let (
+            OpCode::SetLocal(source),
+            Some(OpCode::GetLocal(read)),
+            Some(OpCode::SetLocal(destination)),
+            Some(OpCode::Jump(offset)),
+        ) = (
+            &old_code[pc],
+            old_code.get(pc + 1),
+            old_code.get(pc + 2),
+            old_code.get(pc + 3),
+        ) && source == read
+            && !targets.contains(&(pc + 1))
+            && !targets.contains(&(pc + 2))
+            && !targets.contains(&(pc + 3))
+        {
+            old_code[pc] = OpCode::SetLocalAndCopyAndJump {
+                source: *source,
+                destination: *destination,
+                // The fused op moves three pcs before the old jump.
+                offset: *offset + 3,
+            };
+            keep[pc + 1] = false;
+            keep[pc + 2] = false;
+            keep[pc + 3] = false;
+            pc += 4;
+            continue;
+        }
         if let (
             OpCode::BinaryLocalConst { op, local, constant },
             Some(OpCode::ForeachCollect(accumulator_slot)),
@@ -128,6 +160,18 @@ fn optimize_chunk(chunk: &mut Chunk) {
         // there still observes the same combined operation. The second instruction must not be
         // a target: entering there can depend on an intermediate operand-stack value.
         match (&old_code[pc], old_code.get(pc + 1)) {
+            (OpCode::SetLocalAndCopy { source, destination }, Some(OpCode::Jump(offset)))
+                if !targets.contains(&(pc + 1)) =>
+            {
+                old_code[pc] = OpCode::SetLocalAndCopyAndJump {
+                    source: *source,
+                    destination: *destination,
+                    // The fused op stays one pc before the old jump.
+                    offset: *offset + 1,
+                };
+                keep[pc + 1] = false;
+                pc += 2;
+            }
             (OpCode::Const(_), Some(OpCode::Pop)) if !targets.contains(&pc) && !targets.contains(&(pc + 1)) => {
                 keep[pc] = false;
                 keep[pc + 1] = false;
@@ -334,6 +378,7 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
             | OpCode::JumpIfFalseLocalLocal { offset, .. }
             | OpCode::JumpIfFalseLocalConst { offset, .. }
             | OpCode::JumpIfFalseLocalNumberConst { offset, .. }
+            | OpCode::SetLocalAndCopyAndJump { offset, .. }
             | OpCode::ForeachCollectAndJump { offset, .. }
             | OpCode::ForeachBinaryLocalNumberConstAndJump { offset, .. } => {
                 if let Some(target) = jump_target(pc, *offset) {
@@ -423,6 +468,15 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
             op,
             local,
             constant,
+            offset: rewrite(offset),
+        },
+        OpCode::SetLocalAndCopyAndJump {
+            source,
+            destination,
+            offset,
+        } => OpCode::SetLocalAndCopyAndJump {
+            source,
+            destination,
             offset: rewrite(offset),
         },
         OpCode::ForeachNext {
@@ -737,6 +791,38 @@ mod tests {
                     destination: 1,
                 },
                 OpCode::ReturnLocal(1),
+            ]
+        ));
+        assert_eq!(verify_chunks(&[chunk]), Ok(()));
+    }
+
+    #[test]
+    fn peephole_fuses_a_store_copy_loop_backedge() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::SetLocal(0),
+                OpCode::GetLocal(0),
+                OpCode::SetLocal(1),
+                OpCode::Jump(-5),
+                OpCode::Return,
+            ],
+            local_count: 2,
+            ..Default::default()
+        };
+
+        optimize_chunk(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::PushNone,
+                OpCode::SetLocalAndCopyAndJump {
+                    source: 0,
+                    destination: 1,
+                    offset: -2,
+                },
+                OpCode::Return,
             ]
         ));
         assert_eq!(verify_chunks(&[chunk]), Ok(()));

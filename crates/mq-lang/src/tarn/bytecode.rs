@@ -226,6 +226,16 @@ pub(crate) enum OpCode {
         source: u16,
         destination: u16,
     },
+    /// Clones the top operand into one local, then pops it into another local and jumps.
+    ///
+    /// Conditional-loop bodies end with this store/copy sequence followed by their backedge.
+    /// Keeping the backedge in the same instruction removes one dispatch per completed
+    /// iteration without changing the operand-stack transition.
+    SetLocalAndCopyAndJump {
+        source: u16,
+        destination: u16,
+        offset: i32,
+    },
     /// Stores a constant directly in a local without using the operand stack.
     SetLocalConst {
         local: u16,
@@ -459,6 +469,7 @@ impl OpCode {
             Self::GetLocal(_) => "GetLocal",
             Self::SetLocal(_) => "SetLocal",
             Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
+            Self::SetLocalAndCopyAndJump { .. } => "SetLocalAndCopyAndJump",
             Self::SetLocalConst { .. } => "SetLocalConst",
             Self::TeeLocal(_) => "TeeLocal",
             Self::CopyLocal { .. } => "CopyLocal",
@@ -952,6 +963,22 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         }
                     }
                 }
+                OpCode::SetLocalAndCopyAndJump {
+                    source,
+                    destination,
+                    offset,
+                } => {
+                    for slot in [source, destination] {
+                        if *slot >= chunk.local_count {
+                            return Err(BytecodeError::LocalOutOfBounds {
+                                chunk: chunk_index,
+                                pc,
+                                slot: *slot,
+                            });
+                        }
+                    }
+                    verify_jump_target(chunk, chunk_index, pc, *offset)?;
+                }
                 OpCode::ForeachCollectAndJump { slot, offset } => {
                     if *slot >= chunk.local_count {
                         return Err(BytecodeError::LocalOutOfBounds {
@@ -1399,7 +1426,8 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecod
             | OpCode::FlowContinue
             | OpCode::RaiseDestructuringFailed => {}
             OpCode::Jump(offset) => enqueue(jump_target(pc, *offset).expect("verified jump target"), next_height),
-            OpCode::ForeachCollectAndJump { offset, .. }
+            OpCode::SetLocalAndCopyAndJump { offset, .. }
+            | OpCode::ForeachCollectAndJump { offset, .. }
             | OpCode::ForeachBinaryLocalNumberConstAndJump { offset, .. } => {
                 enqueue(
                     jump_target(pc, *offset).expect("verified foreach collect target"),
@@ -1462,6 +1490,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::GetExternalGlobal(_) => (0, 1),
         OpCode::SetLocal(_)
         | OpCode::SetLocalAndCopy { .. }
+        | OpCode::SetLocalAndCopyAndJump { .. }
         | OpCode::SetUpvalue(_)
         | OpCode::Pop
         | OpCode::ForeachCollect(_)

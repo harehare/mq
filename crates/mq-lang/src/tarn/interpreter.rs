@@ -1167,6 +1167,25 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 // SAFETY: `verify_chunks` validates both local slots before execution.
                 unsafe { locals.set_unchecked(*destination, value) };
             }
+            OpCode::SetLocalAndCopyAndJump {
+                source,
+                destination,
+                offset,
+            } => {
+                debug_assert!(
+                    stack.len() > frame.stack_base,
+                    "verified bytecode underflowed the stack"
+                );
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let copied = unsafe { stack.last().unwrap_unchecked() }.clone();
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                unsafe { locals.set_unchecked(*source, copied) };
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let value = unsafe { stack.pop().unwrap_unchecked() };
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                unsafe { locals.set_unchecked(*destination, value) };
+                ip = (ip as i64 + *offset as i64) as usize;
+            }
             OpCode::SetLocalConst { local, constant } => {
                 // SAFETY: `verify_chunks` validates the local slot and constant index before execution.
                 let value = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();

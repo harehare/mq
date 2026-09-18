@@ -336,7 +336,7 @@ fn loop_header_comparisons_use_a_compact_branch_opcode() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::SetLocalAndCopy { .. }))
+            .any(|op| matches!(op, OpCode::SetLocalAndCopyAndJump { .. }))
     );
     assert_eq!(
         run("var i = 3 | while(i > 0): i -= 1; | i"),
