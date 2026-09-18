@@ -2983,7 +2983,7 @@ fn to_md_name_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
 fn md_heading_level_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     let level = match args.as_slice() {
         [RuntimeValue::Markdown(node, _)] => match &**node {
-            mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) => *depth,
+            mq_markdown::Node::Heading(mq_markdown::Heading { depth, .. }) if (1..=6).contains(depth) => *depth,
             _ => 0,
         },
         _ => 0,
