@@ -14,6 +14,10 @@ pub const NAN: Number = Number(f64::NAN);
 /// Represents positive infinity.
 pub const INFINITE: Number = Number(f64::INFINITY);
 
+// Exclusive upper bound for safe `as i64` casts. `i64::MAX as f64` rounds up to 2^63.
+const I64_MIN_F64: f64 = i64::MIN as f64;
+const I64_MAX_BOUND_F64: f64 = 9223372036854775808.0;
+
 impl Number {
     /// Creates a new `Number` from an `f64` value.
     pub fn new(value: f64) -> Self {
@@ -119,8 +123,11 @@ impl From<f64> for Number {
 
 impl fmt::Display for Number {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_int() {
+        // `as i64` saturates beyond i64's range, so guard against it here.
+        if self.is_int() && self.0 >= I64_MIN_F64 && self.0 < I64_MAX_BOUND_F64 {
             write!(f, "{}", self.0 as i64)
+        } else if self.is_int() {
+            write!(f, "{}", self.0)
         } else {
             let s = format!("{:.6}", self.0);
             let s = s.trim_end_matches('0').trim_end_matches('.');
@@ -165,11 +172,6 @@ impl Rem for Number {
     type Output = Self;
 
     fn rem(self, other: Self) -> Self {
-        // `i64::MAX as f64` rounds up to 2^63, so use the exact 2^63 literal as an
-        // exclusive upper bound instead — otherwise 2^63 itself wrongly passes the check
-        // and then saturates to i64::MAX in the cast below.
-        const I64_MIN_F64: f64 = i64::MIN as f64;
-        const I64_MAX_BOUND_F64: f64 = 9223372036854775808.0;
         if self.is_int()
             && other.is_int()
             && other.0 != 0.0
@@ -221,6 +223,15 @@ mod tests {
     fn test_display_formatting(#[case] input: f64, #[case] expected: &str) {
         let num = Number::new(input);
         assert_eq!(format!("{}", num), expected);
+    }
+
+    #[test]
+    fn test_display_beyond_i64_range_does_not_saturate() {
+        let big = Number::new(2f64.powf(100.0));
+        assert_eq!(format!("{}", big), "1267650600228229400000000000000");
+
+        let small = Number::new(-(2f64.powf(100.0)));
+        assert_eq!(format!("{}", small), "-1267650600228229400000000000000");
     }
 
     #[rstest]

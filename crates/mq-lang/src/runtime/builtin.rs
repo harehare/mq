@@ -1859,10 +1859,11 @@ fn slice_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 fn pow_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::Number(base), RuntimeValue::Number(exp)] => {
-            if exp.is_int() && exp.value() >= 0.0 {
-                Ok(RuntimeValue::Number(
-                    (base.value() as i64).pow(exp.value() as u32).into(),
-                ))
+            if base.is_int() && exp.is_int() && exp.value() >= 0.0 {
+                match (base.value() as i64).checked_pow(exp.value() as u32) {
+                    Some(result) => Ok(RuntimeValue::Number(result.into())),
+                    None => Ok(RuntimeValue::Number(base.value().powf(exp.value()).into())),
+                }
             } else {
                 Ok(RuntimeValue::Number(base.value().powf(exp.value()).into()))
             }
