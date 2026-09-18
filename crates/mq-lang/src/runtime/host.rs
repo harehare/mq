@@ -143,6 +143,11 @@ impl HostFunctions {
     pub(crate) fn get(&self, name: &Ident) -> Option<Shared<dyn HostFunction>> {
         self.0.get(name).cloned()
     }
+
+    /// Whether no host functions are registered at all.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 #[cfg(test)]

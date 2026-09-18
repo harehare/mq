@@ -51,12 +51,6 @@ static SUB_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::SUB));
 static MUL_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MUL));
 static DIV_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::DIV));
 static MOD_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::MOD));
-static EQ_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::EQ));
-static NE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NE));
-static LT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LT));
-static LTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::LTE));
-static GT_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GT));
-static GTE_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::GTE));
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSlot;
@@ -1183,6 +1177,25 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 // SAFETY: `verify_chunks` validates both local slots before execution.
                 unsafe { locals.set_unchecked(*destination, value) };
             }
+            OpCode::SetLocalAndCopyAndJump {
+                source,
+                destination,
+                offset,
+            } => {
+                debug_assert!(
+                    stack.len() > frame.stack_base,
+                    "verified bytecode underflowed the stack"
+                );
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let copied = unsafe { stack.last().unwrap_unchecked() }.clone();
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                unsafe { locals.set_unchecked(*source, copied) };
+                // SAFETY: `verify_chunks` proves this opcode has an operand.
+                let value = unsafe { stack.pop().unwrap_unchecked() };
+                // SAFETY: `verify_chunks` validates both local slots before execution.
+                unsafe { locals.set_unchecked(*destination, value) };
+                ip = (ip as i64 + *offset as i64) as usize;
+            }
             OpCode::SetLocalConst { local, constant } => {
                 // SAFETY: `verify_chunks` validates the local slot and constant index before execution.
                 let value = unsafe { chunk.constants.get_unchecked(*constant as usize) }.clone();
@@ -1263,10 +1276,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let Some(operation) = binary_op_from_opcode(op) else {
                     bail!(VmError::Corrupt("missing comparison binary operation"));
                 };
-                stack.push(StackValue::Value(
-                    cmp_op(operation, a, b, locals, chunks, execution.env, execution.host_functions)
-                        .map_err(|e| locate(chunk, ip, e))?,
-                ));
+                stack.push(StackValue::Value(cmp_op(operation, &a, &b)));
             }
             OpCode::BinaryLocalLocal { op, left, right } => {
                 let a = local_runtime_value(locals, *left, chunks)?;
@@ -1401,6 +1411,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::ArrayNew => {
                 stack.push(StackValue::Value(RuntimeValue::empty_array()));
+            }
+            OpCode::ArrayNewWithCapacityLocal(slot) => {
+                let capacity = match local_runtime_value(locals, *slot, chunks)? {
+                    RuntimeValue::Array(array) => array.len(),
+                    _ => 0,
+                };
+                stack.push(StackValue::Value(RuntimeValue::array_with_capacity(capacity)));
             }
             OpCode::ArrayPush | OpCode::ToForeachIterable | OpCode::ArrayLen | OpCode::ArrayGetAt => {
                 array_misc_op(op, stack, chunks, chunk, ip)?;
@@ -1585,14 +1602,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(result));
             }
             OpCode::GetEnvVar(name_idx) => {
-                // SAFETY: `verify_chunks` validates every constant index before execution.
-                let RuntimeValue::String(name) = (unsafe { chunk.constants.get_unchecked(*name_idx as usize) }) else {
-                    bail!(VmError::Corrupt("GetEnvVar constant is not a string"));
-                };
-                let value = builtin::io_context::current()
-                    .env_var(name)
-                    .map_err(|_| locate(chunk, ip, VmError::EnvNotFound(name.to_string())))?;
-                stack.push(StackValue::Value(RuntimeValue::String(value.into())));
+                let value = get_env_var(*name_idx, chunk, ip)?;
+                stack.push(StackValue::Value(value));
             }
             OpCode::GetExternalGlobal(ident) => {
                 stack.push(StackValue::Value(get_external_global(
@@ -2038,12 +2049,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
             }
             OpCode::TryCatch(info) => {
-                let catch_closure = pop!();
-                let try_closure = pop!();
-                let new_frame = begin_try_catch(
+                let new_frame = try_catch_from_stack(
                     info,
-                    catch_closure,
-                    try_closure,
+                    stack,
                     CallSite {
                         locals,
                         chunk,
@@ -2056,12 +2064,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Enter(new_frame);
             }
             OpCode::FlowBreak(has_value) => {
-                let value = if *has_value { Some(pop_value!()) } else { None };
-                bail!(VmError::FlowBreak(value));
+                return flow_break_from_stack(*has_value, stack, chunks, chunk, ip);
             }
-            OpCode::FlowContinue => bail!(VmError::FlowContinue),
+            OpCode::FlowContinue => return flow_continue_from(chunk, ip),
             OpCode::RaiseDestructuringFailed => {
-                bail!(VmError::DestructuringFailed);
+                return destructuring_failed_from(chunk, ip);
             }
             OpCode::ReturnLocal(slot) => {
                 // SAFETY: `verify_chunks` validates every local slot before execution.
@@ -2148,18 +2155,22 @@ fn tail_call_outcome(chunk: &Chunk, next_ip: usize, frame: Frame) -> FrameOutcom
     }
 }
 
-/// `try`/`catch` is rare; kept out of `run_frame_slice`. Builds the try body's `Frame`, and `unwind_frames`
-/// handles the rest (routing success, or dispatching to `catch`/a loop jump on error).
-#[cold]
+/// Builds a `try` body's frame from its closures on the operand stack.
 #[inline(never)]
-fn begin_try_catch(
+fn try_catch_from_stack(
     info: &TryCatchInfo,
-    catch_closure: StackValue,
-    try_closure: StackValue,
+    stack: &mut Vec<StackValue>,
     call_site: CallSite<'_>,
     chunks: &Shared<Vec<Chunk>>,
     execution: &mut ExecutionContext<'_>,
 ) -> VmResult<Frame> {
+    let CallSite { chunk, ip, .. } = &call_site;
+    let catch_closure = stack
+        .pop()
+        .ok_or_else(|| locate(chunk, *ip, VmError::Corrupt("stack underflow in TryCatch")))?;
+    let try_closure = stack
+        .pop()
+        .ok_or_else(|| locate(chunk, *ip, VmError::Corrupt("stack underflow in TryCatch")))?;
     let CallSite {
         locals,
         chunk,
@@ -2200,6 +2211,55 @@ fn begin_try_catch(
             continue_offset: info.continue_offset,
         })),
     ))
+}
+
+/// Returns the value of an environment variable named by a verified constant-pool entry.
+#[inline(never)]
+fn get_env_var(name_idx: u16, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue> {
+    // SAFETY: `verify_chunks` validates every constant index before execution.
+    let RuntimeValue::String(name) = (unsafe { chunk.constants.get_unchecked(name_idx as usize) }) else {
+        return Err(locate(
+            chunk,
+            ip,
+            VmError::Corrupt("GetEnvVar constant is not a string"),
+        ));
+    };
+    let value = builtin::io_context::current()
+        .env_var(name)
+        .map_err(|_| locate(chunk, ip, VmError::EnvNotFound(name.to_string())))?;
+    Ok(RuntimeValue::String(value.into()))
+}
+
+/// Produces the control-flow error used to propagate a `break` through a nested `try` body.
+#[cold]
+#[inline(never)]
+fn flow_break_from_stack(
+    has_value: bool,
+    stack: &mut Vec<StackValue>,
+    chunks: &Shared<Vec<Chunk>>,
+    chunk: &Chunk,
+    ip: usize,
+) -> VmResult<FrameOutcome> {
+    let value = if has_value {
+        Some(pop_value_from(stack, chunks, chunk, ip)?)
+    } else {
+        None
+    };
+    Err(locate(chunk, ip, VmError::FlowBreak(value)))
+}
+
+/// Produces the control-flow error used to propagate a `continue` through a nested `try` body.
+#[cold]
+#[inline(never)]
+fn flow_continue_from(chunk: &Chunk, ip: usize) -> VmResult<FrameOutcome> {
+    Err(locate(chunk, ip, VmError::FlowContinue))
+}
+
+/// Produces the internal error that drives destructuring-pattern fallback.
+#[cold]
+#[inline(never)]
+fn destructuring_failed_from(chunk: &Chunk, ip: usize) -> VmResult<FrameOutcome> {
+    Err(locate(chunk, ip, VmError::DestructuringFailed))
 }
 
 /// Rare spread-syntax opcodes, kept out of `run_frame_slice`.
@@ -2450,7 +2510,7 @@ fn eval_binary_op(
         op,
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge
     ) {
-        return cmp_op(op, a, b, locals, chunks, env, host_functions);
+        return Ok(cmp_op(op, &a, &b));
     }
     binop(op, a, b, locals, chunks, env, host_functions)
 }
@@ -2508,26 +2568,15 @@ fn binop(
     call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
 }
 
-fn cmp_op(
-    op: BinaryOp,
-    a: RuntimeValue,
-    b: RuntimeValue,
-    locals: &Locals,
-    chunks: &Shared<Vec<Chunk>>,
-    env: &VmEnv,
-    host_functions: &HostFunctions,
-) -> VmResult<RuntimeValue> {
-    if let (RuntimeValue::Number(n1), RuntimeValue::Number(n2)) = (&a, &b) {
-        return eval_number_binary_op(op, *n1, *n2);
-    }
-    let ident = match op {
-        BinaryOp::Eq => &EQ_IDENT,
-        BinaryOp::Ne => &NE_IDENT,
-        BinaryOp::Lt => &LT_IDENT,
-        BinaryOp::Le => &LTE_IDENT,
-        BinaryOp::Gt => &GT_IDENT,
-        BinaryOp::Ge => &GTE_IDENT,
-        _ => return Err(VmError::Corrupt("non-comparison opcode in cmp_op")),
-    };
-    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
+#[inline(always)]
+fn cmp_op(op: BinaryOp, left: &RuntimeValue, right: &RuntimeValue) -> RuntimeValue {
+    RuntimeValue::Boolean(match op {
+        BinaryOp::Eq => left == right,
+        BinaryOp::Ne => left != right,
+        BinaryOp::Lt => left < right,
+        BinaryOp::Le => left <= right,
+        BinaryOp::Gt => left > right,
+        BinaryOp::Ge => left >= right,
+        _ => false,
+    })
 }

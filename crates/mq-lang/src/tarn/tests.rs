@@ -336,7 +336,7 @@ fn loop_header_comparisons_use_a_compact_branch_opcode() {
         compiled.chunks[0]
             .code
             .iter()
-            .any(|op| matches!(op, OpCode::SetLocalAndCopy { .. }))
+            .any(|op| matches!(op, OpCode::SetLocalAndCopyAndJump { .. }))
     );
     assert_eq!(
         run("var i = 3 | while(i > 0): i -= 1; | i"),
@@ -796,6 +796,33 @@ fn direct_builtin_calls_with_common_arities_preserve_results(#[case] code: &str,
     assert_eq!(run(code), expected);
 }
 
+#[rstest]
+#[case("\"a\" == \"a\"", true)]
+#[case("\"a\" != \"b\"", true)]
+#[case("\"a\" < \"b\"", true)]
+#[case("\"a\" <= \"a\"", true)]
+#[case("\"b\" > \"a\"", true)]
+#[case("\"b\" >= \"b\"", true)]
+#[case(":heading == :heading", true)]
+#[case("true > false", true)]
+#[case("\"1\" == 1", false)]
+#[case("\"1\" < 1", false)]
+fn direct_comparisons_preserve_builtin_semantics(#[case] code: &str, #[case] expected: bool) {
+    assert_eq!(run(code), RuntimeValue::Boolean(expected));
+}
+
+#[test]
+fn direct_markdown_comparisons_match_builtin_calls() {
+    assert_eq!(
+        run("to_h(\"a\", 1) == to_h(\"a\", 1)"),
+        run("eq(to_h(\"a\", 1), to_h(\"a\", 1))")
+    );
+    assert_eq!(
+        run("to_h(\"a\", 1) < to_h(\"b\", 1)"),
+        run("lt(to_h(\"a\", 1), to_h(\"b\", 1))")
+    );
+}
+
 #[test]
 fn immutable_function_upvalue_calls_use_call_upvalue() {
     use super::bytecode::OpCode;
@@ -858,7 +885,12 @@ fn foreach_uses_the_specialized_iteration_opcode() {
             .iter()
             .any(|op| matches!(op, OpCode::ForeachNext { .. }))
     );
-    assert!(compiled.chunks[0].code.iter().any(|op| matches!(op, OpCode::ArrayNew)));
+    assert!(
+        compiled.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::ArrayNewWithCapacityLocal(_)))
+    );
     assert!(
         compiled.chunks[0]
             .code

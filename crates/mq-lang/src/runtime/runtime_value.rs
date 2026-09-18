@@ -339,11 +339,7 @@ impl PartialOrd for RuntimeValue {
             (RuntimeValue::String(a), RuntimeValue::String(b)) => a.partial_cmp(b),
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a.partial_cmp(b),
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a.partial_cmp(b),
-            (RuntimeValue::Markdown(a, _), RuntimeValue::Markdown(b, _)) => {
-                let a = a.to_string();
-                let b = b.to_string();
-                a.to_string().partial_cmp(&b)
-            }
+            (RuntimeValue::Markdown(a, _), RuntimeValue::Markdown(b, _)) => a.to_string().partial_cmp(&b.to_string()),
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a.partial_cmp(b),
             (RuntimeValue::Dict(_), _) => None,
             (_, RuntimeValue::Dict(_)) => None,
@@ -455,6 +451,12 @@ impl RuntimeValue {
     #[inline(always)]
     pub fn empty_array() -> RuntimeValue {
         RuntimeValue::Array(Shared::new(Vec::new()))
+    }
+
+    /// Returns a new empty array with enough storage for `capacity` values.
+    #[inline(always)]
+    pub(crate) fn array_with_capacity(capacity: usize) -> RuntimeValue {
+        RuntimeValue::Array(Shared::new(Vec::with_capacity(capacity)))
     }
 
     /// Creates a new empty dictionary.

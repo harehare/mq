@@ -29,17 +29,6 @@ def _ensure_aggregated(md_nodes):
     end
 end
 
-def _h_level_num(md):
-  let name = to_md_name(md)
-  | if (name == "h1"): 1
-    elif (name == "h2"): 2
-    elif (name == "h3"): 3
-    elif (name == "h4"): 4
-    elif (name == "h5"): 5
-    elif (name == "h6"): 6
-    else: 0
-end
-
 # Returns sections whose title contains the specified pattern.
 # If depth is true, each section spans until the next header at the same or higher level
 # (delegates to section::sections(md_nodes, depth), see its doc for details).
@@ -110,14 +99,14 @@ def sections(md_nodes, depth = false):
       if (depth):
         do
           let n = len(agg_nodes)
-          | let start_indices = do foreach (i, range(n - 1)): if (_h_level_num(agg_nodes[i]) > 0): i; | compact();
+          | let start_indices = do foreach (i, range(n - 1)): if (_md_heading_level(agg_nodes[i]) > 0): i; | compact();
           | let start_index_len = len(start_indices)
           | var result = []
           | var i = 0
           | while (i < start_index_len):
               let start = start_indices[i]
-              | let lvl = _h_level_num(agg_nodes[start])
-              | let boundaries = do foreach (j, range(n - 1)): let candidate_level = _h_level_num(agg_nodes[j]) | if (candidate_level > 0 && candidate_level <= lvl): j; | compact();
+              | let lvl = _md_heading_level(agg_nodes[start])
+              | let boundaries = do foreach (j, range(n - 1)): let candidate_level = _md_heading_level(agg_nodes[j]) | if (candidate_level > 0 && candidate_level <= lvl): j; | compact();
               | let boundaries_with_end = boundaries + n
               | let end_node = first(filter(boundaries_with_end, fn(b): b > start;))
               | result += [{type: :section, header: agg_nodes[start], children: agg_nodes[start + 1:end_node]}]
@@ -127,7 +116,7 @@ def sections(md_nodes, depth = false):
         end
       else:
         do
-          let indices = do foreach (i, range(len(agg_nodes) - 1)): if (_h_level_num(agg_nodes[i]) > 0): i; | compact();
+          let indices = do foreach (i, range(len(agg_nodes) - 1)): if (_md_heading_level(agg_nodes[i]) > 0): i; | compact();
           | let indices_with_end = indices + len(agg_nodes)
           | let indices_len = len(indices)
           | var result = []
@@ -148,13 +137,13 @@ def _tree_from_nodes(items):
     []
   else:
     do
-      let h_idxs = do foreach (i, range(0, len(items) - 1)): if (_h_level_num(items[i]) > 0): i; | compact();
+      let h_idxs = do foreach (i, range(0, len(items) - 1)): if (_md_heading_level(items[i]) > 0): i; | compact();
       | if (is_empty(h_idxs)):
           []
         else:
           do
-            let min_level = first(sort(map(h_idxs, fn(i): _h_level_num(items[i]);)))
-            | let top_idxs = filter(h_idxs, fn(i): _h_level_num(items[i]) == min_level;)
+            let min_level = first(sort(map(h_idxs, fn(i): _md_heading_level(items[i]);)))
+            | let top_idxs = filter(h_idxs, fn(i): _md_heading_level(items[i]) == min_level;)
             | let top_idxs_with_end = top_idxs + [len(items)]
             | let n = len(top_idxs)
             | var result = []
@@ -163,7 +152,7 @@ def _tree_from_nodes(items):
                 let start = top_idxs[k]
                 | let end_idx = top_idxs_with_end[k + 1]
                 | let span = items[start + 1:end_idx]
-                | let sub_h_idxs = do foreach (j, range(0, len(span) - 1)): if (_h_level_num(span[j]) > 0): j; | compact();
+                | let sub_h_idxs = do foreach (j, range(0, len(span) - 1)): if (_md_heading_level(span[j]) > 0): j; | compact();
                 | let first_sub = first(sub_h_idxs)
                 | let own_body = if (is_none(first_sub)): span else: span[0:first_sub]
                 | let rest = if (is_none(first_sub)): [] else: span[first_sub:len(span)]
@@ -234,7 +223,7 @@ def split(md_nodes, level):
       []
     else:
       do
-        let indices = do foreach (i, range(len(agg_nodes) - 1)): if (_h_level_num(agg_nodes[i]) == level): i; | compact();
+        let indices = do foreach (i, range(len(agg_nodes) - 1)): if (_md_heading_level(agg_nodes[i]) == level): i; | compact();
         | let indices_with_end = indices + len(agg_nodes)
         | let indices_len = len(indices)
         | var result = []
@@ -458,7 +447,7 @@ end
 # Returns: number
 def level(section):
   if (_is_section(section)):
-    _h_level_num(section[:header])
+    _md_heading_level(section[:header])
   else:
     0
 end
@@ -627,7 +616,7 @@ def shift_level(section, delta):
   else:
     do
       let shift_node = fn(node):
-            if (_h_level_num(node) > 0):
+            if (_md_heading_level(node) > 0):
               if (delta >= 0):
                 shift_right(node, delta)
               else:

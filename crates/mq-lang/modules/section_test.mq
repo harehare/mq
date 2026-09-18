@@ -312,3 +312,8 @@ end
 def test_section_toc_markdown_empty():
   assert_eq(section::toc_markdown([]), [])
 end
+
+def test_section_sections_invalid_heading_depth():
+  let secs = section::sections([to_h("A", 7)])
+  | assert(is_none(secs))
+end

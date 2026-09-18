@@ -152,6 +152,16 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::SetLocalAndCopy { source, destination } => {
             format!("SetLocalAndCopy {} -> {}", local(*source), local(*destination))
         }
+        bytecode::OpCode::SetLocalAndCopyAndJump {
+            source,
+            destination,
+            offset,
+        } => format!(
+            "SetLocalAndCopyAndJump {} -> {} {}",
+            local(*source),
+            local(*destination),
+            jump_ref(pc, *offset)
+        ),
         bytecode::OpCode::SetLocalConst { local: slot, constant } => {
             format!("SetLocalConst {} {constant}", local(*slot))
         }
@@ -254,6 +264,9 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::Neg => "Neg".to_string(),
         bytecode::OpCode::Not => "Not".to_string(),
         bytecode::OpCode::ArrayNew => "ArrayNew".to_string(),
+        bytecode::OpCode::ArrayNewWithCapacityLocal(slot) => {
+            format!("ArrayNewWithCapacityLocal {}", local(*slot))
+        }
         bytecode::OpCode::ArrayPush => "ArrayPush".to_string(),
         bytecode::OpCode::ArraySpread => "ArraySpread".to_string(),
         bytecode::OpCode::DictSpread => "DictSpread".to_string(),

@@ -2885,7 +2885,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_expr(iterable)?;
         self.emit(OpCode::ToForeachIterable);
         self.emit(OpCode::SetLocal(array_slot));
-        self.emit(OpCode::ArrayNew);
+        self.emit(OpCode::ArrayNewWithCapacityLocal(array_slot));
         self.emit(OpCode::SetLocal(acc_slot));
 
         let index_slot = self.scope_mut().declare_synthetic();
