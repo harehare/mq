@@ -147,6 +147,24 @@ def test_is_blank(value, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["a1b2", "[0-9]", fn(m): "[" + m["match"] + "]";, "a[1]b[2]"],
+#   ["hello", "[0-9]", fn(m): "x";, "hello"],
+# ])
+def test_regex_replace(text, pattern, f, expected):
+  let result = regex_replace(text, pattern, f)
+  | assert_eq(result, expected)
+end
+
+def test_regex_replace_named_captures():
+  let result = regex_replace(
+    "2024-06",
+    "(?P<y>[0-9]{4})-(?P<m>[0-9]{2})",
+    fn(m): m["captures"]["m"] + "/" + m["captures"]["y"];
+  )
+  | assert_eq(result, "06/2024")
+end
+
 # Selector tests
 # @parametrize([[42, true, 42], [42, false, None]])
 def test_select(value, cond, expected):

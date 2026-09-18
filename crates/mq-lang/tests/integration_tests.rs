@@ -2663,6 +2663,9 @@ fn engine() -> DefaultEngine {
 // ascii_upcase only folds ASCII letters: "à" is left untouched, unlike upcase above
 #[case::ascii_upcase_non_ascii(r##"ascii_upcase("abcà")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("ABCà".to_string()))].into()))]
 #[case::gsub_simple(r##"gsub("a1b2", "\\d", "x")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("axbx".to_string()))].into()))]
+#[case::regex_replace_callback(r##"regex_replace("a1b2", "\\d", fn(m): "[" + m["match"] + "]";)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("a[1]b[2]".to_string()))].into()))]
+#[case::regex_replace_named_captures(r##"regex_replace("2024-06", "(?P<y>\\d{4})-(?P<m>\\d{2})", fn(x): x["captures"]["m"] + "/" + x["captures"]["y"];)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("06/2024".to_string()))].into()))]
+#[case::regex_replace_no_match(r##"regex_replace("hello", "\\d", fn(m): "x";)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 #[case::regex_match_simple(r##"regex_match("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("1".to_string())), RuntimeValue::String(Shared::new("2".to_string()))]))].into()))]
 #[case::scan_no_groups(r##"scan("a1b2", "\\d")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("1".to_string())), RuntimeValue::String(Shared::new("2".to_string()))]))].into()))]
 #[case::scan_with_groups(r##"scan("2024-06 2025-07", "(\\d{4})-(\\d{2})")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
@@ -3678,6 +3681,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::multiple_variadic_params("def f(*a, *b): a", vec![RuntimeValue::Number(0.into())],)]
 #[case::regex_invalid_pattern(r#""abc" =~ "[invalid""#, vec![RuntimeValue::None],)]
 #[case::is_regex_match_invalid_pattern(r#"is_regex_match("abc", "[invalid")"#, vec![RuntimeValue::None],)]
+#[case::regex_replace_non_string_callback(r##"regex_replace("a1", "\\d", fn(m): 1;)"##, vec![RuntimeValue::None],)]
 // recursion depth exceeded
 #[case::recursion_limit("def f(x): 1 + f(x); | f(1)", vec![RuntimeValue::None],)]
 // too many args to a user-defined function

@@ -135,6 +135,77 @@ pub(super) fn scan_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error>
     Ok(scan_re_inner(&re, input))
 }
 
+/// Caps matches collected per `regex_replace_matches` call.
+const MAX_REGEX_REPLACE_MATCHES: usize = 10_000;
+
+fn match_info(re: &Regex, caps: &regex::Captures) -> RuntimeValue {
+    let m = caps.get(0).expect("capture group 0 is always present for a match");
+    let mut captures = DictMap::default();
+    for (index, group) in caps.iter().enumerate().skip(1) {
+        if let Some(group) = group {
+            captures.insert(
+                Ident::new(&index.to_string()),
+                RuntimeValue::String(Shared::new(group.as_str().to_string())),
+            );
+        }
+    }
+    for name in re.capture_names().flatten() {
+        if let Some(group) = caps.name(name) {
+            captures.insert(
+                Ident::new(name),
+                RuntimeValue::String(Shared::new(group.as_str().to_string())),
+            );
+        }
+    }
+
+    let mut fields = DictMap::default();
+    fields.insert(
+        Ident::new("match"),
+        RuntimeValue::String(Shared::new(m.as_str().to_string())),
+    );
+    fields.insert(Ident::new("captures"), RuntimeValue::Dict(Shared::new(captures)));
+    fields.insert(Ident::new("start"), RuntimeValue::Number((m.start() as i64).into()));
+    fields.insert(Ident::new("end"), RuntimeValue::Number((m.end() as i64).into()));
+    RuntimeValue::Dict(Shared::new(fields))
+}
+
+/// Splits `input` on every match of `re`. Yields `matches.len() + 1` segments, so the
+/// original text is `segments[0] + matches[0] + segments[1] + ... + segments[n]`.
+fn regex_replace_matches_inner(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
+    let mut segments = Vec::new();
+    let mut matches = Vec::new();
+    let mut last_end = 0usize;
+
+    for caps in re.captures_iter(input) {
+        if matches.len() >= MAX_REGEX_REPLACE_MATCHES {
+            return Err(Error::Runtime(format!(
+                "regex_replace: pattern matched more than {MAX_REGEX_REPLACE_MATCHES} times"
+            )));
+        }
+        let m = caps.get(0).expect("capture group 0 is always present for a match");
+        segments.push(RuntimeValue::String(Shared::new(
+            input[last_end..m.start()].to_string(),
+        )));
+        matches.push(match_info(re, &caps));
+        last_end = m.end();
+    }
+    segments.push(RuntimeValue::String(Shared::new(input[last_end..].to_string())));
+
+    let mut result = DictMap::default();
+    result.insert(Ident::new("segments"), RuntimeValue::Array(Shared::new(segments)));
+    result.insert(Ident::new("matches"), RuntimeValue::Array(Shared::new(matches)));
+    Ok(RuntimeValue::Dict(Shared::new(result)))
+}
+
+pub(super) fn regex_replace_matches(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+        return regex_replace_matches_inner(&re, input);
+    }
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
+    regex_replace_matches_inner(&re, input)
+}
+
 /// Escapes `text` so it can be inserted literally into a regex *pattern*.
 ///
 /// This is unrelated to escaping a *replacement* string (e.g. for `gsub`),
@@ -330,6 +401,63 @@ mod tests {
     #[test]
     fn test_scan_re_invalid_pattern() {
         assert!(scan_re("text", "[invalid").is_err());
+    }
+
+    fn dict_get(value: &RuntimeValue, key: &str) -> RuntimeValue {
+        match value {
+            RuntimeValue::Dict(map) => map[&Ident::new(key)].clone(),
+            other => panic!("expected Dict, got {:?}", other),
+        }
+    }
+
+    fn as_array(value: &RuntimeValue) -> Vec<RuntimeValue> {
+        match value {
+            RuntimeValue::Array(arr) => (**arr).clone(),
+            other => panic!("expected Array, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_regex_replace_matches_captures() {
+        let result = regex_replace_matches("hello1 world2", r"(?P<word>[a-z]+)(\d)").unwrap();
+        let segments = as_array(&dict_get(&result, "segments"));
+        let matches = as_array(&dict_get(&result, "matches"));
+        assert_eq!(segments.len(), matches.len() + 1);
+        assert_eq!(matches.len(), 2);
+
+        let first = &matches[0];
+        assert_eq!(dict_get(first, "match"), "hello1".into());
+        let captures = dict_get(first, "captures");
+        assert_eq!(dict_get(&captures, "1"), "hello".into());
+        assert_eq!(dict_get(&captures, "word"), "hello".into());
+        assert_eq!(dict_get(&captures, "2"), "1".into());
+    }
+
+    #[test]
+    fn test_regex_replace_matches_byte_offsets_are_not_char_offsets() {
+        // "é" is 2 UTF-8 bytes, so the digit's byte offset differs from its char index (5).
+        let result = regex_replace_matches("héllo1", r"\d").unwrap();
+        let matches = as_array(&dict_get(&result, "matches"));
+        assert_eq!(dict_get(&matches[0], "start"), RuntimeValue::Number(6.into()));
+        assert_eq!(dict_get(&matches[0], "end"), RuntimeValue::Number(7.into()));
+    }
+
+    #[test]
+    fn test_regex_replace_matches_no_match_is_single_segment() {
+        let result = regex_replace_matches("no digits here", r"\d+").unwrap();
+        assert_eq!(as_array(&dict_get(&result, "matches")), vec![]);
+        assert_eq!(as_array(&dict_get(&result, "segments")), vec!["no digits here".into()]);
+    }
+
+    #[test]
+    fn test_regex_replace_matches_invalid_pattern() {
+        assert!(regex_replace_matches("text", "[invalid").is_err());
+    }
+
+    #[test]
+    fn test_regex_replace_matches_caps_match_count() {
+        let input = "a".repeat(MAX_REGEX_REPLACE_MATCHES + 1);
+        assert!(regex_replace_matches(&input, "a").is_err());
     }
 
     #[rstest]

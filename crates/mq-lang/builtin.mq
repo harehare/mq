@@ -179,6 +179,37 @@ end
 # Returns: bool
 def test(s, pattern): is_regex_match(s, pattern);
 
+# Replaces matches of `pattern` in `text`, calling `f` for each match instead of using a
+# fixed replacement string (unlike `gsub`). `f` receives a dict with `match` (the matched
+# text), `captures` (a dict of capture groups, keyed by number, e.g. `"1"`, and by name for
+# named groups) and the match's `start`/`end` UTF-8 byte offsets. `f` must return a string.
+#
+# Example:
+# ```
+# regex_replace("a1b2", "[0-9]", fn(m): "[" + m["match"] + "]";)
+# #=> a[1]b[2]
+# ```
+#
+# Returns: string
+def regex_replace(text, pattern, f):
+  let r = _regex_replace_matches(text, pattern)
+  | let matches = r["matches"]
+  | if (is_empty(matches)):
+      text
+    else:
+      do
+        let tails = slice(r["segments"], 1, len(r["segments"]))
+        | fold(zip(matches, tails), first(r["segments"]), fn(acc, pair):
+            let replacement = f(pair[0])
+            | if (is_string(replacement)):
+                acc + replacement + pair[1]
+              else:
+                error("regex_replace: callback must return a string")
+              ;
+          )
+      end
+end
+
 # Returns true if the string is empty or contains only Unicode whitespace.
 #
 # Example:
