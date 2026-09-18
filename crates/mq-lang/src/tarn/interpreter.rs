@@ -2541,27 +2541,13 @@ fn binop(
 
 #[inline(always)]
 fn cmp_op(op: BinaryOp, left: &RuntimeValue, right: &RuntimeValue) -> RuntimeValue {
-    macro_rules! ordered_comparison {
-        ($operator:tt) => {
-            match (left, right) {
-                (RuntimeValue::String(left), RuntimeValue::String(right)) => left $operator right,
-                (RuntimeValue::Symbol(left), RuntimeValue::Symbol(right)) => left $operator right,
-                (RuntimeValue::Number(left), RuntimeValue::Number(right)) => left $operator right,
-                (RuntimeValue::Boolean(left), RuntimeValue::Boolean(right)) => left $operator right,
-                (RuntimeValue::Bytes(left), RuntimeValue::Bytes(right)) => left $operator right,
-                (RuntimeValue::Markdown(left, _), RuntimeValue::Markdown(right, _)) => left $operator right,
-                _ => false,
-            }
-        };
-    }
-
     RuntimeValue::Boolean(match op {
         BinaryOp::Eq => left == right,
         BinaryOp::Ne => left != right,
-        BinaryOp::Lt => ordered_comparison!(<),
-        BinaryOp::Le => ordered_comparison!(<=),
-        BinaryOp::Gt => ordered_comparison!(>),
-        BinaryOp::Ge => ordered_comparison!(>=),
+        BinaryOp::Lt => left < right,
+        BinaryOp::Le => left <= right,
+        BinaryOp::Gt => left > right,
+        BinaryOp::Ge => left >= right,
         _ => false,
     })
 }

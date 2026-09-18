@@ -2501,13 +2501,7 @@ fn ne_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
 #[mq_macros::mq_fn(name = "gt", params = Fixed(2))]
 fn gt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 > s2).into()),
-        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 > s2).into()),
-        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 > n2).into()),
-        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 > b2).into()),
-        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 > b2).into()),
-        [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 > n2).into()),
-        [_, _] => Ok(RuntimeValue::FALSE),
+        [a, b] => Ok((a > b).into()),
         _ => unreachable!("gt should always receive exactly two arguments"),
     }
 }
@@ -2515,13 +2509,7 @@ fn gt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
 #[mq_macros::mq_fn(name = "gte", params = Fixed(2))]
 fn gte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 >= s2).into()),
-        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 >= s2).into()),
-        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 >= n2).into()),
-        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 >= b2).into()),
-        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 >= b2).into()),
-        [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 >= n2).into()),
-        [_, _] => Ok(RuntimeValue::FALSE),
+        [a, b] => Ok((a >= b).into()),
         _ => unreachable!("gte should always receive exactly two arguments"),
     }
 }
@@ -2529,13 +2517,7 @@ fn gte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Ru
 #[mq_macros::mq_fn(name = "lt", params = Fixed(2))]
 fn lt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 < s2).into()),
-        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 < s2).into()),
-        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 < n2).into()),
-        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 < b2).into()),
-        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 < b2).into()),
-        [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 < n2).into()),
-        [_, _] => Ok(RuntimeValue::FALSE),
+        [a, b] => Ok((a < b).into()),
         _ => unreachable!("lt should always receive exactly two arguments"),
     }
 }
@@ -2543,13 +2525,7 @@ fn lt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<Run
 #[mq_macros::mq_fn(name = "lte", params = Fixed(2))]
 fn lte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => Ok((s1 <= s2).into()),
-        [RuntimeValue::Symbol(s1), RuntimeValue::Symbol(s2)] => Ok((s1 <= s2).into()),
-        [RuntimeValue::Number(n1), RuntimeValue::Number(n2)] => Ok((n1 <= n2).into()),
-        [RuntimeValue::Boolean(b1), RuntimeValue::Boolean(b2)] => Ok((b1 <= b2).into()),
-        [RuntimeValue::Bytes(b1), RuntimeValue::Bytes(b2)] => Ok((b1 <= b2).into()),
-        [RuntimeValue::Markdown(n1, _), RuntimeValue::Markdown(n2, _)] => Ok((n1 <= n2).into()),
-        [_, _] => Ok(RuntimeValue::FALSE),
+        [a, b] => Ok((a <= b).into()),
         _ => unreachable!("lte should always receive exactly two arguments"),
     }
 }
