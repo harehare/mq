@@ -107,7 +107,7 @@ jobs:
         with:
           just-version: 1.58.0
       - name: Install cargo-deb
-        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-deb
       - name: Install musl-tools
@@ -151,7 +151,7 @@ jobs:
         with:
           just-version: 1.58.0
       - name: Install cargo-generate-rpm
-        uses: taiki-e/install-action@fa23953489c080190314742a9b907f8e97c6767c # v2.87.10
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-generate-rpm
       - name: Install musl-tools
