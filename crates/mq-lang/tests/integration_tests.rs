@@ -3011,6 +3011,9 @@ fn engine() -> DefaultEngine {
 #[case::to_hex_basic(r#"to_hex(b"\xde\xad")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("dead".to_string()))].into()))]
 #[case::from_hex_len(r#"from_hex("deadbeef") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(4.into())].into()))]
 #[case::hex_roundtrip(r#"to_hex(from_hex("deadbeef"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("deadbeef".to_string()))].into()))]
+// hexdump
+#[case::hexdump_basic(r#"hexdump(b"hi")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("00000000  68 69                                             |hi|".to_string()))].into()))]
+#[case::hexdump_none("hexdump(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 // utf8: bytes to string
 #[case::utf8_basic(r#"utf8(b"hello")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello".to_string()))].into()))]
 // bitwise byte operations
@@ -3018,6 +3021,14 @@ fn engine() -> DefaultEngine {
 #[case::band_bytes(r#"band(b"\xff", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0x0f]))].into()))]
 #[case::bor_bytes(r#"bor(b"\xf0", b"\x0f")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
 #[case::bnot_bytes(r#"bnot(b"\x00")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
+// byte-aware string functions
+#[case::split_bytes(r#"split(b"a,b,c", b",") | map(to_hex)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("61".to_string())), RuntimeValue::String(Shared::new("62".to_string())), RuntimeValue::String(Shared::new("63".to_string()))]))].into()))]
+#[case::split_bytes_no_match(r#"split(b"abc", b",") | map(to_hex)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("616263".to_string()))]))].into()))]
+#[case::replace_bytes(r#"to_hex(replace(b"hello", b"l", b"L"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("68654c4c6f".to_string()))].into()))]
+#[case::trim_bytes(r#"to_hex(trim(b"\x20\x09hi\x0a\x20"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("6869".to_string()))].into()))]
+#[case::ltrim_bytes(r#"to_hex(ltrim(b"\x20\x09hi\x0a"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("68690a".to_string()))].into()))]
+#[case::rtrim_bytes(r#"to_hex(rtrim(b"\x20\x09hi\x0a"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("20096869".to_string()))].into()))]
+#[case::join_bytes(r#"to_hex(join([b"ab", b"cd"], b"-"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("61622d6364".to_string()))].into()))]
 // pack / unpack
 #[case::pack_u8(r#"pack("u8", 255)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff]))].into()))]
 #[case::pack_unpack_roundtrip(r#"unpack("u8", pack("u8", 42))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(42.into())].into()))]
@@ -3703,6 +3714,8 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::from_hex_invalid("from_hex(\"xyz\")", vec![RuntimeValue::None],)]
 // to_hex with non-bytes
 #[case::to_hex_non_bytes("to_hex(\"string\")", vec![RuntimeValue::None],)]
+// hexdump with non-bytes
+#[case::hexdump_non_bytes("hexdump(\"string\")", vec![RuntimeValue::None],)]
 // base64d invalid input
 #[case::base64d_invalid(r#"base64d("not-valid-base64!!!")"#, vec![RuntimeValue::None],)]
 // to_bytes with out-of-range element

@@ -102,7 +102,7 @@ def is_bytes(b): type(b) == "bytes";
 # Returns: bool
 def is_coroutine(c): type(c) == "coroutine";
 
-# Checks if string contains a substring
+# Checks if a string, byte array, or dict contains a substring, byte subsequence, or key
 #
 # Example:
 # ```

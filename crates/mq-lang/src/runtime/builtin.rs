@@ -847,6 +847,16 @@ fn to_hex_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -
     }
 }
 
+#[mq_macros::mq_fn(name = "hexdump", params = Fixed(1))]
+fn hexdump_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Bytes(b)] => convert::hexdump(b),
+        [RuntimeValue::None] => Ok(RuntimeValue::NONE),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("hexdump should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "utf8", params = Fixed(1))]
 fn utf8_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -1486,6 +1496,33 @@ fn replace_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.value().replace(&**s1, &*s2).as_str())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [
+            RuntimeValue::Bytes(s1),
+            RuntimeValue::Bytes(s2),
+            RuntimeValue::Bytes(s3),
+        ] => {
+            let nlen = s2.len();
+
+            if nlen == 0 {
+                return Ok(RuntimeValue::Bytes(std::mem::take(s1)));
+            }
+
+            let mut out = Vec::new();
+            let mut i = 0;
+
+            while i + nlen <= s1.len() {
+                if s1[i..i + nlen] == s2.as_slice()[..] {
+                    out.extend_from_slice(s3);
+                    i += nlen;
+                } else {
+                    out.push(s1[i]);
+                    i += 1;
+                }
+            }
+
+            out.extend_from_slice(&s1[i..]);
+            Ok(RuntimeValue::Bytes(Shared::new(out)))
+        }
         [RuntimeValue::None, RuntimeValue::String(_), RuntimeValue::String(_)] => Ok(RuntimeValue::NONE),
         [a, b, c] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -1602,6 +1639,17 @@ fn trim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::Bytes(b)] => {
+            let start = b.iter().position(|c| !c.is_ascii_whitespace()).unwrap_or(b.len());
+            let end = b
+                .iter()
+                .rposition(|c| !c.is_ascii_whitespace())
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            Ok(RuntimeValue::Bytes(Shared::new(
+                b.get(start..end).unwrap_or(&[]).to_vec(),
+            )))
+        }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("trim should always receive exactly one argument"),
@@ -1616,6 +1664,10 @@ fn ltrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.to_string().trim_start())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::Bytes(b)] => {
+            let start = b.iter().position(|c| !c.is_ascii_whitespace()).unwrap_or(b.len());
+            Ok(RuntimeValue::Bytes(Shared::new(b[start..].to_vec())))
+        }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("ltrim should always receive exactly one argument"),
@@ -1630,6 +1682,14 @@ fn rtrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| Ok(node.update_markdown_value(md.to_string().trim_end())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::Bytes(b)] => {
+            let end = b
+                .iter()
+                .rposition(|c| !c.is_ascii_whitespace())
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            Ok(RuntimeValue::Bytes(Shared::new(b[..end].to_vec())))
+        }
         [RuntimeValue::None] => Ok(RuntimeValue::NONE),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("rtrim should always receive exactly one argument"),
@@ -2325,6 +2385,20 @@ fn del_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
 #[mq_macros::mq_fn(name = "join", params = Fixed(2))]
 fn join_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
+        [RuntimeValue::Array(array), RuntimeValue::Bytes(sep)]
+            if !array.is_empty() && array.iter().all(|v| matches!(v, RuntimeValue::Bytes(_))) =>
+        {
+            let mut out = Vec::new();
+            for (i, v) in array.iter().enumerate() {
+                if i > 0 {
+                    out.extend_from_slice(sep);
+                }
+                if let RuntimeValue::Bytes(b) = v {
+                    out.extend_from_slice(b);
+                }
+            }
+            Ok(RuntimeValue::Bytes(Shared::new(out)))
+        }
         [RuntimeValue::Array(array), RuntimeValue::String(s)] => Ok(array.iter().join(s).into()),
         [a, b] => Err(Error::InvalidTypes(
             ident.to_string(),
@@ -2437,6 +2511,32 @@ fn split_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             .markdown_node()
             .map(|md| split_re(md.value().as_str(), s))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [RuntimeValue::Bytes(haystack), RuntimeValue::Bytes(needle)] => {
+            let nlen = needle.len();
+
+            if nlen == 0 {
+                return Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::Bytes(
+                    std::mem::take(haystack),
+                )])));
+            }
+
+            let mut result = Vec::new();
+            let mut start = 0;
+            let mut i = 0;
+
+            while i + nlen <= haystack.len() {
+                if haystack[i..i + nlen] == needle.as_slice()[..] {
+                    result.push(RuntimeValue::Bytes(Shared::new(haystack[start..i].to_vec())));
+                    i += nlen;
+                    start = i;
+                } else {
+                    i += 1;
+                }
+            }
+
+            result.push(RuntimeValue::Bytes(Shared::new(haystack[start..].to_vec())));
+            Ok(RuntimeValue::Array(Shared::new(result)))
+        }
         [RuntimeValue::Array(array), v] => {
             if array.is_empty() {
                 return Ok(RuntimeValue::Array(Shared::new(vec![RuntimeValue::empty_array()])));
@@ -5542,6 +5642,7 @@ mq_macros::builtin_dispatch! {
     TO_BYTES,
     FROM_HEX,
     TO_HEX,
+    HEXDUMP,
     UTF8,
     DECODE,
     ENCODE,
@@ -7350,6 +7451,20 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
         },
     );
     map.insert(
+        SmolStr::new("hexdump"),
+        BuiltinFunctionDoc {
+            description: "Renders bytes as a hexdump (offset, hex bytes, ASCII gutter), like `xxd`/`hexdump -C`.",
+            params: &["bytes"],
+            param_types: &["bytes"],
+            returns: "string",
+            examples: &[BuiltinExample {
+                code: r#"hexdump(to_bytes("hi"))"#,
+                expected: r#"00000000  68 69                                             |hi|"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("utf8"),
         BuiltinFunctionDoc {
             description: "Decodes bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.",
@@ -7749,10 +7864,10 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
     map.insert(
         SmolStr::new("replace"),
         BuiltinFunctionDoc {
-            description: "Replaces all occurrences of a substring with another substring.",
+            description: "Replaces all occurrences of a substring or byte subsequence with another one.",
             params: &["from", "pattern", "to"],
-            param_types: &["string", "string", "string"],
-            returns: "string",
+            param_types: &["dynamic", "dynamic", "dynamic"],
+            returns: "dynamic",
             examples: &[BuiltinExample {
                 code: r#"replace("aXbXc", "X", "-")"#,
                 expected: r#"a-b-c"#,
@@ -7828,10 +7943,10 @@ world"# }],
     map.insert(
         SmolStr::new("trim"),
         BuiltinFunctionDoc {
-            description: "Trims whitespace from both ends of the given string.",
+            description: "Trims whitespace from both ends of the given string or byte array.",
             params: &["input"],
-            param_types: &["string"],
-            returns: "string",
+            param_types: &["dynamic"],
+            returns: "dynamic",
             examples: &[BuiltinExample {
                 code: r#"trim("  hi  ")"#,
                 expected: r#"hi"#,
@@ -7842,10 +7957,10 @@ world"# }],
     map.insert(
         SmolStr::new("ltrim"),
         BuiltinFunctionDoc {
-            description: "Trims whitespace from the left end of the given string.",
+            description: "Trims whitespace from the left end of the given string or byte array.",
             params: &["input"],
-            param_types: &["string"],
-            returns: "string",
+            param_types: &["dynamic"],
+            returns: "dynamic",
             examples: &[BuiltinExample {
                 code: r#"ltrim("  hi  ")"#,
                 expected: r#"hi  "#,
@@ -7856,10 +7971,10 @@ world"# }],
     map.insert(
         SmolStr::new("rtrim"),
         BuiltinFunctionDoc {
-            description: "Trims whitespace from the right end of the given string.",
+            description: "Trims whitespace from the right end of the given string or byte array.",
             params: &["input"],
-            param_types: &["string"],
-            returns: "string",
+            param_types: &["dynamic"],
+            returns: "dynamic",
             examples: &[BuiltinExample {
                 code: r#"rtrim("  hi  ")"#,
                 expected: r#"  hi"#,
@@ -8040,10 +8155,10 @@ world"# }],
     map.insert(
         SmolStr::new("join"),
         BuiltinFunctionDoc {
-            description: "Joins the elements of an array into a string with the given separator.",
+            description: "Joins the elements of an array into a string with the given separator. An array of byte arrays with a byte array separator is joined into a byte array instead.",
             params: &["array", "separator"],
-            param_types: &["array", "string"],
-            returns: "string",
+            param_types: &["array", "dynamic"],
+            returns: "dynamic",
             examples: &[BuiltinExample {
                 code: r#"join([1, 2, 3], ",")"#,
                 expected: r#"1,2,3"#,
@@ -8107,9 +8222,9 @@ world"# }],
     map.insert(
         SmolStr::new("split"),
         BuiltinFunctionDoc {
-            description: "Splits the given string by the specified separator.",
-            params: &["string", "separator"],
-            param_types: &["string", "string"],
+            description: "Splits the given string (as a regular expression) or byte array (literal separator) by the specified separator.",
+            params: &["value", "separator"],
+            param_types: &["dynamic", "dynamic"],
             returns: "array",
             examples: &[BuiltinExample {
                 code: r#"split("a,b,c", ",")"#,
@@ -12856,6 +12971,34 @@ mod tests {
         .unwrap();
         let roundtripped = eval_builtin(&RuntimeValue::None, &Ident::new("from_hex"), vec![hex].into(), &env).unwrap();
         assert_eq!(roundtripped, RuntimeValue::Bytes(original.into()));
+    }
+
+    #[rstest]
+    #[case::empty(vec![], Ok(RuntimeValue::String(Shared::new("00000000".to_string()))))]
+    #[case::short(
+        b"hi".to_vec(),
+        Ok(RuntimeValue::String(Shared::new("00000000  68 69                                             |hi|".to_string())))
+    )]
+    fn test_hexdump(#[case] input: Vec<u8>, #[case] expected: Result<RuntimeValue, Error>) {
+        let ident = Ident::new("hexdump");
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &ident,
+            vec![RuntimeValue::Bytes(input.into())].into(),
+            &VmEnv::default(),
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_hexdump_none() {
+        let result = eval_builtin(
+            &RuntimeValue::None,
+            &Ident::new("hexdump"),
+            vec![RuntimeValue::None].into(),
+            &VmEnv::default(),
+        );
+        assert_eq!(result, Ok(RuntimeValue::NONE));
     }
 
     #[rstest]
