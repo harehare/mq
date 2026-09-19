@@ -627,6 +627,16 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::Number,
         Type::array(Type::Number),
     );
+    // range: (string, string) -> [string], (string, string, number) -> [string]
+    register_binary(ctx, "range", Type::String, Type::String, Type::array(Type::String));
+    register_ternary(
+        ctx,
+        "range",
+        Type::String,
+        Type::String,
+        Type::Number,
+        Type::array(Type::String),
+    );
 
     // .. : (number, number) -> [number]  — binary infix range operator
     register_binary(ctx, "..", Type::Number, Type::Number, Type::array(Type::Number));
@@ -2242,7 +2252,7 @@ mod tests {
     #[case::values_number("values(42)", false)] // expects dict
     #[case::values_string("values(\"hello\")", false)] // expects dict
     #[case::entries_string("entries(\"hello\")", false)] // expects dict
-    #[case::range_string("range(\"a\", 5)", false)] // expects number
+    #[case::range_string("range(\"a\", true)", false)] // expects number or string
     #[case::repeat_bool("repeat(\"x\", true)", false)] // second arg must be number
     fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
