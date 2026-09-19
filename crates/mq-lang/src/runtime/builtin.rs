@@ -25,6 +25,8 @@ use crate::io::HttpRequestSpec;
 use crate::io::{FileKind, Io};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
+#[cfg(feature = "file-io")]
+use crate::runtime::file_handle::FileHandle;
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 use crate::tarn::interpreter::coroutine;
@@ -259,6 +261,11 @@ fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Res
                 Err(Error::Runtime(format!("{ident}: cannot close a running coroutine")))
             }
         }
+        #[cfg(feature = "file-io")]
+        [RuntimeValue::FileHandle(handle)] => {
+            handle.close();
+            Ok(RuntimeValue::FileHandle(Shared::clone(handle)))
+        }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
         _ => unreachable!("close should always receive exactly one argument"),
     }
@@ -268,6 +275,12 @@ fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Res
 fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [RuntimeValue::Coroutine(handle)] => Ok(RuntimeValue::Symbol(Ident::new(coroutine::status_name(handle)))),
+        #[cfg(feature = "file-io")]
+        [RuntimeValue::FileHandle(handle)] => Ok(RuntimeValue::Symbol(Ident::new(if handle.is_open() {
+            "open"
+        } else {
+            "closed"
+        }))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
         _ => unreachable!("status should always receive exactly one argument"),
     }
@@ -4757,6 +4770,67 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     }
 }
 
+/// Opens `path` for incremental reading and returns a file handle. Requires the ambient
+/// [`Io`]'s read permission (see [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "open_file", params = Fixed(1))]
+fn open_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => io_context::current()
+            .open_read(std::path::Path::new(path.as_str()))
+            .map(|reader| RuntimeValue::FileHandle(Shared::new(FileHandle::new(path.to_string(), reader))))
+            .map_err(|e| Error::Runtime(format!("Failed to open file {}: {}", path, e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("open_file should always receive exactly one argument"),
+    }
+}
+
+/// Reads the next line from a file handle without its terminator, or `None` at end of file.
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "read_line", params = Fixed(1))]
+fn read_line_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::FileHandle(handle)] => handle
+            .read_line()
+            .map(|line| {
+                line.map(|l| RuntimeValue::String(l.into()))
+                    .unwrap_or(RuntimeValue::NONE)
+            })
+            .map_err(|e| Error::Runtime(format!("Failed to read {}: {}", handle.path(), e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("read_line should always receive exactly one argument"),
+    }
+}
+
+/// Reads up to `size` bytes from a file handle, or `None` at end of file.
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "read_bytes", params = Fixed(2))]
+fn read_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::FileHandle(handle), RuntimeValue::Number(size)] => {
+            if !size.is_int() || size.value() < 1.0 {
+                return Err(Error::Runtime(format!(
+                    "{ident}: size must be a positive integer, got {}",
+                    size.value()
+                )));
+            }
+            handle
+                .read_bytes(size.value() as usize)
+                .map(|bytes| {
+                    bytes
+                        .map(|b| RuntimeValue::Bytes(b.into()))
+                        .unwrap_or(RuntimeValue::NONE)
+                })
+                .map_err(|e| Error::Runtime(format!("Failed to read {}: {}", handle.path(), e)))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("read_bytes should always receive exactly two arguments"),
+    }
+}
+
 /// Writes `content` (string or bytes) to `path`, creating or truncating the file.
 /// Requires the ambient [`Io`]'s write permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
@@ -5715,6 +5789,12 @@ mq_macros::builtin_dispatch! {
     FILE_INFO,
     #[cfg(feature = "file-io")]
     READ_FILE_BYTES,
+    #[cfg(feature = "file-io")]
+    OPEN_FILE,
+    #[cfg(feature = "file-io")]
+    READ_LINE,
+    #[cfg(feature = "file-io")]
+    READ_BYTES,
     #[cfg(feature = "file-io")]
     COLLECTION,
     #[cfg(feature = "file-io")]
@@ -9076,6 +9156,42 @@ x
             description: "Reads the contents of a file at the given path and returns it as raw bytes. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
             params: &["path"],
             param_types: &["string"],
+            returns: "bytes",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("open_file"),
+        BuiltinFunctionDoc {
+            description: "Opens the file at the given path for incremental reading and returns a file handle. Read from it with `read_line` or `read_bytes`. The file is closed by `close(handle)`, or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["path"],
+            param_types: &["string"],
+            returns: "file",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("read_line"),
+        BuiltinFunctionDoc {
+            description: "Reads the next line from a file handle without its `\\n`/`\\r\\n` terminator, or returns `None` at end of file. Errors if the handle is closed or the line is not valid UTF-8.",
+            params: &["handle"],
+            param_types: &["file"],
+            returns: "string",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
+        SmolStr::new("read_bytes"),
+        BuiltinFunctionDoc {
+            description: "Reads up to `size` bytes from a file handle (fewer only at end of file), or returns `None` at end of file. `size` must be a positive integer. Errors if the handle is closed.",
+            params: &["handle", "size"],
+            param_types: &["file", "number"],
             returns: "bytes",
             examples: &[],
             capability: Some("file-io"),
@@ -14223,6 +14339,70 @@ mod tests {
             RuntimeValue::Number(n) => assert!((n.value() - value).abs() < 1e-5),
             _ => panic!("expected Number"),
         }
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
+    fn test_open_file_capability_gate_and_incremental_reads() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        tmp.write_all(b"one\r\ntwo\nthree").expect("failed to write");
+        let path = RuntimeValue::String(Shared::new(tmp.path().to_string_lossy().to_string()));
+        let string = |s: &str| RuntimeValue::String(Shared::new(s.to_string()));
+
+        assert!(
+            call("open_file", vec![path.clone()]).is_err(),
+            "open_file should be blocked when read access is not allowed"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+        let handle = call("open_file", vec![path.clone()]).expect("open_file should succeed");
+        assert_eq!(call("type", vec![handle.clone()]), Ok(string("file")));
+
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("one")));
+        assert_eq!(
+            call("read_bytes", vec![handle.clone(), RuntimeValue::Number(2.into())]),
+            Ok(RuntimeValue::Bytes(Shared::new(b"tw".to_vec())))
+        );
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("o")));
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("three")));
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(RuntimeValue::NONE));
+        assert_eq!(
+            call("read_bytes", vec![handle.clone(), RuntimeValue::Number(1.into())]),
+            Ok(RuntimeValue::NONE)
+        );
+
+        assert_eq!(
+            call("status", vec![handle.clone()]),
+            Ok(RuntimeValue::Symbol(Ident::new("open")))
+        );
+        assert_eq!(call("close", vec![handle.clone()]), Ok(handle.clone()));
+        assert_eq!(
+            call("status", vec![handle.clone()]),
+            Ok(RuntimeValue::Symbol(Ident::new("closed")))
+        );
+        assert!(call("read_line", vec![handle.clone()]).is_err());
+
+        let open = call("open_file", vec![path.clone()]).unwrap();
+        for size in [0.0, -1.0, 1.5] {
+            assert!(
+                call("read_bytes", vec![open.clone(), RuntimeValue::Number(size.into())]).is_err(),
+                "read_bytes should reject size {size}"
+            );
+        }
+        assert!(call("read_line", vec![path.clone()]).is_err());
+        assert!(call("open_file", vec![RuntimeValue::Number(42.into())]).is_err());
+        assert!(
+            call(
+                "open_file",
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_file.txt".into()
+                ))]
+            )
+            .is_err(),
+            "open_file should error for a nonexistent file"
+        );
     }
 
     #[cfg(feature = "file-io")]

@@ -1,6 +1,6 @@
 #[cfg(feature = "http")]
 use super::HttpRequestSpec;
-use super::{FileKind, FileMetadata, Io, IoError};
+use super::{FileKind, FileMetadata, Io, IoError, IoReader};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -56,6 +56,11 @@ impl Io for NativeIo {
 
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError> {
         std::fs::read(path).map_err(|e| io_err(e, path))
+    }
+
+    fn open_read(&self, path: &Path) -> Result<Box<dyn IoReader>, IoError> {
+        let file = std::fs::File::open(path).map_err(|e| io_err(e, path))?;
+        Ok(Box::new(std::io::BufReader::new(file)))
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
