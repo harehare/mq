@@ -1699,6 +1699,48 @@ end
 # Returns: array
 def load_markdown(path): read_file(path) | to_markdown();
 
+# Lazily yields each line of the file at `path` without its line terminator.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Example:
+# ```
+# stream_lines("app.log") | filter(fn(line): contains(line, "ERROR");) | take(10) | collect()
+# ```
+#
+# Returns: dynamic
+def stream_lines(path): _stream_lines(open_file(path));
+
+def _stream_lines(f):
+  var line = read_line(f)
+  | while (!is_none(line)):
+      yield: line
+      | line = read_line(f)
+    end
+end
+
+# Lazily yields the file at `path` as chunks of up to `size` bytes.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Returns: dynamic
+def stream_chunks(path, size): _stream_chunks(open_file(path), size);
+
+def _stream_chunks(f, size):
+  var chunk = read_bytes(f, size)
+  | while (!is_none(chunk)):
+      yield: chunk
+      | chunk = read_bytes(f, size)
+    end
+end
+
+# Lazily yields each byte of the file at `path` as a number from 0 to 255.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Returns: dynamic
+def stream_bytes(path): flat_map(stream_chunks(path, 8192), fn(chunk): to_array(chunk););
+
 # Performs an HTTPS GET request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
 #
