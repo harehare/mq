@@ -124,6 +124,42 @@ Closing an already-`completed`/`failed` coroutine is a no-op; closing a `failed`
 hide its error (`next()` still re-raises it). Closing a `running` coroutine is a runtime error,
 same as reentrant `next()`.
 
+## Reading files lazily
+
+With the `file-io` feature and read permission (`--allow-read`), a file can be read incrementally
+instead of all at once. These generators open the file immediately, so a missing file or a
+permission error is raised at the call, not at the first `next()`:
+
+- `stream_lines(path)` yields each line without its `\n`/`\r\n` terminator.
+- `stream_chunks(path, size)` yields `bytes` chunks of up to `size` bytes.
+- `stream_bytes(path)` yields each byte as a number from 0 to 255.
+
+```mq
+stream_lines("app.log")
+| filter(contains("ERROR"))
+| take(10)
+| collect()
+```
+
+### File handles and closing
+
+The generators are built on a file handle. `open_file(path)` returns one, `read_line(handle)` and
+`read_bytes(handle, size)` read from it and return `None` at end of file, and `close(handle)`
+closes it (`status(handle)` is `:open` or `:closed`). Reading from a closed handle is a runtime
+error. `size` must be a positive integer.
+
+```mq
+let f = open_file("data.txt")
+| let first = read_line(f)
+| close(f)
+```
+
+The file is closed when a coroutine holding it finishes or is closed with `close(stream)`, and
+when the last reference to it is dropped. There is no `finally`, so this relies on the handle
+being released rather than on code in the generator body. Stopping early with `take`, `first`,
+`any` and similar does not close the source stream, since it may still be advanced afterwards.
+Call `close(stream)` when you are done with it.
+
 ## Rules
 
 - `next(stream)`/`send(stream, value)` (or piped as `stream | next()`/`stream | send(value)`)

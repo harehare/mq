@@ -1,8 +1,11 @@
-use super::{FileKind, FileMetadata, Io, IoError};
+use super::{FileKind, FileMetadata, Io, IoError, IoReader};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 /// In-memory [`Io`] — file writes, environment variables, and fetch/HTTP responses all
 /// live in-process instead of touching the real filesystem/network. Useful both for unit
@@ -22,6 +25,35 @@ pub struct MemIo {
     command_responses: Mutex<HashMap<String, String>>,
     home: Option<PathBuf>,
     cwd: Option<PathBuf>,
+    open_readers: Arc<AtomicUsize>,
+}
+
+/// Reader over a snapshot of a file that counts itself in [`MemIo::open_readers`] until dropped.
+struct TrackedReader {
+    inner: std::io::Cursor<Vec<u8>>,
+    open_readers: Arc<AtomicUsize>,
+}
+
+impl std::io::Read for TrackedReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf)
+    }
+}
+
+impl std::io::BufRead for TrackedReader {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        self.inner.fill_buf()
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.inner.consume(amt)
+    }
+}
+
+impl Drop for TrackedReader {
+    fn drop(&mut self) {
+        self.open_readers.fetch_sub(1, Ordering::SeqCst);
+    }
 }
 
 /// Key `execute`/`with_command_response` use to look up a mocked command's output:
@@ -34,6 +66,11 @@ fn command_key(command: &str, args: &[String]) -> String {
 }
 
 impl MemIo {
+    /// Number of readers from [`Io::open_read`] that have not been dropped yet.
+    pub fn open_readers(&self) -> usize {
+        self.open_readers.load(Ordering::SeqCst)
+    }
+
     pub fn with_file(self, path: impl Into<PathBuf>, content: impl Into<Vec<u8>>) -> Self {
         self.files.lock().unwrap().insert(path.into(), content.into());
         self
@@ -83,6 +120,15 @@ impl Io for MemIo {
             .get(path)
             .cloned()
             .ok_or_else(|| IoError::NotFound(Cow::Owned(path.display().to_string())))
+    }
+
+    fn open_read(&self, path: &Path) -> Result<Box<dyn IoReader>, IoError> {
+        let inner = std::io::Cursor::new(self.read_bytes(path)?);
+        self.open_readers.fetch_add(1, Ordering::SeqCst);
+        Ok(Box::new(TrackedReader {
+            inner,
+            open_readers: Arc::clone(&self.open_readers),
+        }))
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
