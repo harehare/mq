@@ -86,3 +86,42 @@ Only the specified keys are overridden; unspecified keys use the default colors.
 | `35` | Magenta   |
 | `36` | Cyan      |
 | `37` | White     |
+
+## REPL Configuration
+
+### `MQ_REPL_OUTPUT_LIMIT`
+
+Sets how many lines of a result the REPL prints at once. Longer results are cut off with a hint, and the rest can be shown with the `/more` and `/all` commands. The default is `50`.
+
+| Value                           | Behavior                         |
+| ------------------------------- | -------------------------------- |
+| unset                           | Print 50 lines at a time         |
+| a positive integer (e.g. `100`) | Print that many lines at a time  |
+| `0`                             | Never truncate, print everything |
+| anything else                   | Fall back to the default (`50`)  |
+
+```sh
+# Print 20 lines at a time
+MQ_REPL_OUTPUT_LIMIT=20 mq repl README.md
+```
+
+```
+❯ .code
+...
+... 73 more lines (/more: next 20, /all: show all)
+❯ /more
+...
+❯ /all
+...
+```
+
+The variable is read on every evaluation, so it can also be changed inside the REPL with `/env`:
+
+```
+❯ /env MQ_REPL_OUTPUT_LIMIT 100
+```
+
+| Command | Description                                                  |
+| ------- | ------------------------------------------------------------ |
+| `/more` | Show the next page of truncated output                       |
+| `/all`  | Show all remaining truncated output, regardless of the limit |

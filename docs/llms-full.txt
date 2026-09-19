@@ -657,6 +657,12 @@ mq -C '.h' README.md
 
 Available color keys: `heading`, `code`, `code_inline`, `emphasis`, `strong`, `link`, `link_url`, `image`, `blockquote`, `delete`, `hr`, `html`, `frontmatter`, `list`, `table`, `math`
 
+REPL output limit (lines printed at once, default 50, `0` disables truncation). Show the rest of truncated output with `/more` (next page) or `/all`:
+
+```sh
+MQ_REPL_OUTPUT_LIMIT=20 mq repl README.md
+```
+
 ---
 
 # Example Queries

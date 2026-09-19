@@ -10,7 +10,7 @@ use rustyline::{
     hint::Hinter,
     validate::{ValidationContext, ValidationResult, Validator},
 };
-use std::{borrow::Cow, cell::RefCell, fs, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, collections::VecDeque, fs, rc::Rc};
 
 /// Highlight mq syntax with keywords and commands.
 ///
@@ -22,7 +22,7 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     // (start, end, priority, colored_replacement) — lower priority number wins
     let mut matches: Vec<(usize, usize, u8, String)> = Vec::new();
 
-    let commands_pattern = r"^(/clear|/copy|/edit|/env|/help|/history|/quit|/load|/reset|/vars|/version)\b";
+    let commands_pattern = r"^(/all|/clear|/copy|/edit|/env|/help|/history|/more|/quit|/load|/reset|/vars|/version)\b";
     if let Ok(re) = regex::Regex::new(commands_pattern) {
         for m in re.find_iter(line) {
             matches.push((m.start(), m.end(), 0, m.as_str().bright_green().to_string()));
@@ -85,16 +85,30 @@ fn highlight_mq_syntax(line: &str) -> Cow<'_, str> {
     Cow::Owned(result)
 }
 
+/// Applies `paint` to each line separately so color codes never span a page break.
+fn paint_lines(s: &str, paint: impl Fn(&str) -> ColoredString) -> String {
+    s.split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                paint(line).to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Format a markdown node with type-specific colors.
 fn format_markdown_node(node: &mq_markdown::Node) -> String {
     let s = node.to_string();
     match node {
-        mq_markdown::Node::Heading(_) => s.bold().bright_cyan().to_string(),
-        mq_markdown::Node::Code(_) => s.bright_yellow().to_string(),
-        mq_markdown::Node::CodeInline(_) => s.yellow().to_string(),
-        mq_markdown::Node::Link(_) | mq_markdown::Node::LinkRef(_) => s.bright_blue().to_string(),
-        mq_markdown::Node::Strong(_) => s.bold().to_string(),
-        mq_markdown::Node::Emphasis(_) => s.italic().to_string(),
+        mq_markdown::Node::Heading(_) => paint_lines(&s, |l| l.bold().bright_cyan()),
+        mq_markdown::Node::Code(_) => paint_lines(&s, |l| l.bright_yellow()),
+        mq_markdown::Node::CodeInline(_) => paint_lines(&s, |l| l.yellow()),
+        mq_markdown::Node::Link(_) | mq_markdown::Node::LinkRef(_) => paint_lines(&s, |l| l.bright_blue()),
+        mq_markdown::Node::Strong(_) => paint_lines(&s, |l| l.bold()),
+        mq_markdown::Node::Emphasis(_) => paint_lines(&s, |l| l.italic()),
         _ => s,
     }
 }
@@ -145,7 +159,7 @@ fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
         _ if value.is_empty() => return None,
         RuntimeValue::Number(n) => n.to_string().bright_magenta().to_string(),
         RuntimeValue::Boolean(b) => b.to_string().bright_yellow().to_string(),
-        RuntimeValue::String(s) => format!("\"{}\"", s).bright_green().to_string(),
+        RuntimeValue::String(s) => paint_lines(&format!("\"{}\"", s), |l| l.bright_green()),
         RuntimeValue::Markdown(node, _) => format_markdown_node(node),
         _ => {
             let s = display_value_to_string(value);
@@ -156,6 +170,66 @@ fn format_runtime_value(value: &mq_lang::RuntimeValue) -> Option<String> {
         }
     };
     Some(s)
+}
+
+/// Environment variable that sets how many output lines are printed at once.
+/// `0` disables truncation.
+const OUTPUT_LIMIT_ENV: &str = "MQ_REPL_OUTPUT_LIMIT";
+
+/// Default number of output lines printed at once. The rest is kept for `/more` and `/all`.
+const PAGE_LINES: usize = 50;
+
+/// Parses the output limit, falling back to [`PAGE_LINES`] when unset or invalid.
+fn parse_output_limit(value: Option<&str>) -> usize {
+    match value.and_then(|v| v.trim().parse::<usize>().ok()) {
+        Some(0) => usize::MAX,
+        Some(limit) => limit,
+        None => PAGE_LINES,
+    }
+}
+
+/// Reads the output limit on every call so `/env` changes take effect immediately.
+fn output_limit() -> usize {
+    parse_output_limit(std::env::var(OUTPUT_LIMIT_ENV).ok().as_deref())
+}
+
+/// Holds output lines that have not been printed yet.
+#[derive(Debug, Default)]
+struct Pager {
+    pending: VecDeque<String>,
+}
+
+impl Pager {
+    /// Replaces the pending lines with `text` and returns the first `limit` lines.
+    fn start(&mut self, text: &str, limit: usize) -> Vec<String> {
+        self.pending = if text.is_empty() {
+            VecDeque::new()
+        } else {
+            text.split('\n').map(String::from).collect()
+        };
+        self.take(limit)
+    }
+
+    /// Takes up to `limit` pending lines, followed by a hint when more remain.
+    fn take(&mut self, limit: usize) -> Vec<String> {
+        let mut page: Vec<String> = self.pending.drain(..limit.min(self.pending.len())).collect();
+        if !self.pending.is_empty() {
+            page.push(
+                format!(
+                    "... {} more lines (/more: next {}, /all: show all)",
+                    self.pending.len(),
+                    limit
+                )
+                .dimmed()
+                .to_string(),
+            );
+        }
+        page
+    }
+
+    fn is_empty(&self) -> bool {
+        self.pending.is_empty()
+    }
 }
 
 /// Get the appropriate prompt symbol based on character availability
@@ -451,6 +525,8 @@ impl Repl {
 
         Self::print_welcome();
 
+        let mut pager = Pager::default();
+
         loop {
             let prompt = format!("{}", get_prompt().cyan());
             let readline = editor.readline(&prompt);
@@ -466,11 +542,21 @@ impl Repl {
                             }
                         }
                         Ok(CommandOutput::Value(runtime_values)) => {
-                            let lines: Vec<String> = runtime_values.iter().filter_map(format_runtime_value).collect();
-                            if !lines.is_empty() {
-                                println!("{}", lines.join("\n"))
+                            let text = runtime_values
+                                .iter()
+                                .filter_map(format_runtime_value)
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            let page = pager.start(&text, output_limit());
+                            if !page.is_empty() {
+                                println!("{}", page.join("\n"))
                             }
                         }
+                        Ok(CommandOutput::More) | Ok(CommandOutput::All) if pager.is_empty() => {
+                            println!("{}", "No more output.".dimmed());
+                        }
+                        Ok(CommandOutput::More) => println!("{}", pager.take(output_limit()).join("\n")),
+                        Ok(CommandOutput::All) => println!("{}", pager.take(usize::MAX).join("\n")),
                         Ok(CommandOutput::History) => {
                             let entries: Vec<String> = editor
                                 .history()
@@ -515,6 +601,7 @@ impl Repl {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_config_dir() {
@@ -622,6 +709,104 @@ mod tests {
         )])));
 
         assert!(format_runtime_value(&v).unwrap().contains("\"value\": None"));
+    }
+
+    #[test]
+    fn test_pager_short_output_has_no_hint() {
+        let mut pager = Pager::default();
+        let text = (0..PAGE_LINES).map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
+
+        let page = pager.start(&text, PAGE_LINES);
+
+        assert_eq!(page.len(), PAGE_LINES);
+        assert!(pager.is_empty());
+    }
+
+    #[test]
+    fn test_pager_empty_output_prints_nothing() {
+        let mut pager = Pager::default();
+
+        assert!(pager.start("", PAGE_LINES).is_empty());
+        assert!(pager.is_empty());
+    }
+
+    #[test]
+    fn test_pager_long_output_is_truncated_with_hint() {
+        let mut pager = Pager::default();
+        let text = (0..PAGE_LINES + 20)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let page = pager.start(&text, PAGE_LINES);
+
+        assert_eq!(page.len(), PAGE_LINES + 1);
+        assert_eq!(page[0], "0");
+        assert!(page[PAGE_LINES].contains("20 more lines"));
+        assert!(!pager.is_empty());
+    }
+
+    #[test]
+    fn test_pager_take_continues_where_it_left_off() {
+        let mut pager = Pager::default();
+        let text = (0..PAGE_LINES * 2 + 5)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        pager.start(&text, PAGE_LINES);
+        let second = pager.take(PAGE_LINES);
+        assert_eq!(second[0], PAGE_LINES.to_string());
+        assert!(second[PAGE_LINES].contains("5 more lines"));
+
+        let rest = pager.take(usize::MAX);
+        assert_eq!(rest.len(), 5);
+        assert!(pager.is_empty());
+    }
+
+    #[test]
+    fn test_pager_start_discards_previous_pending_lines() {
+        let mut pager = Pager::default();
+        let text = (0..PAGE_LINES * 2)
+            .map(|i| i.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        pager.start(&text, PAGE_LINES);
+        pager.start("short", PAGE_LINES);
+
+        assert!(pager.is_empty());
+    }
+
+    #[test]
+    fn test_pager_hint_reports_configured_limit() {
+        let mut pager = Pager::default();
+        let text = (0..10).map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
+
+        let page = pager.start(&text, 3);
+
+        assert_eq!(page.len(), 4);
+        assert!(page[3].contains("7 more lines"));
+        assert!(page[3].contains("next 3"));
+    }
+
+    #[rstest]
+    #[case::unset(None, PAGE_LINES)]
+    #[case::custom(Some("10"), 10)]
+    #[case::padded(Some(" 10 "), 10)]
+    #[case::zero_disables_truncation(Some("0"), usize::MAX)]
+    #[case::not_a_number(Some("abc"), PAGE_LINES)]
+    #[case::negative(Some("-1"), PAGE_LINES)]
+    #[case::empty(Some(""), PAGE_LINES)]
+    fn test_parse_output_limit(#[case] value: Option<&str>, #[case] expected: usize) {
+        assert_eq!(parse_output_limit(value), expected);
+    }
+
+    #[test]
+    fn test_paint_lines_keeps_line_structure() {
+        let painted = paint_lines("a\n\nb", |l| l.bold());
+
+        assert_eq!(painted.split('\n').count(), 3);
     }
 
     #[test]

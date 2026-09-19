@@ -19,11 +19,16 @@ pub enum CommandOutput {
     Value(Vec<mq_lang::RuntimeValue>),
     String(Vec<String>),
     History,
+    /// Show the next page of truncated output.
+    More,
+    /// Show all remaining truncated output.
+    All,
     None,
 }
 
 #[derive(Debug, Clone, strum::EnumIter)]
 pub enum Command {
+    All,
     Clear,
     Copy,
     Edit,
@@ -32,6 +37,7 @@ pub enum Command {
     Help,
     History,
     LoadFile(Vec<String>),
+    More,
     NotFound(String),
     Quit,
     Reset,
@@ -53,6 +59,7 @@ const KEYWORDS: &[&str; 28] = &[
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Command::All => write!(f, "/all"),
             Command::Clear => write!(f, "/clear"),
             Command::Copy => write!(f, "/copy"),
             Command::Edit => write!(f, "/edit"),
@@ -61,6 +68,7 @@ impl fmt::Display for Command {
             Command::History => write!(f, "/history"),
             Command::Quit => write!(f, "/quit"),
             Command::LoadFile(_) => write!(f, "/load"),
+            Command::More => write!(f, "/more"),
             Command::SaveFile(_) => write!(f, "/save"),
             Command::Reset => write!(f, "/reset"),
             Command::Vars => write!(f, "/vars"),
@@ -74,6 +82,7 @@ impl fmt::Display for Command {
 impl Command {
     pub fn help(&self) -> String {
         match self {
+            Command::All => format!("{:<12}{}", "/all", "Show all remaining truncated output"),
             Command::Clear => format!("{:<12}{}", "/clear", "Clear the terminal screen"),
             Command::Copy => format!("{:<12}{}", "/copy", "Copy the execution results to the clipboard"),
             Command::Edit => format!("{:<12}{}", "/edit", "Edit the current buffer in external editor"),
@@ -87,6 +96,7 @@ impl Command {
                     "/load", "Load one or more markdown files (supports globs, e.g. /load *.md)"
                 )
             }
+            Command::More => format!("{:<12}{}", "/more", "Show the next page of truncated output"),
             Command::SaveFile(_) => format!("{:<12}{}", "/save", "Save a current result to a file"),
             Command::Reset => format!("{:<12}{}", "/reset", "Reset REPL state (clear variables and input)"),
             Command::Vars => format!("{:<12}{}", "/vars", "List bound variables"),
@@ -100,12 +110,14 @@ impl Command {
 impl From<String> for Command {
     fn from(s: String) -> Self {
         match s.as_str().split_whitespace().collect::<Vec<&str>>().as_slice() {
+            ["/all"] => Command::All,
             ["/clear"] => Command::Clear,
             ["/copy"] => Command::Copy,
             ["/edit"] => Command::Edit,
             ["/env", name, value] => Command::Env(name.to_string(), value.to_string()),
             ["/help"] => Command::Help,
             ["/history"] => Command::History,
+            ["/more"] => Command::More,
             ["/quit"] => Command::Quit,
             ["/load", first, rest @ ..] => {
                 Command::LoadFile(std::iter::once(first).chain(rest).map(|s| s.to_string()).collect())
@@ -395,6 +407,8 @@ impl CommandContext {
                 Ok(CommandOutput::None)
             }
             Command::History => Ok(CommandOutput::History),
+            Command::More => Ok(CommandOutput::More),
+            Command::All => Ok(CommandOutput::All),
             Command::Reset => {
                 let mut hir = mq_hir::Hir::default();
                 let (source_id, scope_id) = hir.add_new_source(None);
@@ -631,6 +645,8 @@ mod tests {
 
     #[test]
     fn test_command_from_string() {
+        assert!(matches!(Command::from("/all".to_string()), Command::All));
+        assert!(matches!(Command::from("/more".to_string()), Command::More));
         assert!(matches!(Command::from("/clear".to_string()), Command::Clear));
         assert!(matches!(Command::from("/copy".to_string()), Command::Copy));
         assert!(matches!(Command::from("/edit".to_string()), Command::Edit));
@@ -669,6 +685,8 @@ mod tests {
 
     #[test]
     fn test_command_display() {
+        assert_eq!(format!("{}", Command::All), "/all");
+        assert_eq!(format!("{}", Command::More), "/more");
         assert_eq!(format!("{}", Command::Clear), "/clear");
         assert_eq!(format!("{}", Command::Copy), "/copy");
         assert_eq!(format!("{}", Command::Edit), "/edit");
@@ -693,6 +711,8 @@ mod tests {
             assert!(!help.is_empty());
 
             match cmd {
+                Command::All => assert!(help.contains("/all")),
+                Command::More => assert!(help.contains("/more")),
                 Command::Clear => assert!(help.contains("/clear")),
                 Command::Copy => assert!(help.contains("/copy")),
                 Command::Edit => assert!(help.contains("/edit")),
