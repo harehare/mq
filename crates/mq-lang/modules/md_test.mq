@@ -38,6 +38,45 @@ def test_md_delete():
   | assert_eq(result, "~~gone~~")
 end
 
+def test_md_h1_to_h6():
+  assert_eq(to_string(md::h1("T")), "# T")
+  | assert_eq(to_string(md::h2("T")), "## T")
+  | assert_eq(to_string(md::h3("T")), "### T")
+  | assert_eq(to_string(md::h4("T")), "#### T")
+  | assert_eq(to_string(md::h5("T")), "##### T")
+  | assert_eq(to_string(md::h6("T")), "###### T")
+end
+
+def test_md_highlight():
+  assert_eq(to_string(md::highlight("key")), "==key==")
+end
+
+def test_md_comment():
+  assert_eq(to_string(md::comment("todo")), "<!-- todo -->")
+end
+
+def test_md_wikilink():
+  assert_eq(to_string(md::wikilink("Page")), "[[Page]]")
+  | assert_eq(to_string(md::wikilink("Page", "alias")), "[[Page|alias]]")
+  | assert_eq(to_md_name(md::wikilink("Page")), "wikilink")
+end
+
+def test_md_embed():
+  assert_eq(to_string(md::embed("a.png")), "![[a.png]]")
+  | assert_eq(to_string(md::embed("a.png", "cap")), "![[a.png|cap]]")
+  | assert_eq(to_md_name(md::embed("a.png")), "embed")
+end
+
+def test_md_escape():
+  assert_eq(to_string(md::escape("a*b_c[d]#")), "a\\*b\\_c\\[d\\]\\#")
+  | assert_eq(to_string(md::escape("plain")), "plain")
+end
+
+def test_md_hard_break():
+  assert_eq(to_string(md::hard_break("a\nb\n\nc\nd")), "a  \nb\n\nc  \nd")
+  | assert_eq(to_string(md::hard_break("single")), "single")
+end
+
 def test_md_blockquote():
   let result = to_string(md::blockquote("quote"))
   | assert_eq(result, "> quote")
