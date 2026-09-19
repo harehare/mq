@@ -714,10 +714,14 @@ impl RuntimeValue {
             RuntimeValue::None => serde_json::Value::Null,
             RuntimeValue::Boolean(b) => serde_json::Value::Bool(b),
             RuntimeValue::Number(n) => {
-                if n.is_int() {
+                let v = n.value();
+                // `i64::MAX as f64` and `u64::MAX as f64` round up to 2^63 and 2^64, so `<` keeps the bounds exact.
+                if n.is_int() && v >= i64::MIN as f64 && v < i64::MAX as f64 {
                     serde_json::Value::Number(serde_json::Number::from(n.to_int()))
+                } else if n.is_int() && v >= 0.0 && v < u64::MAX as f64 {
+                    serde_json::Value::Number(serde_json::Number::from(v as u64))
                 } else {
-                    serde_json::Number::from_f64(n.value())
+                    serde_json::Number::from_f64(v)
                         .map(serde_json::Value::Number)
                         .unwrap_or(serde_json::Value::Null)
                 }

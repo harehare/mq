@@ -44,6 +44,48 @@ def test_toml_stringify_parse_round_trip(s, n, b, arr):
   | assert_eq(toml::toml_parse(toml::toml_stringify(data)), data)
 end
 
+# Keys that are not bare (spaces, dots, quotes, empty) must be quoted, including in table headers.
+# @parametrize([
+#   [{"a b": 1}], [{"a.b": 1}], [{"": 1}], [{"a\"b\\c": 1}],
+#   [{"t": {"a b": 1}}], [{"a b": {"c d": {"e f": [1]}}}], [{"a b": [{"c d": 1}]}],
+# ])
+def test_toml_stringify_quotes_keys(input):
+  assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
+end
+
+# @parametrize([["x\ry"], ["x\u0001y"], ["x\u007fy"], ["\u0000"], ["a\nb\tc\"\\"]])
+def test_toml_stringify_escapes_control_characters(s):
+  let data = {"k": s}
+  | assert_eq(toml::toml_parse(toml::toml_stringify(data)), data)
+end
+
+# A key written after a `[table]` header would be parsed as a member of that table, so scalars
+# and arrays must be emitted before any table.
+# @parametrize([
+#   [{"t": {"x": 2}, "z": 3}],
+#   [{"t": {}, "z": 3}],
+#   [{"arr": [{"a": 1}, {"a": 2}], "z": 1}],
+#   [{"a": 1, "t": {"x": 2}, "z": [1, 2], "u": {"y": 3}}],
+# ])
+def test_toml_stringify_keeps_scalars_out_of_tables(input):
+  assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
+end
+
+# TOML has no null: None-valued keys are omitted, and a null inside an array is an error.
+# @parametrize([
+#   [{"a": 1, "k": None}, {"a": 1}],
+#   [{"t": {"x": None, "y": 1}, "u": 1}, {"t": {"y": 1}, "u": 1}],
+#   [{"t": {"x": None}}, {"t": {}}],
+#   [{"arr": [{"a": 1, "b": None}]}, {"arr": [{"a": 1}]}],
+# ])
+def test_toml_stringify_omits_none(input, expected):
+  assert_eq(toml::toml_parse(toml::toml_stringify(input)), expected)
+end
+
+def test_toml_stringify_none_in_array_is_error():
+  assert_eq(try: toml::toml_stringify({"k": [1, None]}) catch(e): "error", "error")
+end
+
 # @parametrize([[{"title": "title", "draft": false}], [{"count": 3}]])
 def test_toml_to_frontmatter(input):
   let result = toml::to_frontmatter(input)

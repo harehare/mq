@@ -1,16 +1,45 @@
 # Based on YAML 1.2 specification
 
+def _yaml_escape_control_char(code):
+  if (code < 32):
+    "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+  else:
+    implode([code])
+end
+
+def _yaml_escape_common(str):
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t") | replace("\r", "\\r")
+end
+
 def _escape_string(str):
-  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+  let escaped = _yaml_escape_common(str)
+  | if (test(escaped, "[\\x00-\\x1f\\x7f]")): join(map(explode(escaped), _yaml_escape_control_char), "") else: escaped
+end
+
+# True when a plain scalar would be read back as something other than the same string.
+def _yaml_needs_quotes(str):
+  is_empty(str)
+  || test(str, "^\\s|\\s$")
+  || test(str, "[\\x00-\\x1f\\x7f\"']")
+  || test(str, "^[-?:,\\[\\]{}#&*!|>%@`]|^\\.\\.\\.")
+  || test(str, ": | #|:$")
+  || contains(["true", "false", "null", "yes", "no", "on", "off", "~"], downcase(str))
+  || test(str, "^[-+]?(\\.[0-9]+|[0-9][0-9_]*(\\.[0-9_]*)?)([eE][-+]?[0-9]+)?$")
+  || test(str, "^0[xo][0-9a-fA-F]+$")
+  || test(downcase(str), "^[-+]?\\.inf$|^\\.nan$")
+end
+
+def _yaml_scalar(str):
+  if (_yaml_needs_quotes(str)):
+    "\"" + _escape_string(str) + "\""
+  else:
+    str
 end
 
 def _yaml_stringify_value(value, indent_level):
   let indent = repeat(" ", indent_level * 2)
   | if (is_string(value)):
-      if (contains(value, "\n") || contains(value, "\"") || contains(value, "'")):
-        "\"" + _escape_string(value) + "\""
-      else:
-        value
+      _yaml_scalar(value)
     elif (is_number(value)):
       to_string(value)
     elif (is_bool(value)):
@@ -26,7 +55,7 @@ def _yaml_stringify_value(value, indent_level):
       if (is_empty(keys(value))):
         "{}"
       else:
-        join(map(sort(keys(value)), fn(k): "\n" + indent + k + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
+        join(map(sort(keys(value)), fn(k): "\n" + indent + _yaml_scalar(k) + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
     else:
       to_string(value)
 end
@@ -65,7 +94,7 @@ def yaml_stringify(data):
     if (is_empty(keys(data))):
       "{}"
     else:
-      join(map(sort(keys(data)), fn(k): k + ": " + _yaml_stringify_value(data[k], 1);), "\n")
+      join(map(sort(keys(data)), fn(k): _yaml_scalar(k) + ": " + _yaml_stringify_value(data[k], 1);), "\n")
   else:
     _yaml_stringify_value(data, 0)
 end
