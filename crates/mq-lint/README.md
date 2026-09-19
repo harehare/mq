@@ -308,7 +308,7 @@ module a: def foo(): 1; end
 
 | Rule ID                      | Severity | Description                                                                                |
 | ----------------------------- | -------- | --------------------------------------------------------------------------------------------- |
-| `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `write_file`) |
+| `dangerous_capability_call`  | warn     | Call to a capability-gated builtin (`http`, `read_file`, `read_file_bytes`, `open_file`, `write_file`) |
 
 **Example — `dangerous_capability_call`**
 

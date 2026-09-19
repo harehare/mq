@@ -627,6 +627,16 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::Number,
         Type::array(Type::Number),
     );
+    // range: (string, string) -> [string], (string, string, number) -> [string]
+    register_binary(ctx, "range", Type::String, Type::String, Type::array(Type::String));
+    register_ternary(
+        ctx,
+        "range",
+        Type::String,
+        Type::String,
+        Type::Number,
+        Type::array(Type::String),
+    );
 
     // .. : (number, number) -> [number]  — binary infix range operator
     register_binary(ctx, "..", Type::Number, Type::Number, Type::array(Type::Number));
@@ -1389,6 +1399,12 @@ fn register_debug(ctx: &mut InferenceContext) {
 fn register_file_io(ctx: &mut InferenceContext) {
     register_unary(ctx, "read_file", Type::String, Type::String);
     register_unary(ctx, "read_file_bytes", Type::String, Type::Bytes);
+
+    // File handles are runtime-only, like coroutines, so the checker models them as dynamic.
+    register_unary(ctx, "open_file", Type::String, Type::Dynamic);
+    register_unary(ctx, "read_line", Type::Dynamic, Type::Dynamic);
+    register_binary(ctx, "read_bytes", Type::Dynamic, Type::Number, Type::Dynamic);
+
     register_unary(ctx, "file_exists", Type::String, Type::Bool);
     register_unary(ctx, "file_size", Type::String, Type::Number);
 
@@ -2039,6 +2055,8 @@ mod tests {
     #[rstest]
     #[case::read_file("read_file(\"a.md\")", true)]
     #[case::read_file_bytes("read_file_bytes(\"a.md\")", true)]
+    #[case::open_file("open_file(\"a.md\")", true)]
+    #[case::open_file_number("open_file(42)", false)]
     #[case::file_exists("file_exists(\"a.md\")", true)]
     #[case::file_size("file_size(\"a.md\")", true)]
     #[case::file_info("file_info(\"a.md\")", true)]
@@ -2234,7 +2252,7 @@ mod tests {
     #[case::values_number("values(42)", false)] // expects dict
     #[case::values_string("values(\"hello\")", false)] // expects dict
     #[case::entries_string("entries(\"hello\")", false)] // expects dict
-    #[case::range_string("range(\"a\", 5)", false)] // expects number
+    #[case::range_string("range(\"a\", true)", false)] // expects number or string
     #[case::repeat_bool("repeat(\"x\", true)", false)] // second arg must be number
     fn test_function_type_errors(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);

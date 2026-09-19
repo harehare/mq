@@ -1,4 +1,4 @@
-use super::{FileMetadata, HttpRequestSpec, Io, IoError, NativeIo};
+use super::{FileMetadata, HttpRequestSpec, Io, IoError, IoReader, NativeIo};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -205,6 +205,16 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
             return Err(denied_path("read", path));
         }
         self.inner.read_bytes(path)
+    }
+
+    fn open_read(&self, path: &Path) -> Result<Box<dyn IoReader>, IoError> {
+        if self.allow_read.is_denied() {
+            return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.permits_real(&self.allow_read, path) {
+            return Err(denied_path("read", path));
+        }
+        self.inner.open_read(path)
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {

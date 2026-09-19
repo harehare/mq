@@ -1722,6 +1722,102 @@ end
 # Returns: array
 def load_markdown(path): read_file(path) | to_markdown();
 
+# Lazily yields numbers from `start` to `stop` (inclusive), like `range` but without building an array.
+# `step` defaults to 1, or -1 when `start > stop`. A `stop` of `None` yields numbers without bound.
+# String arguments behave like `range`: single characters are yielded lazily, longer strings
+# (e.g. "aa" to "zz") are generated eagerly.
+#
+# Example:
+# ```
+# stream_range(0, None) | take(3) | collect()
+# ```
+#
+# Returns: dynamic
+def stream_range(start, stop, step = None):
+  if (is_string(start)):
+    _stream_char_range(start, stop, step)
+  else:
+    _stream_number_range(start, stop, step)
+end
+
+def _stream_number_range(start, stop, step):
+  let s = (if (!is_none(step)): step elif (is_none(stop) || start <= stop): 1 else: -1)
+  | if (s == 0):
+      error("step for range must not be zero")
+    else:
+      _stream_range(start, stop, s)
+end
+
+def _stream_range(start, stop, step):
+  var i = start
+  | while (is_none(stop) || (if (step > 0): i <= stop else: i >= stop)):
+      yield: i
+      | i += step
+    end
+end
+
+# Single-character ranges reuse the numeric stream over code points, skipping the surrogate
+# block (U+D800..U+DFFF) as `range` does.
+def _stream_char_range(start, stop, step):
+  if (is_none(stop)):
+    error("stream_range: a string range requires a stop value")
+  else:
+    do
+      let a = explode(start)
+      | let b = explode(stop)
+      | if (len(a) == 1 && len(b) == 1):
+          do
+            _stream_number_range(a[0], b[0], step)
+            | filter(fn(c): c < 55296 || c > 57343;)
+            | map(fn(c): implode([c]);)
+          end
+        else:
+          to_coroutine(if (is_none(step)): range(start, stop) else: range(start, stop, step))
+    end
+end
+
+# Lazily yields each line of the file at `path` without its line terminator.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Example:
+# ```
+# stream_lines("app.log") | filter(fn(line): contains(line, "ERROR");) | take(10) | collect()
+# ```
+#
+# Returns: dynamic
+def stream_lines(path): _stream_lines(open_file(path));
+
+def _stream_lines(f):
+  var line = read_line(f)
+  | while (!is_none(line)):
+      yield: line
+      | line = read_line(f)
+    end
+end
+
+# Lazily yields the file at `path` as chunks of up to `size` bytes.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Returns: dynamic
+def stream_chunks(path, size): _stream_chunks(open_file(path), size);
+
+def _stream_chunks(f, size):
+  var chunk = read_bytes(f, size)
+  | while (!is_none(chunk)):
+      yield: chunk
+      | chunk = read_bytes(f, size)
+    end
+end
+
+# Lazily yields each byte of the file at `path` as a number from 0 to 255.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+# Requires the file-io feature.
+#
+# Returns: dynamic
+def stream_bytes(path): flat_map(stream_chunks(path, 8192), fn(chunk): to_array(chunk););
+
 # Performs an HTTPS GET request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
 #

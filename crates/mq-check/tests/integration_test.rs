@@ -2012,6 +2012,26 @@ fn test_coalesce_operator(#[case] code: &str, #[case] should_succeed: bool, #[ca
 }
 
 #[rstest]
+#[case("range(3)", true, "number end")]
+#[case("range(1, 5)", true, "number start and end")]
+#[case("range(1, 10, 2)", true, "number start, end and step")]
+#[case(r#"range("a", "z")"#, true, "string start and end")]
+#[case(r#"range("a", "z", 2)"#, true, "string start, end and step")]
+#[case(r#"range("a", true)"#, false, "bool end")]
+#[case(r#"range("a", "z", "b")"#, false, "string step")]
+fn test_range_function(#[case] code: &str, #[case] should_succeed: bool, #[case] desc: &str) {
+    let result = check_types_with_builtins(code);
+    assert_eq!(
+        result.is_empty(),
+        should_succeed,
+        "{}: Code='{}' Errors={:?}",
+        desc,
+        code,
+        result
+    );
+}
+
+#[rstest]
 #[case("1 .. 5", true, "literal number range")]
 #[case("let n = 5 | 1 .. n", true, "range with variable end")]
 #[case("let s = 1 | let e = 10 | s .. e", true, "range with both variable operands")]
