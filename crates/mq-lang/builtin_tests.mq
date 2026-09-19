@@ -285,6 +285,12 @@ def test_first_coroutine():
   | assert_eq(first(source()), 10)
 end
 
+def test_len_coroutine_is_error():
+  let source = fn(): yield: 1 | yield: 2;
+  | assert_eq(try: len(source()) catch(e): "error", "error")
+  | assert_eq(try: utf8bytelen(source()) catch(e): "error", "error")
+end
+
 def test_collect():
   let source = fn(): yield: 1 | yield: 2 | yield: 3;
   | assert_eq(collect(source()), [1, 2, 3])
@@ -521,6 +527,11 @@ def test_count_by(value, f, expected):
   | assert_eq(result, expected)
 end
 
+def test_count_by_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3 | yield: 4;
+  | assert_eq(count_by(source(), fn(x): x % 2 == 0;), 2)
+end
+
 # @parametrize([[[1, 2, 3, 4, 5], fn(x): x > 3;, true], [[1, 2, 3], fn(x): x > 10;, false], [[], fn(x): x > 0;, false]])
 def test_any(value, f, expected):
   let result = any(value, f)
@@ -751,6 +762,14 @@ end
 def test_partition(value, f, expected):
   let result = partition(value, f)
   | assert_eq(result, expected)
+end
+
+def test_partition_coroutine():
+  let source = fn(): yield: 3 | yield: 2 | yield: 1;
+  | var calls = 0
+  | let result = partition(source(), fn(x): calls += 1 | x > 1;)
+  | assert_eq(result, [[3, 2], [1]])
+  | assert_eq(calls, 3)
 end
 
 # @parametrize([
@@ -1046,6 +1065,11 @@ def test_mean(value, expected):
   | assert_eq(result, expected)
 end
 
+def test_mean_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(mean(source()), 2)
+end
+
 def test_geomean():
   let result1 = geomean([1, 2, 4])
   | assert_eq(round(result1 * 100) / 100, 2)
@@ -1156,6 +1180,11 @@ end
 def test_ngram(value, n, expected):
   let result = ngram(value, n)
   | assert_eq(result, expected)
+end
+
+def test_ngram_coroutine():
+  let source = fn(): yield: 1 | yield: 2 | yield: 3;
+  | assert_eq(ngram(source(), 2), [[1, 2], [2, 3]])
 end
 
 # @parametrize([

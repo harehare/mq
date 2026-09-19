@@ -964,10 +964,11 @@ def sort_natural(arr):
 #
 # Returns: number
 def count_by(arr, f):
-  if (!is_array(arr) || is_empty(arr)):
-    0
-  else:
-    filter(arr, f) | len()
+  let items = collect(arr)
+  | if (!is_array(items) || is_empty(items)):
+      0
+    else:
+      filter(items, f) | len()
 end
 
 # Skips the first n elements of an array and returns the rest. A coroutine input
@@ -1519,6 +1520,7 @@ end
 def reject(arr, f): filter(arr, fn(x): !f(x););
 
 # Splits an array into two arrays: [matching, not_matching] based on a condition.
+# A coroutine input is consumed in a single pass.
 #
 # Example:
 # ```
@@ -1527,7 +1529,28 @@ def reject(arr, f): filter(arr, fn(x): !f(x););
 # ```
 #
 # Returns: array
-def partition(arr, f): [filter(arr, f), filter(arr, fn(x): !f(x);)];
+def partition(arr, f):
+  if (is_coroutine(arr)):
+    _partition_coroutine(arr, f)
+  else:
+    [filter(arr, f), filter(arr, fn(x): !f(x);)]
+end
+
+# Splits `stream` into [matching, not_matching] in a single pass, calling `f` once per value.
+def _partition_coroutine(stream, f):
+  var matched = []
+  | var rest = []
+  | var step = next(stream)
+  | while (!step["done"]):
+      let value = step["value"]
+      | if (f(value)):
+          matched += [value]
+        else:
+          rest += [value]
+      | step = next(stream)
+    end
+  | [matched, rest]
+end
 
 # Safely gets a value from a dict with a default if the key doesn't exist.
 #
@@ -2183,10 +2206,11 @@ end
 #
 # Returns: number
 def mean(arr):
-  if (is_empty(arr)):
-    None
-  else:
-    sum(arr) / len(arr)
+  let items = collect(arr)
+  | if (is_empty(items)):
+      None
+    else:
+      sum(items) / len(items)
 end
 
 # Returns the geometric mean of an array of numbers, or None if the array is empty.
@@ -2388,7 +2412,9 @@ end
 # ```
 #
 # Returns: array
-def ngram(s, n):
+def ngram(s, n): _ngram(collect(s), n);
+
+def _ngram(s, n):
   if (n <= 0):
     error("n must be a positive integer")
   elif (len(s) < n):
