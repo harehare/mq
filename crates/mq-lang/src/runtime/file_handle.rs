@@ -163,9 +163,7 @@ mod release_tests {
         let io = Shared::new(MemIo::default().with_file("a.txt", "x\ny\nz\n"));
         let mut engine = Engine::with_io(DefaultModuleResolver::default(), Shared::clone(&io));
         engine.load_builtin_module();
-        let result = engine
-            .eval(&format!("import \"stream\" | {query}"), null_input().into_iter())
-            .unwrap();
+        let result = engine.eval(query, null_input().into_iter()).unwrap();
         let while_alive = io.open_readers();
         drop(result);
         drop(engine);
@@ -173,32 +171,16 @@ mod release_tests {
     }
 
     #[rstest]
-    #[case::from("stream::from([1, 2, 3]) | collect()", "[1, 2, 3]")]
-    #[case::lines("stream::lines(\"a.txt\") | collect()", "[\"x\", \"y\", \"z\"]")]
-    #[case::lines_take("stream::lines(\"a.txt\") | take(2) | collect()", "[\"x\", \"y\"]")]
-    #[case::bytes("stream::bytes(\"a.txt\") | take(3) | collect()", "[120, 10, 121]")]
-    #[case::chunks("stream::chunks(\"a.txt\", 4) | map(len) | collect()", "[4, 2]")]
-    fn stream_sources_yield_values(#[case] query: &str, #[case] expected: &str) {
-        let io = Shared::new(MemIo::default().with_file("a.txt", "x\ny\nz\n"));
-        let mut engine = Engine::with_io(DefaultModuleResolver::default(), Shared::clone(&io));
-        engine.load_builtin_module();
-        let result = engine
-            .eval(&format!("import \"stream\" | {query}"), null_input().into_iter())
-            .unwrap();
-        assert_eq!(result.values()[0].to_string(), expected, "query: {query}");
-    }
-
-    #[rstest]
     #[case::handle_stays_open("open_file(\"a.txt\")", 1)]
     #[case::handle_closed("let f = open_file(\"a.txt\") | close(f) | f", 0)]
-    #[case::stream_opened_eagerly("stream::lines(\"a.txt\")", 1)]
-    #[case::stream_suspended("let s = stream::lines(\"a.txt\") | next(s) | s", 1)]
-    #[case::stream_closed("let s = stream::lines(\"a.txt\") | next(s) | close(s) | s", 0)]
-    #[case::closed_before_first_next("let s = stream::lines(\"a.txt\") | close(s) | s", 0)]
-    #[case::stream_exhausted("let s = stream::lines(\"a.txt\") | collect(s) | s", 0)]
-    #[case::chunks_exhausted("let s = stream::chunks(\"a.txt\", 2) | collect(s) | s", 0)]
-    #[case::bytes_exhausted("let s = stream::bytes(\"a.txt\") | collect(s) | s", 0)]
-    #[case::take_leaves_source_open("let s = stream::lines(\"a.txt\") | take(s, 1) | collect() | s", 1)]
+    #[case::stream_opened_eagerly("stream_lines(\"a.txt\")", 1)]
+    #[case::stream_suspended("let s = stream_lines(\"a.txt\") | next(s) | s", 1)]
+    #[case::stream_closed("let s = stream_lines(\"a.txt\") | next(s) | close(s) | s", 0)]
+    #[case::closed_before_first_next("let s = stream_lines(\"a.txt\") | close(s) | s", 0)]
+    #[case::stream_exhausted("let s = stream_lines(\"a.txt\") | collect(s) | s", 0)]
+    #[case::chunks_exhausted("let s = stream_chunks(\"a.txt\", 2) | collect(s) | s", 0)]
+    #[case::bytes_exhausted("let s = stream_bytes(\"a.txt\") | collect(s) | s", 0)]
+    #[case::take_leaves_source_open("let s = stream_lines(\"a.txt\") | take(s, 1) | collect() | s", 1)]
     fn file_is_released_when_its_coroutine_is_closed_or_finished(#[case] query: &str, #[case] open_while_alive: usize) {
         assert_eq!(open_readers(query), (open_while_alive, 0), "query: {query}");
     }

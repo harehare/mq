@@ -77,7 +77,7 @@ def g(): yield: 1;
 
 ## Creating a coroutine from a value
 
-`to_coroutine(value)` (or `stream::from(value)`, see [Stream sources](#stream-sources)) wraps an array or dictionary in a coroutine that lazily yields its elements (a dictionary yields its `[key, value]` entry pairs, matching `entries()`). A coroutine input is returned unchanged, so `to_coroutine` is safe to use as an input boundary when a value may already be lazy:
+`to_coroutine(value)` wraps an array or dictionary in a coroutine that lazily yields its elements (a dictionary yields its `[key, value]` entry pairs, matching `entries()`). A coroutine input is returned unchanged, so `to_coroutine` is safe to use as an input boundary when a value may already be lazy:
 
 ```mq
 to_coroutine([1, 2, 3]) | collect()
@@ -105,29 +105,22 @@ def g(): yield: 1;
 
 Closing an already-`completed`/`failed` coroutine is a no-op; closing a `failed` one does not hide its error (`next()` still re-raises it). Closing a `running` coroutine is a runtime error, same as reentrant `next()`.
 
-## Stream sources
+## Reading files lazily
 
-The `stream` module collects the functions that create coroutines. Combinators such as `map`, `filter`, `take` and `collect` stay global because they also accept arrays.
+With the `file-io` feature and read permission (`--allow-read`), a file can be read incrementally instead of all at once. These generators open the file immediately, so a missing file or a permission error is raised at the call, not at the first `next()`:
 
-- `stream::from(value)` is the same as `to_coroutine(value)`.
-
-### Reading files lazily
-
-With the `file-io` feature and read permission (`--allow-read`), a file can be read incrementally instead of all at once. Without `file-io`, these functions fail with an undefined function error. They open the file immediately, so a missing file or a permission error is raised at the call, not at the first `next()`:
-
-- `stream::lines(path)` yields each line without its `\n`/`\r\n` terminator.
-- `stream::chunks(path, size)` yields `bytes` chunks of up to `size` bytes.
-- `stream::bytes(path)` yields each byte as a number from 0 to 255.
+- `stream_lines(path)` yields each line without its `\n`/`\r\n` terminator.
+- `stream_chunks(path, size)` yields `bytes` chunks of up to `size` bytes.
+- `stream_bytes(path)` yields each byte as a number from 0 to 255.
 
 ```mq
-import "stream"
-| stream::lines("app.log")
-| filter(contains("ERROR"))
+stream_lines("app.log")
+| filter(fn(line): contains(line, "ERROR");)
 | take(10)
 | collect()
 ```
 
-#### File handles and closing
+### File handles and closing
 
 The generators are built on a file handle. `open_file(path)` returns one, `read_line(handle)` and `read_bytes(handle, size)` read from it and return `None` at end of file, and `close(handle)` closes it (`status(handle)` is `:open` or `:closed`). Reading from a closed handle is a runtime error. `size` must be a positive integer.
 

@@ -49,7 +49,6 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
         "md" => Cow::Borrowed("md.mq"),
         "section" => Cow::Borrowed("section.mq"),
         "semver" => Cow::Borrowed("semver.mq"),
-        "stream" => Cow::Borrowed("stream.mq"),
         "test" => Cow::Borrowed("test.mq"),
         "table" => Cow::Borrowed("table.mq"),
         "toml" => Cow::Borrowed("toml.mq"),
@@ -123,7 +122,6 @@ pub static STANDARD_MODULES: LazyLock<StandardModules> = LazyLock::new(|| {
     std_module!(md);
     std_module!(section);
     std_module!(semver);
-    std_module!(stream);
     std_module!(test);
     std_module!(table);
     std_module!(toml);

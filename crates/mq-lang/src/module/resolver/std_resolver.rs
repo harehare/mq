@@ -47,7 +47,6 @@ mod tests {
     #[case("toml")]
     #[case("xml")]
     #[case("semver")]
-    #[case("stream")]
     #[case("table")]
     #[case("test")]
     fn test_resolve_known_module(#[case] name: &str) {
