@@ -156,9 +156,8 @@ def escape(value): to_md_text(gsub(to_string(value), "([\\\\`*_\\[\\]<>~|#])", "
 #
 # Example:
 # ```
-# import "md" | md::hard_break("a\nb")
-# #=> a
-# b
+# import "md" | split(md::hard_break("a\nb"), "\n")
+# #=> ["a  ", "b"]
 # ```
 #
 # Returns: markdown
