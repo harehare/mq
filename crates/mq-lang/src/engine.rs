@@ -576,7 +576,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 code: compiled.source.clone(),
             },
         };
-        let module_loader_for_error = self.vm.module_loader.clone();
         vm.run(
             compiled,
             #[cfg(feature = "debugger")]
@@ -590,7 +589,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             Box::new(error::Error::from_error(
                 &compiled.source,
                 error.into_inner_error(Shared::clone(&self.token_arena)),
-                module_loader_for_error,
+                self.vm.module_loader.clone(),
             ))
         })
     }
