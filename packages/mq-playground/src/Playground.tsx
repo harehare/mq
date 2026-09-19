@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import "./index.css";
 import "./vim.css";
-import * as mq from "./worker/mqEngineClient";
-import { toHtml } from "./worker/mqEngineClient";
+import * as mq from "mq-web";
+import { toHtml } from "mq-web";
 import { languages, editor, IPosition } from "monaco-editor";
 import LZString from "lz-string";
 import { FileTree } from "./components/FileTree";
@@ -26,7 +26,6 @@ import {
   VscMap,
   VscSettingsGear,
   VscPlay,
-  VscDebugStop,
   VscSymbolMethod,
   VscLinkExternal,
   VscCopy,
@@ -78,7 +77,6 @@ const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
 const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
 const EDITOR_SETTINGS_KEY = "mq-playground.editor-settings";
 const PROBLEMS_PANEL_HEIGHT_KEY = "mq-playground.problems-panel-height";
-const EXECUTION_TIMEOUT_MS = 30_000;
 
 type EditorSettings = {
   version: number;
@@ -162,7 +160,6 @@ export const Playground = () => {
   const [executionTime, setExecutionTime] = useState<number | null>(null);
   const [isEmbed, setIsEmbed] = useState(false);
   const [result, setResult] = useState("");
-  const [isRunning, setIsRunning] = useState(false);
   const [listStyle, setListStyle] = useState<mq.Options["listStyle"]>(null);
   const [linkUrlStyle, setLinkUrlStyle] =
     useState<mq.Options["linkUrlStyle"]>(null);
@@ -568,9 +565,6 @@ export const Playground = () => {
   }, []);
 
   const handleRun = useCallback(async () => {
-    if (isRunning) {
-      return;
-    }
     setIsFirstRun(false);
 
     if (!code) {
@@ -580,7 +574,6 @@ export const Playground = () => {
     setAstResult("");
     setPreviewHtml("");
     setExecutionTime(null);
-    setIsRunning(true);
 
     const startTime = performance.now();
 
@@ -592,7 +585,6 @@ export const Playground = () => {
         linkTitleStyle,
         linkUrlStyle,
         allowHttpImport,
-        timeoutMs: EXECUTION_TIMEOUT_MS,
       });
       setResult(output);
 
@@ -600,12 +592,11 @@ export const Playground = () => {
         setPreviewHtml(await toHtml(output));
       }
     } catch (e) {
-      setResult(mq.isCancelledError(e) ? "Stopped." : (e as Error).toString());
+      setResult((e as Error).toString());
       setPreviewHtml("");
     } finally {
       const endTime = performance.now();
       setExecutionTime(endTime - startTime);
-      setIsRunning(false);
 
       // HTTP imports (if any) write/update mq.lock directly in OPFS,
       // bypassing the file tree's own write path, so refresh it here.
@@ -619,7 +610,6 @@ export const Playground = () => {
     markdown,
     inputFormat,
     isUpdate,
-    isRunning,
     listStyle,
     linkUrlStyle,
     linkTitleStyle,
@@ -627,10 +617,6 @@ export const Playground = () => {
     isOPFSSupported,
     loadFiles,
   ]);
-
-  const handleStop = useCallback(() => {
-    mq.cancel();
-  }, []);
 
   const handleGenerateAst = useCallback(async () => {
     if (!code) {
@@ -2197,25 +2183,14 @@ img{max-width:100%}
                   <VscSymbolMethod size={14} />
                   <span>Format</span>
                 </button>
-                {isRunning ? (
-                  <button
-                    className="button stop-button"
-                    onClick={handleStop}
-                    title="Stop script"
-                  >
-                    <VscDebugStop size={14} color="rgb(244, 135, 113)" />
-                    <span>Stop</span>
-                  </button>
-                ) : (
-                  <button
-                    className="button run-button"
-                    onClick={handleRun}
-                    title="Run script (Ctrl+Enter)"
-                  >
-                    <VscPlay size={14} color="rgb(76, 175, 80)" />
-                    <span>Run</span>
-                  </button>
-                )}
+                <button
+                  className="button run-button"
+                  onClick={handleRun}
+                  title="Run script (Ctrl+Enter)"
+                >
+                  <VscPlay size={14} color="rgb(76, 175, 80)" />
+                  <span>Run</span>
+                </button>
               </div>
             </div>
             <div className="editor-content">

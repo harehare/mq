@@ -395,8 +395,7 @@ body {
   border-radius: 6px;
 }
 
-.run-button,
-.stop-button {
+.run-button {
   padding: 4px 16px;
 }
 
@@ -539,8 +538,7 @@ body {
     white-space: nowrap;
   }
 
-  .run-button,
-  .stop-button {
+  .run-button {
     padding: 4px 12px;
     font-weight: 700;
   }
