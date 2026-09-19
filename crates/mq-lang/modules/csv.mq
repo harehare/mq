@@ -172,3 +172,125 @@ def csv_to_json(data):
     else:
       _to_json(map(data, fn(row): row;))
 end
+
+def _fill_is_missing(v, missing):
+  if (missing == "empty"): v == ""
+  elif (missing == "none"): is_none(v)
+  elif (missing == "both"): is_none(v) || v == ""
+  else: error("csv: missing must be \"empty\", \"none\" or \"both\", got " + to_string(missing))
+end
+
+# Splits rows into [header, data]. Array rows treat the first row as the header.
+def _fill_split(rows):
+  if (is_array(first(rows))): [first(rows), rows[1:len(rows)]] else: [None, rows]
+end
+
+# Resolves a column name to an array index. Dict rows and numeric columns pass through.
+def _fill_col(header, c):
+  if (is_none(header) || !is_string(c)):
+    c
+  else:
+    do
+      let i = index(header, c)
+      | if (i < 0): error("csv: column not found: " + c) else: i
+    end
+end
+
+def _fill_step(s, c, gkey, missing, max_gap):
+  let k = gkey + "|" + to_string(c)
+  | let v = s["row"][c]
+  | if (_fill_is_missing(v, missing)):
+      do
+        let n = (s["gap"][k] ?? 0) + 1
+        | let prev = s["last"][k]
+        | let fillable = !is_none(prev) && (is_none(max_gap) || n <= max_gap)
+        | {"row": if (fillable): set(s["row"], c, first(prev)) else: s["row"], "last": s["last"], "gap": set(s["gap"], k, n)}
+      end
+    else:
+      {"row": s["row"], "last": set(s["last"], k, [v]), "gap": set(s["gap"], k, 0)}
+end
+
+# Fills data rows (no header) top to bottom. `header` is None for dict rows.
+def _fill_forward(header, data, cols, group_by, missing, max_gap):
+  let col_ids = map(cols, fn(c): _fill_col(header, c);)
+  | let group_ids = map(group_by, fn(g): _fill_col(header, g);)
+  | let init = {"rows": [], "last": {}, "gap": {}}
+  | let filled = fold(data, init, fn(acc, row):
+      let gkey = to_string(map(group_ids, fn(g): row[g];))
+      | let step = fold(col_ids, {"row": row, "last": acc["last"], "gap": acc["gap"]}, fn(s, c): _fill_step(s, c, gkey, missing, max_gap);)
+      | {"rows": acc["rows"] + [step["row"]], "last": step["last"], "gap": step["gap"]};)
+  | filled["rows"]
+end
+
+def _fill_with_header(header, data):
+  if (is_none(header)): data else: [header] + data
+end
+
+# Fills missing cells in the given columns with the last non-missing value above.
+# Rows are dicts or arrays (the first array row is the header and is left as is).
+# `cols` are column names, or indexes for array rows. `group_by` columns keep a separate
+# carried value per group. `missing` is "empty", "none" or "both". `max_gap` limits how many
+# consecutive missing cells are filled. Cells with no value above stay missing.
+#
+# Example:
+# ```
+# import "csv" | csv::forward_fill([{"a": "x"}, {"a": ""}], ["a"])
+# #=> [{"a": "x"}, {"a": "x"}]
+# ```
+#
+# Returns: array
+def forward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
+  if (len(rows) == 0):
+    rows
+  else:
+    do
+      let parts = _fill_split(rows)
+      | _fill_with_header(parts[0], _fill_forward(parts[0], parts[1], cols, group_by, missing, max_gap))
+    end
+end
+
+# Fills missing cells in the given columns with the next non-missing value below.
+# Takes the same arguments as `forward_fill`. With `max_gap`, the cells nearest to the value are filled.
+#
+# Example:
+# ```
+# import "csv" | csv::backward_fill([{"a": ""}, {"a": "x"}], ["a"])
+# #=> [{"a": "x"}, {"a": "x"}]
+# ```
+#
+# Returns: array
+def backward_fill(rows, cols, group_by = [], missing = "both", max_gap = None):
+  if (len(rows) == 0):
+    rows
+  else:
+    do
+      let parts = _fill_split(rows)
+      | _fill_with_header(parts[0], reverse(_fill_forward(parts[0], reverse(parts[1]), cols, group_by, missing, max_gap)))
+    end
+end
+
+# Fills missing cells with a constant per column. `defaults` maps column names to values.
+# Array rows use header names as keys. Values are inserted as given, without type conversion.
+#
+# Example:
+# ```
+# import "csv" | csv::constant_fill([{"a": ""}, {"a": "x"}], {"a": "N/A"})
+# #=> [{"a": "N/A"}, {"a": "x"}]
+# ```
+#
+# Returns: array
+def constant_fill(rows, defaults, missing = "both"):
+  if (len(rows) == 0):
+    rows
+  else:
+    do
+      let parts = _fill_split(rows)
+      | let header = parts[0]
+      | let cols = keys(defaults)
+      | let filled = map(parts[1], fn(row):
+          fold(cols, row, fn(r, c):
+            let idx = _fill_col(header, c)
+            | if (_fill_is_missing(r[idx], missing)): set(r, idx, defaults[c]) else: r;);)
+      | _fill_with_header(header, filled)
+    end
+end

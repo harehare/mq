@@ -76,3 +76,123 @@ def test_psv_to_json(as_dict, expected):
   let result = csv::csv_to_json(csv::psv_parse(psv_input, as_dict))
   | assert_eq(result, expected)
 end
+
+# -- fill Tests --
+
+| let fill_dicts = [{"g": "a", "v": "1"}, {"g": "a", "v": ""}, {"g": "b", "v": ""}, {"g": "b", "v": "2"}, {"g": "a", "v": ""}, {"g": "a", "v": ""}] |
+
+# @parametrize([
+# [[], "both", None, ["1", "1", "1", "2", "2", "2"]],
+# [["g"], "both", None, ["1", "1", "", "2", "1", "1"]],
+# [[], "both", 1, ["1", "1", "", "2", "2", ""]],
+# ])
+def test_forward_fill_dicts(group_by, missing, max_gap, expected):
+  let result = csv::forward_fill(fill_dicts, ["v"], group_by, missing, max_gap)
+  | assert_eq(map(result, fn(r): r["v"];), expected)
+end
+
+# @parametrize([
+# [[], None, ["1", "2", "2", "2", "", ""]],
+# [["g"], None, ["1", "", "2", "2", "", ""]],
+# [[], 1, ["1", "", "2", "2", "", ""]],
+# ])
+def test_backward_fill_dicts(group_by, max_gap, expected):
+  let result = csv::backward_fill(fill_dicts, ["v"], group_by, "both", max_gap)
+  | assert_eq(map(result, fn(r): r["v"];), expected)
+end
+
+def test_backward_fill_max_gap_fills_nearest_cells():
+  let result = csv::backward_fill([{"v": ""}, {"v": ""}, {"v": ""}, {"v": "x"}], ["v"], [], "both", 2)
+  | assert_eq(map(result, fn(r): r["v"];), ["", "x", "x", "x"])
+end
+
+def test_forward_fill_empty_mode_does_not_fill_none():
+  let result = csv::forward_fill([{"v": "x"}, {"v": ""}, {}], ["v"], [], "empty", None)
+  | assert_eq(result, [{"v": "x"}, {"v": "x"}, {}])
+end
+
+def test_forward_fill_none_mode_does_not_fill_empty_string():
+  let result = csv::forward_fill([{"v": "x"}, {}, {"v": ""}], ["v"], [], "none", None)
+  | assert_eq(result, [{"v": "x"}, {"v": "x"}, {"v": ""}])
+end
+
+def test_forward_fill_leading_missing_stays_missing():
+  let result = csv::forward_fill([{"v": ""}, {"v": ""}, {"v": "x"}, {"v": ""}], ["v"])
+  | assert_eq(map(result, fn(r): r["v"];), ["", "", "x", "x"])
+end
+
+def test_forward_fill_does_not_change_existing_values():
+  let rows = [{"a": "1", "b": "p"}, {"a": "", "b": "q"}]
+  | let result = csv::forward_fill(rows, ["a"])
+  | assert_eq(rows, [{"a": "1", "b": "p"}, {"a": "", "b": "q"}])
+  | assert_eq(result, [{"a": "1", "b": "p"}, {"a": "1", "b": "q"}])
+end
+
+def test_forward_fill_multiple_columns():
+  let result = csv::forward_fill([{"a": "1", "b": "x"}, {"a": "", "b": ""}, {"a": "2", "b": ""}], ["a", "b"])
+  | assert_eq(result, [{"a": "1", "b": "x"}, {"a": "1", "b": "x"}, {"a": "2", "b": "x"}])
+end
+
+def test_fill_empty_rows():
+  assert_eq(csv::forward_fill([], ["a"]), [])
+  | assert_eq(csv::backward_fill([], ["a"]), [])
+  | assert_eq(csv::constant_fill([], {"a": "x"}), [])
+end
+
+def test_forward_fill_array_rows_by_header_name():
+  let rows = [["dept", "mgr"], ["A", "m1"], ["A", ""], ["B", ""], ["B", "m2"], ["A", ""]]
+  | let result = csv::forward_fill(rows, ["mgr"], ["dept"])
+  | assert_eq(result, [["dept", "mgr"], ["A", "m1"], ["A", "m1"], ["B", ""], ["B", "m2"], ["A", "m1"]])
+end
+
+def test_forward_fill_array_rows_by_index():
+  let rows = [["dept", "mgr"], ["A", "m1"], ["A", ""], ["B", ""]]
+  | assert_eq(csv::forward_fill(rows, [1], [0]), [["dept", "mgr"], ["A", "m1"], ["A", "m1"], ["B", ""]])
+end
+
+def test_forward_fill_array_rows_keep_header_untouched():
+  let rows = [["", "b"], ["x", "y"], ["", ""]]
+  | assert_eq(csv::forward_fill(rows, [0, 1]), [["", "b"], ["x", "y"], ["x", "y"]])
+end
+
+def test_forward_fill_array_rows_short_row_treated_as_missing():
+  let rows = [["a", "b"], ["1", "2"], ["3"]]
+  | assert_eq(csv::forward_fill(rows, ["b"]), [["a", "b"], ["1", "2"], ["3", "2"]])
+end
+
+def test_backward_fill_array_rows():
+  let rows = [["a", "b"], ["1", ""], ["2", ""], ["3", "z"]]
+  | assert_eq(csv::backward_fill(rows, ["b"]), [["a", "b"], ["1", "z"], ["2", "z"], ["3", "z"]])
+end
+
+def test_fill_array_rows_unknown_column_is_error():
+  let rows = [["a"], [""]]
+  | assert_eq(try: csv::forward_fill(rows, ["nope"]) catch: "error", "error")
+end
+
+def test_fill_invalid_missing_is_error():
+  assert_eq(try: csv::forward_fill([{"a": ""}], ["a"], [], "blank", None) catch: "error", "error")
+end
+
+def test_constant_fill_dicts():
+  let result = csv::constant_fill([{"a": "", "b": "1"}, {"a": "x", "b": ""}, {"b": "2"}], {"a": "N/A", "b": 0})
+  | assert_eq(result, [{"a": "N/A", "b": "1"}, {"a": "x", "b": 0}, {"b": "2", "a": "N/A"}])
+end
+
+def test_constant_fill_missing_modes():
+  let rows = [{"a": ""}, {}]
+  | assert_eq(csv::constant_fill(rows, {"a": "x"}, "empty"), [{"a": "x"}, {}])
+  | assert_eq(csv::constant_fill(rows, {"a": "x"}, "none"), [{"a": ""}, {"a": "x"}])
+end
+
+def test_constant_fill_array_rows():
+  let rows = [["a", "b"], ["", "1"], ["x", ""]]
+  | assert_eq(csv::constant_fill(rows, {"b": "0"}), [["a", "b"], ["", "1"], ["x", "0"]])
+end
+
+def test_fill_parse_stringify_round_trip():
+  let input = "region,item\nEast,a\n,b\nWest,c\n,d\n"
+  | let expected = "region,item\nEast,a\nEast,b\nWest,c\nWest,d"
+  | assert_eq(csv::csv_stringify(csv::forward_fill(csv::csv_parse(input, true), ["region"]), ","), expected)
+  | assert_eq(csv::csv_stringify(csv::forward_fill(csv::csv_parse(input, false), ["region"]), ","), expected)
+end
