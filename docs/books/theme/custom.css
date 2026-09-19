@@ -157,6 +157,16 @@ html:not(.js) #menu-bar {
     border-radius: 4px;
 }
 
+/* Sidebar fold toggle (added by sidebar-fold.js) */
+.chapter li > a.toggle {
+    display: flex;
+    align-items: center;
+}
+
+.chapter li > a.toggle:hover {
+    opacity: 1;
+}
+
 /* Content */
 .page {
     background-color: var(--bg);

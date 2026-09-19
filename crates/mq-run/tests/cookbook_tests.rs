@@ -245,6 +245,40 @@ fn cookbook_extract_tables() {
 }
 
 #[test]
+fn cookbook_fill_blank_csv_cells() {
+    let path = write_temp(
+        "cookbook_fill_blank_csv_cells.csv",
+        "region,product,owner\nEast,apple,Kim\n,banana,\nWest,apple,\n,banana,Lee\n",
+    );
+    let path = path.to_str().unwrap();
+
+    let out = run(&[r#"csv::forward_fill(["region"]) | csv::csv_stringify(",")"#, path]);
+    assert_eq!(
+        out.trim(),
+        "region,product,owner\nEast,apple,Kim\nEast,banana,\nWest,apple,\nWest,banana,Lee"
+    );
+
+    let grouped =
+        r#"csv::forward_fill(["region"]) | csv::forward_fill(self, ["owner"], ["region"]) | csv::csv_stringify(",")"#;
+    assert_eq!(
+        run(&[grouped, path]).trim(),
+        "region,product,owner\nEast,apple,Kim\nEast,banana,Kim\nWest,apple,\nWest,banana,Lee"
+    );
+
+    let constant = r#"csv::forward_fill(["region"]) | csv::forward_fill(self, ["owner"], ["region"]) | csv::constant_fill(self, {"owner": "unassigned"}) | csv::csv_stringify(",")"#;
+    assert_eq!(
+        run(&[constant, path]).trim(),
+        "region,product,owner\nEast,apple,Kim\nEast,banana,Kim\nWest,apple,unassigned\nWest,banana,Lee"
+    );
+
+    let limited = r#"csv::forward_fill(self, ["region"], [], "both", 1) | csv::csv_stringify(",")"#;
+    assert_eq!(
+        run(&[limited, path]).trim(),
+        "region,product,owner\nEast,apple,Kim\nEast,banana,\nWest,apple,\nWest,banana,Lee"
+    );
+}
+
+#[test]
 fn cookbook_filter_empty_sections() {
     let path = write_temp(
         "cookbook_filter_empty_sections.md",
