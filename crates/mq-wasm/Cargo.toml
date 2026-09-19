@@ -31,7 +31,7 @@ serde-wasm-bindgen = {workspace = true}
 serde_json = {workspace = true}
 wasm-bindgen = {workspace = true}
 wasm-bindgen-futures = {workspace = true}
-web-sys = {version = "0.3", features = ["Response", "console"]}
+web-sys = {version = "0.3", features = ["FileSystemDirectoryHandle", "Response", "console"]}
 
 [dev-dependencies]
 wasm-bindgen-test = {workspace = true}
@@ -39,6 +39,7 @@ wasm-bindgen-test = {workspace = true}
 [features]
 default = ["opfs"]
 opfs = ["dep:opfs"]
+test-in-worker = []
 
 [package.metadata.wasm-pack.profile.release]
 wasm-opt = ['-O4', '--enable-simd', '--enable-bulk-memory', '--enable-nontrapping-float-to-int']
