@@ -1,0 +1,54 @@
+# Lazy sources built on coroutines.
+#
+# Each function returns a coroutine that composes with `map`, `filter`, `take`, `collect`, etc.
+# The file sources need the file-io feature and read permission (`--allow-read`).
+
+# Converts an array or dictionary into a coroutine. Same as `to_coroutine`.
+#
+# Example:
+# ```
+# import "stream" | stream::from([1, 2, 3]) | collect()
+# #=> [1, 2, 3]
+# ```
+#
+# Returns: dynamic
+def from(v): to_coroutine(v);
+
+# Lazily yields each line of the file at `path` without its line terminator.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+#
+# Example:
+# ```
+# import "stream" | stream::lines("app.log") | filter(contains("ERROR")) | take(10) | collect()
+# ```
+#
+# Returns: dynamic
+def lines(path): _read_lines(open_file(path));
+
+def _read_lines(f):
+  var line = read_line(f)
+  | while (!is_none(line)):
+      yield: line
+      | line = read_line(f)
+    end
+end
+
+# Lazily yields the file at `path` as chunks of up to `size` bytes.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+#
+# Returns: dynamic
+def chunks(path, size): _read_chunks(open_file(path), size);
+
+def _read_chunks(f, size):
+  var chunk = read_bytes(f, size)
+  | while (!is_none(chunk)):
+      yield: chunk
+      | chunk = read_bytes(f, size)
+    end
+end
+
+# Lazily yields each byte of the file at `path` as a number from 0 to 255.
+# The file is opened immediately, and closed when the stream finishes or is passed to `close()`.
+#
+# Returns: dynamic
+def bytes(path): flat_map(_read_chunks(open_file(path), 8192), fn(chunk): to_array(chunk););
