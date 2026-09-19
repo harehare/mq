@@ -2038,7 +2038,7 @@ img{max-width:100%}
     <div className="playground-container">
       {!isEmbed && (
         <header className="playground-header">
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div className="header-left">
             {isOPFSSupported && (
               <button
                 className="header-icon-button"
@@ -2053,42 +2053,36 @@ img{max-width:100%}
               </button>
             )}
             <a
+              className="header-brand"
               href="https://mqlang.org/"
-              style={{
-                textDecoration: "none",
-                paddingTop: "6px",
-              }}
               target="_blank"
+              rel="noopener noreferrer"
             >
-              <img src="./logo.svg" className="logo-icon" />
+              <img src="./logo.svg" className="logo-icon" alt="mq" />
+              <h1>Playground</h1>
             </a>
-            <h1 style={{ color: "var(--header-title-color)" }}>playground</h1>
           </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "12px",
-              marginRight: "8px",
-            }}
-          >
+          <div className="header-right">
             <a
-              className="header-icon-button"
+              className="header-button"
               href="https://mqlang.org/book/builtins.html"
               target="_blank"
               rel="noopener noreferrer"
               title="Builtin function reference"
             >
               <VscBook size={16} />
+              <span>Reference</span>
             </a>
             <button
-              className="header-icon-button"
+              className="header-button"
               onClick={() => setIsSettingsOpen(true)}
               title="Settings"
             >
               <VscSettingsGear size={16} />
+              <span>Settings</span>
             </button>
             <a
+              className="header-stars"
               href="https://github.com/harehare/mq"
               target="_blank"
               rel="noopener noreferrer"
@@ -2297,9 +2291,11 @@ img{max-width:100%}
               </div>
             )}
             <div className="editor-header">
+              <h2>Input</h2>
               <label className="label">
                 <select
                   className="dropdown"
+                  aria-label="Input format"
                   value={inputFormat || "markdown"}
                   onChange={(e) =>
                     setInputFormat(e.target.value as mq.Options["inputFormat"])
@@ -2376,13 +2372,7 @@ img{max-width:100%}
                 {activeTab === "output" && (
                   <>
                     <label className="label">
-                      <div
-                        style={{
-                          marginRight: "4px",
-                        }}
-                      >
-                        List Style:
-                      </div>
+                      <span className="option-name">List Style</span>
                       <select
                         className="dropdown"
                         onChange={handleChangeListStyle}
@@ -2393,13 +2383,7 @@ img{max-width:100%}
                       </select>
                     </label>
                     <label className="label">
-                      <div
-                        style={{
-                          marginRight: "4px",
-                        }}
-                      >
-                        URL Style:
-                      </div>
+                      <span className="option-name">URL Style</span>
                       <select
                         className="dropdown"
                         onChange={handleChangeLinkUrlStyle}
@@ -2409,13 +2393,7 @@ img{max-width:100%}
                       </select>
                     </label>
                     <label className="label">
-                      <div
-                        style={{
-                          marginRight: "4px",
-                        }}
-                      >
-                        Title Style:
-                      </div>
+                      <span className="option-name">Title Style</span>
                       <select
                         className="dropdown"
                         onChange={(e) => {
@@ -2433,34 +2411,22 @@ img{max-width:100%}
                         <option value="paren">Paren</option>
                       </select>
                     </label>
-                    <div>
-                      <label className="label">
-                        <input
-                          type="checkbox"
-                          checked={isUpdate}
-                          onChange={(e) => setIsUpdate(e.target.checked)}
-                          style={{
-                            marginRight: "5px",
-                            cursor: "pointer",
-                          }}
-                        />
-                        <div>Update Markdown</div>
-                      </label>
-                    </div>
-                    <div>
-                      <label className="label">
-                        <input
-                          type="checkbox"
-                          checked={enableTypeCheck}
-                          onChange={(e) => setEnableTypeCheck(e.target.checked)}
-                          style={{
-                            marginRight: "5px",
-                            cursor: "pointer",
-                          }}
-                        />
-                        <div>Type Check (β)</div>
-                      </label>
-                    </div>
+                    <label className="label">
+                      <input
+                        type="checkbox"
+                        checked={isUpdate}
+                        onChange={(e) => setIsUpdate(e.target.checked)}
+                      />
+                      <span>Update Markdown</span>
+                    </label>
+                    <label className="label">
+                      <input
+                        type="checkbox"
+                        checked={enableTypeCheck}
+                        onChange={(e) => setEnableTypeCheck(e.target.checked)}
+                      />
+                      <span>Type Check (β)</span>
+                    </label>
                   </>
                 )}
                 {activeTab === "ast" && (
@@ -2473,23 +2439,28 @@ img{max-width:100%}
             </div>
           )}
           <div className="editor-content result-container">
-            {activeTab === "output" && (
-              <Editor
-                height="100%"
-                defaultLanguage="markdown"
-                defaultValue={`Click "Run" button to display results`}
-                value={result}
-                options={{
-                  readOnly: true,
-                  domReadOnly: true,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                }}
-                theme={monacoTheme}
-              />
-            )}
+            {activeTab === "output" &&
+              (!result && executionTime === null ? (
+                <div className="result-empty">
+                  <p>Click "Run" button to display results</p>
+                  <kbd>Ctrl+Enter</kbd>
+                </div>
+              ) : (
+                <Editor
+                  height="100%"
+                  defaultLanguage="markdown"
+                  value={result}
+                  options={{
+                    readOnly: true,
+                    domReadOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize,
+                    automaticLayout: true,
+                  }}
+                  theme={monacoTheme}
+                />
+              ))}
             {activeTab === "preview" && (
               <iframe
                 srcDoc={previewSrcDoc}
@@ -2502,23 +2473,27 @@ img{max-width:100%}
                 title="Preview"
               />
             )}
-            {activeTab === "ast" && (
-              <Editor
-                height="100%"
-                defaultLanguage="json"
-                defaultValue={`Click "Generate AST" button to display AST`}
-                value={astResult}
-                options={{
-                  readOnly: true,
-                  domReadOnly: true,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  fontSize,
-                  automaticLayout: true,
-                }}
-                theme={monacoTheme}
-              />
-            )}
+            {activeTab === "ast" &&
+              (!astResult ? (
+                <div className="result-empty">
+                  <p>Click "Generate AST" button to display AST</p>
+                </div>
+              ) : (
+                <Editor
+                  height="100%"
+                  defaultLanguage="json"
+                  value={astResult}
+                  options={{
+                    readOnly: true,
+                    domReadOnly: true,
+                    minimap: { enabled: false },
+                    scrollBeyondLastLine: false,
+                    fontSize,
+                    automaticLayout: true,
+                  }}
+                  theme={monacoTheme}
+                />
+              ))}
           </div>
         </div>
       </div>
@@ -2579,11 +2554,7 @@ img{max-width:100%}
               </>
             )}
             {!currentFilePath && isOPFSSupported && (
-              <span
-                style={{ color: "var(--tree-empty-color)", fontSize: "11px" }}
-              >
-                No file selected
-              </span>
+              <span className="footer-muted">No file selected</span>
             )}
           </div>
           <div className="footer-right">
@@ -2616,7 +2587,7 @@ img{max-width:100%}
               title={
                 wordWrap === "on" ? "Disable Word Wrap" : "Enable Word Wrap"
               }
-              style={{ opacity: wordWrap === "on" ? 1 : 0.5 }}
+              aria-pressed={wordWrap === "on"}
             >
               <VscWordWrap size={14} />
             </button>
@@ -2624,7 +2595,7 @@ img{max-width:100%}
               className="footer-icon-button"
               onClick={toggleMinimap}
               title={minimapEnabled ? "Disable Minimap" : "Enable Minimap"}
-              style={{ opacity: minimapEnabled ? 1 : 0.5 }}
+              aria-pressed={minimapEnabled}
             >
               <VscMap size={14} />
             </button>

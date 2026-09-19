@@ -4,7 +4,6 @@
   height: 100%;
   background-color: var(--tree-bg);
   border-right: 1px solid var(--tree-border);
-  border-top: 1px solid var(--tree-border);
   overflow: hidden;
 }
 
@@ -12,7 +11,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  height: 40px;
+  box-sizing: border-box;
+  height: var(--panel-header-height);
 }
 
 .file-tree-header-left {
@@ -42,12 +42,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 3px;
-  transition: background-color 0.2s;
+  border-radius: 4px;
+  transition: background-color 0.15s;
 }
 
 .file-tree-action-btn:hover {
   background-color: var(--tree-border);
+}
+
+.file-tree-action-btn:focus-visible,
+.file-tree-empty-btn:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
 }
 
 .file-tree-search {
@@ -198,10 +204,40 @@
 }
 
 .file-tree-empty {
-  padding: 16px;
+  padding: 24px 16px;
   text-align: center;
   color: var(--tree-empty-color);
   font-size: 12px;
+}
+
+.file-tree-empty p {
+  margin: 0 0 12px;
+}
+
+.file-tree-empty-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.file-tree-empty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--tree-border);
+  border-radius: 6px;
+  background: none;
+  color: var(--tree-item-color);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.file-tree-empty-btn:hover {
+  background-color: var(--tree-item-hover-bg);
 }
 
 /* Scrollbar styling for file tree */
