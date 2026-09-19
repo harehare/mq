@@ -1,0 +1,34 @@
+[package]
+authors.workspace = true
+categories = ["command-line-utilities", "text-processing"]
+description = "Benchmark runner for mq — times bench_ functions written in .mq files"
+edition.workspace = true
+homepage = "https://mqlang.org/"
+keywords = ["markdown", "jq", "query", "benchmark"]
+license.workspace = true
+name = "mq-bench"
+readme = "README.md"
+repository.workspace = true
+version.workspace = true
+
+[dependencies]
+clap = {workspace = true, features = ["derive"]}
+glob = {workspace = true}
+miette = {workspace = true, features = ["fancy"]}
+mq-lang = {workspace = true, features = ["cst", "file-io", "mock-io"]}
+rustc-hash = {workspace = true}
+serde = {workspace = true, features = ["derive"]}
+serde_json = {workspace = true}
+tabled = {workspace = true}
+
+[dev-dependencies]
+rstest = {workspace = true}
+
+[[bin]]
+name = "mq-bench"
+path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-fmt = "bin"
+pkg-url = "{ repo }/releases/download/v{ version }/{ bin }-{ target }{ binary-ext }"
+disabled-strategies = ["quick-install"]

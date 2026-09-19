@@ -1,0 +1,40 @@
+# Regression benches for realistic, end-to-end mq queries, run via `mq-bench`
+# (see `just bench-mq`). These complement `benches/benchmark.rs`'s low-level,
+# single-instruction Tarn VM benches with whole-pipeline timings: parsing,
+# compiling, and running a query the way a user actually would.
+
+import "md"
+
+# Builds an 80-row, 4-column table and renders it to a Markdown string.
+def bench_markdown_table_render():
+  let header = ["id", "name", "status", "duration"]
+  | let rows = map(range(0, 79), fn(i): [to_string(i), "item-" + to_string(i), "ok", to_string(i * 3) + "ms"];)
+  | to_string(md::doc(md::table(header, rows)))
+end
+
+# Builds a 60-heading document at mixed depths and renders it, exercising
+# markdown node construction together with string rendering.
+def bench_markdown_toc_build():
+  let headings = map(range(0, 59), fn(i): md::h("Section " + to_string(i), (i % 3) + 1);)
+  | to_string(md::doc(headings))
+end
+
+# Recursive call overhead through the Tarn VM, end to end (parse + compile + eval),
+# complementing `eval_compiled_fibonacci` in `benchmark.rs`.
+def fibonacci(x):
+  if (x < 2):
+    x
+  else:
+    fibonacci(x - 1) + fibonacci(x - 2)
+end
+
+def bench_fibonacci():
+  fibonacci(28)
+end
+
+# A typical text-cleanup chain: build a paragraph, then split and rejoin it,
+# the shape of a common markdown-cleanup query.
+def bench_string_pipeline():
+  let text = join(map(range(0, 199), fn(i): "word" + to_string(i);), "  ")
+  | join(split(text, "  "), "-")
+end

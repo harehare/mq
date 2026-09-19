@@ -30,7 +30,7 @@ bench-local:
 build:
     cargo build --release -p mq-run --bin mq
     cargo build --release -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release -p mq-lsp -p mq-crawler -p mq-test
+    cargo build --release -p mq-lsp -p mq-crawler -p mq-test -p mq-bench
     cargo build --release -p mq-check --features="cli"
     cargo build --release -p mq-lint --features="cli"
     cargo build --release -p mq-formatter
@@ -39,7 +39,7 @@ build:
 build-target target:
     cargo build --release --target {{target}} -p mq-run --bin mq
     cargo build --release --target {{target}} -p mq-run --bin mq-dbg --features="debugger"
-    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-test
+    cargo build --release --target {{target}} -p mq-lsp -p mq-crawler -p mq-test -p mq-bench
     cargo build --release --target {{target}} -p mq-check --features="cli"
     cargo build --release --target {{target}} -p mq-lint --features="cli"
     cargo build --release --target {{target}} -p mq-formatter
@@ -97,6 +97,10 @@ fmt:
 test-mq:
     cargo run -p mq-test -- crates/mq-lang/builtin_tests.mq crates/mq-lang/modules/*_test.mq
 
+# Time bundled mq benches through the Tarn bytecode VM.
+bench-mq:
+    cargo run --release -p mq-bench -- crates/mq-lang/benches/mq_benches.mq
+
 # Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
 test-gfm-spec:
     cargo test -p mq-markdown --test gfm_roundtrip_fidelity -- --ignored --nocapture
@@ -115,7 +119,7 @@ test-all: fmt lint test-mq test-doc test-all-features test
 
 # Run tests with code coverage reporting
 test-cov:
-    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
+    cargo llvm-cov --open --html --workspace --all-features --ignore-filename-regex 'crates/mq-(crawler|test|bench|wasm|web-api|dap|python|lsp/src/capabilities\.rs|repl/src/repl\.rs)'
 
 # Run fuzzing tests against the Tarn bytecode VM
 test-fuzz:
