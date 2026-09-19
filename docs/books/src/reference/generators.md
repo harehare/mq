@@ -105,6 +105,28 @@ def g(): yield: 1;
 
 Closing an already-`completed`/`failed` coroutine is a no-op; closing a `failed` one does not hide its error (`next()` still re-raises it). Closing a `running` coroutine is a runtime error, same as reentrant `next()`.
 
+## Generating numbers lazily
+
+`stream_range(start, stop, step)` is the lazy counterpart of `range`. It yields numbers from `start` to `stop` (inclusive) without building an array, so it is not subject to `range`'s size limit. `step` is optional and defaults to `1`, or `-1` when `start > stop`. A `step` of `0` is an error raised at the call. Unlike `range`, `stop` is required, and a `stop` of `None` yields without bound:
+
+```mq
+stream_range(0, 10, 5) | collect()
+# Output: [0, 5, 10]
+
+stream_range(0, None) | take(3) | collect()
+# Output: [0, 1, 2]
+```
+
+String arguments follow `range` too. A single-character range is generated lazily and yields the same values as `range` (surrogate code points are skipped). A longer range such as `"aa"` to `"zz"` is generated eagerly and then wrapped in a coroutine, so `step` is not supported for it. A string range needs a `stop`; `None` is an error.
+
+```mq
+stream_range("a", "e") | collect()
+# Output: ["a", "b", "c", "d", "e"]
+
+stream_range("a", "z", 5) | collect()
+# Output: ["a", "f", "k", "p", "u", "z"]
+```
+
 ## Reading files lazily
 
 With the `file-io` feature and read permission (`--allow-read`), a file can be read incrementally instead of all at once. These generators open the file immediately, so a missing file or a permission error is raised at the call, not at the first `next()`:

@@ -312,6 +312,68 @@ def test_to_coroutine_with_take():
   assert_eq(collect(take(to_coroutine([1, 2, 3, 4, 5]), 2)), [1, 2])
 end
 
+# @parametrize([[0, 3, None, [0, 1, 2, 3]], [3, 0, None, [3, 2, 1, 0]], [0, 10, 5, [0, 5, 10]], [10, 0, -5, [10, 5, 0]], [2, 2, None, [2]], [0, 5, -1, []]])
+def test_stream_range(start, stop, step, expected):
+  let stream = stream_range(start, stop, step)
+  | assert(is_coroutine(stream))
+  | assert_eq(collect(stream), expected)
+end
+
+def test_stream_range_matches_range():
+  assert_eq(collect(stream_range(0, 9)), range(0, 9))
+end
+
+def test_stream_range_unbounded_with_take():
+  assert_eq(collect(take(stream_range(5, None), 3)), [5, 6, 7])
+  | assert_eq(collect(take(stream_range(5, None, -2), 3)), [5, 3, 1])
+end
+
+def test_stream_range_is_lazy():
+  let stream = stream_range(0, 1000000000)
+  | assert_eq(next(stream)["value"], 0)
+  | assert_eq(next(stream)["value"], 1)
+end
+
+def test_stream_range_zero_step_errors():
+  let result = try: stream_range(0, 3, 0) catch(e): e["message"]
+  | assert_true(contains(result, "step for range must not be zero"))
+end
+
+# @parametrize([["a", "e", None], ["e", "a", None], ["a", "z", 5], ["z", "a", -7], ["aa", "ad", None], ["あ", "え", None], ["A", "A", None]])
+def test_stream_range_string_matches_range(start, stop, step):
+  let expected = if (is_none(step)): range(start, stop) else: range(start, stop, step)
+  | let stream = stream_range(start, stop, step)
+  | assert(is_coroutine(stream))
+  | assert_eq(collect(stream), expected)
+end
+
+def test_stream_range_string_skips_surrogates():
+  let stream = stream_range("\u{D7FF}", "\u{E000}")
+  | assert_eq(collect(stream), range("\u{D7FF}", "\u{E000}"))
+  | assert_eq(len(collect(stream_range("\u{D7FF}", "\u{E000}"))), 2)
+end
+
+def test_stream_range_string_is_lazy():
+  let stream = stream_range("a", "\u{10FFFF}")
+  | assert_eq(next(stream)["value"], "a")
+  | assert_eq(next(stream)["value"], "b")
+end
+
+def test_stream_range_string_zero_step_errors():
+  let result = try: stream_range("a", "e", 0) catch(e): e["message"]
+  | assert_true(contains(result, "step for range must not be zero"))
+end
+
+def test_stream_range_string_none_stop_errors():
+  let result = try: stream_range("a", None) catch(e): e["message"]
+  | assert_true(contains(result, "requires a stop value"))
+end
+
+def test_stream_range_multi_char_with_step_errors():
+  let result = try: stream_range("aa", "ad", 2) catch(e): e["message"]
+  | assert_true(contains(result, "only supported for single characters"))
+end
+
 # @parametrize([[[1, 2, 3], 3], [[42], 42]])
 def test_last(value, expected):
   let result = last(value)
