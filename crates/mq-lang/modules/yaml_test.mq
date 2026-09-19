@@ -32,11 +32,20 @@ def test_to_frontmatter():
   | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
 end
 
-# `s` is letters-only (no digits/spaces): a plain YAML scalar trims surrounding whitespace and a
-# purely numeric string would round-trip back as a number instead of a string, so both would
-# break equality against the original dict.
-# @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 8), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
+# @property(50, [gen::string("abc XYZ012:#-\"'\\\n\t", 8), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
 def test_yaml_stringify_parse_round_trip(s, n, b, arr):
   let data = {"s": s, "n": n, "b": b, "arr": arr}
+  | assert_eq(yaml::yaml_parse(yaml::yaml_stringify(data)), data)
+end
+
+# Strings that a plain scalar would read back as a bool, null, number, or a different structure.
+# @parametrize([
+#   ["true"], ["False"], ["null"], ["~"], ["yes"], ["off"], ["123"], ["-5"], ["1.5"], ["1e3"], [".inf"], [".NaN"],
+#   ["0x1F"], ["0o17"], [""], [" "], [" a"], ["a "], ["a: b"], ["a #b"], ["a:"], ["#x"], ["- x"], ["-"], ["&a"],
+#   ["*a"], ["!t"], ["|"], [">"], ["[a]"], ["{a}"], ["a,b"], ["it's"], ["a\nb"], ["a\tb"], ["a\rb"], ["a\u0001b"],
+#   ["---"], ["..."], ["plain"], ["é😀"],
+# ])
+def test_yaml_stringify_string_round_trips(s):
+  let data = dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]])
   | assert_eq(yaml::yaml_parse(yaml::yaml_stringify(data)), data)
 end

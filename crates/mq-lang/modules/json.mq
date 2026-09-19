@@ -28,8 +28,20 @@ end
 #
 # Returns: string
 def json_stringify(data):
+  def _escape_control_char(code):
+    if (code < 32):
+      "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+    else:
+      implode([code])
+  end
+
+  def _escape_common(str):
+    replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t") | replace("\r", "\\r")
+  end
+
   def _escape_string(str):
-    replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+    let escaped = _escape_common(str)
+    | if (test(escaped, "[\\x00-\\x1f]")): join(map(explode(escaped), _escape_control_char), "") else: escaped
   end
 
   def _format_json_stringify(data):

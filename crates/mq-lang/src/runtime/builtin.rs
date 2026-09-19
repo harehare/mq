@@ -12512,6 +12512,9 @@ mod tests {
     #[case::string_with_colon_needs_quoting(RuntimeValue::String(Shared::new("a:b".to_string())), "\"a:b\"")]
     #[case::string_with_delimiter_needs_quoting(RuntimeValue::String(Shared::new("a,b".to_string())), "\"a,b\"")]
     #[case::string_starting_with_dash_needs_quoting(RuntimeValue::String(Shared::new("-x".to_string())), "\"-x\"")]
+    #[case::integer_above_i64_max(RuntimeValue::Number(2f64.powi(63).into()), "9223372036854775808")]
+    #[case::integer_above_i64_max_up_to_u64(RuntimeValue::Number(1e19.into()), "10000000000000000000")]
+    #[case::integer_i64_min(RuntimeValue::Number((i64::MIN as f64).into()), "-9223372036854775808")]
     fn test_toon_stringify(#[case] input: RuntimeValue, #[case] expected: &str) {
         let ident = Ident::new("_toon_stringify");
         let result = eval_builtin(&RuntimeValue::None, &ident, vec![input].into(), &VmEnv::default());

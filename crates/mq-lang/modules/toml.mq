@@ -1,24 +1,55 @@
 # TOML Implementation in mq
 # Based on TOML v1.0.0 specification
 
+def _toml_escape_control_char(code):
+  if (code < 32 || code == 127):
+    "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+  else:
+    implode([code])
+end
+
+def _toml_escape_common(str):
+  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t") | replace("\r", "\\r")
+end
+
 def _escape_string(str):
-  replace(str, "\\", "\\\\") | replace("\"", "\\\"") | replace("\n", "\\n") | replace("\t", "\\t")
+  let escaped = _toml_escape_common(str)
+  | if (test(escaped, "[\\x00-\\x1f\\x7f]")): join(map(explode(escaped), _toml_escape_control_char), "") else: escaped
+end
+
+# Bare keys only allow A-Za-z0-9_-; anything else must be a quoted key.
+def _toml_key(k):
+  if (test(k, "^[A-Za-z0-9_-]+$")):
+    k
+  else:
+    "\"" + _escape_string(k) + "\""
+end
+
+# TOML has no null, so None-valued entries are omitted.
+def _toml_keys(d): filter(keys(d), fn(k): !is_none(d[k]););
+
+def _is_toml_table(value): is_dict(value) || (is_array(value) && !is_empty(value) && is_dict(first(value)));
+
+# Scalars and inline arrays must precede tables: a key after a `[table]` header belongs to that table.
+def _toml_ordered_keys(data):
+  let groups = partition(_toml_keys(data), fn(k): _is_toml_table(data[k]);)
+  | groups[1] + groups[0]
 end
 
 def _add_toml_lines(lines, key, value):
-  if (is_dict(value)):
+  if (is_none(value)):
+    lines
+  elif (is_dict(value)):
     do
-      let body_lines = map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);)
-      | let last_line = last(body_lines)
-      | let last_line = if (last_line): last_line + "\n" else: None
-      | lines + ["[" + key + "]"] + body_lines[0:len(body_lines) - 1] + last_line
+      let body_lines = map(_toml_keys(value), fn(k): _toml_key(k) + " = " + _toml_stringify_value(value[k]);)
+      | lines + ["[" + _toml_key(key) + "]"] + body_lines + (if (is_empty(body_lines)): [] else: [""])
     end
   elif (is_array(value)):
     if (is_empty(value) || !is_dict(first(value))):
-      lines + [key + " = " + _toml_stringify_value(value)]
+      lines + [_toml_key(key) + " = " + _toml_stringify_value(value)]
     else:
-      lines + flat_map(value, fn(entry): ["[[" + key + "]]"] + map(keys(entry), fn(k): k + " = " + _toml_stringify_value(entry[k]););)
-  else: lines + [key + " = " + _toml_stringify_value(value)]
+      lines + flat_map(value, fn(entry): ["[[" + _toml_key(key) + "]]"] + map(_toml_keys(entry), fn(k): _toml_key(k) + " = " + _toml_stringify_value(entry[k]););)
+  else: lines + [_toml_key(key) + " = " + _toml_stringify_value(value)]
 end
 
 def _toml_stringify_value(value):
@@ -31,9 +62,9 @@ def _toml_stringify_value(value):
   elif (is_array(value)):
     "[" + join(map(value, _toml_stringify_value), ", ") + "]"
   elif (is_dict(value)):
-    "{" + join(map(keys(value), fn(k): k + " = " + _toml_stringify_value(value[k]);), ", ") + "}"
+    "{" + join(map(_toml_keys(value), fn(k): _toml_key(k) + " = " + _toml_stringify_value(value[k]);), ", ") + "}"
   elif (is_none(value)):
-    ""
+    error("TOML cannot represent null inside an array")
   else:
     to_string(value)
 end
@@ -62,7 +93,7 @@ end
 # Returns: string
 def toml_stringify(data):
   let lines = []
-  | let result = keys(data)
+  | let result = _toml_ordered_keys(data)
   | var i = 0
   | let final_lines = while (i < len(result)):
       let key = result[i]
