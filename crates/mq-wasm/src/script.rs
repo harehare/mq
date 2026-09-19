@@ -1245,7 +1245,7 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
 ///
 /// `opfs::persistent::app_specific_dir` goes through `web_sys::window()`, which is `None` in
 /// Web Workers, so the root is resolved from the global scope's `navigator.storage` instead.
-#[cfg(feature = "opfs")]
+#[cfg(all(feature = "opfs", target_arch = "wasm32"))]
 async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
     let get = |target: &JsValue, key: &str| js_sys::Reflect::get(target, &JsValue::from_str(key));
 
@@ -1259,6 +1259,14 @@ async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
     let promise: js_sys::Promise = get_directory.call0(&storage)?.dyn_into()?;
     let handle: web_sys::FileSystemDirectoryHandle = wasm_bindgen_futures::JsFuture::from(promise).await?.dyn_into()?;
     Ok(handle.into())
+}
+
+/// Returns the app-specific data directory on non-wasm targets, where there is no OPFS.
+#[cfg(all(feature = "opfs", not(target_arch = "wasm32")))]
+async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
+    opfs::persistent::app_specific_dir()
+        .await
+        .map_err(|e| JsValue::from_str(&e.to_string()))
 }
 
 /// Fetches the text content of a HTTPS URL.
