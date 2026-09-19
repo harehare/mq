@@ -17,6 +17,22 @@
 # Returns: markdown
 def h(value, depth): to_h(value, depth);
 
+# Shorthands for `h(value, 1)` through `h(value, 6)`.
+#
+# Example:
+# ```
+# import "md" | md::h2("Title")
+# #=> ## Title
+# ```
+#
+# Returns: markdown
+def h1(value): to_h(value, 1);
+def h2(value): to_h(value, 2);
+def h3(value): to_h(value, 3);
+def h4(value): to_h(value, 4);
+def h5(value): to_h(value, 5);
+def h6(value): to_h(value, 6);
+
 # Wraps `value` in a fenced code block with the given `lang`.
 #
 # Returns: markdown
@@ -76,6 +92,80 @@ def em(value): to_em(value);
 #
 # Returns: markdown
 def delete(value): to_delete(value);
+
+# Wraps `value` in highlight markers.
+#
+# Example:
+# ```
+# import "md" | md::highlight("key")
+# #=> ==key==
+# ```
+#
+# Returns: markdown
+def highlight(value): to_md_text("==" + to_string(value) + "==");
+
+# Wraps `value` in an HTML comment.
+#
+# Example:
+# ```
+# import "md" | md::comment("todo")
+# #=> <!-- todo -->
+# ```
+#
+# Returns: markdown
+def comment(value): to_md_html("<!-- " + to_string(value) + " -->");
+
+# Creates a wikilink to `target`, with optional display `text`.
+#
+# Example:
+# ```
+# import "md" | md::wikilink("Page", "alias")
+# #=> [[Page|alias]]
+# ```
+#
+# Returns: markdown
+def wikilink(target, text = ""):
+  let inner = if (is_empty(text)): target else: target + "|" + text
+  | first(to_markdown("[[" + inner + "]]"));
+
+# Creates an embed of `target` (`![[target]]`), with optional `display` text.
+#
+# Example:
+# ```
+# import "md" | md::embed("image.png")
+# #=> ![[image.png]]
+# ```
+#
+# Returns: markdown
+def embed(target, display = ""):
+  let inner = if (is_empty(display)): target else: target + "|" + display
+  | first(to_markdown("![[" + inner + "]]"));
+
+# Escapes Markdown punctuation in `value` so it renders literally.
+#
+# Example:
+# ```
+# import "md" | md::escape("a*b")
+# #=> a\*b
+# ```
+#
+# Returns: markdown
+def escape(value): to_md_text(gsub(to_string(value), "([\\\\`*_\\[\\]<>~|#])", "\\$1"));
+
+# Turns single newlines in `value` into hard line breaks; blank lines are kept.
+#
+# Example:
+# ```
+# import "md" | split(md::hard_break("a\nb"), "\n")
+# #=> ["a  ", "b"]
+# ```
+#
+# Returns: markdown
+def hard_break(value):
+  let lines = split(to_string(value), "\n")
+  | let nexts = slice(lines, 1, len(lines)) + [""]
+  | map(zip(lines, nexts), fn(p): if (is_empty(p[0]) || is_empty(p[1])): p[0] else: p[0] + "  ";)
+  | to_md_text(join("\n"));
 
 # Wraps `value` in a blockquote node.
 #

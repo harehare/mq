@@ -186,6 +186,21 @@ import "md"
   )
 ```
 
+Inline and heading helpers cover the rest of the common formatting cases:
+
+```mq
+import "md"
+| md::doc(
+    md::h2("Notes"),          # md::h1 .. md::h6
+    md::highlight("key"),     # ==key==
+    md::comment("todo"),      # <!-- todo -->
+    md::wikilink("Page", "alias"),  # [[Page|alias]]
+    md::embed("image.png"),   # ![[image.png]]
+    md::escape("a*b_c"),      # a\*b\_c
+    md::hard_break("a\nb"),   # single newlines become hard line breaks
+  )
+```
+
 ### Reference indexing and resolution
 
 `md::reference_index(md_nodes)` and `md::resolve_references(md_nodes, index = None)` index and
