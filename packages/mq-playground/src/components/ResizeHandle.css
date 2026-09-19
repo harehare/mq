@@ -1,14 +1,25 @@
 .resize-handle {
   flex-shrink: 0;
-  background-color: var(--tree-border);
-  transition: background-color 0.15s;
   position: relative;
   z-index: 10;
 }
 
-.resize-handle:hover,
-.resize-handle:active {
+/* The 4px hit area stays transparent; only a 1px line is drawn. */
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  background-color: var(--tree-border);
+  transition: background-color 0.15s;
+}
+
+.resize-handle:hover::after,
+.resize-handle:active::after,
+.resize-handle:focus-visible::after {
   background-color: var(--accent-blue);
+}
+
+.resize-handle:focus-visible {
+  outline: none;
 }
 
 .resize-handle-horizontal {
@@ -17,8 +28,36 @@
   align-self: stretch;
 }
 
+.resize-handle-horizontal::after {
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+}
+
+.resize-handle-horizontal:hover::after,
+.resize-handle-horizontal:active::after,
+.resize-handle-horizontal:focus-visible::after {
+  left: 1px;
+  width: 2px;
+}
+
 .resize-handle-vertical {
   height: 4px;
   cursor: row-resize;
   width: 100%;
+}
+
+.resize-handle-vertical::after {
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+}
+
+.resize-handle-vertical:hover::after,
+.resize-handle-vertical:active::after,
+.resize-handle-vertical:focus-visible::after {
+  top: 1px;
+  height: 2px;
 }

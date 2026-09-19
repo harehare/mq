@@ -701,7 +701,29 @@ export const FileTree = ({
         )}
         {displayedFiles.length === 0 && !creatingItem ? (
           <div className="file-tree-empty">
-            {searchQuery ? "No matching files" : "No files"}
+            {searchQuery ? (
+              "No matching files"
+            ) : (
+              <>
+                <p>No files yet</p>
+                <div className="file-tree-empty-actions">
+                  <button
+                    className="file-tree-empty-btn"
+                    onClick={() => handleStartCreate(undefined, "file")}
+                  >
+                    <VscNewFile size={14} />
+                    New File
+                  </button>
+                  <button
+                    className="file-tree-empty-btn"
+                    onClick={() => handleStartCreate(undefined, "folder")}
+                  >
+                    <VscNewFolder size={14} />
+                    New Folder
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           displayedFiles.map((node) => (
