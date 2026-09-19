@@ -39,6 +39,7 @@ Every recipe follows the same four parts:
 - [Add a row to a table](add-row-to-table.md)
 - [Convert a Markdown table to CSV](convert-table-to-csv.md)
 - [Convert CSV to a Markdown table](convert-csv-to-markdown-table.md)
+- [Fill blank cells in a CSV column](fill-blank-csv-cells.md)
 - [Reshape a table between wide and long form](reshape-table-pivot.md)
 
 ## Functions and data
