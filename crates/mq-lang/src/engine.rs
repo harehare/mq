@@ -1104,6 +1104,48 @@ mod tests {
         assert_eq!(values.len(), 1);
     }
 
+    /// Errors raised inside an imported module must name that module's file and show its source,
+    /// even when the engine already holds another module (so the module ids can't line up by luck).
+    #[rstest]
+    #[case::runtime_error(
+        "def boom(): error(\"boom\");",
+        "broken_module_runtime_error",
+        "broken_module_runtime_error::boom()"
+    )]
+    #[case::syntax_error(
+        "def f(t):\n  let rows = map(t, fn(row): map(row, to_string););\n  | rows\nend\n\ndef g(): 1;\n",
+        "broken_module_syntax_error",
+        "1"
+    )]
+    fn test_error_in_imported_module_names_module_file(
+        #[case] content: &str,
+        #[case] module: &str,
+        #[case] call: &str,
+    ) {
+        let (temp_dir, temp_file_path) = create_file(&format!("{module}.mq"), content);
+        let temp_file_path_clone = temp_file_path.clone();
+
+        defer! {
+            if temp_file_path_clone.exists() {
+                std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+            }
+        }
+
+        let mut engine = DefaultEngine::default();
+        engine.set_search_paths(vec![temp_dir]);
+        engine.load_builtin_module();
+        engine.load_module("section").unwrap();
+
+        let error = engine
+            .eval(
+                &format!(r#"import "{module}" | {call}"#),
+                vec!["".to_string().into()].into_iter(),
+            )
+            .unwrap_err();
+
+        assert_eq!(error.source_code.name(), format!("{module}.mq"), "{error:?}");
+    }
+
     #[test]
     fn test_eval_import_as_alias() {
         let (temp_dir, temp_file_path) =
