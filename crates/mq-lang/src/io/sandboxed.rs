@@ -319,6 +319,22 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.http_request(method, url, body, headers)
     }
 
+    fn http_request_stream(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<Box<dyn IoReader>, IoError> {
+        if self.allow_net.is_denied() {
+            return Err(denied("network access is disabled"));
+        }
+        if !self.allow_net.permits(url) {
+            return Err(denied_domain(url));
+        }
+        self.inner.http_request_stream(method, url, body, headers)
+    }
+
     fn http_request_all(&self, requests: &[HttpRequestSpec]) -> Result<Vec<String>, IoError> {
         if self.allow_net.is_denied() {
             return Err(denied("network access is disabled"));

@@ -142,9 +142,21 @@ stream_lines("app.log")
 | collect()
 ```
 
-### File handles and closing
+## Reading HTTP responses lazily
 
-The generators are built on a file handle. `open_file(path)` returns one, `read_line(handle)` and `read_bytes(handle, size)` read from it and return `None` at end of file, and `close(handle)` closes it (`status(handle)` is `:open` or `:closed`). Reading from a closed handle is a runtime error. `size` must be a positive integer.
+With the `http` feature and net permission (`--allow-net`), a response body can be read line by line as it arrives instead of waiting for the whole thing:
+
+- `http_lines(method, url, body, headers)` yields each line without its `\n`/`\r\n` terminator. `body` and `headers` are optional, same as `http()`.
+
+```mq
+http_lines(:get, "https://example.com/stream")
+| take(10)
+| collect()
+```
+
+### Reader handles and closing
+
+These generators are built on a reader handle: `open_file(path)`/`open_http(method, url, body, headers)` return one, `read_line(handle)` and `read_bytes(handle, size)` read from it and return `None` at end of stream, and `close(handle)` closes it (`status(handle)` is `:open` or `:closed`). Reading from a closed handle is a runtime error. `size` must be a positive integer. `type(handle)` reports `"file"` or `"http"` depending on how it was opened.
 
 ```mq
 let f = open_file("data.txt")
@@ -152,7 +164,7 @@ let f = open_file("data.txt")
 | close(f)
 ```
 
-The file is closed when a coroutine holding it finishes or is closed with `close(stream)`, and when the last reference to it is dropped. There is no `finally`, so this relies on the handle being released rather than on code in the generator body. Stopping early with `take`, `first`, `any` and similar does not close the source stream, since it may still be advanced afterwards. Call `close(stream)` when you are done with it.
+The underlying file/connection is closed when a coroutine holding the handle finishes or is closed with `close(stream)`, and when the last reference to it is dropped. There is no `finally`, so this relies on the handle being released rather than on code in the generator body. Stopping early with `take`, `first`, `any` and similar does not close the source stream, since it may still be advanced afterwards. Call `close(stream)` when you are done with it.
 
 ## Rules
 

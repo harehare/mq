@@ -153,6 +153,21 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         headers: &[(String, String)],
     ) -> Result<String, IoError>;
 
+    /// Opens a streaming HTTP response body, backing `open_http`. The default buffers the
+    /// whole response via [`Io::http_request`] and wraps it in a `Cursor`; override to stream
+    /// without buffering (see `NativeIo`).
+    fn http_request_stream(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<Box<dyn IoReader>, IoError> {
+        Ok(Box::new(std::io::Cursor::new(
+            self.http_request(method, url, body, headers)?.into_bytes(),
+        )))
+    }
+
     /// Batched HTTP requests, backing the `http_all()` builtin. The default
     /// implementation issues each request sequentially through
     /// [`Io::http_request`]; implementations that can safely fan out (e.g.

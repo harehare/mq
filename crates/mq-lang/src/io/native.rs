@@ -49,6 +49,65 @@ fn system_time_to_unix(time: std::time::SystemTime) -> Option<i64> {
     }
 }
 
+/// Shared SSRF-hardened agent behind `http_request`/`http_request_stream`.
+#[cfg(feature = "http")]
+fn http_agent() -> &'static ureq::Agent {
+    const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+    static AGENT: std::sync::LazyLock<ureq::Agent> =
+        std::sync::LazyLock::new(|| crate::module::resolver::ssrf::ssrf_safe_agent(TIMEOUT, true));
+    &AGENT
+}
+
+/// Issues the request behind `http_request`/`http_request_stream`, enforcing HTTPS-only and
+/// a successful status, and returns the still-unread response.
+#[cfg(feature = "http")]
+fn send_http_request(
+    method: &str,
+    url: &str,
+    body: Option<&str>,
+    headers: &[(String, String)],
+) -> Result<ureq::http::Response<ureq::Body>, IoError> {
+    if !crate::module::resolver::ssrf::is_https(url) {
+        return Err(IoError::Other(Cow::Owned(format!(
+            "only https:// URLs are allowed, got {url:?}"
+        ))));
+    }
+
+    let method: ureq::http::Method = method
+        .parse()
+        .map_err(|_| IoError::Other(Cow::Owned(format!("invalid HTTP method {method:?}"))))?;
+
+    let mut builder = ureq::http::Request::builder().method(method).uri(url);
+    for (name, value) in headers {
+        builder = builder.header(name, value);
+    }
+
+    let response = match body {
+        Some(body) => {
+            let request = builder
+                .body(body.to_string())
+                .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+            http_agent().run(request)
+        }
+        None => {
+            let request = builder
+                .body(())
+                .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+            http_agent().run(request)
+        }
+    }
+    .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(IoError::Other(Cow::Owned(format!(
+            "request failed with status {status}"
+        ))));
+    }
+
+    Ok(response)
+}
+
 impl Io for NativeIo {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError> {
         std::fs::read_to_string(path).map_err(|e| io_err(e, path))
@@ -172,51 +231,10 @@ impl Io for NativeIo {
     ) -> Result<String, IoError> {
         /// Matches the `http()` builtin's existing limits.
         const MAX_RESPONSE_SIZE: u64 = 10 * 1024 * 1024;
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
-        static AGENT: std::sync::LazyLock<ureq::Agent> =
-            std::sync::LazyLock::new(|| crate::module::resolver::ssrf::ssrf_safe_agent(TIMEOUT, true));
 
-        if !crate::module::resolver::ssrf::is_https(url) {
-            return Err(IoError::Other(Cow::Owned(format!(
-                "only https:// URLs are allowed, got {url:?}"
-            ))));
-        }
-
-        let method: ureq::http::Method = method
-            .parse()
-            .map_err(|_| IoError::Other(Cow::Owned(format!("invalid HTTP method {method:?}"))))?;
-
-        let mut builder = ureq::http::Request::builder().method(method).uri(url);
-        for (name, value) in headers {
-            builder = builder.header(name, value);
-        }
-
-        let mut response = match body {
-            Some(body) => {
-                let request = builder
-                    .body(body.to_string())
-                    .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
-                AGENT.run(request)
-            }
-            None => {
-                let request = builder
-                    .body(())
-                    .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
-                AGENT.run(request)
-            }
-        }
-        .map_err(|e| IoError::Other(Cow::Owned(e.to_string())))?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(IoError::Other(Cow::Owned(format!(
-                "request failed with status {status}"
-            ))));
-        }
-
-        response
-            .body_mut()
-            .with_config()
+        send_http_request(method, url, body, headers)?
+            .into_body()
+            .into_with_config()
             .limit(MAX_RESPONSE_SIZE)
             .read_to_string()
             .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read response body: {e}"))))
@@ -233,6 +251,20 @@ impl Io for NativeIo {
         Err(IoError::Other(Cow::Borrowed(
             "network access is not compiled into this build",
         )))
+    }
+
+    /// Streams the response body without buffering it, backing `open_http`. Decompression
+    /// (gzip) and charset handling happen transparently, same as `http_request`.
+    #[cfg(feature = "http")]
+    fn http_request_stream(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<Box<dyn IoReader>, IoError> {
+        let response = send_http_request(method, url, body, headers)?;
+        Ok(Box::new(std::io::BufReader::new(response.into_body().into_reader())))
     }
 
     #[cfg(feature = "http")]

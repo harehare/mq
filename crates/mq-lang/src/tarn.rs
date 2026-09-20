@@ -218,8 +218,8 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
         RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => mq_markdown::Node::Empty,
         RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => mq_markdown::Node::Empty,
-        #[cfg(feature = "file-io")]
-        RuntimeValue::FileHandle(_) => mq_markdown::Node::Empty,
+        #[cfg(any(feature = "file-io", feature = "http"))]
+        RuntimeValue::ReaderHandle(_) => mq_markdown::Node::Empty,
         RuntimeValue::Array(arr) => arr
             .iter()
             .filter_map(|v| if v.is_none() { None } else { Some(v.to_string()) })

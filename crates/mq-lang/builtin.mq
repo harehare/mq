@@ -1823,6 +1823,25 @@ end
 # Returns: dynamic
 def stream_bytes(path): flat_map(stream_chunks(path, 8192), fn(chunk): to_array(chunk););
 
+# Lazily yields each line of the response body for an HTTPS request with the given method,
+# without its line terminator, instead of waiting for the whole response. `body`, when given,
+# is sent regardless of method; `headers` is a dict of string to string. The connection is
+# opened immediately, and closed when the stream finishes or is passed to `close()`. Requires
+# the http feature.
+#
+# Example:
+# ```
+# http_lines(:get, "https://example.com/stream") | take(10) | collect()
+# ```
+#
+# Returns: dynamic
+def http_lines(method, url, body = None, headers = {}):
+  if (is_none(body)):
+    _stream_lines(open_http(method, url, headers))
+  else:
+    _stream_lines(open_http(method, url, body, headers))
+end
+
 # Performs an HTTPS GET request, optionally with the given headers (a dict of string to
 # string), and returns the response body as a string
 #

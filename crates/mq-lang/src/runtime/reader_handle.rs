@@ -1,31 +1,57 @@
-//! Read-only file handle behind `RuntimeValue::FileHandle`.
+//! Generic closeable reader behind `RuntimeValue::ReaderHandle`.
 use crate::SharedCell;
 use crate::io::{IoError, IoReader};
 use std::borrow::Cow;
 use std::io::Read;
 
-/// Cloning the owning `RuntimeValue` shares the handle. The reader is dropped, and the file
+/// What a [`ReaderHandle`] was opened from, used for `type_of`/display purposes only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HandleKind {
+    #[cfg(feature = "file-io")]
+    File,
+    #[cfg(feature = "http")]
+    Http,
+}
+
+impl HandleKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            #[cfg(feature = "file-io")]
+            HandleKind::File => "file",
+            #[cfg(feature = "http")]
+            HandleKind::Http => "http",
+        }
+    }
+}
+
+/// Cloning the owning `RuntimeValue` shares the handle. The reader is dropped, and the source
 /// closed, on [`close`](Self::close) or when the last reference goes away (including when a
 /// coroutine holding it is closed or finishes).
-pub(crate) struct FileHandle {
+pub(crate) struct ReaderHandle {
+    kind: HandleKind,
     path: String,
     reader: SharedCell<Option<Box<dyn IoReader>>>,
 }
 
 fn closed() -> IoError {
-    IoError::Other(Cow::Borrowed("file handle is closed"))
+    IoError::Other(Cow::Borrowed("reader handle is closed"))
 }
 
 fn read_err(err: std::io::Error) -> IoError {
     IoError::Other(Cow::Owned(err.to_string()))
 }
 
-impl FileHandle {
-    pub(crate) fn new(path: String, reader: Box<dyn IoReader>) -> Self {
+impl ReaderHandle {
+    pub(crate) fn new(kind: HandleKind, path: String, reader: Box<dyn IoReader>) -> Self {
         Self {
+            kind,
             path,
             reader: SharedCell::new(Some(reader)),
         }
+    }
+
+    pub(crate) fn kind(&self) -> HandleKind {
+        self.kind
     }
 
     pub(crate) fn path(&self) -> &str {
@@ -88,9 +114,10 @@ impl FileHandle {
     }
 }
 
-impl std::fmt::Debug for FileHandle {
+impl std::fmt::Debug for ReaderHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FileHandle")
+        f.debug_struct("ReaderHandle")
+            .field("kind", &self.kind.as_str())
             .field("path", &self.path)
             .field("open", &self.is_open())
             .finish()
@@ -103,14 +130,20 @@ mod tests {
     use rstest::rstest;
     use std::io::Cursor;
 
-    fn handle(content: &str) -> FileHandle {
-        FileHandle::new(
+    #[cfg(feature = "file-io")]
+    const TEST_KIND: HandleKind = HandleKind::File;
+    #[cfg(all(not(feature = "file-io"), feature = "http"))]
+    const TEST_KIND: HandleKind = HandleKind::Http;
+
+    fn handle(content: &str) -> ReaderHandle {
+        ReaderHandle::new(
+            TEST_KIND,
             "test.txt".to_string(),
             Box::new(Cursor::new(content.as_bytes().to_vec())),
         )
     }
 
-    fn lines(handle: &FileHandle) -> Vec<String> {
+    fn lines(handle: &ReaderHandle) -> Vec<String> {
         std::iter::from_fn(|| handle.read_line().unwrap()).collect()
     }
 
@@ -127,7 +160,11 @@ mod tests {
 
     #[test]
     fn read_line_rejects_invalid_utf8() {
-        let handle = FileHandle::new("bin".to_string(), Box::new(Cursor::new(vec![0xff, 0xfe, b'\n'])));
+        let handle = ReaderHandle::new(
+            TEST_KIND,
+            "bin".to_string(),
+            Box::new(Cursor::new(vec![0xff, 0xfe, b'\n'])),
+        );
         assert!(handle.read_line().is_err());
     }
 
@@ -152,7 +189,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "file-io"))]
 mod release_tests {
     use crate::io::MemIo;
     use crate::{DefaultModuleResolver, Engine, Shared, null_input};

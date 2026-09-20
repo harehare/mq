@@ -14,6 +14,8 @@ use crate::DictMap;
 use super::Error;
 use super::io_context;
 use crate::RuntimeValue;
+use crate::Shared;
+use crate::runtime::reader_handle::{HandleKind, ReaderHandle};
 
 /// Builds an `Error::Runtime` with the `http: ` prefix shared by every error in this module.
 fn err(msg: impl std::fmt::Display) -> Error {
@@ -63,6 +65,28 @@ pub(super) fn request(
     io_context::current()
         .http_request(&method, url, body, &headers)
         .map(|s| RuntimeValue::String(s.into()))
+        .map_err(err)
+}
+
+/// Opens the response body as a streaming reader handle instead of buffering it, backing
+/// `open_http`. Same method/body/header handling as [`request`].
+pub(super) fn open_stream(
+    method: &RuntimeValue,
+    url: &str,
+    body: Option<&str>,
+    headers: Option<&DictMap>,
+) -> Result<RuntimeValue, Error> {
+    let method = parse_method(method)?;
+    let headers = extract_headers(headers)?;
+    io_context::current()
+        .http_request_stream(&method, url, body, &headers)
+        .map(|reader| {
+            RuntimeValue::ReaderHandle(Shared::new(ReaderHandle::new(
+                HandleKind::Http,
+                url.to_string(),
+                reader,
+            )))
+        })
         .map_err(err)
 }
 
@@ -224,5 +248,36 @@ mod tests {
     #[test]
     fn test_extract_headers_passthrough_when_none() {
         assert!(extract_headers(None).unwrap().is_empty());
+    }
+
+    #[cfg(feature = "mock-io")]
+    #[test]
+    fn test_http_lines_streams_the_mocked_response_line_by_line() {
+        use crate::{DefaultModuleResolver, Engine, RuntimeValue, null_input};
+
+        let io = Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true));
+        let mut engine = Engine::with_io(DefaultModuleResolver::default(), Shared::clone(&io));
+        engine.load_builtin_module();
+        engine
+            .eval(
+                r#"mock_fetch("https://example.invalid", "a\nb\nc")"#,
+                null_input().into_iter(),
+            )
+            .unwrap();
+
+        let result = engine
+            .eval(
+                r#"collect(http_lines(:get, "https://example.invalid"))"#,
+                null_input().into_iter(),
+            )
+            .unwrap();
+        let value = result.into_iter().next().unwrap();
+        let RuntimeValue::Array(items) = value else {
+            panic!("expected an array, got {value:?}")
+        };
+        assert_eq!(
+            items.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
     }
 }

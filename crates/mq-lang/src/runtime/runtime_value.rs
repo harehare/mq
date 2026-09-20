@@ -1,5 +1,5 @@
-#[cfg(feature = "file-io")]
-use crate::runtime::file_handle::FileHandle;
+#[cfg(any(feature = "file-io", feature = "http"))]
+use crate::runtime::reader_handle::ReaderHandle;
 use crate::{
     Ident, Shared,
     number::Number,
@@ -112,9 +112,9 @@ pub enum RuntimeValue {
     #[allow(private_interfaces)]
     WeakCoroutine(CoroutineWeakHandle),
     /// An open read-only file handle from `open_file`. Cloning shares the handle.
-    #[cfg(feature = "file-io")]
+    #[cfg(any(feature = "file-io", feature = "http"))]
     #[allow(private_interfaces)]
-    FileHandle(Shared<FileHandle>),
+    ReaderHandle(Shared<ReaderHandle>),
     /// An empty or null value.
     #[default]
     None,
@@ -138,8 +138,8 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Bytes(a), RuntimeValue::Bytes(b)) => a == b,
             (RuntimeValue::Coroutine(a), RuntimeValue::Coroutine(b)) => Shared::ptr_eq(a, b),
             (RuntimeValue::WeakCoroutine(a), RuntimeValue::WeakCoroutine(b)) => a.ptr_eq(b),
-            #[cfg(feature = "file-io")]
-            (RuntimeValue::FileHandle(a), RuntimeValue::FileHandle(b)) => Shared::ptr_eq(a, b),
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            (RuntimeValue::ReaderHandle(a), RuntimeValue::ReaderHandle(b)) => Shared::ptr_eq(a, b),
             (RuntimeValue::None, RuntimeValue::None) => true,
             _ => false,
         }
@@ -372,8 +372,8 @@ impl std::fmt::Display for RuntimeValue {
             Self::Dict(_) => self.string(),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
-            #[cfg(feature = "file-io")]
-            Self::FileHandle(_) => Cow::Borrowed("file"),
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            Self::ReaderHandle(handle) => Cow::Borrowed(handle.kind().as_str()),
         };
         write!(f, "{}", value)
     }
@@ -498,8 +498,8 @@ impl RuntimeValue {
             RuntimeValue::Bytes(_) => "bytes",
             RuntimeValue::Coroutine(_) => "coroutine",
             RuntimeValue::WeakCoroutine(_) => "coroutine",
-            #[cfg(feature = "file-io")]
-            RuntimeValue::FileHandle(_) => "file",
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            RuntimeValue::ReaderHandle(handle) => handle.kind().as_str(),
         }
     }
 
@@ -585,8 +585,8 @@ impl RuntimeValue {
             RuntimeValue::VmClosure(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => true,
-            #[cfg(feature = "file-io")]
-            RuntimeValue::FileHandle(_) => true,
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            RuntimeValue::ReaderHandle(_) => true,
             RuntimeValue::None => false,
         }
     }
@@ -611,8 +611,8 @@ impl RuntimeValue {
             RuntimeValue::CoroutineBuiltin(..) => 0,
             RuntimeValue::VmClosure(..) => 0,
             RuntimeValue::Coroutine(..) | RuntimeValue::WeakCoroutine(..) => 0,
-            #[cfg(feature = "file-io")]
-            RuntimeValue::FileHandle(..) => 0,
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            RuntimeValue::ReaderHandle(..) => 0,
         }
     }
 
@@ -703,8 +703,8 @@ impl RuntimeValue {
             Self::VmClosure(_) => Cow::Borrowed("function"),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
-            #[cfg(feature = "file-io")]
-            Self::FileHandle(_) => Cow::Borrowed("file"),
+            #[cfg(any(feature = "file-io", feature = "http"))]
+            Self::ReaderHandle(handle) => Cow::Borrowed(handle.kind().as_str()),
             Self::Dict(map) => {
                 let items = map
                     .iter()
@@ -870,8 +870,8 @@ impl RuntimeValues {
                         }
                         RuntimeValue::VmClosure(_) => current_value.clone(),
                         RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => current_value.clone(),
-                        #[cfg(feature = "file-io")]
-                        RuntimeValue::FileHandle(_) => current_value.clone(),
+                        #[cfg(any(feature = "file-io", feature = "http"))]
+                        RuntimeValue::ReaderHandle(_) => current_value.clone(),
                         RuntimeValue::Markdown(node, _) if node.is_empty() => current_value.clone(),
                         RuntimeValue::Markdown(node, _) => {
                             if node.is_fragment() {
