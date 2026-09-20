@@ -209,6 +209,30 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/json-to-markdown-table</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/convert-yaml-and-json</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/read-toml-values</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/extract-links-from-html</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/find-latest-version-with-semver</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/fuzzy-match-headings</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/parse-ltsv-logs</loc>
     <priority>1.0</priority>
   </url>

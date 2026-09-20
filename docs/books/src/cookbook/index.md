@@ -51,6 +51,15 @@ Every recipe follows the same four parts:
 - [Track task-list (checkbox) progress](track-task-list-progress.md)
 - [Count words in a document](count-words-in-document.md)
 - [Inline local images as base64](inline-local-images-as-base64.md)
+- [Sort versions and find the latest release](find-latest-version-with-semver.md)
+- [Find the closest heading to a misspelled name](fuzzy-match-headings.md)
+
+## Working with JSON, YAML, TOML and HTML
+
+- [Turn JSON into a Markdown table](json-to-markdown-table.md)
+- [Convert between YAML and JSON](convert-yaml-and-json.md)
+- [Read values from a TOML file](read-toml-values.md)
+- [Extract links from an HTML page](extract-links-from-html.md)
 
 ## Parsing text formats and command output
 
