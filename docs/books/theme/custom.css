@@ -158,12 +158,7 @@ html:not(.js) #menu-bar {
 }
 
 /* Sidebar fold toggle (added by sidebar-fold.js) */
-.chapter li > a.toggle {
-    display: flex;
-    align-items: center;
-}
-
-.chapter li > a.toggle:hover {
+.chapter-fold-toggle:hover {
     opacity: 1;
 }
 

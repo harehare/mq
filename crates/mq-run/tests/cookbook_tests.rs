@@ -368,7 +368,7 @@ fn cookbook_find_section_containing_a_node() {
     );
     let out = run(&[
         "-A",
-        r#"let n = first(compact(.code)) | section::title(section::containing(., n))"#,
+        r#"let n = first(compact(.code)) | section::containing(n) | section::title"#,
         path.to_str().unwrap(),
     ]);
     assert_eq!(out.trim(), "Installation");
