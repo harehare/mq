@@ -345,6 +345,11 @@ def test_stream_range_zero_step_errors():
   | assert_true(contains(result, "step for range must not be zero"))
 end
 
+def test_stream_range_stalled_step_errors():
+  let result = try: collect(stream_range(9007199254740992, 9007199254740994, 1)) catch(e): e["message"]
+  | assert_true(contains(result, "step is too small"))
+end
+
 # @parametrize([["a", "e", None], ["e", "a", None], ["a", "z", 5], ["z", "a", -7], ["aa", "ad", None], ["あ", "え", None], ["A", "A", None]])
 def test_stream_range_string_matches_range(start, stop, step):
   let expected = if (is_none(step)): range(start, stop) else: range(start, stop, step)

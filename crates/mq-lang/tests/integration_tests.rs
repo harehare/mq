@@ -8,6 +8,12 @@ fn engine() -> DefaultEngine {
     engine
 }
 
+#[test]
+fn io_reader_is_nameable_from_external_crates() {
+    let reader: Box<dyn mq_lang::IoReader> = Box::new(std::io::Cursor::new(b"abc".to_vec()));
+    assert_eq!(std::io::read_to_string(reader).unwrap(), "abc");
+}
+
 #[rstest]
 #[case::def_("
     # comments

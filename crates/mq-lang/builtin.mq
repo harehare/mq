@@ -1752,7 +1752,10 @@ def _stream_range(start, stop, step):
   var i = start
   | while (is_none(stop) || (if (step > 0): i <= stop else: i >= stop)):
       yield: i
-      | i += step
+      | if (i + step == i):
+          error("stream_range: step is too small to advance past " + to_string(i))
+        else:
+          i += step
     end
 end
 

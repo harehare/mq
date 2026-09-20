@@ -60,6 +60,9 @@ use mq_markdown;
 /// Maximum number of elements allowed in a generated range
 pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
 const MAX_REPEAT_COUNT: usize = 1_000;
+/// Maximum number of bytes a single `read_bytes` call may request from a file handle
+#[cfg(feature = "file-io")]
+pub(super) const MAX_READ_BYTES: usize = 64 * 1024 * 1024;
 
 /// Converts a user-supplied number into a bounded allocation size.
 ///
@@ -4914,14 +4917,14 @@ fn read_line_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn read_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::FileHandle(handle), RuntimeValue::Number(size)] => {
-            if !size.is_int() || size.value() < 1.0 {
+            if size.value() == 0.0 {
                 return Err(Error::Runtime(format!(
-                    "{ident}: size must be a positive integer, got {}",
-                    size.value()
+                    "{ident}: size must be a positive integer, got 0"
                 )));
             }
+            let size = bounded_size(size, MAX_READ_BYTES, "read_bytes size")?;
             handle
-                .read_bytes(size.value() as usize)
+                .read_bytes(size)
                 .map(|bytes| {
                     bytes
                         .map(|b| RuntimeValue::Bytes(b.into()))
@@ -14537,7 +14540,7 @@ mod tests {
         assert!(call("read_line", vec![handle.clone()]).is_err());
 
         let open = call("open_file", vec![path.clone()]).unwrap();
-        for size in [0.0, -1.0, 1.5] {
+        for size in [0.0, -1.0, 1.5, 1e300, (MAX_READ_BYTES + 1) as f64] {
             assert!(
                 call("read_bytes", vec![open.clone(), RuntimeValue::Number(size.into())]).is_err(),
                 "read_bytes should reject size {size}"

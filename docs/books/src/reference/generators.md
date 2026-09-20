@@ -107,7 +107,7 @@ Closing an already-`completed`/`failed` coroutine is a no-op; closing a `failed`
 
 ## Generating numbers lazily
 
-`stream_range(start, stop, step)` is the lazy counterpart of `range`. It yields numbers from `start` to `stop` (inclusive) without building an array, so it is not subject to `range`'s size limit. `step` is optional and defaults to `1`, or `-1` when `start > stop`. A `step` of `0` is an error raised at the call. Unlike `range`, `stop` is required, and a `stop` of `None` yields without bound:
+`stream_range(start, stop, step)` is the lazy counterpart of `range`. It yields numbers from `start` to `stop` (inclusive) without building an array, so it is not subject to `range`'s size limit. `step` is optional and defaults to `1`, or `-1` when `start > stop`. A `step` of `0` is an error raised at the call. A `step` too small to advance `start` (for example `1` at `2^53`) is an error raised during iteration. Unlike `range`, `stop` is required, and a `stop` of `None` yields without bound:
 
 ```mq
 stream_range(0, 10, 5) | collect()
