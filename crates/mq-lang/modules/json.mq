@@ -116,7 +116,7 @@ end
 # Example:
 # ```
 # import "json" | json::json_pointer_from_path(["a/b", 0])
-# #=> "/a~1b/0"
+# #=> /a~1b/0
 # ```
 #
 # Returns: string
