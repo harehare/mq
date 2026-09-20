@@ -2,7 +2,7 @@ pub mod error;
 pub mod resolver;
 
 use crate::{
-    Arena, ArenaId, Program, Shared, TokenArena,
+    Arena, ArenaId, Program, Shared, SharedCell, TokenArena,
     ast::{node as ast, parser::Parser},
     lexer::{self, Lexer},
     module::{
@@ -61,7 +61,11 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
 
 #[derive(Debug, Clone)]
 pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
+    /// Names of the modules this loader has loaded. Tracks load state only; module ids come from `module_names`.
     pub(crate) loaded_modules: Arena<ModuleName>,
+    /// Maps module ids to names. Shared with every loader derived from this one (`clone`,
+    /// `with_same_resolver`), so a token's `module_id` means the same module in all of them.
+    module_names: Shared<SharedCell<Arena<ModuleName>>>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<SmolStr, String>,
@@ -134,9 +138,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn new(resolver: T) -> Self {
         let mut loaded_modules = Arena::new(10);
         loaded_modules.alloc(Module::TOP_LEVEL_MODULE.into());
+        let mut module_names = Arena::new(10);
+        module_names.alloc(Module::TOP_LEVEL_MODULE.into());
 
         Self {
             loaded_modules,
+            module_names: Shared::new(SharedCell::new(module_names)),
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
@@ -150,19 +157,54 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     pub(crate) fn with_same_resolver(&self) -> Self {
         let mut loader = Self::new(self.resolver.clone());
+        loader.module_names = Shared::clone(&self.module_names);
         loader.builtin_module_cache = self.builtin_module_cache.clone();
         loader
     }
 
-    #[inline(always)]
+    /// Returns the id of `name`, registering it first if it has none yet.
+    fn module_id_of(&self, name: &str) -> ModuleId {
+        #[cfg(not(feature = "sync"))]
+        let mut names = self.module_names.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut names = self.module_names.write().unwrap();
+
+        match names.as_slice().iter().position(|n| n == name) {
+            Some(id) => id.into(),
+            None => names.alloc(SmolStr::new(name)),
+        }
+    }
+
+    /// Returns the id `name` has, or would get if registered now.
+    fn peek_module_id_of(&self, name: &str) -> ModuleId {
+        #[cfg(not(feature = "sync"))]
+        let names = self.module_names.borrow();
+        #[cfg(feature = "sync")]
+        let names = self.module_names.read().unwrap();
+
+        names
+            .as_slice()
+            .iter()
+            .position(|n| n == name)
+            .unwrap_or(names.len())
+            .into()
+    }
+
+    #[cold]
     pub fn module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
         match module_id {
             Module::TOP_LEVEL_MODULE_ID => Cow::Borrowed(Module::TOP_LEVEL_MODULE),
-            _ => self
-                .loaded_modules
-                .get(module_id)
-                .map(|s| Cow::Owned(s.to_string()))
-                .unwrap_or_else(|| Cow::Borrowed("<unknown>")),
+            _ => {
+                #[cfg(not(feature = "sync"))]
+                let names = self.module_names.borrow();
+                #[cfg(feature = "sync")]
+                let names = self.module_names.read().unwrap();
+
+                names
+                    .get(module_id)
+                    .map(|s| Cow::Owned(s.to_string()))
+                    .unwrap_or_else(|| Cow::Borrowed("<unknown>"))
+            }
         }
     }
 
@@ -188,7 +230,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
 
-        let module_id = self.loaded_modules.len().into();
+        // Registered before parsing so an error inside this module can still name its file.
+        let module_id = self.module_id_of(module_name);
         let mut program = Self::parse_program(code, module_id, token_arena)?;
 
         self.load_from_ast(module_name, &mut program)
@@ -200,6 +243,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
 
         let module = Self::classify_module(module_name, program)?;
+        self.module_id_of(module_name);
         self.loaded_modules.alloc(module_name.into());
         self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
         Ok(module)
@@ -255,7 +299,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .get(name.as_str())
             .cloned()
             .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
-        let module_id = self.loaded_modules.alloc(SmolStr::new(&name));
+        self.loaded_modules.alloc(SmolStr::new(&name));
+        let module_id = self.module_id_of(&name);
         let program = Self::parse_program(&code, module_id, token_arena)?;
         let module = Self::classify_module(&name, &program)?;
         self.module_ast_cache.insert(SmolStr::new(&name), module.clone());
@@ -310,13 +355,15 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         if let Some((cached_arena, module)) = &self.builtin_module_cache
             && Shared::ptr_eq(cached_arena, &token_arena)
         {
+            self.module_id_of(Module::BUILTIN_MODULE);
             self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
             return Ok(module.clone());
         }
 
         // Cache is only valid when both arenas are in their initial state (builtin
         // module_id == 1, tokens right after the dummy EOF). Fall back to full parse otherwise.
-        let pristine = self.loaded_modules.len() == 1 && {
+        let builtin_id_is_one = self.peek_module_id_of(Module::BUILTIN_MODULE) == 1.into();
+        let pristine = self.loaded_modules.len() == 1 && builtin_id_is_one && {
             #[cfg(not(feature = "sync"))]
             {
                 token_arena.borrow().len() == 1
@@ -338,6 +385,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     #[cfg(feature = "sync")]
                     token_arena.write().unwrap().extend_from_slice(&tokens);
                 }
+                self.module_id_of(Module::BUILTIN_MODULE);
                 self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
                 self.builtin_module_cache = Some((token_arena, module.clone()));
                 return Ok(module);
@@ -382,6 +430,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
     }
 
+    #[cold]
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
         let name = self.module_name(module_id);
         match name.as_ref() {
@@ -397,6 +446,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     /// Returns the display filename for a module (e.g. `"builtin.mq"`, `"csv.mq"`, `""` for top-level).
+    #[cold]
     pub fn module_file_name(&self, module_id: ModuleId) -> String {
         let name = self.module_name(module_id);
         match name.as_ref() {
@@ -728,6 +778,51 @@ mod tests {
         assert_eq!(module1.functions.len(), module2.functions.len());
         assert_eq!(module1.vars.len(), module2.vars.len());
         assert_eq!(module1.modules.len(), module2.modules.len());
+    }
+
+    #[rstest]
+    fn test_module_ids_are_shared_with_derived_loaders(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let parent = ModuleLoader::new(DefaultModuleResolver::default());
+        let mut first = parent.with_same_resolver();
+        let mut second = parent.with_same_resolver();
+
+        // Loaded in a different order in each derived loader.
+        first
+            .load("a", "def f(): 1;", Shared::clone(&pristine_token_arena))
+            .unwrap();
+        first
+            .load("b", "def f(): 1;", Shared::clone(&pristine_token_arena))
+            .unwrap();
+        second
+            .load("b", "def f(): 1;", Shared::clone(&pristine_token_arena))
+            .unwrap();
+        second
+            .load("a", "def f(): 1;", Shared::clone(&pristine_token_arena))
+            .unwrap();
+
+        let a = first.module_id_of("a");
+        let b = first.module_id_of("b");
+        assert_ne!(a, b);
+        assert_eq!(second.module_id_of("a"), a);
+        assert_eq!(second.module_id_of("b"), b);
+        assert_eq!(parent.module_name(a), "a");
+        assert_eq!(parent.module_name(b), "b");
+    }
+
+    #[rstest]
+    fn test_failed_load_still_registers_module_name(
+        pristine_token_arena: Shared<SharedCell<crate::arena::Arena<Shared<Token>>>>,
+    ) {
+        let parent = ModuleLoader::new(DefaultModuleResolver::default());
+        let mut child = parent.with_same_resolver();
+
+        assert!(child.load("broken", "def f(:", pristine_token_arena).is_err());
+
+        let id = child.peek_module_id_of("broken");
+        assert_eq!(parent.module_name(id), "broken");
+        assert_eq!(parent.module_file_name(id), "broken.mq");
     }
 
     /// After load_builtin, the builtin module must be registered at loaded_modules index 1
