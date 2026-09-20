@@ -17,6 +17,39 @@ def test_xml_stringify():
   | assert_eq(result, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>\n")
 end
 
+# @parametrize([["users", 1], ["user", 3], ["role", 5], ["name", 3], ["nope", 0]])
+def test_xml_find_all(tag, expected_len):
+  let result = xml::xml_find_all(xml::xml_parse(xml_input), tag)
+  | assert_eq(len(result), expected_len)
+end
+
+# @parametrize([["users", "users"], ["user", "user"], ["name", "name"], ["nope", None]])
+def test_xml_find(tag, expected_tag):
+  let result = xml::xml_find(xml::xml_parse(xml_input), tag)
+  | let actual_tag = if (is_none(result)): None else: result["tag"]
+  | assert_eq(actual_tag, expected_tag)
+end
+
+def test_xml_find_returns_first_in_document_order():
+  let result = xml::xml_find(xml::xml_parse(xml_input), "name")
+  | assert_eq(result["text"], "Alice")
+end
+
+# @parametrize([["id", "1"], ["missing", None]])
+def test_xml_attr(name, expected):
+  let user = xml::xml_find(xml::xml_parse(xml_input), "user")
+  | assert_eq(xml::xml_attr(user, name), expected)
+end
+
+# @parametrize([
+#   ["<r><i>a</i><i>b</i></r>", "a b"],
+#   ["<r><i></i></r>", ""],
+#   ["<p>hi</p>", "hi"],
+# ])
+def test_xml_text(input, expected):
+  assert_eq(xml::xml_text(xml::xml_parse(input)), expected)
+end
+
 def test_xml_to_markdown_table():
   let result = xml::xml_to_markdown_table(xml::xml_parse(xml_input))
   | assert_snapshot("xml_to_markdown_table", result)

@@ -155,6 +155,72 @@ def xml_to_markdown_table(data):
   _xml_to_markdown_table(data, 1)
 end
 
+def _xml_find_all(data, tag):
+  let matches = if (data["tag"] == tag): [data] else: []
+  | matches + flat_map(data["children"], fn(child): _xml_find_all(child, tag);)
+end
+
+# Recursively finds every element (including `data` itself) whose tag matches
+# `tag`, in document order.
+#
+# Example:
+# ```
+# import "xml" | len(xml::xml_find_all(xml::xml_parse("<r><i>a</i><i>b</i></r>"), "i"))
+# #=> 2
+# ```
+#
+# Returns: array
+def xml_find_all(data, tag):
+  _xml_find_all(data, tag)
+end
+
+# Recursively finds the first element (including `data` itself) whose tag
+# matches `tag`, or `None` if there's no match.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_find(xml::xml_parse("<r><i>hi</i></r>"), "i")["text"]
+# #=> hi
+# ```
+#
+# Returns: dict
+def xml_find(data, tag):
+  first(_xml_find_all(data, tag))
+end
+
+# Returns the value of attribute `name` on element `data`, or `None` if the
+# attribute isn't set.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_attr(xml::xml_find(xml::xml_parse("<r><i id=\"1\"/></r>"), "i"), "id")
+# #=> 1
+# ```
+#
+# Returns: string
+def xml_attr(data, name):
+  data["attributes"][name]
+end
+
+def _xml_text_parts(data):
+  let own = if (is_empty(data["text"])): [] else: [data["text"]]
+  | own + flat_map(data["children"], _xml_text_parts)
+end
+
+# Returns the concatenated text content of `data` and all its descendants, in
+# document order.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_text(xml::xml_parse("<r><i>a</i><i>b</i></r>"))
+# #=> a b
+# ```
+#
+# Returns: string
+def xml_text(data):
+  join(_xml_text_parts(data), " ")
+end
+
 # Converts a data structure (typically the `{tag, attributes, children,
 # text}` shape returned by `xml_parse`) to a JSON string representation.
 #
