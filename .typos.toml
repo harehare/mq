@@ -3,6 +3,8 @@
 Hashi = "Hashi"
 # CLI help abbreviation syntax: b[reakpoint], l[ist]
 ist = "ist"
+# Intentional misspelling in the fuzzy-match-headings cookbook recipe
+instalation = "instalation"
 juxt = "juxt"
 reakpoint = "reakpoint"
 sction = "sction"
