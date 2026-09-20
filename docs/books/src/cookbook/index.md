@@ -52,6 +52,11 @@ Every recipe follows the same four parts:
 - [Count words in a document](count-words-in-document.md)
 - [Inline local images as base64](inline-local-images-as-base64.md)
 
+## Parsing text formats and command output
+
+- [Parse LTSV logs](parse-ltsv-logs.md)
+- [Turn command output into structured data](parse-command-output.md)
+
 ## Fetching over the network
 
 - [Fetch a web page and filter it](fetch-and-filter-a-web-page.md)
