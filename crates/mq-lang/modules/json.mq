@@ -74,6 +74,113 @@ def json_stringify(data):
       to_string(data)
 end
 
+# Splits a JSON Pointer (RFC 6901) into its unescaped reference tokens.
+def _pointer_tokens(pointer):
+  if (pointer == ""):
+    []
+  elif (!starts_with(pointer, "/")):
+    error("invalid JSON Pointer: " + pointer)
+  else:
+    map(skip(split(pointer, "/"), 1), fn(token): replace(replace(token, "~1", "/"), "~0", "~");)
+end
+
+# Converts a JSON Pointer (RFC 6901) into a path array usable with `get_path`/`set_path`/`del_path`.
+# `data` is needed because a token like `"0"` is an index for an array but a key for a dict.
+# Tokens under a missing value stay strings, and `-` on an array is the index one past the end.
+# Raises an error for a pointer that does not start with `/` or an array token that is not an index.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_to_path({"a": [1, 2]}, "/a/1")
+# #=> ["a", 1]
+# ```
+#
+# Returns: array
+def json_pointer_to_path(data, pointer):
+  last(fold(_pointer_tokens(pointer), [data, []], fn(acc, token):
+    let current = first(acc)
+    | let key = if (is_array(current) && test(token, "^(0|[1-9][0-9]*)$")):
+        to_number(token)
+      elif (is_array(current) && token == "-"):
+        len(current)
+      elif (is_array(current)):
+        error("invalid array index in JSON Pointer: " + token)
+      else:
+        token
+    | [get(current, key), last(acc) + [key]]
+  end))
+end
+
+# Converts a path array (e.g. from `paths`) into a JSON Pointer (RFC 6901), escaping `~` and `/`.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_from_path(["a/b", 0])
+# #=> "/a~1b/0"
+# ```
+#
+# Returns: string
+def json_pointer_from_path(path):
+  join(map(path, fn(key): "/" + replace(replace(to_string(key), "~", "~0"), "/", "~1");), "")
+end
+
+# Returns the value a JSON Pointer (RFC 6901) refers to, or None if it does not exist.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_get({"a": [1, 2]}, "/a/1")
+# #=> 2
+# ```
+#
+# Returns: dynamic
+def json_pointer_get(data, pointer):
+  get_path(data, json_pointer_to_path(data, pointer))
+end
+
+# Returns true if a JSON Pointer (RFC 6901) refers to an existing value, even if that value is None.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_has({"a": None}, "/a")
+# #=> true
+# ```
+#
+# Returns: bool
+def json_pointer_has(data, pointer):
+  let path = json_pointer_to_path(data, pointer)
+  | if (is_empty(path)):
+      true
+    else:
+      has(get_path(data, take(path, len(path) - 1)), last(path))
+end
+
+# Sets the value at a JSON Pointer (RFC 6901). Missing intermediate containers are created as dicts,
+# and `-` appends to an array.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_set({"a": [1]}, "/a/-", 2)
+# #=> {"a": [1, 2]}
+# ```
+#
+# Returns: dynamic
+def json_pointer_set(data, pointer, value):
+  set_path(data, json_pointer_to_path(data, pointer), value)
+end
+
+# Deletes the value at a JSON Pointer (RFC 6901). A pointer to a missing value leaves `data` unchanged.
+#
+# Example:
+# ```
+# import "json" | json::json_pointer_del({"a": 1, "b": 2}, "/a")
+# #=> {"b": 2}
+# ```
+#
+# Returns: dynamic
+def json_pointer_del(data, pointer):
+  del_path(data, json_pointer_to_path(data, pointer))
+end
+
 # Converts a JSON data structure to a Markdown table.
 #
 # Example:
