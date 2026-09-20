@@ -157,6 +157,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/fill-blank-table-cells</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/reshape-table-pivot</loc>
     <priority>1.0</priority>
   </url>

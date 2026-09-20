@@ -636,6 +636,71 @@ def from_array(records):
     end
 end
 
+# Applies a `csv` fill function to the table as array rows (header first), then writes the
+# result back cell by cell. Untouched cells keep their original node; changed cells keep row/column.
+def _fill_table(table, fill):
+  let header = map(table[:header], to_string)
+  | let rows = map(table[:rows], fn(row): map(row, to_string);)
+  | let filled = fill([header] + rows)
+  | let new_rows = map(zip(table[:rows], filled[1:len(filled)]), fn(pair):
+      map(zip(pair[0], pair[1]), fn(cp):
+        let cell = cp[0]
+        | let value = to_string(cp[1])
+        | if (to_string(cell) == value): cell else: to_md_table_cell(value, cell.row, cell.column););)
+  | set(table, :rows, new_rows)
+end
+
+# Fills empty cells in the given columns with the last non-empty value above.
+# Takes the same arguments as `csv::forward_fill`: `cols` are header names or column indexes
+# (use an index when header names repeat), `group_by` keeps a separate carried value per group,
+# `missing` is "empty", "none" or "both", and `max_gap` limits consecutive fills. The header,
+# alignment and row/column numbers are preserved.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| x | 1 |\n|  | 2 |")) | first(self) | table::forward_fill(self, ["a"]) | table::to_csv(self)
+# #=> a,b
+# x,1
+# x,2
+# ```
+#
+# Returns: dict
+def forward_fill(table, cols, group_by = [], missing = "both", max_gap = None):
+  _fill_table(table, fn(rows): csv::forward_fill(rows, cols, group_by, missing, max_gap);)
+end
+
+# Fills empty cells in the given columns with the next non-empty value below.
+# Takes the same arguments as `table::forward_fill`. With `max_gap`, the cells nearest to the value are filled.
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n|  | 1 |\n| x | 2 |")) | first(self) | table::backward_fill(self, ["a"]) | table::to_csv(self)
+# #=> a,b
+# x,1
+# x,2
+# ```
+#
+# Returns: dict
+def backward_fill(table, cols, group_by = [], missing = "both", max_gap = None):
+  _fill_table(table, fn(rows): csv::backward_fill(rows, cols, group_by, missing, max_gap);)
+end
+
+# Fills empty cells with a constant per column. `defaults` maps header names to values,
+# which are converted to strings. `missing` is "empty", "none" or "both".
+#
+# Example:
+# ```
+# import "table" | table::tables(to_markdown("| a | b |\n| --- | --- |\n| x | 1 |\n|  | 2 |")) | first(self) | table::constant_fill(self, {"a": "N/A"}) | table::to_csv(self)
+# #=> a,b
+# x,1
+# N/A,2
+# ```
+#
+# Returns: dict
+def constant_fill(table, defaults, missing = "both"):
+  _fill_table(table, fn(rows): csv::constant_fill(rows, defaults, missing);)
+end
+
 # Reshape a table from wide format to long format (a.k.a. melt/unpivot).
 # `value_columns` is an array of column indices to unpivot; each one becomes
 # a row holding its header name (in the `names_to` column) and its cell

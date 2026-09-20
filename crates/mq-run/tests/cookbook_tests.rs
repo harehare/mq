@@ -279,6 +279,31 @@ fn cookbook_fill_blank_csv_cells() {
 }
 
 #[test]
+fn cookbook_fill_blank_table_cells() {
+    let path = write_temp(
+        "cookbook_fill_blank_table_cells.md",
+        "| Region | Product | Owner |\n| :----- | ------- | ----: |\n| East   | apple   | Kim   |\n|        | banana  |       |\n| West   | apple   |       |\n|        | banana  | Lee   |\n",
+    );
+    let path = path.to_str().unwrap();
+
+    let out = run(&[
+        "-A",
+        r#"import "table" | table::tables | first | table::forward_fill(["Region"])"#,
+        path,
+    ]);
+    assert_eq!(
+        out.trim(),
+        "| Region | Product | Owner |\n| :----- | ------- | ----: |\n| East   | apple   |   Kim |\n| East   | banana  |       |\n| West   | apple   |       |\n| West   | banana  |   Lee |"
+    );
+
+    let constant = r#"import "table" | table::tables | first | table::forward_fill(["Region"]) | table::forward_fill(self, ["Owner"], ["Region"]) | table::constant_fill(self, {"Owner": "unassigned"})"#;
+    assert_eq!(
+        run(&["-A", constant, path]).trim(),
+        "| Region | Product |      Owner |\n| :----- | ------- | ---------: |\n| East   | apple   |        Kim |\n| East   | banana  |        Kim |\n| West   | apple   | unassigned |\n| West   | banana  |        Lee |"
+    );
+}
+
+#[test]
 fn cookbook_filter_empty_sections() {
     let path = write_temp(
         "cookbook_filter_empty_sections.md",
