@@ -9,7 +9,7 @@ Prerequisites: The built-in `toml` module. Read the file with `-I raw` to get it
 The dependencies as a Markdown table:
 
 ```bash
-$ mq -I raw 'import "toml" | toml::toml_parse(.) | get("dependencies") | toml::toml_to_markdown_table()' Cargo.toml
+$ mq -I raw 'import "toml" | toml::toml_parse | get("dependencies") | toml::toml_to_markdown_table' Cargo.toml
 ```
 
 ## Input (`Cargo.toml`)
@@ -38,7 +38,7 @@ miette = "7"
 
 ## Notes
 
-- One value: `mq -I raw 'import "toml" | toml::toml_parse(.) | get("package") | get("version")' Cargo.toml` prints `0.3.1`.
-- The crate names only, as JSON: `mq -I raw -F json 'import "toml" | toml::toml_parse(.) | get("dependencies") | keys()' Cargo.toml` returns `["clap", "miette", "serde"]`.
+- One value: `mq -I raw 'import "toml" | toml::toml_parse | get("package") | get("version")' Cargo.toml` prints `0.3.1`.
+- The crate names only, as JSON: `mq -I raw -F json 'import "toml" | toml::toml_parse | get("dependencies") | keys' Cargo.toml` returns `["clap", "miette", "serde"]`.
 - `toml_to_json(data)` serializes a parsed file as compact JSON.
 - `toml_stringify` writes TOML back, but it sorts keys and drops comments. To change one value in place and keep the rest of the file as it is, see [Bump a version string across a file](update-text-in-place.md).

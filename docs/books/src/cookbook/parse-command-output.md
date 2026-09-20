@@ -9,7 +9,7 @@ Prerequisites: The [cmd.mq](https://github.com/harehare/cmd.mq) extension module
 The processes using the most memory, as a Markdown table:
 
 ```bash
-$ ps aux | mq -I raw 'import "cmd" | import "csv" | cmd::ps_parse(.) | sort_by(fn(p): -p["mem_percent"];) | map(fn(p): {"pid": p["pid"], "mem_percent": p["mem_percent"], "command": p["command"]};) | slice(0, 2) | csv::csv_to_markdown_table()'
+$ ps aux | mq -I raw 'import "cmd" | import "csv" | cmd::ps_parse | sort_by(fn(p): -p["mem_percent"];) | map(fn(p): {"pid": p["pid"], "mem_percent": p["mem_percent"], "command": p["command"]};) | slice(0, 2) | csv::csv_to_markdown_table()'
 ```
 
 ## Input (`ps aux`)
@@ -35,7 +35,7 @@ alice     1377  0.3  0.8 812340  65536 pts/0   Ss   09:16   0:00 -bash
 `git_log_parse` reads the default `git log` format into `commit`, `author`, `date` and `message`, plus `merge` and `refs` when present. This turns it into a Markdown list of short hashes and subjects:
 
 ```bash
-$ git log -2 | mq -I raw 'import "cmd" | cmd::git_log_parse(.) | map(fn(c): "- " + slice(c["commit"], 0, 7) + " " + first(split(c["message"], "\n")) + " (" + c["author"] + ")";) | join("\n")'
+$ git log -2 | mq -I raw 'import "cmd" | cmd::git_log_parse | map(fn(c): "- " + slice(c["commit"], 0, 7) + " " + first(split(c["message"], "\n")) + " (" + c["author"] + ")";) | join("\n")'
 ```
 
 ```markdown
@@ -56,7 +56,7 @@ $ mq -I null --allow-run=df -F json 'import "cmd" | cmd::run("df", ["-k"]) | fil
 `cmd::parse_auto` recognizes the command from the output text (header line or line shape), so you do not have to name the parser:
 
 ```bash
-$ echo 'uid=501(alice) gid=20(staff) groups=20(staff)' | mq -I raw -F json 'import "cmd" | cmd::parse_auto(.)'
+$ echo 'uid=501(alice) gid=20(staff) groups=20(staff)' | mq -I raw -F json 'import "cmd" | cmd::parse_auto'
 ```
 
 ```json
@@ -74,9 +74,9 @@ $ echo 'uid=501(alice) gid=20(staff) groups=20(staff)' | mq -I raw -F json 'impo
 }
 ```
 
-It never guesses. Each parser has a signature that is matched against the first 20 lines of the text, and it describes the whole shape of the output, so text that mixes two formats is refused rather than read as one of them. If no parser fits, or several do, `parse_auto` raises an error that lists the candidates. Formats that are too generic to recognize (`wc`, `du`, `git status`, ...) are not claimed at all. In those cases name the parser with `cmd::parse_output("git status", .)`. `cmd::detect(.)` returns the matching keys without parsing.
+It never guesses. Each parser has a signature that is matched against the first 20 lines of the text, and it describes the whole shape of the output, so text that mixes two formats is refused rather than read as one of them. If no parser fits, or several do, `parse_auto` raises an error that lists the candidates. Formats that are too generic to recognize (`wc`, `du`, `git status`, ...) are not claimed at all. In those cases name the parser with `cmd::parse_output("git status", .)`. `cmd::detect` returns the matching keys without parsing.
 
-Naming a parser does not skip the check: `parse_output("id", .)` raises an error when the text does not look like `id` output. Call the parser function itself, such as `cmd::id_parse(.)`, to bypass it.
+Naming a parser does not skip the check: `parse_output("id", .)` raises an error when the text does not look like `id` output. Call the parser function itself, such as `cmd::id_parse`, to bypass it.
 
 ## Notes
 

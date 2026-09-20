@@ -7,7 +7,7 @@ Prerequisites: The [ltsv.mq](https://github.com/harehare/ltsv.mq) extension modu
 ## Query
 
 ```bash
-$ mq -I raw -F json 'import "ltsv" | ltsv::ltsv_parse(.) | filter(fn(r): r["status"] == "404";)' access.ltsv
+$ mq -I raw -F json 'import "ltsv" | ltsv::ltsv_parse | filter(fn(r): r["status"] == "404";)' access.ltsv
 ```
 
 ## Input (`access.ltsv`)

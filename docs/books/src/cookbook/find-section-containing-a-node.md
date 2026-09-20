@@ -7,7 +7,7 @@ Prerequisites: The `section` module, via `-A` or `nodes`.
 ## Query
 
 ```bash
-$ mq -A 'let n = first(compact(.code)) | section::title(section::containing(., n))' README.md
+$ mq -A 'let n = first(compact(.code)) | section::containing(n) | section::title' README.md
 ```
 
 Or with `nodes`:
@@ -16,7 +16,7 @@ Or with `nodes`:
 import "section"
 | nodes
 | let n = first(compact(.code))
-| section::title(section::containing(., n))
+| section::containing(n) | section::title
 ```
 
 ## Input

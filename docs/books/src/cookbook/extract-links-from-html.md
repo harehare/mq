@@ -7,7 +7,7 @@ Prerequisites: The built-in `html` module, which needs the `css-selector` build 
 ## Query
 
 ```bash
-$ mq -I raw 'import "html" | html::html_parse(.) | html::html_find_all("a") | filter(fn(a): !is_none(html::html_attr(a, "href"));) | map(fn(a): "- [" + html::html_text(a) + "](" + html::html_attr(a, "href") + ")";) | join("\n")' page.html
+$ mq -I raw 'import "html" | html::html_parse | html::html_find_all("a") | filter(fn(a): a | html::html_attr("href") | !is_none();) | map(fn(a): "- [" + html::html_text(a) + "](" + html::html_attr(a, "href") + ")";) | join("\n")' page.html
 ```
 
 ## Input (`page.html`)
