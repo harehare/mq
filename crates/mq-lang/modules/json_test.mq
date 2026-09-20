@@ -55,3 +55,66 @@ def test_json_parse_stringify_round_trip(s, n, b, arr):
   let data = {"s": s, "n": n, "b": b, "arr": arr, "nested": {"x": n, "y": b, "z": s}}
   | assert_eq(json::json_parse(json::json_stringify(data)), data)
 end
+
+# -- JSON Pointer Tests --
+
+| let pointer_doc = {"foo": ["bar", "baz"], "": 0, "a/b": 1, "c%d": 2, "e^f": 3, "g|h": 4, "i\\j": 5, "k\"l": 6, " ": 7, "m~n": 8, "0": "zero"} |
+
+# RFC 6901 section 5 examples.
+# @parametrize([["", pointer_doc], ["/foo", ["bar", "baz"]], ["/foo/0", "bar"], ["/foo/1", "baz"], ["/", 0], ["/a~1b", 1], ["/c%d", 2], ["/e^f", 3], ["/g|h", 4], ["/i\\j", 5], ["/k\"l", 6], ["/ ", 7], ["/m~0n", 8]])
+def test_json_pointer_get(pointer, expected):
+  assert_eq(json::json_pointer_get(pointer_doc, pointer), expected)
+end
+
+def test_json_pointer_get_prefers_dict_key_over_index():
+  assert_eq(json::json_pointer_get(pointer_doc, "/0"), "zero")
+end
+
+# @parametrize([["/foo/2"], ["/nope"], ["/nope/x"], ["/foo/-"]])
+def test_json_pointer_get_missing(pointer):
+  assert_none(json::json_pointer_get(pointer_doc, pointer))
+end
+
+# @parametrize([["foo"], ["#/foo"], [" /foo"], ["/foo/01"], ["/foo/bar"], ["/foo/+1"]])
+def test_json_pointer_get_invalid(pointer):
+  assert_eq(try: json::json_pointer_get(pointer_doc, pointer) catch: "error", "error")
+end
+
+def test_json_pointer_to_path():
+  assert_eq(json::json_pointer_to_path(pointer_doc, "/foo/1"), ["foo", 1])
+  | assert_eq(json::json_pointer_to_path(pointer_doc, ""), [])
+  | assert_eq(json::json_pointer_to_path(pointer_doc, "/a~1b"), ["a/b"])
+  | assert_eq(json::json_pointer_to_path(pointer_doc, "/foo/-"), ["foo", 2])
+  | assert_eq(json::json_pointer_to_path({}, "/a/0"), ["a", "0"])
+end
+
+# @parametrize([[[], ""], [["foo", 0], "/foo/0"], [["a/b"], "/a~1b"], [["m~n"], "/m~0n"], [["~1"], "/~01"], [[""], "/"]])
+def test_json_pointer_from_path(path, expected):
+  assert_eq(json::json_pointer_from_path(path), expected)
+end
+
+def test_json_pointer_from_path_round_trips_paths():
+  let doc = {"a/b": [1, {"~": 2}], "": 3, "0": 4}
+  | let pointers = map(paths(doc), json::json_pointer_from_path)
+  | assert_eq(map(pointers, fn(p): json::json_pointer_get(doc, p);), [1, 2, 3, 4])
+end
+
+def test_json_pointer_has():
+  let doc = {"a": None, "b": [1]}
+  | assert(json::json_pointer_has(doc, ""))
+  | assert(json::json_pointer_has(doc, "/a"))
+  | assert(json::json_pointer_has(doc, "/b/0"))
+  | assert(!json::json_pointer_has(doc, "/b/1"))
+  | assert(!json::json_pointer_has(doc, "/c"))
+  | assert(!json::json_pointer_has(doc, "/c/d"))
+end
+
+# @parametrize([["/a", 9, {"a": 9, "b": [1, 2]}], ["/b/1", 9, {"a": 1, "b": [1, 9]}], ["/b/-", 9, {"a": 1, "b": [1, 2, 9]}], ["/c/d", 9, {"a": 1, "b": [1, 2], "c": {"d": 9}}], ["", 9, 9]])
+def test_json_pointer_set(pointer, value, expected):
+  assert_eq(json::json_pointer_set({"a": 1, "b": [1, 2]}, pointer, value), expected)
+end
+
+# @parametrize([["/a", {"b": [1, 2]}], ["/b/0", {"a": 1, "b": [2]}], ["/c", {"a": 1, "b": [1, 2]}], ["/c/d", {"a": 1, "b": [1, 2]}], ["", None]])
+def test_json_pointer_del(pointer, expected):
+  assert_eq(json::json_pointer_del({"a": 1, "b": [1, 2]}, pointer), expected)
+end

@@ -139,6 +139,28 @@ import "json"
 | json::json_parse()
 ```
 
+### JSON Pointer
+
+The `json` module also supports [JSON Pointer (RFC 6901)](https://datatracker.ietf.org/doc/html/rfc6901) references, built on `get_path`/`set_path`/`del_path`.
+
+| Function                                   | Description                                                                |
+| ------------------------------------------ | -------------------------------------------------------------------------- |
+| `json::json_pointer_get(data, ptr)`        | Returns the referenced value, or `None` if it does not exist               |
+| `json::json_pointer_has(data, ptr)`        | Returns `true` if the reference exists, even when its value is `None`      |
+| `json::json_pointer_set(data, ptr, value)` | Sets the value; missing containers become dicts and `-` appends to arrays  |
+| `json::json_pointer_del(data, ptr)`        | Deletes the value                                                          |
+| `json::json_pointer_to_path(data, ptr)`    | Converts a pointer to a path array for `get_path`/`set_path`/`del_path`    |
+| `json::json_pointer_from_path(path)`       | Converts a path array to a pointer, escaping `~` and `/`                   |
+
+```mq
+import "json"
+| let doc = {"a/b": [10, 20]}
+| json::json_pointer_get(doc, "/a~1b/1")
+# => 20
+```
+
+Combine with `paths` to list a pointer for every leaf: `paths(doc) | map(json::json_pointer_from_path)`.
+
 ## Markdown Builder (`md`)
 
 The `md` module provides functions for constructing markdown nodes from scratch, rather than
