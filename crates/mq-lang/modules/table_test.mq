@@ -1,4 +1,5 @@
 import "table"
+| import "csv"
 | import "gen"
 | include "test"
 
@@ -419,4 +420,106 @@ def test_table_nest_unnest_roundtrip():
   | let nested = table::nest_rows(t, "tags", ";")
   | let result = table::unnest_rows(nested, "tags", ";")
   | assert_eq(table::to_array(result), [{"id": "1", "tags": "a;b"}])
+end
+
+# -- fill Tests --
+
+| let fill_records = [{"g": "a", "v": "1"}, {"g": "a", "v": ""}, {"g": "b", "v": ""}, {"g": "b", "v": "2"}, {"g": "a", "v": ""}, {"g": "a", "v": ""}]
+| let fill_table = table::from_array(fill_records)
+| let fill_align_md = "| a | b | c |\n| :- | -: | :-: |\n| x | 1 |  |\n|  | 2 | p |\n|  |  |  |\n" |
+
+# The same spec must give the same values for CSV records and a Markdown table.
+# @parametrize([
+# [[], "both", None],
+# [["g"], "both", None],
+# [[], "both", 1],
+# [["g"], "empty", 1],
+# [[], "none", None],
+# ])
+def test_table_forward_fill_matches_csv(group_by, missing, max_gap):
+  let result = table::forward_fill(fill_table, ["v"], group_by, missing, max_gap)
+  | assert_eq(table::to_array(result), csv::forward_fill(fill_records, ["v"], group_by, missing, max_gap))
+end
+
+# @parametrize([
+# [[], "both", None],
+# [["g"], "both", None],
+# [[], "both", 1],
+# [["g"], "empty", 1],
+# [[], "none", None],
+# ])
+def test_table_backward_fill_matches_csv(group_by, missing, max_gap):
+  let result = table::backward_fill(fill_table, ["v"], group_by, missing, max_gap)
+  | assert_eq(table::to_array(result), csv::backward_fill(fill_records, ["v"], group_by, missing, max_gap))
+end
+
+# @parametrize([
+# [{"v": "N/A"}, "both"],
+# [{"v": "N/A", "g": "?"}, "empty"],
+# [{"v": "N/A"}, "none"],
+# ])
+def test_table_constant_fill_matches_csv(defaults, missing):
+  let result = table::constant_fill(fill_table, defaults, missing)
+  | assert_eq(table::to_array(result), csv::constant_fill(fill_records, defaults, missing))
+end
+
+def test_table_forward_fill_values():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::forward_fill(t, ["a", "c"])
+  | assert_eq(table::to_array(result), [{"a": "x", "b": "1", "c": ""}, {"a": "x", "b": "2", "c": "p"}, {"a": "x", "b": "", "c": "p"}])
+end
+
+def test_table_backward_fill_values():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::backward_fill(t, ["a", "c"])
+  | assert_eq(table::to_array(result), [{"a": "x", "b": "1", "c": "p"}, {"a": "", "b": "2", "c": "p"}, {"a": "", "b": "", "c": ""}])
+end
+
+def test_table_constant_fill_converts_value_to_string():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::constant_fill(t, {"b": 0})
+  | assert_eq(map(table::to_array(result), fn(r): r["b"];), ["1", "2", "0"])
+end
+
+def test_table_fill_preserves_align_and_header():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::forward_fill(t, ["a", "c"])
+  | assert_eq(result[:align], t[:align])
+  | assert_eq(result[:header], t[:header])
+end
+
+def test_table_fill_preserves_cell_positions():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::forward_fill(t, ["a", "b", "c"])
+  | let positions = map(result[:rows], fn(row): map(row, fn(c): [c.row, c.column];);)
+  | assert_eq(positions, [[[1, 0], [1, 1], [1, 2]], [[2, 0], [2, 1], [2, 2]], [[3, 0], [3, 1], [3, 2]]])
+end
+
+def test_table_fill_unchanged_cells_stay_identical():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | let result = table::forward_fill(t, ["a"])
+  | assert_eq(result[:rows][0], t[:rows][0])
+end
+
+def test_table_fill_by_column_index_with_duplicate_headers():
+  let t = first(table::tables(to_markdown("| k | k |\n| - | - |\n| x | y |\n|  |  |\n")))
+  | let result = table::forward_fill(t, [1])
+  | assert_eq(map(result[:rows], fn(row): map(row, to_string);), [["x", "y"], ["", "y"]])
+end
+
+def test_table_fill_group_by_header_name():
+  let t = first(table::tables(to_markdown("| g | v |\n| - | - |\n| a | 1 |\n| b |  |\n| a |  |\n")))
+  | let result = table::forward_fill(t, ["v"], ["g"])
+  | assert_eq(map(table::to_array(result), fn(r): r["v"];), ["1", "", "1"])
+end
+
+def test_table_fill_table_without_rows():
+  let t = first(table::tables(to_markdown("| a | b |\n| - | - |\n")))
+  | assert_eq(table::to_array(table::forward_fill(t, ["a"])), [])
+  | assert_eq(table::to_array(table::constant_fill(t, {"a": "x"})), [])
+end
+
+def test_table_fill_unknown_column_is_error():
+  let t = first(table::tables(to_markdown(fill_align_md)))
+  | assert_eq(try: table::forward_fill(t, ["nope"]) catch: "error", "error")
 end
