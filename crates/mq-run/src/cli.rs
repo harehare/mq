@@ -1538,12 +1538,79 @@ impl Cli {
     /// Prints an uncaught error to stderr per `--error-format`.
     pub fn report_error(&self, err: &miette::Report) {
         match self.error_format {
-            ErrorFormat::Human => eprintln!("Error: {err:?}"),
+            ErrorFormat::Human => {
+                eprintln!("Error: {err:?}");
+                if let Some(hint) = Self::capability_hint(&err.to_string()) {
+                    eprintln!("  hint: {hint}");
+                }
+            }
             ErrorFormat::Json => match Self::render_error_json(err) {
                 Some(json) => eprintln!("{json}"),
                 None => eprintln!("Error: {err:?}"),
             },
         }
+    }
+
+    #[cold]
+    fn capability_hint(message: &str) -> Option<String> {
+        fn between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
+            let rest = text.split_once(start)?.1;
+            Some(rest.split_once(end)?.0.trim())
+        }
+        let broad = |flag: &str, scoped: &str| {
+            Some(format!(
+                "the sandbox blocked this. Pass `{flag}` (or `{scoped}` to limit it), or `--allow-all`."
+            ))
+        };
+        let scoped = |flag: &str, value: &str| {
+            Some(format!(
+                "the sandbox blocked this. Add it with `{flag}={value}`, or pass `--allow-all`."
+            ))
+        };
+
+        if message.contains("network access is disabled") {
+            return broad("--allow-net", "--allow-net=DOMAIN");
+        }
+        if message.contains("filesystem reads are disabled") {
+            return broad("--allow-read", "--allow-read=PATH");
+        }
+        if message.contains("filesystem writes are disabled") {
+            return broad("--allow-write", "--allow-write=PATH");
+        }
+        if message.contains("environment variable access is disabled") {
+            return broad("--allow-env", "--allow-env=NAME");
+        }
+        if message.contains("process execution is disabled") {
+            return broad("--allow-run", "--allow-run=COMMAND");
+        }
+        if let Some(url) = between(
+            message,
+            "network access to ",
+            " is not allowed (outside the allowed domains)",
+        ) {
+            let host = url.split("://").last().unwrap_or(url).split('/').next().unwrap_or(url);
+            return scoped("--allow-net", host);
+        }
+        if let Some(path) = between(message, " of ", " is not allowed (outside the allowed paths)") {
+            let action = message.split(" of ").next()?.split_whitespace().last()?;
+            let flag = if action == "write" {
+                "--allow-write"
+            } else {
+                "--allow-read"
+            };
+            return scoped(flag, path);
+        }
+        if let Some(name) = between(message, "environment variable `", "` is not allowed") {
+            return scoped("--allow-env", name);
+        }
+        if let Some(command) = between(
+            message,
+            "execution of ",
+            " is not allowed (outside the allowed commands)",
+        ) {
+            return scoped("--allow-run", command);
+        }
+        None
     }
 
     /// Renders `err` as a single-line JSON diagnostic object (`None` on a render failure).
@@ -3176,6 +3243,42 @@ impl Cli {
 
 #[cfg(test)]
 mod tests {
+    #[rstest]
+    #[case("Runtime error: http: network access is disabled", Some("`--allow-net`"))]
+    #[case(
+        "http: network access to https://api.example.invalid/x is not allowed (outside the allowed domains)",
+        Some("`--allow-net=api.example.invalid`")
+    )]
+    #[case("read_file: filesystem reads are disabled", Some("`--allow-read`"))]
+    #[case(
+        "read of /tmp/a.md is not allowed (outside the allowed paths)",
+        Some("`--allow-read=/tmp/a.md`")
+    )]
+    #[case(
+        "write of /tmp/a.md is not allowed (outside the allowed paths)",
+        Some("`--allow-write=/tmp/a.md`")
+    )]
+    #[case("filesystem writes are disabled", Some("`--allow-write`"))]
+    #[case("environment variable access is disabled", Some("`--allow-env`"))]
+    #[case("access to environment variable `HOME` is not allowed", Some("`--allow-env=HOME`"))]
+    #[case("process execution is disabled", Some("`--allow-run`"))]
+    #[case(
+        "execution of git is not allowed (outside the allowed commands)",
+        Some("`--allow-run=git`")
+    )]
+    #[case("Unexpected token `x`", None)]
+    fn test_capability_hint(#[case] message: &str, #[case] expected: Option<&str>) {
+        let hint = Cli::capability_hint(message);
+        match expected {
+            Some(flag) => {
+                let hint = hint.expect("a hint");
+                assert!(hint.contains(flag), "{hint} should contain {flag}");
+                assert!(hint.contains("--allow-all"));
+            }
+            None => assert!(hint.is_none()),
+        }
+    }
+
     use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
