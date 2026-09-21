@@ -19,7 +19,6 @@ use crate::{
     ModuleLoader, Token,
     arena::Arena,
     error::{self},
-    optimizer::{OptimizationLevel, Optimizer},
     parse,
     runtime::builtin::io_context,
 };
@@ -95,7 +94,7 @@ impl From<crate::ast::Program> for CompiledProgram {
 
 /// The main execution engine for the mq.
 ///
-/// The `Engine` manages parsing, optimization, and evaluation of mq code.
+/// The `Engine` manages parsing and evaluation of mq code.
 /// It provides methods for configuration, loading modules, and evaluating code.
 ///
 /// # Examples
@@ -115,7 +114,6 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     /// VM state — see [`tarn::VmState`].
     pub(crate) vm: tarn::VmState<T, IO>,
     token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-    optimization_level: OptimizationLevel,
     vm_module_prelude: Vec<VmModulePrelude>,
 }
 
@@ -160,7 +158,6 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
         Self {
             vm: tarn::VmState::with_module_loader(module_loader),
             token_arena,
-            optimization_level: OptimizationLevel::default(),
             vm_module_prelude: Vec::new(),
         }
     }
@@ -215,14 +212,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         Self {
             vm: tarn::VmState::with_module_loader_and_io(module_loader, io),
             token_arena,
-            optimization_level: OptimizationLevel::default(),
             vm_module_prelude: Vec::new(),
         }
-    }
-
-    /// Set the optimization level for AST transformations applied before evaluation.
-    pub fn set_optimization_level(&mut self, level: OptimizationLevel) {
-        self.optimization_level = level;
     }
 
     /// Set the maximum call stack depth for function calls.
@@ -396,7 +387,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     /// The main engine for evaluating mq code.
     ///
-    /// The `Engine` manages parsing, optimization, and evaluation of mq.
+    /// The `Engine` manages parsing and evaluation of mq.
     /// It provides methods for configuration, loading modules, and evaluating code.
     ///
     /// # Examples
@@ -418,7 +409,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         // Scoped before `parse`, not just `eval_compiled_vm`, so bare `$VAR` resolution sees this engine's `Io`.
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
-        let program = Optimizer::with_level(self.optimization_level).optimize(program);
 
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
@@ -446,7 +436,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
-        let program = Optimizer::with_level(self.optimization_level).optimize(program);
         Ok(CompiledProgram {
             source: code.to_string(),
             program,

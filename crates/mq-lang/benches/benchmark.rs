@@ -16,7 +16,7 @@ fn main() {
     divan::main();
 }
 
-/// Measures steady-state execution after parsing and optimization on the selected engine.
+/// Measures steady-state execution after parsing on the selected engine.
 fn bench_compiled<F>(bencher: divan::Bencher, engine: &mut mq_lang::DefaultEngine, code: &str, mut input: F)
 where
     F: FnMut() -> Vec<mq_lang::RuntimeValue>,

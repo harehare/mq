@@ -1,7 +1,7 @@
 //! Bytecode-level (peephole) rewrites, run per [`Chunk`] right after compilation.
 //!
-//! The bytecode/IR counterpart to the AST-to-AST passes in [`crate::optimizer`]: fuses adjacent
-//! stack ops into superinstructions, drops dead `Push`/`Pop` pairs, and collapses no-op jumps.
+//! Fuses adjacent stack ops into superinstructions, drops dead `Push`/`Pop` pairs, and collapses
+//! no-op jumps.
 
 use super::bytecode::{Chunk, LineEntry, OpCode, StaticExactCallTarget, TryCatchInfo, jump_target};
 use crate::ast::TokenId;

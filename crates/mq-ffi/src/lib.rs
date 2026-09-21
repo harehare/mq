@@ -524,38 +524,6 @@ pub extern "C" fn mq_version() -> *const c_char {
     concat!(env!("CARGO_PKG_VERSION"), "\0").as_ptr() as *const c_char
 }
 
-/// C-compatible optimization level for AST transformations applied before evaluation.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub enum MqOptimizationLevel {
-    None = 0,
-    Basic = 1,
-    Full = 2,
-}
-
-impl From<MqOptimizationLevel> for mq_lang::OptimizationLevel {
-    fn from(level: MqOptimizationLevel) -> Self {
-        match level {
-            MqOptimizationLevel::None => mq_lang::OptimizationLevel::None,
-            MqOptimizationLevel::Basic => mq_lang::OptimizationLevel::Basic,
-            MqOptimizationLevel::Full => mq_lang::OptimizationLevel::Full,
-        }
-    }
-}
-
-/// Sets the optimization level for AST transformations applied before evaluation.
-/// Has no effect if `engine_ptr` is null.
-#[unsafe(no_mangle)]
-pub extern "C" fn mq_set_optimization_level(engine_ptr: *mut MqContext, level: MqOptimizationLevel) {
-    guard(move || {
-        if engine_ptr.is_null() {
-            return;
-        }
-        let engine = unsafe { &mut *(engine_ptr as *mut Engine) };
-        engine.set_optimization_level(level.into());
-    });
-}
-
 /// Sets the maximum call stack depth for function calls, to guard against
 /// runaway recursion in untrusted mq code. Has no effect if `engine_ptr` is null.
 #[unsafe(no_mangle)]
@@ -1279,48 +1247,6 @@ mod tests {
         let first = unsafe { CStr::from_ptr(mq_version()) }.to_str().unwrap();
         let second = unsafe { CStr::from_ptr(mq_version()) }.to_str().unwrap();
         assert_eq!(first, second);
-    }
-
-    #[test]
-    fn test_optimization_level_conversion() {
-        assert!(matches!(
-            mq_lang::OptimizationLevel::from(MqOptimizationLevel::None),
-            mq_lang::OptimizationLevel::None
-        ));
-        assert!(matches!(
-            mq_lang::OptimizationLevel::from(MqOptimizationLevel::Basic),
-            mq_lang::OptimizationLevel::Basic
-        ));
-        assert!(matches!(
-            mq_lang::OptimizationLevel::from(MqOptimizationLevel::Full),
-            mq_lang::OptimizationLevel::Full
-        ));
-    }
-
-    #[test]
-    fn test_set_optimization_level() {
-        let engine = mq_create();
-        mq_set_optimization_level(engine, MqOptimizationLevel::None);
-        mq_set_optimization_level(engine, MqOptimizationLevel::Basic);
-        mq_set_optimization_level(engine, MqOptimizationLevel::Full);
-
-        // Evaluation must still succeed after switching optimization levels.
-        let code = make_c_string("len()");
-        let input = make_c_string("abc");
-        let format = make_c_string("text");
-        let result = unsafe { mq_eval(engine, code, input, format) };
-        assert!(result.error_msg.is_null());
-        mq_free_result(result);
-        unsafe {
-            mq_free_string(code as *mut c_char);
-            mq_free_string(input as *mut c_char);
-            mq_free_string(format as *mut c_char);
-        }
-
-        // Should not crash when the engine pointer is null.
-        mq_set_optimization_level(ptr::null_mut(), MqOptimizationLevel::None);
-
-        mq_destroy(engine);
     }
 
     #[test]

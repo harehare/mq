@@ -260,30 +260,8 @@ void test_version() {
     printf("PASS\n");
 }
 
-void test_set_optimization_level() {
-    printf("Test 12: mq_set_optimization_level... ");
-
-    mq_context_t *engine = mq_create();
-
-    mq_set_optimization_level(engine, None);
-    mq_set_optimization_level(engine, Basic);
-    mq_set_optimization_level(engine, Full);
-
-    // Evaluation must still succeed after switching optimization levels.
-    struct mq_result_t result = mq_eval(engine, "len()", "abc", "text");
-    assert_null(result.error_msg, "Should not have error");
-    mq_free_result(result);
-
-    // Should not crash with a null engine.
-    mq_set_optimization_level(NULL, None);
-
-    mq_destroy(engine);
-
-    printf("PASS\n");
-}
-
 void test_set_max_call_stack_depth() {
-    printf("Test 13: mq_set_max_call_stack_depth... ");
+    printf("Test 12: mq_set_max_call_stack_depth... ");
 
     mq_context_t *engine = mq_create();
     mq_set_max_call_stack_depth(engine, 2);
@@ -301,7 +279,7 @@ void test_set_max_call_stack_depth() {
 }
 
 void test_define_string_value() {
-    printf("Test 14: mq_define_string_value... ");
+    printf("Test 13: mq_define_string_value... ");
 
     mq_context_t *engine = mq_create();
     mq_define_string_value(engine, "greeting", "hello");
@@ -322,7 +300,7 @@ void test_define_string_value() {
 }
 
 void test_load_module() {
-    printf("Test 15: mq_set_search_paths + mq_load_module... ");
+    printf("Test 14: mq_set_search_paths + mq_load_module... ");
 
     const char *module_path = TEST_MODULE_DIR "/mq_ffi_c_test_module.mq";
     FILE *f = fopen(module_path, "w");
@@ -349,7 +327,7 @@ void test_load_module() {
 }
 
 void test_load_module_missing() {
-    printf("Test 16: mq_load_module with missing module... ");
+    printf("Test 15: mq_load_module with missing module... ");
 
     mq_context_t *engine = mq_create();
     char *error_msg = mq_load_module(engine, "nonexistent_module_for_c_test");
@@ -362,7 +340,7 @@ void test_load_module_missing() {
 }
 
 void test_load_module_null_engine() {
-    printf("Test 17: mq_load_module with null engine... ");
+    printf("Test 16: mq_load_module with null engine... ");
 
     char *error_msg = mq_load_module(NULL, "anything");
     assert_not_null(error_msg, "Should have error message");
@@ -374,7 +352,7 @@ void test_load_module_null_engine() {
 }
 
 void test_import_module() {
-    printf("Test 18: mq_set_search_paths + mq_import_module... ");
+    printf("Test 17: mq_set_search_paths + mq_import_module... ");
 
     const char *module_path = TEST_MODULE_DIR "/mq_ffi_c_test_import_module.mq";
     FILE *f = fopen(module_path, "w");
@@ -402,7 +380,7 @@ void test_import_module() {
 }
 
 void test_import_module_missing() {
-    printf("Test 19: mq_import_module with missing module... ");
+    printf("Test 18: mq_import_module with missing module... ");
 
     mq_context_t *engine = mq_create();
     char *error_msg = mq_import_module(engine, "nonexistent_module_for_c_test");
@@ -415,7 +393,7 @@ void test_import_module_missing() {
 }
 
 void test_import_module_null_engine() {
-    printf("Test 20: mq_import_module with null engine... ");
+    printf("Test 19: mq_import_module with null engine... ");
 
     char *error_msg = mq_import_module(NULL, "anything");
     assert_not_null(error_msg, "Should have error message");
@@ -427,7 +405,7 @@ void test_import_module_null_engine() {
 }
 
 void test_set_search_paths_edge_cases() {
-    printf("Test 21: mq_set_search_paths edge cases... ");
+    printf("Test 20: mq_set_search_paths edge cases... ");
 
     mq_context_t *engine = mq_create();
 
@@ -444,7 +422,7 @@ void test_set_search_paths_edge_cases() {
 }
 
 void test_http_allowed_domains_does_not_crash() {
-    printf("Test 22: mq_set_http_allowed_domains... ");
+    printf("Test 21: mq_set_http_allowed_domains... ");
 
     mq_context_t *engine = mq_create();
     const char *domains[] = {"example.com"};
@@ -461,7 +439,7 @@ void test_http_allowed_domains_does_not_crash() {
 }
 
 void test_clear_http_cache_does_not_crash() {
-    printf("Test 23: mq_clear_http_cache / mq_clear_http_cache_all... ");
+    printf("Test 22: mq_clear_http_cache / mq_clear_http_cache_all... ");
 
     mq_context_t *engine = mq_create();
 
@@ -495,7 +473,6 @@ int main() {
     test_html_to_markdown_with_options();
     test_html_to_markdown_null_input();
     test_version();
-    test_set_optimization_level();
     test_set_max_call_stack_depth();
     test_define_string_value();
     test_load_module();

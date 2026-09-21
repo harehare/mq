@@ -3259,7 +3259,7 @@ fn io_reader_is_nameable_from_external_crates() {
 #[case::fn_as_value("def sq(x): x * x; | map([2, 3, 4], sq)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(4.into()), RuntimeValue::Number(9.into()), RuntimeValue::Number(16.into())]))].into()))]
 // try-catch: catches runtime errors
 #[case::try_catch_on_error("try: error(\"e\") catch: \"caught\"", vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("caught".to_string()))].into()))]
-// optimizer: while loop variant with reassignment
+// while loop with reassignment
 #[case::while_with_reassign("var n = 0 | while(n < 3): n += 1 | n", vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(3.into())].into()))]
 #[case::until_("
     var x = 0 |
