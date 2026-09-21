@@ -518,7 +518,6 @@ fn collect_soft_builtin_names(
         }
         Expr::Literal(_)
         | Expr::Selector(_)
-        | Expr::SelectorChain(_)
         | Expr::Include(_)
         | Expr::Import(_, _)
         | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
@@ -636,7 +635,6 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Id
         }
         Expr::Literal(_)
         | Expr::Selector(_)
-        | Expr::SelectorChain(_)
         | Expr::Include(_)
         | Expr::Import(_, _)
         | Expr::Self_
@@ -695,7 +693,6 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         Expr::Break(value) => value.as_ref().is_some_and(node_contains_direct_yield),
         Expr::Literal(_)
         | Expr::Selector(_)
-        | Expr::SelectorChain(_)
         | Expr::Include(_)
         | Expr::Import(_, _)
         | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
@@ -2313,13 +2310,6 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Selector(selector) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
                 self.emit_selector(selector);
-                Ok(())
-            }
-            Expr::SelectorChain(selectors) => {
-                self.emit(OpCode::GetLocal(SELF_SLOT));
-                for selector in selectors {
-                    self.emit_selector(selector);
-                }
                 Ok(())
             }
             Expr::SelectorCall(selector, args) => {

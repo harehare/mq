@@ -51,7 +51,6 @@ mod io;
 mod lexer;
 mod module;
 mod number;
-mod optimizer;
 mod range;
 mod runtime;
 mod selector;
@@ -102,7 +101,6 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
-pub use optimizer::OptimizationLevel;
 pub use range::{Position, Range};
 pub use runtime::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,

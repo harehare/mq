@@ -6,15 +6,6 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-/**
- * C-compatible optimization level for AST transformations applied before evaluation.
- */
-typedef enum MqOptimizationLevel {
-  None = 0,
-  Basic = 1,
-  Full = 2,
-} MqOptimizationLevel;
-
 typedef void mq_context_t;
 
 typedef struct mq_result_t {
@@ -140,12 +131,6 @@ char *mq_html_to_markdown(const char *html_input_c,
  * Returns the mq-ffi library version as a static, null-terminated string.
  */
 const char *mq_version(void);
-
-/**
- * Sets the optimization level for AST transformations applied before evaluation.
- * Has no effect if `engine_ptr` is null.
- */
-void mq_set_optimization_level(mq_context_t *engine_ptr, enum MqOptimizationLevel level);
 
 /**
  * Sets the maximum call stack depth for function calls, to guard against
