@@ -1660,6 +1660,23 @@ mod tests {
 
     #[cfg(not(feature = "debugger"))]
     #[test]
+    fn test_eval_compiled_vm_nodes_does_not_reinstantiate_module_defs_per_input() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_module("section").unwrap();
+        let compiled = engine.compile("nodes | len()").unwrap();
+        let inputs = || (0..3).map(|i| RuntimeValue::Number(f64::from(i).into()));
+
+        let result = engine.eval_compiled(&compiled, inputs()).unwrap();
+        assert_eq!(result.values(), &[RuntimeValue::Number(3.0.into())]);
+
+        let cached = compiled.cached_vm_program().flatten().unwrap();
+        assert!(!cached.per_input_program_makes_closures());
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[test]
     fn test_eval_compiled_vm_caches_a_program_with_nodes() {
         use crate::RuntimeValue;
 

@@ -11,15 +11,18 @@ pub(super) fn split_at_nodes(program: &Program) -> Option<(ProgramSlice<'_>, Pro
     Some(program.split_at(index))
 }
 
+/// Whether `node` only declares names, leaving the piped value untouched.
+pub(super) fn is_declaration(node: &Node) -> bool {
+    matches!(
+        &node.expr,
+        Expr::Def(..) | Expr::Include(..) | Expr::Import(..) | Expr::Module(..)
+    )
+}
+
 pub(super) fn program_after_nodes(before: ProgramSlice<'_>, after: ProgramSlice<'_>) -> Program {
     before
         .iter()
-        .filter(|node| {
-            matches!(
-                &node.expr,
-                Expr::Def(..) | Expr::Include(..) | Expr::Import(..) | Expr::Module(..)
-            )
-        })
+        .filter(|node| is_declaration(node))
         .cloned()
         .chain(after.iter().cloned())
         .collect()
