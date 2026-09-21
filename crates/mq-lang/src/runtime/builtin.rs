@@ -13,6 +13,7 @@ mod random;
 mod range;
 mod regex;
 pub(super) mod tokenizer;
+mod xml;
 
 use crate::DictMap;
 use crate::arena::Arena;
@@ -35,7 +36,6 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use quick_xml::XmlVersion;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
@@ -4312,157 +4312,7 @@ fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
 #[mq_macros::mq_fn(name = "_xml_parse", params = Fixed(1))]
 fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(xml_str)] => {
-            let mut reader = quick_xml::Reader::from_str(xml_str);
-            reader.config_mut().trim_text(true);
-            let mut buf = Vec::new();
-            #[allow(clippy::type_complexity)]
-            let mut stack: Vec<(String, DictMap, Vec<RuntimeValue>, Option<String>)> = Vec::new();
-            let mut root: Option<RuntimeValue> = None;
-
-            let parse_attrs = |e: &quick_xml::events::BytesStart<'_>| {
-                let mut attrs = DictMap::default();
-                for attr in e.attributes() {
-                    let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
-                    let key = attr.key.as_ref().to_string();
-                    let value = attr
-                        .normalized_value(XmlVersion::default())
-                        .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
-                        .to_string();
-                    attrs.insert(Ident::new(&key), RuntimeValue::String(value.into()));
-                }
-                Ok::<_, Error>(attrs)
-            };
-
-            loop {
-                match reader.read_event_into(&mut buf) {
-                    Ok(quick_xml::events::Event::Start(e)) => {
-                        let tag = e.name().as_ref().to_string();
-                        let attrs = parse_attrs(&e)?;
-                        stack.push((tag, attrs, Vec::new(), None));
-                    }
-                    Ok(quick_xml::events::Event::End(e)) => {
-                        let end_tag = e.name().as_ref().to_string();
-                        let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
-                            Error::Runtime(format!(
-                                "XML parse error at position {}: unexpected closing tag </{}>",
-                                reader.buffer_position(),
-                                end_tag
-                            ))
-                        })?;
-
-                        if tag != end_tag {
-                            return Err(Error::Runtime(format!(
-                                "XML parse error at position {}: mismatched closing tag: expected </{}> but found </{}>",
-                                reader.buffer_position(),
-                                tag,
-                                end_tag
-                            )));
-                        }
-
-                        let mut dict = DictMap::default();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
-                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-                        dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
-                        dict.insert(
-                            Ident::new("text"),
-                            text.map(|s| RuntimeValue::String(s.into()))
-                                .unwrap_or(RuntimeValue::NONE),
-                        );
-                        let element = RuntimeValue::Dict(Shared::new(dict));
-
-                        if let Some(parent) = stack.last_mut() {
-                            parent.2.push(element);
-                        } else {
-                            root = Some(element);
-                            break;
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Empty(e)) => {
-                        let tag = e.name().as_ref().to_string();
-                        let attrs = parse_attrs(&e)?;
-                        let mut dict = DictMap::default();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
-                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-                        dict.insert(Ident::new("children"), RuntimeValue::empty_array());
-                        dict.insert(Ident::new("text"), RuntimeValue::NONE);
-                        let element = RuntimeValue::Dict(Shared::new(dict));
-
-                        if let Some(parent) = stack.last_mut() {
-                            parent.2.push(element);
-                        } else {
-                            root = Some(element);
-                            break;
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Text(e)) => {
-                        if let Some(parent) = stack.last_mut() {
-                            let text = e.as_ref().to_string();
-
-                            if !text.is_empty() {
-                                match &mut parent.3 {
-                                    Some(t) => t.push_str(&text),
-                                    None => parent.3 = Some(text),
-                                }
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::CData(e)) => {
-                        if let Some(parent) = stack.last_mut() {
-                            let text = e.as_ref().to_string();
-                            match &mut parent.3 {
-                                Some(t) => t.push_str(&text),
-                                None => parent.3 = Some(text),
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::GeneralRef(e)) => {
-                        // quick-xml tokenizes `&name;`/`&#NNN;` references out of surrounding
-                        // text as their own event rather than leaving them embedded in
-                        // `Event::Text`, so they must be resolved and appended here or every
-                        // entity reference (e.g. `&lt;`, `&amp;`) silently vanishes from the
-                        // parsed text instead of decoding to the character it represents.
-                        if let Some(parent) = stack.last_mut() {
-                            let resolved = e
-                                .resolve_char_ref()
-                                .map_err(|e| {
-                                    Error::Runtime(format!(
-                                        "XML parse error at position {}: invalid character reference: {}",
-                                        reader.buffer_position(),
-                                        e
-                                    ))
-                                })?
-                                .map(String::from)
-                                .or_else(|| quick_xml::escape::resolve_predefined_entity(e.as_ref()).map(String::from))
-                                .ok_or_else(|| {
-                                    Error::Runtime(format!(
-                                        "XML parse error at position {}: unknown entity reference &{};",
-                                        reader.buffer_position(),
-                                        e.as_ref()
-                                    ))
-                                })?;
-
-                            match &mut parent.3 {
-                                Some(t) => t.push_str(&resolved),
-                                None => parent.3 = Some(resolved),
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Eof) => break,
-                    Err(e) => {
-                        return Err(Error::Runtime(format!(
-                            "XML parse error at position {}: {}",
-                            reader.buffer_position(),
-                            e
-                        )));
-                    }
-                    _ => (),
-                }
-                buf.clear();
-            }
-
-            Ok(root.unwrap_or(RuntimeValue::NONE))
-        }
+        [RuntimeValue::String(xml_str)] => xml::parse_xml(xml_str),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_xml_parse should always receive exactly one argument"),
     }
@@ -13385,109 +13235,6 @@ mod tests {
             &VmEnv::default(),
         );
         assert!(result.is_err());
-    }
-
-    #[rstest]
-    #[case::simple(
-        "<root>hello</root>",
-        {
-            let mut root = DictMap::default();
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
-            root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
-    )]
-    #[case::with_attributes(
-        "<root id=\"1\" class=\"main\">hello</root>",
-        {
-            let mut root = DictMap::default();
-            let mut attrs = DictMap::default();
-            attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
-            attrs.insert(Ident::new("class"), RuntimeValue::String(Shared::new("main".to_string())));
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-            root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
-    )]
-    #[case::nested(
-        "<root><child id=\"1\">hello</child><child id=\"2\">world</child></root>",
-        {
-            let mut root = DictMap::default();
-            let mut child1 = DictMap::default();
-            let mut attrs1 = DictMap::default();
-            attrs1.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
-            child1.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
-            child1.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs1)));
-            child1.insert(Ident::new("children"), RuntimeValue::empty_array());
-            child1.insert(Ident::new("text"), RuntimeValue::String(Shared::new("hello".to_string())));
-
-            let mut child2 = DictMap::default();
-            let mut attrs2 = DictMap::default();
-            attrs2.insert(Ident::new("id"), RuntimeValue::String(Shared::new("2".to_string())));
-            child2.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
-            child2.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs2)));
-            child2.insert(Ident::new("children"), RuntimeValue::empty_array());
-            child2.insert(Ident::new("text"), RuntimeValue::String(Shared::new("world".to_string())));
-
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
-            root.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::Dict(Shared::new(child1)),
-                RuntimeValue::Dict(Shared::new(child2)),
-            ])));
-            root.insert(Ident::new("text"), RuntimeValue::NONE);
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
-    )]
-    #[case::self_closing(
-        "<root><child id=\"1\"/></root>",
-        {
-            let mut root = DictMap::default();
-            let mut child = DictMap::default();
-            let mut attrs = DictMap::default();
-            attrs.insert(Ident::new("id"), RuntimeValue::String(Shared::new("1".to_string())));
-            child.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("child".to_string())));
-            child.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-            child.insert(Ident::new("children"), RuntimeValue::empty_array());
-            child.insert(Ident::new("text"), RuntimeValue::NONE);
-
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
-            root.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(vec![
-                RuntimeValue::Dict(Shared::new(child)),
-            ])));
-            root.insert(Ident::new("text"), RuntimeValue::NONE);
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
-    )]
-    #[case::entity_references(
-        // `x` (rather than whitespace) separates the references: `trim_text(true)` (a
-        // deliberate, pre-existing config for ignoring pretty-printed indentation) trims a
-        // whitespace-only text run to empty even when it sits between two entity references,
-        // which would make this case about that interaction instead of about entity resolution.
-        "<root>&lt;b&gt;x&amp;x&quot;q&quot;x&apos;s&apos;x&#65;&#x42;</root>",
-        {
-            let mut root = DictMap::default();
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
-            root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("<b>x&x\"q\"x's'xAB".to_string())));
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
-    )]
-    fn test_xml_parse(#[case] xml: &str, #[case] expected: Result<RuntimeValue, Error>) {
-        let ident = Ident::new("_xml_parse");
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![RuntimeValue::String(Shared::new(xml.to_string()))].into(),
-            &VmEnv::default(),
-        );
-        assert_eq!(result, expected);
     }
 
     #[test]

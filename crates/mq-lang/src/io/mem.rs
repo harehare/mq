@@ -347,4 +347,26 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn test_open_readers_tracks_open_and_dropped_readers() {
+        let io = MemIo::default().with_file("/a.txt", "hello");
+        assert_eq!(io.open_readers(), 0);
+
+        let first = io.open_read(Path::new("/a.txt")).unwrap();
+        let second = io.open_read(Path::new("/a.txt")).unwrap();
+        assert_eq!(io.open_readers(), 2);
+
+        drop(first);
+        assert_eq!(io.open_readers(), 1);
+        drop(second);
+        assert_eq!(io.open_readers(), 0);
+    }
+
+    #[test]
+    fn test_open_readers_unchanged_when_open_read_fails() {
+        let io = MemIo::default();
+        assert!(io.open_read(Path::new("/missing.txt")).is_err());
+        assert_eq!(io.open_readers(), 0);
+    }
 }
