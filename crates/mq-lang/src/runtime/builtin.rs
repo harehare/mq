@@ -13,6 +13,7 @@ mod random;
 mod range;
 mod regex;
 pub(super) mod tokenizer;
+mod xml;
 
 use crate::DictMap;
 use crate::arena::Arena;
@@ -35,7 +36,6 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use quick_xml::XmlVersion;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
@@ -4309,203 +4309,10 @@ fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
-/// Character data and entity references accumulated between two XML markup events.
-///
-/// Only the outer edges of a run are trimmed (pretty-printing indentation), so whitespace
-/// next to an entity reference (`x &amp; y`) is preserved.
-#[derive(Default)]
-struct XmlTextRun {
-    buf: String,
-    tail_start: Option<usize>,
-}
-
-impl XmlTextRun {
-    fn is_xml_whitespace(c: char) -> bool {
-        matches!(c, ' ' | '\t' | '\r' | '\n')
-    }
-
-    fn push_text(&mut self, text: &str) {
-        let text = if self.buf.is_empty() {
-            text.trim_start_matches(Self::is_xml_whitespace)
-        } else {
-            text
-        };
-        self.tail_start = Some(self.buf.len());
-        self.buf.push_str(text);
-    }
-
-    fn push_resolved_ref(&mut self, resolved: &str) {
-        self.tail_start = None;
-        self.buf.push_str(resolved);
-    }
-
-    fn take(&mut self) -> Option<String> {
-        if let Some(start) = self.tail_start.take() {
-            let kept = self.buf[start..].trim_end_matches(Self::is_xml_whitespace).len();
-            self.buf.truncate(start + kept);
-        }
-        let text = std::mem::take(&mut self.buf);
-        (!text.is_empty()).then_some(text)
-    }
-}
-
 #[mq_macros::mq_fn(name = "_xml_parse", params = Fixed(1))]
 fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::String(xml_str)] => {
-            let mut reader = quick_xml::Reader::from_str(xml_str);
-            let mut buf = Vec::new();
-            #[allow(clippy::type_complexity)]
-            let mut stack: Vec<(String, DictMap, Vec<RuntimeValue>, Option<String>)> = Vec::new();
-            let mut root: Option<RuntimeValue> = None;
-            let mut run = XmlTextRun::default();
-
-            let parse_attrs = |e: &quick_xml::events::BytesStart<'_>| {
-                let mut attrs = DictMap::default();
-                for attr in e.attributes() {
-                    let attr = attr.map_err(|e| Error::Runtime(format!("XML attribute error: {}", e)))?;
-                    let key = attr.key.as_ref().to_string();
-                    let value = attr
-                        .normalized_value(XmlVersion::default())
-                        .map_err(|e| Error::Runtime(format!("XML attribute value error: {}", e)))?
-                        .to_string();
-                    attrs.insert(Ident::new(&key), RuntimeValue::String(value.into()));
-                }
-                Ok::<_, Error>(attrs)
-            };
-
-            loop {
-                let event = reader.read_event_into(&mut buf);
-
-                if !matches!(
-                    event,
-                    Ok(quick_xml::events::Event::Text(_)) | Ok(quick_xml::events::Event::GeneralRef(_))
-                ) && let (Some(text), Some(parent)) = (run.take(), stack.last_mut())
-                {
-                    match &mut parent.3 {
-                        Some(t) => t.push_str(&text),
-                        None => parent.3 = Some(text),
-                    }
-                }
-
-                match event {
-                    Ok(quick_xml::events::Event::Start(e)) => {
-                        let tag = e.name().as_ref().to_string();
-                        let attrs = parse_attrs(&e)?;
-                        stack.push((tag, attrs, Vec::new(), None));
-                    }
-                    Ok(quick_xml::events::Event::End(e)) => {
-                        let end_tag = e.name().as_ref().to_string();
-                        let (tag, attrs, children, text) = stack.pop().ok_or_else(|| {
-                            Error::Runtime(format!(
-                                "XML parse error at position {}: unexpected closing tag </{}>",
-                                reader.buffer_position(),
-                                end_tag
-                            ))
-                        })?;
-
-                        if tag != end_tag {
-                            return Err(Error::Runtime(format!(
-                                "XML parse error at position {}: mismatched closing tag: expected </{}> but found </{}>",
-                                reader.buffer_position(),
-                                tag,
-                                end_tag
-                            )));
-                        }
-
-                        let mut dict = DictMap::default();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
-                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-                        dict.insert(Ident::new("children"), RuntimeValue::Array(Shared::new(children)));
-                        dict.insert(
-                            Ident::new("text"),
-                            text.map(|s| RuntimeValue::String(s.into()))
-                                .unwrap_or(RuntimeValue::NONE),
-                        );
-                        let element = RuntimeValue::Dict(Shared::new(dict));
-
-                        if let Some(parent) = stack.last_mut() {
-                            parent.2.push(element);
-                        } else {
-                            root = Some(element);
-                            break;
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Empty(e)) => {
-                        let tag = e.name().as_ref().to_string();
-                        let attrs = parse_attrs(&e)?;
-                        let mut dict = DictMap::default();
-                        dict.insert(Ident::new("tag"), RuntimeValue::String(tag.into()));
-                        dict.insert(Ident::new("attributes"), RuntimeValue::Dict(Shared::new(attrs)));
-                        dict.insert(Ident::new("children"), RuntimeValue::empty_array());
-                        dict.insert(Ident::new("text"), RuntimeValue::NONE);
-                        let element = RuntimeValue::Dict(Shared::new(dict));
-
-                        if let Some(parent) = stack.last_mut() {
-                            parent.2.push(element);
-                        } else {
-                            root = Some(element);
-                            break;
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Text(e)) => {
-                        if !stack.is_empty() {
-                            run.push_text(e.as_ref());
-                        }
-                    }
-                    Ok(quick_xml::events::Event::CData(e)) => {
-                        if let Some(parent) = stack.last_mut() {
-                            let text = e.as_ref().to_string();
-                            match &mut parent.3 {
-                                Some(t) => t.push_str(&text),
-                                None => parent.3 = Some(text),
-                            }
-                        }
-                    }
-                    Ok(quick_xml::events::Event::GeneralRef(e)) => {
-                        // quick-xml tokenizes `&name;`/`&#NNN;` references out of surrounding
-                        // text as their own event rather than leaving them embedded in
-                        // `Event::Text`, so they must be resolved and appended here or every
-                        // entity reference (e.g. `&lt;`, `&amp;`) silently vanishes from the
-                        // parsed text instead of decoding to the character it represents.
-                        if !stack.is_empty() {
-                            let resolved = e
-                                .resolve_char_ref()
-                                .map_err(|e| {
-                                    Error::Runtime(format!(
-                                        "XML parse error at position {}: invalid character reference: {}",
-                                        reader.buffer_position(),
-                                        e
-                                    ))
-                                })?
-                                .map(String::from)
-                                .or_else(|| quick_xml::escape::resolve_predefined_entity(e.as_ref()).map(String::from))
-                                .ok_or_else(|| {
-                                    Error::Runtime(format!(
-                                        "XML parse error at position {}: unknown entity reference &{};",
-                                        reader.buffer_position(),
-                                        e.as_ref()
-                                    ))
-                                })?;
-
-                            run.push_resolved_ref(&resolved);
-                        }
-                    }
-                    Ok(quick_xml::events::Event::Eof) => break,
-                    Err(e) => {
-                        return Err(Error::Runtime(format!(
-                            "XML parse error at position {}: {}",
-                            reader.buffer_position(),
-                            e
-                        )));
-                    }
-                    _ => (),
-                }
-                buf.clear();
-            }
-
-            Ok(root.unwrap_or(RuntimeValue::NONE))
-        }
+        [RuntimeValue::String(xml_str)] => xml::parse_xml(xml_str),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_xml_parse should always receive exactly one argument"),
     }
