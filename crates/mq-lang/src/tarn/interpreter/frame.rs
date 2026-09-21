@@ -17,14 +17,8 @@ use crate::ast::node::Node;
 /// One call's state, held on the trampoline's frame stack instead of a native Rust call frame.
 pub(super) struct Frame {
     pub(super) chunk_index: u16,
-    /// The chunk pool when it differs from the program's root pool. `None` means the root
-    /// chunk pool, supplied once by the trampoline. Most calls stay within the program being
-    /// evaluated, so avoiding an `Rc`/`Arc` clone here removes reference-count traffic from the
-    /// fixed-call hot path.
     pub(super) chunks: Option<Shared<Vec<Chunk>>>,
     pub(super) locals: Locals,
-    /// `None` for the top-level frame, which has no captures and must not allocate an empty
-    /// vector for every evaluation.
     pub(super) upvalues: Option<Shared<Vec<Cell>>>,
     /// First operand-stack slot owned by this frame. The operand stack itself is shared by the
     /// whole execution, so entering a call only records this boundary.
@@ -44,7 +38,6 @@ pub(super) struct Frame {
 }
 
 impl Frame {
-    /// Debug fields are filled in by `push_frame`.
     pub(super) fn new(
         chunk_index: u16,
         chunks: Option<Shared<Vec<Chunk>>>,
@@ -62,9 +55,6 @@ impl Frame {
             ip: 0,
             reusable_locals,
             on_complete,
-            // Frames are constructed before they enter the trampoline. `push_frame` assigns
-            // the initial cost for ordinary calls; bottom frames are seeded directly and do not
-            // consume a call slot.
             call_depth_cost: 0,
             #[cfg(feature = "debugger")]
             caller_node: None,
@@ -412,4 +402,28 @@ pub(super) struct ExecutionContext<'a> {
     pub(super) host_functions: &'a HostFunctions,
     /// Read only on the uncaught-error path by `unwind_frames`.
     pub(super) capture_stack_trace: bool,
+}
+
+#[cfg(test)]
+mod size_tests {
+    use super::*;
+
+    #[test]
+    fn locals_stays_within_one_vec_plus_tag() {
+        assert!(
+            std::mem::size_of::<Locals>() <= 32,
+            "Locals grew to {} bytes; box rare variants instead of widening it",
+            std::mem::size_of::<Locals>()
+        );
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[test]
+    fn frame_stays_compact() {
+        assert!(
+            std::mem::size_of::<Frame>() <= 88,
+            "Frame grew to {} bytes; every call pushes and pops one",
+            std::mem::size_of::<Frame>()
+        );
+    }
 }
