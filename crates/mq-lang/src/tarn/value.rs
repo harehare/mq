@@ -241,11 +241,16 @@ pub(crate) enum Locals {
     Flat(Vec<StackValue>),
     #[cfg(not(feature = "sync"))]
     /// Direct slots plus cells at the sparse set of captured slot positions.
-    Hybrid {
-        slots: Vec<StackValue>,
-        captured: Vec<Option<Cell>>,
-    },
+    ///
+    /// Boxed so this rarer variant doesn't widen `Locals`, and thus every pushed `Frame`.
+    Hybrid(Box<HybridLocals>),
     Boxed(Vec<Cell>),
+}
+
+#[cfg(not(feature = "sync"))]
+pub(crate) struct HybridLocals {
+    slots: Vec<StackValue>,
+    captured: Vec<Option<Cell>>,
 }
 
 impl Locals {
@@ -274,10 +279,10 @@ impl Locals {
                     *cell = Some(new_cell(StackValue::Value(RuntimeValue::None)));
                 }
             }
-            Locals::Hybrid {
+            Locals::Hybrid(Box::new(HybridLocals {
                 slots: (0..count).map(|_| StackValue::Value(RuntimeValue::None)).collect(),
                 captured,
-            }
+            }))
         }
         #[cfg(feature = "sync")]
         {
@@ -301,7 +306,7 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots.len(),
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, .. } => slots.len(),
+            Locals::Hybrid(hybrid) => hybrid.slots.len(),
             Locals::Boxed(slots) => slots.len(),
         }
     }
@@ -317,7 +322,8 @@ impl Locals {
                 }
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
                 let from = from.min(slots.len());
                 for index in from..slots.len() {
                     if let Some(cell) = &captured[index] {
@@ -341,9 +347,9 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots[slot as usize].upgraded(),
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => captured[slot as usize]
+            Locals::Hybrid(hybrid) => hybrid.captured[slot as usize]
                 .as_ref()
-                .map_or_else(|| slots[slot as usize].upgraded(), read_cell),
+                .map_or_else(|| hybrid.slots[slot as usize].upgraded(), read_cell),
             Locals::Boxed(slots) => read_cell(&slots[slot as usize]),
         }
     }
@@ -359,7 +365,8 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => slots[slot as usize] = value,
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
                 if let Some(cell) = &captured[slot as usize] {
                     write_cell(cell, value);
                 } else {
@@ -385,7 +392,8 @@ impl Locals {
                 unsafe { slots.get_unchecked(slot as usize) }.upgraded()
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &**hybrid;
                 // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
                 match unsafe { captured.get_unchecked(slot as usize) } {
                     Some(cell) => read_cell(cell),
@@ -419,7 +427,8 @@ impl Locals {
                 }
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &**hybrid;
                 // SAFETY: inherited from this method's caller contract.
                 if unsafe { captured.get_unchecked(_slot as usize) }.is_some() {
                     return None;
@@ -444,7 +453,8 @@ impl Locals {
                 *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
                 // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
                 if let Some(cell) = unsafe { captured.get_unchecked(slot as usize) } {
                     write_cell(cell, value);
@@ -466,7 +476,7 @@ impl Locals {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(_) => unreachable!("a non-capturing chunk's locals can't be captured"),
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { captured, .. } => captured[slot as usize]
+            Locals::Hybrid(hybrid) => hybrid.captured[slot as usize]
                 .as_ref()
                 .expect("bytecode attempted to capture a local slot without a cell"),
             Locals::Boxed(slots) => &slots[slot as usize],
@@ -486,7 +496,8 @@ impl Locals {
                 }
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
                 for (slot, cell) in slots.iter_mut().zip(captured) {
                     if let Some(cell) = cell {
                         if let Some(weak_cell) = weak_coroutine_cell(cell, handle) {
@@ -527,7 +538,8 @@ impl Locals {
                 }
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => {
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &**hybrid;
                 for (slot, cell) in slots.iter().zip(captured) {
                     match cell {
                         Some(cell) => collect_coroutine_handles_in_cell(cell, handles),
@@ -555,10 +567,10 @@ impl Locals {
                 Ok(())
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { slots, captured } => match &captured[slot as usize] {
+            Locals::Hybrid(hybrid) => match &hybrid.captured[slot as usize] {
                 Some(cell) => append_to_array_cell(cell, value),
                 None => {
-                    let StackValue::Value(RuntimeValue::Array(array)) = &mut slots[slot as usize] else {
+                    let StackValue::Value(RuntimeValue::Array(array)) = &mut hybrid.slots[slot as usize] else {
                         return Err("ForeachCollect accumulator is not an array");
                     };
                     array_mut(array).push(value);
@@ -620,7 +632,7 @@ impl Locals {
                 Ok(true)
             }
             #[cfg(not(feature = "sync"))]
-            Locals::Hybrid { .. } => {
+            Locals::Hybrid(_) => {
                 // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let index = unsafe { self.get_unchecked(index_slot) };
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
