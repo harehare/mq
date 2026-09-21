@@ -1613,10 +1613,20 @@ end
 # Records with a missing or `None` join key never match, and duplicate keys on either
 # side expand as a cross product.
 #
+# `kind` can also be "semi" or "anti" (filtering joins). "semi" returns only the left
+# records whose key exists on the right, and "anti" returns only those whose key does not.
+# Left records are returned unchanged, in their original order, without being duplicated
+# by repeated right keys, and no right fields are merged in. A left record with a missing
+# or `None` key never matches, so "semi" drops it and "anti" keeps it.
+#
 # Example:
 # ```
 # join_by([{"id": 2, "name": "bob"}], [{"uid": 2, "age": 30}], "id", "uid")
 # #=> [{"id": 2, "name": "bob", "uid": 2, "age": 30}]
+# join_by([{"id": 1}, {"id": 2}], [{"uid": 2}, {"uid": 2}], "id", "uid", "semi")
+# #=> [{"id": 2}]
+# join_by([{"id": 1}, {"id": 2}], [{"uid": 2}, {"uid": 2}], "id", "uid", "anti")
+# #=> [{"id": 1}]
 # ```
 #
 # Returns: array
@@ -1625,8 +1635,21 @@ def join_by(left, right, left_key, right_key, kind = "inner"):
     error("join_by: left must be an array")
   elif (!is_array(right)):
     error("join_by: right must be an array")
-  elif (!in(["inner", "left", "right", "full"], kind)):
-    error("join_by: invalid kind, expected one of \"inner\", \"left\", \"right\", \"full\"")
+  elif (!in(["inner", "left", "right", "full", "semi", "anti"], kind)):
+    error("join_by: invalid kind, expected one of \"inner\", \"left\", \"right\", \"full\", \"semi\", \"anti\"")
+  elif (kind == "semi" || kind == "anti"):
+    do
+      let right_key_set = fold(right, dict(), fn(acc, r):
+              let k = get(r, right_key)
+              | if (is_none(k)): acc else: set(acc, to_string(k), true);
+      )
+      | let keep_if_found = kind == "semi"
+      | filter(left, fn(l):
+              let k = get(l, left_key)
+              | let found = if (is_none(k)): false else: !is_none(get(right_key_set, to_string(k)))
+              | found == keep_if_found;
+      )
+    end
   else:
     do
       let schema_of = fn(records): unique_by(flat_map(records, keys), identity);

@@ -950,6 +950,85 @@ def test_join_by_missing_keys_never_match():
   | assert_eq(result[1], {"name": None, "age": 30})
 end
 
+def test_join_by_semi_keeps_left_with_match():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}, {"id": 3, "name": "carol"}]
+  | let right = [{"uid": 3, "age": 40}, {"uid": 2, "age": 30}]
+  | let result = join_by(left, right, "id", "uid", "semi")
+  | assert_eq(result, [{"id": 2, "name": "bob"}, {"id": 3, "name": "carol"}])
+end
+
+def test_join_by_semi_duplicate_right_keys_do_not_duplicate_left():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
+  | let right = [{"uid": 2, "age": 30}, {"uid": 2, "age": 31}]
+  | let result = join_by(left, right, "id", "uid", "semi")
+  | assert_eq(result, [{"id": 2, "name": "bob"}])
+end
+
+def test_join_by_semi_duplicate_left_keys_are_all_kept():
+  let left = [{"id": 2, "n": "a"}, {"id": 1, "n": "b"}, {"id": 2, "n": "c"}]
+  | let right = [{"uid": 2}]
+  | let result = join_by(left, right, "id", "uid", "semi")
+  | assert_eq(result, [{"id": 2, "n": "a"}, {"id": 2, "n": "c"}])
+end
+
+def test_join_by_semi_does_not_merge_right_fields():
+  let left = [{"id": 1, "value": "from_left"}]
+  | let right = [{"id": 1, "value": "from_right", "extra": true}]
+  | let result = join_by(left, right, "id", "id", "semi")
+  | assert_eq(result, [{"id": 1, "value": "from_left"}])
+end
+
+def test_join_by_semi_none_and_missing_keys_never_match():
+  let left = [{"id": None, "name": "a"}, {"name": "b"}, {"id": 1, "name": "c"}]
+  | let right = [{"uid": None}, {"age": 1}, {"uid": 1}]
+  | let result = join_by(left, right, "id", "uid", "semi")
+  | assert_eq(result, [{"id": 1, "name": "c"}])
+end
+
+def test_join_by_semi_compares_keys_as_strings():
+  let left = [{"id": 1, "name": "a"}, {"id": "2", "name": "b"}]
+  | let right = [{"uid": "1"}, {"uid": 2}]
+  | let result = join_by(left, right, "id", "uid", "semi")
+  | assert_eq(result, left)
+end
+
+def test_join_by_semi_empty_inputs():
+  assert_eq(join_by([], [{"uid": 1}], "id", "uid", "semi"), [])
+  | assert_eq(join_by([{"id": 1}], [], "id", "uid", "semi"), [])
+end
+
+def test_join_by_anti_keeps_left_without_match():
+  let left = [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}, {"id": 3, "name": "carol"}]
+  | let right = [{"uid": 2, "age": 30}, {"uid": 2, "age": 31}]
+  | let result = join_by(left, right, "id", "uid", "anti")
+  | assert_eq(result, [{"id": 1, "name": "alice"}, {"id": 3, "name": "carol"}])
+end
+
+def test_join_by_anti_keeps_none_and_missing_keys():
+  let left = [{"id": None, "name": "a"}, {"name": "b"}, {"id": 1, "name": "c"}]
+  | let right = [{"uid": None}, {"age": 1}, {"uid": 1}]
+  | let result = join_by(left, right, "id", "uid", "anti")
+  | assert_eq(result, [{"id": None, "name": "a"}, {"name": "b"}])
+end
+
+def test_join_by_anti_empty_right_keeps_all():
+  let left = [{"id": 1}, {"id": 2}]
+  | assert_eq(join_by(left, [], "id", "uid", "anti"), left)
+end
+
+def test_join_by_semi_and_anti_partition_left():
+  let left = [{"id": 1}, {"id": 2}, {"id": None}, {"id": 3}]
+  | let right = [{"uid": 2}, {"uid": 3}]
+  | let semi = join_by(left, right, "id", "uid", "semi")
+  | let anti = join_by(left, right, "id", "uid", "anti")
+  | assert_eq(len(semi) + len(anti), len(left))
+end
+
+def test_join_by_semi_non_array_right_errors():
+  let result = try: join_by([], "nope", "id", "uid", "semi") catch(e): e["message"]
+  | assert(contains(result, "right must be an array"))
+end
+
 def test_join_by_invalid_kind():
   let result = try: join_by([], [], "id", "uid", "outer") catch(e): e["message"]
   | assert(contains(result, "invalid kind"))
