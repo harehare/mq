@@ -1623,8 +1623,14 @@ end
 # ```
 # join_by([{"id": 2, "name": "bob"}], [{"uid": 2, "age": 30}], "id", "uid")
 # #=> [{"id": 2, "name": "bob", "uid": 2, "age": 30}]
+# ```
+# Example:
+# ```
 # join_by([{"id": 1}, {"id": 2}], [{"uid": 2}, {"uid": 2}], "id", "uid", "semi")
 # #=> [{"id": 2}]
+# ```
+# Example:
+# ```
 # join_by([{"id": 1}, {"id": 2}], [{"uid": 2}, {"uid": 2}], "id", "uid", "anti")
 # #=> [{"id": 1}]
 # ```

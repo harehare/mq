@@ -48,9 +48,9 @@ pub struct ModuleDoc {
 /// def is_array(a): type(a) == "array";
 /// ```
 ///
-/// Inside a fenced ` ``` ` block, a line immediately followed by a `#=>` line becomes a
-/// runnable example (checked by `doc_examples` tests); a block may contain several such
-/// pairs. A `Returns: TYPE` line sets the return type. Everything else is free-text
+/// Inside a fenced ` ``` ` block, the code before a `#=>` line and the expected output after
+/// it become one runnable example (checked by `doc_examples` tests); a function with several
+/// examples uses one `Example:` + fence per example. A `Returns: TYPE` line sets the return type. Everything else is free-text
 /// description.
 pub fn extract_functions_from_cst(source: &str, skip_native: bool) -> Vec<MqFnDoc> {
     extract_module(source, skip_native).1
