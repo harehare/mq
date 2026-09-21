@@ -22,7 +22,7 @@ use super::bytecode::{BinaryOp, Chunk, OpCode, SELF_SLOT, TryCatchInfo};
 use super::compiler::CompiledProgram;
 #[cfg(feature = "debugger")]
 use super::value::Cell;
-use super::value::VmClosureValue;
+use super::value::ClosureValue;
 use super::value::{Closure, Locals, StackValue, read_cell, resolve_weak_coroutines, write_cell};
 #[cfg(feature = "debugger")]
 use crate::ast::TokenId;
@@ -32,6 +32,8 @@ use crate::runtime::builtin::{self, Args};
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::{self, ResumeBuiltin, RuntimeValue};
 use crate::selector::Selector;
+#[cfg(feature = "debugger")]
+use crate::tarn::Options;
 use crate::tarn::VmEnv;
 #[cfg(feature = "vm-profile")]
 use crate::vm_profile;
@@ -379,7 +381,7 @@ pub(crate) fn run_debug_expression(
         RunOptions {
             host_functions,
             timeout: None,
-            max_call_stack_depth: crate::tarn::Options::default().max_call_stack_depth,
+            max_call_stack_depth: Options::default().max_call_stack_depth,
             capture_stack_trace: false,
             global_bindings: &[],
         },
@@ -504,7 +506,7 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
     match v {
         StackValue::Value(rv) => rv,
         StackValue::Closure(closure) => {
-            RuntimeValue::VmClosure(Shared::new(VmClosureValue::from_closure(chunks, &closure)))
+            RuntimeValue::Closure(Shared::new(ClosureValue::from_closure(chunks, &closure)))
         }
         StackValue::WeakCoroutine(handle) => coroutine::upgrade_handle(&handle)
             .map(RuntimeValue::Coroutine)
@@ -2014,7 +2016,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let value = pop!();
                 let eligible = match &value {
                     StackValue::Closure(closure) => chunks[closure.chunk_index as usize].param_shape.required <= 1,
-                    StackValue::Value(RuntimeValue::VmClosure(vc)) => {
+                    StackValue::Value(RuntimeValue::Closure(vc)) => {
                         vc.chunks[vc.chunk_index as usize]
                             .param_shape
                             .required

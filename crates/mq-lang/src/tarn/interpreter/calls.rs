@@ -3,14 +3,14 @@
 use super::errors::{VmError, VmResult, locate};
 use super::frame::{Continuation, ExecutionContext, Frame, PendingCall};
 use super::{current_self, into_runtime_value};
-use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
-use crate::runtime::host::HostFunctions;
+use crate::runtime::host::{HostFunctionError, HostFunctions, panic_message};
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::tarn::VmEnv;
 use crate::tarn::bytecode::{Chunk, ParamBinding, ParamShape, SELF_SLOT, UpvalueSource};
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
+use crate::{Ident, Shared, TokenArena};
 use std::collections::VecDeque;
 
 pub(super) struct CallSite<'a> {
@@ -77,11 +77,7 @@ pub(super) enum CallStep {
 }
 
 /// A generator call binds arguments like any other call but never executes the body.
-pub(super) fn frame_or_coroutine(
-    frame: Frame,
-    chunk_pool: &Shared<Vec<Chunk>>,
-    token_arena: &crate::TokenArena,
-) -> CallStep {
+pub(super) fn frame_or_coroutine(frame: Frame, chunk_pool: &Shared<Vec<Chunk>>, token_arena: &TokenArena) -> CallStep {
     if chunk_pool[frame.chunk_index as usize].is_generator {
         CallStep::Value(generator_coroutine(frame, chunk_pool, token_arena))
     } else {
@@ -93,7 +89,7 @@ pub(super) fn frame_or_coroutine(
 pub(super) fn generator_coroutine(
     frame: Frame,
     chunk_pool: &Shared<Vec<Chunk>>,
-    token_arena: &crate::TokenArena,
+    token_arena: &TokenArena,
 ) -> StackValue {
     let handle =
         super::coroutine::CoroutineState::new_handle(frame, Shared::clone(chunk_pool), Shared::clone(token_arena));
@@ -204,7 +200,7 @@ pub(super) fn call_stack_value<const CHECK_TIMEOUT: bool>(
             closure.upvalues.clone(),
             call_site.frame_chunks,
         ),
-        StackValue::Value(RuntimeValue::VmClosure(vc)) => {
+        StackValue::Value(RuntimeValue::Closure(vc)) => {
             if !vc.bound_args.is_empty() {
                 // `args` is a caller-owned pooled buffer. Prepend into a second pooled buffer,
                 // then immediately return the emptied original one instead of dropping its
@@ -822,7 +818,7 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
 }
 
 pub(super) fn call_builtin(
-    ident: &crate::Ident,
+    ident: &Ident,
     args: &[RuntimeValue],
     self_value: &RuntimeValue,
     env: &VmEnv,
@@ -832,7 +828,7 @@ pub(super) fn call_builtin(
 }
 
 pub(super) fn call_builtin_args(
-    ident: &crate::Ident,
+    ident: &Ident,
     args: Args,
     self_value: &RuntimeValue,
     env: &VmEnv,
@@ -852,10 +848,7 @@ pub(super) fn call_builtin_args(
                 };
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(host_args)))
                     .unwrap_or_else(|payload| {
-                        Err(crate::runtime::host::HostFunctionError::new(format!(
-                            "panic: {}",
-                            crate::runtime::host::panic_message(&*payload)
-                        )))
+                        Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload))))
                     })
                     .map_err(|e| VmError::Host(*ident, e.message().to_string()))
             }
@@ -868,8 +861,8 @@ pub(super) fn call_builtin_args(
     }
 }
 
-pub(super) fn negate_ident() -> &'static crate::Ident {
+pub(super) fn negate_ident() -> &'static Ident {
     use std::sync::LazyLock;
-    static NEGATE: LazyLock<crate::Ident> = LazyLock::new(|| crate::Ident::new(builtins::NEGATE));
+    static NEGATE: LazyLock<Ident> = LazyLock::new(|| Ident::new(builtins::NEGATE));
     &NEGATE
 }

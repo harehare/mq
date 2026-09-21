@@ -17,6 +17,7 @@ mod xml;
 
 use crate::DictMap;
 use crate::arena::Arena;
+use crate::ast::TokenId;
 use crate::ast::constants;
 use crate::error::runtime::RuntimeError;
 use crate::ident::all_symbols;
@@ -173,7 +174,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
     let provided = args;
 
     match fn_value {
-        RuntimeValue::VmClosure(vc) => {
+        RuntimeValue::Closure(vc) => {
             let total_params = vc.chunks[vc.chunk_index as usize].param_shape.bindings.len();
             let already_bound = vc.bound_args.len();
             if already_bound + provided.len() >= total_params {
@@ -185,7 +186,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
             }
             let mut vc = vc;
             Shared::make_mut(&mut vc).bound_args.extend(provided);
-            Ok(RuntimeValue::VmClosure(vc))
+            Ok(RuntimeValue::Closure(vc))
         }
         other => Err(Error::InvalidTypes(ident.to_string(), vec![other])),
     }
@@ -9700,7 +9701,7 @@ impl Error {
     #[cold]
     pub fn to_runtime_error(
         &self,
-        token_id: crate::ast::TokenId,
+        token_id: TokenId,
         token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     ) -> RuntimeError {
         match self {
