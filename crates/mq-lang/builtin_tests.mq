@@ -350,6 +350,11 @@ def test_stream_range_stalled_step_errors():
   | assert_true(contains(result, "step is too small"))
 end
 
+# @parametrize([[9007199254740992, 9007199254740992, 1, [9007199254740992]], [-9007199254740992, -9007199254740992, -1, [-9007199254740992]]])
+def test_stream_range_exact_endpoint_completes_normally(start, stop, step, expected):
+  assert_eq(collect(stream_range(start, stop, step)), expected)
+end
+
 # @parametrize([["a", "e", None], ["e", "a", None], ["a", "z", 5], ["z", "a", -7], ["aa", "ad", None], ["あ", "え", None], ["A", "A", None]])
 def test_stream_range_string_matches_range(start, stop, step):
   let expected = if (is_none(step)): range(start, stop) else: range(start, stop, step)
