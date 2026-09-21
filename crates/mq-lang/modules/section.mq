@@ -132,7 +132,7 @@ def sections(md_nodes, depth = false):
         end
 end
 
-def _tree_from_nodes(items, prefix = []):
+def _tree_from_nodes(items):
   if (is_empty(items)):
     []
   else:
@@ -156,8 +156,7 @@ def _tree_from_nodes(items, prefix = []):
                 | let first_sub = first(sub_h_idxs)
                 | let own_body = if (is_none(first_sub)): span else: span[0:first_sub]
                 | let rest = if (is_none(first_sub)): [] else: span[first_sub:len(span)]
-                | let here = prefix + [k]
-                | result += [{type: :section, header: items[start], children: own_body, path: here, subsections: _tree_from_nodes(rest, here)}]
+                | result += [{type: :section, header: items[start], children: own_body, subsections: _tree_from_nodes(rest)}]
                 | k += 1
                 | result
               end
@@ -170,8 +169,7 @@ end
 # directly beneath it (recursively nested the same way). A section's own
 # `children` stays exactly what `section::sections` would give it: the
 # section's own body up to its next heading of any level, not including the
-# content of its subsections. Each section also has a `path` (index path) used by
-# `section::tree::*` to navigate.
+# content of its subsections.
 #
 # Example:
 # ```
@@ -385,180 +383,6 @@ def subsections(section):
     get_or(section, :subsections, [])
   else:
     []
-end
-
-# Navigation over a `section::tree` result: `roots` first, then a section from it.
-module tree:
-  def _subs(node): if (is_dict(node)): get_or(node, :subsections, []) else: [];
-
-  def _nth(items, i): if (i < 0 || i >= len(items)): None else: items[i];
-
-  # Returns a section's index path in the tree (`[]` if not built by `section::tree`).
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n## A2\n\n# B")) | section::tree::path(section::tree::at(roots, [0, 1]))
-  # #=> [0, 1]
-  # ```
-  #
-  # Returns: array
-  def path(node):
-    if (is_dict(node)):
-      get_or(node, :path, [])
-    else:
-      []
-  end
-
-  # Returns the section at `idx_path`, or `None`.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n## A2\n\n# B")) | section::title(section::tree::at(roots, [0, 1]))
-  # #=> A2
-  # ```
-  #
-  # Returns: dynamic
-  def at(roots, idx_path):
-    if (is_empty(idx_path)):
-      None
-    else:
-      do
-        fold(idx_path, {level_nodes: roots, found: None}, fn(acc, i):
-          let node = _nth(acc[:level_nodes], i)
-          | {level_nodes: _subs(node), found: node}
-        ;)
-        | get(:found)
-      end
-  end
-
-  # Returns the ancestors of a section, top-level first.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n### A1a\n\n# B")) | section::titles(section::tree::ancestors(roots, section::tree::at(roots, [0, 0, 0])))
-  # #=> ["A", "A1"]
-  # ```
-  #
-  # Returns: array
-  def ancestors(roots, node):
-    let p = path(node)
-    | if (len(p) <= 1):
-        []
-      else:
-        map(range(1, len(p) - 1), fn(k): at(roots, p[0:k]);)
-  end
-
-  # Returns the parent section, or `None` at the top level.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n# B")) | section::title(section::tree::parent(roots, section::tree::at(roots, [0, 0])))
-  # #=> A
-  # ```
-  #
-  # Returns: dynamic
-  def parent(roots, node):
-    let a = ancestors(roots, node)
-    | if (is_empty(a)):
-        None
-      else:
-        last(a)
-  end
-
-  def _group(roots, node):
-    let p = path(node)
-    | if (is_empty(p)):
-        []
-      elif (len(p) == 1):
-        roots
-      else:
-        _subs(parent(roots, node))
-  end
-
-  # Returns the other sections under the same parent, in document order.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n## A2\n\n## A3")) | section::titles(section::tree::siblings(roots, section::tree::at(roots, [0, 1])))
-  # #=> ["A1", "A3"]
-  # ```
-  #
-  # Returns: array
-  def siblings(roots, node):
-    let group = _group(roots, node)
-    | let me = last(path(node))
-    | if (is_empty(group)):
-        []
-      else:
-        do foreach (i, range(0, len(group) - 1)): if (i != me): group[i]; | compact();
-  end
-
-  # Returns the previous sibling, or `None`.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n## A2")) | section::title(section::tree::prev_sibling(roots, section::tree::at(roots, [0, 1])))
-  # #=> A1
-  # ```
-  #
-  # Returns: dynamic
-  def prev_sibling(roots, node):
-    let group = _group(roots, node)
-    | let me = last(path(node))
-    | if (is_empty(group) || me == 0):
-        None
-      else:
-        group[me - 1]
-  end
-
-  # Returns the next sibling, or `None`.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n## A2")) | section::title(section::tree::next_sibling(roots, section::tree::at(roots, [0, 0])))
-  # #=> A2
-  # ```
-  #
-  # Returns: dynamic
-  def next_sibling(roots, node):
-    let group = _group(roots, node)
-    | let me = last(path(node))
-    | if (is_empty(group) || me + 1 >= len(group)):
-        None
-      else:
-        group[me + 1]
-  end
-
-  def _title(node): if (is_dict(node) && has(node, :header)): to_text(node[:header]) else: "";
-
-  # Returns the heading titles from the top level down to `node`.
-  #
-  # Example:
-  # ```
-  # import "section" | let roots = section::tree(to_markdown("# A\n\n## A1\n\n### A1a")) | section::tree::breadcrumb(roots, section::tree::at(roots, [0, 0, 0]))
-  # #=> ["A", "A1", "A1a"]
-  # ```
-  #
-  # Returns: array
-  def breadcrumb(roots, node):
-    map(ancestors(roots, node) + [node], _title)
-  end
-
-  # Flattens the tree into one array of sections in document order.
-  #
-  # Example:
-  # ```
-  # import "section" | section::titles(section::tree::flatten(section::tree(to_markdown("# A\n\n## A1\n\n### A1a\n\n## A2\n\n# B"))))
-  # #=> ["A", "A1", "A1a", "A2", "B"]
-  # ```
-  #
-  # Returns: array
-  def flatten(roots):
-    if (is_empty(roots)):
-      []
-    else:
-      flat_map(roots, fn(node): [node] + flatten(_subs(node));)
-  end
 end
 
 # Returns the section from `md_nodes` that contains `node` (matched against the
