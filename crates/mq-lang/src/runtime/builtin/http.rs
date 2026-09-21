@@ -251,6 +251,69 @@ mod tests {
     }
 
     #[cfg(feature = "mock-io")]
+    #[rstest]
+    #[case::no_body_or_headers(r#"http_lines(:get, "https://example.invalid")"#)]
+    #[case::headers_as_third_arg(r#"http_lines(:get, "https://example.invalid", {"Authorization": "Bearer t"})"#)]
+    #[case::body_as_third_arg(r#"http_lines(:post, "https://example.invalid", "payload")"#)]
+    #[case::none_body_with_headers(
+        r#"http_lines(:get, "https://example.invalid", None, {"Authorization": "Bearer t"})"#
+    )]
+    #[case::body_and_headers(
+        r#"http_lines(:post, "https://example.invalid", "payload", {"Authorization": "Bearer t"})"#
+    )]
+    fn test_http_lines_accepts_optional_body_and_headers(#[case] call: &str) {
+        use crate::{DefaultModuleResolver, Engine, RuntimeValue, null_input};
+
+        let io = Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true));
+        let mut engine = Engine::with_io(DefaultModuleResolver::default(), Shared::clone(&io));
+        engine.load_builtin_module();
+        engine
+            .eval(
+                r#"mock_fetch("https://example.invalid", "a\nb")"#,
+                null_input().into_iter(),
+            )
+            .unwrap();
+
+        let result = engine
+            .eval(&format!("collect({call})"), null_input().into_iter())
+            .unwrap_or_else(|e| panic!("{call} failed: {e:?}"));
+        let value = result.into_iter().next().unwrap();
+        let RuntimeValue::Array(items) = value else {
+            panic!("expected an array, got {value:?}")
+        };
+        assert_eq!(
+            items.iter().map(|v| v.to_string()).collect::<Vec<_>>(),
+            vec!["a".to_string(), "b".to_string()],
+            "{call}"
+        );
+    }
+
+    #[cfg(feature = "mock-io")]
+    #[test]
+    fn test_http_lines_rejects_dict_body_with_headers() {
+        use crate::{DefaultModuleResolver, Engine, null_input};
+
+        let io = Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true));
+        let mut engine = Engine::with_io(DefaultModuleResolver::default(), Shared::clone(&io));
+        engine.load_builtin_module();
+        engine
+            .eval(
+                r#"mock_fetch("https://example.invalid", "a")"#,
+                null_input().into_iter(),
+            )
+            .unwrap();
+
+        assert!(
+            engine
+                .eval(
+                    r#"http_lines(:get, "https://example.invalid", {"A": "1"}, {"B": "2"})"#,
+                    null_input().into_iter(),
+                )
+                .is_err()
+        );
+    }
+
+    #[cfg(feature = "mock-io")]
     #[test]
     fn test_http_lines_streams_the_mocked_response_line_by_line() {
         use crate::{DefaultModuleResolver, Engine, RuntimeValue, null_input};

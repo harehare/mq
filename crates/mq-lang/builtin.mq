@@ -1838,6 +1838,8 @@ def stream_bytes(path): flat_map(stream_chunks(path, 8192), fn(chunk): to_array(
 def http_lines(method, url, body = None, headers = {}):
   if (is_none(body)):
     _stream_lines(open_http(method, url, headers))
+  elif (is_dict(body) && is_empty(headers)):
+    _stream_lines(open_http(method, url, body))
   else:
     _stream_lines(open_http(method, url, body, headers))
 end
