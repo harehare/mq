@@ -40,6 +40,7 @@ Every recipe follows the same four parts:
 - [Convert a Markdown table to CSV](convert-table-to-csv.md)
 - [Convert CSV to a Markdown table](convert-csv-to-markdown-table.md)
 - [Fill blank cells in a CSV column](fill-blank-csv-cells.md)
+- [Fill blank cells in a Markdown table](fill-blank-table-cells.md)
 - [Reshape a table between wide and long form](reshape-table-pivot.md)
 
 ## Functions and data
@@ -54,11 +55,18 @@ Every recipe follows the same four parts:
 - [Sort versions and find the latest release](find-latest-version-with-semver.md)
 - [Find the closest heading to a misspelled name](fuzzy-match-headings.md)
 
-## Working with JSON, YAML, TOML and HTML
+## Working with data formats
 
 - [Turn JSON into a Markdown table](json-to-markdown-table.md)
+- [Generate Markdown from data](generate-markdown-with-md-module.md)
 - [Convert between YAML and JSON](convert-yaml-and-json.md)
 - [Read values from a TOML file](read-toml-values.md)
+- [Read values from an XML file](read-values-from-xml.md)
+- [Convert between XML and JSON](convert-xml-and-json.md)
+- [Query XML with XPath](query-xml-with-xpath.md)
+- [Flatten JSON into greppable paths](flatten-json-with-gron.md)
+- [Compact JSON with TOON for LLM prompts](compact-json-with-toon.md)
+- [Decode a CBOR payload](decode-cbor-payload.md)
 - [Extract links from an HTML page](extract-links-from-html.md)
 
 ## Parsing text formats and command output
