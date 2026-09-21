@@ -137,6 +137,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/navigate-the-section-tree</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/extract-tables</loc>
     <priority>1.0</priority>
   </url>
