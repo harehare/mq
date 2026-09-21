@@ -4917,12 +4917,13 @@ fn read_line_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv
 fn read_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::FileHandle(handle), RuntimeValue::Number(size)] => {
-            if size.value() == 0.0 {
+            let raw_size = size.value();
+            let size = bounded_size(size, MAX_READ_BYTES, "read_bytes size")?;
+            if size == 0 {
                 return Err(Error::Runtime(format!(
-                    "{ident}: size must be a positive integer, got 0"
+                    "{ident}: size must be a positive integer, got {raw_size}"
                 )));
             }
-            let size = bounded_size(size, MAX_READ_BYTES, "read_bytes size")?;
             handle
                 .read_bytes(size)
                 .map(|bytes| {
@@ -14540,7 +14541,7 @@ mod tests {
         assert!(call("read_line", vec![handle.clone()]).is_err());
 
         let open = call("open_file", vec![path.clone()]).unwrap();
-        for size in [0.0, -1.0, 1.5, 1e300, (MAX_READ_BYTES + 1) as f64] {
+        for size in [0.0, 1e-20, -1.0, 1.5, 1e300, (MAX_READ_BYTES + 1) as f64] {
             assert!(
                 call("read_bytes", vec![open.clone(), RuntimeValue::Number(size.into())]).is_err(),
                 "read_bytes should reject size {size}"
