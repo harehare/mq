@@ -18,6 +18,9 @@ Standard modules are built into `mq` — use them with `include` or `import`, no
 | `table`   | Table rendering utilities                                             |
 | `fuzzy`   | Fuzzy string matching                                                 |
 | `toon`    | TOON format support                                                   |
+| `gron`    | gron-style flattening into `path = value;` lines, and back            |
+| `md`      | Builders for generating Markdown (headings, tables, lists, callouts)  |
+| `gen`     | Generator combinators for property-based testing                      |
 | `test`    | Testing framework (`assert_eq`, `assert_true`, …)                     |
 
 ## Extension Modules

@@ -217,11 +217,39 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/generate-markdown-with-md-module</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook/convert-yaml-and-json</loc>
     <priority>1.0</priority>
   </url>
   <url>
     <loc>https://mqlang.org/book/cookbook/read-toml-values</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/read-values-from-xml</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/convert-xml-and-json</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/query-xml-with-xpath</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/flatten-json-with-gron</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/compact-json-with-toon</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/decode-cbor-payload</loc>
     <priority>1.0</priority>
   </url>
   <url>
