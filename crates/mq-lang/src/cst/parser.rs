@@ -353,7 +353,7 @@ impl<'a> Parser<'a> {
 
                     break;
                 }
-                TokenKind::Def => {
+                TokenKind::Def | TokenKind::Module => {
                     if root {
                         ranges.push((stmt_start, self.pos));
                     }
@@ -11299,6 +11299,13 @@ mod tests {
         let (nodes, errors) = Parser::new(&input).parse();
         assert_eq!(errors, expected.1);
         assert_eq!(nodes, expected.0);
+    }
+
+    #[test]
+    fn test_module_block_can_follow_a_def() {
+        let (nodes, errors) = crate::parse_recovery("def a(): 1;\nmodule m:\n  def b(): 2;\nend\n");
+        assert!(!errors.has_errors());
+        assert!(nodes.iter().any(|node| node.kind == NodeKind::Module));
     }
 
     #[test]
