@@ -44,6 +44,44 @@ fn cookbook_add_row_to_table() {
 }
 
 #[test]
+fn cookbook_compact_json_with_toon() {
+    let path = write_temp(
+        "cookbook_compact_json_with_toon.json",
+        r#"{"users": [{"id": 1, "name": "Alice", "role": "admin"}, {"id": 2, "name": "Bob", "role": "dev"}, {"id": 3, "name": "Carol", "role": "dev"}]}"#,
+    );
+    let toon = run(&["-I", "json", "-F", "toon", ".", path.to_str().unwrap()]);
+    assert_eq!(
+        toon.trim(),
+        "users[3]{id,name,role}:\n  1,Alice,admin\n  2,Bob,dev\n  3,Carol,dev"
+    );
+
+    let embedded = run(&[
+        "-I",
+        "json",
+        r#"import "toon" | "Users:\n" + toon::toon_stringify(get("users"))"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        embedded.trim(),
+        "Users:\n[3]{id,name,role}:\n  1,Alice,admin\n  2,Bob,dev\n  3,Carol,dev"
+    );
+
+    let toon_file = write_temp("cookbook_compact_json_with_toon.toon", &toon);
+    let names = run(&[
+        "-I",
+        "toon",
+        "-F",
+        "json",
+        r#"get("users") | map(fn(u): u["name"];)"#,
+        toon_file.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        names.split_whitespace().collect::<String>(),
+        r#"["Alice","Bob","Carol"]"#
+    );
+}
+
+#[test]
 fn cookbook_convert_csv_to_markdown_table() {
     let path = write_temp(
         "cookbook_convert_csv_to_markdown_table.csv",
@@ -78,6 +116,56 @@ fn cookbook_convert_table_to_csv() {
 }
 
 #[test]
+fn cookbook_convert_xml_and_json() {
+    let path = write_temp(
+        "cookbook_convert_xml_and_json.xml",
+        "<library>\n  <book id=\"b1\" lang=\"en\"><title>Dune</title><year>1965</year></book>\n  <book id=\"b2\" lang=\"ja\"><title>Kokoro</title><year>1914</year></book>\n</library>\n",
+    );
+    let books = run(&[
+        "-I",
+        "xml",
+        "-F",
+        "json",
+        r#"import "xml" | xml::xml_find_all("book") | map(fn(b): {"id": xml::xml_attr(b, "id"), "title": xml::xml_text(xml::xml_find(b, "title")), "year": to_number(xml::xml_text(xml::xml_find(b, "year")))};)"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        books.split_whitespace().collect::<String>(),
+        r#"[{"id":"b1","title":"Dune","year":1965},{"id":"b2","title":"Kokoro","year":1914}]"#
+    );
+
+    let tree = write_temp(
+        "cookbook_convert_xml_and_json_tree.xml",
+        r#"<book id="b1"><title>Dune</title><year>1965</year></book>"#,
+    );
+    let tree_json = run(&["-I", "xml", "-F", "json", ".", tree.to_str().unwrap()]);
+    assert_eq!(
+        tree_json.split_whitespace().collect::<String>(),
+        r#"{"tag":"book","attributes":{"id":"b1"},"children":[{"tag":"title","attributes":{},"children":[],"text":"Dune"},{"tag":"year","attributes":{},"children":[],"text":"1965"}],"text":null}"#
+    );
+
+    let json = write_temp(
+        "cookbook_convert_xml_and_json.json",
+        r#"{"name": "web", "ports": [80, 443], "debug": false}"#,
+    );
+    let xml = run(&["-I", "json", "-F", "xml", ".", json.to_str().unwrap()]);
+    assert_eq!(
+        xml.trim(),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<root>\n  <name>web</name>\n  <ports>\n    <item>80</item>\n    <item>443</item>\n  </ports>\n  <debug>false</debug>\n</root>"
+    );
+
+    let greeting = run(&[
+        "-I",
+        "null",
+        r#"import "xml" | xml::xml_stringify({"tag": "greeting", "attributes": {"lang": "en"}, "children": [], "text": "hello"})"#,
+    ]);
+    assert_eq!(
+        greeting.trim(),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<greeting lang=\"en\">hello</greeting>"
+    );
+}
+
+#[test]
 fn cookbook_count_words_in_document() {
     let path = write_temp(
         "cookbook_count_words_in_document.md",
@@ -89,6 +177,50 @@ fn cookbook_count_words_in_document() {
         path.to_str().unwrap(),
     ]);
     assert_eq!(out.trim(), "23");
+}
+
+#[test]
+fn cookbook_decode_cbor_payload() {
+    let expected = r#"{"id":7,"tags":["a","b"],"ok":true}"#;
+    let compact = |out: String| out.split_whitespace().collect::<String>();
+
+    let payload = std::env::temp_dir().join("cookbook_decode_cbor_payload.cbor");
+    fs::write(
+        &payload,
+        [
+            0xa3, 0x62, 0x69, 0x64, 0x07, 0x64, 0x74, 0x61, 0x67, 0x73, 0x82, 0x61, 0x61, 0x61, 0x62, 0x62, 0x6f, 0x6b,
+            0xf5,
+        ],
+    )
+    .unwrap();
+    let from_file = run(&["-I", "cbor", "-F", "json", ".", payload.to_str().unwrap()]);
+    assert_eq!(compact(from_file), expected);
+
+    let base64 = write_temp("cookbook_decode_cbor_payload.b64", "o2JpZAdkdGFnc4JhYWFiYm9r9Q==\n");
+    let from_base64 = run(&[
+        "-I",
+        "raw",
+        "-F",
+        "json",
+        r#"import "cbor" | cbor::cbor_parse"#,
+        base64.to_str().unwrap(),
+    ]);
+    assert_eq!(compact(from_base64), expected);
+
+    let tags = run(&["-I", "cbor", r#"get("tags")"#, payload.to_str().unwrap()]);
+    assert_eq!(tags.trim(), r#"["a", "b"]"#);
+
+    let json = write_temp(
+        "cookbook_decode_cbor_payload.json",
+        r#"{"id": 7, "tags": ["a", "b"], "ok": true}"#,
+    );
+    let encoded = run(&[
+        "-I",
+        "json",
+        r#"import "cbor" | cbor::cbor_stringify | base64"#,
+        json.to_str().unwrap(),
+    ]);
+    assert_eq!(encoded.trim(), "o2JpZPlHAGR0YWdzgmFhYWJib2v1");
 }
 
 #[test]
@@ -375,6 +507,43 @@ fn cookbook_find_section_containing_a_node() {
 }
 
 #[test]
+fn cookbook_flatten_json_with_gron() {
+    let path = write_temp(
+        "cookbook_flatten_json_with_gron.json",
+        r#"{"name": "demo", "version": "1.0.0", "scripts": {"build": "tsc", "test": "vitest"}, "dependencies": {"react": "^18.2.0", "zod": "^3.22.0"}, "keywords": ["a", "b"]}"#,
+    );
+    let gron = run(&["-I", "json", "-F", "gron", ".", path.to_str().unwrap()]);
+    assert_eq!(
+        gron.trim(),
+        "json = {};\njson.name = \"demo\";\njson.version = \"1.0.0\";\njson.scripts = {};\njson.scripts.build = \"tsc\";\njson.scripts.test = \"vitest\";\njson.dependencies = {};\njson.dependencies.react = \"^18.2.0\";\njson.dependencies.zod = \"^3.22.0\";\njson.keywords = [];\njson.keywords[0] = \"a\";\njson.keywords[1] = \"b\";"
+    );
+
+    // The rebuild step reads gron lines back with `-I gron`; both the parent-inclusive and
+    // leaf-only selections must recreate the same object.
+    let compact = |out: String| out.split_whitespace().collect::<String>();
+    let expected = r#"{"dependencies":{"react":"^18.2.0","zod":"^3.22.0"}}"#;
+    for selection in [
+        "json.dependencies = {};\njson.dependencies.react = \"^18.2.0\";\njson.dependencies.zod = \"^3.22.0\";\n",
+        "json.dependencies.react = \"^18.2.0\";\njson.dependencies.zod = \"^3.22.0\";\n",
+    ] {
+        let lines = write_temp("cookbook_flatten_json_with_gron.gron", selection);
+        let rebuilt = run(&["-I", "gron", "-F", "json", ".", lines.to_str().unwrap()]);
+        assert_eq!(compact(rebuilt), expected);
+    }
+
+    let module = run(&[
+        "-I",
+        "json",
+        r#"import "gron" | gron::gron_stringify | split("\n") | filter(fn(l): contains(l, "dependencies.");) | join("\n")"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        module.trim(),
+        "json.dependencies.react = \"^18.2.0\";\njson.dependencies.zod = \"^3.22.0\";"
+    );
+}
+
+#[test]
 fn cookbook_generate_document_statistics() {
     let path = write_temp(
         "cookbook_generate_document_statistics.md",
@@ -387,6 +556,40 @@ fn cookbook_generate_document_statistics() {
 | s"Headers: ${headers}, Paragraphs: ${paragraphs}, Code: ${code_blocks}, Links: ${links}""#;
     let out = run(&["-A", query, path.to_str().unwrap()]);
     assert_eq!(out.trim(), "Headers: 2, Paragraphs: 2, Code: 1, Links: 1");
+}
+
+#[test]
+fn cookbook_generate_markdown_with_md_module() {
+    let path = write_temp(
+        "cookbook_generate_markdown_with_md_module.json",
+        r#"{"users": [{"id": 1, "name": "Alice", "role": "admin"}, {"id": 2, "name": "Bob", "role": "dev"}, {"id": 3, "name": "Carol", "role": "dev"}]}"#,
+    );
+    let query = r#"import "md" | let users = get("users") | md::doc(md::h2("Team"), md::table(["Name", "Role"], map(users, fn(u): [u["name"], u["role"]];)), md::h3("Members"), map(users, fn(u): md::list(u["name"]);))"#;
+    let out = run(&["-I", "json", query, path.to_str().unwrap()]);
+    assert_eq!(
+        out.trim(),
+        "## Team\n|Name|Role|\n|---|---|\n|Alice|admin|\n|Bob|dev|\n|Carol|dev|\n### Members\n- Alice\n- Bob\n- Carol"
+    );
+
+    let html = run(&["-I", "json", "-F", "html", query, path.to_str().unwrap()]);
+    assert!(
+        html.starts_with("<h2>Team</h2>\n<table>\n<thead>"),
+        "unexpected HTML: {html}"
+    );
+
+    let aligned = run(&[
+        "-I",
+        "null",
+        r#"import "md" | md::doc(md::table(["Name", "Score"], [["a", "1"]], ["left", "right"]))"#,
+    ]);
+    assert_eq!(aligned.trim(), "|Name|Score|\n|:---|---:|\n|a|1|");
+
+    let checkboxes = run(&[
+        "-I",
+        "null",
+        r#"import "md" | md::doc(md::list("todo", 0, false, false), md::list("done", 0, false, true))"#,
+    ]);
+    assert_eq!(checkboxes.trim(), "- [ ] todo\n- [x] done");
 }
 
 #[test]
@@ -504,6 +707,95 @@ fn cookbook_process_files_in_parallel() {
     let parallel = lines(run_in(Some(&dir), &["-P", "1", ".h1", "a.md", "b.md"]));
     assert_eq!(sequential, vec!["# A", "# B"]);
     assert_eq!(parallel, vec!["# A", "# B"]);
+}
+
+#[test]
+fn cookbook_read_values_from_xml() {
+    let pom = write_temp(
+        "cookbook_read_values_from_xml_pom.xml",
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <artifactId>demo-app</artifactId>
+  <version>1.2.0</version>
+  <dependencies>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.9</version>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.0.0-jre</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+</project>
+"#,
+    );
+    let table = run(&[
+        "-I",
+        "xml",
+        r#"import "xml" | import "csv" | xml::xml_find_all("dependency") | map(fn(d): {"group": xml::xml_text(xml::xml_find(d, "groupId")), "artifact": xml::xml_text(xml::xml_find(d, "artifactId")), "version": xml::xml_text(xml::xml_find(d, "version"))};) | csv::csv_to_markdown_table()"#,
+        pom.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        table.trim(),
+        "| group | artifact | version |\n| --- | --- | --- |\n| org.slf4j | slf4j-api | 2.0.9 |\n| com.google.guava | guava | 33.0.0-jre |"
+    );
+
+    // The first `version` in document order is the project's own, not a dependency's.
+    let version = run(&[
+        "-I",
+        "xml",
+        r#"import "xml" | xml::xml_text(xml::xml_find("version"))"#,
+        pom.to_str().unwrap(),
+    ]);
+    assert_eq!(version.trim(), "1.2.0");
+
+    let test_scoped = run(&[
+        "-I",
+        "xml",
+        r#"import "xml" | xml::xml_find_all("dependency") | filter(fn(d): xml::xml_text(xml::xml_find(d, "scope")) == "test";) | map(fn(d): xml::xml_text(xml::xml_find(d, "artifactId"));)"#,
+        pom.to_str().unwrap(),
+    ]);
+    assert_eq!(test_scoped.trim(), r#"["guava"]"#);
+
+    let users = write_temp(
+        "cookbook_read_values_from_xml_users.xml",
+        r#"<users><user id="1" role="admin"/><user id="2" role="dev"/><user id="3" role="dev"/></users>"#,
+    );
+    let dev_ids = run(&[
+        "-I",
+        "xml",
+        r#"import "xml" | xml::xml_find_all("user") | filter(fn(u): xml::xml_attr(u, "role") == "dev";) | map(fn(u): xml::xml_attr(u, "id");)"#,
+        users.to_str().unwrap(),
+    ]);
+    assert_eq!(dev_ids.trim(), r#"["2", "3"]"#);
+
+    let feed = write_temp(
+        "cookbook_read_values_from_xml_feed.xml",
+        r#"<?xml version="1.0"?>
+<rss version="2.0">
+  <channel>
+    <title>Release notes</title>
+    <item><title>v0.8.5</title><link>https://example.com/v0.8.5</link></item>
+    <item><title>v0.8.4</title><link>https://example.com/v0.8.4</link></item>
+  </channel>
+</rss>
+"#,
+    );
+    let items = run(&[
+        "-I",
+        "xml",
+        r#"import "xml" | xml::xml_find_all("item") | map(fn(i): "- [" + xml::xml_text(xml::xml_find(i, "title")) + "](" + xml::xml_text(xml::xml_find(i, "link")) + ")";) | join("\n")"#,
+        feed.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        items.trim(),
+        "- [v0.8.5](https://example.com/v0.8.5)\n- [v0.8.4](https://example.com/v0.8.4)"
+    );
 }
 
 #[test]
