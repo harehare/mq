@@ -1,4 +1,4 @@
-use super::{FileMetadata, HttpRequestSpec, Io, IoError, NativeIo};
+use super::{FileMetadata, HttpRequestSpec, Io, IoError, IoReader, NativeIo};
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
@@ -207,6 +207,16 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.read_bytes(path)
     }
 
+    fn open_read(&self, path: &Path) -> Result<Box<dyn IoReader>, IoError> {
+        if self.allow_read.is_denied() {
+            return Err(denied("filesystem reads are disabled"));
+        }
+        if !self.permits_real(&self.allow_read, path) {
+            return Err(denied_path("read", path));
+        }
+        self.inner.open_read(path)
+    }
+
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
         if self.allow_write.is_denied() {
             return Err(denied("filesystem writes are disabled"));
@@ -307,6 +317,22 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
             return Err(denied_domain(url));
         }
         self.inner.http_request(method, url, body, headers)
+    }
+
+    fn http_request_stream(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<Box<dyn IoReader>, IoError> {
+        if self.allow_net.is_denied() {
+            return Err(denied("network access is disabled"));
+        }
+        if !self.allow_net.permits(url) {
+            return Err(denied_domain(url));
+        }
+        self.inner.http_request_stream(method, url, body, headers)
     }
 
     fn http_request_all(&self, requests: &[HttpRequestSpec]) -> Result<Vec<String>, IoError> {

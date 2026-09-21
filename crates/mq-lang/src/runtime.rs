@@ -5,4 +5,6 @@ pub mod builtin;
 pub mod debugger;
 pub mod host;
 mod json;
+#[cfg(any(feature = "file-io", feature = "http"))]
+pub(crate) mod reader_handle;
 pub mod runtime_value;

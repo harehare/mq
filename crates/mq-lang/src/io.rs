@@ -52,6 +52,10 @@ pub trait IoSyncBound {}
 #[cfg(not(feature = "sync"))]
 impl<T> IoSyncBound for T {}
 
+/// Forward-only reader from [`Io::open_read`]. Dropping it closes the underlying resource.
+pub trait IoReader: std::io::BufRead + IoSyncBound {}
+impl<T: std::io::BufRead + IoSyncBound> IoReader for T {}
+
 /// One batched HTTP request specification for [`Io::http_request_all`].
 #[derive(Debug, Clone)]
 pub struct HttpRequestSpec {
@@ -109,6 +113,13 @@ pub struct FileMetadata {
 pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     fn read_to_string(&self, path: &Path) -> Result<String, IoError>;
     fn read_bytes(&self, path: &Path) -> Result<Vec<u8>, IoError>;
+
+    /// Opens `path` for incremental reading, backing `open_file`. The default reads the whole
+    /// file up front; override it to stream.
+    fn open_read(&self, path: &Path) -> Result<Box<dyn IoReader>, IoError> {
+        Ok(Box::new(std::io::Cursor::new(self.read_bytes(path)?)))
+    }
+
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError>;
     fn exists(&self, path: &Path) -> Result<bool, IoError>;
 
@@ -141,6 +152,21 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
         body: Option<&str>,
         headers: &[(String, String)],
     ) -> Result<String, IoError>;
+
+    /// Opens a streaming HTTP response body, backing `open_http`. The default buffers the
+    /// whole response via [`Io::http_request`] and wraps it in a `Cursor`; override to stream
+    /// without buffering (see `NativeIo`).
+    fn http_request_stream(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
+        headers: &[(String, String)],
+    ) -> Result<Box<dyn IoReader>, IoError> {
+        Ok(Box::new(std::io::Cursor::new(
+            self.http_request(method, url, body, headers)?.into_bytes(),
+        )))
+    }
 
     /// Batched HTTP requests, backing the `http_all()` builtin. The default
     /// implementation issues each request sequentially through

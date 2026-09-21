@@ -87,7 +87,7 @@ pub use error::Error;
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]
 pub use io::MemIo;
-pub use io::{EnvAccess, Io, IoError, NativeIo, NetAccess, PathAccess, SandboxedIo};
+pub use io::{EnvAccess, Io, IoError, IoReader, NativeIo, NetAccess, PathAccess, SandboxedIo};
 pub use lexer::Options as LexerOptions;
 pub use lexer::token::{StringSegment, Token, TokenKind};
 #[cfg(feature = "http-import")]

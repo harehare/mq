@@ -25,6 +25,8 @@ use crate::io::HttpRequestSpec;
 use crate::io::{FileKind, Io};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
+#[cfg(feature = "file-io")]
+use crate::runtime::reader_handle::{HandleKind, ReaderHandle};
 use crate::selector::Selector;
 use crate::tarn::VmEnv;
 use crate::tarn::interpreter::coroutine;
@@ -58,6 +60,9 @@ use mq_markdown;
 /// Maximum number of elements allowed in a generated range
 pub(super) const MAX_RANGE_SIZE: usize = 1_000_000;
 const MAX_REPEAT_COUNT: usize = 1_000;
+/// Maximum number of bytes a single `read_bytes` call may request from a reader handle
+#[cfg(any(feature = "file-io", feature = "http"))]
+pub(super) const MAX_READ_BYTES: usize = 64 * 1024 * 1024;
 
 /// Converts a user-supplied number into a bounded allocation size.
 ///
@@ -259,6 +264,11 @@ fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Res
                 Err(Error::Runtime(format!("{ident}: cannot close a running coroutine")))
             }
         }
+        #[cfg(any(feature = "file-io", feature = "http"))]
+        [RuntimeValue::ReaderHandle(handle)] => {
+            handle.close();
+            Ok(RuntimeValue::ReaderHandle(Shared::clone(handle)))
+        }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
         _ => unreachable!("close should always receive exactly one argument"),
     }
@@ -268,6 +278,12 @@ fn close_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Res
 fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [RuntimeValue::Coroutine(handle)] => Ok(RuntimeValue::Symbol(Ident::new(coroutine::status_name(handle)))),
+        #[cfg(any(feature = "file-io", feature = "http"))]
+        [RuntimeValue::ReaderHandle(handle)] => Ok(RuntimeValue::Symbol(Ident::new(if handle.is_open() {
+            "open"
+        } else {
+            "closed"
+        }))),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![a.clone()])),
         _ => unreachable!("status should always receive exactly one argument"),
     }
@@ -4863,6 +4879,74 @@ fn read_file_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Sha
     }
 }
 
+/// Opens `path` for incremental reading and returns a file handle. Requires the ambient
+/// [`Io`]'s read permission (see [`io_context`]).
+#[cfg(feature = "file-io")]
+#[mq_macros::mq_fn(name = "open_file", params = Fixed(1))]
+fn open_file_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(path)] => io_context::current()
+            .open_read(std::path::Path::new(path.as_str()))
+            .map(|reader| {
+                RuntimeValue::ReaderHandle(Shared::new(ReaderHandle::new(
+                    HandleKind::File,
+                    path.to_string(),
+                    reader,
+                )))
+            })
+            .map_err(|e| Error::Runtime(format!("Failed to open file {}: {}", path, e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("open_file should always receive exactly one argument"),
+    }
+}
+
+/// Reads the next line from a reader handle without its terminator, or `None` at end of file.
+#[cfg(any(feature = "file-io", feature = "http"))]
+#[mq_macros::mq_fn(name = "read_line", params = Fixed(1))]
+fn read_line_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::ReaderHandle(handle)] => handle
+            .read_line()
+            .map(|line| {
+                line.map(|l| RuntimeValue::String(l.into()))
+                    .unwrap_or(RuntimeValue::NONE)
+            })
+            .map_err(|e| Error::Runtime(format!("Failed to read {}: {}", handle.path(), e))),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("read_line should always receive exactly one argument"),
+    }
+}
+
+/// Reads up to `size` bytes from a reader handle, or `None` at end of file.
+#[cfg(any(feature = "file-io", feature = "http"))]
+#[mq_macros::mq_fn(name = "read_bytes", params = Fixed(2))]
+fn read_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::ReaderHandle(handle), RuntimeValue::Number(size)] => {
+            let raw_size = size.value();
+            let size = bounded_size(size, MAX_READ_BYTES, "read_bytes size")?;
+            if size == 0 {
+                return Err(Error::Runtime(format!(
+                    "{ident}: size must be a positive integer, got {raw_size}"
+                )));
+            }
+            handle
+                .read_bytes(size)
+                .map(|bytes| {
+                    bytes
+                        .map(|b| RuntimeValue::Bytes(b.into()))
+                        .unwrap_or(RuntimeValue::NONE)
+                })
+                .map_err(|e| Error::Runtime(format!("Failed to read {}: {}", handle.path(), e)))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("read_bytes should always receive exactly two arguments"),
+    }
+}
+
 /// Writes `content` (string or bytes) to `path`, creating or truncating the file.
 /// Requires the ambient [`Io`]'s write permission (see [`io_context`]).
 #[cfg(feature = "file-io")]
@@ -5054,6 +5138,43 @@ fn http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
             RuntimeValue::String(body),
             RuntimeValue::Dict(headers),
         ] => http::request(method, url, Some(body), Some(headers)),
+        args => Err(Error::InvalidTypes(
+            ident.to_string(),
+            args.iter_mut().map(std::mem::take).collect(),
+        )),
+    }
+}
+
+/// Opens an HTTPS request with the given method (`"get"`/`:get`, `"post"`/`:post`, etc.) and
+/// returns the response body as a streaming reader handle instead of buffering it, so a large
+/// or slow response can be processed line by line as it arrives. `body`/`headers` behave the
+/// same as [`http_impl`]. The connection is closed by `close(handle)`, or automatically when
+/// the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the
+/// ambient [`Io`]'s net permission (see [`io_context`]).
+#[cfg(feature = "http")]
+#[mq_macros::mq_fn(name = "open_http", params = Range(2, 4))]
+fn open_http_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+        ] => http::open_stream(method, url, None, None),
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+            RuntimeValue::String(body),
+        ] => http::open_stream(method, url, Some(body), None),
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+            RuntimeValue::Dict(headers),
+        ] => http::open_stream(method, url, None, Some(headers)),
+        [
+            method @ (RuntimeValue::Symbol(_) | RuntimeValue::String(_)),
+            RuntimeValue::String(url),
+            RuntimeValue::String(body),
+            RuntimeValue::Dict(headers),
+        ] => http::open_stream(method, url, Some(body), Some(headers)),
         args => Err(Error::InvalidTypes(
             ident.to_string(),
             args.iter_mut().map(std::mem::take).collect(),
@@ -5823,6 +5944,12 @@ mq_macros::builtin_dispatch! {
     #[cfg(feature = "file-io")]
     READ_FILE_BYTES,
     #[cfg(feature = "file-io")]
+    OPEN_FILE,
+    #[cfg(any(feature = "file-io", feature = "http"))]
+    READ_LINE,
+    #[cfg(any(feature = "file-io", feature = "http"))]
+    READ_BYTES,
+    #[cfg(feature = "file-io")]
     COLLECTION,
     #[cfg(feature = "file-io")]
     WALK_FILES,
@@ -5834,6 +5961,8 @@ mq_macros::builtin_dispatch! {
     EXTRACT_IMAGES,
     #[cfg(feature = "http")]
     HTTP,
+    #[cfg(feature = "http")]
+    OPEN_HTTP,
     #[cfg(feature = "http")]
     HTTP_ALL,
     #[cfg(all(feature = "http", feature = "mock-io"))]
@@ -9204,6 +9333,42 @@ x
     );
     #[cfg(feature = "file-io")]
     map.insert(
+        SmolStr::new("open_file"),
+        BuiltinFunctionDoc {
+            description: "Opens the file at the given path for incremental reading and returns a file handle. Read from it with `read_line` or `read_bytes`. The file is closed by `close(handle)`, or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
+            params: &["path"],
+            param_types: &["string"],
+            returns: "file",
+            examples: &[],
+            capability: Some("file-io"),
+        },
+    );
+    #[cfg(any(feature = "file-io", feature = "http"))]
+    map.insert(
+        SmolStr::new("read_line"),
+        BuiltinFunctionDoc {
+            description: "Reads the next line from a reader handle without its `\\n`/`\\r\\n` terminator, or returns `None` at end of file. Errors if the handle is closed or the line is not valid UTF-8.",
+            params: &["handle"],
+            param_types: &["dynamic"],
+            returns: "string",
+            examples: &[],
+            capability: Some("file-io or http"),
+        },
+    );
+    #[cfg(any(feature = "file-io", feature = "http"))]
+    map.insert(
+        SmolStr::new("read_bytes"),
+        BuiltinFunctionDoc {
+            description: "Reads up to `size` bytes from a reader handle (fewer only at end of file), or returns `None` at end of file. `size` must be a positive integer. Errors if the handle is closed.",
+            params: &["handle", "size"],
+            param_types: &["dynamic", "number"],
+            returns: "bytes",
+            examples: &[],
+            capability: Some("file-io or http"),
+        },
+    );
+    #[cfg(feature = "file-io")]
+    map.insert(
         SmolStr::new("collection"),
         BuiltinFunctionDoc {
             description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. `respect_gitignore` is optional (default `false`); when `true`, dotfiles/dot-directories and any path matched by a `.gitignore` in `dir` or a subdirectory are skipped, with closer `.gitignore` files taking precedence, same as `git`. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
@@ -9270,6 +9435,18 @@ x
             params: &["method", "url", "body", "headers"],
             param_types: &["string", "string", "string", "dict"],
             returns: "string",
+            examples: &[],
+            capability: Some("http"),
+        },
+    );
+    #[cfg(feature = "http")]
+    map.insert(
+        SmolStr::new("open_http"),
+        BuiltinFunctionDoc {
+            description: "Opens an HTTPS request with the given method (a string or symbol, same as http()) and returns the response body as a streaming reader handle instead of buffering it, so it can be read incrementally with read_line/read_bytes rather than waiting for the whole response. body/headers behave the same as http(). The connection is closed by close(handle), or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            params: &["method", "url", "body", "headers"],
+            param_types: &["string", "string", "string", "dict"],
+            returns: "http",
             examples: &[],
             capability: Some("http"),
         },
@@ -14379,6 +14556,70 @@ mod tests {
 
     #[cfg(feature = "file-io")]
     #[test]
+    fn test_open_file_capability_gate_and_incremental_reads() {
+        use std::io::Write;
+
+        let mut tmp = tempfile::NamedTempFile::new().expect("failed to create temp file");
+        tmp.write_all(b"one\r\ntwo\nthree").expect("failed to write");
+        let path = RuntimeValue::String(Shared::new(tmp.path().to_string_lossy().to_string()));
+        let string = |s: &str| RuntimeValue::String(Shared::new(s.to_string()));
+
+        assert!(
+            call("open_file", vec![path.clone()]).is_err(),
+            "open_file should be blocked when read access is not allowed"
+        );
+
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(true)));
+        let handle = call("open_file", vec![path.clone()]).expect("open_file should succeed");
+        assert_eq!(call("type", vec![handle.clone()]), Ok(string("file")));
+
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("one")));
+        assert_eq!(
+            call("read_bytes", vec![handle.clone(), RuntimeValue::Number(2.into())]),
+            Ok(RuntimeValue::Bytes(Shared::new(b"tw".to_vec())))
+        );
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("o")));
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(string("three")));
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(RuntimeValue::NONE));
+        assert_eq!(
+            call("read_bytes", vec![handle.clone(), RuntimeValue::Number(1.into())]),
+            Ok(RuntimeValue::NONE)
+        );
+
+        assert_eq!(
+            call("status", vec![handle.clone()]),
+            Ok(RuntimeValue::Symbol(Ident::new("open")))
+        );
+        assert_eq!(call("close", vec![handle.clone()]), Ok(handle.clone()));
+        assert_eq!(
+            call("status", vec![handle.clone()]),
+            Ok(RuntimeValue::Symbol(Ident::new("closed")))
+        );
+        assert!(call("read_line", vec![handle.clone()]).is_err());
+
+        let open = call("open_file", vec![path.clone()]).unwrap();
+        for size in [0.0, 1e-20, -1.0, 1.5, 1e300, (MAX_READ_BYTES + 1) as f64] {
+            assert!(
+                call("read_bytes", vec![open.clone(), RuntimeValue::Number(size.into())]).is_err(),
+                "read_bytes should reject size {size}"
+            );
+        }
+        assert!(call("read_line", vec![path.clone()]).is_err());
+        assert!(call("open_file", vec![RuntimeValue::Number(42.into())]).is_err());
+        assert!(
+            call(
+                "open_file",
+                vec![RuntimeValue::String(Shared::new(
+                    "/nonexistent/path/no_such_file.txt".into()
+                ))]
+            )
+            .is_err(),
+            "open_file should error for a nonexistent file"
+        );
+    }
+
+    #[cfg(feature = "file-io")]
+    #[test]
     fn test_read_capability_gate_and_success() {
         use std::io::Write;
 
@@ -15538,6 +15779,44 @@ mod tests {
                 ]
             ),
             Ok(RuntimeValue::String(Shared::new("body".into())))
+        );
+    }
+
+    #[cfg(all(feature = "http", feature = "mock-io"))]
+    #[test]
+    fn test_open_http_streams_the_mocked_response_line_by_line() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default()).allow_net(true)));
+        call(
+            "mock_fetch",
+            vec![
+                RuntimeValue::String(Shared::new("https://example.invalid".into())),
+                RuntimeValue::String(Shared::new("a\nb\nc".into())),
+            ],
+        )
+        .unwrap();
+
+        let handle = call(
+            "open_http",
+            vec![
+                RuntimeValue::Symbol(Ident::new("get")),
+                RuntimeValue::String(Shared::new("https://example.invalid".into())),
+            ],
+        )
+        .unwrap();
+        assert_eq!(call("type", vec![handle.clone()]).unwrap().to_string(), "http");
+
+        for line in ["a", "b", "c"] {
+            assert_eq!(
+                call("read_line", vec![handle.clone()]),
+                Ok(RuntimeValue::String(Shared::new(line.into())))
+            );
+        }
+        assert_eq!(call("read_line", vec![handle.clone()]), Ok(RuntimeValue::NONE));
+
+        assert!(call("close", vec![handle.clone()]).is_ok());
+        assert_eq!(
+            call("status", vec![handle]),
+            Ok(RuntimeValue::Symbol(Ident::new("closed")))
         );
     }
 
