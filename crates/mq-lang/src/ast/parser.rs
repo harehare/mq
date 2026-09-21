@@ -7,7 +7,6 @@ use crate::module::ModuleId;
 use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
-use rustc_hash::FxHashMap;
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 use std::iter::Peekable;
@@ -23,7 +22,8 @@ static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::buil
 
 pub struct Parser<'a, 'alloc> {
     tokens: Peekable<core::slice::Iter<'a, Token>>,
-    token_cache: FxHashMap<*const Token, Shared<Token>>,
+    token_base_address: usize,
+    token_cache: Vec<Option<Shared<Token>>>,
     token_arena: &'alloc mut Arena<Shared<Token>>,
     module_id: ModuleId,
 }
@@ -34,9 +34,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         token_arena: &'alloc mut Arena<Shared<Token>>,
         module_id: ModuleId,
     ) -> Self {
+        let token_slice = tokens.as_slice();
         Self {
             tokens: tokens.peekable(),
-            token_cache: FxHashMap::default(),
+            token_base_address: token_slice.as_ptr() as usize,
+            token_cache: vec![None; token_slice.len()],
             token_arena,
             module_id,
         }
@@ -49,13 +51,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Returns the shared representation for a token retained by the AST.
     ///
     /// The lexer owns the input token vector for the duration of parsing, so its element address
-    /// is a stable identity. Caching here avoids eagerly allocating an `Rc`/`Arc` for every token
-    /// while still sharing a token when multiple AST fields retain it.
+    /// maps to a stable index in `token_cache`. Indexing that cache directly avoids a hash-table
+    /// lookup for every AST token while still sharing tokens retained by multiple AST fields.
     fn shared_token(&mut self, token: &Token) -> Shared<Token> {
-        let token_address = token as *const Token;
-        self.token_cache
-            .entry(token_address)
-            .or_insert_with(|| Shared::new(token.clone()))
+        let token_size = std::mem::size_of::<Token>();
+        let byte_offset = (token as *const Token as usize)
+            .checked_sub(self.token_base_address)
+            .expect("parser tokens belong to its input slice");
+        debug_assert_eq!(byte_offset % token_size, 0);
+        let index = byte_offset / token_size;
+        debug_assert!(index < self.token_cache.len());
+        self.token_cache[index]
+            .get_or_insert_with(|| Shared::new(token.clone()))
             .clone()
     }
 

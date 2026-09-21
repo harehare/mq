@@ -443,9 +443,25 @@ fn byte_escape_seq(input: Span) -> IResult<Span, u8> {
     .parse(input)
 }
 
+/// Returns the byte-string body's encoded length without including a following query.
+fn byte_string_capacity(input: &str) -> usize {
+    let mut escaped = false;
+    for (index, byte) in input.bytes().enumerate() {
+        if escaped {
+            escaped = false;
+        } else if byte == b'\\' {
+            escaped = true;
+        } else if byte == b'"' {
+            return index;
+        }
+    }
+    0
+}
+
 fn byte_string_literal(input: Span) -> IResult<Span, Token> {
     let (span, start) = position(input)?;
     let (span, _) = tag("b\"")(span)?;
+    let capacity = byte_string_capacity(span.fragment());
 
     let (span, bytes) = fold_many0(
         alt((
@@ -454,7 +470,7 @@ fn byte_string_literal(input: Span) -> IResult<Span, Token> {
             // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
             map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| c as u8),
         )),
-        Vec::new,
+        || Vec::with_capacity(capacity),
         |mut bytes, byte| {
             bytes.push(byte);
             bytes
@@ -916,6 +932,14 @@ mod tests {
     use super::*;
     use proptest::proptest;
     use rstest::rstest;
+
+    #[rstest]
+    #[case("value\" | trailing", 5)]
+    #[case(r#"escaped\"quote" | trailing"#, 14)]
+    #[case("unterminated", 0)]
+    fn test_byte_string_capacity(#[case] input: &str, #[case] expected: usize) {
+        assert_eq!(byte_string_capacity(input), expected);
+    }
 
     #[rstest]
     #[case("and(contains(\"test\"))",

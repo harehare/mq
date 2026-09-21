@@ -400,6 +400,40 @@ impl Locals {
         }
     }
 
+    /// Borrows a directly stored runtime value without cloning it.
+    ///
+    /// Returns `None` for boxed/captured slots and internal coroutine markers, whose reads need
+    /// the normal upgrade path in [`Self::get_unchecked`].
+    ///
+    /// # Safety
+    /// `slot` must be `< self.len()`.
+    #[inline(always)]
+    pub(crate) unsafe fn direct_runtime_value_unchecked(&self, _slot: u16) -> Option<&RuntimeValue> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => {
+                // SAFETY: inherited from this method's caller contract.
+                match unsafe { slots.get_unchecked(_slot as usize) } {
+                    StackValue::Value(value) => Some(value),
+                    _ => None,
+                }
+            }
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid { slots, captured } => {
+                // SAFETY: inherited from this method's caller contract.
+                if unsafe { captured.get_unchecked(_slot as usize) }.is_some() {
+                    return None;
+                }
+                // SAFETY: inherited from this method's caller contract.
+                match unsafe { slots.get_unchecked(_slot as usize) } {
+                    StackValue::Value(value) => Some(value),
+                    _ => None,
+                }
+            }
+            Locals::Boxed(_) => None,
+        }
+    }
+
     /// Like [`Locals::set`], without the bounds check. See [`Locals::get_unchecked`].
     #[inline(always)]
     pub(crate) unsafe fn set_unchecked(&mut self, slot: u16, value: StackValue) {
