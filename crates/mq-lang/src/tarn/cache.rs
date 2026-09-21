@@ -1,6 +1,6 @@
 //! Caches compiled bytecode across repeated evaluations of the same program (non-debugger builds).
 use super::nodes_split::{
-    immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
+    immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
 use super::{
     EngineRunContext, Error, compiler, engine, interpreter, map_input_values, remaining_timeout,
@@ -53,6 +53,15 @@ impl fmt::Debug for CachedProgram {
 
 #[cfg(test)]
 impl CachedProgram {
+    /// Whether the program run once per input instantiates any closure at top level.
+    pub(crate) fn per_input_program_makes_closures(&self) -> bool {
+        use super::bytecode::OpCode;
+        self.program.chunks[0]
+            .code
+            .iter()
+            .any(|op| matches!(op, OpCode::MakeClosure(_) | OpCode::MakeStaticClosure(_)))
+    }
+
     pub(crate) fn has_available_execution_pools(&self) -> bool {
         #[cfg(not(feature = "sync"))]
         {
@@ -88,9 +97,16 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
         let let_names = let_names_before_nodes(before);
         let immutable_let_names = immutable_let_names_before_nodes(before);
+        // Declarations pass each input through unchanged, and `after` re-declares them once.
+        // Compiling them here would re-instantiate every module `def` for each input.
+        let per_input = if before.iter().all(|node| is_declaration(node)) {
+            Program::new()
+        } else {
+            before.to_vec()
+        };
         (
             compiler::compile_program_for_engine(
-                &before.to_vec(),
+                &per_input,
                 Shared::clone(&token_arena),
                 module_loader.clone(),
                 &global_names,
