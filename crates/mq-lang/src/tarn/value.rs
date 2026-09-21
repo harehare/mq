@@ -207,14 +207,14 @@ impl std::fmt::Debug for Closure {
 
 /// A VM closure stored as a runtime value.
 #[derive(Clone)]
-pub(crate) struct VmClosureValue {
+pub(crate) struct ClosureValue {
     pub(crate) chunks: Shared<Vec<Chunk>>,
     pub(crate) chunk_index: u16,
     pub(crate) upvalues: Option<Shared<Vec<Cell>>>,
     pub(crate) bound_args: Vec<RuntimeValue>,
 }
 
-impl VmClosureValue {
+impl ClosureValue {
     /// Converts a stack closure to a runtime closure.
     pub(crate) fn from_closure(chunks: &Shared<Vec<Chunk>>, closure: &Closure) -> Self {
         Self {

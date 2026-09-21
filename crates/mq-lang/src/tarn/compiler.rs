@@ -5,32 +5,35 @@ use super::resolver::FunctionScope;
 use crate::Shared;
 use crate::ast::constants::builtins;
 use crate::ast::node::{AccessTarget, Expr, IdentWithToken, Literal, Node, Pattern, StringSegment};
-use crate::ast::{Program, node as ast};
+use crate::ast::{Program, TokenId, node as ast};
 use crate::module::BUILTIN_FILE;
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
-use crate::{ModuleError, ModuleLoader, ModuleResolver, TokenArena};
+use crate::selector::Selector;
+use crate::{Ident, Module, ModuleError, ModuleLoader, ModuleResolver, TokenArena};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 use std::sync::LazyLock;
 
 #[cfg(feature = "debugger")]
 use super::debug_symbols::DebugSymbolTable;
+#[cfg(feature = "debugger")]
+use crate::{ModuleId, Source};
 
 #[derive(Debug)]
 pub(crate) enum CompileError {
-    UndefinedIdent(String, crate::ast::TokenId),
-    Unsupported(&'static str, crate::ast::TokenId),
+    UndefinedIdent(String, TokenId),
+    Unsupported(&'static str, TokenId),
     Module(ModuleError),
-    AssignToImmutable(String, crate::ast::TokenId),
+    AssignToImmutable(String, TokenId),
     InvalidBytecode(String),
     /// `yield` outside any `def`/`fn` body.
-    YieldOutsideFunction(crate::ast::TokenId),
+    YieldOutsideFunction(TokenId),
 }
 
 impl CompileError {
     #[cold]
-    pub(crate) fn token_id(&self) -> Option<crate::ast::TokenId> {
+    pub(crate) fn token_id(&self) -> Option<TokenId> {
         match self {
             CompileError::UndefinedIdent(_, token_id)
             | CompileError::Unsupported(_, token_id)
@@ -67,7 +70,7 @@ pub(crate) struct CompiledProgram {
     /// Source metadata captured from the same module loader that assigned every token's
     /// module ID. The debugger must not reconstruct this through a fresh loader instance.
     #[cfg(feature = "debugger")]
-    pub(crate) debug_sources: Vec<(crate::ModuleId, crate::Source)>,
+    pub(crate) debug_sources: Vec<(ModuleId, Source)>,
 }
 
 enum Resolved {
@@ -96,12 +99,12 @@ struct LoopCtx {
 /// A `module`/`import`-qualified name reference (`alias::name` or `parent::child::name`).
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct QualifiedName {
-    path: Box<[crate::Ident]>,
-    name: crate::Ident,
+    path: Box<[Ident]>,
+    name: Ident,
 }
 
 impl QualifiedName {
-    fn new(path: &[crate::Ident], name: crate::Ident) -> Self {
+    fn new(path: &[Ident], name: Ident) -> Self {
         Self {
             path: path.to_vec().into_boxed_slice(),
             name,
@@ -119,31 +122,31 @@ struct QualifiedSlot {
 /// Bookkeeping for destructuring `let`/`var` patterns.
 #[derive(Default)]
 struct PatternState {
-    or_pattern_slots: Vec<FxHashMap<crate::Ident, u16>>,
-    pending_pattern_overrides: std::collections::VecDeque<FxHashMap<crate::Ident, u16>>,
-    current_pattern_override: Option<FxHashMap<crate::Ident, u16>>,
+    or_pattern_slots: Vec<FxHashMap<Ident, u16>>,
+    pending_pattern_overrides: std::collections::VecDeque<FxHashMap<Ident, u16>>,
+    current_pattern_override: Option<FxHashMap<Ident, u16>>,
 }
 
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
     scopes: Vec<FunctionScope>,
     /// The directly enclosing named function, its fixed arity if any, and whether it's a generator.
-    function_names: Vec<Option<(crate::Ident, Option<usize>, bool)>>,
+    function_names: Vec<Option<(Ident, Option<usize>, bool)>>,
     current: usize,
     loops: Vec<LoopCtx>,
-    current_token_id: crate::ast::TokenId,
+    current_token_id: TokenId,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     qualified_bindings: FxHashMap<QualifiedName, QualifiedSlot>,
-    external_globals: FxHashSet<crate::Ident>,
+    external_globals: FxHashSet<Ident>,
     /// Module var values the caller already computed once. See [`ResolvedModuleVars`].
     preresolved_module_vars: ResolvedModuleVars,
     /// Lazily collected roots for module-function pruning.
     top_level_program: Program,
-    module_function_roots: std::cell::OnceCell<FxHashSet<crate::Ident>>,
+    module_function_roots: std::cell::OnceCell<FxHashSet<Ident>>,
     prune_module_functions: bool,
     /// Names called but not resolvable against the current `BuiltinPrelude`.
-    unresolved_call_names: FxHashSet<crate::Ident>,
+    unresolved_call_names: FxHashSet<Ident>,
     /// Bare names in `try`/`catch` must remain runtime failures.
     try_depth: usize,
     /// Whether the chunk currently being compiled is lexically inside a `def`/`fn` body. A
@@ -183,7 +186,7 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    bindings: &[crate::Ident],
+    bindings: &[Ident],
 ) -> CompileResult<CompiledProgram> {
     compile_program_impl(
         program,
@@ -225,7 +228,7 @@ pub(crate) fn compile_program_for_engine<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    external_globals: &[crate::Ident],
+    external_globals: &[Ident],
     preresolved_module_vars: &ResolvedModuleVars,
 ) -> CompileResult<CompiledProgram> {
     compile_program_for_engine_with_bindings(
@@ -247,9 +250,9 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
-    seed_bindings: &[crate::Ident],
-    seed_immutable: &[crate::Ident],
-    external_globals: &[crate::Ident],
+    seed_bindings: &[Ident],
+    seed_immutable: &[Ident],
+    external_globals: &[Ident],
     preresolved_module_vars: &ResolvedModuleVars,
 ) -> CompileResult<CompiledProgram> {
     let seeds = CompileSeeds {
@@ -285,7 +288,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
                 }
             }
             Err(CompileError::UndefinedIdent(name, _)) => {
-                let ident = crate::Ident::new(&name);
+                let ident = Ident::new(&name);
                 if !SOFT_BUILTIN_NAMES.contains(&ident) || !reachable.insert(ident) {
                     break;
                 }
@@ -310,17 +313,17 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
 /// inline block has no path.
 #[derive(Clone, Default)]
 pub(crate) struct ResolvedModuleVars {
-    pub(super) by_path: FxHashMap<String, Vec<(crate::Ident, RuntimeValue)>>,
-    pub(super) by_token: FxHashMap<crate::ast::TokenId, RuntimeValue>,
+    pub(super) by_path: FxHashMap<String, Vec<(Ident, RuntimeValue)>>,
+    pub(super) by_token: FxHashMap<TokenId, RuntimeValue>,
 }
 
 /// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument
 /// instead of four.
 #[derive(Clone, Copy)]
 struct CompileSeeds<'a> {
-    seed_bindings: &'a [crate::Ident],
-    seed_immutable: &'a [crate::Ident],
-    external_globals: &'a [crate::Ident],
+    seed_bindings: &'a [Ident],
+    seed_immutable: &'a [Ident],
+    external_globals: &'a [Ident],
     preresolved_module_vars: &'a ResolvedModuleVars,
 }
 
@@ -328,7 +331,7 @@ struct CompileSeeds<'a> {
 enum BuiltinPrelude<'a> {
     None,
     All,
-    Reachable(&'a FxHashSet<crate::Ident>),
+    Reachable(&'a FxHashSet<Ident>),
 }
 
 #[derive(Clone, Copy)]
@@ -347,15 +350,11 @@ impl<'a> CompileOptions<'a> {
 }
 
 /// Names implemented by `builtin.mq`, rather than native Rust builtins.
-static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| {
+static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<Ident>> = LazyLock::new(|| {
     BUILTIN_FILE
         .lines()
         .filter_map(|line| line.trim_start().strip_prefix("def "))
-        .filter_map(|definition| {
-            definition
-                .split_once('(')
-                .map(|(name, _)| crate::Ident::new(name.trim()))
-        })
+        .filter_map(|definition| definition.split_once('(').map(|(name, _)| Ident::new(name.trim())))
         .collect()
 });
 
@@ -363,7 +362,7 @@ static SOFT_BUILTIN_NAMES: LazyLock<FxHashSet<crate::Ident>> = LazyLock::new(|| 
 struct BuiltinDependencyGraph {
     /// `module.functions[0]`, used to detect a reparsed (non-cached) `builtin.mq`.
     anchor: Shared<Node>,
-    dependencies: FxHashMap<crate::Ident, FxHashSet<crate::Ident>>,
+    dependencies: FxHashMap<Ident, FxHashSet<Ident>>,
 }
 
 thread_local! {
@@ -371,7 +370,7 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
-fn builtin_dependency_graph(module: &crate::Module) -> Option<Shared<BuiltinDependencyGraph>> {
+fn builtin_dependency_graph(module: &Module) -> Option<Shared<BuiltinDependencyGraph>> {
     let anchor = module.functions.first()?;
 
     if let Some(cached) = BUILTIN_DEPENDENCY_GRAPH.with(|cache| cache.borrow().clone())
@@ -398,14 +397,14 @@ fn builtin_dependency_graph(module: &crate::Module) -> Option<Shared<BuiltinDepe
 }
 
 /// Finds referenced soft builtins.
-fn soft_builtin_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
+fn soft_builtin_names_in_program(program: &Program) -> FxHashSet<Ident> {
     soft_builtin_names_in_program_with_shadowed(program, &FxHashSet::default())
 }
 
 fn soft_builtin_names_in_program_with_shadowed(
     program: &Program,
-    inherited_shadowed: &FxHashSet<crate::Ident>,
-) -> FxHashSet<crate::Ident> {
+    inherited_shadowed: &FxHashSet<Ident>,
+) -> FxHashSet<Ident> {
     let mut names = FxHashSet::default();
     let mut shadowed = inherited_shadowed.clone();
     shadowed.extend(program.iter().filter_map(|node| match &node.expr {
@@ -418,11 +417,7 @@ fn soft_builtin_names_in_program_with_shadowed(
     names
 }
 
-fn collect_soft_builtin_names(
-    node: &Shared<Node>,
-    shadowed: &FxHashSet<crate::Ident>,
-    names: &mut FxHashSet<crate::Ident>,
-) {
+fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, names: &mut FxHashSet<Ident>) {
     match &node.expr {
         Expr::As(_, value)
         | Expr::Let(_, value)
@@ -529,7 +524,7 @@ fn collect_soft_builtin_names(
 }
 
 /// Collects direct function names used by a program.
-fn referenced_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
+fn referenced_names_in_program(program: &Program) -> FxHashSet<Ident> {
     let mut names = FxHashSet::default();
     for node in program {
         collect_referenced_names(node, &mut names);
@@ -537,7 +532,7 @@ fn referenced_names_in_program(program: &Program) -> FxHashSet<crate::Ident> {
     names
 }
 
-fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<crate::Ident>) {
+fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
     match &node.expr {
         Expr::As(_, value)
         | Expr::Let(_, value)
@@ -710,7 +705,7 @@ fn compile_program_impl<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     options: CompileOptions<'_>,
     seeds: CompileSeeds<'_>,
-) -> CompileResult<(CompiledProgram, FxHashSet<crate::Ident>)> {
+) -> CompileResult<(CompiledProgram, FxHashSet<Ident>)> {
     let mut scope = FunctionScope::default();
     assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
     for name in seeds.seed_bindings {
@@ -725,7 +720,7 @@ fn compile_program_impl<R: ModuleResolver>(
         function_names: vec![None],
         current: 0,
         loops: Vec::new(),
-        current_token_id: crate::ast::TokenId::new(0),
+        current_token_id: TokenId::new(0),
         token_arena,
         module_loader,
         qualified_bindings: FxHashMap::default(),
@@ -788,7 +783,7 @@ fn compile_program_impl<R: ModuleResolver>(
 
 impl<R: ModuleResolver> Compiler<R> {
     #[cfg(feature = "debugger")]
-    fn debug_sources(&self) -> Vec<(crate::ModuleId, crate::Source)> {
+    fn debug_sources(&self) -> Vec<(ModuleId, Source)> {
         #[cfg(not(feature = "sync"))]
         let token_ids = self
             .token_arena
@@ -819,11 +814,11 @@ impl<R: ModuleResolver> Compiler<R> {
 
         token_ids
             .into_iter()
-            .filter(|module_id| *module_id != crate::Module::TOP_LEVEL_MODULE_ID)
+            .filter(|module_id| *module_id != Module::TOP_LEVEL_MODULE_ID)
             .map(|module_id| {
                 (
                     module_id,
-                    crate::Source {
+                    Source {
                         name: Some(self.module_loader.module_file_name(module_id)),
                         code: self
                             .module_loader
@@ -838,8 +833,8 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_top_level(&mut self, program: &Program) -> CompileResult<()> {
         enum Deferred {
             Statement(Shared<Node>),
-            ModuleVars(String, crate::Module, Option<crate::Ident>),
-            InlineModuleRest(Vec<crate::Ident>, usize, Program, FxHashMap<crate::Ident, u16>),
+            ModuleVars(String, Module, Option<Ident>),
+            InlineModuleRest(Vec<Ident>, usize, Program, FxHashMap<Ident, u16>),
         }
         let mut deferred = Vec::with_capacity(program.len());
         let mut defs: Program = Vec::new();
@@ -888,7 +883,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     let module_alias = alias
                         .as_ref()
                         .map(|a| a.name)
-                        .unwrap_or_else(|| crate::Ident::new(&module.name));
+                        .unwrap_or_else(|| Ident::new(&module.name));
                     deferred.push(Deferred::ModuleVars(path, module, Some(module_alias)));
                 }
                 Expr::Module(ident, inline_program) => {
@@ -970,7 +965,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     /// Declares a fresh slot per name bound by `pattern`, without compiling any
     /// pattern-match bytecode.
-    fn predeclare_pattern_slots(&mut self, pattern: &Pattern) -> FxHashMap<crate::Ident, u16> {
+    fn predeclare_pattern_slots(&mut self, pattern: &Pattern) -> FxHashMap<Ident, u16> {
         let mut names = Vec::new();
         collect_pattern_idents(pattern, &mut names);
         names
@@ -987,7 +982,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.scopes.last_mut().expect("at least one scope")
     }
 
-    fn insert_qualified_binding(&mut self, path: &[crate::Ident], name: crate::Ident, slot: QualifiedSlot) {
+    fn insert_qualified_binding(&mut self, path: &[Ident], name: Ident, slot: QualifiedSlot) {
         self.qualified_bindings.insert(QualifiedName::new(path, name), slot);
     }
 
@@ -1071,7 +1066,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         params: &ast::Params,
         body: &Program,
-        name_for_shadow: Option<crate::Ident>,
+        name_for_shadow: Option<Ident>,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let is_generator = program_contains_direct_yield(body);
         let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, true);
@@ -1086,7 +1081,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         params: &ast::Params,
         body: &Program,
-        name_for_shadow: Option<crate::Ident>,
+        name_for_shadow: Option<Ident>,
         is_generator: bool,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let outer = self.current;
@@ -1441,7 +1436,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 
     /// Reuses the in-progress `Pattern::Or`'s slot for `name`, if any; else declares fresh.
-    fn declare_or_take_or_slot(&mut self, name: crate::Ident) -> u16 {
+    fn declare_or_take_or_slot(&mut self, name: Ident) -> u16 {
         if let Some(&slot) = self.patterns.or_pattern_slots.last().and_then(|slots| slots.get(&name)) {
             slot
         } else {
@@ -1519,7 +1514,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.compile_module_vars(path, &module, None)
     }
 
-    fn compile_include_functions(&mut self, literal: &Literal) -> CompileResult<crate::Module> {
+    fn compile_include_functions(&mut self, literal: &Literal) -> CompileResult<Module> {
         let Literal::String(path) = literal else {
             return Err(CompileError::Unsupported(
                 "include target must be a string literal",
@@ -1541,7 +1536,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(module)
     }
 
-    fn load_module_or_reload(&mut self, path: &str) -> CompileResult<crate::Module> {
+    fn load_module_or_reload(&mut self, path: &str) -> CompileResult<Module> {
         match self
             .module_loader
             .load_from_file(path, Shared::clone(&self.token_arena))
@@ -1563,12 +1558,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_module_vars(
-        &mut self,
-        path: &str,
-        module: &crate::Module,
-        alias: Option<crate::Ident>,
-    ) -> CompileResult<()> {
+    fn compile_module_vars(&mut self, path: &str, module: &Module, alias: Option<Ident>) -> CompileResult<()> {
         self.compile_module_vars_binding(path, module, alias)?;
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
@@ -1576,13 +1566,8 @@ impl<R: ModuleResolver> Compiler<R> {
 
     /// Compiles a module's top-level `let`s, live or baked in as constants when
     /// `preresolved_module_vars` already has their values.
-    fn compile_module_vars_binding(
-        &mut self,
-        path: &str,
-        module: &crate::Module,
-        alias: Option<crate::Ident>,
-    ) -> CompileResult<()> {
-        let var_slots: Vec<(crate::Ident, u16)> = if alias.is_some() {
+    fn compile_module_vars_binding(&mut self, path: &str, module: &Module, alias: Option<Ident>) -> CompileResult<()> {
+        let var_slots: Vec<(Ident, u16)> = if alias.is_some() {
             module
                 .vars
                 .iter()
@@ -1607,7 +1592,7 @@ impl<R: ModuleResolver> Compiler<R> {
             let depth = self.scopes.len() - 1;
             for (name, slot) in var_slots {
                 self.insert_qualified_binding(&[module_alias], name, QualifiedSlot { depth, slot });
-                self.scope_mut().set_local_name(slot, crate::Ident::default());
+                self.scope_mut().set_local_name(slot, Ident::default());
             }
         }
         Ok(())
@@ -1615,13 +1600,9 @@ impl<R: ModuleResolver> Compiler<R> {
 
     /// Like `compile_discarding` for a module's `vars`, but bakes each known value in as a
     /// constant instead of recompiling its initializer. Falls back to a live compile when a var
-    /// isn't in `known`, or its value is a `VmClosure` (closures capture chunk indices from
+    /// isn't in `known`, or its value is a `Closure` (closures capture chunk indices from
     /// their original compile, so can't be baked into a different program's constant pool).
-    fn compile_module_vars_from_known(
-        &mut self,
-        vars: &Program,
-        known: &[(crate::Ident, RuntimeValue)],
-    ) -> CompileResult<()> {
+    fn compile_module_vars_from_known(&mut self, vars: &Program, known: &[(Ident, RuntimeValue)]) -> CompileResult<()> {
         for node in vars {
             self.current_token_id = node.token_id;
             let Expr::Let(pattern, value) = &node.expr else {
@@ -1632,7 +1613,7 @@ impl<R: ModuleResolver> Compiler<R> {
             let precomputed = match pattern {
                 Pattern::Ident(ident) => known
                     .iter()
-                    .find(|(name, value)| *name == ident.name && !matches!(value, RuntimeValue::VmClosure(_)))
+                    .find(|(name, value)| *name == ident.name && !matches!(value, RuntimeValue::Closure(_)))
                     .map(|(_, value)| value.clone()),
                 _ => None,
             };
@@ -1662,7 +1643,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_discarding_in_module_path(
         &mut self,
         nodes: &Program,
-        parent_module_path: &[crate::Ident],
+        parent_module_path: &[Ident],
     ) -> CompileResult<()> {
         for node in nodes {
             if let Expr::Module(ident, program) = &node.expr {
@@ -1683,7 +1664,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_flattened_module(&mut self, module: &crate::Module) -> CompileResult<()> {
+    fn compile_flattened_module(&mut self, module: &Module) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
         let result = (|| {
             self.compile_discarding(&module.modules)?;
@@ -1694,23 +1675,19 @@ impl<R: ModuleResolver> Compiler<R> {
         result
     }
 
-    fn compile_module_directives(
-        &mut self,
-        modules: &Program,
-        parent_module_path: &[crate::Ident],
-    ) -> CompileResult<()> {
+    fn compile_module_directives(&mut self, modules: &Program, parent_module_path: &[Ident]) -> CompileResult<()> {
         let previously_pruning = std::mem::replace(&mut self.prune_module_functions, false);
         let result = self.compile_discarding_in_module_path(modules, parent_module_path);
         self.prune_module_functions = previously_pruning;
         result
     }
 
-    fn reachable_module_functions(&self, module: &crate::Module) -> Program {
+    fn reachable_module_functions(&self, module: &Module) -> Program {
         if !self.prune_module_functions {
             return module.functions.clone();
         }
 
-        let definitions: FxHashMap<crate::Ident, &Shared<Node>> = module
+        let definitions: FxHashMap<Ident, &Shared<Node>> = module
             .functions
             .iter()
             .filter_map(|node| match &node.expr {
@@ -1722,13 +1699,13 @@ impl<R: ModuleResolver> Compiler<R> {
             .module_function_roots
             .get_or_init(|| referenced_names_in_program(&self.top_level_program));
         let var_roots = referenced_names_in_program(&module.vars);
-        let mut required: FxHashSet<crate::Ident> = module_function_roots
+        let mut required: FxHashSet<Ident> = module_function_roots
             .iter()
             .chain(var_roots.iter())
             .filter(|name| definitions.contains_key(name))
             .copied()
             .collect();
-        let mut pending: Vec<crate::Ident> = required.iter().copied().collect();
+        let mut pending: Vec<Ident> = required.iter().copied().collect();
         while let Some(name) = pending.pop() {
             let Some(definition) = definitions.get(&name) else {
                 continue;
@@ -1748,11 +1725,7 @@ impl<R: ModuleResolver> Compiler<R> {
             .collect()
     }
 
-    fn compile_reachable_builtin_prelude(
-        &mut self,
-        module: &crate::Module,
-        roots: &FxHashSet<crate::Ident>,
-    ) -> CompileResult<()> {
+    fn compile_reachable_builtin_prelude(&mut self, module: &Module, roots: &FxHashSet<Ident>) -> CompileResult<()> {
         // Prelude initialization requires compiling the whole module.
         if !module.modules.is_empty() || !module.vars.is_empty() {
             return self.compile_flattened_module(module);
@@ -1760,7 +1733,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
         let graph = builtin_dependency_graph(module);
         let mut required = roots.clone();
-        let mut pending: Vec<crate::Ident> = roots.iter().copied().collect();
+        let mut pending: Vec<Ident> = roots.iter().copied().collect();
         while let Some(name) = pending.pop() {
             let Some(dependencies) = graph.as_ref().and_then(|graph| graph.dependencies.get(&name)) else {
                 continue;
@@ -1815,7 +1788,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.compile_import_functions(literal, alias)?;
-        let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
+        let module_alias = alias.map(|a| a.name).unwrap_or_else(|| Ident::new(&module.name));
         self.compile_module_vars(path, &module, Some(module_alias))
     }
 
@@ -1823,7 +1796,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         literal: &Literal,
         alias: Option<&ast::IdentWithToken>,
-    ) -> CompileResult<crate::Module> {
+    ) -> CompileResult<Module> {
         let Literal::String(path) = literal else {
             return Err(CompileError::Unsupported(
                 "import target must be a string literal",
@@ -1831,7 +1804,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         };
         let module = self.load_module_or_reload(path)?;
-        let module_alias = alias.map(|a| a.name).unwrap_or_else(|| crate::Ident::new(&module.name));
+        let module_alias = alias.map(|a| a.name).unwrap_or_else(|| Ident::new(&module.name));
 
         #[cfg(feature = "http-import")]
         self.module_loader.push_http_boundary();
@@ -1868,7 +1841,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         // Only qualified names remain visible after compilation.
         for slot in slots {
-            self.scope_mut().set_local_name(slot, crate::Ident::default());
+            self.scope_mut().set_local_name(slot, Ident::default());
         }
         Ok(module)
     }
@@ -1877,7 +1850,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         ident: &ast::IdentWithToken,
         program: &Program,
-        parent_path: &[crate::Ident],
+        parent_path: &[Ident],
     ) -> CompileResult<()> {
         // Module initializers are declaration-only at the enclosing level. Rejecting a direct
         // yield here avoids accepting code whose `Yield` opcode would otherwise be discarded.
@@ -1893,9 +1866,9 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_module_functions(
         &mut self,
-        module_path: &[crate::Ident],
+        module_path: &[Ident],
         program: &Program,
-    ) -> CompileResult<(Program, FxHashMap<crate::Ident, u16>)> {
+    ) -> CompileResult<(Program, FxHashMap<Ident, u16>)> {
         let depth = self.scopes.len() - 1;
 
         let mut def_slots = FxHashMap::default();
@@ -1940,20 +1913,20 @@ impl<R: ModuleResolver> Compiler<R> {
         }
 
         for slot in def_slots.values() {
-            self.scope_mut().set_local_name(*slot, crate::Ident::default());
+            self.scope_mut().set_local_name(*slot, Ident::default());
         }
         for slot in let_slots.values() {
-            self.scope_mut().set_local_name(*slot, crate::Ident::default());
+            self.scope_mut().set_local_name(*slot, Ident::default());
         }
         Ok((rest, let_slots))
     }
 
     fn compile_module_rest(
         &mut self,
-        module_path: &[crate::Ident],
+        module_path: &[Ident],
         depth: usize,
         rest: &Program,
-        let_slots: &FxHashMap<crate::Ident, u16>,
+        let_slots: &FxHashMap<Ident, u16>,
     ) -> CompileResult<()> {
         for node in rest {
             self.current_token_id = node.token_id;
@@ -1979,7 +1952,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
                     if let Pattern::Ident(ident) = pattern {
                         match self.preresolved_module_vars.by_token.get(&node.token_id).cloned() {
-                            Some(known) if !mutable && !matches!(known, RuntimeValue::VmClosure(_)) => {
+                            Some(known) if !mutable && !matches!(known, RuntimeValue::Closure(_)) => {
                                 let idx = self.chunk_mut().push_const(known);
                                 self.emit(OpCode::Const(idx));
                             }
@@ -2027,7 +2000,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     let import_alias = alias
                         .as_ref()
                         .map(|a| a.name)
-                        .unwrap_or_else(|| crate::Ident::new(&module.name));
+                        .unwrap_or_else(|| Ident::new(&module.name));
                     self.compile_module_vars_binding(&path, &module, Some(import_alias))?;
                 }
                 Expr::Module(nested_ident, nested_program) => {
@@ -2057,7 +2030,7 @@ impl<R: ModuleResolver> Compiler<R> {
             AccessTarget::Ident(id) => id.name,
             AccessTarget::Call(id, _) => id.name,
         };
-        let module_path: Vec<crate::Ident> = path.iter().map(|segment| segment.name).collect();
+        let module_path: Vec<Ident> = path.iter().map(|segment| segment.name).collect();
         let QualifiedSlot { depth, slot } = *self
             .qualified_bindings
             .get(&QualifiedName::new(&module_path, member))
@@ -2116,11 +2089,11 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn resolve(&mut self, name: crate::Ident) -> Option<Resolved> {
+    fn resolve(&mut self, name: Ident) -> Option<Resolved> {
         self.resolve_at(self.scopes.len() - 1, name)
     }
 
-    fn resolve_at(&mut self, depth: usize, name: crate::Ident) -> Option<Resolved> {
+    fn resolve_at(&mut self, depth: usize, name: Ident) -> Option<Resolved> {
         if let Some(slot) = self.scopes[depth].resolve_local(name) {
             return Some(Resolved::Local(slot));
         }
@@ -2327,8 +2300,8 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn emit_selector(&mut self, selector: &crate::selector::Selector) {
-        if let crate::selector::Selector::Heading(level) = selector {
+    fn emit_selector(&mut self, selector: &Selector) {
+        if let Selector::Heading(level) = selector {
             self.emit(OpCode::SelectorMatchHeading(level.unwrap_or(0)));
         } else if let Some(kind) = super::bytecode::NodeSelectorKind::from_selector(selector) {
             self.emit(OpCode::SelectorMatchKind(kind));
@@ -2337,7 +2310,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_ident_get(&mut self, name: crate::Ident) -> CompileResult<()> {
+    fn compile_ident_get(&mut self, name: Ident) -> CompileResult<()> {
         match self.resolve(name) {
             Some(Resolved::Local(slot)) => {
                 self.emit(OpCode::GetLocal(slot));
@@ -2389,13 +2362,13 @@ impl<R: ModuleResolver> Compiler<R> {
     /// Restores `current_token_id` to the call node's own token after its arguments have been
     /// compiled, emitting `SyncCallNode` to resync the debugger's `current_node` too (without
     /// triggering a breakpoint stop, unlike `StmtBoundary`).
-    fn set_call_token_id(&mut self, call_token_id: crate::ast::TokenId) {
+    fn set_call_token_id(&mut self, call_token_id: TokenId) {
         self.current_token_id = call_token_id;
         #[cfg(feature = "debugger")]
         self.emit(OpCode::SyncCallNode(call_token_id));
     }
 
-    fn compile_call(&mut self, ident: crate::Ident, args: &ast::Args) -> CompileResult<()> {
+    fn compile_call(&mut self, ident: Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
 
         #[cfg(feature = "debugger")]
@@ -2600,7 +2573,7 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self,
         builtin: ResumeBuiltin,
         args: &ast::Args,
-        call_token_id: crate::ast::TokenId,
+        call_token_id: TokenId,
     ) -> CompileResult<()> {
         let idx = self.chunk_mut().push_const(RuntimeValue::CoroutineBuiltin(builtin));
         self.emit(OpCode::Const(idx));
@@ -2691,7 +2664,7 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    fn compile_dict_call(&mut self, args: &ast::Args, call_token_id: crate::ast::TokenId) -> CompileResult<()> {
+    fn compile_dict_call(&mut self, args: &ast::Args, call_token_id: TokenId) -> CompileResult<()> {
         if !args.iter().any(|arg| Self::is_spread(arg)) {
             for arg in args {
                 self.compile_expr(arg)?;
@@ -2869,7 +2842,7 @@ impl<R: ModuleResolver> Compiler<R> {
         ))
     }
 
-    fn compile_foreach(&mut self, ident: crate::Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
+    fn compile_foreach(&mut self, ident: Ident, iterable: &Shared<Node>, body: &Program) -> CompileResult<()> {
         let acc_slot = self.scope_mut().declare_synthetic();
         let array_slot = self.scope_mut().declare_synthetic();
         self.compile_expr(iterable)?;
@@ -2999,7 +2972,7 @@ impl<R: ModuleResolver> Compiler<R> {
     }
 }
 
-fn fast_path_binop(name: &crate::Ident) -> Option<BinaryOp> {
+fn fast_path_binop(name: &Ident) -> Option<BinaryOp> {
     let name = *name;
     if name == builtins::ADD.into() {
         Some(BinaryOp::Add)
@@ -3044,7 +3017,7 @@ fn binary_op_opcode(op: BinaryOp) -> OpCode {
     }
 }
 
-pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<crate::Ident>) {
+pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<Ident>) {
     match pattern {
         Pattern::Ident(ident) => out.push(ident.name),
         Pattern::ArrayRest(elems, rest) => {
@@ -3059,7 +3032,7 @@ pub(super) fn collect_pattern_idents(pattern: &Pattern, out: &mut Vec<crate::Ide
 }
 
 /// Names bound by a module's top-level `let`s, in declaration order.
-pub(super) fn module_var_names(vars: &Program) -> Vec<crate::Ident> {
+pub(super) fn module_var_names(vars: &Program) -> Vec<Ident> {
     vars.iter()
         .filter_map(|node| match &node.expr {
             Expr::Let(Pattern::Ident(ident), _) => Some(ident.name),

@@ -4,6 +4,7 @@ use crate::{
     Ident, Shared,
     number::Number,
     tarn::interpreter::coroutine::{CoroutineHandle, CoroutineWeakHandle},
+    tarn::value::ClosureValue,
 };
 use indexmap::IndexMap;
 use mq_markdown::Node;
@@ -87,13 +88,13 @@ pub enum RuntimeValue {
     /// A first-class coroutine resumption helper (`next` or `send`).
     CoroutineBuiltin(ResumeBuiltin),
     /// A VM closure that has crossed into plain-value territory (stored in an array/dict,
-    /// passed to `partial`, ...) — see `tarn::value::VmClosureValue`. `VmClosureValue` is
+    /// passed to `partial`, ...) — see `tarn::value::ClosureValue`. `ClosureValue` is
     /// deliberately `pub(crate)` — this variant is constructible only from within the crate.
     ///
-    /// `Shared`-wrapped, not inline: `VmClosureValue` is 64 bytes (chunks/upvalues/bound_args),
+    /// `Shared`-wrapped, not inline: `ClosureValue` is 64 bytes (chunks/upvalues/bound_args),
     /// which would otherwise force every `RuntimeValue` variant to that size.
     #[allow(private_interfaces)]
-    VmClosure(Shared<crate::tarn::value::VmClosureValue>),
+    Closure(Shared<ClosureValue>),
     /// A dictionary mapping identifiers to runtime values.
     ///
     /// Same clone-on-write scheme as [`RuntimeValue::Array`]; see [`dict_mut`].
@@ -129,7 +130,7 @@ impl PartialEq for RuntimeValue {
             (RuntimeValue::Symbol(a), RuntimeValue::Symbol(b)) => a == b,
             (RuntimeValue::Array(a), RuntimeValue::Array(b)) => a == b,
             (RuntimeValue::Markdown(a, sa), RuntimeValue::Markdown(b, sb)) => a == b && sa == sb,
-            (RuntimeValue::VmClosure(a), RuntimeValue::VmClosure(b)) => {
+            (RuntimeValue::Closure(a), RuntimeValue::Closure(b)) => {
                 Shared::ptr_eq(&a.chunks, &b.chunks) && a.chunk_index == b.chunk_index && a.bound_args == b.bound_args
             }
             (RuntimeValue::NativeFunction(a), RuntimeValue::NativeFunction(b)) => a == b,
@@ -313,9 +314,9 @@ impl From<ciborium::Value> for RuntimeValue {
             ciborium::Value::Bool(b) => RuntimeValue::Boolean(b),
             ciborium::Value::Integer(i) => {
                 let n: i128 = i.into();
-                RuntimeValue::Number(crate::number::Number::from(n as f64))
+                RuntimeValue::Number(Number::from(n as f64))
             }
-            ciborium::Value::Float(f) => RuntimeValue::Number(crate::number::Number::from(f)),
+            ciborium::Value::Float(f) => RuntimeValue::Number(Number::from(f)),
             ciborium::Value::Text(s) => RuntimeValue::String(Shared::new(s)),
             ciborium::Value::Bytes(b) => RuntimeValue::Bytes(Shared::new(b)),
             ciborium::Value::Array(arr) => {
@@ -368,7 +369,7 @@ impl std::fmt::Display for RuntimeValue {
             Self::None => Cow::Borrowed(""),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::CoroutineBuiltin(_) => Cow::Borrowed("native_function"),
-            Self::VmClosure(_) => Cow::Borrowed("function"),
+            Self::Closure(_) => Cow::Borrowed("function"),
             Self::Dict(_) => self.string(),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
@@ -439,7 +440,7 @@ impl RuntimeValue {
         while let Some(value) = pending.pop() {
             match value {
                 Self::Coroutine(_) => return Some("coroutine"),
-                Self::VmClosure(_) => return Some("VM closure"),
+                Self::Closure(_) => return Some("VM closure"),
                 Self::Array(values) => pending.extend(values.iter()),
                 Self::Dict(values) => pending.extend(values.values()),
                 _ => {}
@@ -493,7 +494,7 @@ impl RuntimeValue {
             RuntimeValue::None => "None",
             RuntimeValue::NativeFunction(_) => "native_function",
             RuntimeValue::CoroutineBuiltin(_) => "native_function",
-            RuntimeValue::VmClosure(_) => "function",
+            RuntimeValue::Closure(_) => "function",
             RuntimeValue::Dict(_) => "dict",
             RuntimeValue::Bytes(_) => "bytes",
             RuntimeValue::Coroutine(_) => "coroutine",
@@ -512,7 +513,7 @@ impl RuntimeValue {
     /// Returns `true` if this value is a user-defined function.
     #[inline(always)]
     pub fn is_function(&self) -> bool {
-        matches!(self, RuntimeValue::VmClosure(_))
+        matches!(self, RuntimeValue::Closure(_))
     }
 
     /// Returns `true` if this value is a resumable coroutine.
@@ -582,7 +583,7 @@ impl RuntimeValue {
             | RuntimeValue::NativeFunction(_)
             | RuntimeValue::CoroutineBuiltin(_)
             | RuntimeValue::Dict(_) => true,
-            RuntimeValue::VmClosure(_) => true,
+            RuntimeValue::Closure(_) => true,
             RuntimeValue::Bytes(b) => !b.is_empty(),
             RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => true,
             #[cfg(any(feature = "file-io", feature = "http"))]
@@ -609,7 +610,7 @@ impl RuntimeValue {
             RuntimeValue::None => 0,
             RuntimeValue::NativeFunction(..) => 0,
             RuntimeValue::CoroutineBuiltin(..) => 0,
-            RuntimeValue::VmClosure(..) => 0,
+            RuntimeValue::Closure(..) => 0,
             RuntimeValue::Coroutine(..) | RuntimeValue::WeakCoroutine(..) => 0,
             #[cfg(any(feature = "file-io", feature = "http"))]
             RuntimeValue::ReaderHandle(..) => 0,
@@ -700,7 +701,7 @@ impl RuntimeValue {
             Self::None => Cow::Borrowed(""),
             Self::NativeFunction(_) => Cow::Borrowed("native_function"),
             Self::CoroutineBuiltin(_) => Cow::Borrowed("native_function"),
-            Self::VmClosure(_) => Cow::Borrowed("function"),
+            Self::Closure(_) => Cow::Borrowed("function"),
             Self::Bytes(b) => Cow::Owned(bytes_to_hex(b)),
             Self::Coroutine(_) | Self::WeakCoroutine(_) => Cow::Borrowed("coroutine"),
             #[cfg(any(feature = "file-io", feature = "http"))]
@@ -868,7 +869,7 @@ impl RuntimeValues {
                         RuntimeValue::None | RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => {
                             current_value.clone()
                         }
-                        RuntimeValue::VmClosure(_) => current_value.clone(),
+                        RuntimeValue::Closure(_) => current_value.clone(),
                         RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => current_value.clone(),
                         #[cfg(any(feature = "file-io", feature = "http"))]
                         RuntimeValue::ReaderHandle(_) => current_value.clone(),

@@ -1,6 +1,6 @@
 //! Tarn: mq's bytecode VM, which powers `Engine::eval` and `Engine::eval_compiled`.
 //!
-//! VM closures have a `RuntimeValue::VmClosure` representation, so they can be stored in
+//! VM closures have a `RuntimeValue::Closure` representation, so they can be stored in
 //! collections and passed to native higher-order functions such as `partial`.
 //!
 //! This file is the front door (`Error`, `VmState`/`TarnVm`, session + run orchestration);
@@ -34,6 +34,7 @@ use nodes_split::{
 use crate::Shared;
 use crate::TokenArena;
 use crate::ast::Program;
+use crate::ast::TokenId;
 use crate::ast::node::{self as ast, AccessTarget, Expr, Literal, Node, Pattern};
 use crate::engine;
 use crate::error;
@@ -41,7 +42,7 @@ use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::resolver::DefaultModuleResolver;
 use crate::runtime::host::HostFunctions;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{ModuleLoader, ModuleResolver};
+use crate::{Arena, Ident, ModuleError, ModuleLoader, ModuleResolver, SharedCell, get_token, parse};
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 #[cfg(not(feature = "debugger"))]
@@ -49,7 +50,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "debugger")]
-use crate::{Debugger, DebuggerHandler, SharedCell, Source};
+use crate::runtime::debugger::DefaultDebuggerHandler;
+#[cfg(feature = "debugger")]
+use crate::{Debugger, DebuggerHandler, Source};
 
 /// VM execution limits.
 #[derive(Debug, Clone)]
@@ -78,7 +81,7 @@ impl Default for Options {
 /// neither parent scopes nor separate mutability tracking.
 #[derive(Debug)]
 pub(crate) struct VmEnv {
-    globals: FxHashMap<crate::Ident, RuntimeValue>,
+    globals: FxHashMap<Ident, RuntimeValue>,
     /// Arena for this evaluation's token IDs; stashed onto coroutines it creates.
     pub(crate) token_arena: TokenArena,
 }
@@ -88,13 +91,13 @@ impl Default for VmEnv {
     fn default() -> Self {
         Self {
             globals: FxHashMap::default(),
-            token_arena: Shared::new(crate::SharedCell::new(crate::Arena::new(1))),
+            token_arena: Shared::new(SharedCell::new(Arena::new(1))),
         }
     }
 }
 
 impl VmEnv {
-    pub(crate) fn from_bindings(bindings: &[(crate::Ident, RuntimeValue)], token_arena: TokenArena) -> Self {
+    pub(crate) fn from_bindings(bindings: &[(Ident, RuntimeValue)], token_arena: TokenArena) -> Self {
         Self {
             globals: bindings.iter().cloned().collect(),
             token_arena,
@@ -102,7 +105,7 @@ impl VmEnv {
     }
 
     #[inline]
-    pub(crate) fn get(&self, ident: crate::Ident) -> Option<RuntimeValue> {
+    pub(crate) fn get(&self, ident: Ident) -> Option<RuntimeValue> {
         self.globals.get(&ident).cloned()
     }
 
@@ -165,8 +168,8 @@ fn compile_error_to_runtime_error(
 ) -> error::runtime::RuntimeError {
     use error::runtime::RuntimeError;
     // Fall back to the arena's dummy EOF token.
-    let token_id = err.token_id().unwrap_or(crate::ast::TokenId::new(0));
-    let token = (*crate::get_token(token_arena, token_id)).clone();
+    let token_id = err.token_id().unwrap_or(TokenId::new(0));
+    let token = (*get_token(token_arena, token_id)).clone();
     match err {
         compiler::CompileError::UndefinedIdent(name, _) => RuntimeError::UndefinedReference(token, name, Box::new([])),
         compiler::CompileError::Unsupported(what, _) => RuntimeError::Runtime(token, format!("unsupported: {what}")),
@@ -183,8 +186,8 @@ pub(crate) fn vm_error_to_runtime_error(
     err: &interpreter::VmError,
     token_arena: TokenArena,
 ) -> error::runtime::RuntimeError {
-    let token_id = err.token_id().unwrap_or(crate::ast::TokenId::new(0));
-    let token = (*crate::get_token(Shared::clone(&token_arena), token_id)).clone();
+    let token_id = err.token_id().unwrap_or(TokenId::new(0));
+    let token = (*get_token(Shared::clone(&token_arena), token_id)).clone();
     err.to_runtime_error(token, token_id, token_arena)
 }
 
@@ -216,7 +219,7 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
     match value {
         RuntimeValue::None => Shared::unwrap_or_clone(fallback).into_fragment(),
         RuntimeValue::NativeFunction(_) | RuntimeValue::CoroutineBuiltin(_) => mq_markdown::Node::Empty,
-        RuntimeValue::VmClosure(_) => mq_markdown::Node::Empty,
+        RuntimeValue::Closure(_) => mq_markdown::Node::Empty,
         RuntimeValue::Coroutine(_) | RuntimeValue::WeakCoroutine(_) => mq_markdown::Node::Empty,
         #[cfg(any(feature = "file-io", feature = "http"))]
         RuntimeValue::ReaderHandle(_) => mq_markdown::Node::Empty,
@@ -244,7 +247,7 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
 /// One captured top-level `let`/`var`/`def` binding for [`engine::Engine::enable_query_session`].
 #[derive(Debug, Clone)]
 pub(crate) struct SessionBinding {
-    pub(crate) name: crate::Ident,
+    pub(crate) name: Ident,
     pub(crate) mutable: bool,
     pub(crate) value: RuntimeValue,
 }
@@ -255,28 +258,28 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
     pub(crate) options: Options,
     pub(crate) module_loader: ModuleLoader<T>,
     pub(crate) io: Shared<IO>,
-    pub(crate) host_functions: Shared<crate::SharedCell<HostFunctions>>,
-    global_bindings: Shared<crate::SharedCell<GlobalBindings>>,
+    pub(crate) host_functions: Shared<SharedCell<HostFunctions>>,
+    global_bindings: Shared<SharedCell<GlobalBindings>>,
     /// Distinguishes frozen module bytecode when a `CompiledProgram` is shared by Engines.
     #[cfg(not(feature = "debugger"))]
     pub(crate) module_cache_key: VmModuleCacheKey,
     /// `Some` once [`engine::Engine::enable_query_session`] is on; holds the captured top-level
     /// bindings carried from one `eval()` call to the next.
-    pub(crate) session: Option<Shared<crate::SharedCell<Vec<SessionBinding>>>>,
+    pub(crate) session: Option<Shared<SharedCell<Vec<SessionBinding>>>>,
     #[cfg(feature = "debugger")]
-    pub(crate) debugger: Shared<crate::SharedCell<Debugger>>,
+    pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
-    pub(crate) debugger_handler: Shared<crate::SharedCell<Box<dyn DebuggerHandler>>>,
+    pub(crate) debugger_handler: Shared<SharedCell<Box<dyn DebuggerHandler>>>,
 }
 
 /// Engine-owned globals and a revision used to invalidate a cached VM lookup environment.
 #[derive(Debug)]
 #[cfg_attr(feature = "debugger", derive(Default))]
 struct GlobalBindings {
-    values: FxHashMap<crate::Ident, RuntimeValue>,
+    values: FxHashMap<Ident, RuntimeValue>,
     /// Immutable view handed to one VM evaluation. Rebuilding this only when a binding changes
     /// avoids cloning every global value for each one-input `eval_compiled` call.
-    snapshot: Shared<Vec<(crate::Ident, RuntimeValue)>>,
+    snapshot: Shared<Vec<(Ident, RuntimeValue)>>,
     #[cfg(not(feature = "debugger"))]
     source: u64,
     revision: u64,
@@ -316,7 +319,7 @@ impl Default for GlobalBindings {
 
 impl GlobalBindings {
     /// Replaces one binding and publishes the immutable view used by VM evaluations.
-    fn insert(&mut self, name: crate::Ident, value: RuntimeValue) {
+    fn insert(&mut self, name: Ident, value: RuntimeValue) {
         self.values.insert(name, value);
         self.snapshot = Shared::new(self.values.iter().map(|(name, value)| (*name, value.clone())).collect());
         self.revision = self.revision.wrapping_add(1);
@@ -373,18 +376,16 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             options: Options::default(),
             module_loader,
             io,
-            host_functions: Shared::new(crate::SharedCell::new(HostFunctions::default())),
-            global_bindings: Shared::new(crate::SharedCell::new(GlobalBindings::default())),
+            host_functions: Shared::new(SharedCell::new(HostFunctions::default())),
+            global_bindings: Shared::new(SharedCell::new(GlobalBindings::default())),
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
             session: None,
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
-            debugger: Shared::new(crate::SharedCell::new(Debugger::new())),
+            debugger: Shared::new(SharedCell::new(Debugger::new())),
             #[cfg(feature = "debugger")]
-            debugger_handler: Shared::new(crate::SharedCell::new(Box::new(
-                crate::runtime::debugger::DefaultDebuggerHandler,
-            ))),
+            debugger_handler: Shared::new(SharedCell::new(Box::new(DefaultDebuggerHandler))),
         }
     }
 
@@ -392,7 +393,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
         Self::new(module_loader, io)
     }
 
-    pub(crate) fn define(&self, name: crate::Ident, value: RuntimeValue) {
+    pub(crate) fn define(&self, name: Ident, value: RuntimeValue) {
         #[cfg(not(feature = "sync"))]
         {
             let mut bindings = self.global_bindings.borrow_mut();
@@ -406,7 +407,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     }
 
     #[cfg(any(feature = "debugger", feature = "debug-trace"))]
-    pub(crate) fn global_bindings_snapshot(&self) -> Vec<(crate::Ident, RuntimeValue)> {
+    pub(crate) fn global_bindings_snapshot(&self) -> Vec<(Ident, RuntimeValue)> {
         #[cfg(not(feature = "sync"))]
         let bindings = self.global_bindings.borrow();
         #[cfg(feature = "sync")]
@@ -419,9 +420,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     }
 
     #[cfg(not(feature = "debugger"))]
-    pub(crate) fn global_bindings_snapshot_with_key(
-        &self,
-    ) -> (Shared<Vec<(crate::Ident, RuntimeValue)>>, VmEnvCacheKey) {
+    pub(crate) fn global_bindings_snapshot_with_key(&self) -> (Shared<Vec<(Ident, RuntimeValue)>>, VmEnvCacheKey) {
         #[cfg(not(feature = "sync"))]
         let bindings = self.global_bindings.borrow();
         #[cfg(feature = "sync")]
@@ -436,7 +435,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     /// Warms this VM's own builtin.mq parse cache, independent of `Evaluator`.
     pub(crate) fn load_builtin_module(&mut self, token_arena: TokenArena) {
         match self.module_loader.load_builtin(token_arena) {
-            Ok(_) | Err(crate::module::error::ModuleError::AlreadyLoaded(_)) => {}
+            Ok(_) | Err(ModuleError::AlreadyLoaded(_)) => {}
             Err(e) => panic!("Failed to load builtin module: {e}"),
         }
     }
@@ -456,9 +455,9 @@ pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
     pub(crate) capture_stack_trace: bool,
     pub(crate) token_arena: TokenArena,
     pub(crate) module_loader: ModuleLoader<R>,
-    pub(crate) global_bindings: &'a [(crate::Ident, RuntimeValue)],
+    pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
     /// `Some` when [`engine::Engine::enable_query_session`] is on.
-    pub(crate) session: Option<&'a Shared<crate::SharedCell<Vec<SessionBinding>>>>,
+    pub(crate) session: Option<&'a Shared<SharedCell<Vec<SessionBinding>>>>,
     /// Module var values computed once per eval. See [`resolve_module_prelude_globals`].
     pub(crate) preresolved_module_vars: compiler::ResolvedModuleVars,
 }
@@ -514,7 +513,7 @@ pub(crate) fn build_program(
             engine::VmModulePrelude::Include(name) => format!("include {name:?}"),
             engine::VmModulePrelude::Import(name) => format!("import {name:?}"),
         };
-        prelude_program.extend(crate::parse(&directive, Shared::clone(&token_arena))?);
+        prelude_program.extend(parse(&directive, Shared::clone(&token_arena))?);
     }
     let mut result = prelude_program.clone();
     if let Some(nodes_index) = program.iter().position(|node| node.is_nodes()) {
@@ -584,7 +583,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     token_arena: &TokenArena,
     host_functions: &HostFunctions,
     max_call_stack_depth: u32,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
+    global_bindings: &[(Ident, RuntimeValue)],
     module_loader: &mut ModuleLoader<R>,
     seen: &mut FxHashSet<String>,
     result: &mut compiler::ResolvedModuleVars,
@@ -597,7 +596,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
 
     let module = match module_loader.load_from_file(path, Shared::clone(token_arena)) {
         Ok(module) => module,
-        Err(crate::ModuleError::AlreadyLoaded(_)) => module_loader
+        Err(ModuleError::AlreadyLoaded(_)) => module_loader
             .reload_cached(path, Shared::clone(token_arena))
             .map_err(compiler::CompileError::Module)?,
         Err(error) => return Err(compiler::CompileError::Module(error).into()),
@@ -625,7 +624,7 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     }
 
     let directive_program: Program = vec![Shared::new(Node {
-        token_id: crate::ast::TokenId::new(0),
+        token_id: TokenId::new(0),
         expr: Expr::Include(Literal::String(path.to_string())),
     })];
     let compiled = compiler::compile_program_for_engine(
@@ -726,18 +725,18 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                     unreachable!("filtered above");
                 };
                 Shared::new(Node {
-                    token_id: crate::ast::TokenId::new(0),
+                    token_id: TokenId::new(0),
                     expr: Expr::QualifiedAccess(path.clone(), AccessTarget::Ident(let_ident.clone())),
                 })
             })
             .collect();
         let mut probe_program = prefix;
         probe_program.push(Shared::new(Node {
-            token_id: crate::ast::TokenId::new(0),
+            token_id: TokenId::new(0),
             expr: Expr::Module(ident.clone(), body),
         }));
         probe_program.push(Shared::new(Node {
-            token_id: crate::ast::TokenId::new(0),
+            token_id: TokenId::new(0),
             expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
         }));
 
@@ -867,38 +866,38 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
 }
 
 #[cfg(not(feature = "sync"))]
-fn session_snapshot(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>) -> Vec<SessionBinding> {
+fn session_snapshot(session: &Shared<SharedCell<Vec<SessionBinding>>>) -> Vec<SessionBinding> {
     session.borrow().clone()
 }
 
 #[cfg(feature = "sync")]
-fn session_snapshot(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>) -> Vec<SessionBinding> {
+fn session_snapshot(session: &Shared<SharedCell<Vec<SessionBinding>>>) -> Vec<SessionBinding> {
     session.read().unwrap().clone()
 }
 
 #[cfg(not(feature = "sync"))]
-fn store_session(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>, bindings: Vec<SessionBinding>) {
+fn store_session(session: &Shared<SharedCell<Vec<SessionBinding>>>, bindings: Vec<SessionBinding>) {
     *session.borrow_mut() = bindings;
 }
 
 #[cfg(feature = "sync")]
-fn store_session(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>, bindings: Vec<SessionBinding>) {
+fn store_session(session: &Shared<SharedCell<Vec<SessionBinding>>>, bindings: Vec<SessionBinding>) {
     *session.write().unwrap() = bindings;
 }
 
 /// Seed data derived from a session's current bindings, for recompiling and re-running.
 struct SessionSeed {
-    seed_names: Vec<crate::Ident>,
-    seed_immutable: Vec<crate::Ident>,
+    seed_names: Vec<Ident>,
+    seed_immutable: Vec<Ident>,
     seed_values: Vec<RuntimeValue>,
     /// `seed_names` plus any new top-level names `program` itself declares.
-    capture_names: Vec<crate::Ident>,
+    capture_names: Vec<Ident>,
 }
 
-fn session_seed(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>, program: &Program) -> SessionSeed {
+fn session_seed(session: &Shared<SharedCell<Vec<SessionBinding>>>, program: &Program) -> SessionSeed {
     let existing = session_snapshot(session);
-    let seed_names: Vec<crate::Ident> = existing.iter().map(|binding| binding.name).collect();
-    let seed_immutable: Vec<crate::Ident> = existing
+    let seed_names: Vec<Ident> = existing.iter().map(|binding| binding.name).collect();
+    let seed_immutable: Vec<Ident> = existing
         .iter()
         .filter(|binding| !binding.mutable)
         .map(|binding| binding.name)
@@ -923,7 +922,7 @@ fn session_seed(session: &Shared<crate::SharedCell<Vec<SessionBinding>>>, progra
 /// Converts captured top-level values back into [`SessionBinding`]s.
 fn session_bindings_from_captured(
     compiled: &compiler::CompiledProgram,
-    captured: Vec<(crate::Ident, RuntimeValue)>,
+    captured: Vec<(Ident, RuntimeValue)>,
 ) -> Vec<SessionBinding> {
     let local_names = &compiled.chunks[0].local_names;
     let local_mutable = &compiled.chunks[0].local_mutable;
@@ -941,7 +940,7 @@ fn session_bindings_from_captured(
         .collect()
 }
 
-fn extend_unique(names: &mut Vec<crate::Ident>, additional: impl IntoIterator<Item = crate::Ident>) {
+fn extend_unique(names: &mut Vec<Ident>, additional: impl IntoIterator<Item = Ident>) {
     for name in additional {
         if !names.contains(&name) {
             names.push(name);
@@ -950,11 +949,11 @@ fn extend_unique(names: &mut Vec<crate::Ident>, additional: impl IntoIterator<It
 }
 
 /// Clones the values from named bindings while preserving their compiler slot order.
-fn binding_values(bindings: &[(crate::Ident, RuntimeValue)]) -> Vec<RuntimeValue> {
+fn binding_values(bindings: &[(Ident, RuntimeValue)]) -> Vec<RuntimeValue> {
     bindings.iter().map(|(_, value)| value.clone()).collect()
 }
 
-type CapturedBindings = Vec<(crate::Ident, RuntimeValue)>;
+type CapturedBindings = Vec<(Ident, RuntimeValue)>;
 
 /// Runs each input with the latest captured bindings and returns the final successful capture.
 ///
@@ -993,9 +992,9 @@ where
     inputs.map(|input| map_input_values(input, &mut run_one)).collect()
 }
 
-fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -> Vec<crate::Ident> {
+fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -> Vec<Ident> {
     let declared_before = let_names_before_nodes(before);
-    let mut names: Vec<crate::Ident> = seed
+    let mut names: Vec<Ident> = seed
         .seed_immutable
         .iter()
         .copied()
@@ -1007,7 +1006,7 @@ fn session_nodes_immutable_names(seed: &SessionSeed, before: ProgramSlice<'_>) -
 
 /// Fallback locals for the aggregate program when no pre-`nodes` run captured any bindings,
 /// so an empty input iterator doesn't wipe saved session values.
-fn aggregate_seed_values(seed: &SessionSeed, before_names: &[crate::Ident]) -> Vec<RuntimeValue> {
+fn aggregate_seed_values(seed: &SessionSeed, before_names: &[Ident]) -> Vec<RuntimeValue> {
     before_names
         .iter()
         .map(|name| {
@@ -1026,8 +1025,8 @@ fn run_nodes_with_session<I, R: ModuleResolver>(
     after: ProgramSlice<'_>,
     inputs: I,
     context: &EngineRunContext<'_, R>,
-    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
-    global_names: &[crate::Ident],
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
+    global_names: &[Ident],
     deadline: Option<Instant>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
@@ -1097,8 +1096,8 @@ fn run_with_session<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
     context: &EngineRunContext<'_, R>,
-    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
-    global_names: &[crate::Ident],
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
+    global_names: &[Ident],
     deadline: Option<Instant>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
@@ -1144,8 +1143,8 @@ fn run_nodes_with_session_debugged<I, R: ModuleResolver>(
     after: ProgramSlice<'_>,
     inputs: I,
     context: DebugRunContext<'_, R>,
-    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
-    global_names: &[crate::Ident],
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
+    global_names: &[Ident],
     deadline: Option<Instant>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
@@ -1243,8 +1242,8 @@ fn run_with_session_debugged<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
     context: DebugRunContext<'_, R>,
-    session: &Shared<crate::SharedCell<Vec<SessionBinding>>>,
-    global_names: &[crate::Ident],
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
+    global_names: &[Ident],
     deadline: Option<Instant>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
@@ -1299,14 +1298,14 @@ fn run_nodes_aggregate<R: ModuleResolver>(
     before: ProgramSlice<'_>,
     after: ProgramSlice<'_>,
     values: Vec<RuntimeValue>,
-    let_bindings: &[(crate::Ident, RuntimeValue)],
+    let_bindings: &[(Ident, RuntimeValue)],
     context: &EngineRunContext<'_, R>,
     // From the caller's shared deadline, not `context.timeout`.
     timeout: Option<Duration>,
 ) -> Result<Vec<RuntimeValue>, Error> {
-    let let_names: Vec<crate::Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
+    let let_names: Vec<Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
     let immutable_let_names = immutable_let_names_before_nodes(before);
-    let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
     let result = if let_names.is_empty() {
@@ -1365,7 +1364,7 @@ where
 {
     let deadline = shared_deadline(context.timeout);
     context.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context, deadline)?;
-    let global_names: Vec<crate::Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.session {
         return run_with_session(program, inputs, &context, session, &global_names, deadline);
     }
@@ -1404,7 +1403,7 @@ where
         &context.preresolved_module_vars,
     )?;
     let let_names = let_names_before_nodes(before);
-    let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
+    let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
         run_inputs(inputs, |value| {
             interpreter::run_with_global_options(&compiled, value, context.run_options(remaining_timeout(deadline)))
@@ -1452,7 +1451,7 @@ where
 {
     let deadline = shared_deadline(context.engine.timeout);
     context.engine.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context.engine, deadline)?;
-    let global_names: Vec<crate::Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
+    let global_names: Vec<Ident> = context.engine.global_bindings.iter().map(|(ident, _)| *ident).collect();
     if let Some(session) = context.engine.session {
         return run_with_session_debugged(program, inputs, context, session, &global_names, deadline);
     }
@@ -1503,7 +1502,7 @@ where
         context.engine.host_functions.clone(),
     );
     let let_names = let_names_before_nodes(before);
-    let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
+    let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
     let values = if let_names.is_empty() {
         run_inputs(inputs, |value| {
             interpreter::run_with_debug_hook_and_globals(
@@ -1543,7 +1542,7 @@ where
             })
             .collect::<Result<Vec<_>, Error>>()?
     };
-    let let_names: Vec<crate::Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
+    let let_names: Vec<Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
     let immutable_let_names = immutable_let_names_before_nodes(before);
     let program = program_after_nodes(before, after);
     let input = RuntimeValue::Array(Shared::new(values));
@@ -1598,10 +1597,10 @@ pub(crate) fn eval_debug_expression<R: ModuleResolver>(
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     input: RuntimeValue,
-    bindings: &[(crate::Ident, RuntimeValue)],
+    bindings: &[(Ident, RuntimeValue)],
     host_functions: &HostFunctions,
 ) -> Result<RuntimeValue, Error> {
-    let names: Vec<crate::Ident> = bindings.iter().map(|(name, _)| *name).collect();
+    let names: Vec<Ident> = bindings.iter().map(|(name, _)| *name).collect();
     let values: Vec<RuntimeValue> = bindings.iter().map(|(_, value)| value.clone()).collect();
     let compiled = compiler::compile_debug_expression(program, token_arena, module_loader, &names)?;
     Ok(interpreter::run_debug_expression(

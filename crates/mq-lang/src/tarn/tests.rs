@@ -509,7 +509,7 @@ fn local_assignment_uses_local_update_opcode() {
 
 #[test]
 fn top_level_function_literal_produces_a_callable_value() {
-    assert!(matches!(run("fn(x): x;"), RuntimeValue::VmClosure(_)));
+    assert!(matches!(run("fn(x): x;"), RuntimeValue::Closure(_)));
 }
 
 #[test]
@@ -2373,7 +2373,7 @@ fn debugger_hook_exposes_closure_bindings() {
         event
             .bindings
             .iter()
-            .any(|(name, value)| *name == crate::Ident::new("f") && matches!(value, RuntimeValue::VmClosure(_)))
+            .any(|(name, value)| *name == crate::Ident::new("f") && matches!(value, RuntimeValue::Closure(_)))
     }));
 }
 
