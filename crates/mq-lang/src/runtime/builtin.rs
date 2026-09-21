@@ -4309,16 +4309,56 @@ fn _cbor_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Character data and entity references accumulated between two XML markup events.
+///
+/// Only the outer edges of a run are trimmed (pretty-printing indentation), so whitespace
+/// next to an entity reference (`x &amp; y`) is preserved.
+#[derive(Default)]
+struct XmlTextRun {
+    buf: String,
+    tail_start: Option<usize>,
+}
+
+impl XmlTextRun {
+    fn is_xml_whitespace(c: char) -> bool {
+        matches!(c, ' ' | '\t' | '\r' | '\n')
+    }
+
+    fn push_text(&mut self, text: &str) {
+        let text = if self.buf.is_empty() {
+            text.trim_start_matches(Self::is_xml_whitespace)
+        } else {
+            text
+        };
+        self.tail_start = Some(self.buf.len());
+        self.buf.push_str(text);
+    }
+
+    fn push_resolved_ref(&mut self, resolved: &str) {
+        self.tail_start = None;
+        self.buf.push_str(resolved);
+    }
+
+    fn take(&mut self) -> Option<String> {
+        if let Some(start) = self.tail_start.take() {
+            let kept = self.buf[start..].trim_end_matches(Self::is_xml_whitespace).len();
+            self.buf.truncate(start + kept);
+        }
+        let text = std::mem::take(&mut self.buf);
+        (!text.is_empty()).then_some(text)
+    }
+}
+
 #[mq_macros::mq_fn(name = "_xml_parse", params = Fixed(1))]
 fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(xml_str)] => {
             let mut reader = quick_xml::Reader::from_str(xml_str);
-            reader.config_mut().trim_text(true);
             let mut buf = Vec::new();
             #[allow(clippy::type_complexity)]
             let mut stack: Vec<(String, DictMap, Vec<RuntimeValue>, Option<String>)> = Vec::new();
             let mut root: Option<RuntimeValue> = None;
+            let mut run = XmlTextRun::default();
 
             let parse_attrs = |e: &quick_xml::events::BytesStart<'_>| {
                 let mut attrs = DictMap::default();
@@ -4335,7 +4375,20 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
             };
 
             loop {
-                match reader.read_event_into(&mut buf) {
+                let event = reader.read_event_into(&mut buf);
+
+                if !matches!(
+                    event,
+                    Ok(quick_xml::events::Event::Text(_)) | Ok(quick_xml::events::Event::GeneralRef(_))
+                ) && let (Some(text), Some(parent)) = (run.take(), stack.last_mut())
+                {
+                    match &mut parent.3 {
+                        Some(t) => t.push_str(&text),
+                        None => parent.3 = Some(text),
+                    }
+                }
+
+                match event {
                     Ok(quick_xml::events::Event::Start(e)) => {
                         let tag = e.name().as_ref().to_string();
                         let attrs = parse_attrs(&e)?;
@@ -4396,15 +4449,8 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         }
                     }
                     Ok(quick_xml::events::Event::Text(e)) => {
-                        if let Some(parent) = stack.last_mut() {
-                            let text = e.as_ref().to_string();
-
-                            if !text.is_empty() {
-                                match &mut parent.3 {
-                                    Some(t) => t.push_str(&text),
-                                    None => parent.3 = Some(text),
-                                }
-                            }
+                        if !stack.is_empty() {
+                            run.push_text(e.as_ref());
                         }
                     }
                     Ok(quick_xml::events::Event::CData(e)) => {
@@ -4422,7 +4468,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                         // `Event::Text`, so they must be resolved and appended here or every
                         // entity reference (e.g. `&lt;`, `&amp;`) silently vanishes from the
                         // parsed text instead of decoding to the character it represents.
-                        if let Some(parent) = stack.last_mut() {
+                        if !stack.is_empty() {
                             let resolved = e
                                 .resolve_char_ref()
                                 .map_err(|e| {
@@ -4442,10 +4488,7 @@ fn _xml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
                                     ))
                                 })?;
 
-                            match &mut parent.3 {
-                                Some(t) => t.push_str(&resolved),
-                                None => parent.3 = Some(resolved),
-                            }
+                            run.push_resolved_ref(&resolved);
                         }
                     }
                     Ok(quick_xml::events::Event::Eof) => break,
@@ -13465,20 +13508,17 @@ mod tests {
         }
     )]
     #[case::entity_references(
-        // `x` (rather than whitespace) separates the references: `trim_text(true)` (a
-        // deliberate, pre-existing config for ignoring pretty-printed indentation) trims a
-        // whitespace-only text run to empty even when it sits between two entity references,
-        // which would make this case about that interaction instead of about entity resolution.
         "<root>&lt;b&gt;x&amp;x&quot;q&quot;x&apos;s&apos;x&#65;&#x42;</root>",
-        {
-            let mut root = DictMap::default();
-            root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new("root".to_string())));
-            root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
-            root.insert(Ident::new("children"), RuntimeValue::empty_array());
-            root.insert(Ident::new("text"), RuntimeValue::String(Shared::new("<b>x&x\"q\"x's'xAB".to_string())));
-            Ok(RuntimeValue::Dict(Shared::new(root)))
-        }
+        xml_text_element("root", Some("<b>x&x\"q\"x's'xAB"))
     )]
+    #[case::entity_with_surrounding_spaces("<a>x &amp; y</a>", xml_text_element("a", Some("x & y")))]
+    #[case::whitespace_only_between_entities("<a>&lt; &gt;</a>", xml_text_element("a", Some("< >")))]
+    #[case::entity_at_edges_with_inner_spaces("<a>&amp; x &amp;</a>", xml_text_element("a", Some("& x &")))]
+    #[case::char_ref_space_is_preserved("<a>&#32;x&#32;</a>", xml_text_element("a", Some(" x ")))]
+    #[case::pretty_printed_text_is_trimmed("<a>\n  x &amp; y\n</a>", xml_text_element("a", Some("x & y")))]
+    #[case::whitespace_only_text_is_dropped("<a>\n  \n</a>", xml_text_element("a", None))]
+    #[case::cdata_whitespace_is_preserved("<a><![CDATA[ x  y ]]></a>", xml_text_element("a", Some(" x  y ")))]
+    #[case::entity_and_cdata("<a>x &amp; <![CDATA[ y ]]></a>", xml_text_element("a", Some("x & y ")))]
     fn test_xml_parse(#[case] xml: &str, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("_xml_parse");
         let result = eval_builtin(
@@ -13488,6 +13528,19 @@ mod tests {
             &VmEnv::default(),
         );
         assert_eq!(result, expected);
+    }
+
+    fn xml_text_element(tag: &str, text: Option<&str>) -> Result<RuntimeValue, Error> {
+        let mut root = DictMap::default();
+        root.insert(Ident::new("tag"), RuntimeValue::String(Shared::new(tag.to_string())));
+        root.insert(Ident::new("attributes"), RuntimeValue::new_dict());
+        root.insert(Ident::new("children"), RuntimeValue::empty_array());
+        root.insert(
+            Ident::new("text"),
+            text.map(|t| RuntimeValue::String(Shared::new(t.to_string())))
+                .unwrap_or(RuntimeValue::NONE),
+        );
+        Ok(RuntimeValue::Dict(Shared::new(root)))
     }
 
     #[test]
