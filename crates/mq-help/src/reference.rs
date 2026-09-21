@@ -80,6 +80,10 @@ pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Ve
 
     let mut functions = Vec::new();
     for (i, node) in nodes.iter().enumerate() {
+        if matches!(node.kind, CstNodeKind::Module) {
+            collect_module_functions(node, "", &mut functions);
+            continue;
+        }
         if !node.is_def() {
             continue;
         }
@@ -90,6 +94,25 @@ pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Ve
     }
 
     (module_doc, functions)
+}
+
+/// Collects a `module` block's public functions as `name::function` (recursing into nested modules).
+fn collect_module_functions(module_node: &Shared<CstNode>, prefix: &str, out: &mut Vec<MqFnDoc>) {
+    let Some(name) = module_node.children.first().and_then(ident_text) else {
+        return;
+    };
+    let qualified = format!("{prefix}{name}::");
+
+    for child in module_node.children.iter().skip(1) {
+        if child.is_def() {
+            if let Some(mut info) = def_info(child, false, 0) {
+                info.name = format!("{qualified}{}", info.name);
+                out.push(info);
+            }
+        } else if matches!(child.kind, CstNodeKind::Module) {
+            collect_module_functions(child, &qualified, out);
+        }
+    }
 }
 
 // If node 0 is a documented def, its first paragraph is only a module header when a second
@@ -274,6 +297,18 @@ fn ident_text(node: &Shared<CstNode>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn test_extract_module_includes_functions_of_nested_module_blocks() {
+        let src = "# Adds one.\n# Returns: number\ndef add1(x): x + 1;\n\nmodule inner:\n  # Doubles.\n  # Example:\n  # ```\n  # inner::double(2)\n  # #=> 4\n  # ```\n  def double(x): x * 2;\n  def _private(x): x;\n  def flatten(x): x;\nend\n";
+        let (_, functions) = extract_module(src, true);
+        let names: Vec<&str> = functions.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["add1", "inner::double", "inner::flatten"]);
+        let double = functions.iter().find(|f| f.name == "inner::double").unwrap();
+        assert_eq!(double.description, "Doubles.");
+        assert_eq!(double.params, vec!["x".to_string()]);
+        assert_eq!(double.examples.len(), 1);
+    }
+
     use super::*;
 
     #[test]
