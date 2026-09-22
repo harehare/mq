@@ -19,6 +19,7 @@ use crate::DictMap;
 use crate::arena::Arena;
 use crate::ast::TokenId;
 use crate::ast::constants;
+use crate::diff::TextDiff;
 use crate::error::runtime::RuntimeError;
 use crate::ident::all_symbols;
 #[cfg(feature = "http")]
@@ -41,7 +42,7 @@ use itertools::Itertools;
 use rustc_hash::FxHashMap;
 #[cfg(feature = "file-io")]
 use rustc_hash::FxHashSet;
-use similar::{ChangeTag, TextDiff};
+use similar::ChangeTag;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use thiserror::Error;
