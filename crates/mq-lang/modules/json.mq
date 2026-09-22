@@ -371,6 +371,99 @@ def json_patch(doc, ops):
     fold(ops, doc, fn(acc, op): _apply_op(acc, op) end)
 end
 
+# Applies a JSON Merge Patch (RFC 7396) to `doc` and returns the result. Unlike `json_patch`,
+# a merge patch is itself a JSON value: a `null` member removes the matching key, an object
+# member merges recursively, and any other value (including an array) replaces it wholesale.
+# If `patch` is not a dict, it replaces `doc` entirely (this is how a merge patch clears or
+# replaces a non-dict value).
+#
+# Example:
+# ```
+# import "json" | json::json_merge_patch({"a": 1, "b": {"c": 2, "d": 3}}, {"a": None, "b": {"c": 9}})
+# #=> {"b": {"c": 9, "d": 3}}
+# ```
+#
+# Returns: dynamic
+def json_merge_patch(doc, patch):
+  if (!is_dict(patch)):
+    patch
+  else:
+    do
+      let base = if (is_dict(doc)): doc else: {}
+      | fold(keys(patch), base, fn(acc, k):
+        let v = patch[k]
+        | if (is_none(v)):
+            if (has(acc, k)): del(acc, k) else: acc
+          else:
+            set(acc, k, json_merge_patch(get_or(acc, k, None), v))
+      end)
+    end
+end
+
+# 3-way merges `ours` and `theirs` against their common `base`. Returns `{value, conflicts}`:
+# `value` is the merged result (favoring `ours` at any conflicting leaf or deletion-vs-edit
+# clash), and `conflicts` lists every path where both sides changed the same leaf to different
+# values, as `{path, base, ours, theirs}` (a JSON Pointer `path`; `ours`/`theirs` is `None` when
+# that side deleted the key, which is indistinguishable from a genuine `null` value there). Two
+# sides editing the same nested dict key-by-key merges recursively; anything else (arrays,
+# scalars, one side turning a dict into something else) is compared as a whole leaf.
+#
+# Example:
+# ```
+# import "json" | json::merge3({"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 3})
+# #=> {"value": {"a": 2, "b": 3}, "conflicts": []}
+# ```
+#
+# Returns: dict
+def merge3(base, ours, theirs):
+  _merge3_at(base, ours, theirs, [])
+end
+
+def _merge3_at(base, ours, theirs, path):
+  if (ours == theirs):
+    {value: ours, conflicts: []}
+  elif (is_dict(ours) && is_dict(theirs)):
+    _merge3_dict(if (is_dict(base)): base else: {}, ours, theirs, path)
+  elif (ours == base):
+    {value: theirs, conflicts: []}
+  elif (theirs == base):
+    {value: ours, conflicts: []}
+  else:
+    {value: ours, conflicts: [{path: json_pointer_from_path(path), base: base, ours: ours, theirs: theirs}]}
+end
+
+def _merge3_dict(base, ours, theirs, path):
+  fold(uniq(keys(base) + keys(ours) + keys(theirs)), {value: {}, conflicts: []}, fn(acc, k):
+    let hb = has(base, k)
+    | let ho = has(ours, k)
+    | let ht = has(theirs, k)
+    | let bv = get_or(base, k, None)
+    | let ov = get_or(ours, k, None)
+    | let tv = get_or(theirs, k, None)
+    | if (!ho && !ht):
+        acc
+      elif (ho && !ht):
+        if (!hb):
+          {value: set(acc[:value], k, ov), conflicts: acc[:conflicts]}
+        elif (ov == bv):
+          acc
+        else:
+          {value: set(acc[:value], k, ov), conflicts: acc[:conflicts] + [{path: json_pointer_from_path(path + [k]), base: bv, ours: ov, theirs: None}]}
+      elif (!ho && ht):
+        if (!hb):
+          {value: set(acc[:value], k, tv), conflicts: acc[:conflicts]}
+        elif (tv == bv):
+          acc
+        else:
+          {value: acc[:value], conflicts: acc[:conflicts] + [{path: json_pointer_from_path(path + [k]), base: bv, ours: None, theirs: tv}]}
+      else:
+        do
+          let sub = _merge3_at(bv, ov, tv, path + [k])
+          | {value: set(acc[:value], k, sub[:value]), conflicts: acc[:conflicts] + sub[:conflicts]}
+        end
+  end)
+end
+
 # Converts a JSON data structure to a Markdown table.
 #
 # Example:
