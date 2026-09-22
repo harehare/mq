@@ -380,6 +380,8 @@ fn register_string(ctx: &mut InferenceContext) {
         vec![Type::String],
         Type::String,
     );
+    register_unary(ctx, "base64d_bytes", Type::String, Type::Bytes);
+    register_unary(ctx, "base64urld_bytes", Type::String, Type::Bytes);
 
     // markdown_escape: (string, context) -> string
     register_binary(ctx, "markdown_escape", Type::String, Type::String, Type::String);
@@ -419,6 +421,8 @@ fn register_string(ctx: &mut InferenceContext) {
             "base64d",
             "base64url",
             "base64urld",
+            "base64d_bytes",
+            "base64urld_bytes",
             "url_encode",
             "url_decode",
             "html_escape",
@@ -1851,6 +1855,8 @@ mod tests {
     #[case::regex_escape_number("regex_escape(42)", false)] // Should fail: wrong type
     #[case::base64("base64(\"hello\")", true)]
     #[case::base64d("base64d(\"aGVsbG8=\")", true)]
+    #[case::base64d_bytes("base64d_bytes(\"aGVsbG8=\")", true)]
+    #[case::base64urld_bytes("base64urld_bytes(\"aGVsbG8\")", true)]
     #[case::url_encode("url_encode(\"hello world\")", true)]
     #[case::url_decode("url_decode(\"hello%20world\")", true)]
     #[case::uuid("uuid()", true)]
@@ -2791,6 +2797,9 @@ mod tests {
     #[case::bytes_lte(r#"lte(to_bytes("a"); to_bytes("a"))"#, true)]
     // is_bytes: (a) -> bool
     #[case::is_bytes(r#"to_bytes("hello") | is_bytes"#, true)]
+    // base64d_bytes: string -> bytes, usable where bytes are expected
+    #[case::base64d_bytes_xor(r#"xor(base64d_bytes("aGVsbG8="); to_bytes("world"))"#, true)]
+    #[case::base64urld_bytes_is_bytes(r#"base64urld_bytes("aGVsbG8") | is_bytes"#, true)]
     fn test_bytes_builtin_signatures(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
         assert_eq!(
