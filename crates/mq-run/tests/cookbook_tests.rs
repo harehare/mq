@@ -531,6 +531,26 @@ fn cookbook_navigate_the_section_tree() {
 }
 
 #[test]
+fn cookbook_redact_secrets_from_json() {
+    let path = write_temp(
+        "cookbook_redact_secrets_from_json.json",
+        r#"{"name": "demo", "api_key": "sk-abc123def456", "config": {"db_password": "hunter2"}}"#,
+    );
+    let out = run(&[
+        "-I",
+        "json",
+        "-F",
+        "json",
+        r#"redact(., [{type: "key", pattern: "api_key|password|secret|token"}])"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        out.trim(),
+        "{\n  \"name\": \"demo\",\n  \"api_key\": \"[REDACTED]\",\n  \"config\": {\n    \"db_password\": \"[REDACTED]\"\n  }\n}"
+    );
+}
+
+#[test]
 fn cookbook_flatten_json_with_gron() {
     let path = write_temp(
         "cookbook_flatten_json_with_gron.json",

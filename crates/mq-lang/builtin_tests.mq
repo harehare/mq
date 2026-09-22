@@ -1692,3 +1692,89 @@ def test_assert_matches():
   | let result4 = assert_matches("hello world", "^bye")
   | assert_eq(result4["error"], true)
 end
+
+# -- redact Tests --
+
+def test_redact_key_rule_masks_value():
+  assert_eq(
+    redact({"user": "alice", "password": "hunter2"}, [{type: "key", pattern: "password"}]),
+    {"user": "alice", "password": "[REDACTED]"}
+  )
+end
+
+def test_redact_key_rule_is_case_insensitive_by_default():
+  assert_eq(
+    redact({"Password": "hunter2"}, [{type: "key", pattern: "password"}]),
+    {"Password": "[REDACTED]"}
+  )
+end
+
+def test_redact_key_rule_case_sensitive_opt_out():
+  assert_eq(
+    redact({"Password": "hunter2"}, [{type: "key", pattern: "password", case_insensitive: false}]),
+    {"Password": "hunter2"}
+  )
+end
+
+def test_redact_key_rule_custom_replacement():
+  assert_eq(
+    redact({"password": "hunter2"}, [{type: "key", pattern: "password", replacement: "***"}]),
+    {"password": "***"}
+  )
+end
+
+def test_redact_key_rule_regex_alternation():
+  assert_eq(
+    redact({"api_key": "sk-1", "token": "tok-1", "note": "ok"}, [{type: "key", pattern: "api_key|secret|token"}]),
+    {"api_key": "[REDACTED]", "token": "[REDACTED]", "note": "ok"}
+  )
+end
+
+def test_redact_recurses_into_nested_dicts_and_arrays():
+  assert_eq(
+    redact({"password": "x", "items": [{"password": "y"}, {"other": 1}]}, [{type: "key", pattern: "password"}]),
+    {"password": "[REDACTED]", "items": [{"password": "[REDACTED]"}, {"other": 1}]}
+  )
+end
+
+def test_redact_value_rule_masks_substring_in_string():
+  assert_eq(
+    redact("token=sk-abc123 (keep this)", [{type: "value", pattern: "sk-[a-z0-9]+", replacement: "[KEY]"}]),
+    "token=[KEY] (keep this)"
+  )
+end
+
+def test_redact_value_rule_applies_inside_dict_values():
+  assert_eq(
+    redact({"note": "contact a@b.com now"}, [{type: "value", pattern: "[a-z]+@[a-z.]+", replacement: "[EMAIL]"}]),
+    {"note": "contact [EMAIL] now"}
+  )
+end
+
+def test_redact_multiple_value_rules_chain():
+  assert_eq(
+    redact("a@b.com and 1234-5678-9012-3456", [
+      {type: "value", pattern: "[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{4}", replacement: "[CARD]"},
+      {type: "value", pattern: "[a-z]+@[a-z.]+", replacement: "[EMAIL]"}
+    ]),
+    "[EMAIL] and [CARD]"
+  )
+end
+
+def test_redact_value_rule_no_match_is_unchanged():
+  assert_eq(redact("nothing sensitive here", [{type: "value", pattern: "sk-[a-z0-9]+"}]), "nothing sensitive here")
+end
+
+def test_redact_non_string_leaves_pass_through():
+  assert_eq(redact({"n": 42, "ok": true, "x": None}, [{type: "key", pattern: "nomatch"}]), {"n": 42, "ok": true, "x": None})
+end
+
+def test_redact_empty_rules_is_identity():
+  assert_eq(redact({"a": 1, "b": [1, "x"]}, []), {"a": 1, "b": [1, "x"]})
+  | assert_eq(redact([], []), [])
+  | assert_eq(redact({}, []), {})
+end
+
+def test_redact_symbol_and_string_keys_both_match():
+  assert_eq(redact({a: 1, "b": 2}, [{type: "key", pattern: "a"}]), {"a": "[REDACTED]", "b": 2})
+end

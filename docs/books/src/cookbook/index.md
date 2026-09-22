@@ -33,6 +33,7 @@ Every recipe follows the same four parts:
 - [Find sections that have no content](filter-empty-sections.md)
 - [Find which section a node belongs to](find-section-containing-a-node.md)
 - [Navigate the section tree](navigate-the-section-tree.md)
+- [Redact secrets from JSON, YAML or TOML data](redact-secrets-from-json.md)
 
 ## Working with tables
 

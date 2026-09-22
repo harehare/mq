@@ -3125,6 +3125,65 @@ def walk(v, f):
   end
 end
 
+def _redact_ci(s, case_insensitive): if (case_insensitive): downcase(to_string(s)) else: to_string(s);
+
+def _redact_rule_matches(subject, rule):
+  test(_redact_ci(subject, get_or(rule, :case_insensitive, true)), rule[:pattern])
+end
+
+def _redact_key_rule(key, rules):
+  first(filter(rules, fn(r): get_or(r, :type, "value") == "key" && _redact_rule_matches(to_string(key), r);))
+end
+
+def _redact_string(s, rules):
+  fold(filter(rules, fn(r): get_or(r, :type, "value") == "value";), s, fn(acc, r):
+    if (_redact_rule_matches(acc, r)):
+      gsub(acc, r[:pattern], get_or(r, :replacement, "[REDACTED]"))
+    else:
+      acc
+  end)
+end
+
+# Recursively masks matching values in a dict/array/string, given `rules`: an array of
+# `{type: "key", pattern, replacement = "[REDACTED]", case_insensitive = true}` (masks a dict
+# value outright when its key matches `pattern`, without looking at the value) or
+# `{type: "value", pattern, replacement = "[REDACTED]", case_insensitive = true}` (replaces
+# matches of `pattern` inside string values via `gsub`, leaving the rest of the string intact).
+# `pattern` is matched case-sensitively against the (optionally downcased) subject — mq's regex
+# engine has no `(?i)` support, so write `pattern` in lowercase for a case-insensitive rule.
+# Numbers, booleans and `None` pass through unchanged; markdown nodes are walked but their own
+# text is not redacted (redact `to_text(node)` separately if needed).
+#
+# Example:
+# ```
+# redact({"user": "alice", "password": "hunter2"}, [{type: "key", pattern: "password"}])
+# #=> {"user": "alice", "password": "[REDACTED]"}
+# ```
+#
+# Returns: dynamic
+def redact(value, rules):
+  match (value):
+    | :dict:
+      with_entries(value, fn(entry):
+        let k = entry[0]
+        | let key_rule = _redact_key_rule(k, rules)
+        | if (is_none(key_rule)):
+            [k, redact(entry[1], rules)]
+          else:
+            [k, get_or(key_rule, :replacement, "[REDACTED]")]
+      ;)
+    | :array:
+      map(value, fn(x): redact(x, rules);)
+    | :markdown:
+      do
+        let new_children = map(value.children, fn(child): redact(child, rules);)
+        | set_children(value, new_children)
+      end
+    | _:
+      if (is_string(value)): _redact_string(value, rules) else: value
+  end
+end
+
 # Formats a byte count as a human-readable decimal (SI, 1000-based) string,
 # e.g. `human_bytes(1500)` => "1.5KB". Negative numbers keep their sign.
 #

@@ -33,6 +33,7 @@
   - [Find sections that have no content](cookbook/filter-empty-sections.md)
   - [Find which section a node belongs to](cookbook/find-section-containing-a-node.md)
   - [Navigate the section tree](cookbook/navigate-the-section-tree.md)
+  - [Redact secrets from JSON, YAML or TOML data](cookbook/redact-secrets-from-json.md)
   - [Extract all tables from a document](cookbook/extract-tables.md)
   - [Add a row to a table](cookbook/add-row-to-table.md)
   - [Convert a Markdown table to CSV](cookbook/convert-table-to-csv.md)
