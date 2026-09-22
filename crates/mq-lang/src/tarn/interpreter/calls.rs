@@ -1,7 +1,7 @@
 //! Invoking a callee: binding arguments and producing the `Frame` for the trampoline to push,
 //! instead of calling back into the dispatch loop directly.
 use super::errors::{VmError, VmResult, locate};
-use super::frame::{Continuation, ExecutionContext, Frame, PendingCall};
+use super::frame::{Continuation, DeferredContinuation, ExecutionContext, Frame, PendingCall};
 use super::{current_self, into_runtime_value};
 use crate::ast::constants::builtins;
 use crate::runtime::builtin::{self, Args};
@@ -733,7 +733,7 @@ fn resume_bind_params(
                         default_locals,
                         (!captured.is_empty()).then(|| Shared::new(captured)),
                         !default_chunk_ref.captures_local_slots(),
-                        Continuation::ResumeBindParams(Box::new(pending)),
+                        Continuation::Deferred(Box::new(DeferredContinuation::ResumeBindParams(pending))),
                     ));
                 }
             }
