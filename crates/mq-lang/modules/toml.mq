@@ -86,13 +86,13 @@ end
 #
 # Example:
 # ```
-# import "toml" | toml::toml_try_parse("key = 1")
-# #=> {"ok": true, "value": {"key": 1}, "error": None}
+# import "toml" | toml::toml_try_parse("key = 1")["ok"]
+# #=> true
 # ```
 # Example:
 # ```
-# import "toml" | toml::toml_try_parse("key = ")
-# #=> {"ok": false, "value": None, "error": {"message": "..."}}
+# import "toml" | toml::toml_try_parse("key = ")["ok"]
+# #=> false
 # ```
 #
 # Returns: dict

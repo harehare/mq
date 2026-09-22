@@ -17,13 +17,13 @@ end
 #
 # Example:
 # ```
-# import "json" | json::json_try_parse("{\"a\": 1}")
-# #=> {"ok": true, "value": {"a": 1}, "error": None}
+# import "json" | json::json_try_parse("{\"a\": 1}")["ok"]
+# #=> true
 # ```
 # Example:
 # ```
-# import "json" | json::json_try_parse("{bad")
-# #=> {"ok": false, "value": None, "error": {"message": "..."}}
+# import "json" | json::json_try_parse("{bad")["ok"]
+# #=> false
 # ```
 #
 # Returns: dict

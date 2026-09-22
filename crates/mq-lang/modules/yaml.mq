@@ -79,13 +79,13 @@ end
 #
 # Example:
 # ```
-# import "yaml" | yaml::yaml_try_parse("key: 1")
-# #=> {"ok": true, "value": {"key": 1}, "error": None}
+# import "yaml" | yaml::yaml_try_parse("key: 1")["ok"]
+# #=> true
 # ```
 # Example:
 # ```
-# import "yaml" | yaml::yaml_try_parse("key: [unterminated")
-# #=> {"ok": false, "value": None, "error": {"message": "..."}}
+# import "yaml" | yaml::yaml_try_parse("key: [unterminated")["ok"]
+# #=> false
 # ```
 #
 # Returns: dict
