@@ -192,3 +192,72 @@ def test_json_diff_patch_round_trip_objects(xs, ys):
   | let b = {"q": ys[1], "r": {"s": ys[2], "t": [ys[3]]}, "u": ys[0], "v": ys[4]}
   | assert_eq(json::json_patch(a, json::json_diff(a, b)), b)
 end
+
+# -- JSON Merge Patch / merge3 Tests --
+
+# RFC 7396 examples (https://datatracker.ietf.org/doc/html/rfc7396#section-1)
+# @parametrize([[{"a": "b"}, {"a": "c"}, {"a": "c"}], [{"a": "b"}, {"b": "c"}, {"a": "b", "b": "c"}], [{"a": "b"}, {"a": None}, {}], [{"a": "b", "b": "c"}, {"a": None}, {"b": "c"}], [{"a": ["b"]}, {"a": "c"}, {"a": "c"}], [{"a": "c"}, {"a": ["b"]}, {"a": ["b"]}], [{"a": {"b": "c"}}, {"a": {"b": "d", "c": None}}, {"a": {"b": "d"}}], [{"a": [{"b": "c"}]}, {"a": [1]}, {"a": [1]}], [["a", "b"], ["c", "d"], ["c", "d"]], [{"a": "b"}, ["c"], ["c"]], [{"a": "foo"}, None, None], [{"a": "foo"}, "bar", "bar"], [{"e": None}, {"a": 1}, {"e": None, "a": 1}], [[1, 2], {"a": "b", "c": None}, {"a": "b"}], [{}, {"a": {"bb": {"ccc": None}}}, {"a": {"bb": {}}}]])
+def test_json_merge_patch_rfc7396(doc, patch, expected):
+  assert_eq(json::json_merge_patch(doc, patch), expected)
+end
+
+def test_json_merge_patch_nested():
+  assert_eq(
+    json::json_merge_patch({"a": 1, "b": {"c": 2, "d": 3}}, {"a": None, "b": {"c": 9}}),
+    {"b": {"c": 9, "d": 3}}
+  )
+end
+
+def test_merge3_no_conflict():
+  assert_eq(json::merge3({"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 3}), {"value": {"a": 2, "b": 3}, "conflicts": []})
+end
+
+def test_merge3_same_edit_both_sides_is_not_a_conflict():
+  assert_eq(json::merge3({"a": 1}, {"a": 2}, {"a": 2}), {"value": {"a": 2}, "conflicts": []})
+end
+
+def test_merge3_conflicting_edit():
+  assert_eq(json::merge3({"a": 1}, {"a": 2}, {"a": 3}), {"value": {"a": 2}, "conflicts": [{"path": "/a", "base": 1, "ours": 2, "theirs": 3}]})
+end
+
+def test_merge3_independent_additions_are_not_conflicts():
+  assert_eq(json::merge3({}, {"a": 1}, {"b": 2}), {"value": {"a": 1, "b": 2}, "conflicts": []})
+end
+
+def test_merge3_both_sides_add_same_key_differently_is_a_conflict():
+  assert_eq(json::merge3({}, {"a": 1}, {"a": 2}), {"value": {"a": 1}, "conflicts": [{"path": "/a", "base": None, "ours": 1, "theirs": 2}]})
+end
+
+def test_merge3_unchanged_side_yields_to_a_deletion():
+  assert_eq(json::merge3({"a": 1}, {"a": 1}, {}), {"value": {}, "conflicts": []})
+  | assert_eq(json::merge3({"a": 1}, {}, {"a": 1}), {"value": {}, "conflicts": []})
+end
+
+def test_merge3_edit_vs_delete_favors_ours_edit():
+  assert_eq(json::merge3({"a": 1}, {"a": 2}, {}), {"value": {"a": 2}, "conflicts": [{"path": "/a", "base": 1, "ours": 2, "theirs": None}]})
+end
+
+def test_merge3_delete_vs_edit_favors_ours_delete():
+  assert_eq(json::merge3({"a": 1}, {}, {"a": 2}), {"value": {}, "conflicts": [{"path": "/a", "base": 1, "ours": None, "theirs": 2}]})
+end
+
+def test_merge3_recurses_into_nested_dicts():
+  let result = json::merge3({"a": {"x": 1, "y": 1}}, {"a": {"x": 2, "y": 1}}, {"a": {"x": 1, "y": 3}})
+  | assert_eq(result, {"value": {"a": {"x": 2, "y": 3}}, "conflicts": []})
+end
+
+def test_merge3_arrays_compared_as_a_whole():
+  assert_eq(json::merge3({"a": [1, 2]}, {"a": [1, 2, 3]}, {"a": [1, 2, 4]}), {"value": {"a": [1, 2, 3]}, "conflicts": [{"path": "/a", "base": [1, 2], "ours": [1, 2, 3], "theirs": [1, 2, 4]}]})
+end
+
+def test_merge3_identical_edit_on_both_sides():
+  assert_eq(json::merge3(1, 2, 2), {"value": 2, "conflicts": []})
+end
+
+# @property(60, [gen::array(gen::int(0, 2), 3), gen::array(gen::int(0, 2), 3)])
+def test_merge3_ours_edits_alone_apply_cleanly(xs, ys):
+  let base = {"a": xs[0], "b": xs[1], "c": xs[2]}
+  | let ours = {"a": ys[0], "b": ys[1], "c": ys[2]}
+  | let result = json::merge3(base, ours, base)
+  | assert_eq(result, {"value": ours, "conflicts": []})
+end

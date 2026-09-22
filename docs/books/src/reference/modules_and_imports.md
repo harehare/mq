@@ -178,6 +178,27 @@ import "json"
 
 Dicts are compared by key and arrays by index, so an element inserted at the front of an array shows up as a run of `replace` operations.
 
+### JSON Merge Patch and 3-way merge
+
+| Function                             | Description                                                                                     |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `json::json_merge_patch(doc, patch)` | Applies a [JSON Merge Patch (RFC 7396)](https://datatracker.ietf.org/doc/html/rfc7396): `null` members remove keys, dict members merge recursively, anything else replaces the value wholesale |
+| `json::merge3(base, ours, theirs)`   | 3-way merges `ours` and `theirs` against their common `base`, returning `{value, conflicts}`. Favors `ours` on a conflicting leaf or a deletion-vs-edit clash; `conflicts` lists every diverging path as `{path, base, ours, theirs}` |
+
+```mq
+import "json"
+| json::json_merge_patch({"a": 1, "b": {"c": 2, "d": 3}}, {"a": None, "b": {"c": 9}})
+# => {"b": {"c": 9, "d": 3}}
+```
+
+```mq
+import "json"
+| json::merge3({"a": 1, "b": 1}, {"a": 2, "b": 1}, {"a": 1, "b": 3})
+# => {"value": {"a": 2, "b": 3}, "conflicts": []}
+```
+
+`merge3` only merges nested dicts key-by-key; arrays and scalars are compared as a whole leaf, so a change to any element of an array both sides touched is one conflict on the whole array. A key added independently by both sides with different values is also a conflict, even though neither `base` had it.
+
 Combine with `paths` to list a pointer for every leaf: `paths(doc) | map(json::json_pointer_from_path)`.
 
 ## Markdown Builder (`md`)
