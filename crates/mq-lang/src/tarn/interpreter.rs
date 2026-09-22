@@ -42,7 +42,7 @@ use errors::StackTraceFrame;
 pub(crate) use errors::VmError;
 use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
 pub(crate) use frame::ExecutionPools;
-use frame::{Continuation, ExecutionContext, ExecutionLimits, Frame, TryBody};
+use frame::{Continuation, DeferredContinuation, ExecutionContext, ExecutionLimits, Frame, TryBody};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -771,57 +771,63 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
                 debug,
             )
             .expect("just checked len() > 1");
-        match continuation {
-            Continuation::Push | Continuation::TryBody(_) => {
+        let pending = match continuation {
+            Continuation::Push => {
                 operand_stack.push(value);
+                continue 'frames;
             }
-            Continuation::ResumeBindParams(pending) => {
-                let next = match apply_pending(*pending, value, execution) {
-                    Ok(next) => next,
-                    Err(e) => {
-                        let e = locate_at_top(frames, root_chunks, e);
-                        match unwind_frames(
-                            e,
-                            frames,
-                            root_chunks,
-                            operand_stack,
-                            execution,
-                            #[cfg(feature = "debugger")]
-                            debug,
-                        ) {
-                            Ok(()) => continue 'frames,
-                            Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
-                        }
-                    }
-                };
-                // May be the callee's own now-fully-bound frame; needs generator detection too.
-                let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
-                match frame_or_coroutine(next, &next_chunks, &execution.token_arena) {
-                    CallStep::Value(coroutine) => {
-                        operand_stack.push(coroutine);
-                    }
-                    CallStep::Enter(mut next) => {
-                        next.stack_base = operand_stack.len();
-                        if let Err(e) = execution.limits.push_frame(
-                            frames,
-                            next,
-                            #[cfg(feature = "debugger")]
-                            debug,
-                        ) {
-                            let e = locate_at_top(frames, root_chunks, e);
-                            match unwind_frames(
-                                e,
-                                frames,
-                                root_chunks,
-                                operand_stack,
-                                execution,
-                                #[cfg(feature = "debugger")]
-                                debug,
-                            ) {
-                                Ok(()) => continue 'frames,
-                                Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
-                            }
-                        }
+            Continuation::Deferred(deferred) => match *deferred {
+                DeferredContinuation::TryBody(_) => {
+                    operand_stack.push(value);
+                    continue 'frames;
+                }
+                DeferredContinuation::ResumeBindParams(pending) => pending,
+            },
+        };
+        let next = match apply_pending(pending, value, execution) {
+            Ok(next) => next,
+            Err(e) => {
+                let e = locate_at_top(frames, root_chunks, e);
+                match unwind_frames(
+                    e,
+                    frames,
+                    root_chunks,
+                    operand_stack,
+                    execution,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    Ok(()) => continue 'frames,
+                    Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
+                }
+            }
+        };
+        // May be the callee's own now-fully-bound frame; needs generator detection too.
+        let next_chunks = next.chunks.as_ref().unwrap_or(root_chunks).clone();
+        match frame_or_coroutine(next, &next_chunks, &execution.token_arena) {
+            CallStep::Value(coroutine) => {
+                operand_stack.push(coroutine);
+            }
+            CallStep::Enter(mut next) => {
+                next.stack_base = operand_stack.len();
+                if let Err(e) = execution.limits.push_frame(
+                    frames,
+                    next,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                ) {
+                    let e = locate_at_top(frames, root_chunks, e);
+                    match unwind_frames(
+                        e,
+                        frames,
+                        root_chunks,
+                        operand_stack,
+                        execution,
+                        #[cfg(feature = "debugger")]
+                        debug,
+                    ) {
+                        Ok(()) => continue 'frames,
+                        Err((e, locals)) => break 'frames DriveOutcome::Failed(e, locals),
                     }
                 }
             }
@@ -849,10 +855,7 @@ fn unwind_frames(
     execution: &mut ExecutionContext<'_>,
     #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
 ) -> Result<(), (VmError, Locals)> {
-    let capture_trace = execution.capture_stack_trace
-        && !frames
-            .iter()
-            .any(|frame| matches!(&frame.on_complete, Continuation::TryBody(_)));
+    let capture_trace = execution.capture_stack_trace && !frames.iter().any(|frame| frame.on_complete.is_try_body());
     let mut stack_trace = capture_trace.then(|| capture_stack_trace(frames, root_chunks));
     loop {
         if frames.len() == 1 {
@@ -875,13 +878,15 @@ fn unwind_frames(
         // in-progress array/dict literal), matching the truncation `run_frame_slice` does
         // on success so a catch frame, or the next frame up the chain, starts clean.
         operand_stack.truncate(failed_stack_base);
-        match continuation {
-            Continuation::Push => continue,
-            Continuation::ResumeBindParams(pending) => {
-                execution.limits.recycle_pending_locals(*pending);
+        let Continuation::Deferred(deferred) = continuation else {
+            continue;
+        };
+        match *deferred {
+            DeferredContinuation::ResumeBindParams(pending) => {
+                execution.limits.recycle_pending_locals(pending);
                 continue;
             }
-            Continuation::TryBody(body) => {
+            DeferredContinuation::TryBody(body) => {
                 let TryBody {
                     catch_closure,
                     has_binder,
@@ -889,7 +894,7 @@ fn unwind_frames(
                     break_completed_iteration_slot,
                     break_offset,
                     continue_offset,
-                } = *body;
+                } = body;
                 if let Some(value) = flow_break_value(&e) {
                     let (Some(acc_slot), Some(offset)) = (break_acc_slot, break_offset) else {
                         continue;
@@ -969,6 +974,9 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
         .collect()
 }
 
+// Keep the opcode loop separate from the trampoline's continuation and unwinding paths.
+// Inlining it into `drive_frames` also merges their native stack frames and code footprint.
+#[inline(never)]
 fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     frame: &mut Frame,
     root_chunks: &Shared<Vec<Chunk>>,
@@ -2123,14 +2131,14 @@ fn try_catch_from_stack(
         try_locals,
         try_closure.upvalues.clone(),
         !try_chunk.captures_local_slots(),
-        Continuation::TryBody(Box::new(TryBody {
+        Continuation::Deferred(Box::new(DeferredContinuation::TryBody(TryBody {
             catch_closure,
             has_binder: info.has_binder,
             break_acc_slot: info.break_acc_slot,
             break_completed_iteration_slot: info.break_completed_iteration_slot,
             break_offset: info.break_offset,
             continue_offset: info.continue_offset,
-        })),
+        }))),
     ))
 }
 

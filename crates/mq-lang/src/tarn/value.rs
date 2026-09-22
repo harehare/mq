@@ -235,16 +235,18 @@ pub(crate) fn new_cell(value: StackValue) -> Cell {
 ///
 /// A capturing frame only allocates shared cells for slots a nested closure actually captures;
 /// its other slots retain the direct-value representation used by non-capturing frames.
+/// Slot counts are fixed by the compiler, so boxed slices avoid carrying unused capacity in
+/// every frame without adding an allocation or another indirection to local accesses.
 pub(crate) enum Locals {
     #[cfg(not(feature = "sync"))]
     /// A contiguous, exclusively owned local region for a non-capturing frame.
-    Flat(Vec<StackValue>),
+    Flat(Box<[StackValue]>),
     #[cfg(not(feature = "sync"))]
     /// Direct slots plus cells at the sparse set of captured slot positions.
     ///
     /// Boxed so this rarer variant doesn't widen `Locals`, and thus every pushed `Frame`.
     Hybrid(Box<HybridLocals>),
-    Boxed(Vec<Cell>),
+    Boxed(Box<[Cell]>),
 }
 
 #[cfg(not(feature = "sync"))]

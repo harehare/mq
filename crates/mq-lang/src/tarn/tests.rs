@@ -1487,6 +1487,18 @@ fn error_in_a_default_parameter_is_caught_by_the_callers_try() {
 }
 
 #[rstest]
+#[case::successive_defaults_call_a_helper(
+    "def identity(x): x; | def f(a = identity(20), b = identity(a + 2)): a + b; | f()"
+)]
+#[case::catch_returns_to_default_binding("def safe(): try: 1 / 0 catch: 40; | def f(a = safe(), b = a + 2): b; | f()")]
+#[case::default_and_tail_call_return_through_try(
+    "def identity(x): x; | def f(a = identity(42)): identity(a); | try: f() catch: 0;"
+)]
+fn nested_default_and_try_continuations_resume_the_correct_frame(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::Number(42.into()));
+}
+
+#[rstest]
 #[case::array_merges_multiple_sources("len([0, ...[1, 2], ...[3, 4], 5])", 6.0)]
 #[case::array_none_is_an_empty_source("len([...None, 1])", 1.0)]
 #[case::dict_later_entries_override_spread_entries(

@@ -66,17 +66,30 @@ impl Frame {
 
 /// What to do with a frame's outcome, replacing a recursive call's implicit return.
 ///
-/// `TryBody`/`ResumeBindParams` are boxed so the (overwhelmingly common) `Push` case keeps
-/// `Continuation`, and thus `Frame`, which every call pushes and pops, pointer-sized.
+/// Only exceptional return paths need a payload. Keeping their discriminant inside the box
+/// makes this enum pointer-sized, and ordinary calls still require no allocation.
 pub(super) enum Continuation {
     /// Normal call return / `catch` body: push the value on success; propagate on error.
     Push,
+    /// A return that needs additional state for exception handling or parameter binding.
+    Deferred(Box<DeferredContinuation>),
+}
+
+/// State needed only while executing a `try` body or a default-parameter expression.
+pub(super) enum DeferredContinuation {
     /// `try` body: success behaves like `Push`. `break`/`continue` rewrites the parent's
     /// accumulator/`ip` directly; any other error spawns a `catch` frame.
-    TryBody(Box<TryBody>),
+    TryBody(TryBody),
     /// Default-parameter value expression: store the result and resume binding on success;
     /// recycle the unbound callee's locals and propagate on error.
-    ResumeBindParams(Box<PendingCall>),
+    ResumeBindParams(PendingCall),
+}
+
+impl Continuation {
+    /// Returns whether this continuation can catch an error while unwinding.
+    pub(super) fn is_try_body(&self) -> bool {
+        matches!(self, Self::Deferred(deferred) if matches!(**deferred, DeferredContinuation::TryBody(_)))
+    }
 }
 
 pub(super) struct TryBody {
@@ -409,19 +422,24 @@ mod size_tests {
     use super::*;
 
     #[test]
-    fn locals_stays_within_one_vec_plus_tag() {
+    fn locals_stays_within_one_slice_plus_tag() {
         assert!(
-            std::mem::size_of::<Locals>() <= 32,
+            std::mem::size_of::<Locals>() <= 3 * std::mem::size_of::<usize>(),
             "Locals grew to {} bytes; box rare variants instead of widening it",
             std::mem::size_of::<Locals>()
         );
+    }
+
+    #[test]
+    fn continuation_stays_pointer_sized() {
+        assert_eq!(std::mem::size_of::<Continuation>(), std::mem::size_of::<usize>());
     }
 
     #[cfg(not(feature = "debugger"))]
     #[test]
     fn frame_stays_compact() {
         assert!(
-            std::mem::size_of::<Frame>() <= 88,
+            std::mem::size_of::<Frame>() <= 72,
             "Frame grew to {} bytes; every call pushes and pops one",
             std::mem::size_of::<Frame>()
         );
