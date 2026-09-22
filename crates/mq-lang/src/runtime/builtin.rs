@@ -611,6 +611,37 @@ fn base64urld_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEn
     }
 }
 
+#[mq_macros::mq_fn(name = "base64d_bytes", params = Fixed(1))]
+fn base64d_bytes_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::base64d_bytes(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| convert::base64d_bytes(md.value().as_str()))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("base64d_bytes should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "base64urld_bytes", params = Fixed(1))]
+fn base64urld_bytes_impl(
+    ident: &Ident,
+    _: &RuntimeValue,
+    mut args: Args,
+    _: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => convert::base64urld_bytes(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| convert::base64urld_bytes(md.value().as_str()))
+            .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("base64urld_bytes should always receive exactly one argument"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "md5", params = Fixed(1))]
 fn md5_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5591,6 +5622,8 @@ mq_macros::builtin_dispatch! {
     BASE64D,
     BASE64URL,
     BASE64URLD,
+    BASE64D_BYTES,
+    BASE64URLD_BYTES,
     MD5,
     SHA256,
     SHA512,
@@ -7179,6 +7212,28 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
                 code: r#"base64urld(base64url("hi"))"#,
                 expected: r#"hi"#,
             }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("base64d_bytes"),
+        BuiltinFunctionDoc {
+            description: "Decodes the given base64 string to raw bytes. Unlike `base64d`, this does not assume the decoded data is UTF-8 text, so arbitrary binary data round-trips losslessly.",
+            params: &["input"],
+            param_types: &["string"],
+            returns: "bytes",
+            examples: &[],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("base64urld_bytes"),
+        BuiltinFunctionDoc {
+            description: "Decodes the given URL-safe base64 string to raw bytes. Unlike `base64urld`, this does not assume the decoded data is UTF-8 text, so arbitrary binary data round-trips losslessly.",
+            params: &["input"],
+            param_types: &["string"],
+            returns: "bytes",
+            examples: &[],
             capability: None,
         },
     );
