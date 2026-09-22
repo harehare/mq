@@ -1778,3 +1778,33 @@ end
 def test_redact_symbol_and_string_keys_both_match():
   assert_eq(redact({a: 1, "b": 2}, [{type: "key", pattern: "a"}]), {"a": "[REDACTED]", "b": 2})
 end
+
+def test_redact_value_rule_masks_markdown_text_leaf():
+  let node = do "The api key is sk-abc123." | to_markdown() | first();
+  | let result = redact(node, [{type: "value", pattern: "sk-[a-z0-9]+", replacement: "[KEY]"}])
+  | assert_eq(to_text(result), "The api key is [KEY].")
+end
+
+def test_redact_value_rule_masks_markdown_code_inline_leaf():
+  let node = do "`sk-abc123`" | to_markdown() | first();
+  | let result = redact(node, [{type: "value", pattern: "sk-[a-z0-9]+", replacement: "[KEY]"}])
+  | assert_eq(to_text(result), "[KEY]")
+end
+
+def test_redact_value_rule_masks_markdown_yaml_frontmatter_leaf():
+  let node = do "---\napi_key: sk-abc123\nname: demo\n---\n" | to_markdown() | first();
+  | let result = redact(node, [{type: "value", pattern: "sk-[a-z0-9]+", replacement: "[KEY]"}])
+  | assert_eq(to_text(result), "api_key: [KEY]\nname: demo")
+end
+
+def test_redact_value_rule_recurses_into_markdown_heading_children():
+  let node = do "# api key sk-abc123" | to_markdown() | first();
+  | let result = redact(node, [{type: "value", pattern: "sk-[a-z0-9]+", replacement: "[KEY]"}])
+  | assert_eq(to_html(result), "<h1>api key [KEY]</h1>")
+end
+
+def test_redact_key_rule_does_not_apply_to_markdown_nodes():
+  let node = do "sk-abc123" | to_markdown() | first();
+  | let result = redact(node, [{type: "key", pattern: "sk-[a-z0-9]+"}])
+  | assert_eq(to_text(result), "sk-abc123")
+end

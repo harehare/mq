@@ -3125,7 +3125,7 @@ def walk(v, f):
   end
 end
 
-def _redact_ci(s, case_insensitive): if (case_insensitive): downcase(to_string(s)) else: to_string(s);
+def _redact_ci(s, case_insensitive): if (case_insensitive): downcase(s) else: s;
 
 def _redact_rule_matches(subject, rule):
   test(_redact_ci(subject, get_or(rule, :case_insensitive, true)), rule[:pattern])
@@ -3135,7 +3135,7 @@ def _redact_key_rule(key, rules):
   first(filter(rules, fn(r): get_or(r, :type, "value") == "key" && _redact_rule_matches(to_string(key), r);))
 end
 
-def _redact_string(s, rules):
+def _redact_text(s, rules):
   fold(filter(rules, fn(r): get_or(r, :type, "value") == "value";), s, fn(acc, r):
     if (_redact_rule_matches(acc, r)):
       gsub(acc, r[:pattern], get_or(r, :replacement, "[REDACTED]"))
@@ -3144,15 +3144,9 @@ def _redact_string(s, rules):
   end)
 end
 
-# Recursively masks matching values in a dict/array/string, given `rules`: an array of
-# `{type: "key", pattern, replacement = "[REDACTED]", case_insensitive = true}` (masks a dict
-# value outright when its key matches `pattern`, without looking at the value) or
-# `{type: "value", pattern, replacement = "[REDACTED]", case_insensitive = true}` (replaces
-# matches of `pattern` inside string values via `gsub`, leaving the rest of the string intact).
-# `pattern` is matched case-sensitively against the (optionally downcased) subject — mq's regex
-# engine has no `(?i)` support, so write `pattern` in lowercase for a case-insensitive rule.
-# Numbers, booleans and `None` pass through unchanged; markdown nodes are walked but their own
-# text is not redacted (redact `to_text(node)` separately if needed).
+# Recursively masks matching values in a dict/array/string/markdown node, given `rules`: an array of `{type: "key", pattern, replacement = "[REDACTED]", case_insensitive = true}` (masks a dict value outright when its key matches `pattern`, without looking at the value) or `{type: "value", pattern, replacement = "[REDACTED]", case_insensitive = true}` (replaces matches of `pattern` inside string or markdown node text via `gsub`, leaving the rest of the text intact).
+# `pattern` is matched case-sensitively against the (optionally downcased) subject. mq's regex engine has no `(?i)` support, so write `pattern` in lowercase for a case-insensitive rule.
+# Numbers, booleans and `None` pass through unchanged. A markdown node with children (e.g. a heading, list, or link) is walked by redacting each child; a leaf node (e.g. text, code, code_inline, html, yaml, toml, image, definition) has `value`-type rules applied directly to its own text, so `key`-type rules only ever apply to dict keys, never to markdown structure.
 #
 # Example:
 # ```
@@ -3175,12 +3169,15 @@ def redact(value, rules):
     | :array:
       map(value, fn(x): redact(x, rules);)
     | :markdown:
-      do
-        let new_children = map(value.children, fn(child): redact(child, rules);)
-        | set_children(value, new_children)
-      end
+      if (is_empty(value.children)):
+        _redact_text(value, rules)
+      else:
+        do
+          let new_children = map(value.children, fn(child): redact(child, rules);)
+          | set_children(value, new_children)
+        end
     | _:
-      if (is_string(value)): _redact_string(value, rules) else: value
+      if (is_string(value)): _redact_text(value, rules) else: value
   end
 end
 

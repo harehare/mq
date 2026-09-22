@@ -551,6 +551,22 @@ fn cookbook_redact_secrets_from_json() {
 }
 
 #[test]
+fn cookbook_redact_secrets_from_markdown() {
+    let path = write_temp(
+        "cookbook_redact_secrets_from_markdown.md",
+        "---\napi_key: sk-abc123def456\n---\n\nRun with `sk-abc123def456` set as the key.\n",
+    );
+    let out = run(&[
+        r#"redact(., [{type: "value", pattern: "sk-[a-z0-9]+"}])"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        out.trim(),
+        "---\napi_key: [REDACTED]\n---\n\nRun with `[REDACTED]` set as the key."
+    );
+}
+
+#[test]
 fn cookbook_flatten_json_with_gron() {
     let path = write_temp(
         "cookbook_flatten_json_with_gron.json",
