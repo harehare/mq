@@ -276,6 +276,81 @@ def test_section_tree_leaf_has_no_subsections():
   | assert_eq(section::subsections(roots[1]), [])
 end
 
+def test_section_tree_path():
+  let roots = section::tree(nested_sections)
+  | let a1a = section::tree::at(roots, [0, 0, 0])
+  | assert_eq(section::tree::path(roots[0]), [0])
+  | assert_eq(section::tree::path(roots[1]), [1])
+  | assert_eq(section::tree::path(a1a), [0, 0, 0])
+  | assert_eq(section::title(a1a), "A1a")
+end
+
+def test_section_path_of_section_not_built_by_tree():
+  assert_eq(section::tree::path(first(section::sections(nested_sections))), [])
+  | assert_eq(section::tree::path("not a section"), [])
+end
+
+def test_section_at_missing():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::tree::at(roots, []), None)
+  | assert_eq(section::tree::at(roots, [5]), None)
+  | assert_eq(section::tree::at(roots, [0, 9]), None)
+end
+
+def test_section_ancestors():
+  let roots = section::tree(nested_sections)
+  | let a1a = section::tree::at(roots, [0, 0, 0])
+  | assert_eq(section::titles(section::tree::ancestors(roots, a1a)), ["A", "A1"])
+  | assert_eq(section::titles(section::tree::ancestors(roots, section::tree::at(roots, [0, 1]))), ["A"])
+  | assert_eq(section::tree::ancestors(roots, roots[0]), [])
+end
+
+def test_section_parent():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::title(section::tree::parent(roots, section::tree::at(roots, [0, 0, 0]))), "A1")
+  | assert_eq(section::title(section::tree::parent(roots, section::tree::at(roots, [0, 1]))), "A")
+  | assert_eq(section::tree::parent(roots, roots[0]), None)
+end
+
+def test_section_siblings():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::titles(section::tree::siblings(roots, section::tree::at(roots, [0, 0]))), ["A2"])
+  | assert_eq(section::titles(section::tree::siblings(roots, roots[0])), ["B"])
+  | assert_eq(section::tree::siblings(roots, section::tree::at(roots, [0, 0, 0])), [])
+end
+
+def test_section_prev_and_next_sibling():
+  let roots = section::tree(nested_sections)
+  | let a1 = section::tree::at(roots, [0, 0])
+  | let a2 = section::tree::at(roots, [0, 1])
+  | assert_eq(section::title(section::tree::next_sibling(roots, a1)), "A2")
+  | assert_eq(section::title(section::tree::prev_sibling(roots, a2)), "A1")
+  | assert_eq(section::tree::prev_sibling(roots, a1), None)
+  | assert_eq(section::tree::next_sibling(roots, a2), None)
+  | assert_eq(section::title(section::tree::next_sibling(roots, roots[0])), "B")
+end
+
+def test_section_breadcrumb():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::tree::breadcrumb(roots, section::tree::at(roots, [0, 0, 0])), ["A", "A1", "A1a"])
+  | assert_eq(section::tree::breadcrumb(roots, roots[1]), ["B"])
+end
+
+def test_section_flatten_is_document_order():
+  let roots = section::tree(nested_sections)
+  | assert_eq(section::titles(section::tree::flatten(roots)), ["A", "A1", "A1a", "A2", "B"])
+end
+
+def test_section_flatten_empty():
+  assert_eq(section::tree::flatten([]), [])
+end
+
+def test_section_flatten_then_collect_restores_document():
+  let roots = section::tree(nested_sections)
+  | let restored = section::collect(section::tree::flatten(roots))
+  | assert_eq(map(restored, to_text), map(nested_sections, to_text))
+end
+
 def test_section_subsections_non_section():
   assert_eq(section::subsections("not a section"), [])
 end

@@ -111,7 +111,13 @@ test-doc:
 test-all-features:
     cargo nextest run --workspace --all-features
 
-test:
+# Workspace dependencies enable `debugger`, which excludes the production bytecode cache.
+# Test mq-lang separately to cover both Rc and Arc cache implementations.
+test-lang-cached:
+    cargo nextest run -p mq-lang --lib
+    cargo nextest run -p mq-lang --lib --features sync
+
+test: test-lang-cached
     cargo nextest run --workspace
 
 # Run formatting, linting and all tests

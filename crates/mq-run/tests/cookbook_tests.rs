@@ -507,6 +507,30 @@ fn cookbook_find_section_containing_a_node() {
 }
 
 #[test]
+fn cookbook_navigate_the_section_tree() {
+    let path = write_temp(
+        "cookbook_navigate_the_section_tree.md",
+        "# Guide\n\nIntro.\n\n## Install\n\n### macOS\n\nbrew.\n\n### Linux\n\napt.\n\n## Usage\n\nRun it.\n",
+    );
+    let out = run(&[
+        "-A",
+        r#"let t = section::tree(self) | map(section::tree::flatten(t), fn(s): join(section::tree::breadcrumb(t, s), " > ");)"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        out.trim(),
+        "Guide\nGuide > Install\nGuide > Install > macOS\nGuide > Install > Linux\nGuide > Usage"
+    );
+
+    let neighbours = run(&[
+        "-A",
+        r#"let t = section::tree(self) | let s = section::tree::at(t, [0, 0, 1]) | section::title(section::tree::prev_sibling(t, s))"#,
+        path.to_str().unwrap(),
+    ]);
+    assert_eq!(neighbours.trim(), "macOS");
+}
+
+#[test]
 fn cookbook_flatten_json_with_gron() {
     let path = write_temp(
         "cookbook_flatten_json_with_gron.json",

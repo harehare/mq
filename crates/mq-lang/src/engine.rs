@@ -710,6 +710,231 @@ mod tests {
     use std::io::Write;
     use std::{fs::File, path::PathBuf};
 
+    mod nodes {
+        //! Regression coverage for the per-input/aggregate boundary and reused programs.
+        use crate::{DefaultEngine, RuntimeValue};
+        use rstest::rstest;
+
+        fn numbers(values: &[i64]) -> Vec<RuntimeValue> {
+            values.iter().map(|&value| RuntimeValue::Number(value.into())).collect()
+        }
+
+        #[rstest]
+        #[case::identity("nodes", vec![2, 5], vec![2, 5])]
+        #[case::empty("nodes | len()", vec![], vec![0])]
+        #[case::singleton(". * 2 | nodes | map(fn(x): x + 1;)", vec![3], vec![7])]
+        #[case::both_sides(". * 2 | nodes | map(fn(x): x + 1;)", vec![2, 5], vec![5, 11])]
+        #[case::def_before("def twice(x): x * 2; | twice(.) | nodes | map(twice)", vec![2, 5], vec![8, 20])]
+        #[case::def_after(". * 2 | nodes | def twice(x): x * 2; | map(twice)", vec![2, 5], vec![8, 20])]
+        #[case::module_before("module m: def twice(x): x * 2; end | m::twice(.) | nodes | map(m::twice)", vec![2, 5], vec![8, 20])]
+        #[case::declaration_empty("def twice(x): x * 2; | nodes | twice(len())", vec![], vec![0])]
+        #[case::last_let("let x = . | nodes | x", vec![2, 5], vec![5])]
+        #[case::last_as(". as x | nodes | x", vec![2, 5], vec![5])]
+        #[case::captured_def("let x = . | def get(): x; | nodes | get()", vec![2, 5], vec![5])]
+        #[case::captured_closure("let x = . | let f = fn(): x; | nodes | f()", vec![2, 5], vec![5])]
+        #[case::destructure("let [a, b] = [., . + 1] | nodes | a + b", vec![2, 5], vec![11])]
+        #[case::mutable("var x = . | nodes | x += 1 | x", vec![2, 5], vec![6])]
+        #[case::shadowing("let x = 100 | var x = . | nodes | x += 1 | x", vec![2, 5], vec![6])]
+        #[case::import("import \"json\" | nodes | json::json_parse(\"42\")", vec![2, 5], vec![42])]
+        #[case::include("include \"json\" | nodes | json_parse(\"42\")", vec![2, 5], vec![42])]
+        fn nodes_eval_and_compiled_agree(#[case] query: &str, #[case] input: Vec<i64>, #[case] expected: Vec<i64>) {
+            let mut engine = DefaultEngine::default();
+            let actual = engine.eval(query, numbers(&input).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&expected), "eval: {query}");
+
+            let mut engine = DefaultEngine::default();
+            let compiled = engine.compile(query).unwrap();
+            for _ in 0..2 {
+                let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&expected), "eval_compiled: {query}");
+            }
+        }
+
+        #[rstest]
+        #[case::aggregate("nodes | map(fn(x): x * 2;)")]
+        #[case::binding("let x = . * 2 | nodes | x")]
+        fn nodes_repeated_evaluation_uses_current_inputs(#[case] query: &str) {
+            let mut engine = DefaultEngine::default();
+            let compiled = engine.compile(query).unwrap();
+            for input in [vec![1, 2, 3], vec![9], vec![4, 5], vec![1, 2, 3]] {
+                let expected = if query.starts_with("let") {
+                    vec![input.last().unwrap() * 2]
+                } else {
+                    input.iter().map(|x| x * 2).collect()
+                };
+                let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&expected));
+            }
+        }
+
+        #[rstest]
+        // Streaming Markdown keeps unmatched nodes as fragments; selecting from the
+        // collected array returns None for non-headings, which compact removes.
+        #[case::selector_before(".h | nodes | compact() | len()", [3, 0, 1, 1])]
+        #[case::selector_after("nodes | .h | compact() | len()", [2, 0, 0, 1])]
+        fn nodes_markdown_selectors_survive_repeated_evaluation(#[case] query: &str, #[case] counts: [i64; 4]) {
+            let mut engine = DefaultEngine::default();
+            let compiled = engine.compile(query).unwrap();
+            for (markdown, count) in ["# A\n\nbody\n\n## B", "", "plain text", "# C"].into_iter().zip(counts) {
+                let input = crate::parse_markdown_input(markdown).unwrap();
+                let actual = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&[count]), "{query}: {markdown}");
+            }
+        }
+
+        #[rstest]
+        #[case::loaded("nodes | tree(.) | tree::flatten(.) | len()", true)]
+        #[case::included("include \"section\" | nodes | tree(.) | tree::flatten(.) | len()", false)]
+        #[case::imported(
+            "import \"section\" | nodes | section::tree(.) | section::tree::flatten(.) | len()",
+            false
+        )]
+        fn nodes_section_tree_declarations_survive_repeated_evaluation(#[case] query: &str, #[case] load_module: bool) {
+            let mut engine = DefaultEngine::default();
+            if load_module {
+                engine.load_module("section").unwrap();
+            }
+            let compiled = engine.compile(query).unwrap();
+            for (markdown, count) in [("# A\n\n## B\n\n### C\n\n# D", 4), ("", 0), ("# E", 1)] {
+                let input = crate::parse_markdown_input(markdown).unwrap();
+                let actual = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&[count]), "{query}: {markdown}");
+                #[cfg(not(feature = "debugger"))]
+                assert!(
+                    !compiled
+                        .cached_vm_program()
+                        .flatten()
+                        .unwrap()
+                        .per_input_program_makes_closures()
+                );
+            }
+        }
+
+        #[test]
+        fn nodes_repeated_evaluation_observes_updated_globals_in_both_phases() {
+            let mut engine = DefaultEngine::default();
+            engine.define_value("offset", RuntimeValue::Number(1.into())).unwrap();
+            let compiled = engine.compile(". + offset | nodes | map(fn(x): x + offset;)").unwrap();
+            for offset in [1, 10, -2] {
+                engine
+                    .define_value("offset", RuntimeValue::Number(offset.into()))
+                    .unwrap();
+                let actual = engine.eval_compiled(&compiled, numbers(&[2, 5]).into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&[2 + offset * 2, 5 + offset * 2]));
+            }
+        }
+
+        #[cfg(not(feature = "debugger"))]
+        #[rstest]
+        #[case::declarations_only("module m: let value = initialize() end | nodes | m::value")]
+        #[case::mixed("module m: let value = initialize() end | . + m::value | nodes | m::value")]
+        fn nodes_cached_module_initializer_is_not_repeated(#[case] query: &str) {
+            use std::sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            };
+            let count = Arc::new(AtomicUsize::new(0));
+            let captured = count.clone();
+            let mut engine = DefaultEngine::default();
+            engine.register_fn("initialize", move |_args: &[RuntimeValue]| {
+                captured.fetch_add(1, Ordering::SeqCst);
+                Ok(RuntimeValue::Number(42.into()))
+            });
+            let compiled = engine.compile(query).unwrap();
+            for input in [vec![1, 2, 3], vec![], vec![9]] {
+                let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&[42]));
+                assert_eq!(
+                    count.load(Ordering::SeqCst),
+                    1,
+                    "initializer is baked into cached bytecode"
+                );
+            }
+        }
+
+        #[test]
+        fn nodes_runs_each_phase_exactly_once_and_reuses_cache() {
+            use std::sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            };
+            let mut engine = DefaultEngine::default();
+            let before = Arc::new(AtomicUsize::new(0));
+            let after = Arc::new(AtomicUsize::new(0));
+            for (name, count) in [("before", before.clone()), ("after", after.clone())] {
+                engine.register_fn(name, move |args: &[RuntimeValue]| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    Ok(args[0].clone())
+                });
+            }
+            let compiled = engine
+                .compile("def f(x): before(x); | f(.) | nodes | after(.)")
+                .unwrap();
+            assert_eq!(before.load(Ordering::SeqCst), 0, "compile must not evaluate inputs");
+            assert_eq!(after.load(Ordering::SeqCst), 0);
+            #[cfg(not(feature = "debugger"))]
+            let mut previous_cache = None;
+            let mut total = 0;
+            for (evaluation, size) in [3, 0, 1, 128, 0].into_iter().enumerate() {
+                let input = numbers(&(0..size).collect::<Vec<_>>());
+                let actual = engine.eval_compiled(&compiled, input.clone().into_iter()).unwrap();
+                assert_eq!(actual.values(), &input);
+                total += size as usize;
+                assert_eq!(before.load(Ordering::SeqCst), total);
+                assert_eq!(after.load(Ordering::SeqCst), evaluation + 1);
+                #[cfg(not(feature = "debugger"))]
+                {
+                    let cached = compiled.cached_vm_program().flatten().unwrap();
+                    assert!(cached.has_available_execution_pools());
+                    if let Some(previous) = &previous_cache {
+                        assert!(crate::Shared::ptr_eq(previous, &cached), "must reuse bytecode");
+                    }
+                    previous_cache = Some(cached);
+                }
+            }
+        }
+
+        #[cfg(not(feature = "debugger"))]
+        #[rstest]
+        #[case::def("def f(x): x + 1; | nodes | map(f)")]
+        #[case::module("module m: def f(x): x + 1; end | nodes | map(m::f)")]
+        #[case::include("include \"json\" | nodes | len()")]
+        #[case::import("import \"json\" | nodes | len()")]
+        fn nodes_declarations_do_not_allocate_closures_per_input(#[case] query: &str) {
+            let mut engine = DefaultEngine::default();
+            let compiled = engine.compile(query).unwrap();
+            for input in [vec![], vec![1], vec![1, 2, 3]] {
+                engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+                let cached = compiled.cached_vm_program().flatten().unwrap();
+                assert!(!cached.per_input_program_makes_closures(), "{query}");
+            }
+        }
+
+        #[rstest]
+        #[case::before("10 / . | nodes")]
+        #[case::after("nodes | map(fn(x): 10 / x;)")]
+        fn nodes_recovers_after_runtime_error(#[case] query: &str) {
+            let mut engine = DefaultEngine::default();
+            let compiled = engine.compile(query).unwrap();
+            for _ in 0..2 {
+                let error = engine
+                    .eval_compiled(&compiled, numbers(&[2, 0]).into_iter())
+                    .unwrap_err();
+                assert_eq!(error.source_code.inner(), query);
+                #[cfg(not(feature = "debugger"))]
+                assert!(
+                    compiled
+                        .cached_vm_program()
+                        .flatten()
+                        .unwrap()
+                        .has_available_execution_pools()
+                );
+                let actual = engine.eval_compiled(&compiled, numbers(&[5, 2]).into_iter()).unwrap();
+                assert_eq!(actual.values(), &numbers(&[2, 5]));
+            }
+        }
+    }
+
     fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
         let temp_dir = std::env::temp_dir();
         let temp_file_path = temp_dir.join(name);
@@ -1656,6 +1881,23 @@ mod tests {
 
         let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(second.values(), first.values());
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[test]
+    fn test_eval_compiled_vm_nodes_does_not_reinstantiate_module_defs_per_input() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        engine.load_module("section").unwrap();
+        let compiled = engine.compile("nodes | len()").unwrap();
+        let inputs = || (0..3).map(|i| RuntimeValue::Number(f64::from(i).into()));
+
+        let result = engine.eval_compiled(&compiled, inputs()).unwrap();
+        assert_eq!(result.values(), &[RuntimeValue::Number(3.0.into())]);
+
+        let cached = compiled.cached_vm_program().flatten().unwrap();
+        assert!(!cached.per_input_program_makes_closures());
     }
 
     #[cfg(not(feature = "debugger"))]
