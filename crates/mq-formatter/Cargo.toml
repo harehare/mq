@@ -14,7 +14,7 @@ version.workspace = true
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
 glob = "0.3.3"
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true, features = ["cst"]}
 
 [dev-dependencies]

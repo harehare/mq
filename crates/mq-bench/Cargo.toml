@@ -14,7 +14,7 @@ version.workspace = true
 [dependencies]
 clap = {workspace = true, features = ["derive"]}
 glob = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true, features = ["cst", "file-io", "mock-io"]}
 rustc-hash = {workspace = true}
 serde = {workspace = true, features = ["derive"]}

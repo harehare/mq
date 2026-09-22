@@ -14,7 +14,7 @@ version.workspace = true
 [dependencies]
 crossbeam-channel = {workspace = true}
 dap = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true, features = ["debugger"]}
 serde = {workspace = true}
 serde_json = {workspace = true}
