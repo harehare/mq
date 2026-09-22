@@ -46,6 +46,7 @@
 
 pub(crate) mod atomic_output;
 pub mod cli;
+mod diff;
 pub(crate) mod grep;
 pub(crate) mod output;
 

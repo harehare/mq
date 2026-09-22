@@ -19,6 +19,7 @@ use crate::DictMap;
 use crate::arena::Arena;
 use crate::ast::TokenId;
 use crate::ast::constants;
+use crate::diff::TextDiff;
 use crate::error::runtime::RuntimeError;
 use crate::ident::all_symbols;
 #[cfg(feature = "http")]
@@ -38,7 +39,7 @@ use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
 use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
-use similar::{ChangeTag, TextDiff};
+use similar::ChangeTag;
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::borrow::Cow;

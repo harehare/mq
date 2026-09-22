@@ -44,6 +44,7 @@ mod ast;
 #[cfg(feature = "cst")]
 mod cst;
 pub mod diagnostic;
+pub mod diff;
 mod engine;
 mod error;
 mod ident;
