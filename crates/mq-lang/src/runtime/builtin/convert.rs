@@ -427,6 +427,25 @@ pub(super) fn base64urld(input: &str) -> Result<RuntimeValue, Error> {
         .map(|v| RuntimeValue::String(Shared::new(String::from_utf8_lossy(&v).to_string())))
 }
 
+/// Decode from base64 to raw bytes, losslessly (unlike `base64d`, which assumes UTF-8 text and
+/// replaces invalid sequences).
+#[inline(always)]
+pub(super) fn base64d_bytes(input: &str) -> Result<RuntimeValue, Error> {
+    BASE64_STANDARD
+        .decode(input)
+        .map_err(Error::InvalidBase64String)
+        .map(|v| RuntimeValue::Bytes(Shared::new(v)))
+}
+
+/// Decode from base64url to raw bytes, losslessly (unlike `base64urld`).
+#[inline(always)]
+pub(super) fn base64urld_bytes(input: &str) -> Result<RuntimeValue, Error> {
+    BASE64_URL_SAFE_NO_PAD
+        .decode(input)
+        .map_err(Error::InvalidBase64String)
+        .map(|v| RuntimeValue::Bytes(Shared::new(v)))
+}
+
 /// URL encode
 #[inline(always)]
 pub(super) fn url_encode(input: &str) -> Result<RuntimeValue, Error> {

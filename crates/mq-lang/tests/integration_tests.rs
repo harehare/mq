@@ -3006,6 +3006,22 @@ fn io_reader_is_nameable_from_external_crates() {
 #[case::base64url_roundtrip(r#"base64urld(base64url("hello world"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("hello world".to_string()))].into()))]
 // base64 with bytes
 #[case::base64_bytes(r#"base64(b"\x48\x69") | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
+// base64d_bytes/base64urld_bytes decode to raw bytes, losslessly (unlike base64d/base64urld,
+// which assume the decoded data is UTF-8 text)
+#[case::base64d_bytes(r#"base64d_bytes("aGVsbG8=")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into()))]
+#[case::base64urld_bytes(r#"base64urld_bytes("aGVsbG8")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Bytes(Shared::new(b"hello".to_vec()))].into()))]
+// Non-UTF-8 bytes, decoded losslessly. `base64d`/`base64urld` would mangle these via
+// `String::from_utf8_lossy`; `//4AAQ==` and `__4AAQ` both decode to [0xff, 0xfe, 0x00, 0x01].
+#[case::base64d_bytes_non_utf8(
+    r#"base64d_bytes("//4AAQ==")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff, 0xfe, 0x00, 0x01]))].into())
+)]
+#[case::base64urld_bytes_non_utf8(
+    r#"base64urld_bytes("__4AAQ")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::Bytes(Shared::new(vec![0xff, 0xfe, 0x00, 0x01]))].into())
+)]
 // md5 hash
 #[case::md5_len(r#"md5("hello") | len"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(32.into())].into()))]
 #[case::md5_type(r#"type(md5("hello"))"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
@@ -3468,6 +3484,10 @@ fn io_reader_is_nameable_from_external_crates() {
 #[case::base64url_markdown(r#"to_h("test", 1) | base64url | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // base64urld: with Markdown input (decode base64url-encoded heading text)
 #[case::base64urld_markdown(r#"to_h("dGVzdA", 1) | base64urld | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+// base64d_bytes/base64urld_bytes: with Markdown input, returns raw bytes (not re-wrapped as a
+// markdown node — unlike base64d/base64urld, bytes can't be markdown text content)
+#[case::base64d_bytes_markdown(r#"to_h("dGVzdA==", 1) | base64d_bytes | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
+#[case::base64urld_bytes_markdown(r#"to_h("dGVzdA", 1) | base64urld_bytes | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("bytes".to_string()))].into()))]
 // md5/sha256/sha512: with Bytes input (from_hex creates bytes)
 #[case::md5_bytes(r#"md5(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
 #[case::sha256_bytes(r#"sha256(from_hex("68656c6c6f")) | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("string".to_string()))].into()))]
@@ -3724,6 +3744,9 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::hexdump_non_bytes("hexdump(\"string\")", vec![RuntimeValue::None],)]
 // base64d invalid input
 #[case::base64d_invalid(r#"base64d("not-valid-base64!!!")"#, vec![RuntimeValue::None],)]
+// base64d_bytes/base64urld_bytes invalid input
+#[case::base64d_bytes_invalid(r#"base64d_bytes("not-valid-base64!!!")"#, vec![RuntimeValue::None],)]
+#[case::base64urld_bytes_invalid(r#"base64urld_bytes("not-valid-base64!!!")"#, vec![RuntimeValue::None],)]
 // to_bytes with out-of-range element
 #[case::to_bytes_invalid_element("to_bytes([256])", vec![RuntimeValue::None],)]
 // user-defined error
