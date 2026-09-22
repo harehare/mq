@@ -2176,6 +2176,17 @@ fn io_reader_is_nameable_from_external_crates() {
 #[case::is_regex_match_markdown(r#"is_regex_match(., "hello")"#,
     vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { value: "hello world".to_string(), position: None }))],
     Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Text(mq_markdown::Text { position: None, value: "true".to_string() }))].into()))]
+// (?i) inline case-insensitive flag: requires the `unicode-case` regex crate feature.
+#[case::is_regex_match_case_insensitive_ascii(r#"is_regex_match("PASSWORD", "(?i)password")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+// Unicode-aware, not just ASCII case folding (é / É).
+#[case::is_regex_match_case_insensitive_unicode(r#"is_regex_match("café", "(?i)CAFÉ")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![true.into()].into()))]
+#[case::gsub_case_insensitive(r#"gsub("Api_Key=abc", "(?i)api_key", "REDACTED")"#,
+    vec![RuntimeValue::None],
+    Ok(vec![RuntimeValue::String(Shared::new("REDACTED=abc".to_string()))].into()))]
 #[case::regex_escape_metacharacters(r#"regex_escape("a.b*c?")"#,
     vec![RuntimeValue::None],
     Ok(vec![RuntimeValue::String(Shared::new(r"a\.b\*c\?".to_string()))].into()))]
