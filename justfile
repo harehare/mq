@@ -131,10 +131,11 @@ test-cov:
 test-fuzz:
     cargo +nightly fuzz run interpreter
 
-# Run WebAssembly tests in Chrome
+# Run WebAssembly tests in Chrome (main thread and dedicated worker)
 [working-directory: 'crates/mq-wasm']
 test-wasm:
     wasm-pack test --chrome --headless
+    wasm-pack test --chrome --headless -- --features test-in-worker
 
 # Run formatter and linter
 lint:
