@@ -33,7 +33,7 @@ csv = {workspace = true}
 dirs = {workspace = true}
 flate2 = {workspace = true}
 glob = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mimalloc = {workspace = true, features = ["v3"], optional = true}
 mq-dap = {workspace = true, optional = true}
 mq-help = {workspace = true}

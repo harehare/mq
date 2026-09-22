@@ -19,7 +19,7 @@ crossbeam = {workspace = true}
 dashmap = {workspace = true}
 fantoccini = {workspace = true, features = ["rustls-tls"]}
 futures = {workspace = true}
-miette = {workspace = true, features = ["fancy"]}
+miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-lang = {workspace = true}
 mq-markdown = {workspace = true}
 quick-xml = {workspace = true}
