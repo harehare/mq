@@ -159,6 +159,25 @@ import "json"
 # => 20
 ```
 
+### JSON Patch
+
+The `json` module can compare two values and apply the result as a [JSON Patch (RFC 6902)](https://datatracker.ietf.org/doc/html/rfc6902). Values from YAML, TOML and front matter work the same way.
+
+| Function                                | Description                                                                                          |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `json::json_diff(a, b, options)`        | Returns the patch that turns `a` into `b`. A key removed and re-added with an equal value becomes a `move`; pass `{moves: false}` to turn that off |
+| `json::json_patch(doc, ops)`            | Applies `add`, `remove`, `replace`, `move`, `copy` and `test` operations, raising an error if one cannot be applied |
+
+```mq
+import "json"
+| let a = {"name": "mq", "tags": ["md"]}
+| let b = {"title": "mq", "tags": ["md", "cli"]}
+| json::json_diff(a, b)
+# => [{"op": "add", "path": "/tags/1", "value": "cli"}, {"op": "move", "from": "/name", "path": "/title"}]
+```
+
+Dicts are compared by key and arrays by index, so an element inserted at the front of an array shows up as a run of `replace` operations.
+
 Combine with `paths` to list a pointer for every leaf: `paths(doc) | map(json::json_pointer_from_path)`.
 
 ## Markdown Builder (`md`)
