@@ -1263,10 +1263,8 @@ async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
 
 /// Returns the app-specific data directory on non-wasm targets, where there is no OPFS.
 #[cfg(all(feature = "opfs", not(target_arch = "wasm32")))]
-async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
-    opfs::persistent::app_specific_dir()
-        .await
-        .map_err(|e| JsValue::from_str(&e.to_string()))
+async fn opfs_root() -> opfs::persistent::Result<opfs::persistent::DirectoryHandle> {
+    opfs::persistent::app_specific_dir().await
 }
 
 /// Fetches the text content of a HTTPS URL.
