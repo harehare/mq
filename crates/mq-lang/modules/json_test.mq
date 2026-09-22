@@ -11,6 +11,20 @@ def test_json_parse():
   | assert_eq(len(result["users"]), 3)
 end
 
+def test_json_try_parse_ok():
+  let result = json::json_try_parse("{\"a\": 1}")
+  | assert_eq(result["ok"], true)
+  | assert_eq(result["value"], {"a": 1})
+  | assert_eq(result["error"], None)
+end
+
+def test_json_try_parse_error():
+  let result = json::json_try_parse("{bad")
+  | assert_eq(result["ok"], false)
+  | assert_eq(result["value"], None)
+  | assert_eq(is_string(result["error"]["message"]), true)
+end
+
 def test_json_stringify():
   let result = json::json_stringify(json::json_parse(json_input))
   | assert_snapshot("json_stringify", result)

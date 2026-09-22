@@ -12,6 +12,20 @@ def test_xml_parse():
   | assert_eq(len(result["children"]), 3)
 end
 
+def test_xml_try_parse_ok():
+  let result = xml::xml_try_parse("<a>hi</a>")
+  | assert_eq(result["ok"], true)
+  | assert_eq(result["value"]["tag"], "a")
+  | assert_eq(result["error"], None)
+end
+
+def test_xml_try_parse_error():
+  let result = xml::xml_try_parse("<a>unclosed")
+  | assert_eq(result["ok"], false)
+  | assert_eq(result["value"], None)
+  | assert_eq(is_string(result["error"]["message"]), true)
+end
+
 def test_xml_stringify():
   let result = xml::xml_stringify(xml::xml_parse(xml_input))
   | assert_eq(result, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<users><user id=\"1\"><name>Alice</name><email>alice@example.com</email><roles><role>admin</role><role>user</role></roles></user><user id=\"2\"><name>Bob</name><email>bob@example.com</email><roles><role>user</role></roles></user><user id=\"3\"><name>Charlie</name><email>charlie@example.com</email><roles><role>editor</role><role>user</role></roles></user></users>\n")

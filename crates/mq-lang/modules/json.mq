@@ -13,6 +13,25 @@ def json_parse(input):
   _json_parse(to_string(input))
 end
 
+# Parses a JSON string without raising on invalid input.
+#
+# Example:
+# ```
+# import "json" | json::json_try_parse("{\"a\": 1}")
+# #=> {"ok": true, "value": {"a": 1}, "error": None}
+# ```
+# Example:
+# ```
+# import "json" | json::json_try_parse("{bad")
+# #=> {"ok": false, "value": None, "error": {"message": "..."}}
+# ```
+#
+# Returns: dict
+def json_try_parse(input):
+  try: {ok: true, value: json_parse(input), error: None}
+  catch(e): {ok: false, value: None, error: {message: e["message"]}}
+end
+
 # Serializes a value to a JSON string.
 #
 # Example:

@@ -17,6 +17,25 @@ def xml_parse(input):
   _xml_parse(to_string(input))
 end
 
+# Parses an XML string without raising on invalid input.
+#
+# Example:
+# ```
+# import "xml" | xml::xml_try_parse("<a>hi</a>")["ok"]
+# #=> true
+# ```
+# Example:
+# ```
+# import "xml" | xml::xml_try_parse("<a>unclosed")["ok"]
+# #=> false
+# ```
+#
+# Returns: dict
+def xml_try_parse(input):
+  try: {ok: true, value: xml_parse(input), error: None}
+  catch(e): {ok: false, value: None, error: {message: e["message"]}}
+end
+
 def _xml_stringify(data):
   def _escape_text(str):
     replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")

@@ -11,6 +11,19 @@ def test_toon_parse():
   | assert_eq(len(result), 5)
 end
 
+def test_toon_try_parse_ok():
+  let result = toon::toon_try_parse(toon::toon_stringify({"a": 1}))
+  | assert_eq(result["ok"], true)
+  | assert_eq(result["value"], {"a": 1})
+  | assert_eq(result["error"], None)
+end
+
+def test_toon_try_parse_error():
+  let result = toon::toon_try_parse(": : :")
+  | assert_eq(result["ok"], false)
+  | assert_eq(result["value"], None)
+  | assert_eq(is_string(result["error"]["message"]), true)
+end
 
 # `RuntimeValue::Dict` preserves insertion order, so TOON stringification has stable
 # key ordering. Keep the complete output in a snapshot to catch format regressions.

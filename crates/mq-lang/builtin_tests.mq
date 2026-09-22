@@ -855,6 +855,17 @@ def test_get_or(d, key, default, expected):
   | assert_eq(result, expected)
 end
 
+# @parametrize([
+#   ["42", 0, 42],
+#   ["not a number", 0, 0],
+#   ["3.14", 0, 3.14],
+#   ["", -1, -1],
+# ])
+def test_to_number_or(value, default, expected):
+  let result = to_number_or(value, default)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[5, 1, 10, true], [0, 1, 10, false], [10, 1, 10, true], [1, 1, 10, true], [15, 1, 10, false]])
 def test_between(value, lo, hi, expected):
   let result = between(value, lo, hi)

@@ -12,6 +12,20 @@ def test_toml_parse():
   | assert_eq(len(result), 2)
 end
 
+def test_toml_try_parse_ok():
+  let result = toml::toml_try_parse("key = 1")
+  | assert_eq(result["ok"], true)
+  | assert_eq(result["value"], {"key": 1})
+  | assert_eq(result["error"], None)
+end
+
+def test_toml_try_parse_error():
+  let result = toml::toml_try_parse("key = ")
+  | assert_eq(result["ok"], false)
+  | assert_eq(result["value"], None)
+  | assert_eq(is_string(result["error"]["message"]), true)
+end
+
 def test_toml_to_json():
   let parsed = toml::toml_parse(toml_input)
   | let result = toml::toml_to_json(parsed)
