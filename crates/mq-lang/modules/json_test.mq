@@ -118,3 +118,77 @@ end
 def test_json_pointer_del(pointer, expected):
   assert_eq(json::json_pointer_del({"a": 1, "b": [1, 2]}, pointer), expected)
 end
+
+# -- JSON Patch / Diff Tests --
+
+# RFC 6902 Appendix A
+# @parametrize([[{"foo": "bar"}, {"op": "add", "path": "/baz", "value": "qux"}, {"foo": "bar", "baz": "qux"}], [{"foo": ["bar", "baz"]}, {"op": "add", "path": "/foo/1", "value": "qux"}, {"foo": ["bar", "qux", "baz"]}], [{"foo": ["bar"]}, {"op": "add", "path": "/foo/-", "value": ["abc", "def"]}, {"foo": ["bar", ["abc", "def"]]}], [{"foo": "bar"}, {"op": "add", "path": "/foo", "value": "baz"}, {"foo": "baz"}], [{"baz": "qux", "foo": "bar"}, {"op": "remove", "path": "/baz"}, {"foo": "bar"}], [{"foo": ["bar", "qux", "baz"]}, {"op": "remove", "path": "/foo/1"}, {"foo": ["bar", "baz"]}], [{"baz": "qux", "foo": "bar"}, {"op": "replace", "path": "/baz", "value": "boo"}, {"baz": "boo", "foo": "bar"}], [{"foo": {"bar": "baz", "waldo": "fred"}, "qux": {"corge": "grault"}}, {"op": "move", "from": "/foo/waldo", "path": "/qux/thud"}, {"foo": {"bar": "baz"}, "qux": {"corge": "grault", "thud": "fred"}}], [{"foo": ["all", "grass", "cows", "eat"]}, {"op": "move", "from": "/foo/1", "path": "/foo/3"}, {"foo": ["all", "cows", "eat", "grass"]}], [{"foo": {"bar": "baz"}}, {"op": "copy", "from": "/foo/bar", "path": "/foo/copied"}, {"foo": {"bar": "baz", "copied": "baz"}}], [{"baz": "qux", "foo": ["a", 2, "c"]}, {"op": "test", "path": "/baz", "value": "qux"}, {"baz": "qux", "foo": ["a", 2, "c"]}], [{"/": 9, "~1": 10}, {"op": "test", "path": "/~01", "value": 10}, {"/": 9, "~1": 10}], [{"a": 1}, {"op": "replace", "path": "", "value": [1]}, [1]]])
+def test_json_patch_single_op(doc, op, expected):
+  assert_eq(json::json_patch(doc, [op]), expected)
+end
+
+# @parametrize([[{"baz": "qux"}, {"op": "test", "path": "/baz", "value": "bar"}], [{"foo": "bar"}, {"op": "add", "path": "/baz/bat", "value": "qux"}], [{"foo": [1]}, {"op": "add", "path": "/foo/5", "value": 2}], [{"foo": 1}, {"op": "remove", "path": "/bar"}], [{"foo": 1}, {"op": "replace", "path": "/bar", "value": 1}], [{"foo": 1}, {"op": "move", "from": "/bar", "path": "/baz"}], [{"foo": {"a": 1}}, {"op": "move", "from": "/foo", "path": "/foo/a"}], [{"foo": 1}, {"op": "add", "path": "/bar"}], [{"foo": 1}, {"op": "nope", "path": "/foo"}], [{"foo": 1}, {"path": "/foo"}], [{"foo": 1}, {"op": "test", "path": "/foo", "value": "1"}]])
+def test_json_patch_errors(doc, op):
+  assert_eq(try: json::json_patch(doc, [op]) catch: "error", "error")
+end
+
+def test_json_patch_applies_operations_in_order():
+  let ops = [{"op": "add", "path": "/a", "value": 1}, {"op": "replace", "path": "/a", "value": 2}, {"op": "copy", "from": "/a", "path": "/b"}, {"op": "remove", "path": "/a"}]
+  | assert_eq(json::json_patch({}, ops), {"b": 2})
+end
+
+def test_json_patch_empty_patch_is_identity():
+  assert_eq(json::json_patch({"a": [1]}, []), {"a": [1]})
+end
+
+def test_json_patch_requires_an_array():
+  assert_eq(try: json::json_patch({}, {"op": "add"}) catch: "error", "error")
+end
+
+def test_json_patch_does_not_change_the_input():
+  let doc = {"a": [1, 2]}
+  | let _ = json::json_patch(doc, [{"op": "remove", "path": "/a/0"}])
+  | assert_eq(doc, {"a": [1, 2]})
+end
+
+# @parametrize([[{"a": 1}, {"a": 1}, []], [{"a": 1, "b": 2}, {"a": 1, "b": 3}, [{"op": "replace", "path": "/b", "value": 3}]], [{"a": 1}, {"a": 1, "b": 2}, [{"op": "add", "path": "/b", "value": 2}]], [{"a": 1, "b": 2}, {"a": 1}, [{"op": "remove", "path": "/b"}]], [{"a": {"b": {"c": 1}}}, {"a": {"b": {"c": 2}}}, [{"op": "replace", "path": "/a/b/c", "value": 2}]], [[1, 2, 3], [1, 2, 3, 4, 5], [{"op": "add", "path": "/3", "value": 4}, {"op": "add", "path": "/4", "value": 5}]], [[1, 2, 3, 4], [1, 2], [{"op": "remove", "path": "/3"}, {"op": "remove", "path": "/2"}]], [{"a": [1, 2]}, {"a": [1, 9]}, [{"op": "replace", "path": "/a/1", "value": 9}]], [{"a": 1}, {"a": "1"}, [{"op": "replace", "path": "/a", "value": "1"}]], [{"a": {"x": 1}}, {"a": [1]}, [{"op": "replace", "path": "/a", "value": [1]}]], [1, 2, [{"op": "replace", "path": "", "value": 2}]], [{"a/b": 1}, {"a/b": 2}, [{"op": "replace", "path": "/a~1b", "value": 2}]], [{"a": None}, {"a": 1}, [{"op": "replace", "path": "/a", "value": 1}]], [{}, {"a": None}, [{"op": "add", "path": "/a", "value": None}]]])
+def test_json_diff(a, b, expected):
+  assert_eq(json::json_diff(a, b), expected)
+end
+
+def test_json_diff_detects_key_rename_as_move():
+  let ops = json::json_diff({"name": "x", "keep": 1}, {"title": "x", "keep": 1})
+  | assert_eq(ops, [{"op": "move", "from": "/name", "path": "/title"}])
+end
+
+def test_json_diff_detects_move_between_objects():
+  let ops = json::json_diff({"a": {"v": [1, 2]}, "b": {}}, {"a": {}, "b": {"v": [1, 2]}})
+  | assert_eq(ops, [{"op": "move", "from": "/a/v", "path": "/b/v"}])
+end
+
+def test_json_diff_moves_can_be_disabled():
+  let ops = json::json_diff({"name": "x"}, {"title": "x"}, {moves: false})
+  | assert_eq(ops, [{"op": "remove", "path": "/name"}, {"op": "add", "path": "/title", "value": "x"}])
+end
+
+def test_json_diff_does_not_move_null_or_array_items():
+  assert_eq(json::json_diff({"a": None}, {"b": None}), [{"op": "remove", "path": "/a"}, {"op": "add", "path": "/b", "value": None}])
+  | assert_eq(json::json_diff([1, 2], [2]), [{"op": "replace", "path": "/0", "value": 2}, {"op": "remove", "path": "/1"}])
+end
+
+def test_json_diff_pairs_each_removed_key_only_once():
+  let ops = json::json_diff({"a": 1, "b": 1}, {"c": 1})
+  | assert_eq(ops, [{"op": "remove", "path": "/b"}, {"op": "move", "from": "/a", "path": "/c"}])
+end
+
+# @property(100, [gen::array_of(gen::int(0, 3), 0, 6), gen::array_of(gen::int(0, 3), 0, 6)])
+def test_json_diff_patch_round_trip_arrays(a, b):
+  assert_eq(json::json_patch(a, json::json_diff(a, b)), b)
+end
+
+# @property(100, [gen::array(gen::int(0, 2), 5), gen::array(gen::int(0, 2), 5)])
+def test_json_diff_patch_round_trip_objects(xs, ys):
+  let a = {"p": xs[0], "q": xs[1], "r": {"s": xs[2], "t": [xs[3], xs[4]]}}
+  | let b = {"q": ys[1], "r": {"s": ys[2], "t": [ys[3]]}, "u": ys[0], "v": ys[4]}
+  | assert_eq(json::json_patch(a, json::json_diff(a, b)), b)
+end

@@ -181,6 +181,196 @@ def json_pointer_del(data, pointer):
   del_path(data, json_pointer_to_path(data, pointer))
 end
 
+def _diff_dict(a, b, path):
+  let changed = flat_map(keys(a), fn(k):
+    if (has(b, k)):
+      _diff_ops(a[k], b[k], path + [k])
+    else:
+      [{op: "remove", path: path + [k], old: a[k]}]
+  end)
+  | let added = flat_map(keys(b), fn(k):
+    if (has(a, k)):
+      []
+    else:
+      [{op: "add", path: path + [k], value: b[k]}]
+  end)
+  | changed + added
+end
+
+def _diff_array(a, b, path):
+  let na = len(a)
+  | let nb = len(b)
+  | let common = min(na, nb)
+  | let changed = if (common == 0):
+      []
+    else:
+      flat_map(range(0, common - 1), fn(i): _diff_ops(a[i], b[i], path + [i]) end)
+  | let removed = if (na > nb):
+      map(range(na - 1, nb), fn(i): {op: "remove", path: path + [i], old: a[i]} end)
+    else:
+      []
+  | let added = if (nb > na):
+      map(range(na, nb - 1), fn(i): {op: "add", path: path + [i], value: b[i]} end)
+    else:
+      []
+  | changed + removed + added
+end
+
+def _diff_ops(a, b, path):
+  if (a == b):
+    []
+  elif (is_dict(a) && is_dict(b)):
+    _diff_dict(a, b, path)
+  elif (is_array(a) && is_array(b)):
+    _diff_array(a, b, path)
+  else:
+    [{op: "replace", path: path, value: b}]
+end
+
+def _is_key_path(path): !is_empty(path) && is_string(last(path));
+
+# Pairs each added dict key with a removed key holding an equal value: `{moves: {add index: remove index}, used: [remove indexes]}`.
+def _find_moves(ops):
+  let idx = range(0, len(ops) - 1)
+  | let add_idx = filter(idx, fn(i): ops[i][:op] == "add" && _is_key_path(ops[i][:path]) && !is_none(ops[i][:value]) end)
+  | let rem_idx = filter(idx, fn(i): ops[i][:op] == "remove" && _is_key_path(ops[i][:path]) && !is_none(ops[i][:old]) end)
+  | fold(add_idx, {moves: {}, used: []}, fn(acc, i):
+    let j = first(filter(rem_idx, fn(r): !in(acc[:used], r) && ops[r][:old] == ops[i][:value] end))
+    | if (is_none(j)):
+        acc
+      else:
+        {moves: set(acc[:moves], to_string(i), j), used: acc[:used] + [j]}
+  end)
+end
+
+def _finalize_ops(ops, detect_moves):
+  if (is_empty(ops)):
+    []
+  else:
+    do
+      let plan = if (detect_moves):
+          _find_moves(ops)
+        else:
+          {moves: {}, used: []}
+      | flat_map(range(0, len(ops) - 1), fn(i):
+        let op = ops[i]
+        | if (in(plan[:used], i)):
+            []
+          elif (has(plan[:moves], to_string(i))):
+            [{op: "move", from: json_pointer_from_path(ops[plan[:moves][to_string(i)]][:path]), path: json_pointer_from_path(op[:path])}]
+          elif (op[:op] == "remove"):
+            [{op: "remove", path: json_pointer_from_path(op[:path])}]
+          else:
+            [{op: op[:op], path: json_pointer_from_path(op[:path]), value: op[:value]}]
+      end)
+    end
+end
+
+# Returns the JSON Patch (RFC 6902) that turns `a` into `b`. Dicts are compared by key and arrays by index.
+# A key removed in one place and added elsewhere with an equal value becomes a `move`; pass `{moves: false}` to disable that.
+#
+# Example:
+# ```
+# import "json" | json::json_diff({"a": 1, "b": 2}, {"a": 1, "b": 3})
+# #=> [{"op": "replace", "path": "/b", "value": 3}]
+# ```
+#
+# Returns: array
+def json_diff(a, b, options = {}):
+  _finalize_ops(_diff_ops(a, b, []), get_or(options, :moves, true))
+end
+
+def _patch_fail(op, message):
+  error("json_patch: " + to_string(get_or(op, "op", "?")) + " " + to_string(get_or(op, "path", "")) + ": " + message)
+end
+
+def _patch_add(doc, path, value):
+  if (is_empty(path)):
+    value
+  else:
+    let parent_path = take(path, len(path) - 1)
+    | let key = last(path)
+    | let parent = get_path(doc, parent_path)
+    | if (is_array(parent)):
+        if (!is_number(key) || key < 0 || key > len(parent)):
+          error("json_patch: array index out of range")
+        elif (is_empty(parent_path)):
+          take(parent, key) + [value] + skip(parent, key)
+        else:
+          set_path(doc, parent_path, take(parent, key) + [value] + skip(parent, key))
+      elif (is_dict(parent)):
+        set_path(doc, path, value)
+      else:
+        error("json_patch: the parent of the target is not an object or array")
+end
+
+def _patch_move_copy(doc, op, kind, pointer):
+  let src = get_or(op, "from", None)
+  | if (is_none(src) || !json_pointer_has(doc, src)):
+      _patch_fail(op, "\"from\" does not exist")
+    elif (kind == "move" && pointer == src):
+      doc
+    elif (kind == "move" && starts_with(pointer, src + "/")):
+      _patch_fail(op, "cannot move a value into itself")
+    elif (kind == "copy"):
+      _patch_add(doc, json_pointer_to_path(doc, pointer), json_pointer_get(doc, src))
+    else:
+      do
+        let removed = json_pointer_del(doc, src)
+        | _patch_add(removed, json_pointer_to_path(removed, pointer), json_pointer_get(doc, src))
+      end
+end
+
+def _apply_op(doc, op):
+  let kind = get_or(op, "op", None)
+  | let pointer = get_or(op, "path", None)
+  | if (is_none(kind) || is_none(pointer)):
+      error("json_patch: every operation needs \"op\" and \"path\"")
+    elif (kind == "add"):
+      if (!has(op, "value")):
+        _patch_fail(op, "missing \"value\"")
+      else:
+        _patch_add(doc, json_pointer_to_path(doc, pointer), op["value"])
+    elif (kind == "remove"):
+      if (pointer == "" || !json_pointer_has(doc, pointer)):
+        _patch_fail(op, "path does not exist")
+      else:
+        json_pointer_del(doc, pointer)
+    elif (kind == "replace"):
+      if (!has(op, "value") || !json_pointer_has(doc, pointer)):
+        _patch_fail(op, "path does not exist or \"value\" is missing")
+      elif (pointer == ""):
+        op["value"]
+      else:
+        json_pointer_set(doc, pointer, op["value"])
+    elif (kind == "move" || kind == "copy"):
+      _patch_move_copy(doc, op, kind, pointer)
+    elif (kind == "test"):
+      if (!has(op, "value") || !json_pointer_has(doc, pointer) || json_pointer_get(doc, pointer) != op["value"]):
+        _patch_fail(op, "test failed")
+      else:
+        doc
+    else:
+      _patch_fail(op, "unknown operation")
+end
+
+# Applies a JSON Patch (RFC 6902: add, remove, replace, move, copy, test) to `doc` and returns the result.
+# Raises an error, leaving `doc` untouched, if an operation cannot be applied.
+#
+# Example:
+# ```
+# import "json" | json::json_patch({"a": [1, 3]}, [{"op": "add", "path": "/a/1", "value": 2}])
+# #=> {"a": [1, 2, 3]}
+# ```
+#
+# Returns: dynamic
+def json_patch(doc, ops):
+  if (!is_array(ops)):
+    error("json_patch: the patch must be an array of operations")
+  else:
+    fold(ops, doc, fn(acc, op): _apply_op(acc, op) end)
+end
+
 # Converts a JSON data structure to a Markdown table.
 #
 # Example:
