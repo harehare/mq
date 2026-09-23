@@ -694,11 +694,11 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
         );
 
         let value = match outcome {
-            Ok(FrameOutcome::Enter(mut new_frame)) => {
-                new_frame.stack_base = operand_stack.len();
+            Ok(FrameOutcome::Enter(new_frame)) => {
                 if let Err(e) = execution.limits.push_frame(
                     frames,
                     new_frame,
+                    operand_stack.len(),
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
@@ -808,11 +808,11 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
             CallStep::Value(coroutine) => {
                 operand_stack.push(coroutine);
             }
-            CallStep::Enter(mut next) => {
-                next.stack_base = operand_stack.len();
+            CallStep::Enter(next) => {
                 if let Err(e) = execution.limits.push_frame(
                     frames,
                     next,
+                    operand_stack.len(),
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
@@ -839,7 +839,7 @@ fn drive_frames<const CHECK_TIMEOUT: bool>(
 fn locate_at_top(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>, e: VmError) -> VmError {
     let caller = frames.last().expect("the frame stack is never empty here");
     let chunks = caller.chunks.as_ref().unwrap_or(root_chunks);
-    locate(&chunks[caller.chunk_index as usize], caller.ip, e)
+    locate(&chunks[caller.chunk_index as usize], caller.ip as usize, e)
 }
 
 /// Pops frames until a `try` body catches `e` (`Ok(())`) or the stack empties (`Err`).
@@ -865,7 +865,7 @@ fn unwind_frames(
             let finished = frames.pop().expect("just checked len() == 1");
             return Err((e, finished.locals));
         }
-        let failed_stack_base = frames.last().expect("just checked len() > 1").stack_base;
+        let failed_stack_base = frames.last().expect("just checked len() > 1").stack_base as usize;
         let continuation = execution
             .limits
             .pop_frame(
@@ -910,7 +910,7 @@ fn unwind_frames(
                     {
                         parent.locals.set(acc_slot, StackValue::Value(RuntimeValue::None));
                     }
-                    parent.ip = (parent.ip as i64 + offset as i64) as usize;
+                    parent.ip = (parent.ip as i64 + offset as i64) as u32;
                     return Ok(());
                 }
                 if flow_continue(&e) {
@@ -918,7 +918,7 @@ fn unwind_frames(
                         continue;
                     };
                     let parent = frames.last_mut().expect("just checked len() > 1");
-                    parent.ip = (parent.ip as i64 + offset as i64) as usize;
+                    parent.ip = (parent.ip as i64 + offset as i64) as u32;
                     return Ok(());
                 }
                 let parent = frames.last().expect("just checked len() > 1");
@@ -931,7 +931,7 @@ fn unwind_frames(
                 if has_binder {
                     catch_locals.set(1, StackValue::Value(error_dict(&e)));
                 }
-                let mut catch_frame = Frame::new(
+                let catch_frame = Frame::new(
                     catch_closure.chunk_index,
                     parent.chunks.clone(),
                     catch_locals,
@@ -939,10 +939,10 @@ fn unwind_frames(
                     !catch_chunk.captures_local_slots(),
                     Continuation::Push,
                 );
-                catch_frame.stack_base = operand_stack.len();
                 match execution.limits.push_frame(
                     frames,
                     catch_frame,
+                    operand_stack.len(),
                     #[cfg(feature = "debugger")]
                     debug,
                 ) {
@@ -968,7 +968,7 @@ fn capture_stack_trace(frames: &[Frame], root_chunks: &Shared<Vec<Chunk>>) -> Bo
             let chunk = &chunks[frame.chunk_index as usize];
             StackTraceFrame {
                 function_name: chunk.function_name,
-                token_id: chunk.token_at(frame.ip.saturating_sub(1)),
+                token_id: chunk.token_at(frame.ip.saturating_sub(1) as usize),
             }
         })
         .collect()
@@ -988,12 +988,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     let chunk = &chunks[frame.chunk_index as usize];
     let locals = &mut frame.locals;
     let upvalues = frame.upvalues.as_deref().map_or_else(|| &[][..], Vec::as_slice);
-    let mut ip = frame.ip;
+    let mut ip = frame.ip as usize;
 
     macro_rules! pop {
         () => {{
             debug_assert!(
-                stack.len() > frame.stack_base,
+                stack.len() > frame.stack_base as usize,
                 "verified bytecode underflowed the stack"
             );
             // SAFETY: `verify_chunks` proves this opcode has an operand.
@@ -1067,7 +1067,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
 
     let outcome = 'dispatch: loop {
         if ip >= chunk.code.len() {
-            let value = if stack.len() > frame.stack_base {
+            let value = if stack.len() > frame.stack_base as usize {
                 // SAFETY: the length check above proves the stack is non-empty.
                 unsafe { stack.pop().unwrap_unchecked() }
             } else {
@@ -1175,7 +1175,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::SetLocalAndCopy { source, destination } => {
                 debug_assert!(
-                    stack.len() > frame.stack_base,
+                    stack.len() > frame.stack_base as usize,
                     "verified bytecode underflowed the stack"
                 );
                 // SAFETY: `verify_chunks` proves this opcode has an operand.
@@ -1193,7 +1193,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 offset,
             } => {
                 debug_assert!(
-                    stack.len() > frame.stack_base,
+                    stack.len() > frame.stack_base as usize,
                     "verified bytecode underflowed the stack"
                 );
                 // SAFETY: `verify_chunks` proves this opcode has an operand.
@@ -1214,7 +1214,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::TeeLocal(slot) => {
                 debug_assert!(
-                    stack.len() > frame.stack_base,
+                    stack.len() > frame.stack_base as usize,
                     "verified bytecode underflowed the stack"
                 );
                 // SAFETY: `verify_chunks` proves this opcode has an operand.
@@ -1253,7 +1253,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::Dup => {
                 debug_assert!(
-                    stack.len() > frame.stack_base,
+                    stack.len() > frame.stack_base as usize,
                     "verified bytecode underflowed the stack"
                 );
                 // SAFETY: `verify_chunks` proves this opcode has an operand.
@@ -1310,8 +1310,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
             OpCode::UpdateLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
@@ -1354,8 +1353,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 constant,
                 offset,
             } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let cond = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let cond = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 if !cond.is_truthy() {
                     ip = (ip as i64 + *offset as i64) as usize;
@@ -1418,8 +1416,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(result));
             }
             OpCode::BinaryLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let result = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let result = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
@@ -1501,8 +1498,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 accumulator_slot,
                 offset,
             } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 locals
                     .append_to_array_at(*accumulator_slot, value)
@@ -1564,7 +1560,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     .len()
                     .checked_sub(*n as usize)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in InterpString")))?;
-                if start < frame.stack_base {
+                if start < frame.stack_base as usize {
                     bail!(VmError::Corrupt("stack underflow in InterpString"));
                 }
                 let value = interp_string(&stack[start..], chunks);
@@ -1896,7 +1892,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     .len()
                     .checked_sub(*argc as usize + 1)
                     .ok_or_else(|| locate(chunk, ip, VmError::Corrupt("stack underflow in CallValue")))?;
-                if callee_index < frame.stack_base {
+                if callee_index < frame.stack_base as usize {
                     bail!(VmError::Corrupt("stack underflow in CallValue"));
                 }
                 if let StackValue::Closure(closure) = &stack[callee_index]
@@ -2031,8 +2027,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
             }
             OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
             }
@@ -2063,9 +2058,11 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
         }
     };
-    frame.ip = ip;
+    // `verify_chunks` rejects chunks longer than u32::MAX and verifies all jump targets.
+    debug_assert!(u32::try_from(ip).is_ok());
+    frame.ip = ip as u32;
     if let FrameOutcome::Complete(_) = &outcome {
-        stack.truncate(frame.stack_base);
+        stack.truncate(frame.stack_base as usize);
     }
     Ok(outcome)
 }
@@ -2507,22 +2504,15 @@ fn eval_binary_op(
 }
 
 #[inline(always)]
-fn numeric_constant(chunk: &Chunk, index: u16) -> VmResult<Number> {
-    match chunk.constants.get(index as usize) {
-        Some(RuntimeValue::Number(value)) => Ok(*value),
-        _ => Err(VmError::Corrupt("numeric opcode constant is not a number")),
-    }
-}
-
-#[inline(always)]
 fn eval_local_number_const_binary_op(
     op: BinaryOp,
     locals: &Locals,
     local: u16,
-    constant: Number,
+    constant: i32,
     chunks: &Shared<Vec<Chunk>>,
     execution: &ExecutionContext<'_>,
 ) -> VmResult<RuntimeValue> {
+    let constant = Number::new(constant as f64);
     // SAFETY: the bytecode verifier validates the local slot before execution.
     if let Some(RuntimeValue::Number(value)) = unsafe { locals.direct_runtime_value_unchecked(local) } {
         return eval_number_binary_op(op, *value, constant);

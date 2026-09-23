@@ -352,8 +352,15 @@ fn optimize_chunk(chunk: &mut Chunk) {
     chunk.lines = new_lines;
 }
 
-fn numeric_constant(constants: &[RuntimeValue], index: u16) -> Option<u16> {
-    matches!(constants.get(index as usize), Some(RuntimeValue::Number(_))).then_some(index)
+fn numeric_constant(constants: &[RuntimeValue], index: u16) -> Option<i32> {
+    match constants.get(index as usize) {
+        Some(RuntimeValue::Number(value)) => {
+            let number = value.value();
+            let integer = number as i32;
+            (number == integer as f64 && !(number == 0.0 && number.is_sign_negative())).then_some(integer)
+        }
+        _ => None,
+    }
 }
 
 /// Whether `op` immediately followed by `next` is a comparison feeding a plain `JumpIfFalse`,
@@ -632,6 +639,10 @@ mod tests {
 
     #[rstest::rstest]
     #[case::number(RuntimeValue::Number(2.into()), true)]
+    #[case::negative_integer(RuntimeValue::Number((-2).into()), true)]
+    #[case::fraction(RuntimeValue::Number(crate::number::Number::new(2.5)), false)]
+    #[case::negative_zero(RuntimeValue::Number(crate::number::Number::new(-0.0)), false)]
+    #[case::out_of_range(RuntimeValue::Number(crate::number::Number::new(i32::MAX as f64 + 1.0)), false)]
     #[case::string(RuntimeValue::String(crate::Shared::new("two".to_string())), false)]
     fn peephole_keeps_numeric_local_constant_fusion(#[case] constant: RuntimeValue, #[case] numeric: bool) {
         let mut chunk = Chunk {

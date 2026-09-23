@@ -625,8 +625,13 @@ impl Locals {
                 };
 
                 // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                *unsafe { slots.get_unchecked_mut(index_slot as usize) } =
-                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0)));
+                // The loop index was checked above. Update its payload directly so each
+                // iteration does not run `StackValue`'s drop path for the old number.
+                let index = unsafe { slots.get_unchecked_mut(index_slot as usize) };
+                let StackValue::Value(RuntimeValue::Number(index)) = index else {
+                    return Err("ForeachNext has invalid loop state");
+                };
+                *index = Number::new(index_value + 1.0);
                 // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 *unsafe { slots.get_unchecked_mut(value_slot as usize) } = StackValue::Value(value.clone());
                 // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
