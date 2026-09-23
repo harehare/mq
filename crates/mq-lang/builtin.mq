@@ -3004,6 +3004,39 @@ def paths(value):
     [[]]
 end
 
+# Returns an array of `{path, value, type, depth}` records, one per leaf value in a nested
+# dict/array, e.g. `leaf_entries({"a": {"b": 1}})` returns `[{"path": ["a", "b"], "value": 1,
+# "type": "number", "depth": 2}]`. `depth` is `len(path)`. Like `paths`, containers with no
+# leaves (e.g. `{}`, `[]`) contribute no entries.
+#
+# Example:
+# ```
+# leaf_entries({"a": {"b": 1}})
+# #=> [{"path": ["a", "b"], "value": 1, "type": "number", "depth": 2}]
+# ```
+#
+# Returns: array
+def leaf_entries(value):
+  def _entry(path, value):
+    {path: path, value: value, type: type(value), depth: len(path)}
+  end
+
+  | if (is_dict(value)):
+      fold(entries(value), [], fn(acc, entry): acc + map(leaf_entries(entry[1]), fn(e): _entry([entry[0]] + e["path"], e["value"]););)
+    elif (is_array(value)):
+      do
+        var result = []
+        | var i = 0
+        | while (i < len(value)):
+            result = result + map(leaf_entries(value[i]), fn(e): _entry([i] + e["path"], e["value"]);)
+            | i += 1
+          end
+        | result
+      end
+    else:
+      [_entry([], value)]
+end
+
 # Builds a dict from an array of [key, value] pairs, as produced by `entries`.
 # If the same key appears more than once, the last occurrence wins.
 #

@@ -1537,6 +1537,45 @@ def test_paths(value, expected):
   | assert_eq(result, expected)
 end
 
+def test_leaf_entries_nested_dict_and_array():
+  let result = leaf_entries({"a": {"b": 1, "c": [2, 3]}})
+  | assert_eq(result, [
+      {"path": ["a", "b"], "value": 1, "type": "number", "depth": 2},
+      {"path": ["a", "c", 0], "value": 2, "type": "number", "depth": 3},
+      {"path": ["a", "c", 1], "value": 3, "type": "number", "depth": 3},
+    ])
+end
+
+def test_leaf_entries_mixed_types():
+  let result = leaf_entries({"n": 1, "s": "x", "b": true, "z": None})
+  | assert_eq(result, [
+      {"path": ["n"], "value": 1, "type": "number", "depth": 1},
+      {"path": ["s"], "value": "x", "type": "string", "depth": 1},
+      {"path": ["b"], "value": true, "type": "bool", "depth": 1},
+      {"path": ["z"], "value": None, "type": "None", "depth": 1},
+    ])
+end
+
+def test_leaf_entries_empty_containers_contribute_nothing():
+  let result = leaf_entries({"a": {}, "b": [], "c": 1})
+  | assert_eq(result, [{"path": ["c"], "value": 1, "type": "number", "depth": 1}])
+end
+
+def test_leaf_entries_top_level_empty_dict():
+  let result = leaf_entries({})
+  | assert_eq(result, [])
+end
+
+def test_leaf_entries_top_level_empty_array():
+  let result = leaf_entries([])
+  | assert_eq(result, [])
+end
+
+def test_leaf_entries_top_level_scalar():
+  let result = leaf_entries(42)
+  | assert_eq(result, [{"path": [], "value": 42, "type": "number", "depth": 0}])
+end
+
 # @parametrize([[[["a", 1], ["b", 2]], {"a": 1, "b": 2}], [[], dict()], [[["a", 1], ["a", 2]], {"a": 2}]])
 def test_from_entries(value, expected):
   let result = from_entries(value)
