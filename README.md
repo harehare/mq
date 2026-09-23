@@ -288,7 +288,7 @@ Options:
   -O, --optimize-level <OPTIMIZE_LEVEL>
           Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes) [default: none] [possible values: none, basic, full]
       --timeout <SECONDS>
-          Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). Must be a finite positive number. No timeout by default
+          Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). No timeout by default
   -h, --help
           Print help (see more with '--help')
   -V, --version
