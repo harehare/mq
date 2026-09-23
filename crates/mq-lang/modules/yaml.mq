@@ -75,6 +75,25 @@ def yaml_parse(input):
   _yaml_parse(to_string(input))
 end
 
+# Parses a YAML string without raising on invalid input.
+#
+# Example:
+# ```
+# import "yaml" | yaml::yaml_try_parse("key: 1")["ok"]
+# #=> true
+# ```
+# Example:
+# ```
+# import "yaml" | yaml::yaml_try_parse("key: [unterminated")["ok"]
+# #=> false
+# ```
+#
+# Returns: dict
+def yaml_try_parse(input):
+  try: {ok: true, value: yaml_parse(input), error: None}
+  catch(e): {ok: false, value: None, error: {message: e["message"]}}
+end
+
 # Converts a data structure to a YAML string representation.
 #
 # Example:

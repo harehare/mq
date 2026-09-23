@@ -1566,6 +1566,24 @@ def get_or(dict, key, default):
   | if (is_none(val)): default else: val
 end
 
+# Converts a value to a number, returning a default instead of raising if it can't be parsed.
+#
+# Example:
+# ```
+# to_number_or("42", 0)
+# #=> 42
+# ```
+# Example:
+# ```
+# to_number_or("not a number", 0)
+# #=> 0
+# ```
+#
+# Returns: number
+def to_number_or(value, default):
+  try: to_number(value) catch: default
+end
+
 # Checks if a value is between min and max (inclusive).
 #
 # Example:
@@ -2815,7 +2833,6 @@ def normalize_newlines(text, mode):
       | if (mode == "crlf"): gsub(lf, "\n", "\r\n") else: lf
     end
 end
-
 
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 #

@@ -82,6 +82,25 @@ def toml_parse(input):
   _toml_parse(to_string(input))
 end
 
+# Parses a TOML string without raising on invalid input.
+#
+# Example:
+# ```
+# import "toml" | toml::toml_try_parse("key = 1")["ok"]
+# #=> true
+# ```
+# Example:
+# ```
+# import "toml" | toml::toml_try_parse("key = ")["ok"]
+# #=> false
+# ```
+#
+# Returns: dict
+def toml_try_parse(input):
+  try: {ok: true, value: toml_parse(input), error: None}
+  catch(e): {ok: false, value: None, error: {message: e["message"]}}
+end
+
 # Converts a data structure to a TOML string representation.
 #
 # Example:

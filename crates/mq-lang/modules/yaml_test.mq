@@ -16,6 +16,20 @@ def test_yaml_parse_multi_document():
   | assert_eq(result, [{"a": 1}, {"b": 2}])
 end
 
+def test_yaml_try_parse_ok():
+  let result = yaml::yaml_try_parse("key: 1")
+  | assert_eq(result["ok"], true)
+  | assert_eq(result["value"], {"key": 1})
+  | assert_eq(result["error"], None)
+end
+
+def test_yaml_try_parse_error():
+  let result = yaml::yaml_try_parse("key: [unterminated")
+  | assert_eq(result["ok"], false)
+  | assert_eq(result["value"], None)
+  | assert_eq(is_string(result["error"]["message"]), true)
+end
+
 def test_yaml_to_json():
   let result = yaml::yaml_to_json(yaml::yaml_parse(yaml_input))
   | assert_snapshot("yaml_to_json", result)
