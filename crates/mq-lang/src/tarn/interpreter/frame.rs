@@ -21,9 +21,10 @@ pub(super) struct Frame {
     pub(super) locals: Locals,
     pub(super) upvalues: Option<Shared<Vec<Cell>>>,
     /// First operand-stack slot owned by this frame. The operand stack itself is shared by the
-    /// whole execution, so entering a call only records this boundary.
-    pub(super) stack_base: usize,
-    pub(super) ip: usize,
+    /// whole execution, so entering a call only records this boundary. Checked when pushed.
+    pub(super) stack_base: u32,
+    /// The verifier bounds chunk length and jump targets to this representation.
+    pub(super) ip: u32,
     pub(super) reusable_locals: bool,
     pub(super) on_complete: Continuation,
     /// Number of logical call-stack slots represented by this physical frame.
@@ -216,6 +217,7 @@ impl ExecutionLimits {
         &mut self,
         frames: &mut Vec<Frame>,
         mut frame: Frame,
+        stack_base: usize,
         #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
     ) -> VmResult<()> {
         if self.call_depth >= self.max_call_stack_depth {
@@ -224,6 +226,15 @@ impl ExecutionLimits {
             }
             return Err(VmError::RecursionError(self.max_call_stack_depth));
         }
+        frame.stack_base = match u32::try_from(stack_base) {
+            Ok(base) => base,
+            Err(_) => {
+                if frame.reusable_locals {
+                    self.recycle_locals(frame.locals);
+                }
+                return Err(VmError::OperandStackLimit);
+            }
+        };
         self.call_depth += 1;
         frame.call_depth_cost = 1;
         #[cfg(feature = "debugger")]
@@ -439,9 +450,25 @@ mod size_tests {
     #[test]
     fn frame_stays_compact() {
         assert!(
-            std::mem::size_of::<Frame>() <= 72,
+            std::mem::size_of::<Frame>() <= 64,
             "Frame grew to {} bytes; every call pushes and pops one",
             std::mem::size_of::<Frame>()
         );
+    }
+
+    #[cfg(all(target_pointer_width = "64", not(feature = "debugger")))]
+    #[test]
+    fn oversized_operand_stack_rejects_frame_and_recycles_locals() {
+        let mut limits = ExecutionLimits::new(None, 10, ExecutionPools::default());
+        let mut frames = Vec::new();
+        let frame = Frame::new(0, None, Locals::flat(1), None, true, Continuation::Push);
+
+        assert!(matches!(
+            limits.push_frame(&mut frames, frame, u32::MAX as usize + 1),
+            Err(VmError::OperandStackLimit)
+        ));
+        assert!(frames.is_empty());
+        assert_eq!(limits.call_depth, 0);
+        assert_eq!(limits.pools.pooled_local_frame_count(), 1);
     }
 }

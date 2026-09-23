@@ -41,6 +41,7 @@ pub(crate) enum VmError {
     InvalidForeachTarget(String),
     Timeout(Duration),
     RecursionError(u32),
+    OperandStackLimit,
     /// `next()` was called on a coroutine already being driven by an outer `next()` higher on
     /// the Rust call stack.
     CoroutineReentrant,
@@ -72,6 +73,7 @@ impl fmt::Display for VmError {
             VmError::InvalidForeachTarget(repr) => write!(f, "invalid types for \"foreach\", got {repr}"),
             VmError::Timeout(d) => write!(f, "execution timed out after {:.3}s", d.as_secs_f64()),
             VmError::RecursionError(max) => write!(f, "maximum recursion depth exceeded ({max})"),
+            VmError::OperandStackLimit => write!(f, "operand stack exceeds the VM limit"),
             VmError::CoroutineReentrant => write!(f, "coroutine is already running"),
             VmError::CoroutineFailed(inner, _) => write!(f, "{inner}"),
             VmError::Located(inner, _) => write!(f, "{inner}"),
@@ -128,6 +130,9 @@ impl VmError {
             },
             VmError::Timeout(d) => RuntimeError::Timeout(*d),
             VmError::RecursionError(max) => RuntimeError::RecursionError(*max),
+            VmError::OperandStackLimit => {
+                RuntimeError::Runtime(token, "operand stack exceeds the VM limit".to_string())
+            }
             VmError::Corrupt(what) => RuntimeError::Runtime(token, format!("corrupt bytecode: {what}")),
             VmError::CoroutineReentrant => RuntimeError::Runtime(token, "coroutine is already running".to_string()),
             VmError::CoroutineFailed(inner, origin_arena) => {
@@ -364,6 +369,7 @@ mod tests {
     )]
     #[case::timeout(VmError::Timeout(Duration::from_secs(1)), "Execution timed out after 1.000s")]
     #[case::recursion_error(VmError::RecursionError(100), "Maximum recursion depth exceeded (100)")]
+    #[case::operand_stack_limit(VmError::OperandStackLimit, "Runtime error: operand stack exceeds the VM limit")]
     #[case::corrupt(VmError::Corrupt("bad opcode"), "Runtime error: corrupt bytecode: bad opcode")]
     #[case::located_unwraps_to_the_inner_message(
         VmError::Located(Box::new(VmError::ZeroDivision), TokenId::new(0)),
@@ -402,6 +408,7 @@ mod tests {
             | VmError::InvalidForeachTarget(_)
             | VmError::Timeout(_)
             | VmError::RecursionError(_)
+            | VmError::OperandStackLimit
             | VmError::CoroutineReentrant
             | VmError::CoroutineFailed(_, _)
             | VmError::Located(_, _) => {}

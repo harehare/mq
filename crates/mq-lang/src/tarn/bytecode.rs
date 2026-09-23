@@ -747,6 +747,10 @@ pub(crate) enum BytecodeError {
     EmptyChunk(usize),
     MissingReturn(usize),
     TooManyChunks(usize),
+    TooManyInstructions {
+        chunk: usize,
+        count: usize,
+    },
     TooManyConstants {
         chunk: usize,
         count: usize,
@@ -819,6 +823,9 @@ impl fmt::Display for BytecodeError {
             Self::EmptyChunk(chunk) => write!(f, "chunk {chunk} has no instructions"),
             Self::MissingReturn(chunk) => write!(f, "chunk {chunk} does not end in a return instruction"),
             Self::TooManyChunks(count) => write!(f, "bytecode has {count} chunks; the VM limit is 65536"),
+            Self::TooManyInstructions { chunk, count } => {
+                write!(f, "chunk {chunk} has {count} instructions; the VM limit is 4294967295")
+            }
             Self::TooManyConstants { chunk, count } => {
                 write!(f, "chunk {chunk} has {count} constants; the VM limit is 65536")
             }
@@ -894,6 +901,12 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
         return Err(BytecodeError::TooManyChunks(chunks.len()));
     }
     for (chunk_index, chunk) in chunks.iter().enumerate() {
+        if chunk.code.len() > u32::MAX as usize {
+            return Err(BytecodeError::TooManyInstructions {
+                chunk: chunk_index,
+                count: chunk.code.len(),
+            });
+        }
         if chunk.code.is_empty() {
             return Err(BytecodeError::EmptyChunk(chunk_index));
         }
