@@ -8302,7 +8302,7 @@ world"# }],
             returns: "array",
             examples: &[BuiltinExample {
                 code: r#"split_records("a,b,c", ",")"#,
-                expected: r#"[{"text": "a", "index": 0, "start_byte": 0, "end_byte": 1, "terminator": ","}, {"text": "b", "index": 1, "start_byte": 2, "end_byte": 3, "terminator": ","}, {"text": "c", "index": 2, "start_byte": 4, "end_byte": 5, "terminator": None}]"#,
+                expected: r#"[{"text": "a", "index": 0, "start_byte": 0, "end_byte": 1, "terminator": ","}, {"text": "b", "index": 1, "start_byte": 2, "end_byte": 3, "terminator": ","}, {"text": "c", "index": 2, "start_byte": 4, "end_byte": 5, "terminator": }]"#,
             }],
             capability: None,
         },
