@@ -221,19 +221,11 @@ impl ExecutionLimits {
         #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
     ) -> VmResult<()> {
         if self.call_depth >= self.max_call_stack_depth {
-            if frame.reusable_locals {
-                self.recycle_locals(frame.locals);
-            }
-            return Err(VmError::RecursionError(self.max_call_stack_depth));
+            return self.reject_frame(frame, VmError::RecursionError(self.max_call_stack_depth));
         }
         frame.stack_base = match u32::try_from(stack_base) {
             Ok(base) => base,
-            Err(_) => {
-                if frame.reusable_locals {
-                    self.recycle_locals(frame.locals);
-                }
-                return Err(VmError::OperandStackLimit);
-            }
+            Err(_) => return self.reject_frame(frame, VmError::OperandStackLimit),
         };
         self.call_depth += 1;
         frame.call_depth_cost = 1;
@@ -250,6 +242,17 @@ impl ExecutionLimits {
         }
         frames.push(frame);
         Ok(())
+    }
+
+    /// Recycles a frame's locals and turns it into `error`. Kept out of line so the
+    /// `push_frame` success path stays small; both of its rejection cases are rare.
+    #[cold]
+    #[inline(never)]
+    fn reject_frame(&mut self, frame: Frame, error: VmError) -> VmResult<()> {
+        if frame.reusable_locals {
+            self.recycle_locals(frame.locals);
+        }
+        Err(error)
     }
 
     /// Pops the top frame, recycling its locals, and returns its `Continuation`.
