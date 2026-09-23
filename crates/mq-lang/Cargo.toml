@@ -63,7 +63,7 @@ ammonia = {workspace = true}
 web-sys = { version = "0.3", features = ["console"] }
 uuid = {workspace = true, features = ["js"]}
 getrandom = { version = "0.4", features = ["wasm_js"] }
-web-time = {workspace = true}
+web-time = {workspace = true, optional = true}
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
@@ -73,6 +73,8 @@ debug-trace = []
 # Enables execution-count profiling for Tarn bytecode instructions. This is intended for
 # development diagnostics and is deliberately excluded from normal builds.
 vm-profile = []
+# Use the browser clock for VM deadlines when targeting WebAssembly.
+wasm = ["dep:web-time"]
 cst = ["dep:ropey"]
 css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]

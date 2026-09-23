@@ -1433,6 +1433,26 @@ mod tests {
         assert!(result.await.is_err());
     }
 
+    #[wasm_bindgen_test]
+    async fn test_script_run_with_timeout_completes_short_query() {
+        let result = run(
+            "upcase()",
+            "hello",
+            serde_wasm_bindgen::to_value(&Options {
+                is_update: false,
+                input_format: Some(InputFormat::Text),
+                list_style: None,
+                link_title_style: None,
+                link_url_style: None,
+                allowed_domains: None,
+                allow_http_import: None,
+                timeout_ms: Some(60_000),
+            })
+            .unwrap(),
+        );
+        assert_eq!(result.await.unwrap(), "HELLO\n");
+    }
+
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_script_run_invalid_syntax() {

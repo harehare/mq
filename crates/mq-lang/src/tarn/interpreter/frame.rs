@@ -7,7 +7,11 @@ use crate::tarn::VmEnv;
 use crate::tarn::bytecode::Chunk;
 use crate::tarn::value::{Cell, Closure, Locals, StackValue};
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+use std::time::Instant;
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+use web_time::Instant;
 
 #[cfg(feature = "debugger")]
 use super::DebugRuntime;

@@ -11,7 +11,10 @@ use crate::runtime::runtime_value::RuntimeValue;
 use crate::tarn::{VmEnv, VmEnvCacheKey, VmModuleCacheKey};
 use crate::{ModuleResolver, Shared, SharedCell};
 use std::fmt;
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
 use std::time::Instant;
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+use web_time::Instant;
 
 /// Bytecode retained for repeated VM evaluation.
 pub(crate) struct CachedProgram {

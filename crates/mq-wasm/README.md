@@ -12,6 +12,7 @@ WebAssembly bindings for mq Markdown processing.
 - **Full mq Functionality**: Access to the complete mq query language
 - **OPFS Integration**: File system access via Origin Private File System
 - **Async Operations**: Support for asynchronous operations in WASM
+- **Query timeout**: Set `timeoutMs` in `run` options to limit query evaluation time (milliseconds).
 
 ## Usage
 
