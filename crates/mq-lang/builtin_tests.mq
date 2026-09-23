@@ -1,5 +1,41 @@
 include "test" |
 
+# @parametrize([[1, 1, true], [1, 2, false], ["a", "a", true], ["a", "b", false], [None, None, true]])
+def test_eq(a, b, expected):
+  let result = eq(a, b)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[1, 1, false], [1, 2, true], ["a", "a", false], ["a", "b", true]])
+def test_ne(a, b, expected):
+  let result = ne(a, b)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[2, 1, true], [1, 2, false], [1, 1, false], [b"\x02", b"\x01", true], [b"\x01", b"\x02", false], [b"\x01", b"\x01", false], [b"\x01\x00", b"\x01", true]])
+def test_gt(a, b, expected):
+  let result = gt(a, b)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[2, 1, true], [1, 1, true], [1, 2, false], [b"\x02", b"\x01", true], [b"\x01", b"\x01", true], [b"\x01", b"\x02", false]])
+def test_gte(a, b, expected):
+  let result = gte(a, b)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[1, 2, true], [2, 1, false], [1, 1, false], [b"\x01", b"\x02", true], [b"\x02", b"\x01", false], [b"\x01", b"\x01", false]])
+def test_lt(a, b, expected):
+  let result = lt(a, b)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([[1, 2, true], [1, 1, true], [2, 1, false], [b"\x01", b"\x02", true], [b"\x01", b"\x01", true], [b"\x02", b"\x01", false]])
+def test_lte(a, b, expected):
+  let result = lte(a, b)
+  | assert_eq(result, expected)
+end
+
 # @parametrize([[[1, 2, 3], true], ["string", false], [42, false], [None, false], [dict(), false]])
 def test_is_array(arr, expected):
   let result1 = is_array(arr)

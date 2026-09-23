@@ -165,6 +165,10 @@ impl Node {
                     arena[self.token_id].range
                 }
             }
+            Expr::BinaryOp(_, lhs, rhs) => Range {
+                start: lhs.range(Shared::clone(&arena)).start,
+                end: rhs.range(Shared::clone(&arena)).end,
+            },
             Expr::Break(Some(value_node)) | Expr::Yield(Some(value_node)) => {
                 let start = arena[self.token_id].range.start;
                 let end = value_node.range(Shared::clone(&arena)).end;
@@ -320,12 +324,57 @@ impl Display for Literal {
     }
 }
 
+/// A binary arithmetic or comparison operator (`+ - * / % == != < <= > >=`). Compiled directly to
+/// a VM opcode, never desugared into a named call — see `Expr::BinaryOp`.
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl BinaryOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Add => "+",
+            Self::Sub => "-",
+            Self::Mul => "*",
+            Self::Div => "/",
+            Self::Mod => "%",
+            Self::Eq => "==",
+            Self::Ne => "!=",
+            Self::Lt => "<",
+            Self::Le => "<=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
+        }
+    }
+}
+
+impl Display for BinaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
     As(IdentWithToken, Shared<Node>),
     Block(Program),
     Call(IdentWithToken, Args),
+    /// `lhs op rhs` for `+ - * / % == != < <= > >=`. Never desugared into `Call` so operator use
+    /// always compiles to a direct VM opcode, independent of name resolution/shadowing.
+    BinaryOp(BinaryOp, Shared<Node>, Shared<Node>),
     /// An `[...]` array literal. Each spread element (`...expr`) remains a nested
     /// `Call` on `constants::builtins::SPREAD`.
     Array(Args),

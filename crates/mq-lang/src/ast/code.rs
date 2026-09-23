@@ -78,6 +78,11 @@ impl Node {
                 format_args(args, buf, indent);
                 buf.push(')');
             }
+            Expr::BinaryOp(op, lhs, rhs) => {
+                lhs.format_to_code(buf, indent);
+                write!(buf, " {} ", op.as_str()).unwrap();
+                rhs.format_to_code(buf, indent);
+            }
             Expr::Array(args) => {
                 buf.push('[');
                 format_args(args, buf, indent);

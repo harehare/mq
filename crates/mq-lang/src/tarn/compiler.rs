@@ -457,6 +457,10 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
                 collect_soft_builtin_names(operand, shadowed, names);
             }
         }
+        Expr::BinaryOp(_, lhs, rhs) => {
+            collect_soft_builtin_names(lhs, shadowed, names);
+            collect_soft_builtin_names(rhs, shadowed, names);
+        }
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -570,6 +574,10 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
                 collect_referenced_names(operand, names);
             }
         }
+        Expr::BinaryOp(_, lhs, rhs) => {
+            collect_referenced_names(lhs, names);
+            collect_referenced_names(rhs, names);
+        }
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -667,6 +675,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
             node_contains_direct_yield(callee) || args.iter().any(node_contains_direct_yield)
         }
         Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_contains_direct_yield),
+        Expr::BinaryOp(_, lhs, rhs) => node_contains_direct_yield(lhs) || node_contains_direct_yield(rhs),
         Expr::InterpolatedString(segments) => segments
             .iter()
             .any(|segment| matches!(segment, StringSegment::Expr(expr) if node_contains_direct_yield(expr))),
@@ -2297,6 +2306,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Paren(inner) => self.compile_expr(inner),
             Expr::And(operands) => self.compile_and(operands),
             Expr::Or(operands) => self.compile_or(operands),
+            Expr::BinaryOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
         }
     }
 
@@ -2477,7 +2487,7 @@ impl<R: ModuleResolver> Compiler<R> {
         if args.len() == 2
             && let Some(op) = fast_path_binop(&ident)
         {
-            if self.compile_local_binary(op, args) {
+            if self.compile_local_binary(op, &args[0], &args[1]) {
                 return Ok(());
             }
             self.compile_expr(&args[0])?;
@@ -2607,14 +2617,14 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_local_binary(&mut self, op: BinaryOp, args: &ast::Args) -> bool {
-        let Some(left_slot) = self.current_local_slot(&args[0]) else {
+    fn compile_local_binary(&mut self, op: BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> bool {
+        let Some(left_slot) = self.current_local_slot(lhs) else {
             return false;
         };
 
-        match &args[1].expr {
+        match &rhs.expr {
             Expr::Ident(_) => {
-                let Some(right_slot) = self.current_local_slot(&args[1]) else {
+                let Some(right_slot) = self.current_local_slot(rhs) else {
                     return false;
                 };
                 self.emit(OpCode::BinaryLocalLocal {
@@ -2635,6 +2645,23 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             _ => false,
         }
+    }
+
+    /// Compiles `lhs op rhs` for the 11 arithmetic/comparison operators directly to a VM opcode.
+    /// Unlike a named call, this never consults `resolve()`/`shadowed_builtin` — operator use is
+    /// never desugared into `Expr::Call`, so it can't alias a same-named `def`/local and can't
+    /// self-recurse.
+    fn compile_binary_op(&mut self, op: ast::BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> CompileResult<()> {
+        let op = to_vm_binary_op(op);
+        let token_id = self.current_token_id;
+        if self.compile_local_binary(op, lhs, rhs) {
+            return Ok(());
+        }
+        self.compile_expr(lhs)?;
+        self.compile_expr(rhs)?;
+        self.set_call_token_id(token_id);
+        self.emit(binary_op_opcode(op));
+        Ok(())
     }
 
     fn current_local_slot(&self, node: &Shared<Node>) -> Option<u16> {
@@ -2969,6 +2996,22 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())
+    }
+}
+
+fn to_vm_binary_op(op: ast::BinaryOp) -> BinaryOp {
+    match op {
+        ast::BinaryOp::Add => BinaryOp::Add,
+        ast::BinaryOp::Sub => BinaryOp::Sub,
+        ast::BinaryOp::Mul => BinaryOp::Mul,
+        ast::BinaryOp::Div => BinaryOp::Div,
+        ast::BinaryOp::Mod => BinaryOp::Mod,
+        ast::BinaryOp::Eq => BinaryOp::Eq,
+        ast::BinaryOp::Ne => BinaryOp::Ne,
+        ast::BinaryOp::Lt => BinaryOp::Lt,
+        ast::BinaryOp::Le => BinaryOp::Le,
+        ast::BinaryOp::Gt => BinaryOp::Gt,
+        ast::BinaryOp::Ge => BinaryOp::Ge,
     }
 }
 

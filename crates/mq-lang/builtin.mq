@@ -3,6 +3,72 @@
 # Returns: dynamic
 def halt_error(): halt(5);
 
+# Checks if two values are equal
+#
+# Example:
+# ```
+# eq(1, 1)
+# #=> true
+# ```
+#
+# Returns: bool
+def eq(a, b): a == b;
+
+# Checks if two values are not equal
+#
+# Example:
+# ```
+# ne(1, 2)
+# #=> true
+# ```
+#
+# Returns: bool
+def ne(a, b): a != b;
+
+# Checks if the first value is greater than the second
+#
+# Example:
+# ```
+# gt(2, 1)
+# #=> true
+# ```
+#
+# Returns: bool
+def gt(a, b): a > b;
+
+# Checks if the first value is greater than or equal to the second
+#
+# Example:
+# ```
+# gte(1, 1)
+# #=> true
+# ```
+#
+# Returns: bool
+def gte(a, b): a >= b;
+
+# Checks if the first value is less than the second
+#
+# Example:
+# ```
+# lt(1, 2)
+# #=> true
+# ```
+#
+# Returns: bool
+def lt(a, b): a < b;
+
+# Checks if the first value is less than or equal to the second
+#
+# Example:
+# ```
+# lte(1, 1)
+# #=> true
+# ```
+#
+# Returns: bool
+def lte(a, b): a <= b;
+
 # Checks if input is an array
 #
 # Example:
