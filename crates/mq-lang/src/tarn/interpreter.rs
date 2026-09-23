@@ -1310,8 +1310,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
             }
             OpCode::UpdateLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 // SAFETY: `verify_chunks` validates every local slot before execution.
                 unsafe { locals.set_unchecked(*local, StackValue::Value(value)) };
@@ -1354,8 +1353,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 constant,
                 offset,
             } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let cond = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let cond = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 if !cond.is_truthy() {
                     ip = (ip as i64 + *offset as i64) as usize;
@@ -1418,8 +1416,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.push(StackValue::Value(result));
             }
             OpCode::BinaryLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let result = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let result = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 stack.push(StackValue::Value(result));
             }
@@ -1501,8 +1498,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 accumulator_slot,
                 offset,
             } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 locals
                     .append_to_array_at(*accumulator_slot, value)
@@ -2031,8 +2027,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
             }
             OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
-                let constant = numeric_constant(chunk, *constant).map_err(|e| locate(chunk, ip, e))?;
-                let value = eval_local_number_const_binary_op(*op, locals, *local, constant, chunks, execution)
+                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                     .map_err(|e| locate(chunk, ip, e))?;
                 break 'dispatch FrameOutcome::Complete(StackValue::Value(value));
             }
@@ -2509,22 +2504,15 @@ fn eval_binary_op(
 }
 
 #[inline(always)]
-fn numeric_constant(chunk: &Chunk, index: u16) -> VmResult<Number> {
-    match chunk.constants.get(index as usize) {
-        Some(RuntimeValue::Number(value)) => Ok(*value),
-        _ => Err(VmError::Corrupt("numeric opcode constant is not a number")),
-    }
-}
-
-#[inline(always)]
 fn eval_local_number_const_binary_op(
     op: BinaryOp,
     locals: &Locals,
     local: u16,
-    constant: Number,
+    constant: i32,
     chunks: &Shared<Vec<Chunk>>,
     execution: &ExecutionContext<'_>,
 ) -> VmResult<RuntimeValue> {
+    let constant = Number::new(constant as f64);
     // SAFETY: the bytecode verifier validates the local slot before execution.
     if let Some(RuntimeValue::Number(value)) = unsafe { locals.direct_runtime_value_unchecked(local) } {
         return eval_number_binary_op(op, *value, constant);
