@@ -953,3 +953,175 @@ fn cookbook_update_text_in_place() {
         "# My Project v1.3.0\n\nInstall version 1.3.0 to get started.\n\nSee the changelog for details."
     );
 }
+
+#[test]
+fn cookbook_convert_yaml_and_json() {
+    let yaml = write_temp(
+        "cookbook_convert_yaml_and_json.yaml",
+        "name: web\nreplicas: 3\nenv:\n  - name: LOG_LEVEL\n    value: debug\n  - name: PORT\n    value: \"8080\"\n",
+    );
+    let json = run(&[
+        "-I",
+        "raw",
+        "-F",
+        "json",
+        r#"import "yaml" | yaml::yaml_parse"#,
+        yaml.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&json).unwrap(),
+        serde_json::json!({
+            "name": "web",
+            "replicas": 3,
+            "env": [
+                {"name": "LOG_LEVEL", "value": "debug"},
+                {"name": "PORT", "value": "8080"}
+            ]
+        })
+    );
+
+    let json = write_temp(
+        "cookbook_convert_yaml_and_json.json",
+        r#"{"name": "web", "replicas": 3, "tags": ["a", "b"]}"#,
+    );
+    let yaml = run(&[
+        "-I",
+        "raw",
+        r#"import "json" | import "yaml" | json::json_parse | yaml::yaml_stringify"#,
+        json.to_str().unwrap(),
+    ]);
+    let yaml = yaml.lines().map(str::trim_end).collect::<Vec<_>>().join("\n");
+    assert_eq!(yaml, "name: web\nreplicas: 3\ntags:\n  - a\n  - b");
+}
+
+#[test]
+fn cookbook_extract_links_from_html() {
+    let page = write_temp(
+        "cookbook_extract_links_from_html.html",
+        "<html><body>\n<h1>Docs</h1>\n<ul>\n  <li><a href=\"https://example.com/a\">Alpha</a></li>\n  <li><a href=\"/b\" class=\"ext\">Beta <b>2</b></a></li>\n  <li><a>No href</a></li>\n</ul>\n</body></html>\n",
+    );
+    let out = run(&[
+        "-I",
+        "raw",
+        r#"import "html" | html::html_parse | html::html_find_all("a") | filter(fn(a): a | html::html_attr("href") | !is_none();) | map(fn(a): "- [" + html::html_text(a) + "](" + html::html_attr(a, "href") + ")";) | join("\n")"#,
+        page.to_str().unwrap(),
+    ]);
+    assert_eq!(out.trim(), "- [Alpha](https://example.com/a)\n- [Beta 2](/b)");
+}
+
+#[test]
+fn cookbook_fetch_and_filter_a_web_page() {
+    // The recipe's live fetch depends on the current site and network. Exercise its
+    // from_html/heading pipeline with a fixed response body instead.
+    let out = run(&[
+        "-I",
+        "null",
+        "-A",
+        r#""<h1>Query. Filter.</h1><h2>What is mq?</h2><h2>Why mq?</h2><h3>Details</h3>" | from_html | .h(1..2)"#,
+    ]);
+    assert_eq!(out.trim(), "# Query. Filter.\n\n## What is mq?\n\n## Why mq?");
+}
+
+#[test]
+fn cookbook_find_latest_version_with_semver() {
+    let tags = write_temp(
+        "cookbook_find_latest_version_with_semver.txt",
+        "v1.2.0\nv1.10.1\nv1.9.3\nv2.0.0-rc.1\nv2.0.0\nv1.10.0\n",
+    );
+    let path = tags.to_str().unwrap();
+    let sorted = run(&[
+        "-I",
+        "raw",
+        "-F",
+        "json",
+        r#"import "semver" | split("\n") | filter(fn(l): l != "";) | map(semver::semver_parse) | semver::semver_sort | map(semver::semver_to_string)"#,
+        path,
+    ]);
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&sorted).unwrap(),
+        serde_json::json!(["1.2.0", "1.9.3", "1.10.0", "1.10.1", "2.0.0-rc.1", "2.0.0"])
+    );
+
+    let latest = run(&[
+        "-I",
+        "raw",
+        r#"import "semver" | split("\n") | filter(fn(l): l != "";) | map(semver::semver_parse) | semver::semver_max | semver::semver_to_string"#,
+        path,
+    ]);
+    assert_eq!(latest.trim(), "2.0.0");
+
+    let in_range = run(&[
+        "-I",
+        "raw",
+        r#"import "semver" | split("\n") | filter(fn(l): l != "";) | semver::semver_max_satisfying("~1.10.0")"#,
+        path,
+    ]);
+    assert_eq!(in_range.trim(), "1.10.1");
+}
+
+#[test]
+fn cookbook_fuzzy_match_headings() {
+    let guide = write_temp(
+        "cookbook_fuzzy_match_headings.md",
+        "# Guide\n\n## Installation\n\nInstall with cargo.\n\n## Configuration\n\nEdit the config file.\n\n## Troubleshooting\n\nCommon problems.\n",
+    );
+    let path = guide.to_str().unwrap();
+    let best = run(&[
+        r#"import "fuzzy" | nodes | filter(is_h) | map(to_text) | fuzzy::fuzzy_best_match("instalation")"#,
+        path,
+    ]);
+    let best: serde_json::Value = serde_json::from_str(best.trim()).unwrap();
+    assert_eq!(best["text"], "Installation");
+    assert_eq!(best["score"], serde_json::json!(0.914141));
+
+    let section = run(&[
+        r#"import "fuzzy" | import "section" | nodes | let best = fuzzy::fuzzy_best_match(map(filter(., is_h), to_text), "instalation") | section::section(get(best, "text"))"#,
+        path,
+    ]);
+    assert_eq!(section.trim(), "## Installation\n\nInstall with cargo.");
+}
+
+#[test]
+fn cookbook_json_to_markdown_table() {
+    let users = write_temp(
+        "cookbook_json_to_markdown_table.json",
+        r#"{"users":[{"name":"Alice","role":"admin","active":true},{"name":"Bob","role":"dev","active":false},{"name":"Carol","role":"dev","active":true}]}"#,
+    );
+    let out = run(&[
+        "-I",
+        "raw",
+        r#"import "json" | json::json_parse | get("users") | filter(fn(u): u["active"];) | json::json_to_markdown_table"#,
+        users.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        out.trim(),
+        "| name | role | active |\n| --- | --- | --- |\n| Alice | admin | true |\n| Carol | dev | true |"
+    );
+}
+
+#[test]
+fn cookbook_read_toml_values() {
+    let toml = write_temp(
+        "cookbook_read_toml_values.toml",
+        "[package]\nname = \"demo\"\nversion = \"0.3.1\"\nedition = \"2021\"\n\n[dependencies]\nserde = \"1.0\"\nclap = { version = \"4.5\", features = [\"derive\"] }\nmiette = \"7\"\n",
+    );
+    let path = toml.to_str().unwrap();
+    let table = run(&[
+        "-I",
+        "raw",
+        r#"import "toml" | toml::toml_parse | get("dependencies") | toml::toml_to_markdown_table"#,
+        path,
+    ]);
+    assert_eq!(
+        table.trim(),
+        "| Key | Value |\n| --- | --- |\n| clap | {\"features\": [\"derive\"], \"version\": \"4.5\"} |\n| miette | 7 |\n| serde | 1.0 |"
+    );
+
+    let version = run(&[
+        "-I",
+        "raw",
+        r#"import "toml" | toml::toml_parse | get("package") | get("version")"#,
+        path,
+    ]);
+    assert_eq!(version.trim(), "0.3.1");
+}
