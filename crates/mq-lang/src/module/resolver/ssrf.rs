@@ -20,7 +20,14 @@ pub fn is_https(url: &str) -> bool {
 pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
     match ip {
         std::net::IpAddr::V4(v4) => {
-            !(v4.is_loopback()
+            let octets = v4.octets();
+            !(octets[0] == 0
+                || (octets[0] == 100 && (64..=127).contains(&octets[1]))
+                || (octets[0] == 192 && octets[1] == 0 && octets[2] == 0)
+                || (octets[0] == 192 && octets[1] == 88 && octets[2] == 99)
+                || (octets[0] == 198 && (18..=19).contains(&octets[1]))
+                || octets[0] >= 240
+                || v4.is_loopback()
                 || v4.is_private()
                 || v4.is_link_local()
                 || v4.is_multicast()
@@ -32,11 +39,14 @@ pub fn is_global_ip(ip: std::net::IpAddr) -> bool {
             if let Some(mapped) = v6.to_ipv4_mapped() {
                 return is_global_ip(std::net::IpAddr::V4(mapped));
             }
+            let segments = v6.segments();
             !(v6.is_loopback()
                 || v6.is_multicast()
                 || v6.is_unspecified()
                 || v6.is_unique_local()
-                || v6.is_unicast_link_local())
+                || v6.is_unicast_link_local()
+                || (segments[0] & 0xffc0) == 0xfec0 // deprecated site-local
+                || (segments[0] == 0x2001 && segments[1] == 0x0db8)) // documentation
         }
     }
 }
@@ -79,8 +89,8 @@ impl ureq::unversioned::resolver::Resolver for SsrfSafeResolver {
 }
 
 /// Builds a `ureq::Agent` hardened against SSRF: bounds every request to `timeout`, optionally
-/// restricts to `https://` (`https_only`), disables automatic redirects (so a redirect to an
-/// internal address can't bypass allowlist/IP checks), and resolves DNS through
+/// restricts to `https://` (`https_only`), disables proxies and automatic redirects (so neither
+/// can bypass allowlist/IP checks), and resolves DNS through
 /// [`SsrfSafeResolver`] so only publicly routable addresses are ever connected to.
 ///
 /// Shared by the HTTP module-import fetcher and the `http` builtin.
@@ -89,6 +99,8 @@ pub(crate) fn ssrf_safe_agent(timeout: std::time::Duration, https_only: bool) ->
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(timeout))
         .https_only(https_only)
+        // A proxy can resolve the destination itself, bypassing our DNS filter.
+        .proxy(None)
         .max_redirects(0)
         .build();
     ureq::Agent::with_parts(
@@ -103,6 +115,13 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    #[test]
+    #[cfg(any(feature = "http-import-ureq", feature = "http"))]
+    fn ssrf_safe_agent_never_uses_an_ambient_proxy() {
+        let agent = ssrf_safe_agent(std::time::Duration::from_secs(1), true);
+        assert!(agent.config().proxy().is_none());
+    }
+
     #[rstest]
     #[case("127.0.0.1", false)]
     #[case("10.0.0.1", false)]
@@ -110,6 +129,14 @@ mod tests {
     #[case("192.168.1.1", false)]
     #[case("169.254.169.254", false)] // cloud metadata endpoint
     #[case("0.0.0.0", false)]
+    #[case("0.1.2.3", false)]
+    #[case("100.64.0.1", false)] // shared address space
+    #[case("100.127.255.254", false)]
+    #[case("192.0.0.8", false)] // protocol assignments
+    #[case("192.88.99.1", false)] // deprecated 6to4 relay
+    #[case("198.18.0.1", false)] // benchmarking
+    #[case("198.19.255.254", false)]
+    #[case("240.0.0.1", false)]
     #[case("224.0.0.1", false)]
     #[case("255.255.255.255", false)]
     #[case("8.8.8.8", true)]
@@ -117,6 +144,8 @@ mod tests {
     #[case("::1", false)]
     #[case("fc00::1", false)]
     #[case("fe80::1", false)]
+    #[case("fec0::1", false)]
+    #[case("2001:db8::1", false)]
     #[case("::ffff:127.0.0.1", false)] // IPv4-mapped loopback bypass
     #[case("::ffff:8.8.8.8", true)]
     #[case("2001:4860:4860::8888", true)]

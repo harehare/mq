@@ -1,3 +1,5 @@
+use crate::io::url_allowlist;
+
 /// Network access granted to [`SandboxedIo`](super::SandboxedIo); same shape as
 /// [`PathAccess`](super::PathAccess)/[`EnvAccess`](super::EnvAccess) but keyed by domain
 /// (e.g. `mq-run`'s `--allow-net`).
@@ -42,29 +44,11 @@ impl NetAccess {
         match self {
             NetAccess::Denied => false,
             NetAccess::Allowed => true,
-            NetAccess::AllowedDomains(allowed) => {
-                let without_scheme = url
-                    .strip_prefix("https://")
-                    .or_else(|| url.strip_prefix("http://"))
-                    .unwrap_or(url);
-                allowed.iter().any(|domain| prefix_matches(without_scheme, domain))
-            }
+            NetAccess::AllowedDomains(allowed) => allowed.iter().any(|domain| url_allowlist::matches(url, domain)),
         }
     }
 
     pub(super) fn is_denied(&self) -> bool {
         matches!(self, NetAccess::Denied)
     }
-}
-
-/// Returns `true` if `url_without_scheme`'s host/path matches `domain` as a strict prefix.
-///
-/// The match requires that after the prefix the next character is `/`, `?`, `#`, `:`, or
-/// end of string — preventing `example.com.evil.com` from matching `example.com`.
-fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
-    let rest = match url_without_scheme.strip_prefix(domain) {
-        Some(r) => r,
-        None => return false,
-    };
-    rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
 }
