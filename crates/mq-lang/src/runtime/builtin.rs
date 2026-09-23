@@ -53,6 +53,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{
     capture_re, is_match_re, match_re, regex_escape, regex_replace_matches, replace_re, scan_re, split_re,
+    split_records_re,
 };
 use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
@@ -2629,6 +2630,23 @@ fn split_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("split should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "split_records", params = Fixed(2))]
+fn split_records_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s1), RuntimeValue::String(s2)] => split_records_re(s1, s2),
+        [node @ RuntimeValue::Markdown(_, _), RuntimeValue::String(s)] => node
+            .markdown_node()
+            .map(|md| split_records_re(md.value().as_str(), s))
+            .unwrap_or_else(|| Ok(RuntimeValue::empty_array())),
+        [RuntimeValue::None, RuntimeValue::String(_)] => Ok(RuntimeValue::empty_array()),
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("split_records should always receive exactly two arguments"),
     }
 }
 
@@ -5719,6 +5737,7 @@ mq_macros::builtin_dispatch! {
     _SORT_BY_IMPL,
     COMPACT,
     SPLIT,
+    SPLIT_RECORDS,
     UNIQ,
     CEIL,
     FLOOR,
@@ -8270,6 +8289,20 @@ world"# }],
             examples: &[BuiltinExample {
                 code: r#"split("a,b,c", ",")"#,
                 expected: r#"["a", "b", "c"]"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("split_records"),
+        BuiltinFunctionDoc {
+            description: "Splits a string by a regular expression separator into `{text, index, start_byte, end_byte, terminator}` records, keeping each piece's byte range and the separator that followed it (`terminator` is None for the last piece). Errors if the separator matches an empty string.",
+            params: &["value", "separator"],
+            param_types: &["dynamic", "string"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"split_records("a,b,c", ",")"#,
+                expected: r#"[{"text": "a", "index": 0, "start_byte": 0, "end_byte": 1, "terminator": ","}, {"text": "b", "index": 1, "start_byte": 2, "end_byte": 3, "terminator": ","}, {"text": "c", "index": 2, "start_byte": 4, "end_byte": 5, "terminator": None}]"#,
             }],
             capability: None,
         },
