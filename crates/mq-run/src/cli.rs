@@ -34,6 +34,20 @@ use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
 
+fn parse_timeout(value: &str) -> Result<Duration, String> {
+    let secs = value
+        .parse::<f64>()
+        .map_err(|_| "expected a number of seconds".to_string())?;
+    if !secs.is_finite() || secs <= 0.0 {
+        return Err("must be a finite number greater than 0".to_string());
+    }
+    let timeout = Duration::try_from_secs_f64(secs).map_err(|_| "timeout is too large".to_string())?;
+    if std::time::Instant::now().checked_add(timeout).is_none() {
+        return Err("timeout is too large".to_string());
+    }
+    Ok(timeout)
+}
+
 #[derive(Parser, Debug, Default)]
 #[command(name = "mq")]
 #[command(author = env!("CARGO_PKG_AUTHORS"))]
@@ -84,9 +98,9 @@ pub struct Cli {
     argv: Option<Vec<String>>,
 
     /// Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5).
-    /// No timeout by default.
-    #[arg(long, value_name = "SECONDS")]
-    timeout: Option<f64>,
+    /// Must be a finite positive number. No timeout by default.
+    #[arg(long, value_name = "SECONDS", value_parser = parse_timeout, allow_negative_numbers = true)]
+    timeout: Option<Duration>,
 
     /// Include VM frames in uncaught runtime errors.
     #[arg(long, default_value_t = false)]
@@ -1879,11 +1893,8 @@ impl Cli {
             }
         }
 
-        if let Some(secs) = self.timeout {
-            if secs <= 0.0 {
-                return Err(miette!("--timeout must be greater than 0"));
-            }
-            engine.set_timeout(std::time::Duration::from_secs_f64(secs));
+        if let Some(timeout) = self.timeout {
+            engine.set_timeout(timeout);
         }
         engine.set_capture_stack_trace(self.stack_trace);
 
@@ -3736,23 +3747,22 @@ mod tests {
     }
 
     #[rstest]
-    #[case(0.0)]
-    #[case(-1.0)]
-    fn test_timeout_rejects_non_positive(#[case] secs: f64) {
-        let cli = Cli {
-            input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                ..Default::default()
-            },
-            output: OutputArgs::default(),
-            commands: None,
-            query: Some("1".to_string()),
-            files: None,
-            timeout: Some(secs),
-            ..Cli::default()
-        };
+    #[case("0")]
+    #[case("-1")]
+    #[case("NaN")]
+    #[case("inf")]
+    #[case("1e100")]
+    #[case("1e19")]
+    fn test_timeout_rejects_invalid_values(#[case] secs: &str) {
+        let error = Cli::try_parse_from(["mq", "--timeout", secs, "self"]).unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ValueValidation);
+        assert!(error.to_string().contains("--timeout"), "{error}");
+    }
 
-        assert!(cli.run().is_err());
+    #[test]
+    fn test_timeout_parses_fractional_seconds() {
+        let cli = Cli::try_parse_from(["mq", "--timeout", "0.5", "self"]).unwrap();
+        assert_eq!(cli.timeout, Some(Duration::from_millis(500)));
     }
 
     #[test]
@@ -3766,7 +3776,7 @@ mod tests {
             commands: None,
             query: Some("while(true): 1;".to_string()),
             files: None,
-            timeout: Some(0.001),
+            timeout: Some(Duration::from_millis(1)),
             ..Cli::default()
         };
 
@@ -3784,7 +3794,7 @@ mod tests {
             commands: None,
             query: Some("1 + 1".to_string()),
             files: None,
-            timeout: Some(5.0),
+            timeout: Some(Duration::from_secs(5)),
             ..Cli::default()
         };
 
