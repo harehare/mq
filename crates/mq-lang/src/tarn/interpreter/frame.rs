@@ -147,7 +147,7 @@ const MAX_POOLED_FRAME_STACK_CAPACITY: usize = 4096;
 impl ExecutionLimits {
     pub(super) fn new(timeout: Option<Duration>, max_call_stack_depth: u32, pools: ExecutionPools) -> Self {
         Self {
-            deadline: timeout.map(|t| Instant::now() + t),
+            deadline: timeout.and_then(|t| Instant::now().checked_add(t)),
             timeout,
             // Check before the first instruction as well as at the regular interval. Without
             // this, a zero or already-expired timeout could still run a short query to
@@ -447,6 +447,12 @@ mod size_tests {
     #[test]
     fn continuation_stays_pointer_sized() {
         assert_eq!(std::mem::size_of::<Continuation>(), std::mem::size_of::<usize>());
+    }
+
+    #[test]
+    fn oversized_timeout_does_not_panic_when_creating_execution_limits() {
+        let mut limits = ExecutionLimits::new(Some(Duration::MAX), 10, ExecutionPools::default());
+        assert!(limits.check().is_ok());
     }
 
     #[cfg(not(feature = "debugger"))]

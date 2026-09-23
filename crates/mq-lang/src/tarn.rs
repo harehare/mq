@@ -155,7 +155,7 @@ impl Error {
 
 /// A deadline shared by all inputs in one evaluation.
 fn shared_deadline(timeout: Option<Duration>) -> Option<Instant> {
-    timeout.map(|timeout| Instant::now() + timeout)
+    timeout.and_then(|timeout| Instant::now().checked_add(timeout))
 }
 
 fn remaining_timeout(deadline: Option<Instant>) -> Option<Duration> {

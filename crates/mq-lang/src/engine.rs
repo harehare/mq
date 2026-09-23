@@ -973,6 +973,25 @@ mod tests {
         assert_eq!(engine.vm.options.timeout, Some(timeout));
     }
 
+    #[test]
+    fn test_oversized_timeout_does_not_panic_during_vm_evaluation() {
+        let mut engine = DefaultEngine::default();
+        engine.set_timeout(std::time::Duration::MAX);
+
+        let input = std::iter::once(RuntimeValue::None);
+        assert_eq!(
+            engine.eval("1", input).unwrap().values(),
+            &[RuntimeValue::Number(1.into())]
+        );
+
+        let compiled = engine.compile("1").unwrap();
+        let input = std::iter::once(RuntimeValue::None);
+        assert_eq!(
+            engine.eval_compiled(&compiled, input).unwrap().values(),
+            &[RuntimeValue::Number(1.into())]
+        );
+    }
+
     #[rstest]
     #[case::default(false, false)]
     #[case::enabled(true, true)]
