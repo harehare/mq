@@ -47,7 +47,11 @@ use rustc_hash::{FxHashMap, FxHashSet};
 use std::fmt;
 #[cfg(not(feature = "debugger"))]
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
+use std::time::Instant;
+#[cfg(all(target_arch = "wasm32", feature = "wasm"))]
+use web_time::Instant;
 
 #[cfg(feature = "debugger")]
 use crate::runtime::debugger::DefaultDebuggerHandler;
