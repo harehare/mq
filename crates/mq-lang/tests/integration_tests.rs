@@ -3433,6 +3433,17 @@ fn io_reader_is_nameable_from_external_crates() {
 ]))].into()))]
 #[case::split_records_none(r#"split_records(None, ",")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::empty_array()].into()))]
 #[case::split_records_markdown(r#"to_h("a,b", 1) | split_records(",") | len()"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(2.into())].into()))]
+#[case::extract_urls_basic(r#"extract_urls("see https://example.com.")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Array(Shared::new(vec![
+    RuntimeValue::Dict(Shared::new(DictMap::from_iter([
+        (Ident::new("url"), RuntimeValue::String(Shared::new("https://example.com".to_string()))),
+        (Ident::new("start_byte"), RuntimeValue::Number(4.into())),
+        (Ident::new("end_byte"), RuntimeValue::Number(23.into())),
+        (Ident::new("kind"), RuntimeValue::String(Shared::new("http".to_string()))),
+    ]))),
+]))].into()))]
+#[case::extract_urls_no_match(r#"extract_urls("no urls here")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::empty_array()].into()))]
+#[case::extract_urls_none(r#"extract_urls(None)"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::empty_array()].into()))]
+#[case::extract_urls_markdown(r#"to_h("see https://example.com", 1) | extract_urls() | len()"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::Number(1.into())].into()))]
 // to_link: empty title → link with no title
 #[case::to_link_empty_title(r##"to_link("url", "text", "") | type"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // get_title: link with no title → None
@@ -3768,6 +3779,7 @@ fn test_eval(mut engine: Engine, #[case] program: &str, #[case] input: Vec<Runti
 #[case::is_regex_match_invalid_pattern(r#"is_regex_match("abc", "[invalid")"#, vec![RuntimeValue::None],)]
 #[case::regex_replace_non_string_callback(r##"regex_replace("a1", "\\d", fn(m): 1;)"##, vec![RuntimeValue::None],)]
 #[case::split_records_empty_match_is_error(r#"split_records("abc", "")"#, vec![RuntimeValue::None],)]
+#[case::extract_urls_too_many_is_error(r#"repeat("https://a.co ", 10001) | extract_urls()"#, vec![RuntimeValue::None],)]
 // recursion depth exceeded
 #[case::recursion_limit("def f(x): 1 + f(x); | f(1)", vec![RuntimeValue::None],)]
 // too many args to a user-defined function

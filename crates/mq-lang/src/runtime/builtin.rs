@@ -52,8 +52,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use self::range::{generate_char_range, generate_multi_char_range, generate_numeric_range};
 use self::regex::{
-    capture_re, is_match_re, match_re, regex_escape, regex_replace_matches, replace_re, scan_re, split_re,
-    split_records_re,
+    capture_re, extract_urls, is_match_re, match_re, regex_escape, regex_replace_matches, replace_re, scan_re,
+    split_re, split_records_re,
 };
 use super::json::parse_json_runtime_value;
 use super::runtime_value::{self, RuntimeValue};
@@ -2647,6 +2647,20 @@ fn split_records_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Share
             vec![std::mem::take(a), std::mem::take(b)],
         )),
         _ => unreachable!("split_records should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "extract_urls", params = Fixed(1))]
+fn extract_urls_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::String(s)] => extract_urls(s),
+        [node @ RuntimeValue::Markdown(_, _)] => node
+            .markdown_node()
+            .map(|md| extract_urls(md.value().as_str()))
+            .unwrap_or_else(|| Ok(RuntimeValue::empty_array())),
+        [RuntimeValue::None] => Ok(RuntimeValue::empty_array()),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("extract_urls should always receive exactly one argument"),
     }
 }
 
@@ -5738,6 +5752,7 @@ mq_macros::builtin_dispatch! {
     COMPACT,
     SPLIT,
     SPLIT_RECORDS,
+    EXTRACT_URLS,
     UNIQ,
     CEIL,
     FLOOR,
@@ -9364,6 +9379,20 @@ x
             returns: "markdown",
             examples: &[],
             capability: Some("file-io"),
+        },
+    );
+    map.insert(
+        SmolStr::new("extract_urls"),
+        BuiltinFunctionDoc {
+            description: "Extracts http(s):// and mailto: URLs from plain text (not Markdown links or HTML) as {url, start_byte, end_byte, kind} records, trimming trailing prose punctuation off each match. Does not detect bare domains without a scheme.",
+            params: &["text"],
+            param_types: &["dynamic"],
+            returns: "array",
+            examples: &[BuiltinExample {
+                code: r#"extract_urls("see https://example.com.")"#,
+                expected: r#"[{"url": "https://example.com", "start_byte": 4, "end_byte": 23, "kind": "http"}]"#,
+            }],
+            capability: None,
         },
     );
     #[cfg(feature = "http")]

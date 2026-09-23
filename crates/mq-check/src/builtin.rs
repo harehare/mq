@@ -339,6 +339,12 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::String,
         Type::array(Type::dict(Type::String, Type::Dynamic)),
     );
+    register_unary(
+        ctx,
+        "extract_urls",
+        Type::Dynamic,
+        Type::array(Type::dict(Type::String, Type::Dynamic)),
+    );
 
     // word_wrap: (string, number) -> string
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);

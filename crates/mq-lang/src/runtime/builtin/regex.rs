@@ -276,6 +276,71 @@ pub(super) fn split_records_re(input: &str, pattern: &str) -> Result<RuntimeValu
     split_records_re_inner(&re, input)
 }
 
+static URL_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"(?:https?://[^\s<>"']+)|(?:mailto:[^\s<>"']+)"#).expect("static URL regex must compile")
+});
+
+/// Caps matches collected per `extract_urls` call.
+const MAX_EXTRACTED_URLS: usize = 10_000;
+
+/// Strips trailing prose punctuation (`.,;:!?'"`) and, for closing brackets
+/// (`)]}>`), only the ones left unbalanced by an opening counterpart earlier
+/// in `s` — so a wiki-style URL ending in `(...)` keeps its matched pair,
+/// while a URL merely wrapped in prose parens loses the stray closer.
+fn trim_trailing_url_punctuation(s: &str) -> &str {
+    let mut end = s.len();
+    while let Some(c) = s[..end].chars().next_back() {
+        match c {
+            '.' | ',' | ';' | ':' | '!' | '?' | '\'' | '"' => end -= c.len_utf8(),
+            ')' | ']' | '}' | '>' => {
+                let open = match c {
+                    ')' => '(',
+                    ']' => '[',
+                    '}' => '{',
+                    _ => '<',
+                };
+                let candidate = &s[..end - c.len_utf8()];
+                if candidate.matches(c).count() >= candidate.matches(open).count() {
+                    end -= c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            _ => break,
+        }
+    }
+    &s[..end]
+}
+
+/// Extracts `http(s)://` and `mailto:` URLs from plain text (not Markdown links or
+/// HTML) as `{url, start_byte, end_byte, kind}` records, trimming trailing prose
+/// punctuation off each match. Does not detect bare domains without a scheme.
+pub(super) fn extract_urls(input: &str) -> Result<RuntimeValue, Error> {
+    let mut results = Vec::new();
+
+    for m in URL_RE.find_iter(input) {
+        if results.len() >= MAX_EXTRACTED_URLS {
+            return Err(Error::Runtime(format!(
+                "extract_urls: input contains more than {MAX_EXTRACTED_URLS} URLs"
+            )));
+        }
+
+        let url = trim_trailing_url_punctuation(m.as_str());
+        let kind = if url.starts_with("mailto:") { "mailto" } else { "http" };
+        let start = m.start();
+        let end = start + url.len();
+
+        let mut result = DictMap::default();
+        result.insert(Ident::new("url"), url.to_owned().into());
+        result.insert(Ident::new("start_byte"), start.into());
+        result.insert(Ident::new("end_byte"), end.into());
+        result.insert(Ident::new("kind"), kind.to_owned().into());
+        results.push(RuntimeValue::Dict(Shared::new(result)));
+    }
+
+    Ok(RuntimeValue::Array(Shared::new(results)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -486,6 +551,71 @@ mod tests {
     #[test]
     fn test_split_records_re_invalid_pattern() {
         assert!(split_records_re("text", "[invalid").is_err());
+    }
+
+    fn url_record(url: &str, start: usize, end: usize, kind: &str) -> RuntimeValue {
+        let mut result = DictMap::default();
+        result.insert(Ident::new("url"), url.to_string().into());
+        result.insert(Ident::new("start_byte"), start.into());
+        result.insert(Ident::new("end_byte"), end.into());
+        result.insert(Ident::new("kind"), kind.to_string().into());
+        RuntimeValue::Dict(Shared::new(result))
+    }
+
+    #[test]
+    fn test_extract_urls_http_and_mailto() {
+        let result = extract_urls("see https://example.com and mailto:a@b.com").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![
+                url_record("https://example.com", 4, 23, "http"),
+                url_record("mailto:a@b.com", 28, 42, "mailto"),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_trims_trailing_prose_punctuation() {
+        let result = extract_urls("Check https://example.com/page.").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![url_record("https://example.com/page", 6, 30, "http")]))
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_trims_unbalanced_wrapping_paren() {
+        let result = extract_urls("(see https://example.com)").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![url_record("https://example.com", 5, 24, "http")]))
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_keeps_balanced_wiki_style_paren() {
+        let result = extract_urls("https://en.wikipedia.org/wiki/Rust_(programming_language)").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![url_record(
+                "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+                0,
+                57,
+                "http"
+            )]))
+        );
+    }
+
+    #[test]
+    fn test_extract_urls_no_match() {
+        let result = extract_urls("no urls here").unwrap();
+        assert_eq!(result, RuntimeValue::empty_array());
+    }
+
+    #[test]
+    fn test_extract_urls_too_many_matches_is_error() {
+        let input = "https://a.co ".repeat(MAX_EXTRACTED_URLS + 1);
+        assert!(extract_urls(&input).is_err());
     }
 
     #[test]
