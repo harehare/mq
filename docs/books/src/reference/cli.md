@@ -16,12 +16,18 @@ Arguments:
   [FILES]...       
 
 Options:
+  -q, --quiet
+          Suppress normal query output while preserving diagnostics, exit status, and query side effects
   -A, --aggregate
           Aggregate all input files/content into a single array
   -f, --from-file
           load filter from the file
   -I, --input-format <INPUT_FORMAT>
           Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, gron, json, psv, toml, toon, tsv, xml, yaml]
+      --csv-delimiter <CHAR>
+          Custom delimiter for `-I csv` input (a single ASCII character). Has no effect on `-I tsv`/`-I psv`, which use a fixed tab/pipe delimiter by design; pass `-I csv` with this flag instead if you need a different delimiter (e.g. `;`)
+      --no-header
+          Treat csv/tsv/psv input as headerless: each row becomes an array of values instead of a dict keyed by header names. Applies to `-I csv`, `-I tsv`, and `-I psv`
   -L, --directory <MODULE_DIRECTORIES>
           Search modules from the directory
   -M, --module-names <MODULE_NAMES>
@@ -59,7 +65,7 @@ Options:
   -N, --allow-net[=<DOMAIN>...]
           Allow the `http` function to make outbound HTTPS requests. Disabled by default; requests are HTTPS-only and blocked from reaching loopback/private/link-local addresses regardless of this flag. Pass with no value to allow any domain, or `--allow-net=DOMAIN` (repeat the flag, or comma-separate, to add more) to restrict requests to just those domains (and any path under them). The `=` is required so a bare domain after the flag isn't swallowed as a query/file positional instead
   -R, --allow-read[=<PATH>...]
-          Allow the `read_file`/`read_file_bytes`/`collection`/`file_exists`/`embed_images` functions to read from the filesystem. Disabled by default. Pass with no value to allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict reads to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
+          Allow the `read_file`/`read_file_bytes`/`open_file`/`collection`/`walk_files`/`file_exists`/`file_info`/`embed_images` functions to read from the filesystem. Disabled by default. Pass with no value to allow reading anywhere, or `--allow-read=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict reads to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
   -W, --allow-write[=<PATH>...]
           Allow the `write_file`/`extract_images` functions to write to the filesystem. Disabled by default. Pass with no value to allow writing anywhere, or `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to add more) to restrict writes to just those paths and their descendants. The `=` is required so a bare path after the flag isn't swallowed as a query/file positional instead
       --allow-run[=<COMMAND>...]
@@ -68,8 +74,10 @@ Options:
           Allow `$VAR`/`${$VAR}` interpolation and debugger logpoints to read environment variables. Disabled by default. Pass with no value to allow reading any variable, or `--allow-env=NAME` (repeat the flag, or comma-separate, to add more) to restrict access to just those names. The `=` is required so a bare name after the flag isn't swallowed as a query/file positional instead
   -a, --allow-all
           Grant every sandboxed permission at once (read/write/net/run/env), and also enable HTTP module imports as if --allow-http-import were passed. Disabled by default. Cannot be combined with the individual --allow-* flags above
+      --sandbox <SANDBOX>
+          Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags [possible values: strict, read-only, networked, unsafe]
   -F, --output-format <OUTPUT_FORMAT>
-          Set output format [default: markdown] [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
+          Set output format. When omitted, inferred from the `-o`/`--output` file extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to markdown [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
   -U, --update
           Update matching Markdown nodes and write the result to stdout
       --diff
@@ -86,6 +94,12 @@ Options:
           Specify a query to insert between files as a separator
   -o, --output <FILE>
           Output to the specified file
+      --atomic-output <ATOMIC_OUTPUT>
+          Write `-o`/`--output` atomically via a same-directory temp file + fsync + rename, so a crash or full disk mid-write can't truncate the target [default: auto] [possible values: auto, always, never]
+      --no-clobber
+          Fail instead of overwriting `-o`/`--output` if the target already exists
+      --append
+          Add to `-o`/`--output` instead of replacing it, creating it if missing. Use `--atomic-output never` for concurrent-safe appends across processes
   -C, --color-output
           Colorize markdown output
   -B, --before-context <NUM>
@@ -104,18 +118,28 @@ Options:
           Limit output to at most N results
       --no-position
           Omit Markdown node position information from structured output (json, table, gron, csv, toml, toon, xml, yaml). Reduces output size when source line/column spans aren't needed
+      --compact
+          Print JSON on a single line, without pretty-printing. Only valid with -F json
+      --indent <N>
+          Number of spaces per indent level in pretty-printed output (0-7), jq's `--indent`. Only valid with -F json or -F xml; default is 2
+      --tab
+          Indent pretty-printed output with tabs instead of spaces, jq's `--tab`. Only valid with -F json or -F xml
+  -T, --format <FORMAT>
+          Set both input and output format at once (shorthand for `-I FORMAT -F FORMAT`). An explicit `-I`/`-F` overrides this for that side. Only accepts formats valid on both sides; e.g. `-I mdx` or `-F table` still require the dedicated flag [possible values: markdown, html, text, json, gron, raw, csv, toml, toon, xml, yaml]
       --list
           List all available subcommands (built-in and external)
   -P <PARALLEL_THRESHOLD>
           Number of files to process before switching to parallel processing [default: 10]
       --argv [<ARGV>...]
           Positional string arguments, available as ARGS."positional" in queries
-  -O, --optimize-level <OPTIMIZE_LEVEL>
-          Optimization level for AST transformations (none = no changes, basic = constant folding and dead-branch elimination, full = all passes) [default: none] [possible values: none, basic, full]
       --timeout <SECONDS>
-          Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). No timeout by default
+          Maximum time in seconds allowed for query evaluation before aborting (e.g. 0.5, 5). Must be a finite positive number. No timeout by default
+      --stack-trace
+          Include VM frames in uncaught runtime errors
+      --error-format <ERROR_FORMAT>
+          Format for the final uncaught error. Combines with `--stack-trace` [default: human] [possible values: human, json]
   -h, --help
-          Print help
+          Print help (see more with '--help')
   -V, --version
           Print version
 
