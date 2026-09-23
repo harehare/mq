@@ -129,7 +129,18 @@ test-cov:
 
 # Run fuzzing tests against the Tarn bytecode VM
 test-fuzz:
-    cargo +nightly fuzz run interpreter
+    #!/usr/bin/env sh
+    set -eu
+    if cargo +nightly -V >/dev/null 2>&1; then
+        cargo +nightly fuzz run interpreter
+    elif [ -n "${FUZZ_RUSTUP_TOOLCHAIN_BIN:-}" ]; then
+        PATH="$FUZZ_RUSTUP_TOOLCHAIN_BIN:$PATH" cargo-fuzz run interpreter
+    elif command -v rustup >/dev/null 2>&1; then
+        PATH="$(dirname "$(rustup which --toolchain nightly cargo)"):$PATH" cargo-fuzz run interpreter
+    else
+        echo "error: a nightly Rust toolchain is required to fuzz; run 'rustup toolchain install nightly'" >&2
+        exit 1
+    fi
 
 # Run WebAssembly tests in Chrome (main thread and dedicated worker)
 [working-directory: 'crates/mq-wasm']
