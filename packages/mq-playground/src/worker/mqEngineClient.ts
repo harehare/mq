@@ -101,7 +101,16 @@ export function run(
   content: string,
   options: Partial<Options> = {},
 ): Promise<string> {
-  return call<string>("run", [code, content, options]);
+  // mq-wasm's own cooperative timeout relies on `std::time::Instant`, which panics on
+  // wasm32-unknown-unknown (traps as "unreachable"), so `timeoutMs` is never forwarded to
+  // the engine. Enforce it here instead by hard-cancelling the worker once it elapses.
+  const { timeoutMs, ...runOptions } = options;
+  const resultPromise = call<string>("run", [code, content, runOptions]);
+  if (timeoutMs === undefined) {
+    return resultPromise;
+  }
+  const timer = setTimeout(() => cancel(), timeoutMs);
+  return resultPromise.finally(() => clearTimeout(timer));
 }
 
 export function toAst(code: string): Promise<string> {
