@@ -35,6 +35,10 @@
           rust.stable.latest.default.override {
             extensions = [ "rust-src" "rustfmt" ];
           };
+
+        rustFuzzToolchain = prev.rust-bin.nightly.latest.default.override {
+          extensions = [ "rust-src" ];
+        };
       };
 
       formatter = forEachSupportedSystem ({ pkgs }: pkgs.nixfmt);
@@ -65,6 +69,7 @@
           env = {
             RUST_SRC_PATH =
               "${pkgs.rustToolchain}/lib/rustlib/src/rust/library";
+            FUZZ_RUSTUP_TOOLCHAIN_BIN = "${pkgs.rustFuzzToolchain}/bin";
           };
         };
       });
