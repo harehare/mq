@@ -134,6 +134,11 @@ impl<F: HttpFetcher> HttpModuleResolver<F> {
         }
 
         if is_remote_url(module_name) {
+            if !super::ssrf::is_https(module_name) {
+                return Err(ModuleError::IOError(
+                    format!("Only HTTPS URLs are allowed: {module_name}").into(),
+                ));
+            }
             if !self.is_allowed_domain(module_name) {
                 return Err(ModuleError::IOError(
                     format!("Domain not allowed: {}", module_name).into(),
@@ -587,6 +592,17 @@ mod tests {
         resolver.set_enabled(true);
         assert!(resolver.to_fetch_url("github.com/alice/lisp").is_ok());
         assert!(resolver.to_fetch_url("github.com/alice/other").is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "http-import-ureq")]
+    fn test_to_fetch_url_rejects_http_before_fetch() {
+        let mut resolver = resolver_with_domains(vec!["example.invalid".to_string()]);
+        resolver.set_enabled(true);
+        assert!(matches!(
+            resolver.to_fetch_url("http://example.invalid/mod.mq"),
+            Err(ModuleError::IOError(_))
+        ));
     }
 
     #[rstest]

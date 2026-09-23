@@ -2,6 +2,8 @@
 //!
 //! These functions have no I/O dependencies and are not gated behind the `http-import` feature.
 
+use crate::io::url_allowlist;
+
 /// Default domain that is always permitted without an explicit allowlist entry.
 pub const DEFAULT_ALLOWED_DOMAIN: &str = "raw.githubusercontent.com/harehare";
 
@@ -125,16 +127,9 @@ pub fn normalize_allowed_domain(domain: &str) -> String {
     }
 }
 
-/// Returns `true` if `url`'s host/path matches `domain` as a strict prefix.
-///
-/// The match requires that after the prefix the next character is `/`, `?`, `#`, `:`, or
-/// end of string — preventing `example.invalid.evil.com` from matching `example.invalid`.
+/// Returns `true` if a scheme-less HTTP(S) URL's parsed host and path match `domain`.
 pub fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
-    let rest = match url_without_scheme.strip_prefix(domain) {
-        Some(r) => r,
-        None => return false,
-    };
-    rest.is_empty() || rest.starts_with('/') || rest.starts_with('?') || rest.starts_with('#') || rest.starts_with(':')
+    url_allowlist::matches(&format!("https://{url_without_scheme}"), domain)
 }
 
 /// Returns `true` if `url` is permitted given `allowed_domains`.
@@ -142,18 +137,11 @@ pub fn prefix_matches(url_without_scheme: &str, domain: &str) -> bool {
 /// `DEFAULT_ALLOWED_DOMAIN` is always allowed regardless of `allowed_domains`.
 /// An empty `allowed_domains` slice restricts access to the default domain only.
 pub fn is_allowed_url(url: &str, allowed_domains: &[String]) -> bool {
-    let url_without_scheme = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))
-        .unwrap_or(url);
-
-    if prefix_matches(url_without_scheme, DEFAULT_ALLOWED_DOMAIN) {
+    if url_allowlist::matches(url, DEFAULT_ALLOWED_DOMAIN) {
         return true;
     }
 
-    allowed_domains
-        .iter()
-        .any(|domain| prefix_matches(url_without_scheme, domain.as_str()))
+    allowed_domains.iter().any(|domain| url_allowlist::matches(url, domain))
 }
 
 #[cfg(test)]
@@ -362,6 +350,8 @@ mod tests {
     #[case(vec!["example.invalid".to_string()], "https://other.com/foo.mq", false)]
     // prefix-bypass prevention
     #[case(vec!["example.invalid".to_string()], "https://example.invalid.evil.com/foo.mq", false)]
+    #[case(vec!["example.invalid".to_string()], "https://example.invalid:443@evil.invalid/foo.mq", false)]
+    #[case(vec![], "https://raw.githubusercontent.com:443@evil.invalid/harehare/foo.mq", false)]
     // multiple allowed domains
     #[case(vec!["a.com".to_string(), "b.com".to_string()], "https://a.com/x.mq", true)]
     #[case(vec!["a.com".to_string(), "b.com".to_string()], "https://b.com/x.mq", true)]

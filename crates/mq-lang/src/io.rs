@@ -21,6 +21,7 @@ mod error;
 mod mem;
 mod native;
 mod sandboxed;
+pub(crate) mod url_allowlist;
 
 pub use error::IoError;
 pub use native::NativeIo;

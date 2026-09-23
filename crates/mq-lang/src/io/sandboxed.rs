@@ -460,13 +460,19 @@ mod tests {
         "https://example.com.evil.com",
         false
     )]
+    #[case::userinfo_port_escape_rejected(
+        Some(vec!["example.invalid".to_string()]),
+        "https://example.invalid:443@evil.invalid/path",
+        false
+    )]
     fn test_fetch_allowlist(#[case] allow: Option<Vec<String>>, #[case] target: &str, #[case] expected_ok: bool) {
         let mut io = SandboxedIo::new(
             MemIo::default()
                 .with_fetch_response("https://example.com", "body")
                 .with_fetch_response("https://example.com/path", "body")
                 .with_fetch_response("https://other.com", "body")
-                .with_fetch_response("https://example.com.evil.com", "body"),
+                .with_fetch_response("https://example.com.evil.com", "body")
+                .with_fetch_response("https://example.invalid:443@evil.invalid/path", "body"),
         );
         if let Some(domains) = allow {
             io = io.allow_net(Some(domains));
