@@ -229,6 +229,53 @@ pub(super) fn split_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error
     )))
 }
 
+fn split_records_re_inner(re: &Regex, input: &str) -> Result<RuntimeValue, Error> {
+    let mut records = Vec::new();
+    let mut start = 0;
+    let mut index = 0usize;
+
+    for m in re.find_iter(input) {
+        if m.start() == m.end() {
+            return Err(Error::Runtime(
+                "split_records: separator pattern must not match an empty string".to_string(),
+            ));
+        }
+
+        records.push(split_record(input, index, start, m.start(), Some(m.as_str())));
+        start = m.end();
+        index += 1;
+    }
+    records.push(split_record(input, index, start, input.len(), None));
+
+    Ok(RuntimeValue::Array(Shared::new(records)))
+}
+
+fn split_record(input: &str, index: usize, start: usize, end: usize, terminator: Option<&str>) -> RuntimeValue {
+    let mut result = DictMap::default();
+    result.insert(Ident::new("text"), input[start..end].to_owned().into());
+    result.insert(Ident::new("index"), index.into());
+    result.insert(Ident::new("start_byte"), start.into());
+    result.insert(Ident::new("end_byte"), end.into());
+    result.insert(
+        Ident::new("terminator"),
+        terminator
+            .map(|t| RuntimeValue::String(Shared::new(t.to_owned())))
+            .unwrap_or(RuntimeValue::None),
+    );
+    RuntimeValue::Dict(Shared::new(result))
+}
+
+/// Splits `input` on `pattern` like [`split_re`], but keeps each piece's byte
+/// range and the separator that followed it instead of discarding them.
+pub(super) fn split_records_re(input: &str, pattern: &str) -> Result<RuntimeValue, Error> {
+    if let Some(re) = REGEX_CACHE.read().unwrap().get(pattern).cloned() {
+        return split_records_re_inner(&re, input);
+    }
+    let re = compile_regex(pattern)?;
+    cache_regex(pattern, re.clone());
+    split_records_re_inner(&re, input)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -363,6 +410,82 @@ mod tests {
     #[test]
     fn test_split_re_invalid_pattern() {
         assert!(split_re("text", "[invalid").is_err());
+    }
+
+    fn record(text: &str, index: usize, start_byte: usize, end_byte: usize, terminator: Option<&str>) -> RuntimeValue {
+        let mut result = DictMap::default();
+        result.insert(Ident::new("text"), text.to_string().into());
+        result.insert(Ident::new("index"), index.into());
+        result.insert(Ident::new("start_byte"), start_byte.into());
+        result.insert(Ident::new("end_byte"), end_byte.into());
+        result.insert(
+            Ident::new("terminator"),
+            terminator
+                .map(|t| RuntimeValue::String(Shared::new(t.to_string())))
+                .unwrap_or(RuntimeValue::None),
+        );
+        RuntimeValue::Dict(Shared::new(result))
+    }
+
+    #[test]
+    fn test_split_records_re_basic() {
+        let result = split_records_re("a,b,c", ",").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![
+                record("a", 0, 0, 1, Some(",")),
+                record("b", 1, 2, 3, Some(",")),
+                record("c", 2, 4, 5, None),
+            ]))
+        );
+        // second call hits cache — same result expected
+        let result2 = split_records_re("a,b,c", ",").unwrap();
+        assert_eq!(result, result2);
+    }
+
+    #[test]
+    fn test_split_records_re_no_trailing_separator() {
+        let result = split_records_re("a,b", ",").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![
+                record("a", 0, 0, 1, Some(",")),
+                record("b", 1, 2, 3, None),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_split_records_re_no_match() {
+        let result = split_records_re("abc", ",").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![record("abc", 0, 0, 3, None)]))
+        );
+    }
+
+    #[test]
+    fn test_split_records_re_regex_separator() {
+        let result = split_records_re("a1b22c333d", "[0-9]+").unwrap();
+        assert_eq!(
+            result,
+            RuntimeValue::Array(Shared::new(vec![
+                record("a", 0, 0, 1, Some("1")),
+                record("b", 1, 2, 3, Some("22")),
+                record("c", 2, 5, 6, Some("333")),
+                record("d", 3, 9, 10, None),
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_split_records_re_empty_match_is_error() {
+        assert!(split_records_re("abc", "").is_err());
+    }
+
+    #[test]
+    fn test_split_records_re_invalid_pattern() {
+        assert!(split_records_re("text", "[invalid").is_err());
     }
 
     #[test]
