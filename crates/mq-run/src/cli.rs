@@ -852,15 +852,6 @@ enum HelpFormat {
     Markdown,
 }
 
-/// Returns `true` if `value` is a coroutine, or an array/dict containing one at any depth.
-fn value_contains_coroutine(value: &mq_lang::RuntimeValue) -> bool {
-    match value {
-        mq_lang::RuntimeValue::Array(items) => items.iter().any(value_contains_coroutine),
-        mq_lang::RuntimeValue::Dict(map) => map.values().any(value_contains_coroutine),
-        value => value.is_coroutine(),
-    }
-}
-
 impl Cli {
     /// Reserved `mq help` topic name for general CLI usage examples (not a function,
     /// selector, or module).
@@ -2053,78 +2044,6 @@ impl Cli {
         Ok(current_values.update_with(results))
     }
 
-    /// Materializes coroutines at the CLI output boundary.
-    ///
-    /// Query evaluation keeps coroutines lazy so operations such as `first` and `take` can
-    /// short-circuit. A suspended coroutine is not useful output, though, so `mq-run` consumes
-    /// each coroutine (including ones nested inside arrays and dicts) with the standard
-    /// `collect()` builtin before rendering it.
-    fn collect_output_coroutines(
-        &self,
-        engine: &mut mq_lang::DefaultEngine,
-        runtime_values: mq_lang::RuntimeValues,
-    ) -> miette::Result<mq_lang::RuntimeValues> {
-        if !runtime_values.values().iter().any(value_contains_coroutine) {
-            return Ok(runtime_values);
-        }
-
-        let collector = engine.compile("collect()").map_err(|error| *error)?;
-        let mut materialized = Vec::with_capacity(runtime_values.len());
-
-        for value in runtime_values {
-            materialized.push(self.materialize_coroutines(engine, &collector, value)?);
-        }
-
-        Ok(materialized.into())
-    }
-
-    /// Recursively materializes coroutines within a single value, rebuilding arrays and dicts
-    /// that contain them.
-    fn materialize_coroutines(
-        &self,
-        engine: &mut mq_lang::DefaultEngine,
-        collector: &mq_lang::CompiledProgram,
-        value: mq_lang::RuntimeValue,
-    ) -> miette::Result<mq_lang::RuntimeValue> {
-        if value.is_coroutine() {
-            let collected = engine
-                .eval_compiled(collector, std::iter::once(value))
-                .map_err(|error| *error)?;
-            if collected.len() != 1 {
-                return Err(miette!(
-                    "internal error: collect() must produce exactly one output value"
-                ));
-            }
-            return collected
-                .into_iter()
-                .next()
-                .ok_or_else(|| miette!("internal error: collect() produced no output value"));
-        }
-
-        match value {
-            mq_lang::RuntimeValue::Array(items) if items.iter().any(value_contains_coroutine) => {
-                let items = Shared::try_unwrap(items).unwrap_or_else(|shared| (*shared).clone());
-                let materialized = items
-                    .into_iter()
-                    .map(|item| self.materialize_coroutines(engine, collector, item))
-                    .collect::<miette::Result<Vec<_>>>()?;
-                Ok(mq_lang::RuntimeValue::Array(Shared::new(materialized)))
-            }
-            mq_lang::RuntimeValue::Dict(map) if map.values().any(value_contains_coroutine) => {
-                let map = Shared::try_unwrap(map).unwrap_or_else(|shared| (*shared).clone());
-                let materialized = map
-                    .into_iter()
-                    .map(|(key, value)| {
-                        self.materialize_coroutines(engine, collector, value)
-                            .map(|value| (key, value))
-                    })
-                    .collect::<miette::Result<DictMap>>()?;
-                Ok(mq_lang::RuntimeValue::Dict(Shared::new(materialized)))
-            }
-            value => Ok(value),
-        }
-    }
-
     fn emit_results(
         &self,
         runtime_values: mq_lang::RuntimeValues,
@@ -2211,20 +2130,17 @@ impl Cli {
                 .map_err(|error| *error)?;
             #[cfg(not(feature = "debug-trace"))]
             let results = engine.eval(query, input.clone().into_iter()).map_err(|error| *error)?;
-            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
             #[cfg(feature = "debug-trace")]
             {
-                let results = engine
+                engine
                     .eval_compiled(&program, input.into_iter())
-                    .map_err(|error| *error)?;
-                self.collect_output_coroutines(engine, results)?
+                    .map_err(|error| *error)?
             }
             #[cfg(not(feature = "debug-trace"))]
             {
-                let results = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
-                self.collect_output_coroutines(engine, results)?
+                engine.eval(query, input.into_iter()).map_err(|error| *error)?
             }
         };
 
@@ -2242,7 +2158,6 @@ impl Cli {
                     vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
                 )
                 .map_err(|e| *e)?;
-            let separator = self.collect_output_coroutines(engine, separator)?;
             self.print(separator)?;
         }
 
@@ -2579,7 +2494,6 @@ impl Cli {
         let runtime_values = engine
             .eval(&effective_query, combined_input.into_iter())
             .map_err(|error| *error)?;
-        let runtime_values = self.collect_output_coroutines(&mut engine, runtime_values)?;
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
@@ -2620,11 +2534,9 @@ impl Cli {
             let results = engine
                 .eval_compiled(program, input.clone().into_iter())
                 .map_err(|e| *e)?;
-            let results = self.collect_output_coroutines(engine, results)?;
             self.apply_update(input, results)?
         } else {
-            let results = engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?;
-            self.collect_output_coroutines(engine, results)?
+            engine.eval_compiled(program, input.into_iter()).map_err(|e| *e)?
         };
 
         #[cfg(feature = "vm-profile")]
@@ -2668,7 +2580,6 @@ impl Cli {
             .map_err(|error| *error)?;
         #[cfg(not(feature = "debug-trace"))]
         let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
-        let runtime_values = self.collect_output_coroutines(engine, runtime_values)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
@@ -3325,8 +3236,8 @@ mod tests {
     }
 
     #[test]
-    fn test_cli_collects_final_coroutine_output() {
-        let (_, output_file) = create_file("test_cli_collects_final_coroutine_output.md", "");
+    fn test_cli_does_not_auto_collect_final_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_does_not_auto_collect_final_coroutine_output.md", "");
         let output_file_cleanup = output_file.clone();
         defer! {
             if output_file_cleanup.exists() {
@@ -3350,12 +3261,77 @@ mod tests {
         };
 
         cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "coroutine");
+    }
+
+    #[test]
+    fn test_cli_explicit_collect_still_materializes_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_explicit_collect_still_materializes_coroutine_output.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some(
+                "def source(): yield: 1 | yield: 2 | yield: 3; | source() | map(fn(x): x * 10;) | collect()"
+                    .to_string(),
+            ),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
         assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[10, 20, 30]");
     }
 
     #[test]
-    fn test_cli_collects_nested_coroutine_output() {
-        let (_, output_file) = create_file("test_cli_collects_nested_coroutine_output.md", "");
+    fn test_cli_limit_does_not_hang_on_infinite_generator() {
+        // Regression test: previously `mq-run` collected a leftover coroutine before applying
+        // `--limit`, so an infinite generator hung forever even with `--limit` set. The query
+        // now returns immediately because the coroutine is never auto-collected.
+        let (_, output_file) = create_file("test_cli_limit_does_not_hang_on_infinite_generator.md", "");
+        let output_file_cleanup = output_file.clone();
+        defer! {
+            if output_file_cleanup.exists() {
+                std::fs::remove_file(&output_file_cleanup).expect("Failed to delete temporary output file");
+            }
+        }
+
+        let cli = Cli {
+            input: InputArgs {
+                input_format: Some(InputFormat::Null),
+                ..Default::default()
+            },
+            output: OutputArgs {
+                output_file: Some(output_file.clone()),
+                limit: Some(3),
+                ..Default::default()
+            },
+            commands: None,
+            query: Some("def nat(): var i = 0 | while (true): yield: i | i += 1;; | nat()".to_string()),
+            files: None,
+            ..Cli::default()
+        };
+
+        cli.run().unwrap();
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "coroutine");
+    }
+
+    #[test]
+    fn test_cli_does_not_auto_collect_nested_coroutine_output() {
+        let (_, output_file) = create_file("test_cli_does_not_auto_collect_nested_coroutine_output.md", "");
         let output_file_cleanup = output_file.clone();
         defer! {
             if output_file_cleanup.exists() {
@@ -3379,7 +3355,7 @@ mod tests {
         };
 
         cli.run().unwrap();
-        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[[1, 2]]");
+        assert_eq!(std::fs::read_to_string(output_file).unwrap().trim(), "[coroutine]");
     }
 
     #[test]
