@@ -3559,6 +3559,12 @@ fn io_reader_is_nameable_from_external_crates() {
 // ltrim/rtrim/upcase: with Markdown input
 #[case::ltrim_markdown(r#"to_h("  test  ", 1) | ltrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::rtrim_markdown(r#"to_h("  test  ", 1) | rtrim | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
+// trim/ltrim/rtrim on markdown must use the node's plain text value, not its rendered
+// markdown source (a heading's Setext "===" underline, a code_inline's backticks, ...).
+#[case::trim_markdown_heading_no_markup_leak(r#"to_h("  test  ", 1) | trim | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("test".to_string()))].into()))]
+#[case::ltrim_markdown_heading_no_markup_leak(r#"to_h("  test  ", 1) | ltrim | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("test  ".to_string()))].into()))]
+#[case::rtrim_markdown_heading_no_markup_leak(r#"to_h("  test  ", 1) | rtrim | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("  test".to_string()))].into()))]
+#[case::trim_markdown_code_inline_no_backtick_leak(r#""`  foo  `" | to_markdown() | first() | trim(self) | to_text"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("foo".to_string()))].into()))]
 #[case::upcase_markdown(r#"to_h("test", 1) | upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 #[case::ascii_upcase_markdown(r#"to_h("test", 1) | ascii_upcase | type"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::String(Shared::new("markdown".to_string()))].into()))]
 // sub/div/mod: string arguments are converted to numbers
