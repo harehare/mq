@@ -78,7 +78,7 @@ const LEFT_RIGHT_SPLIT_KEY = "mq-playground.left-right-split";
 const TOP_BOTTOM_SPLIT_KEY = "mq-playground.top-bottom-split";
 const EDITOR_SETTINGS_KEY = "mq-playground.editor-settings";
 const PROBLEMS_PANEL_HEIGHT_KEY = "mq-playground.problems-panel-height";
-const EXECUTION_TIMEOUT_MS = 30_000;
+const EXECUTION_TIMEOUT_MS = 120_000;
 
 type EditorSettings = {
   version: number;
