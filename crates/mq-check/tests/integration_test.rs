@@ -159,6 +159,26 @@ fn test_pattern_matching_markdown_node_kind() {
     );
 }
 
+#[test]
+fn test_gsub_accepts_markdown_narrowed_by_match() {
+    // A value narrowed to `markdown` inside a match arm must still type-check for gsub.
+    let result = check_types(
+        r#"
+        def f(value):
+          match (value):
+            | :markdown: gsub(value, "a", "b")
+            | _: value
+          end
+        ;
+        "#,
+    );
+    assert!(
+        result.is_empty(),
+        "gsub should type-check on a markdown-narrowed value: {:?}",
+        result
+    );
+}
+
 #[rstest]
 #[case::wildcard_only(r#"match (42): | _: 0 end"#, true, "wildcard-only arm covers everything")]
 #[case::wildcard_after_literal(
