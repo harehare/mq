@@ -2941,6 +2941,7 @@ dependencies = [
  "mimalloc",
  "mq-check",
  "mq-formatter",
+ "mq-help",
  "mq-hir",
  "mq-lang",
  "mq-lint",

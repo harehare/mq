@@ -362,22 +362,24 @@ pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiRespon
     Ok(FormatApiResponse { formatted })
 }
 
-fn function_doc(name: &str, doc: &mq_lang::BuiltinFunctionDoc) -> FunctionDoc {
+/// Converts a catalog entry (native builtin or `builtin.mq` soft builtin) into the API's
+/// `FunctionDoc` shape. See [`mq_help::top_level_entries`].
+fn function_doc_from_help_entry(entry: &mq_help::HelpEntry) -> FunctionDoc {
     FunctionDoc {
-        name: name.to_string(),
-        description: doc.description.to_string(),
-        params: doc.params.iter().map(|p| p.to_string()).collect(),
-        param_types: doc.param_types.iter().map(|p| p.to_string()).collect(),
-        returns: doc.returns.to_string(),
-        examples: doc
+        name: entry.name.clone(),
+        description: entry.description.clone(),
+        params: entry.params.iter().map(|p| p.name.clone()).collect(),
+        param_types: entry.params.iter().map(|p| p.type_name.clone()).collect(),
+        returns: entry.returns.clone(),
+        examples: entry
             .examples
             .iter()
             .map(|e| ExampleDoc {
-                code: e.code.to_string(),
-                expected: e.expected.to_string(),
+                code: e.code.clone(),
+                expected: e.expected.clone(),
             })
             .collect(),
-        capability: doc.capability.map(str::to_string),
+        capability: entry.capability.clone(),
     }
 }
 
@@ -400,11 +402,13 @@ fn selector_doc(name: &str, doc: &mq_lang::BuiltinSelectorDoc) -> SelectorDoc {
     }
 }
 
-/// Lists all builtin mq functions with their documentation.
+/// Lists all builtin mq functions with their documentation, including functions implemented
+/// in the soft prelude (`builtin.mq`, e.g. `eq`/`ne`/`lt`/`le`/`gt`/`ge`) rather than natively.
 pub fn list_functions() -> FunctionsApiResponse {
-    let mut functions: Vec<FunctionDoc> = mq_lang::BUILTIN_FUNCTION_DOC
+    let mut functions: Vec<FunctionDoc> = mq_help::top_level_entries()
         .iter()
-        .map(|(name, doc)| function_doc(name, doc))
+        .filter(|entry| entry.kind == "function")
+        .map(function_doc_from_help_entry)
         .collect();
     functions.sort_by(|a, b| a.name.cmp(&b.name));
     FunctionsApiResponse { functions }
@@ -420,11 +424,14 @@ pub fn list_selectors() -> SelectorsApiResponse {
     SelectorsApiResponse { selectors }
 }
 
-/// Looks up a single builtin function's documentation by name.
+/// Looks up a single builtin function's documentation by name, including a soft-prelude
+/// (`builtin.mq`) function.
 pub fn get_function(name: &str) -> Option<FunctionDoc> {
-    mq_lang::BUILTIN_FUNCTION_DOC
-        .get(name)
-        .map(|doc| function_doc(name, doc))
+    mq_help::top_level_entries()
+        .into_iter()
+        .find(|entry| entry.kind == "function" && entry.name == name)
+        .as_ref()
+        .map(function_doc_from_help_entry)
 }
 
 /// Looks up a single builtin selector's documentation by name (with or without a leading `.`).
@@ -655,24 +662,54 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    // `list_functions`/`list_selectors` are sourced directly from `mq_lang::BUILTIN_FUNCTION_DOC`/
-    // `BUILTIN_SELECTOR_DOC`, so these guard the *mapping* code in this file (field-for-field
-    // parity), not the underlying doc data — the single source of truth stays in mq-lang.
+    // `list_functions` is sourced from `mq_help::top_level_entries`, which unifies native
+    // builtins (`mq_lang::BUILTIN_FUNCTION_DOC`) with functions implemented in the soft
+    // prelude (`builtin.mq`, e.g. `eq`). This guards the *mapping* code in this file
+    // (field-for-field parity for native entries), not the underlying doc data.
     #[test]
-    fn test_list_functions_matches_mq_lang_doc_map() {
+    fn test_list_functions_matches_mq_help_catalog() {
         let response = list_functions();
-        assert_eq!(response.functions.len(), mq_lang::BUILTIN_FUNCTION_DOC.len());
+        let expected_len = mq_help::top_level_entries()
+            .into_iter()
+            .filter(|entry| entry.kind == "function")
+            .count();
+        assert_eq!(response.functions.len(), expected_len);
 
         for doc in &response.functions {
-            let source = mq_lang::BUILTIN_FUNCTION_DOC
-                .get(doc.name.as_str())
-                .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_FUNCTION_DOC", doc.name));
+            let Some(source) = mq_lang::BUILTIN_FUNCTION_DOC.get(doc.name.as_str()) else {
+                continue;
+            };
             assert_eq!(doc.description, source.description);
             assert_eq!(doc.params, source.params);
-            assert_eq!(doc.param_types, source.param_types);
+            // `mq_help::top_level_entries` pairs each of `source.params` with a type, padding
+            // a shorter `source.param_types` with "dynamic" (see `zip_params`), for a few
+            // builtins (e.g. `partial`) documented with more param names than param types.
+            let expected_param_types: Vec<String> = (0..source.params.len())
+                .map(|i| source.param_types.get(i).copied().unwrap_or("dynamic").to_string())
+                .collect();
+            assert_eq!(doc.param_types, expected_param_types);
             assert_eq!(doc.returns, source.returns);
             assert_eq!(doc.capability.as_deref(), source.capability);
             assert_eq!(doc.examples.len(), source.examples.len());
+        }
+    }
+
+    // Regression test: `eq`/`ne`/`gt`/`gte`/`lt`/`lte` are implemented in `builtin.mq`, not as
+    // native builtins, so they are absent from `BUILTIN_FUNCTION_DOC` and must come from the
+    // soft-prelude side of the catalog instead.
+    #[test]
+    fn test_list_and_get_function_include_soft_prelude_comparison_functions() {
+        let response = list_functions();
+        for name in ["eq", "ne", "gt", "gte", "lt", "lte"] {
+            assert!(
+                !mq_lang::BUILTIN_FUNCTION_DOC.contains_key(name),
+                "{name} unexpectedly native now"
+            );
+            assert!(
+                response.functions.iter().any(|f| f.name == name),
+                "{name} missing from function listing"
+            );
+            assert!(get_function(name).is_some(), "{name} missing from get_function lookup");
         }
     }
 

@@ -27,6 +27,7 @@ opentelemetry_sdk = {workspace = true, optional = true}
 tracing-opentelemetry = {workspace = true, optional = true}
 mq-check = {workspace = true}
 mq-formatter = {workspace = true}
+mq-help = {workspace = true}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["cst"]}
 mq-lint = {workspace = true}
