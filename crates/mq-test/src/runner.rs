@@ -566,19 +566,15 @@ impl TestRunner {
         let mut tests = Vec::new();
 
         for node in nodes {
-            if node.kind == CstNodeKind::Module {
-                tests.extend(Self::discover_tests_in(&node.children));
+            if let CstNodeKind::Module { program, .. } = &node.kind {
+                tests.extend(Self::discover_tests_in(program));
                 continue;
             }
 
-            if node.kind != CstNodeKind::Def {
+            let CstNodeKind::Def { name, .. } = &node.kind else {
                 continue;
-            }
-
-            let func_name = match node.children.first() {
-                Some(child) => child.to_string(),
-                None => continue,
             };
+            let func_name = name.to_string();
 
             if func_name.is_empty() {
                 continue;
@@ -1065,7 +1061,7 @@ mod tests {
         let (nodes, _) = mq_lang::parse_recovery(content);
         nodes
             .into_iter()
-            .find(|n| n.kind == mq_lang::CstNodeKind::Def)
+            .find(|n| matches!(n.kind, mq_lang::CstNodeKind::Def { .. }))
             .expect("no def node found")
     }
 

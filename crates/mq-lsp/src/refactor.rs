@@ -64,7 +64,7 @@ fn slice(text: &str, range: MqRange) -> Option<&str> {
 /// child is itself a compound node (e.g. a `let x = foo(1, 2)` where the last child of
 /// `Let` is the `Call` node `foo(1, 2)`: `Call.range()` is just `foo`, not `foo(1, 2)`).
 fn deep_end(node: &CstNode) -> mq_lang::Position {
-    match node.children.last() {
+    match node.all_children().last() {
         Some(last) => deep_end(last),
         None => node.range().end,
     }
@@ -75,7 +75,7 @@ fn deep_end(node: &CstNode) -> mq_lang::Position {
 /// (e.g. for `1 + 2`, the node's own token is `+`, not `1`) rather than the leading token.
 fn deep_start(node: &CstNode) -> mq_lang::Position {
     let own = node.range().start;
-    match node.children.first() {
+    match node.all_children().first() {
         Some(first) => own.min(deep_start(first)),
         None => own,
     }
@@ -94,19 +94,20 @@ fn is_atomic(kind: &CstNodeKind) -> bool {
     matches!(
         kind,
         CstNodeKind::Literal
-            | CstNodeKind::Ident
-            | CstNodeKind::Self_
+            | CstNodeKind::Symbol { .. }
+            | CstNodeKind::Ident { .. }
+            | CstNodeKind::Self_ { .. }
             | CstNodeKind::SelfAttr
-            | CstNodeKind::Call
-            | CstNodeKind::CallDynamic
+            | CstNodeKind::Call { .. }
+            | CstNodeKind::CallDynamic { .. }
             | CstNodeKind::Nodes
             | CstNodeKind::InterpolatedString
-            | CstNodeKind::Array
-            | CstNodeKind::Dict
-            | CstNodeKind::Selector
-            | CstNodeKind::SelectorCall
-            | CstNodeKind::QualifiedAccess
-            | CstNodeKind::Group
+            | CstNodeKind::Array { .. }
+            | CstNodeKind::Dict { .. }
+            | CstNodeKind::Selector { .. }
+            | CstNodeKind::SelectorCall { .. }
+            | CstNodeKind::QualifiedAccess { .. }
+            | CstNodeKind::Group { .. }
     )
 }
 
@@ -119,17 +120,19 @@ fn wrapped_text(node: &CstNode, text: &str) -> String {
 }
 
 /// Recursively searches `nodes` and every nested (flat, token-interleaved) children list
-/// for the first node matching `pred`, returning the containing sibling list and the
-/// matched node's index within it (so callers can inspect adjacent pipe tokens).
-fn find_container<'a>(
-    nodes: &'a [Shared<CstNode>],
+/// for the first node matching `pred`, returning the containing sibling list (owned, since
+/// a migrated `NodeKind` like `Call` synthesizes its flat view on demand rather than
+/// storing one) and the matched node's index within it (so callers can inspect adjacent
+/// pipe tokens).
+fn find_container(
+    nodes: &[Shared<CstNode>],
     pred: &impl Fn(&CstNode) -> bool,
-) -> Option<(&'a [Shared<CstNode>], usize)> {
+) -> Option<(Vec<Shared<CstNode>>, usize)> {
     if let Some(idx) = nodes.iter().position(|n| pred(n)) {
-        return Some((nodes, idx));
+        return Some((nodes.to_vec(), idx));
     }
     for n in nodes {
-        if let Some(found) = find_container(&n.children, pred) {
+        if let Some(found) = find_container(&n.all_children(), pred) {
             return Some(found);
         }
     }
@@ -137,23 +140,23 @@ fn find_container<'a>(
 }
 
 /// Recursively searches for a single non-token node whose full span equals `target`.
-fn find_single_node(nodes: &[Shared<CstNode>], target: MqRange) -> Option<&Shared<CstNode>> {
+fn find_single_node(nodes: &[Shared<CstNode>], target: MqRange) -> bool {
     for n in nodes {
         if !n.is_token() && full_range(n) == target {
-            return Some(n);
+            return true;
         }
-        if let Some(found) = find_single_node(&n.children, target) {
-            return Some(found);
+        if find_single_node(&n.all_children(), target) {
+            return true;
         }
     }
-    None
+    false
 }
 
 /// Recursively searches every sibling list for a maximal contiguous run of non-token
 /// nodes, joined only by `|` tokens, whose combined span equals `target`. Unlike
 /// [`find_single_node`], the run may not be extracted from inside a comma-separated
 /// argument/element list, since a bare name isn't valid in place of `1, 2` there.
-fn find_pipe_run(nodes: &[Shared<CstNode>], target: MqRange) -> Option<(&[Shared<CstNode>], usize, usize)> {
+fn find_pipe_run(nodes: &[Shared<CstNode>], target: MqRange) -> bool {
     let non_token: Vec<usize> = nodes
         .iter()
         .enumerate()
@@ -168,7 +171,7 @@ fn find_pipe_run(nodes: &[Shared<CstNode>], target: MqRange) -> Option<(&[Shared
         let mut end = start;
         loop {
             if deep_end(&nodes[end]) == target.end {
-                return Some((nodes, start, end));
+                return true;
             }
             let Some(&next) = non_token.iter().find(|&&i| i > end) else {
                 break;
@@ -182,11 +185,11 @@ fn find_pipe_run(nodes: &[Shared<CstNode>], target: MqRange) -> Option<(&[Shared
     }
 
     for n in nodes {
-        if let Some(found) = find_pipe_run(&n.children, target) {
-            return Some(found);
+        if find_pipe_run(&n.all_children(), target) {
+            return true;
         }
     }
-    None
+    false
 }
 
 /// The range to delete for a statement at `idx` within `container`, swallowing one
@@ -311,7 +314,7 @@ pub(crate) fn extract_actions(
     let var_name = fresh_name(hir, "extracted");
     let fn_name = fresh_name(hir, "extracted_fn");
 
-    if find_single_node(&nodes, target).is_some() {
+    if find_single_node(&nodes, target) {
         actions.push(single_edit_action(
             uri,
             format!("Extract to variable `{var_name}`"),
@@ -326,7 +329,7 @@ pub(crate) fn extract_actions(
             target,
             format_snippet(&format!("def {fn_name}(): {trimmed}; | {fn_name}()")),
         ));
-    } else if find_pipe_run(&nodes, target).is_some() {
+    } else if find_pipe_run(&nodes, target) {
         actions.push(single_edit_action(
             uri,
             format!("Extract to function `{fn_name}`"),
@@ -429,12 +432,16 @@ fn inline_variable(
     def_range: MqRange,
 ) -> Option<CodeActionOrCommand> {
     let (container, idx) = find_container(ctx.nodes, &|n| {
-        matches!(n.kind, CstNodeKind::Let | CstNodeKind::Var)
-            && n.children.first().map(|c| c.range()) == Some(def_range)
+        matches!(
+            &n.kind,
+            CstNodeKind::Let { lhs, .. } | CstNodeKind::Var { lhs, .. } if lhs.range() == def_range
+        )
     })?;
     let let_node = &container[idx];
-    // children = [lhs ident, `=` token, rhs expr]; destructuring patterns aren't supported.
-    let rhs = let_node.children.get(2)?;
+    // Destructuring patterns aren't supported.
+    let (CstNodeKind::Let { rhs, .. } | CstNodeKind::Var { rhs, .. }) = &let_node.kind else {
+        return None;
+    };
     let initializer_range = full_range(rhs);
     let initializer_text = slice(ctx.source_text, initializer_range)?;
     let replacement = wrapped_text(rhs, initializer_text);
@@ -449,7 +456,7 @@ fn inline_variable(
         });
     }
     changes.entry(ctx.uri.clone()).or_default().push(TextEdit {
-        range: to_range(deletion_range(container, idx)),
+        range: to_range(deletion_range(&container, idx)),
         new_text: String::new(),
     });
 
@@ -475,9 +482,10 @@ fn inline_function(
         return None;
     }
 
-    let (container, idx) = find_container(ctx.nodes, &|n| {
-        matches!(n.kind, CstNodeKind::Def) && n.children.first().map(|c| c.range()) == Some(def_range)
-    })?;
+    let (container, idx) = find_container(
+        ctx.nodes,
+        &|n| matches!(&n.kind, CstNodeKind::Def { name, .. } if name.range() == def_range),
+    )?;
     let def_node = &container[idx];
     let (_, body) = def_node.split_cond_and_program();
     let [body_node] = body.as_slice() else {
@@ -513,7 +521,7 @@ fn inline_function(
     for (_, call_symbol) in &references {
         let call_range = call_symbol.source.text_range?;
         let (call_container, call_idx) = find_container(ctx.nodes, &|n| {
-            matches!(n.kind, CstNodeKind::Call) && n.range() == call_range
+            matches!(n.kind, CstNodeKind::Call { .. }) && n.range() == call_range
         })?;
         let call_node = &call_container[call_idx];
         let args = call_node.children_without_token();
@@ -562,7 +570,7 @@ fn inline_function(
     }
 
     changes.entry(ctx.uri.clone()).or_default().push(TextEdit {
-        range: to_range(deletion_range(container, idx)),
+        range: to_range(deletion_range(&container, idx)),
         new_text: String::new(),
     });
 

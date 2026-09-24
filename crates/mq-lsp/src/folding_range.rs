@@ -34,7 +34,7 @@ fn visit(node: &Shared<CstNode>, ranges: &mut Vec<FoldingRange>) {
         }
     }
 
-    for child in &node.children {
+    for child in node.all_children().iter() {
         visit(child, ranges);
     }
 }
@@ -45,22 +45,22 @@ fn visit(node: &Shared<CstNode>, ranges: &mut Vec<FoldingRange>) {
 fn is_foldable(kind: &CstNodeKind) -> bool {
     matches!(
         kind,
-        CstNodeKind::Def
-            | CstNodeKind::Module
-            | CstNodeKind::If
-            | CstNodeKind::Unless
-            | CstNodeKind::Elif
-            | CstNodeKind::Else
-            | CstNodeKind::Match
-            | CstNodeKind::MatchArm
-            | CstNodeKind::Foreach
-            | CstNodeKind::While
-            | CstNodeKind::Until
-            | CstNodeKind::Loop
-            | CstNodeKind::Try
-            | CstNodeKind::Catch
-            | CstNodeKind::Array
-            | CstNodeKind::Dict
+        CstNodeKind::Def { .. }
+            | CstNodeKind::Module { .. }
+            | CstNodeKind::If { .. }
+            | CstNodeKind::Unless { .. }
+            | CstNodeKind::Elif { .. }
+            | CstNodeKind::Else { .. }
+            | CstNodeKind::Match { .. }
+            | CstNodeKind::MatchArm { .. }
+            | CstNodeKind::Foreach { .. }
+            | CstNodeKind::While { .. }
+            | CstNodeKind::Until { .. }
+            | CstNodeKind::Loop { .. }
+            | CstNodeKind::Try { .. }
+            | CstNodeKind::Catch { .. }
+            | CstNodeKind::Array { .. }
+            | CstNodeKind::Dict { .. }
     )
 }
 

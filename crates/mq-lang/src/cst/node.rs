@@ -1,11 +1,20 @@
+use std::borrow::Cow;
 use std::fmt::{self, Display};
 
+use smallvec::SmallVec;
 use smol_str::SmolStr;
 
 use crate::{Module, Range, Token};
 use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
+
+/// A flat, source-ordered list of child nodes for a variable-arity construct
+/// (e.g. call arguments), including any structural tokens (parens, commas)
+/// interleaved with them so lossless formatting stays possible.
+pub type ArgList = SmallVec<[Shared<Node>; 2]>;
+/// `elif` clauses attached to an `if`.
+pub type Elifs = SmallVec<[Shared<Node>; 2]>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trivia {
@@ -69,62 +78,226 @@ pub struct Node {
     pub token: Option<Shared<Token>>,
     pub leading_trivia: Vec<Trivia>,
     pub trailing_trivia: Vec<Trivia>,
-    pub children: Vec<Shared<Node>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum NodeKind {
-    Array,
-    As,
-    Assign,
-    BinaryOp(BinaryOp),
-    Block,
-    Break,
-    Call,
-    CallDynamic,
+    Array {
+        items: ArgList,
+    },
+    As {
+        expr: Shared<Node>,
+        name: Shared<Node>,
+    },
+    /// `lhs = rhs` or a compound assignment (`+=`, `-=`, ...); `op` identifies which.
+    Assign {
+        op: BinaryOp,
+        lhs: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    BinaryOp {
+        op: BinaryOp,
+        lhs: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    /// A `do...end` block, an implicit pipeline (`foo(a | b)`), or a selector
+    /// descendant-chain grouping; all share the same flat `program` shape.
+    Block {
+        program: ArgList,
+    },
+    /// `break` or `break: value`.
+    Break {
+        colon: Option<Shared<Node>>,
+        value: Option<Shared<Node>>,
+    },
+    /// A function call (`ident(args)`) or a bracket/slice access desugared to the
+    /// same shape (`target[index]` -> args holds `[`, index expr(s), `]`).
+    /// `args` is the flat, token-interleaved list `parse_args`/`parse_bracket_access`
+    /// produce, in source order.
+    Call {
+        args: ArgList,
+    },
+    /// A call whose callee is an arbitrary expression, e.g. `(f)(x)` or `a[0](x)`.
+    CallDynamic {
+        callee: Shared<Node>,
+        args: ArgList,
+    },
     Continue,
-    Def,
-    Dict,
-    DictEntry,
+    Def {
+        name: Shared<Node>,
+        params: Option<ArgList>,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Dict {
+        entries: ArgList,
+    },
+    DictEntry {
+        key: Shared<Node>,
+        colon: Shared<Node>,
+        value: Shared<Node>,
+    },
     Do,
     End,
-    Elif,
-    Else,
+    Elif {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
+    Else {
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
     Env,
     #[default]
     Eof,
-    Fn,
-    Foreach,
-    Group,
-    Ident,
-    If,
-    Import,
-    Include,
+    Fn {
+        params: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Foreach {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Group {
+        lparen: Shared<Node>,
+        expr: Shared<Node>,
+        rparen: Shared<Node>,
+    },
+    /// An identifier; `attr` is a trailing attribute selector (`x.attr`).
+    Ident {
+        attr: Option<Shared<Node>>,
+    },
+    If {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+        elifs: Elifs,
+        else_branch: Option<Shared<Node>>,
+    },
+    /// `import "path"` or `import "path" as alias`.
+    Import {
+        path: Shared<Node>,
+        as_token: Option<Shared<Node>>,
+        alias: Option<Shared<Node>>,
+    },
+    Include {
+        path: Shared<Node>,
+    },
     InterpolatedString,
-    Let,
-    Loop,
-    Var,
+    Let {
+        lhs: Shared<Node>,
+        eq_token: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    Loop {
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Var {
+        lhs: Shared<Node>,
+        eq_token: Shared<Node>,
+        rhs: Shared<Node>,
+    },
     Literal,
-    Match,
-    MatchArm,
-    Module,
+    Match {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        arms: ArgList,
+        end_token: Option<Shared<Node>>,
+    },
+    /// `| pattern [if (guard)]: body`. `guard_args` is the flat, token-interleaved
+    /// `(...)` list `parse_args` produces (present iff `if_token` is).
+    MatchArm {
+        pipe: Shared<Node>,
+        pattern: Shared<Node>,
+        if_token: Option<Shared<Node>>,
+        guard_args: Option<ArgList>,
+        colon: Shared<Node>,
+        body: Shared<Node>,
+    },
+    Module {
+        name: Shared<Node>,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
     Nodes,
-    OrPattern,
-    Pattern,
-    QualifiedAccess,
-    Selector,
-    SelectorCall,
-    Self_,
+    /// `p1 || p2 || ...`; `items` interleaves the patterns with their `||` tokens.
+    OrPattern {
+        items: ArgList,
+    },
+    /// Wildcard/literal/ident/type/array/dict pattern (one tag, several grammars,
+    /// like `Call`). Leaf patterns carry no items; array/dict patterns hold the
+    /// flat, token-interleaved `[...]`/`{...}` list.
+    /// A `def`/`fn`/`catch` parameter; `token` is its name.
+    Param {
+        asterisk: Option<Shared<Node>>,
+        eq_token: Option<Shared<Node>>,
+        default: Option<Shared<Node>>,
+    },
+    Pattern {
+        items: ArgList,
+    },
+    /// `a::b::c` or `a::b(args)`; `items` interleaves idents, `::` tokens and any call args.
+    QualifiedAccess {
+        items: ArgList,
+    },
+    /// A selector. `items` holds bracket tokens for `.[n]` or a trailing attribute selector.
+    Selector {
+        items: ArgList,
+    },
+    /// A `:name` symbol literal.
+    Symbol {
+        colon: Shared<Node>,
+        name: Shared<Node>,
+    },
+    SelectorCall {
+        args: ArgList,
+    },
+    Self_ {
+        attr: Option<Shared<Node>>,
+    },
     SelfAttr,
-    Spread,
+    Spread {
+        operand: Shared<Node>,
+    },
     Token,
-    Try,
-    Catch,
-    Unless,
-    Until,
-    UnaryOp(UnaryOp),
-    While,
-    Yield,
+    Try {
+        colon_or_do: Option<Shared<Node>>,
+        body: Shared<Node>,
+        catch: Option<Shared<Node>>,
+    },
+    /// `params` is the optional `(e)` error binder.
+    Catch {
+        params: Option<ArgList>,
+        colon_or_do: Option<Shared<Node>>,
+        body: Shared<Node>,
+    },
+    Unless {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
+    Until {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    UnaryOp {
+        op: UnaryOp,
+        operand: Shared<Node>,
+    },
+    While {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Yield {
+        colon: Option<Shared<Node>>,
+        value: Option<Shared<Node>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -209,7 +382,6 @@ impl Node {
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }))],
-            children: Vec::new(),
         }
     }
 
@@ -222,12 +394,209 @@ impl Node {
     }
 
     pub fn node_range(&self) -> Range {
-        if self.children.is_empty() {
+        let children = self.all_children();
+        if children.is_empty() {
             self.range()
         } else {
             let start = self.range().start;
-            let end = self.children.last().map(|child| child.range().end).unwrap_or(start);
+            let end = children.last().map(|child| child.range().end).unwrap_or(start);
             Range { start, end }
+        }
+    }
+
+    /// All immediate child nodes as a flat, source-ordered list (structural tokens
+    /// included), for generic tree walkers that don't care about a node's shape.
+    pub fn all_children(&self) -> Cow<'_, [Shared<Node>]> {
+        match &self.kind {
+            NodeKind::Call { args } => Cow::Borrowed(args.as_slice()),
+            NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => {
+                Cow::Owned(vec![Shared::clone(lhs), Shared::clone(rhs)])
+            }
+            NodeKind::UnaryOp { operand, .. } => Cow::Owned(vec![Shared::clone(operand)]),
+            NodeKind::If {
+                args,
+                colon,
+                then_branch,
+                elifs,
+                else_branch,
+            } => {
+                let mut v: Vec<Shared<Node>> = args.to_vec();
+                v.extend(colon.iter().cloned());
+                v.push(Shared::clone(then_branch));
+                v.extend(elifs.iter().cloned());
+                v.extend(else_branch.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Elif {
+                args,
+                colon,
+                then_branch,
+            }
+            | NodeKind::Unless {
+                args,
+                colon,
+                then_branch,
+            } => {
+                let mut v: Vec<Shared<Node>> = args.to_vec();
+                v.extend(colon.iter().cloned());
+                v.push(Shared::clone(then_branch));
+                Cow::Owned(v)
+            }
+            NodeKind::Else { colon, then_branch } => {
+                let mut v: Vec<Shared<Node>> = colon.iter().cloned().collect();
+                v.push(Shared::clone(then_branch));
+                Cow::Owned(v)
+            }
+            NodeKind::Block { program } => Cow::Borrowed(program.as_slice()),
+            NodeKind::Def {
+                name,
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let mut v: Vec<Shared<Node>> = vec![Shared::clone(name)];
+                if let Some(p) = params {
+                    v.extend(p.iter().cloned());
+                }
+                v.extend(colon_or_do.iter().cloned());
+                v.extend(program.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Fn {
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let mut v: Vec<Shared<Node>> = params.to_vec();
+                v.extend(colon_or_do.iter().cloned());
+                v.extend(program.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Let { lhs, eq_token, rhs } | NodeKind::Var { lhs, eq_token, rhs } => {
+                Cow::Owned(vec![Shared::clone(lhs), Shared::clone(eq_token), Shared::clone(rhs)])
+            }
+            NodeKind::Array { items } => Cow::Borrowed(items.as_slice()),
+            NodeKind::Dict { entries } => Cow::Borrowed(entries.as_slice()),
+            NodeKind::DictEntry { key, colon, value } => {
+                Cow::Owned(vec![Shared::clone(key), Shared::clone(colon), Shared::clone(value)])
+            }
+            NodeKind::Spread { operand } => Cow::Owned(vec![Shared::clone(operand)]),
+            NodeKind::Match {
+                args,
+                colon_or_do,
+                arms,
+                end_token,
+            } => {
+                let mut v: Vec<Shared<Node>> = args.to_vec();
+                v.extend(colon_or_do.iter().cloned());
+                v.extend(arms.iter().cloned());
+                v.extend(end_token.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::MatchArm {
+                pipe,
+                pattern,
+                if_token,
+                guard_args,
+                colon,
+                body,
+            } => {
+                let mut v: Vec<Shared<Node>> = vec![Shared::clone(pipe), Shared::clone(pattern)];
+                v.extend(if_token.iter().cloned());
+                if let Some(args) = guard_args {
+                    v.extend(args.iter().cloned());
+                }
+                v.push(Shared::clone(colon));
+                v.push(Shared::clone(body));
+                Cow::Owned(v)
+            }
+            NodeKind::OrPattern { items }
+            | NodeKind::Pattern { items }
+            | NodeKind::QualifiedAccess { items }
+            | NodeKind::Selector { items }
+            | NodeKind::SelectorCall { args: items } => Cow::Borrowed(items.as_slice()),
+            NodeKind::Foreach {
+                args,
+                colon_or_do,
+                program,
+            }
+            | NodeKind::While {
+                args,
+                colon_or_do,
+                program,
+            }
+            | NodeKind::Until {
+                args,
+                colon_or_do,
+                program,
+            } => {
+                let mut v: Vec<Shared<Node>> = args.to_vec();
+                v.extend(colon_or_do.iter().cloned());
+                v.extend(program.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Loop { colon_or_do, program } => {
+                let mut v: Vec<Shared<Node>> = colon_or_do.iter().cloned().collect();
+                v.extend(program.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Try {
+                colon_or_do,
+                body,
+                catch,
+            } => {
+                let mut v: Vec<Shared<Node>> = colon_or_do.iter().cloned().collect();
+                v.push(Shared::clone(body));
+                v.extend(catch.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Catch {
+                params,
+                colon_or_do,
+                body,
+            } => {
+                let mut v: Vec<Shared<Node>> = params.iter().flatten().cloned().collect();
+                v.extend(colon_or_do.iter().cloned());
+                v.push(Shared::clone(body));
+                Cow::Owned(v)
+            }
+            NodeKind::As { expr, name } => Cow::Owned(vec![Shared::clone(expr), Shared::clone(name)]),
+            NodeKind::Break { colon, value } | NodeKind::Yield { colon, value } => {
+                Cow::Owned(colon.iter().chain(value.iter()).cloned().collect())
+            }
+            NodeKind::CallDynamic { callee, args } => {
+                let mut v = vec![Shared::clone(callee)];
+                v.extend(args.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Group { lparen, expr, rparen } => {
+                Cow::Owned(vec![Shared::clone(lparen), Shared::clone(expr), Shared::clone(rparen)])
+            }
+            NodeKind::Import { path, as_token, alias } => {
+                let mut v = vec![Shared::clone(path)];
+                v.extend(as_token.iter().cloned());
+                v.extend(alias.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Include { path } => Cow::Owned(vec![Shared::clone(path)]),
+            NodeKind::Module {
+                name,
+                colon_or_do,
+                program,
+            } => {
+                let mut v = vec![Shared::clone(name)];
+                v.extend(colon_or_do.iter().cloned());
+                v.extend(program.iter().cloned());
+                Cow::Owned(v)
+            }
+            NodeKind::Ident { attr } | NodeKind::Self_ { attr } => Cow::Owned(attr.iter().cloned().collect()),
+            NodeKind::Param {
+                asterisk,
+                eq_token,
+                default,
+            } => Cow::Owned(asterisk.iter().chain(eq_token).chain(default).cloned().collect()),
+            NodeKind::Symbol { colon, name } => Cow::Owned(vec![Shared::clone(colon), Shared::clone(name)]),
+            _ => Cow::Borrowed(&[]),
         }
     }
 
@@ -244,11 +613,11 @@ impl Node {
     }
 
     pub fn is_fn(&self) -> bool {
-        matches!(self.kind, NodeKind::Fn)
+        matches!(self.kind, NodeKind::Fn { .. })
     }
 
     pub fn is_def(&self) -> bool {
-        matches!(self.kind, NodeKind::Def)
+        matches!(self.kind, NodeKind::Def { .. })
     }
 
     pub fn is_pipe(&self) -> bool {
@@ -265,7 +634,7 @@ impl Node {
     }
 
     pub fn children_without_token(&self) -> Vec<Shared<Node>> {
-        self.children
+        self.all_children()
             .iter()
             .filter(|child| !child.is_token())
             .cloned()
@@ -273,7 +642,36 @@ impl Node {
     }
 
     pub fn split_cond_and_program(&self) -> (Vec<Shared<Node>>, Vec<Shared<Node>>) {
-        let colon_index = self.children.iter().position(|child| {
+        match &self.kind {
+            NodeKind::Def {
+                name,
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let mut cond = vec![Shared::clone(name)];
+                if let Some(p) = params {
+                    cond.extend(p.iter().filter(|c| !c.is_token()).cloned());
+                }
+                let mut prog: Vec<Shared<Node>> = colon_or_do.iter().filter(|c| !c.is_token()).cloned().collect();
+                prog.extend(program.iter().filter(|c| !c.is_token()).cloned());
+                return (cond, prog);
+            }
+            NodeKind::Fn {
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let cond: Vec<Shared<Node>> = params.iter().filter(|c| !c.is_token()).cloned().collect();
+                let mut prog: Vec<Shared<Node>> = colon_or_do.iter().filter(|c| !c.is_token()).cloned().collect();
+                prog.extend(program.iter().filter(|c| !c.is_token()).cloned());
+                return (cond, prog);
+            }
+            _ => {}
+        }
+
+        let children = self.all_children();
+        let colon_index = children.iter().position(|child| {
             child
                 .token
                 .as_ref()
@@ -284,8 +682,7 @@ impl Node {
         // If there's no colon, split before the right parenthesis
         let index = match colon_index {
             Some(index) => index,
-            None => self
-                .children
+            None => children
                 .iter()
                 .position(|child| {
                     child
@@ -299,13 +696,13 @@ impl Node {
         };
 
         (
-            self.children
+            children
                 .iter()
                 .take(index)
                 .filter(|child| !child.is_token())
                 .cloned()
                 .collect::<Vec<_>>(),
-            self.children
+            children
                 .iter()
                 .skip(index)
                 .filter(|child| !child.is_token())
@@ -315,29 +712,25 @@ impl Node {
     }
 
     pub fn binary_op(&self) -> Option<(Shared<Node>, Shared<Node>)> {
-        if matches!(self.kind, NodeKind::BinaryOp(_) | NodeKind::Assign) {
-            let mut non_token_children = self.children.iter().filter(|child| !child.is_token());
-            let left = non_token_children.next()?;
-            let right = non_token_children.next()?;
-            Some((Shared::clone(left), Shared::clone(right)))
-        } else {
-            None
+        match &self.kind {
+            NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => {
+                Some((Shared::clone(lhs), Shared::clone(rhs)))
+            }
+            _ => None,
         }
     }
 
     pub fn unary_op(&self) -> Option<Shared<Node>> {
-        if let NodeKind::UnaryOp(_) = self.kind {
-            let operand = self.children.iter().find(|child| !child.is_token())?;
-            Some(Shared::clone(operand))
-        } else {
-            None
+        match &self.kind {
+            NodeKind::UnaryOp { operand, .. } => Some(Shared::clone(operand)),
+            _ => None,
         }
     }
 
     pub fn get_identifier(&self) -> Option<String> {
         match self {
             Node {
-                kind: NodeKind::Ident | NodeKind::Def,
+                kind: NodeKind::Ident { .. } | NodeKind::Def { .. },
                 token: Some(token),
                 ..
             } => Some(token.to_string()),
@@ -446,15 +839,14 @@ mod tests {
 
     #[rstest]
     #[case(NodeKind::Token, true)]
-    #[case(NodeKind::Call, false)]
-    #[case(NodeKind::Def, false)]
+    #[case(NodeKind::Call { args: ArgList::new() }, false)]
+    #[case(NodeKind::Env, false)]
     fn test_node_is_token(#[case] kind: NodeKind, #[case] expected: bool) {
         let node = Node {
             kind,
             token: None,
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            children: Vec::new(),
         };
         assert_eq!(node.is_token(), expected);
     }
@@ -462,20 +854,18 @@ mod tests {
     #[test]
     fn test_node_has_new_line() {
         let node = Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
             leading_trivia: vec![Trivia::NewLine],
             trailing_trivia: Vec::new(),
-            children: Vec::new(),
         };
         assert!(node.has_new_line());
 
         let node_without_newline = Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            children: Vec::new(),
         };
         assert!(!node_without_newline.has_new_line());
     }
@@ -487,23 +877,22 @@ mod tests {
             token: None,
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            children: Vec::new(),
         });
 
         let call_node = Shared::new(Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            children: Vec::new(),
         });
 
         let parent = Node {
-            kind: NodeKind::Def,
+            kind: NodeKind::Array {
+                items: vec![token_node, call_node.clone()].into(),
+            },
             token: None,
             leading_trivia: Vec::new(),
             trailing_trivia: Vec::new(),
-            children: vec![token_node, call_node.clone()],
         };
 
         let result = parent.children_without_token();

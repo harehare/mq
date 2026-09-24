@@ -38,7 +38,7 @@ fn selector_from_cst_node(node: &mq_lang::CstNode) -> Option<mq_lang::Selector> 
     let mut in_bracket = false;
     let mut bracket_has_number = false;
 
-    for child in &node.children {
+    for child in node.all_children().iter() {
         let Some(tok) = child.token.as_ref() else {
             continue;
         };
@@ -117,115 +117,115 @@ impl Hir {
         let mq_lang::CstNode { kind, .. } = &**node;
 
         match kind {
-            mq_lang::CstNodeKind::BinaryOp(_) => {
+            mq_lang::CstNodeKind::BinaryOp { .. } => {
                 self.add_binary_op_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Block => {
+            mq_lang::CstNodeKind::Block { .. } => {
                 self.add_block_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::UnaryOp(_) => {
+            mq_lang::CstNodeKind::UnaryOp { .. } => {
                 self.add_unary_op_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Call => {
+            mq_lang::CstNodeKind::Call { .. } => {
                 self.add_call_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::CallDynamic => {
+            mq_lang::CstNodeKind::CallDynamic { .. } => {
                 self.add_call_dynamic_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Def => {
+            mq_lang::CstNodeKind::Def { .. } => {
                 self.add_def_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Foreach => {
+            mq_lang::CstNodeKind::Foreach { .. } => {
                 self.add_foreach_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Fn => {
+            mq_lang::CstNodeKind::Fn { .. } => {
                 self.add_fn_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Ident => {
+            mq_lang::CstNodeKind::Ident { .. } => {
                 self.add_ident_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::If => {
+            mq_lang::CstNodeKind::If { .. } => {
                 self.add_if_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Include => {
+            mq_lang::CstNodeKind::Include { .. } => {
                 self.add_include_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Import => {
+            mq_lang::CstNodeKind::Import { .. } => {
                 self.add_import_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Module => {
+            mq_lang::CstNodeKind::Module { .. } => {
                 self.add_module_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::QualifiedAccess => {
+            mq_lang::CstNodeKind::QualifiedAccess { .. } => {
                 self.add_qualified_access_expr(node, source_id, scope_id, parent);
             }
             mq_lang::CstNodeKind::InterpolatedString => {
                 self.add_interpolated_string(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::As => {
+            mq_lang::CstNodeKind::As { .. } => {
                 self.add_as_binding(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var => {
+            mq_lang::CstNodeKind::Let { .. } | mq_lang::CstNodeKind::Var { .. } => {
                 self.add_var_decl(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Literal => {
+            mq_lang::CstNodeKind::Literal | mq_lang::CstNodeKind::Symbol { .. } => {
                 self.add_literal_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr => {
+            mq_lang::CstNodeKind::Selector { .. } | mq_lang::CstNodeKind::SelfAttr => {
                 self.add_selector_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::While => {
+            mq_lang::CstNodeKind::While { .. } => {
                 self.add_while_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Until => {
+            mq_lang::CstNodeKind::Until { .. } => {
                 self.add_until_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Loop => {
+            mq_lang::CstNodeKind::Loop { .. } => {
                 self.add_loop_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Unless => {
+            mq_lang::CstNodeKind::Unless { .. } => {
                 self.add_unless_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Try => {
+            mq_lang::CstNodeKind::Try { .. } => {
                 self.add_try_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Catch => {
+            mq_lang::CstNodeKind::Catch { .. } => {
                 self.add_catch_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Array => {
+            mq_lang::CstNodeKind::Array { .. } => {
                 self.add_array_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Dict => {
+            mq_lang::CstNodeKind::Dict { .. } => {
                 self.add_dict_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Spread => {
+            mq_lang::CstNodeKind::Spread { .. } => {
                 self.add_spread_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Match => {
+            mq_lang::CstNodeKind::Match { .. } => {
                 self.add_match_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::MatchArm => {
+            mq_lang::CstNodeKind::MatchArm { .. } => {
                 self.add_match_arm_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Pattern => {
+            mq_lang::CstNodeKind::Pattern { .. } => {
                 self.add_pattern_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Break => {
+            mq_lang::CstNodeKind::Break { .. } => {
                 self.add_break_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Yield => {
+            mq_lang::CstNodeKind::Yield { .. } => {
                 self.add_yield_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Self_
+            mq_lang::CstNodeKind::Self_ { .. }
             | mq_lang::CstNodeKind::Nodes
             | mq_lang::CstNodeKind::End
             | mq_lang::CstNodeKind::Continue => {
                 self.add_keyword(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Assign => {
+            mq_lang::CstNodeKind::Assign { .. } => {
                 self.add_assign_expr(node, source_id, scope_id, parent);
             }
-            mq_lang::CstNodeKind::Group => {
+            mq_lang::CstNodeKind::Group { .. } => {
                 for child in node.children_without_token() {
                     self.add_expr(&child, source_id, scope_id, parent);
                 }
@@ -235,23 +235,27 @@ impl Hir {
         }
     }
 
-    simple_expr!(add_assign_expr, mq_lang::CstNodeKind::Assign, SymbolKind::Assign);
+    simple_expr!(add_assign_expr, mq_lang::CstNodeKind::Assign { .. }, SymbolKind::Assign);
     simple_expr!(
         add_binary_op_expr,
-        mq_lang::CstNodeKind::BinaryOp(_),
+        mq_lang::CstNodeKind::BinaryOp { .. },
         SymbolKind::BinaryOp
     );
-    simple_expr!(add_unary_op_expr, mq_lang::CstNodeKind::UnaryOp(_), SymbolKind::UnaryOp);
+    simple_expr!(
+        add_unary_op_expr,
+        mq_lang::CstNodeKind::UnaryOp { .. },
+        SymbolKind::UnaryOp
+    );
     simple_expr!(
         add_qualified_access_expr,
-        mq_lang::CstNodeKind::QualifiedAccess,
+        mq_lang::CstNodeKind::QualifiedAccess { .. },
         SymbolKind::QualifiedAccess
     );
-    simple_expr!(add_try_expr, mq_lang::CstNodeKind::Try, SymbolKind::Try);
-    simple_expr!(add_array_expr, mq_lang::CstNodeKind::Array, SymbolKind::Array);
-    simple_expr!(add_spread_expr, mq_lang::CstNodeKind::Spread, SymbolKind::Spread);
+    simple_expr!(add_try_expr, mq_lang::CstNodeKind::Try { .. }, SymbolKind::Try);
+    simple_expr!(add_array_expr, mq_lang::CstNodeKind::Array { .. }, SymbolKind::Array);
+    simple_expr!(add_spread_expr, mq_lang::CstNodeKind::Spread { .. }, SymbolKind::Spread);
 
-    /// Lowers a `CstNodeKind::Catch` node into a `SymbolKind::Catch` symbol.
+    /// Lowers a `CstNodeKind::Catch { .. }` node into a `SymbolKind::Catch` symbol.
     ///
     /// `catch(e):` carries an optional error binder before the leading `(`,
     /// `Ident`, `)` tokens; when present, it declares `e` as a `Parameter`
@@ -265,7 +269,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Catch,
+            kind: mq_lang::CstNodeKind::Catch { .. },
             ..
         } = &**node
         {
@@ -279,11 +283,7 @@ impl Hir {
                 insertion_order: 0,
             });
 
-            let has_binder = node
-                .children
-                .first()
-                .and_then(|child| child.token.clone())
-                .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::LParen));
+            let has_binder = matches!(&node.kind, mq_lang::CstNodeKind::Catch { params: Some(_), .. });
 
             let body_scope_id = if has_binder {
                 self.add_scope(Scope::new(
@@ -326,7 +326,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Block,
+            kind: mq_lang::CstNodeKind::Block { .. },
             ..
         } = &**node
         {
@@ -348,7 +348,7 @@ impl Hir {
             ));
 
             // Process all child nodes within the block scope
-            node.children.iter().for_each(|child| {
+            node.all_children().iter().for_each(|child| {
                 self.add_expr(child, source_id, block_scope_id, Some(symbol_id));
             });
         }
@@ -361,46 +361,34 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Literal,
-            ..
-        } = &**node
-        {
-            // Check if this is a symbol literal (has children: colon + identifier/string)
-            if !node.children.is_empty() {
-                // Symbol literal: extract the symbol name from the second child
-                if let Some(symbol_child) = node.children.get(1) {
-                    self.add_symbol(Symbol {
-                        value: symbol_child.name(),
-                        kind: SymbolKind::Symbol,
-                        source: SourceInfo::new(Some(source_id), Some(node.range())),
-                        scope: scope_id,
-                        doc: node.comments(),
-                        parent,
-                        insertion_order: 0,
-                    });
-                }
-            } else {
-                // Regular literal with token
-                self.add_symbol(Symbol {
-                    value: node.name(),
-                    kind: match &node.token.clone().unwrap().kind {
-                        mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
-                        mq_lang::TokenKind::BytesLiteral(_) => SymbolKind::Bytes,
-                        mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
-                        mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
-                        mq_lang::TokenKind::None => SymbolKind::None,
-                        _ => unreachable!(
-                            "Literal nodes should only have string, bytes, number, boolean, or none tokens"
-                        ),
-                    },
-                    source: SourceInfo::new(Some(source_id), Some(node.range())),
-                    scope: scope_id,
-                    doc: node.comments(),
-                    parent,
-                    insertion_order: 0,
-                });
-            }
+        if let mq_lang::CstNodeKind::Symbol { name, .. } = &node.kind {
+            self.add_symbol(Symbol {
+                value: name.name(),
+                kind: SymbolKind::Symbol,
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
+        } else if matches!(node.kind, mq_lang::CstNodeKind::Literal) {
+            // Regular literal with token
+            self.add_symbol(Symbol {
+                value: node.name(),
+                kind: match &node.token.clone().unwrap().kind {
+                    mq_lang::TokenKind::StringLiteral(_) => SymbolKind::String,
+                    mq_lang::TokenKind::BytesLiteral(_) => SymbolKind::Bytes,
+                    mq_lang::TokenKind::NumberLiteral(_) => SymbolKind::Number,
+                    mq_lang::TokenKind::BoolLiteral(_) => SymbolKind::Boolean,
+                    mq_lang::TokenKind::None => SymbolKind::None,
+                    _ => unreachable!("Literal nodes should only have string, bytes, number, boolean, or none tokens"),
+                },
+                source: SourceInfo::new(Some(source_id), Some(node.range())),
+                scope: scope_id,
+                doc: node.comments(),
+                parent,
+                insertion_order: 0,
+            });
         }
     }
 
@@ -469,7 +457,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Include,
+            kind: mq_lang::CstNodeKind::Include { .. },
             ..
         } = &**node
         {
@@ -503,7 +491,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Import,
+            kind: mq_lang::CstNodeKind::Import { .. },
             ..
         } = &**node
         {
@@ -553,7 +541,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Module,
+            kind: mq_lang::CstNodeKind::Module { .. },
             ..
         } = &**node
         {
@@ -600,7 +588,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::While,
+            kind: mq_lang::CstNodeKind::While { .. },
             ..
         } = &**node
         {
@@ -647,7 +635,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Loop,
+            kind: mq_lang::CstNodeKind::Loop { .. },
             ..
         } = &**node
         {
@@ -680,7 +668,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Until,
+            kind: mq_lang::CstNodeKind::Until { .. },
             ..
         } = &**node
         {
@@ -695,7 +683,10 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        if matches!(node.kind, mq_lang::CstNodeKind::Let | mq_lang::CstNodeKind::Var) {
+        if matches!(
+            node.kind,
+            mq_lang::CstNodeKind::Let { .. } | mq_lang::CstNodeKind::Var { .. }
+        ) {
             let _keyword_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
@@ -709,7 +700,7 @@ impl Hir {
             let children = node.children_without_token();
             let lhs = children.first().unwrap();
 
-            if matches!(lhs.kind, mq_lang::CstNodeKind::Pattern) {
+            if matches!(lhs.kind, mq_lang::CstNodeKind::Pattern { .. }) {
                 // Destructuring pattern: create a DestructuringBinding symbol (sibling to the
                 // Keyword, same as Variable for simple let) that owns PatternVariable children
                 // and the initializer, so piped-input propagation and type constraints can
@@ -753,7 +744,7 @@ impl Hir {
         scope_id: ScopeId,
         parent: Option<SymbolId>,
     ) {
-        if matches!(node.kind, mq_lang::CstNodeKind::As) {
+        if matches!(node.kind, mq_lang::CstNodeKind::As { .. }) {
             let _keyword_id = self.insert_symbol(Symbol {
                 value: node.name(),
                 kind: SymbolKind::Keyword,
@@ -792,7 +783,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Ident,
+            kind: mq_lang::CstNodeKind::Ident { .. },
             ..
         } = &**node
         {
@@ -808,7 +799,7 @@ impl Hir {
 
             // Process Selector children, e.g. `md.depth` is an Ident(md) with a Selector(.depth) child.
             for child in node.children_without_token() {
-                if matches!(child.kind, mq_lang::CstNodeKind::Selector) {
+                if matches!(child.kind, mq_lang::CstNodeKind::Selector { .. }) {
                     self.add_selector_expr(&child, source_id, scope_id, Some(symbol_id));
                 }
             }
@@ -823,7 +814,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Selector | mq_lang::CstNodeKind::SelfAttr,
+            kind: mq_lang::CstNodeKind::Selector { .. } | mq_lang::CstNodeKind::SelfAttr,
             ..
         } = &**node
             && let Some(selector) = selector_from_cst_node(node)
@@ -852,7 +843,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::If,
+            kind: mq_lang::CstNodeKind::If { .. },
             ..
         } = &**node
         {
@@ -906,7 +897,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Unless,
+            kind: mq_lang::CstNodeKind::Unless { .. },
             ..
         } = &**node
         {
@@ -928,7 +919,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Elif,
+            kind: mq_lang::CstNodeKind::Elif { .. },
             ..
         } = &**node
         {
@@ -962,7 +953,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Else,
+            kind: mq_lang::CstNodeKind::Else { .. },
             ..
         } = &**node
         {
@@ -995,7 +986,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Call,
+            kind: mq_lang::CstNodeKind::Call { .. },
             ..
         } = &**node
         {
@@ -1026,7 +1017,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::CallDynamic,
+            kind: mq_lang::CstNodeKind::CallDynamic { .. },
             ..
         } = &**node
         {
@@ -1063,7 +1054,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Foreach,
+            kind: mq_lang::CstNodeKind::Foreach { .. },
             ..
         } = &**node
         {
@@ -1114,7 +1105,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Def,
+            kind: mq_lang::CstNodeKind::Def { .. },
             ..
         } = &**node
         {
@@ -1151,16 +1142,11 @@ impl Hir {
 
             // For def expressions, the first param is the function name, so skip it
             params.iter().skip(1).for_each(|child| {
-                // Check if parameter has default value
-                // In CST, param with default has children: ident, '=', default_expr
-                let has_default = child.children.len() > 1;
-                // Check if parameter is variadic
-                // In CST, variadic param has exactly 1 child with Asterisk token
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
+                let (is_variadic, default_expr) = match &child.kind {
+                    mq_lang::CstNodeKind::Param { asterisk, default, .. } => (asterisk.is_some(), default.as_ref()),
+                    _ => (false, None),
+                };
+                let has_default = default_expr.is_some();
                 let param_name = child.name().unwrap_or("arg".into());
 
                 param_info.push(ParamInfo {
@@ -1182,8 +1168,7 @@ impl Hir {
                 // The default expression gets its own scope: it runs before the function body
                 // starts, so `yield` isn't valid there even though earlier params/outer names
                 // still resolve (its scope's parent is the function scope).
-                if has_default && child.children.len() >= 3 {
-                    let default_expr = &child.children[2];
+                if let Some(default_expr) = default_expr {
                     let default_scope_id = self.add_scope(Scope::new(
                         SourceInfo::new(Some(source_id), Some(default_expr.range())),
                         ScopeKind::DefaultParam(param_symbol_id),
@@ -1211,7 +1196,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Fn,
+            kind: mq_lang::CstNodeKind::Fn { .. },
             ..
         } = &**node
         {
@@ -1245,15 +1230,11 @@ impl Hir {
             let mut param_info = Vec::with_capacity(params.len());
 
             params.iter().for_each(|child| {
-                // Check if parameter has default value
-                // In CST, param with default has children: ident, '=', default_expr
-                let has_default = child.children.len() > 1;
-                // Check if parameter is variadic
-                let is_variadic = child.children.len() == 1
-                    && child.children[0]
-                        .token
-                        .as_ref()
-                        .is_some_and(|t| matches!(t.kind, mq_lang::TokenKind::Asterisk));
+                let (is_variadic, default_expr) = match &child.kind {
+                    mq_lang::CstNodeKind::Param { asterisk, default, .. } => (asterisk.is_some(), default.as_ref()),
+                    _ => (false, None),
+                };
+                let has_default = default_expr.is_some();
                 let param_name = child.name().unwrap_or("arg".into());
 
                 param_info.push(crate::symbol::ParamInfo {
@@ -1275,8 +1256,7 @@ impl Hir {
                 // The default expression gets its own scope: it runs before the function body
                 // starts, so `yield` isn't valid there even though earlier params/outer names
                 // still resolve (its scope's parent is the function scope).
-                if has_default && child.children.len() >= 3 {
-                    let default_expr = &child.children[2];
+                if let Some(default_expr) = default_expr {
                     let default_scope_id = self.add_scope(Scope::new(
                         SourceInfo::new(Some(source_id), Some(default_expr.range())),
                         ScopeKind::DefaultParam(param_symbol_id),
@@ -1304,7 +1284,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Dict,
+            kind: mq_lang::CstNodeKind::Dict { .. },
             ..
         } = &**node
         {
@@ -1319,9 +1299,14 @@ impl Hir {
             });
 
             for entry in node.children_without_token() {
-                if matches!(entry.kind, mq_lang::CstNodeKind::Spread) {
+                if matches!(entry.kind, mq_lang::CstNodeKind::Spread { .. }) {
                     self.add_spread_expr(&entry, source_id, scope_id, Some(symbol_id));
-                } else if let (Some(key_node), Some(value_node)) = (entry.children.first(), entry.children.get(2)) {
+                } else if let mq_lang::CstNodeKind::DictEntry {
+                    key: key_node,
+                    value: value_node,
+                    ..
+                } = &entry.kind
+                {
                     let key_symbol_id = self.add_symbol(Symbol {
                         value: key_node.name(),
                         kind: match &key_node.token {
@@ -1355,7 +1340,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Match,
+            kind: mq_lang::CstNodeKind::Match { .. },
             ..
         } = &**node
         {
@@ -1375,14 +1360,14 @@ impl Hir {
             // Process the value expression (first child: match (value))
             if let Some(value_expr) = children.first() {
                 // Skip MatchArm nodes when looking for the value expression
-                if !matches!(value_expr.kind, mq_lang::CstNodeKind::MatchArm) {
+                if !matches!(value_expr.kind, mq_lang::CstNodeKind::MatchArm { .. }) {
                     self.add_expr(value_expr, source_id, scope_id, Some(symbol_id));
                 }
             }
 
             // Process each MatchArm
             for child in children.iter() {
-                if matches!(child.kind, mq_lang::CstNodeKind::MatchArm) {
+                if matches!(child.kind, mq_lang::CstNodeKind::MatchArm { .. }) {
                     self.add_match_arm_expr(child, source_id, scope_id, Some(symbol_id));
                 }
             }
@@ -1477,7 +1462,7 @@ impl Hir {
         dict_key: Option<smol_str::SmolStr>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::OrPattern,
+            kind: mq_lang::CstNodeKind::OrPattern { .. },
             ..
         } = &**node
         {
@@ -1494,7 +1479,7 @@ impl Hir {
             for child in node.children_without_token() {
                 if matches!(
                     child.kind,
-                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                    mq_lang::CstNodeKind::Pattern { .. } | mq_lang::CstNodeKind::OrPattern { .. }
                 ) {
                     self.add_pattern_expr_inner(&child, source_id, scope_id, Some(symbol_id), false, None);
                 }
@@ -1503,11 +1488,11 @@ impl Hir {
         }
 
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::Pattern,
+            kind: mq_lang::CstNodeKind::Pattern { .. },
             ..
         } = &**node
         {
-            let is_dict_pattern = node.children.iter().any(|child| {
+            let is_dict_pattern = node.all_children().iter().any(|child| {
                 child.is_token()
                     && child
                         .token
@@ -1531,7 +1516,7 @@ impl Hir {
             // Pass `is_rest` so the rest binding (`..rest`) gets the correct kind.
             self.extract_pattern_variables(node, source_id, scope_id, Some(symbol_id), is_rest);
 
-            let has_rest_element = node.children.iter().any(|child| {
+            let has_rest_element = node.all_children().iter().any(|child| {
                 child.is_token()
                     && child
                         .token
@@ -1542,9 +1527,12 @@ impl Hir {
             // Process nested patterns (for array, dict patterns)
             let non_token_children = node.children_without_token();
             let last_pattern_idx = if has_rest_element {
-                non_token_children
-                    .iter()
-                    .rposition(|c| matches!(c.kind, mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern))
+                non_token_children.iter().rposition(|c| {
+                    matches!(
+                        c.kind,
+                        mq_lang::CstNodeKind::Pattern { .. } | mq_lang::CstNodeKind::OrPattern { .. }
+                    )
+                })
             } else {
                 None
             };
@@ -1554,12 +1542,12 @@ impl Hir {
                 let child = &non_token_children[idx];
                 if matches!(
                     child.kind,
-                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                    mq_lang::CstNodeKind::Pattern { .. } | mq_lang::CstNodeKind::OrPattern { .. }
                 ) {
                     let child_is_rest = last_pattern_idx == Some(pattern_idx);
                     self.add_pattern_expr_inner(child, source_id, scope_id, Some(symbol_id), child_is_rest, None);
                     pattern_idx += 1;
-                } else if matches!(child.kind, mq_lang::CstNodeKind::Ident) {
+                } else if matches!(child.kind, mq_lang::CstNodeKind::Ident { .. }) {
                     if is_dict_pattern {
                         // In dict patterns `{a, b}` shorthand, an Ident NOT followed by a
                         // Pattern sibling is both the key name and the binding variable.
@@ -1569,7 +1557,10 @@ impl Hir {
                         // enabling constraint generation to map the binding to its field type.
                         let next = non_token_children.get(idx + 1);
                         let next_is_pattern = next.is_some_and(|c| {
-                            matches!(c.kind, mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern)
+                            matches!(
+                                c.kind,
+                                mq_lang::CstNodeKind::Pattern { .. } | mq_lang::CstNodeKind::OrPattern { .. }
+                            )
                         });
                         if !next_is_pattern {
                             self.add_symbol(Symbol {
@@ -1625,7 +1616,7 @@ impl Hir {
         parent: Option<SymbolId>,
     ) {
         if let mq_lang::CstNode {
-            kind: mq_lang::CstNodeKind::MatchArm,
+            kind: mq_lang::CstNodeKind::MatchArm { .. },
             ..
         } = &**node
         {
@@ -1659,7 +1650,7 @@ impl Hir {
             if let Some(pattern) = children.first()
                 && matches!(
                     pattern.kind,
-                    mq_lang::CstNodeKind::Pattern | mq_lang::CstNodeKind::OrPattern
+                    mq_lang::CstNodeKind::Pattern { .. } | mq_lang::CstNodeKind::OrPattern { .. }
                 )
             {
                 self.add_pattern_expr(pattern, source_id, arm_scope_id, Some(symbol_id));
