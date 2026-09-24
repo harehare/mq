@@ -834,30 +834,23 @@ pub(super) fn call_builtin_args(
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    let host_args = if host_functions.is_empty() {
-        None
-    } else {
-        host_functions.get(ident).map(|_| args.clone())
-    };
+    // Builtins keep precedence. A host-only name can run with its original arguments,
+    // without building the builtin's NotDefined error and candidate-name list.
+    if !host_functions.is_empty()
+        && let Some(host_fn) = host_functions.get(ident)
+        && builtin::get_builtin_functions(ident).is_none()
+    {
+        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(&args)))
+            .unwrap_or_else(|payload| Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload)))))
+            .map_err(|e| VmError::Host(*ident, e.message().to_string()));
+    }
     match builtin::eval_builtin(self_value, ident, args, env) {
-        Ok(v) => Ok(v),
-        Err(builtin::Error::NotDefined(_, _)) => match host_functions.get(ident) {
-            Some(host_fn) => {
-                let Some(host_args) = host_args.as_deref() else {
-                    return Err(VmError::Corrupt("host function arguments were not retained"));
-                };
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(host_args)))
-                    .unwrap_or_else(|payload| {
-                        Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload))))
-                    })
-                    .map_err(|e| VmError::Host(*ident, e.message().to_string()))
-            }
-            None => Err(VmError::Builtin(builtin::Error::NotDefined(
-                ident.to_string(),
-                Vec::new(),
-            ))),
-        },
-        Err(e) => Err(VmError::Builtin(e)),
+        // Keep the VM's existing error shape for unknown function names.
+        Err(builtin::Error::NotDefined(_, _)) => Err(VmError::Builtin(builtin::Error::NotDefined(
+            ident.to_string(),
+            Vec::new(),
+        ))),
+        result => result.map_err(VmError::Builtin),
     }
 }
 
