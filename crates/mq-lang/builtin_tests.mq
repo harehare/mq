@@ -1456,6 +1456,17 @@ def test_normalize_newlines(value, mode, expected):
 end
 
 # @parametrize([
+#   ["  a   b\n\tc  ", "a b c"],
+#   ["already squeezed", "already squeezed"],
+#   ["", ""],
+#   ["   ", ""],
+# ])
+def test_squeeze_whitespace(value, expected):
+  let result = squeeze_whitespace(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
 #   [{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}],
 #   [{"x": 10, "y": 20}, ["y"], {"y": 20}],
 #   [{"key": "value"}, ["nonexistent"], dict()],
