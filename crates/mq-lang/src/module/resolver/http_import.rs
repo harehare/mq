@@ -363,6 +363,8 @@ mod tests {
     proptest! {
         #[test]
         fn prop_default_domain_always_allowed(path in "[a-z0-9/_.-]{1,40}") {
+            // ".." segments get normalized out of the prefix, so skip them.
+            prop_assume!(!path.split('/').any(|segment| segment == ".."));
             let url = format!("https://raw.githubusercontent.com/harehare/{}", path);
             // Always allowed regardless of the allowlist.
             prop_assert!(is_allowed_url(&url, &[]));
