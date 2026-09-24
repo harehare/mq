@@ -181,6 +181,13 @@ pub(crate) fn compile_program<R: ModuleResolver>(
 }
 
 /// Compiles a debugger expression with paused-frame names predeclared as top-level slots.
+///
+/// Mirrors [`compile_program_for_engine_with_bindings`]'s reachable-prelude expansion so a
+/// bare reference to a soft builtin (e.g. `let compare = eq`) resolves even when the paused
+/// query never loaded it. Names already predeclared from the paused frame are kept out of
+/// the reachable set entirely: injecting the prelude's own `def` for one of them would
+/// redeclare it after the seed, and the later declaration would win the same way a real
+/// `var eq = ...` shadows an earlier one.
 #[cfg(feature = "debugger")]
 pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     program: &Program,
@@ -188,17 +195,46 @@ pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     module_loader: ModuleLoader<R>,
     bindings: &[Ident],
 ) -> CompileResult<CompiledProgram> {
+    let seeds = CompileSeeds {
+        seed_bindings: bindings,
+        seed_immutable: &[],
+        external_globals: &[],
+        preresolved_module_vars: &ResolvedModuleVars::default(),
+    };
+    let mut reachable = soft_builtin_names_in_program(program);
+    for name in bindings {
+        reachable.remove(name);
+    }
+    for _ in 0..MAX_PRELUDE_ATTEMPTS {
+        let prelude = if reachable.is_empty() {
+            BuiltinPrelude::None
+        } else {
+            BuiltinPrelude::Reachable(&reachable)
+        };
+        match compile_program_impl(
+            program,
+            Shared::clone(&token_arena),
+            module_loader.clone(),
+            CompileOptions::new(prelude, false),
+            seeds,
+        ) {
+            Ok((compiled, _)) => return Ok(compiled),
+            Err(CompileError::UndefinedIdent(name, _)) => {
+                let ident = Ident::new(&name);
+                if bindings.contains(&ident) || !SOFT_BUILTIN_NAMES.contains(&ident) || !reachable.insert(ident) {
+                    break;
+                }
+            }
+            Err(other) => return Err(other),
+        }
+    }
+    // Didn't converge on a minimal set within the attempt budget. Compile everything.
     compile_program_impl(
         program,
         token_arena,
         module_loader,
-        CompileOptions::new(BuiltinPrelude::None, false),
-        CompileSeeds {
-            seed_bindings: bindings,
-            seed_immutable: &[],
-            external_globals: &[],
-            preresolved_module_vars: &ResolvedModuleVars::default(),
-        },
+        CompileOptions::new(BuiltinPrelude::All, false),
+        seeds,
     )
     .map(|(compiled, _)| compiled)
 }
