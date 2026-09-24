@@ -138,6 +138,9 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
 
     fn env_var(&self, name: &str) -> Result<String, IoError>;
 
+    /// All accessible environment-variable pairs, backing the `env()` builtin.
+    fn env_vars(&self) -> Result<Vec<(String, String)>, IoError>;
+
     /// Callers are responsible for URL/domain policy (HTTPS-only, allowlisting,
     /// etc.) before calling this — `fetch` is a minimal transport primitive.
     fn fetch(&self, url: &str) -> Result<String, IoError>;

@@ -285,6 +285,20 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.env_var(name)
     }
 
+    fn env_vars(&self) -> Result<Vec<(String, String)>, IoError> {
+        if self.allow_env.is_denied() {
+            return Err(denied("environment variable access is disabled"));
+        }
+        match &self.allow_env {
+            EnvAccess::Allowed => self.inner.env_vars(),
+            EnvAccess::AllowedNames(names) => Ok(names
+                .iter()
+                .filter_map(|name| self.inner.env_var(name).ok().map(|v| (name.clone(), v)))
+                .collect()),
+            EnvAccess::Denied => unreachable!(),
+        }
+    }
+
     fn home_dir(&self) -> Option<PathBuf> {
         self.inner.home_dir()
     }

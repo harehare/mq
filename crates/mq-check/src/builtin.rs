@@ -1128,6 +1128,8 @@ fn register_io(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "halt", Type::Number, Type::Var(a));
     register_nullary(ctx, "input", Type::String);
+    register_nullary(ctx, "env", Type::dict(Type::String, Type::String));
+    register_unary(ctx, "env", Type::String, Type::String);
 }
 
 /// Utility functions: coalesce, convert
