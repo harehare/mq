@@ -15,6 +15,31 @@
 
 import "csv" |
 
+# Pads short rows and truncates long ones to the header row's cell count
+# (`rows[0]`), so every downstream table function sees uniform rows even when
+# the source Markdown table has a ragged row. Padding cells are empty table
+# cells placed at the row's original `.row` and the new trailing `.column`.
+def _normalize_table_rows(rows):
+  if (is_empty(rows)):
+    rows
+  else:
+    do
+      let col_count = len(rows[0])
+      | map(rows, fn(row):
+          let n = len(row)
+          | if (n == col_count):
+              row
+            elif (n > col_count):
+              row[0:col_count]
+            else:
+              do
+                let row_index = row[0]
+                | row + map(range(n, col_count - 1), fn(c): to_md_table_cell("", row_index.row, c);)
+              end
+        end)
+    end
+end
+
 # Extract table structures from a list of markdown nodes.
 #
 # Example:
@@ -45,7 +70,8 @@ def tables(md_nodes):
                         | current_row = []
                       end
                     | if (!is_empty(current_rows)) do
-                        tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+                        let normalized_rows = _normalize_table_rows(current_rows)
+                        | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
                       end
                     | current_align = []
                     | current_rows = []
@@ -69,7 +95,8 @@ def tables(md_nodes):
                     | current_row_index = -1
                   end
                 | if (!is_empty(current_rows)) do
-                    tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+                    let normalized_rows = _normalize_table_rows(current_rows)
+                    | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
                     | current_align = []
                     | current_rows = []
                     | current_row = []
@@ -83,7 +110,8 @@ def tables(md_nodes):
             current_rows += [current_row]
           end
       | if (!is_empty(current_rows)) do
-            tables += [{type: :table, align: current_align, header: current_rows[0], rows: current_rows[1:]}]
+            let normalized_rows = _normalize_table_rows(current_rows)
+            | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
           end
       | tables
     end
