@@ -52,6 +52,24 @@ def test_table_tables_adjacent_different_widths():
   | assert_eq(len(result[1][:rows][0]), 1)
 end
 
+def test_table_tables_short_row_is_padded():
+  let md_nodes = to_markdown("| a | b | c |\n| - | - | - |\n| 1 | 2 |\n")
+  | let result = table::tables(md_nodes)
+  | let t = result[0]
+  | assert_eq(len(t[:rows][0]), 3)
+  | assert_eq(to_string(t[:rows][0][2]), "")
+  | assert_eq(table::to_csv(t), "a,b,c\n1,2,")
+  | assert_eq(table::to_array(t), [{"a": "1", "b": "2", "c": ""}])
+end
+
+def test_table_tables_long_row_is_truncated():
+  let md_nodes = to_markdown("| a | b |\n| - | - |\n| 1 | 2 | 3 | 4 |\n")
+  | let result = table::tables(md_nodes)
+  | let t = result[0]
+  | assert_eq(len(t[:rows][0]), 2)
+  | assert_eq(table::to_csv(t), "a,b\n1,2")
+end
+
 def test_table_tables_adjacent_header_only():
   let md_nodes = to_markdown("| A | B |\n| - | - |\n\n| C | D |\n| - | - |\n| 1 | 2 |\n")
   | let result = table::tables(md_nodes)
