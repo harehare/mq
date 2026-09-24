@@ -331,6 +331,8 @@ fn register_string(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_ternary(ctx, "replace", Type::Var(a), Type::String, Type::String, Type::Var(a));
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
+    // gsub also accepts a markdown node at runtime.
+    register_ternary(ctx, "gsub", Type::Markdown, Type::String, Type::String, Type::Markdown);
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
     register_binary(
         ctx,

@@ -1456,6 +1456,17 @@ def test_normalize_newlines(value, mode, expected):
 end
 
 # @parametrize([
+#   ["  a   b\n\tc  ", "a b c"],
+#   ["already squeezed", "already squeezed"],
+#   ["", ""],
+#   ["   ", ""],
+# ])
+def test_squeeze_whitespace(value, expected):
+  let result = squeeze_whitespace(value)
+  | assert_eq(result, expected)
+end
+
+# @parametrize([
 #   [{"a": 1, "b": 2, "c": 3}, ["a", "c"], {"a": 1, "c": 3}],
 #   [{"x": 10, "y": 20}, ["y"], {"y": 20}],
 #   [{"key": "value"}, ["nonexistent"], dict()],
@@ -1857,4 +1868,43 @@ def test_redact_key_rule_does_not_apply_to_markdown_nodes():
   let node = do "sk-abc123" | to_markdown() | first();
   | let result = redact(node, [{type: "key", pattern: "sk-[a-z0-9]+"}])
   | assert_eq(to_text(result), "sk-abc123")
+end
+
+def test_replace_prose_plain_string():
+  assert_eq(replace_prose("foo bar foo", "foo", "baz"), "baz bar baz")
+end
+
+def test_replace_prose_markdown_text_leaf():
+  let node = do "foo bar" | to_markdown() | first();
+  | assert_eq(to_text(replace_prose(node, "foo", "baz")), "baz bar")
+end
+
+def test_replace_prose_skips_code_inline():
+  let node = do "`foo`" | to_markdown() | first();
+  | assert_eq(to_text(replace_prose(node, "foo", "baz")), "foo")
+end
+
+def test_replace_prose_skips_fenced_code_block():
+  let node = do "```\nfoo\n```" | to_markdown() | first();
+  | assert_eq(to_text(replace_prose(node, "foo", "baz")), "foo")
+end
+
+def test_replace_prose_replaces_link_label_but_not_url():
+  let node = do "[foo docs](https://foo.example.com/foo)" | to_markdown() | first();
+  | let result = replace_prose(node, "foo", "baz")
+  | assert_eq(to_html(result), "<p><a href=\"https://foo.example.com/foo\">baz docs</a></p>")
+end
+
+def test_replace_prose_recurses_into_heading_children():
+  let node = do "# foo heading" | to_markdown() | first();
+  | assert_eq(to_html(replace_prose(node, "foo", "baz")), "<h1>baz heading</h1>")
+end
+
+def test_replace_prose_array_of_nodes():
+  let result = replace_prose(to_markdown("foo\n\n`foo`"), "foo", "baz")
+  | assert_eq(map(result, to_text), ["baz", "foo"])
+end
+
+def test_replace_prose_no_match_is_unchanged():
+  assert_eq(replace_prose("no match here", "foo", "baz"), "no match here")
 end

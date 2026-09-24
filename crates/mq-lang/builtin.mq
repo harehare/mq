@@ -2834,6 +2834,23 @@ def normalize_newlines(text, mode):
     end
 end
 
+# Collapses every run of whitespace (spaces, tabs, newlines) into a single space and
+# trims the result, e.g. after joining text from multiple sources.
+#
+# Example:
+# ```
+# squeeze_whitespace("  a   b\n\tc  ")
+# #=> a b c
+# ```
+#
+# Returns: string
+def squeeze_whitespace(s):
+  if (!is_string(s)):
+    error("squeeze_whitespace: argument must be a string")
+  else:
+    trim(gsub(s, "\\s+", " "))
+end
+
 # Returns a new dictionary containing only the specified keys from the original dictionary, if they exist.
 #
 # Example:
@@ -3195,7 +3212,7 @@ def _redact_text(s, rules):
 end
 
 # Recursively masks matching values in a dict/array/string/markdown node, given `rules`: an array of `{type: "key", pattern, replacement = "[REDACTED]", case_insensitive = true}` (masks a dict value outright when its key matches `pattern`, without looking at the value) or `{type: "value", pattern, replacement = "[REDACTED]", case_insensitive = true}` (replaces matches of `pattern` inside string or markdown node text via `gsub`, leaving the rest of the text intact).
-# `pattern` is matched case-sensitively against the (optionally downcased) subject. mq's regex engine has no `(?i)` support, so write `pattern` in lowercase for a case-insensitive rule.
+# `pattern` is matched case-sensitively against the (optionally downcased) subject unless `pattern` itself starts with `(?i)`.
 # Numbers, booleans and `None` pass through unchanged. A markdown node with children (e.g. a heading, list, or link) is walked by redacting each child; a leaf node (e.g. text, code, code_inline, html, yaml, toml, image, definition) has `value`-type rules applied directly to its own text, so `key`-type rules only ever apply to dict keys, never to markdown structure.
 #
 # Example:
@@ -3228,6 +3245,34 @@ def redact(value, rules):
         end
     | _:
       if (is_string(value)): _redact_text(value, rules) else: value
+  end
+end
+
+# Replaces matches of `pattern` with `replacement` (via `gsub`) inside a string or
+# markdown node's prose text only. Only `text` nodes are substituted, so code, html,
+# front matter, math, and link destinations are left untouched.
+#
+# Example:
+# ```
+# replace_prose("Use foo to call foo.", "foo", "bar")
+# #=> Use bar to call bar.
+# ```
+#
+# Returns: dynamic
+def replace_prose(value, pattern, replacement):
+  match (value):
+    | :markdown:
+      if (is_empty(value.children)):
+        if (to_md_name(value) == "text"): gsub(value, pattern, replacement) else: value
+      else:
+        do
+          let new_children = map(value.children, fn(child): replace_prose(child, pattern, replacement);)
+          | set_children(value, new_children)
+        end
+    | :array:
+      map(value, fn(x): replace_prose(x, pattern, replacement);)
+    | _:
+      if (is_string(value)): gsub(value, pattern, replacement) else: value
   end
 end
 
