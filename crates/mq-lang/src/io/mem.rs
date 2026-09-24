@@ -193,6 +193,10 @@ impl Io for MemIo {
             .ok_or_else(|| IoError::NotFound(Cow::Owned(format!("env var `{name}`"))))
     }
 
+    fn env_vars(&self) -> Result<Vec<(String, String)>, IoError> {
+        Ok(self.env.lock().unwrap().clone().into_iter().collect())
+    }
+
     fn fetch(&self, url: &str) -> Result<String, IoError> {
         self.fetch_responses
             .lock()

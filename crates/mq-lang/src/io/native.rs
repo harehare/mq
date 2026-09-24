@@ -177,6 +177,10 @@ impl Io for NativeIo {
         std::env::var(name).map_err(|_| IoError::NotFound(Cow::Owned(format!("env var `{name}`"))))
     }
 
+    fn env_vars(&self) -> Result<Vec<(String, String)>, IoError> {
+        Ok(std::env::vars().collect())
+    }
+
     fn home_dir(&self) -> Option<PathBuf> {
         dirs::home_dir()
     }

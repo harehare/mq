@@ -24,7 +24,7 @@ use crate::ident::all_symbols;
 #[cfg(feature = "http")]
 use crate::io::HttpRequestSpec;
 #[cfg(feature = "file-io")]
-use crate::io::{FileKind, Io};
+use crate::io::{FileKind, Io, IoError};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
 #[cfg(feature = "file-io")]
@@ -4404,6 +4404,30 @@ fn is_debug_mode_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Re
     }
 }
 
+/// `env()` returns all allowed env vars as a dict; `env(name)` returns one, or `None` if unset.
+#[mq_macros::mq_fn(name = "env", params = Range(0, 1))]
+fn env_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [] => {
+            let mut dict = DictMap::default();
+            for (name, value) in io_context::current()
+                .env_vars()
+                .map_err(|e| Error::Runtime(format!("Failed to read environment variables: {}", e)))?
+            {
+                dict.insert(Ident::new(&name), RuntimeValue::String(value.into()));
+            }
+            Ok(dict.into())
+        }
+        [RuntimeValue::String(name)] => match io_context::current().env_var(name) {
+            Ok(value) => Ok(RuntimeValue::String(value.into())),
+            Err(IoError::NotFound(_)) => Ok(RuntimeValue::NONE),
+            Err(e) => Err(Error::Runtime(format!("Failed to read env var {}: {}", name, e))),
+        },
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("env should always receive zero or one arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "shift_left", params = Fixed(2))]
 fn shift_left_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5842,6 +5866,7 @@ mq_macros::builtin_dispatch! {
     _CBOR_STRINGIFY,
     _XML_PARSE,
     IS_DEBUG_MODE,
+    ENV,
     SHIFT_LEFT,
     SHIFT_RIGHT,
     _DIFF,
@@ -9695,6 +9720,17 @@ x
         },
     );
     map.insert(
+        SmolStr::new("env"),
+        BuiltinFunctionDoc {
+            description: "Returns all `--allow-env`-permitted env vars as a dict; `env(name)` returns one value, or `None` if unset.",
+            params: &[],
+            param_types: &[],
+            returns: "dict",
+            examples: &[],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("to_markdown"),
         BuiltinFunctionDoc {
             description: "Parses a markdown string and returns an array of markdown nodes.",
@@ -10502,10 +10538,10 @@ mod tests {
     use mq_markdown::Node;
     use rstest::rstest;
 
-    #[cfg(all(feature = "http", feature = "mock-io"))]
     use crate::io::MemIo;
     #[cfg(any(feature = "file-io", feature = "http", feature = "process-io"))]
-    use crate::io::{NativeIo, SandboxedIo};
+    use crate::io::NativeIo;
+    use crate::io::SandboxedIo;
 
     use super::*;
 
@@ -15645,6 +15681,52 @@ mod tests {
             ),
             Ok(RuntimeValue::String(Shared::new("body".into())))
         );
+    }
+
+    #[test]
+    fn test_env_returns_a_dict_restricted_to_allowed_names() {
+        let _guard = io_context::scoped(Shared::new(
+            SandboxedIo::new(MemIo::default().with_env("MQ_TEST_VAR", "value").with_env("OTHER", "x"))
+                .allow_env(vec!["MQ_TEST_VAR".to_string()]),
+        ));
+
+        assert_eq!(
+            call("env", vec![]),
+            Ok(RuntimeValue::from(DictMap::from_iter([(
+                Ident::new("MQ_TEST_VAR"),
+                RuntimeValue::String(Shared::new("value".into()))
+            )])))
+        );
+    }
+
+    #[test]
+    fn test_env_with_name_returns_the_value_or_none_if_unset() {
+        let _guard = io_context::scoped(Shared::new(
+            SandboxedIo::new(MemIo::default().with_env("MQ_TEST_VAR", "value")).allow_env(true),
+        ));
+
+        assert_eq!(
+            call("env", vec![RuntimeValue::String(Shared::new("MQ_TEST_VAR".into()))]),
+            Ok(RuntimeValue::String(Shared::new("value".into())))
+        );
+        assert_eq!(
+            call("env", vec![RuntimeValue::String(Shared::new("MQ_MISSING".into()))]),
+            Ok(RuntimeValue::NONE)
+        );
+    }
+
+    #[test]
+    fn test_env_with_name_errors_when_not_in_the_allowlist() {
+        let _guard = io_context::scoped(Shared::new(
+            SandboxedIo::new(MemIo::default().with_env("MQ_TEST_VAR", "value")).allow_env(vec!["OTHER".to_string()]),
+        ));
+        assert!(call("env", vec![RuntimeValue::String(Shared::new("MQ_TEST_VAR".into()))]).is_err());
+    }
+
+    #[test]
+    fn test_env_errors_when_env_access_is_denied() {
+        let _guard = io_context::scoped(Shared::new(SandboxedIo::new(MemIo::default())));
+        assert!(call("env", vec![]).is_err());
     }
 
     #[cfg(all(feature = "http", feature = "mock-io"))]
