@@ -5,8 +5,8 @@
 //! Markdown AST and discards container tags (`div`/`span`/`section`, ...) along with their
 //! `class`/`id`/`data-*` attributes. That conversion has no toggle, so information that only
 //! lives on those attributes is unrecoverable once a value has gone through it. These builtins
-//! query the pre-conversion HTML string instead — typically the raw `-I html` input or an
-//! `http()` response body — so element tags and attributes are still available.
+//! query the pre-conversion HTML string instead, typically the raw `-I html` input or an
+//! `http()` response body, so element tags and attributes are still available.
 //!
 //! Gated at compile time by the `css-selector` feature.
 

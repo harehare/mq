@@ -285,7 +285,7 @@ const MAX_EXTRACTED_URLS: usize = 10_000;
 
 /// Strips trailing prose punctuation (`.,;:!?'"`) and, for closing brackets
 /// (`)]}>`), only the ones left unbalanced by an opening counterpart earlier
-/// in `s` — so a wiki-style URL ending in `(...)` keeps its matched pair,
+/// in `s`, so a wiki-style URL ending in `(...)` keeps its matched pair,
 /// while a URL merely wrapped in prose parens loses the stray closer.
 fn trim_trailing_url_punctuation(s: &str) -> &str {
     let mut end = s.len();
@@ -399,7 +399,7 @@ mod tests {
     fn test_is_match_re(#[case] input: &str, #[case] pattern: &str, #[case] expected: bool) {
         let result = is_match_re(input, pattern).unwrap();
         assert_eq!(result, RuntimeValue::Boolean(expected));
-        // second call hits cache — same result expected
+        // second call hits cache, same result expected
         let result2 = is_match_re(input, pattern).unwrap();
         assert_eq!(result, result2);
     }
@@ -450,7 +450,7 @@ mod tests {
     fn test_replace_re(#[case] input: &str, #[case] pattern: &str, #[case] replacement: &str, #[case] expected: &str) {
         let result = replace_re(input, pattern, replacement).unwrap();
         assert_eq!(result, RuntimeValue::String(Shared::new(expected.to_string())));
-        // second call hits cache — same result expected
+        // second call hits cache, same result expected
         let result2 = replace_re(input, pattern, replacement).unwrap();
         assert_eq!(result, result2);
     }
@@ -467,7 +467,7 @@ mod tests {
     fn test_split_re(#[case] input: &str, #[case] pattern: &str, #[case] expected: Vec<&str>) {
         let result = split_re(input, pattern).unwrap();
         assert_eq!(result, strings(expected.clone()));
-        // second call hits cache — same result expected
+        // second call hits cache, same result expected
         let result2 = split_re(input, pattern).unwrap();
         assert_eq!(result, result2);
     }
@@ -503,7 +503,7 @@ mod tests {
                 record("c", 2, 4, 5, None),
             ]))
         );
-        // second call hits cache — same result expected
+        // second call hits cache, same result expected
         let result2 = split_records_re("a,b,c", ",").unwrap();
         assert_eq!(result, result2);
     }
@@ -622,7 +622,7 @@ mod tests {
     fn test_scan_re_no_groups() {
         let result = scan_re("a1b2c3", r"\d").unwrap();
         assert_eq!(result, strings(vec!["1", "2", "3"]));
-        // second call hits cache — same result expected
+        // second call hits cache, same result expected
         let result2 = scan_re("a1b2c3", r"\d").unwrap();
         assert_eq!(result, result2);
     }

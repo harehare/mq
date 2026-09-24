@@ -86,7 +86,7 @@ pub(super) fn token_count(text: &str, model: &str) -> Result<usize, Error> {
 
 pub(super) type Counter = Box<dyn Fn(&str) -> usize>;
 
-/// Like [`token_count`], but resolves the BPE encoder once instead of on every call — for
+/// Like [`token_count`], but resolves the BPE encoder once instead of on every call, for
 /// `token_compress`, which counts tokens in a loop/binary search.
 pub(super) fn counter(model: Option<&str>) -> Result<Counter, Error> {
     match model {

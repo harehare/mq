@@ -655,7 +655,7 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::String),
     );
 
-    // .. : (number, number) -> [number]  — binary infix range operator
+    // .. : (number, number) -> [number] (binary infix range operator)
     register_binary(ctx, "..", Type::Number, Type::Number, Type::array(Type::Number));
     // None propagation for ".."
     register_binary(ctx, "..", Type::None, Type::None, Type::None);
@@ -1130,12 +1130,12 @@ fn register_io(ctx: &mut InferenceContext) {
 
 /// Utility functions: coalesce, convert
 fn register_utility(ctx: &mut InferenceContext) {
-    // coalesce / ?? : (None, a) -> a  — left is None, return right (null-coalescing)
+    // coalesce / ?? : (None, a) -> a (left is None, return right; null-coalescing)
     for name in ["coalesce", "??"] {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::None, Type::Var(a), Type::Var(a));
     }
-    // coalesce / ?? : (a, a) -> a  — same-type fallback
+    // coalesce / ?? : (a, a) -> a (same-type fallback)
     for name in ["coalesce", "??"] {
         let a = ctx.fresh_var();
         register_binary(ctx, name, Type::Var(a), Type::Var(a), Type::Var(a));

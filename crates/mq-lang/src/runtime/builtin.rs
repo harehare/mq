@@ -5548,7 +5548,7 @@ fn walk_files_impl_inner(
 /// Recursively enumerates filesystem entries under `root` whose root-relative path (using
 /// `/` as the separator regardless of platform) matches the glob `pattern` (default
 /// `"**"`, i.e. every file), returning a stable-sorted array of those relative path
-/// strings. Unlike `collection`, this reads neither file contents nor Markdown — it is a
+/// strings. Unlike `collection`, this reads neither file contents nor Markdown; it is a
 /// general-purpose enumeration primitive for reports that mix non-Markdown files,
 /// size/mtime-based inventories, or incremental processing, without escaping to a shell
 /// `find`. Requires the ambient [`Io`]'s read permission (see [`io_context`]).
@@ -9399,7 +9399,7 @@ x
     map.insert(
         SmolStr::new("http"),
         BuiltinFunctionDoc {
-            description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post — get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post; get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
             params: &["method", "url", "body", "headers"],
             param_types: &["string", "string", "string", "dict"],
             returns: "string",

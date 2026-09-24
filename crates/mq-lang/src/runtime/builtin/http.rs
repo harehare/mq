@@ -3,7 +3,7 @@
 //!
 //! Gated at compile time by the `http` feature (implied by `http-import-ureq`) and at
 //! runtime by the ambient [`Io`](crate::io::Io)'s net permission (see
-//! [`super::io_context`]) — both must be satisfied before a request is made. Requests
+//! [`super::io_context`]); both must be satisfied before a request is made. Requests
 //! ultimately go through the same SSRF-hardened agent used for HTTP module imports (see
 //! [`crate::module::resolver::ssrf`]): HTTPS only, no automatic redirects, and DNS
 //! resolution filtered to publicly routable addresses so a hostname can't be rebound to

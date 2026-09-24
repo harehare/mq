@@ -11,7 +11,7 @@
 //! arguments (no hidden global RNG state, safe under parallel evaluation). This backs
 //! property-based tests in `mq-test`, where a failing case's seed can be reported and replayed.
 //!
-//! These functions are still **not** intended for generating secrets or authentication tokens —
+//! These functions are still **not** intended for generating secrets or authentication tokens;
 //! use a purpose-built secret-generation API for that.
 
 use crate::RuntimeValue;
