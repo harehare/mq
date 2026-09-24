@@ -23,8 +23,9 @@ use crate::error::runtime::RuntimeError;
 use crate::ident::all_symbols;
 #[cfg(feature = "http")]
 use crate::io::HttpRequestSpec;
+use crate::io::IoError;
 #[cfg(feature = "file-io")]
-use crate::io::{FileKind, Io, IoError};
+use crate::io::{FileKind, Io};
 use crate::number::{self};
 use crate::runtime::builtin::convert::Convert;
 #[cfg(feature = "file-io")]
