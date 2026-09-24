@@ -1686,9 +1686,8 @@ mod tests {
         );
     }
 
-    // `eq` and its five siblings (`ne`, `lt`, `le`, `gt`, `ge`) are implemented in the soft
-    // prelude (`builtin.mq`), not as native builtins. A paused frame that never loaded them
-    // must still resolve a bare first-class reference to one.
+    // `eq` is a soft-prelude builtin, not native; a paused frame that never loaded
+    // `builtin.mq` must still resolve a bare reference to it.
     #[cfg(feature = "debugger")]
     #[test]
     fn test_eval_debug_expression_vm_resolves_unbound_soft_builtin() {

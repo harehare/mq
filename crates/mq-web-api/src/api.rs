@@ -362,8 +362,7 @@ pub fn format_query(request: FormatApiRequest) -> miette::Result<FormatApiRespon
     Ok(FormatApiResponse { formatted })
 }
 
-/// Converts a catalog entry (native builtin or `builtin.mq` soft builtin) into the API's
-/// `FunctionDoc` shape. See [`mq_help::top_level_entries`].
+/// Converts a [`mq_help::top_level_entries`] catalog entry into the API's `FunctionDoc` shape.
 fn function_doc_from_help_entry(entry: &mq_help::HelpEntry) -> FunctionDoc {
     FunctionDoc {
         name: entry.name.clone(),
@@ -402,8 +401,8 @@ fn selector_doc(name: &str, doc: &mq_lang::BuiltinSelectorDoc) -> SelectorDoc {
     }
 }
 
-/// Lists all builtin mq functions with their documentation, including functions implemented
-/// in the soft prelude (`builtin.mq`, e.g. `eq`/`ne`/`lt`/`le`/`gt`/`ge`) rather than natively.
+/// Lists all builtin mq functions with their documentation, including soft-prelude
+/// functions (`builtin.mq`, e.g. `eq`/`ne`/`lt`/`le`/`gt`/`ge`).
 pub fn list_functions() -> FunctionsApiResponse {
     let mut functions: Vec<FunctionDoc> = mq_help::top_level_entries()
         .iter()
@@ -662,10 +661,8 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    // `list_functions` is sourced from `mq_help::top_level_entries`, which unifies native
-    // builtins (`mq_lang::BUILTIN_FUNCTION_DOC`) with functions implemented in the soft
-    // prelude (`builtin.mq`, e.g. `eq`). This guards the *mapping* code in this file
-    // (field-for-field parity for native entries), not the underlying doc data.
+    // Guards field-for-field parity for native entries in this file's mapping code,
+    // not the underlying doc data in mq-lang/mq-help.
     #[test]
     fn test_list_functions_matches_mq_help_catalog() {
         let response = list_functions();
@@ -681,9 +678,7 @@ mod tests {
             };
             assert_eq!(doc.description, source.description);
             assert_eq!(doc.params, source.params);
-            // `mq_help::top_level_entries` pairs each of `source.params` with a type, padding
-            // a shorter `source.param_types` with "dynamic" (see `zip_params`), for a few
-            // builtins (e.g. `partial`) documented with more param names than param types.
+            // top_level_entries pads a shorter param_types with "dynamic" (see zip_params).
             let expected_param_types: Vec<String> = (0..source.params.len())
                 .map(|i| source.param_types.get(i).copied().unwrap_or("dynamic").to_string())
                 .collect();
@@ -694,9 +689,8 @@ mod tests {
         }
     }
 
-    // Regression test: `eq`/`ne`/`gt`/`gte`/`lt`/`lte` are implemented in `builtin.mq`, not as
-    // native builtins, so they are absent from `BUILTIN_FUNCTION_DOC` and must come from the
-    // soft-prelude side of the catalog instead.
+    // eq/ne/gt/gte/lt/lte live in builtin.mq, not BUILTIN_FUNCTION_DOC; must come from
+    // the soft-prelude side of the catalog.
     #[test]
     fn test_list_and_get_function_include_soft_prelude_comparison_functions() {
         let response = list_functions();

@@ -324,8 +324,8 @@ impl Display for Literal {
     }
 }
 
-/// A binary arithmetic or comparison operator (`+ - * / % == != < <= > >=`). Compiled directly to
-/// a VM opcode, never desugared into a named call — see `Expr::BinaryOp`.
+/// A binary arithmetic or comparison operator (`+ - * / % == != < <= > >=`).
+/// Compiles directly to a VM opcode; see `Expr::BinaryOp`.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
 pub enum BinaryOp {
@@ -372,8 +372,8 @@ pub enum Expr {
     As(IdentWithToken, Shared<Node>),
     Block(Program),
     Call(IdentWithToken, Args),
-    /// `lhs op rhs` for `+ - * / % == != < <= > >=`. Never desugared into `Call` so operator use
-    /// always compiles to a direct VM opcode, independent of name resolution/shadowing.
+    /// `lhs op rhs`. Never desugared into `Call`, so it compiles to a direct VM opcode
+    /// regardless of name resolution/shadowing.
     BinaryOp(BinaryOp, Shared<Node>, Shared<Node>),
     /// An `[...]` array literal. Each spread element (`...expr`) remains a nested
     /// `Call` on `constants::builtins::SPREAD`.

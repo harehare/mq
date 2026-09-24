@@ -182,12 +182,10 @@ pub(crate) fn compile_program<R: ModuleResolver>(
 
 /// Compiles a debugger expression with paused-frame names predeclared as top-level slots.
 ///
-/// Mirrors [`compile_program_for_engine_with_bindings`]'s reachable-prelude expansion so a
-/// bare reference to a soft builtin (e.g. `let compare = eq`) resolves even when the paused
-/// query never loaded it. Names already predeclared from the paused frame are kept out of
-/// the reachable set entirely: injecting the prelude's own `def` for one of them would
-/// redeclare it after the seed, and the later declaration would win the same way a real
-/// `var eq = ...` shadows an earlier one.
+/// Expands the reachable soft-builtin prelude like [`compile_program_for_engine_with_bindings`]
+/// so a bare reference (e.g. `let compare = eq`) resolves even if the paused query never
+/// loaded it, while names already predeclared from the paused frame stay excluded so they
+/// aren't redeclared out from under the seed binding.
 #[cfg(feature = "debugger")]
 pub(crate) fn compile_debug_expression<R: ModuleResolver>(
     program: &Program,
@@ -2683,10 +2681,8 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    /// Compiles `lhs op rhs` for the 11 arithmetic/comparison operators directly to a VM opcode.
-    /// Unlike a named call, this never consults `resolve()`/`shadowed_builtin` — operator use is
-    /// never desugared into `Expr::Call`, so it can't alias a same-named `def`/local and can't
-    /// self-recurse.
+    /// Compiles `lhs op rhs` directly to a VM opcode. Unlike a named call, this skips
+    /// `resolve()`/`shadowed_builtin`, so it can't alias a same-named `def`/local.
     fn compile_binary_op(&mut self, op: ast::BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> CompileResult<()> {
         let op = to_vm_binary_op(op);
         let token_id = self.current_token_id;

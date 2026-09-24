@@ -336,8 +336,7 @@ fn escape_string(s: &str) -> String {
     result
 }
 
-/// Binding strength of a `BinaryOp`, matching the parser's precedence table
-/// (`Parser::binary_op_precedence`) so generated code re-parses into the same tree.
+/// Matches `Parser::binary_op_precedence` so generated code re-parses into the same tree.
 fn binary_op_precedence(op: BinaryOp) -> u8 {
     match op {
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => 0,
@@ -346,23 +345,26 @@ fn binary_op_precedence(op: BinaryOp) -> u8 {
     }
 }
 
-/// Formats one operand of a `BinaryOp`, parenthesizing it when printing it bare would
-/// re-parse into a different tree: a lower-precedence child always needs parens, and on
-/// the right side an equal-precedence child does too, since these operators are all
-/// left-associative (`a - (b - c)` != `a - b - c`).
+/// Parenthesizes an operand when printing it bare would re-parse into a different tree
+/// (lower precedence, or equal precedence on the right since these ops are left-associative).
+/// `&&`/`||` always need parens since they bind looser than every `BinaryOp`.
 fn format_binary_operand(operand: &Node, parent_op: BinaryOp, buf: &mut String, indent: usize, is_right: bool) {
-    if let Expr::BinaryOp(child_op, ..) = &operand.expr {
-        let needs_parens = if is_right {
-            binary_op_precedence(*child_op) <= binary_op_precedence(parent_op)
-        } else {
-            binary_op_precedence(*child_op) < binary_op_precedence(parent_op)
-        };
-        if needs_parens {
-            buf.push('(');
-            operand.format_to_code(buf, indent);
-            buf.push(')');
-            return;
+    let needs_parens = match &operand.expr {
+        Expr::BinaryOp(child_op, ..) => {
+            if is_right {
+                binary_op_precedence(*child_op) <= binary_op_precedence(parent_op)
+            } else {
+                binary_op_precedence(*child_op) < binary_op_precedence(parent_op)
+            }
         }
+        Expr::And(_) | Expr::Or(_) => true,
+        _ => false,
+    };
+    if needs_parens {
+        buf.push('(');
+        operand.format_to_code(buf, indent);
+        buf.push(')');
+        return;
     }
     operand.format_to_code(buf, indent);
 }
@@ -629,8 +631,19 @@ mod tests {
         Shared::new(create_node(Expr::BinaryOp(op, lhs, rhs)))
     }
 
+    fn bool_node(b: bool) -> Shared<Node> {
+        Shared::new(create_node(Expr::Literal(Literal::Bool(b))))
+    }
+
+    fn and_node(operands: Vec<Shared<Node>>) -> Shared<Node> {
+        Shared::new(create_node(Expr::And(operands)))
+    }
+
+    fn or_node(operands: Vec<Shared<Node>>) -> Shared<Node> {
+        Shared::new(create_node(Expr::Or(operands)))
+    }
+
     #[rstest]
-    // x * (2 + 3): a lower-precedence child on the right needs parens.
     #[case::higher_precedence_op_wraps_lower_precedence_rhs(
         Expr::BinaryOp(
             BinaryOp::Mul,
@@ -639,7 +652,6 @@ mod tests {
         ),
         "x * (2 + 3)"
     )]
-    // (a + b) * c: a lower-precedence child on the left needs parens too.
     #[case::higher_precedence_op_wraps_lower_precedence_lhs(
         Expr::BinaryOp(
             BinaryOp::Mul,
@@ -648,7 +660,6 @@ mod tests {
         ),
         "(a + b) * c"
     )]
-    // a * b + c: a higher-precedence child never needs parens.
     #[case::lower_precedence_op_keeps_higher_precedence_children_bare(
         Expr::BinaryOp(
             BinaryOp::Add,
@@ -657,7 +668,6 @@ mod tests {
         ),
         "a * b + c"
     )]
-    // a - b - c: same-precedence, left-associative chain on the left stays bare.
     #[case::same_precedence_lhs_stays_bare(
         Expr::BinaryOp(
             BinaryOp::Sub,
@@ -666,8 +676,7 @@ mod tests {
         ),
         "a - b - c"
     )]
-    // a - (b - c): same-precedence on the right must be parenthesized, or it would
-    // re-parse as `a - b - c` (== `(a - b) - c`), a different value.
+    // Same precedence on the right needs parens or it re-parses as `(a - b) - c`.
     #[case::same_precedence_rhs_needs_parens(
         Expr::BinaryOp(
             BinaryOp::Sub,
@@ -675,6 +684,23 @@ mod tests {
             binary_op_node(BinaryOp::Sub, ident_node("b"), ident_node("c"))
         ),
         "a - (b - c)"
+    )]
+    // `&&` binds looser than `==`, so a bare And lhs would re-parse under the wrong grouping.
+    #[case::and_lhs_needs_parens(
+        Expr::BinaryOp(
+            BinaryOp::Eq,
+            and_node(vec![bool_node(false), bool_node(false)]),
+            bool_node(false)
+        ),
+        "(false && false) == false"
+    )]
+    #[case::or_rhs_needs_parens(
+        Expr::BinaryOp(
+            BinaryOp::Eq,
+            ident_node("a"),
+            or_node(vec![ident_node("b"), ident_node("c")])
+        ),
+        "a == (b || c)"
     )]
     fn test_to_code_binary_op_precedence(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
