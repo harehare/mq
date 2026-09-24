@@ -1686,7 +1686,7 @@ fn trim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
         [RuntimeValue::String(s)] => Ok(s.trim().to_string().into()),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.to_string().trim())))
+            .map(|md| Ok(node.update_markdown_value(md.value().trim())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::Bytes(b)] => {
             let start = b.iter().position(|c| !c.is_ascii_whitespace()).unwrap_or(b.len());
@@ -1711,7 +1711,7 @@ fn ltrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
         [RuntimeValue::String(s)] => Ok(s.trim_start().to_string().into()),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_start())))
+            .map(|md| Ok(node.update_markdown_value(md.value().trim_start())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::Bytes(b)] => {
             let start = b.iter().position(|c| !c.is_ascii_whitespace()).unwrap_or(b.len());
@@ -1729,7 +1729,7 @@ fn rtrim_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
         [RuntimeValue::String(s)] => Ok(s.trim_end().to_string().into()),
         [node @ RuntimeValue::Markdown(_, _)] => node
             .markdown_node()
-            .map(|md| Ok(node.update_markdown_value(md.to_string().trim_end())))
+            .map(|md| Ok(node.update_markdown_value(md.value().trim_end())))
             .unwrap_or_else(|| Ok(RuntimeValue::NONE)),
         [RuntimeValue::Bytes(b)] => {
             let end = b
