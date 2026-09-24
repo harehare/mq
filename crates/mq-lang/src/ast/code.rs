@@ -1,6 +1,6 @@
 use crate::Program;
 
-use super::node::{AccessTarget, Args, Expr, Literal, Node, Params, Pattern, StringSegment};
+use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment};
 use std::fmt::Write;
 
 impl Node {
@@ -79,9 +79,9 @@ impl Node {
                 buf.push(')');
             }
             Expr::BinaryOp(op, lhs, rhs) => {
-                lhs.format_to_code(buf, indent);
+                format_binary_operand(lhs, *op, buf, indent, false);
                 write!(buf, " {} ", op.as_str()).unwrap();
-                rhs.format_to_code(buf, indent);
+                format_binary_operand(rhs, *op, buf, indent, true);
             }
             Expr::Array(args) => {
                 buf.push('[');
@@ -336,6 +336,37 @@ fn escape_string(s: &str) -> String {
     result
 }
 
+/// Binding strength of a `BinaryOp`, matching the parser's precedence table
+/// (`Parser::binary_op_precedence`) so generated code re-parses into the same tree.
+fn binary_op_precedence(op: BinaryOp) -> u8 {
+    match op {
+        BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => 0,
+        BinaryOp::Add | BinaryOp::Sub => 1,
+        BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => 2,
+    }
+}
+
+/// Formats one operand of a `BinaryOp`, parenthesizing it when printing it bare would
+/// re-parse into a different tree: a lower-precedence child always needs parens, and on
+/// the right side an equal-precedence child does too, since these operators are all
+/// left-associative (`a - (b - c)` != `a - b - c`).
+fn format_binary_operand(operand: &Node, parent_op: BinaryOp, buf: &mut String, indent: usize, is_right: bool) {
+    if let Expr::BinaryOp(child_op, ..) = &operand.expr {
+        let needs_parens = if is_right {
+            binary_op_precedence(*child_op) <= binary_op_precedence(parent_op)
+        } else {
+            binary_op_precedence(*child_op) < binary_op_precedence(parent_op)
+        };
+        if needs_parens {
+            buf.push('(');
+            operand.format_to_code(buf, indent);
+            buf.push(')');
+            return;
+        }
+    }
+    operand.format_to_code(buf, indent);
+}
+
 fn format_literal(literal: &Literal, buf: &mut String) {
     match literal {
         Literal::String(s) => {
@@ -582,6 +613,70 @@ mod tests {
         "a || b && c || d"
     )]
     fn test_to_code_operators(#[case] expr: Expr, #[case] expected: &str) {
+        let node = create_node(expr);
+        assert_eq!(node.to_code(), expected);
+    }
+
+    fn ident_node(name: &str) -> Shared<Node> {
+        Shared::new(create_node(Expr::Ident(IdentWithToken::new(name))))
+    }
+
+    fn number_node(n: f64) -> Shared<Node> {
+        Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(n)))))
+    }
+
+    fn binary_op_node(op: BinaryOp, lhs: Shared<Node>, rhs: Shared<Node>) -> Shared<Node> {
+        Shared::new(create_node(Expr::BinaryOp(op, lhs, rhs)))
+    }
+
+    #[rstest]
+    // x * (2 + 3): a lower-precedence child on the right needs parens.
+    #[case::higher_precedence_op_wraps_lower_precedence_rhs(
+        Expr::BinaryOp(
+            BinaryOp::Mul,
+            ident_node("x"),
+            binary_op_node(BinaryOp::Add, number_node(2.0), number_node(3.0))
+        ),
+        "x * (2 + 3)"
+    )]
+    // (a + b) * c: a lower-precedence child on the left needs parens too.
+    #[case::higher_precedence_op_wraps_lower_precedence_lhs(
+        Expr::BinaryOp(
+            BinaryOp::Mul,
+            binary_op_node(BinaryOp::Add, ident_node("a"), ident_node("b")),
+            ident_node("c")
+        ),
+        "(a + b) * c"
+    )]
+    // a * b + c: a higher-precedence child never needs parens.
+    #[case::lower_precedence_op_keeps_higher_precedence_children_bare(
+        Expr::BinaryOp(
+            BinaryOp::Add,
+            binary_op_node(BinaryOp::Mul, ident_node("a"), ident_node("b")),
+            ident_node("c")
+        ),
+        "a * b + c"
+    )]
+    // a - b - c: same-precedence, left-associative chain on the left stays bare.
+    #[case::same_precedence_lhs_stays_bare(
+        Expr::BinaryOp(
+            BinaryOp::Sub,
+            binary_op_node(BinaryOp::Sub, ident_node("a"), ident_node("b")),
+            ident_node("c")
+        ),
+        "a - b - c"
+    )]
+    // a - (b - c): same-precedence on the right must be parenthesized, or it would
+    // re-parse as `a - b - c` (== `(a - b) - c`), a different value.
+    #[case::same_precedence_rhs_needs_parens(
+        Expr::BinaryOp(
+            BinaryOp::Sub,
+            ident_node("a"),
+            binary_op_node(BinaryOp::Sub, ident_node("b"), ident_node("c"))
+        ),
+        "a - (b - c)"
+    )]
+    fn test_to_code_binary_op_precedence(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
     }
