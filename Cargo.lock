@@ -2574,7 +2574,7 @@ dependencies = [
 
 [[package]]
 name = "mq-bench"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap",
  "glob",
@@ -2589,7 +2589,7 @@ dependencies = [
 
 [[package]]
 name = "mq-check"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap",
  "colored 3.1.1",
@@ -2607,7 +2607,7 @@ dependencies = [
 
 [[package]]
 name = "mq-crawler"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "base64 0.23.1",
  "chromiumoxide",
@@ -2636,7 +2636,7 @@ dependencies = [
 
 [[package]]
 name = "mq-dap"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "crossbeam-channel",
  "dap",
@@ -2653,7 +2653,7 @@ dependencies = [
 
 [[package]]
 name = "mq-ffi"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "cbindgen",
  "libc",
@@ -2663,7 +2663,7 @@ dependencies = [
 
 [[package]]
 name = "mq-formatter"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -2686,7 +2686,7 @@ dependencies = [
 
 [[package]]
 name = "mq-help"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "colored 3.1.1",
  "mq-lang",
@@ -2695,7 +2695,7 @@ dependencies = [
 
 [[package]]
 name = "mq-hir"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "itertools 0.15.0",
  "mq-lang",
@@ -2709,7 +2709,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lang"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "ammonia",
  "base64 0.23.1",
@@ -2770,7 +2770,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lint"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap",
  "colored 3.1.1",
@@ -2783,7 +2783,7 @@ dependencies = [
 
 [[package]]
 name = "mq-lsp"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "bimap",
  "clap",
@@ -2805,7 +2805,7 @@ dependencies = [
 
 [[package]]
 name = "mq-macros"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2814,7 +2814,7 @@ dependencies = [
 
 [[package]]
 name = "mq-markdown"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "codspeed-divan-compat",
  "ego-tree",
@@ -2836,7 +2836,7 @@ dependencies = [
 
 [[package]]
 name = "mq-repl"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "arboard",
  "colored 3.1.1",
@@ -2856,7 +2856,7 @@ dependencies = [
 
 [[package]]
 name = "mq-run"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "assert_cmd",
  "base64 0.23.1",
@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "mq-test"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "clap",
  "glob",
@@ -2911,7 +2911,7 @@ dependencies = [
 
 [[package]]
 name = "mq-wasm"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "itertools 0.15.0",
  "js-sys",
@@ -2933,7 +2933,7 @@ dependencies = [
 
 [[package]]
 name = "mq-web-api"
-version = "0.9.0"
+version = "0.9.1"
 dependencies = [
  "axum",
  "colored 3.1.1",
