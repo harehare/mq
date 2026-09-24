@@ -15,6 +15,9 @@ const DEFAULT_OPTIONS: RunOptions = {
   linkTitleStyle: "paren",
 };
 
+// Guards the popup UI against a runaway query hanging indefinitely.
+const EXECUTION_TIMEOUT_MS = 60_000;
+
 export function App() {
   const [markdown, setMarkdown] = useState("");
   const [query, setQuery] = useState(DEFAULT_QUERY);
@@ -58,7 +61,10 @@ export function App() {
     setIsRunning(true);
     const startedAt = performance.now();
     try {
-      const filtered = await run(q, src, opts);
+      const filtered = await run(q, src, {
+        ...opts,
+        timeoutMs: EXECUTION_TIMEOUT_MS,
+      });
       if (runId !== runIdRef.current) return;
       setResult(filtered);
       setLastRun({ durationMs: Math.round(performance.now() - startedAt) });
