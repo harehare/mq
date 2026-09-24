@@ -1686,6 +1686,40 @@ mod tests {
         );
     }
 
+    // `eq` is a soft-prelude builtin, not native; a paused frame that never loaded
+    // `builtin.mq` must still resolve a bare reference to it.
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_eval_debug_expression_vm_resolves_unbound_soft_builtin() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+
+        assert_eq!(
+            engine
+                .eval_debug_expression("let compare = eq | compare(1, 1)", RuntimeValue::NONE, &[])
+                .unwrap()[0],
+            RuntimeValue::Boolean(true)
+        );
+    }
+
+    // A paused-frame binding must still shadow a same-named soft builtin.
+    #[cfg(feature = "debugger")]
+    #[test]
+    fn test_eval_debug_expression_vm_paused_frame_binding_shadows_soft_builtin() {
+        use crate::RuntimeValue;
+
+        let mut engine = DefaultEngine::default();
+        let bindings = [(crate::Ident::new("eq"), RuntimeValue::Number(7.into()))];
+
+        assert_eq!(
+            engine
+                .eval_debug_expression("eq", RuntimeValue::NONE, &bindings)
+                .unwrap()[0],
+            RuntimeValue::Number(7.into())
+        );
+    }
+
     #[test]
     fn test_eval_compiled_vm_error_is_a_real_miette_diagnostic() {
         use crate::RuntimeValue;

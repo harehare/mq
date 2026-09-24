@@ -2723,54 +2723,6 @@ fn abs_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
-#[mq_macros::mq_fn(name = "eq", params = Fixed(2))]
-fn eq_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a == b).into()),
-        _ => unreachable!("eq should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "ne", params = Fixed(2))]
-fn ne_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a != b).into()),
-        _ => unreachable!("ne should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "gt", params = Fixed(2))]
-fn gt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a > b).into()),
-        _ => unreachable!("gt should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "gte", params = Fixed(2))]
-fn gte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a >= b).into()),
-        _ => unreachable!("gte should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "lt", params = Fixed(2))]
-fn lt_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a < b).into()),
-        _ => unreachable!("lt should always receive exactly two arguments"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "lte", params = Fixed(2))]
-fn lte_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_slice() {
-        [a, b] => Ok((a <= b).into()),
-        _ => unreachable!("lte should always receive exactly two arguments"),
-    }
-}
-
 #[mq_macros::mq_fn(name = "add", params = Fixed(2))]
 fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5759,12 +5711,6 @@ mq_macros::builtin_dispatch! {
     ROUND,
     TRUNC,
     ABS,
-    EQ,
-    NE,
-    GT,
-    GTE,
-    LT,
-    LTE,
     ADD,
     SUB,
     DIV,
@@ -8351,90 +8297,6 @@ world"# }],
         },
     );
     map.insert(
-        SmolStr::new(constants::builtins::EQ),
-        BuiltinFunctionDoc {
-            description: "Checks if two values are equal.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"eq(1, 1)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::NE),
-        BuiltinFunctionDoc {
-            description: "Checks if two values are not equal.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"ne(1, 2)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::GT),
-        BuiltinFunctionDoc {
-            description: "Checks if the first value is greater than the second value.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"gt(2, 1)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::GTE),
-        BuiltinFunctionDoc {
-            description: "Checks if the first value is greater than or equal to the second value.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"gte(1, 1)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::LT),
-        BuiltinFunctionDoc {
-            description: "Checks if the first value is less than the second value.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"lt(1, 2)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::LTE),
-        BuiltinFunctionDoc {
-            description: "Checks if the first value is less than or equal to the second value.",
-            params: &["value1", "value2"],
-            param_types: &["dynamic", "dynamic"],
-            returns: "bool",
-            examples: &[BuiltinExample {
-                code: r#"lte(1, 1)"#,
-                expected: r#"true"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
         SmolStr::new(constants::builtins::ADD),
         BuiltinFunctionDoc {
             description: "Adds two values.",
@@ -10571,8 +10433,6 @@ mod tests {
     #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.0.into())))]
     #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(8.0.into())))]
     #[case("div", vec![RuntimeValue::Number(8.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(4.0.into())))]
-    #[case("eq", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("test".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
-    #[case("ne", vec![RuntimeValue::String(Shared::new("test".into())), RuntimeValue::String(Shared::new("different".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
     #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::Number(1.into())), (Ident::new("b"), RuntimeValue::Number(2.into()))]).into(), RuntimeValue::String(Shared::new("c".into()))].into(), Ok(RuntimeValue::Boolean(false)))]
     #[case("has", vec![DictMap::from_iter([(Ident::new("a"), RuntimeValue::None)]).into(), RuntimeValue::String(Shared::new("a".into()))].into(), Ok(RuntimeValue::Boolean(true)))]
@@ -13153,31 +13013,6 @@ mod tests {
             &VmEnv::default(),
         );
         assert_eq!(result, Ok(RuntimeValue::NONE));
-    }
-
-    #[rstest]
-    #[case("gt",  vec![0x02], vec![0x01], true)]
-    #[case("gt",  vec![0x01], vec![0x02], false)]
-    #[case("gt",  vec![0x01], vec![0x01], false)]
-    #[case("gt",  vec![0x01, 0x00], vec![0x01], true)]
-    #[case("gte", vec![0x02], vec![0x01], true)]
-    #[case("gte", vec![0x01], vec![0x01], true)]
-    #[case("gte", vec![0x01], vec![0x02], false)]
-    #[case("lt",  vec![0x01], vec![0x02], true)]
-    #[case("lt",  vec![0x02], vec![0x01], false)]
-    #[case("lt",  vec![0x01], vec![0x01], false)]
-    #[case("lte", vec![0x01], vec![0x02], true)]
-    #[case("lte", vec![0x01], vec![0x01], true)]
-    #[case("lte", vec![0x02], vec![0x01], false)]
-    fn test_bytes_comparison(#[case] op: &str, #[case] lhs: Vec<u8>, #[case] rhs: Vec<u8>, #[case] expected: bool) {
-        let ident = Ident::new(op);
-        let result = eval_builtin(
-            &RuntimeValue::None,
-            &ident,
-            vec![RuntimeValue::Bytes(lhs.into()), RuntimeValue::Bytes(rhs.into())].into(),
-            &VmEnv::default(),
-        );
-        assert_eq!(result, Ok(RuntimeValue::Boolean(expected)));
     }
 
     #[test]

@@ -15,6 +15,30 @@ fn io_reader_is_nameable_from_external_crates() {
 }
 
 #[rstest]
+#[case::compound_assign_mul_of_lower_precedence_rhs("var i = 4 | i *= 2 + 3 | i")]
+#[case::compound_assign_sub_of_same_precedence_rhs("var i = 20 | i -= 2 - 3 | i")]
+fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine, #[case] program: &str) {
+    let original = engine.eval(program, vec![RuntimeValue::None].into_iter()).unwrap();
+
+    let compiled = engine.compile(program).unwrap();
+    let regenerated = compiled
+        .program()
+        .iter()
+        .map(|node| node.to_code())
+        .collect::<Vec<_>>()
+        .join(" | ");
+
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    let round_tripped = engine.eval(&regenerated, vec![RuntimeValue::None].into_iter()).unwrap();
+
+    assert_eq!(
+        original, round_tripped,
+        "`{regenerated}` did not reproduce `{program}`'s result"
+    );
+}
+
+#[rstest]
 #[case::def_("
     # comments
     def test_fn(s):
