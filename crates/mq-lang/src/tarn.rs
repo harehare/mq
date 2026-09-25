@@ -17,9 +17,13 @@ mod debugger;
 #[cfg(feature = "debug-trace")]
 mod disasm;
 pub(crate) mod interpreter;
+#[cfg(feature = "mqc")]
+pub(crate) mod mqc_code;
 mod nodes_split;
 mod peephole;
 mod resolver;
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+pub(crate) mod split_program;
 pub(crate) mod value;
 
 #[cfg(not(feature = "debugger"))]
@@ -846,13 +850,18 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
     pub(crate) fn run<I>(
         &self,
-        #[cfg_attr(feature = "debugger", allow(unused_variables))] compiled: &engine::CompiledProgram,
+        #[cfg_attr(all(feature = "debugger", not(feature = "mqc")), allow(unused_variables))]
+        compiled: &engine::CompiledProgram,
         program: &Program,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        #[cfg(feature = "mqc")]
+        if let Some(precompiled) = &compiled.precompiled {
+            return precompiled.run_standalone(input, &self.engine);
+        }
         #[cfg(not(feature = "debugger"))]
         if self.engine.session.is_none()
             && let Some(cached) = compiled.cached_vm_program()

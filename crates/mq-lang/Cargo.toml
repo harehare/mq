@@ -88,6 +88,8 @@ http-import = []
 http = ["dep:ureq"]
 http-import-ureq = ["http-import", "http"]
 mock-io = []
+# Saves compiled Tarn bytecode as `.mqc` files and runs them without the source.
+mqc = []
 tiktoken = ["dep:tiktoken-rs"]
 
 [dev-dependencies]

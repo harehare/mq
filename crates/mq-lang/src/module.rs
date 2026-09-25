@@ -69,6 +69,9 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<SmolStr, String>,
+    /// The `import`/`include` path of each module in `source_cache`.
+    #[cfg(feature = "mqc")]
+    module_specifiers: FxHashMap<SmolStr, String>,
     /// Parsed builtin AST tied to the token arena it was created in.
     builtin_module_cache: Option<(TokenArena, Module)>,
     /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
@@ -147,6 +150,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            module_specifiers: FxHashMap::default(),
             builtin_module_cache: None,
             module_ast_cache: FxHashMap::default(),
             resolver,
@@ -320,7 +325,38 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         }
         let program = self.resolve(module_path)?;
         self.source_cache.insert(SmolStr::new(&name), program.clone());
+        #[cfg(feature = "mqc")]
+        self.module_specifiers
+            .insert(SmolStr::new(&name), module_path.to_string());
         self.load(&name, &program, token_arena)
+    }
+
+    /// Returns `(name, specifier, source)` for every file module this loader resolved.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn resolved_modules(&self) -> Vec<(&str, &str, &str)> {
+        let mut modules: Vec<_> = self
+            .source_cache
+            .iter()
+            .map(|(name, source)| {
+                let specifier = self.module_specifiers.get(name).map_or(name.as_str(), String::as_str);
+                (name.as_str(), specifier, source.as_str())
+            })
+            .collect();
+        modules.sort_unstable_by_key(|(name, _, _)| *name);
+        modules
+    }
+
+    /// Registers a module's source for diagnostics without loading it.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn register_module_source(&mut self, name: &str, source: String) -> ModuleId {
+        match name {
+            Module::TOP_LEVEL_MODULE => Module::TOP_LEVEL_MODULE_ID,
+            Module::BUILTIN_MODULE => self.module_id_of(name),
+            _ => {
+                self.source_cache.insert(SmolStr::new(name), source);
+                self.module_id_of(name)
+            }
+        }
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
