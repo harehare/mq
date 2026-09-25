@@ -194,6 +194,21 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
     /// this, same as [`fetch`](Self::fetch)'s URL/domain policy.
     fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError>;
 
+    /// Backs `print`. Defaults to the process stdout.
+    fn write_stdout_line(&self, line: &str) -> Result<(), IoError> {
+        process_stdout_line(line)
+    }
+
+    /// Backs `stderr`. Defaults to the process stderr.
+    fn write_stderr_line(&self, line: &str) -> Result<(), IoError> {
+        process_stderr_line(line)
+    }
+
+    /// Backs `input`. Defaults to the process stdin, without the trailing newline.
+    fn read_stdin_line(&self) -> Result<String, IoError> {
+        process_stdin_line()
+    }
+
     /// Seeds the response body a subsequent `fetch`/`http_request` call for `url` returns,
     /// backing the `mock_fetch` builtin. Only meaningful against an `Io` that keeps mock
     /// state (see [`MemIo`]); the default implementation refuses, since there is no sensible
@@ -203,4 +218,29 @@ pub trait Io: std::fmt::Debug + IoSyncBound + 'static {
             "set_fetch_response is not supported by this Io implementation",
         )))
     }
+}
+
+pub(crate) fn process_stdout_line(line: &str) -> Result<(), IoError> {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::log_1(&line.into());
+    #[cfg(not(target_arch = "wasm32"))]
+    println!("{line}");
+    Ok(())
+}
+
+pub(crate) fn process_stderr_line(line: &str) -> Result<(), IoError> {
+    #[cfg(target_arch = "wasm32")]
+    web_sys::console::error_1(&line.into());
+    #[cfg(not(target_arch = "wasm32"))]
+    eprintln!("{line}");
+    Ok(())
+}
+
+pub(crate) fn process_stdin_line() -> Result<String, IoError> {
+    let mut line = String::new();
+    std::io::stdin()
+        .read_line(&mut line)
+        .map_err(|e| IoError::Other(Cow::Owned(format!("failed to read from stdin: {e}"))))?;
+    line.truncate(line.trim_end_matches(['\n', '\r']).len());
+    Ok(line)
 }

@@ -93,6 +93,7 @@ pub enum RuntimeValue {
     ///
     /// `Shared`-wrapped, not inline: `ClosureValue` is 64 bytes (chunks/upvalues/bound_args),
     /// which would otherwise force every `RuntimeValue` variant to that size.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     Closure(Shared<ClosureValue>),
     /// A dictionary mapping identifiers to runtime values.
@@ -106,14 +107,17 @@ pub enum RuntimeValue {
     /// A generator function's coroutine, see `tarn::interpreter::coroutine::CoroutineState`.
     /// `CoroutineState` is deliberately `pub(crate)`, so this variant is constructible only
     /// from within the crate. Cloning shares progress: every clone drives the same coroutine.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     Coroutine(CoroutineHandle),
     /// A coroutine downgraded to break a capture cycle. Only ever lives inside a
     /// `StackValue::NestedWeakCoroutine` cell, resolved before any other code sees it.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     WeakCoroutine(CoroutineWeakHandle),
     /// An open read-only file handle from `open_file`. Cloning shares the handle.
     #[cfg(any(feature = "file-io", feature = "http"))]
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     ReaderHandle(Shared<ReaderHandle>),
     /// An empty or null value.
@@ -617,6 +621,60 @@ impl RuntimeValue {
         }
     }
 
+    /// Returns the string if this is a `String`.
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            RuntimeValue::String(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Returns the number if this is a `Number`.
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            RuntimeValue::Number(n) => Some(n.value()),
+            _ => None,
+        }
+    }
+
+    /// Returns the boolean if this is a `Boolean`.
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            RuntimeValue::Boolean(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    /// Returns the elements if this is an `Array`.
+    pub fn as_array(&self) -> Option<&[RuntimeValue]> {
+        match self {
+            RuntimeValue::Array(values) => Some(values.as_slice()),
+            _ => None,
+        }
+    }
+
+    /// Returns the entries if this is a `Dict`.
+    pub fn as_dict(&self) -> Option<&DictMap> {
+        match self {
+            RuntimeValue::Dict(map) => Some(map),
+            _ => None,
+        }
+    }
+
+    /// Looks up `key` if this is a `Dict`.
+    pub fn get(&self, key: &str) -> Option<&RuntimeValue> {
+        self.as_dict()?.get(&Ident::lookup(key)?)
+    }
+
+    /// Converts to a Markdown node: markdown values keep their (selected) node, anything else
+    pub fn into_markdown_node(self) -> Option<Node> {
+        match self {
+            RuntimeValue::Markdown(node, None) => Some(Shared::unwrap_or_clone(node)),
+            value @ RuntimeValue::Markdown(_, Some(_)) => value.markdown_node(),
+            value => Some(value.to_string().into()),
+        }
+    }
+
     /// Extracts the markdown node from this value, if it is a markdown value.
     ///
     /// If a selector is present, returns the selected child node.
@@ -791,6 +849,36 @@ impl RuntimeValue {
     }
 }
 
+/// Error returned by [`from_value`].
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub struct FromValueError(serde_json::Error);
+
+/// Deserializes a runtime value into `T` through its JSON form (see
+/// [`RuntimeValue::to_json_value`]).
+///
+/// # Examples
+///
+/// ```rust
+/// #[derive(serde::Deserialize)]
+/// struct Task {
+///     title: String,
+///     done: bool,
+/// }
+///
+/// let mut engine = mq_lang::DefaultEngine::default();
+/// engine.load_builtin_module();
+/// let output = engine
+///     .eval(r#"{"title": "build", "done": true}"#, mq_lang::null_input().into_iter())
+///     .unwrap();
+/// let task: Task = mq_lang::from_value(&output[0]).unwrap();
+/// assert_eq!(task.title, "build");
+/// assert!(task.done);
+/// ```
+pub fn from_value<T: serde::de::DeserializeOwned>(value: &RuntimeValue) -> Result<T, FromValueError> {
+    serde_json::from_value(value.clone().to_json_value()).map_err(FromValueError)
+}
+
 /// A collection of runtime values.
 ///
 /// Provides utilities for working with multiple values, such as filtering
@@ -840,6 +928,15 @@ impl RuntimeValues {
     /// Returns a reference to the underlying vector of values.
     pub fn values(&self) -> &Vec<RuntimeValue> {
         &self.0
+    }
+
+    /// Converts every value with [`RuntimeValue::into_markdown_node`], dropping values whose
+    /// selector points at a child that no longer exists instead of exporting a phantom node.
+    pub fn into_markdown_nodes(self) -> Vec<Node> {
+        self.0
+            .into_iter()
+            .filter_map(RuntimeValue::into_markdown_node)
+            .collect()
     }
 
     /// Returns the number of values in this collection.
@@ -925,5 +1022,157 @@ impl RuntimeValues {
             })
             .collect::<Vec<_>>()
             .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use rstest::rstest;
+    use serde::Deserialize;
+
+    fn dict(entries: &[(&str, RuntimeValue)]) -> RuntimeValue {
+        let mut map = DictMap::default();
+        for (key, value) in entries {
+            map.insert(Ident::new(key), value.clone());
+        }
+        RuntimeValue::Dict(Shared::new(map))
+    }
+
+    #[rstest]
+    #[case::string("a".into(), Some("a"), None, None)]
+    #[case::number(RuntimeValue::Number(1.5.into()), None, Some(1.5), None)]
+    #[case::boolean(RuntimeValue::TRUE, None, None, Some(true))]
+    #[case::none(RuntimeValue::NONE, None, None, None)]
+    fn test_scalar_accessors(
+        #[case] value: RuntimeValue,
+        #[case] string: Option<&str>,
+        #[case] number: Option<f64>,
+        #[case] boolean: Option<bool>,
+    ) {
+        assert_eq!(value.as_str(), string);
+        assert_eq!(value.as_f64(), number);
+        assert_eq!(value.as_bool(), boolean);
+    }
+
+    #[rstest]
+    #[case::array(vec![RuntimeValue::TRUE].into(), Some(vec![RuntimeValue::TRUE]))]
+    #[case::string("a".into(), None)]
+    fn test_as_array(#[case] value: RuntimeValue, #[case] expected: Option<Vec<RuntimeValue>>) {
+        assert_eq!(value.as_array().map(<[RuntimeValue]>::to_vec), expected);
+    }
+
+    #[rstest]
+    #[case::present(dict(&[("title", "build".into())]), "title", Some(RuntimeValue::from("build")))]
+    #[case::missing(dict(&[("title", "build".into())]), "title_never_interned_anywhere", None)]
+    #[case::not_dict("title".into(), "title", None)]
+    fn test_get(#[case] value: RuntimeValue, #[case] key: &str, #[case] expected: Option<RuntimeValue>) {
+        assert_eq!(value.get(key).cloned(), expected);
+        assert_eq!(value.as_dict().is_some(), matches!(value, RuntimeValue::Dict(_)));
+    }
+
+    #[test]
+    fn test_get_does_not_intern_missing_keys() {
+        let value = dict(&[]);
+        assert!(value.get("key_only_used_by_this_lookup").is_none());
+        assert!(Ident::lookup("key_only_used_by_this_lookup").is_none());
+    }
+
+    #[rstest]
+    #[case::markdown(RuntimeValue::new_markdown("text".into()), Some(Node::from("text")))]
+    #[case::string("text".into(), Some(Node::from("text")))]
+    #[case::number(RuntimeValue::Number(2.into()), Some(Node::from("2")))]
+    #[case::existing_selected_child(
+        RuntimeValue::Markdown(
+            Shared::new(Node::List(mq_markdown::List {
+                values: vec![Node::from("item")],
+                ..Default::default()
+            })),
+            Selector::index(0),
+        ),
+        Some(Node::from("item"))
+    )]
+    #[case::out_of_range_selected_child(
+        RuntimeValue::Markdown(
+            Shared::new(Node::List(mq_markdown::List {
+                values: vec![Node::from("item")],
+                ..Default::default()
+            })),
+            Selector::index(1),
+        ),
+        None
+    )]
+    fn test_into_markdown_node(#[case] value: RuntimeValue, #[case] expected: Option<Node>) {
+        assert_eq!(value.into_markdown_node(), expected);
+    }
+
+    #[test]
+    fn test_into_markdown_nodes_keeps_order() {
+        let values: RuntimeValues = vec![RuntimeValue::new_markdown("a".into()), "b".into()].into();
+        assert_eq!(values.into_markdown_nodes(), vec![Node::from("a"), Node::from("b")]);
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct CodeBlock {
+        lang: Option<String>,
+        code: String,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    struct Section {
+        title: String,
+        #[serde(default)]
+        description: Option<String>,
+        codes: Vec<CodeBlock>,
+        level: u8,
+    }
+
+    #[test]
+    fn test_from_value_into_struct() {
+        let value = dict(&[
+            ("title", "Build".into()),
+            ("level", RuntimeValue::Number(2.into())),
+            (
+                "codes",
+                vec![dict(&[("lang", "sh".into()), ("code", "make".into())])].into(),
+            ),
+        ]);
+
+        assert_eq!(
+            from_value::<Section>(&value).unwrap(),
+            Section {
+                title: "Build".to_string(),
+                description: None,
+                codes: vec![CodeBlock {
+                    lang: Some("sh".to_string()),
+                    code: "make".to_string(),
+                }],
+                level: 2,
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::missing_field(dict(&[("title", "Build".into())]))]
+    #[case::wrong_type(dict(&[("title", RuntimeValue::TRUE), ("codes", RuntimeValue::empty_array()), ("level", RuntimeValue::Number(1.into()))]))]
+    #[case::fractional_level(dict(&[("title", "a".into()), ("codes", RuntimeValue::empty_array()), ("level", RuntimeValue::Number(1.5.into()))]))]
+    fn test_from_value_rejects_mismatch(#[case] value: RuntimeValue) {
+        assert!(from_value::<Section>(&value).is_err());
+    }
+
+    proptest! {
+        #[test]
+        fn from_value_round_trips_scalars(s in ".*", n in any::<i32>(), b in any::<bool>()) {
+            prop_assert_eq!(from_value::<String>(&RuntimeValue::from(s.clone())).unwrap(), s);
+            prop_assert_eq!(from_value::<i32>(&RuntimeValue::Number((n as f64).into())).unwrap(), n);
+            prop_assert_eq!(from_value::<bool>(&RuntimeValue::Boolean(b)).unwrap(), b);
+        }
+
+        #[test]
+        fn from_value_round_trips_string_arrays(items in prop::collection::vec(".*", 0..8)) {
+            let value: RuntimeValue = items.iter().cloned().map(RuntimeValue::from).collect::<Vec<_>>().into();
+            prop_assert_eq!(from_value::<Vec<String>>(&value).unwrap(), items);
+        }
     }
 }

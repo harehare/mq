@@ -572,6 +572,13 @@ impl Repl {
                         }
                         Ok(CommandOutput::None) => (),
                         Err(e) => {
+                            if let Some(code) = e.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code) {
+                                if let Some(config_dir) = &config_dir {
+                                    let history = config_dir.join("history.txt");
+                                    editor.save_history(&history.to_string_lossy().to_string()).ok();
+                                }
+                                std::process::exit(code);
+                            }
                             eprintln!("{:?}", e)
                         }
                     }

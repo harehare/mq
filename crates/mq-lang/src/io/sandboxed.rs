@@ -307,6 +307,18 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
         self.inner.current_dir()
     }
 
+    fn write_stdout_line(&self, line: &str) -> Result<(), IoError> {
+        self.inner.write_stdout_line(line)
+    }
+
+    fn write_stderr_line(&self, line: &str) -> Result<(), IoError> {
+        self.inner.write_stderr_line(line)
+    }
+
+    fn read_stdin_line(&self) -> Result<String, IoError> {
+        self.inner.read_stdin_line()
+    }
+
     fn fetch(&self, url: &str) -> Result<String, IoError> {
         if self.allow_net.is_denied() {
             return Err(denied("network access is disabled"));

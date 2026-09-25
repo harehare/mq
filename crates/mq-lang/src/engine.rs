@@ -979,6 +979,50 @@ mod tests {
     }
 
     #[test]
+    fn test_console_builtins_use_engine_io() {
+        let io = Shared::new(crate::io::MemIo::default().with_stdin_line("typed"));
+        let mut engine = Engine::with_default_io(Shared::clone(&io));
+        engine.load_builtin_module();
+
+        let output = engine
+            .eval(
+                r#"print("out") | stderr("err") | input()"#,
+                std::iter::once(RuntimeValue::None),
+            )
+            .unwrap();
+
+        assert_eq!(output.values(), &[RuntimeValue::from("typed")]);
+        assert_eq!(io.stdout_lines(), vec!["out".to_string()]);
+        assert_eq!(io.stderr_lines(), vec!["err".to_string()]);
+    }
+
+    #[rstest]
+    #[case::direct("halt(3)", 3)]
+    #[case::inside_try("try: halt(4) catch: 0", 4)]
+    #[case::inside_function("def f(): halt(5); | try: f() catch: 0", 5)]
+    #[case::inside_map("map([1], fn(x): halt(6);)", 6)]
+    fn test_halt_returns_exit_code(#[case] code: &str, #[case] expected: i32) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let err = engine.eval(code, std::iter::once(RuntimeValue::None)).unwrap_err();
+
+        assert_eq!(err.exit_code(), Some(expected));
+    }
+
+    #[test]
+    fn test_exit_code_is_none_for_other_errors() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        let err = engine
+            .eval(r#"error("boom")"#, std::iter::once(RuntimeValue::None))
+            .unwrap_err();
+
+        assert_eq!(err.exit_code(), None);
+    }
+
+    #[test]
     fn test_with_default_io_applies_read_permission_to_local_modules() {
         let temp_dir = tempfile::tempdir().unwrap();
         std::fs::write(temp_dir.path().join("local.mq"), "def greeting(): \"hello\";").unwrap();

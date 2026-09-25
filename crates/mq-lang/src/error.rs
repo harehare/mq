@@ -66,6 +66,21 @@ pub struct Error {
 }
 
 impl Error {
+    /// The exit code passed to `halt`, if this error was raised by it.
+    pub fn exit_code(&self) -> Option<i32> {
+        let mut cause = match &self.cause {
+            InnerError::Runtime(cause) => cause,
+            _ => return None,
+        };
+        while let RuntimeError::WithStackTrace { source, .. } = cause {
+            cause = source;
+        }
+        match cause {
+            RuntimeError::Halt(code) => Some(*code),
+            _ => None,
+        }
+    }
+
     #[cold]
     pub fn from_error(
         top_level_source_code: impl Into<String>,
@@ -312,6 +327,7 @@ impl Diagnostic for Error {
             InnerError::Runtime(RuntimeError::RecursionError(_)) => {
                 Some(Cow::Borrowed("Maximum recursion depth exceeded."))
             }
+            InnerError::Runtime(RuntimeError::Halt(_)) => None,
             InnerError::Runtime(RuntimeError::Timeout(_)) => Some(Cow::Borrowed(
                 "Execution exceeded the configured timeout. Increase it or simplify the query.",
             )),

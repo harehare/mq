@@ -30,6 +30,19 @@ pub fn create_gzip_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
     (temp_dir, temp_file_path)
 }
 
+#[rstest]
+#[case::nonzero("halt(3)", 3, "")]
+#[case::zero(r#"print("hi") | halt(0)"#, 0, "hi\n")]
+#[case::inside_try("try: halt(4) catch: 0", 4, "")]
+fn test_cli_halt_exits_with_code(#[case] query: &str, #[case] code: i32, #[case] stdout: &str) {
+    cargo::cargo_bin_cmd!("mq")
+        .args(["-I", "null", query])
+        .assert()
+        .code(code)
+        .stdout(stdout.to_owned())
+        .stderr("");
+}
+
 #[test]
 fn test_cli_run_with_stdin() -> Result<(), Box<dyn std::error::Error>> {
     let mut cmd = cargo::cargo_bin_cmd!("mq");

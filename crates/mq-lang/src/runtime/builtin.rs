@@ -43,8 +43,6 @@ use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
 use std::borrow::Cow;
-use std::io;
-use std::process::exit;
 use std::sync::LazyLock;
 use thiserror::Error;
 use unicode_normalization::UnicodeNormalization;
@@ -197,7 +195,7 @@ fn partial_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) 
 #[mq_macros::mq_fn(name = "halt", params = Fixed(1))]
 fn halt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Number(exit_code)] => exit(exit_code.value() as i32),
+        [RuntimeValue::Number(exit_code)] => Err(Error::Halt(exit_code.value() as i32)),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("halt should always receive exactly one argument"),
     }
@@ -216,14 +214,9 @@ fn error_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) ->
 fn print_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => {
-            #[cfg(target_arch = "wasm32")]
-            {
-                web_sys::console::log_1(&a.to_string().into());
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                println!("{}", a);
-            }
+            io_context::current()
+                .write_stdout_line(&a.to_string())
+                .map_err(|e| Error::Runtime(e.to_string()))?;
             Ok(current_value.clone())
         }
         _ => unreachable!("print should always receive exactly one argument"),
@@ -234,15 +227,9 @@ fn print_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv
 fn stderr_impl(_: &Ident, current_value: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
         [a] => {
-            #[cfg(target_arch = "wasm32")]
-            {
-                web_sys::console::error_1(&a.to_string().into());
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                eprintln!("{}", a);
-            }
-
+            io_context::current()
+                .write_stderr_line(&a.to_string())
+                .map_err(|e| Error::Runtime(e.to_string()))?;
             Ok(current_value.clone())
         }
         _ => unreachable!("stderr should always receive exactly one argument"),
@@ -3976,13 +3963,10 @@ fn coalesce_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> 
 
 #[mq_macros::mq_fn(name = "input", params = None)]
 fn input_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| Error::Runtime(format!("Failed to read from stdin: {}", e)))?;
-    input.truncate(input.trim_end_matches(&['\n', '\r'][..]).len());
-
-    Ok(RuntimeValue::String(input.into()))
+    let line = io_context::current()
+        .read_stdin_line()
+        .map_err(|e| Error::Runtime(e.to_string()))?;
+    Ok(RuntimeValue::String(line.into()))
 }
 
 #[mq_macros::mq_fn(name = "all_symbols", params = None)]
@@ -9691,6 +9675,8 @@ pub enum Error {
     UndefinedVariable(String),
     #[error("")]
     InvalidConvert(String),
+    #[error("")]
+    Halt(i32),
 }
 
 impl Error {
@@ -9746,6 +9732,7 @@ impl Error {
             Error::InvalidConvert(format) => {
                 RuntimeError::InvalidConvert((*get_token(token_arena, token_id)).clone(), format.clone())
             }
+            Error::Halt(code) => RuntimeError::Halt(*code),
         }
     }
 }

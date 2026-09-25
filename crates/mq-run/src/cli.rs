@@ -1541,6 +1541,11 @@ impl Cli {
     }
 
     /// Prints an uncaught error to stderr per `--error-format`.
+    /// The exit code requested by `halt(code)`, if `err` came from it.
+    pub fn halt_exit_code(err: &miette::Report) -> Option<i32> {
+        err.downcast_ref::<mq_lang::Error>().and_then(mq_lang::Error::exit_code)
+    }
+
     pub fn report_error(&self, err: &miette::Report) {
         match self.error_format {
             ErrorFormat::Human => {
@@ -2290,6 +2295,9 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn run_once_watch(&self) {
         if let Err(err) = self.execute_once() {
+            if let Some(code) = Self::halt_exit_code(&err) {
+                std::process::exit(code);
+            }
             self.report_error(&err);
         }
     }

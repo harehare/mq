@@ -38,6 +38,9 @@ pub enum RuntimeError {
     InvalidDefinition(ErrorToken, String),
     #[error("Maximum recursion depth exceeded ({0})")]
     RecursionError(u32),
+    /// Raised by `halt(code)`; not catchable by `try`.
+    #[error("Halted with exit code {0}")]
+    Halt(i32),
     #[error("Execution timed out after {:.3}s", .0.as_secs_f64())]
     Timeout(Duration),
     #[error(r#"Invalid types for "{}", got {}"#, name, args.join(", "))]
@@ -98,6 +101,7 @@ impl RuntimeError {
             RuntimeError::InvalidDefinition(token, _) => Some(token),
             RuntimeError::RecursionError(_) => None,
             RuntimeError::Timeout(_) => None,
+            RuntimeError::Halt(_) => None,
             RuntimeError::InvalidTypes { token, .. } => Some(token),
             RuntimeError::InvalidNumberOfArguments { token, .. } => Some(token),
             RuntimeError::InvalidRegularExpression(token, _) => Some(token),
