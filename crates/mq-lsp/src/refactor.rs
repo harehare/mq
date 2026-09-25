@@ -64,7 +64,7 @@ fn slice(text: &str, range: MqRange) -> Option<&str> {
 /// child is itself a compound node (e.g. a `let x = foo(1, 2)` where the last child of
 /// `Let` is the `Call` node `foo(1, 2)`: `Call.range()` is just `foo`, not `foo(1, 2)`).
 fn deep_end(node: &CstNode) -> mq_lang::Position {
-    match node.all_children().last() {
+    match node.children().next_back() {
         Some(last) => deep_end(last),
         None => node.range().end,
     }
@@ -75,7 +75,7 @@ fn deep_end(node: &CstNode) -> mq_lang::Position {
 /// (e.g. for `1 + 2`, the node's own token is `+`, not `1`) rather than the leading token.
 fn deep_start(node: &CstNode) -> mq_lang::Position {
     let own = node.range().start;
-    match node.all_children().first() {
+    match node.children().next() {
         Some(first) => own.min(deep_start(first)),
         None => own,
     }

@@ -10,7 +10,7 @@ use smol_str::SmolStr;
 
 use super::{
     error::ParseError,
-    node::{Node, NodeKind, Trivia},
+    node::{Node, NodeKind, Trivia, TriviaList},
 };
 use itertools::Itertools;
 use thiserror::Error;
@@ -190,9 +190,15 @@ impl<'a> Parser<'a> {
         t
     }
 
+    /// Consumes the current token, failing at end of input.
+    #[inline(always)]
+    fn advance_or_eof(&mut self) -> Result<&'a Shared<Token>, ParseError> {
+        self.advance().ok_or(ParseError::UnexpectedEOFDetected)
+    }
+
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
         let nodes = self.parse_program(true, false);
-        (nodes, self.errors.clone())
+        (nodes, std::mem::take(&mut self.errors))
     }
 
     #[inline(always)]
@@ -266,7 +272,7 @@ impl<'a> Parser<'a> {
                             kind: NodeKind::Eof,
                             token: Some(Shared::clone(&token)),
                             leading_trivia,
-                            trailing_trivia: Vec::new(),
+                            trailing_trivia: TriviaList::new(),
                         }));
                     }
 
@@ -311,7 +317,7 @@ impl<'a> Parser<'a> {
                                     kind: NodeKind::Eof,
                                     token: Some(next_token),
                                     leading_trivia,
-                                    trailing_trivia: Vec::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }));
                                 break;
                             } else if matches!(next_token.kind, TokenKind::Pipe) {
@@ -354,7 +360,7 @@ impl<'a> Parser<'a> {
 
     fn parse_expr(
         &mut self,
-        leading_trivia: Vec<Trivia>,
+        leading_trivia: TriviaList,
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
@@ -363,7 +369,7 @@ impl<'a> Parser<'a> {
 
     fn parse_equality_expr(
         &mut self,
-        leading_trivia: Vec<Trivia>,
+        leading_trivia: TriviaList,
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
@@ -371,8 +377,9 @@ impl<'a> Parser<'a> {
 
         while self.try_next_token(|kind| Self::token_kind_to_binary_op(kind).is_some()) {
             let leading_trivia = self.parse_leading_trivia();
-            let operator_token = self.advance().unwrap();
-            let binary_op = Self::token_kind_to_binary_op(&operator_token.kind).unwrap();
+            let operator_token = self.advance_or_eof()?;
+            let binary_op = Self::token_kind_to_binary_op(&operator_token.kind)
+                .ok_or_else(|| ParseError::UnexpectedToken(Shared::clone(operator_token)))?;
             let is_assignment = binary_op.is_assignment();
             let op_trailing_trivia = self.parse_trailing_trivia();
 
@@ -403,15 +410,13 @@ impl<'a> Parser<'a> {
 
         if self.try_next_token(|kind| matches!(kind, TokenKind::As)) {
             let as_leading_trivia = self.parse_leading_trivia();
-            let as_token = self.advance().unwrap();
+            let as_token = self.advance_or_eof()?;
             let as_trailing_trivia = self.parse_trailing_trivia();
 
             let name_leading_trivia = self.parse_leading_trivia();
-            let name_node = match self.peek().map(|t| &t.kind) {
-                Some(TokenKind::Ident(_)) => self.parse_ident(name_leading_trivia)?,
-                Some(_) => {
-                    return Err(ParseError::UnexpectedToken(Shared::clone(self.peek().unwrap())));
-                }
+            let name_node = match self.peek() {
+                Some(token) if matches!(token.kind, TokenKind::Ident(_)) => self.parse_ident(name_leading_trivia)?,
+                Some(token) => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
                 None => return Err(ParseError::UnexpectedEOFDetected),
             };
 
@@ -432,7 +437,7 @@ impl<'a> Parser<'a> {
 
     fn parse_primary_expr(
         &mut self,
-        leading_trivia: Vec<Trivia>,
+        leading_trivia: TriviaList,
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
@@ -479,7 +484,7 @@ impl<'a> Parser<'a> {
                 Err(ParseError::UnexpectedEOFDetected)
             }
             _ => {
-                let token = self.advance().unwrap();
+                let token = self.advance_or_eof()?;
                 Err(ParseError::UnexpectedToken(Shared::clone(token)))
             }
         }
@@ -487,7 +492,7 @@ impl<'a> Parser<'a> {
 
     fn parse_group_expr(
         &mut self,
-        leading_trivia: Vec<Trivia>,
+        leading_trivia: TriviaList,
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
@@ -503,15 +508,15 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Group { lparen, expr, rparen },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         };
 
         // Handle postfix operations: (expr)(args), (expr)[N], (expr)(args)[N], etc.
         self.parse_postfix_chain(Shared::new(node))
     }
 
-    fn parse_ident(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance().unwrap();
+    fn parse_ident(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(6);
 
@@ -523,7 +528,7 @@ impl<'a> Parser<'a> {
                 kind: NodeKind::QualifiedAccess { items: ArgList::new() },
                 token: Some(Shared::clone(token)),
                 leading_trivia,
-                trailing_trivia: Vec::new(),
+                trailing_trivia: TriviaList::new(),
             };
 
             // Parse all :: separated identifiers
@@ -636,7 +641,7 @@ impl<'a> Parser<'a> {
                 kind: NodeKind::Selector { items: ArgList::new() },
                 token: Some(Shared::clone(&selector_token)),
                 leading_trivia: node.leading_trivia.clone(),
-                trailing_trivia: Vec::new(),
+                trailing_trivia: TriviaList::new(),
             });
 
             // Add the original node as the first argument
@@ -673,7 +678,7 @@ impl<'a> Parser<'a> {
 
         if !is_slice_from_start {
             // Parse the first expression
-            let first_expr = self.parse_expr(Vec::new(), false, false)?;
+            let first_expr = self.parse_expr(TriviaList::new(), false, false)?;
             children.push(first_expr);
         }
 
@@ -687,7 +692,7 @@ impl<'a> Parser<'a> {
 
             if !self.try_next_token(|kind| *kind == TokenKind::RBracket) {
                 // Parse the second expression (end index)
-                let second_expr = self.parse_expr(Vec::new(), false, false)?;
+                let second_expr = self.parse_expr(TriviaList::new(), false, false)?;
                 children.push(second_expr);
             }
         }
@@ -721,7 +726,7 @@ impl<'a> Parser<'a> {
             let dynamic_call_node = Node {
                 token: final_node.token.clone(),
                 leading_trivia: final_node.leading_trivia.clone(),
-                trailing_trivia: Vec::new(),
+                trailing_trivia: TriviaList::new(),
                 kind: NodeKind::CallDynamic {
                     callee: final_node,
                     args: args.into(),
@@ -748,7 +753,7 @@ impl<'a> Parser<'a> {
                     },
                     token,
                     leading_trivia,
-                    trailing_trivia: Vec::new(),
+                    trailing_trivia: TriviaList::new(),
                 });
             } else if matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket)) {
                 // Wrap current as first child of a new Call node, then parse bracket access
@@ -757,8 +762,8 @@ impl<'a> Parser<'a> {
                         args: std::iter::once(current).collect(),
                     },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 };
                 current = self.parse_bracket_access(wrapper)?;
             } else {
@@ -831,7 +836,7 @@ impl<'a> Parser<'a> {
 
         while self.try_next_token(|kind| matches!(kind, TokenKind::Pipe)) {
             let pipe_leading_trivia = self.parse_leading_trivia();
-            let pipe_token = self.advance().unwrap();
+            let pipe_token = self.advance_or_eof()?;
             let pipe_trailing_trivia = self.parse_trailing_trivia();
 
             children.push(Shared::new(Node {
@@ -851,13 +856,13 @@ impl<'a> Parser<'a> {
                 program: children.into(),
             },
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_def(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_def(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let name = self.next_node(
@@ -882,14 +887,14 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_fn(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_fn(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let params = self.parse_params()?;
@@ -902,7 +907,7 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         };
@@ -911,8 +916,8 @@ impl<'a> Parser<'a> {
         self.parse_postfix_chain(Shared::new(node))
     }
 
-    fn parse_block(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_block(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         let program = self.parse_program(false, in_loop);
 
@@ -920,17 +925,19 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Block {
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_selector(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance().unwrap();
+    fn parse_selector(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
-        if token.to_string() == "." && !self.try_next_token(|kind| matches!(kind, TokenKind::LBracket)) {
+        if matches!(&token.kind, TokenKind::Selector(s) if s == ".")
+            && !self.try_next_token(|kind| matches!(kind, TokenKind::LBracket))
+        {
             return Ok(Shared::new(Node {
                 kind: NodeKind::Self_ { attr: None },
                 token: Some(Shared::clone(token)),
@@ -1001,7 +1008,7 @@ impl<'a> Parser<'a> {
                     && peek_token.is_selector()
                     && matches!(Selector::try_from(&**peek_token), Ok(Selector::Property(_)))
                 {
-                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let first_token = Shared::clone(token);
                     let block_leading = node.leading_trivia.clone();
                     let block_trailing = node.trailing_trivia.clone();
                     let mut nodes = vec![Shared::new(node)];
@@ -1030,7 +1037,7 @@ impl<'a> Parser<'a> {
                 if matches!(selector, Selector::Property(_))
                     && matches!(self.peek().map(|t| &t.kind), Some(TokenKind::LBracket))
                 {
-                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let first_token = Shared::clone(token);
                     let block_leading = node.leading_trivia.clone();
                     let block_trailing = node.trailing_trivia.clone();
                     let list_node = self.build_list_selector_node()?;
@@ -1064,7 +1071,7 @@ impl<'a> Parser<'a> {
                     && next_token.is_selector()
                     && matches!(Selector::try_from(&**next_token), Ok(sel) if !sel.is_attribute_selector())
                 {
-                    let first_token = Shared::clone(node.token.as_ref().unwrap());
+                    let first_token = Shared::clone(token);
                     let block_leading = node.leading_trivia.clone();
                     let mut nodes = vec![Shared::new(node)];
 
@@ -1106,7 +1113,7 @@ impl<'a> Parser<'a> {
                         kind: NodeKind::Block { program: nodes.into() },
                         token: Some(first_token),
                         leading_trivia: block_leading,
-                        trailing_trivia: Vec::new(),
+                        trailing_trivia: TriviaList::new(),
                     }));
                 }
 
@@ -1132,8 +1139,8 @@ impl<'a> Parser<'a> {
                 items: bracket_children.into(),
             },
             token: Some(dot_token),
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
@@ -1158,21 +1165,21 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_include(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_include(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         let path = self.next_node(|kind| matches!(kind, TokenKind::StringLiteral(_)), NodeKind::Literal)?;
 
         Ok(Shared::new(Node {
             kind: NodeKind::Include { path },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_import(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_import(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         let path = self.next_node(|kind| matches!(kind, TokenKind::StringLiteral(_)), NodeKind::Literal)?;
 
@@ -1190,14 +1197,14 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Import { path, as_token, alias },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_module(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_module(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         let name = self.next_node(
             |kind| matches!(kind, TokenKind::Ident(_)),
@@ -1215,19 +1222,19 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_if(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_if(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token.unwrap())));
+            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1256,19 +1263,19 @@ impl<'a> Parser<'a> {
                 elifs,
                 else_branch,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_elif(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_elif(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token.unwrap())));
+            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1282,14 +1289,14 @@ impl<'a> Parser<'a> {
                 colon,
                 then_branch,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_else(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_else(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1299,27 +1306,27 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Else { colon, then_branch },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
     #[inline(always)]
-    fn parse_node(&mut self, node_kind: NodeKind, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_node(&mut self, node_kind: NodeKind, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         Ok(Shared::new(Node {
             kind: node_kind,
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_break(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_break(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         // Optionally parse colon and expression (break: expr)
         let (colon, value) = if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
@@ -1332,14 +1339,14 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Break { colon, value },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_yield(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_yield(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
         // Optionally parse colon and expression (yield: expr)
         let (colon, value) = if self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
@@ -1352,7 +1359,7 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind: NodeKind::Yield { colon, value },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
@@ -1361,8 +1368,8 @@ impl<'a> Parser<'a> {
     /// Parses a `...expr` spread element inside an array or dict literal, mirroring
     /// `parse_unary_op`'s shape: the `...` token lives on the node itself, and the
     /// spread target is the sole child.
-    fn parse_spread(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let dots_token = self.advance().unwrap();
+    fn parse_spread(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let dots_token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let operand_leading_trivia = self.parse_leading_trivia();
@@ -1376,7 +1383,7 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_array(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_array(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
@@ -1398,7 +1405,7 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Array { items: children.into() },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         });
 
         // Handle postfix bracket access: [1,2,3][0], [1,2,3][0][1], etc.
@@ -1406,7 +1413,7 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn parse_dict_key(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_dict_key(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = Shared::clone(self.peek_token()?);
 
         match &token.kind {
@@ -1417,7 +1424,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_dict(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_dict(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(12);
 
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBrace), NodeKind::Token)?);
@@ -1426,12 +1433,12 @@ impl<'a> Parser<'a> {
 
         if matches!(token.kind, TokenKind::RBrace) {
             let leading_trivia = self.parse_leading_trivia();
-            let token = self.advance().unwrap();
+            let token = self.advance_or_eof()?;
             let trailing_trivia = self.parse_trailing_trivia();
             children.push(Shared::new(Node {
                 kind: NodeKind::Token,
                 token: Some(Shared::clone(token)),
-                leading_trivia: Vec::new(),
+                leading_trivia: TriviaList::new(),
                 trailing_trivia,
             }));
 
@@ -1441,7 +1448,7 @@ impl<'a> Parser<'a> {
                 },
                 token: None,
                 leading_trivia,
-                trailing_trivia: Vec::new(),
+                trailing_trivia: TriviaList::new(),
             }));
         }
 
@@ -1463,7 +1470,7 @@ impl<'a> Parser<'a> {
                     kind: NodeKind::DictEntry { key, colon, value },
                     token: None,
                     leading_trivia,
-                    trailing_trivia: Vec::new(),
+                    trailing_trivia: TriviaList::new(),
                 }));
             }
 
@@ -1472,7 +1479,7 @@ impl<'a> Parser<'a> {
 
             match &token.kind {
                 TokenKind::Comma => {
-                    let token = self.advance().unwrap();
+                    let token = self.advance_or_eof()?;
                     let trailing_trivia = self.parse_trailing_trivia();
 
                     children.push(Shared::new(Node {
@@ -1483,7 +1490,7 @@ impl<'a> Parser<'a> {
                     }));
                 }
                 TokenKind::RBrace => {
-                    let token = self.advance().unwrap();
+                    let token = self.advance_or_eof()?;
                     let trailing_trivia = self.parse_trailing_trivia();
 
                     children.push(Shared::new(Node {
@@ -1505,12 +1512,12 @@ impl<'a> Parser<'a> {
             },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_interpolated_string(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance().unwrap();
+    fn parse_interpolated_string(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         if let TokenKind::InterpolatedString(_) = &token.kind {
@@ -1525,9 +1532,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_var_decl(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
-        let is_var = matches!(token.as_ref().unwrap().kind, TokenKind::Var);
+    fn parse_var_decl(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
+        let is_var = matches!(token.kind, TokenKind::Var);
         let trailing_trivia = self.parse_trailing_trivia();
 
         let lhs_leading_trivia = self.parse_leading_trivia();
@@ -1550,19 +1557,19 @@ impl<'a> Parser<'a> {
 
         Ok(Shared::new(Node {
             kind,
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_self(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_self(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let mut node = Node {
             kind: NodeKind::Self_ { attr: None },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         };
@@ -1578,19 +1585,19 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_nodes(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_nodes(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         Ok(Shared::new(Node {
             kind: NodeKind::Nodes,
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_symbol(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_symbol(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let colon = self.next_node(|kind| matches!(kind, TokenKind::Colon), NodeKind::Token)?;
 
         // Parse the identifier or string literal that follows
@@ -1598,7 +1605,7 @@ impl<'a> Parser<'a> {
         let name = match self.peek() {
             Some(token) => match &token.kind {
                 TokenKind::Ident(_) | TokenKind::StringLiteral(_) => {
-                    let token = self.advance().unwrap();
+                    let token = self.advance_or_eof()?;
                     let trailing_trivia = self.parse_trailing_trivia();
                     Shared::new(Node {
                         kind: NodeKind::Literal,
@@ -1616,12 +1623,12 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Symbol { colon, name },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_foreach(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_foreach(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let mut args: ArgList = ArgList::new();
@@ -1644,13 +1651,13 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_while(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_while(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let (token, trailing_trivia, args, colon_or_do, program) = self.parse_cond_loop()?;
         Ok(Shared::new(Node {
             kind: NodeKind::While {
@@ -1668,8 +1675,8 @@ impl<'a> Parser<'a> {
     #[allow(clippy::type_complexity)]
     fn parse_cond_loop(
         &mut self,
-    ) -> Result<(Shared<Token>, Vec<Trivia>, ArgList, Option<Shared<Node>>, ArgList), ParseError> {
-        let token = Shared::clone(self.advance().unwrap());
+    ) -> Result<(Shared<Token>, TriviaList, ArgList, Option<Shared<Node>>, ArgList), ParseError> {
+        let token = Shared::clone(self.advance_or_eof()?);
         let trailing_trivia = self.parse_trailing_trivia();
 
         let mut args: ArgList = ArgList::new();
@@ -1684,8 +1691,8 @@ impl<'a> Parser<'a> {
         Ok((token, trailing_trivia, args, colon_or_do, program.into()))
     }
 
-    fn parse_loop(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_loop(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
@@ -1696,13 +1703,13 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 program: program.into(),
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_until(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_until(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let (token, trailing_trivia, args, colon_or_do, program) = self.parse_cond_loop()?;
         Ok(Shared::new(Node {
             kind: NodeKind::Until {
@@ -1716,13 +1723,13 @@ impl<'a> Parser<'a> {
         }))
     }
 
-    fn parse_unless(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_unless(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token.unwrap())));
+            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
         }
 
         let colon = self.parse_colon_token_if_present()?;
@@ -1736,14 +1743,14 @@ impl<'a> Parser<'a> {
                 colon,
                 then_branch,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_try(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_try(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
@@ -1764,14 +1771,14 @@ impl<'a> Parser<'a> {
                 body,
                 catch,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_catch(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_catch(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         // Optional error binder: `catch(e):`
@@ -1792,20 +1799,20 @@ impl<'a> Parser<'a> {
                 colon_or_do,
                 body,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_match(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
-        let token = self.advance();
+    fn parse_match(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
+        let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         // Parse (value)
         let args = self.parse_args()?;
         if args.iter().filter(|arg| !arg.is_token()).count() != 1 {
-            return Err(ParseError::UnexpectedToken(Shared::clone(token.unwrap())));
+            return Err(ParseError::UnexpectedToken(Shared::clone(token)));
         }
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
@@ -1841,13 +1848,13 @@ impl<'a> Parser<'a> {
                 arms,
                 end_token,
             },
-            token: Some(Shared::clone(token.unwrap())),
+            token: Some(Shared::clone(token)),
             leading_trivia,
             trailing_trivia,
         }))
     }
 
-    fn parse_match_arm(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_match_arm(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let pipe = self.next_node(|kind| matches!(kind, TokenKind::Pipe), NodeKind::Token)?;
 
         let pattern_leading_trivia = self.parse_leading_trivia();
@@ -1880,11 +1887,11 @@ impl<'a> Parser<'a> {
             },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let first = self.parse_single_pattern(leading_trivia)?;
 
         // Check for or-pattern: p1 || p2 || ...
@@ -1902,12 +1909,12 @@ impl<'a> Parser<'a> {
         Ok(Shared::new(Node {
             kind: NodeKind::OrPattern { items: children.into() },
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_single_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_single_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let token = Shared::clone(self.peek_token()?);
 
         match &token.kind {
@@ -1936,7 +1943,7 @@ impl<'a> Parser<'a> {
                     kind: NodeKind::Pattern { items: children.into() },
                     token: None,
                     leading_trivia,
-                    trailing_trivia: Vec::new(),
+                    trailing_trivia: TriviaList::new(),
                 }))
             }
             // Literal patterns (string, bytes, number, bool, none)
@@ -1976,7 +1983,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_array_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_array_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
 
         // Parse [
@@ -2025,11 +2032,11 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Pattern { items: children.into() },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_dict_pattern(&mut self, leading_trivia: Vec<Trivia>) -> Result<Shared<Node>, ParseError> {
+    fn parse_dict_pattern(&mut self, leading_trivia: TriviaList) -> Result<Shared<Node>, ParseError> {
         let mut children: Vec<Shared<Node>> = Vec::with_capacity(10);
 
         // Parse {
@@ -2078,12 +2085,12 @@ impl<'a> Parser<'a> {
             kind: NodeKind::Pattern { items: children.into() },
             token: None,
             leading_trivia,
-            trailing_trivia: Vec::new(),
+            trailing_trivia: TriviaList::new(),
         }))
     }
 
-    fn parse_unary_op(&mut self, leading_trivia: Vec<Trivia>, root: bool) -> Result<Shared<Node>, ParseError> {
-        let operator_token = self.advance().unwrap();
+    fn parse_unary_op(&mut self, leading_trivia: TriviaList, root: bool) -> Result<Shared<Node>, ParseError> {
+        let operator_token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
         let op = match &operator_token.kind {
@@ -2123,20 +2130,20 @@ impl<'a> Parser<'a> {
 
         // Variadic parameter: *name
         let asterisk = if self.peek().is_some_and(|t| matches!(t.kind, TokenKind::Asterisk)) {
-            let token = self.advance().unwrap();
+            let token = self.advance_or_eof()?;
             let inner_leading_trivia = self.parse_leading_trivia();
             Some(Shared::new(Node {
                 kind: NodeKind::Token,
                 token: Some(Shared::clone(token)),
                 leading_trivia: inner_leading_trivia,
-                trailing_trivia: Vec::new(),
+                trailing_trivia: TriviaList::new(),
             }))
         } else {
             None
         };
 
         let name_token = match self.peek() {
-            Some(token) if matches!(token.kind, TokenKind::Ident(_)) => Shared::clone(self.advance().unwrap()),
+            Some(token) if matches!(token.kind, TokenKind::Ident(_)) => Shared::clone(self.advance_or_eof()?),
             Some(token) => return Err(ParseError::UnexpectedToken(Shared::clone(token))),
             None => return Err(ParseError::UnexpectedEOFDetected),
         };
@@ -2146,7 +2153,7 @@ impl<'a> Parser<'a> {
             // Keep the whitespace between the name and `=` so the tree stays lossless.
             let mut eq_leading_trivia = std::mem::take(&mut trailing_trivia);
             eq_leading_trivia.extend(self.parse_leading_trivia());
-            let equal_token = self.advance().unwrap();
+            let equal_token = self.advance_or_eof()?;
             let eq_trailing_trivia = self.parse_trailing_trivia();
             let eq_token = Shared::new(Node {
                 kind: NodeKind::Token,
@@ -2188,7 +2195,7 @@ impl<'a> Parser<'a> {
         let token = Shared::clone(self.peek_token()?);
         if close_token(&token.kind) {
             let leading_trivia = self.parse_leading_trivia();
-            let token = self.advance().unwrap();
+            let token = self.advance_or_eof()?;
             let trailing_trivia = self.parse_trailing_trivia();
             nodes.push(Shared::new(Node {
                 kind: NodeKind::Token,
@@ -2203,7 +2210,7 @@ impl<'a> Parser<'a> {
             // Check for early close (e.g., trailing comma then close)
             if self.try_next_token(close_token) {
                 let leading_trivia = self.parse_leading_trivia();
-                let token = self.advance().unwrap();
+                let token = self.advance_or_eof()?;
                 let trailing_trivia = self.parse_trailing_trivia();
                 nodes.push(Shared::new(Node {
                     kind: NodeKind::Token,
@@ -2219,7 +2226,7 @@ impl<'a> Parser<'a> {
             let token = Shared::clone(self.peek_token()?);
 
             if matches!(token.kind, TokenKind::Comma) {
-                let token = self.advance().unwrap();
+                let token = self.advance_or_eof()?;
                 let trailing_trivia = self.parse_trailing_trivia();
 
                 nodes.push(item_node);
@@ -2230,7 +2237,7 @@ impl<'a> Parser<'a> {
                     trailing_trivia,
                 }));
             } else if close_token(&token.kind) {
-                let token = self.advance().unwrap();
+                let token = self.advance_or_eof()?;
                 let trailing_trivia = self.parse_trailing_trivia();
 
                 nodes.push(item_node);
@@ -2255,8 +2262,8 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn parse_leading_trivia(&mut self) -> Vec<Trivia> {
-        let mut trivia = Vec::new();
+    fn parse_leading_trivia(&mut self) -> TriviaList {
+        let mut trivia = TriviaList::new();
 
         while let Some(token) = self.tokens.get(self.pos) {
             match &token.kind {
@@ -2337,8 +2344,8 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    fn parse_trailing_trivia(&mut self) -> Vec<Trivia> {
-        let mut trivia = Vec::new();
+    fn parse_trailing_trivia(&mut self) -> TriviaList {
+        let mut trivia = TriviaList::new();
 
         while let Some(token) = self.tokens.get(self.pos) {
             match &token.kind {
@@ -2445,6 +2452,7 @@ mod tests {
     use super::*;
     use crate::cst::node::BinaryOp;
     use rstest::rstest;
+    use smallvec::smallvec;
 
     fn token(token_kind: TokenKind) -> Token {
         Token {
@@ -2476,50 +2484,50 @@ mod tests {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment2".into()))))],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment2".into()))))],
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
                                          Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment".into()))))],
-                    trailing_trivia: Vec::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -2541,44 +2549,44 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: None, program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -2600,44 +2608,44 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("baz".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: None, program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -2660,50 +2668,50 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: None, program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -2725,28 +2733,28 @@ Shared::new(Node {
                     kind: NodeKind::Let { lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), eq_token: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Equal))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Let))),
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -2773,38 +2781,38 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment2".into()))))],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment2".into()))))],
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1)))),
                                          Trivia::Comment(Shared::new(token(TokenKind::Comment("test comment".into())))) ],
-                    trailing_trivia: Vec::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Comma)))], 100)
@@ -2844,50 +2852,50 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), elifs: Elifs::new(), else_branch: Some(Shared::new(Node {
                             kind: NodeKind::Else { colon: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), then_branch: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("else_branch".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Else))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::If))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                 }),
             ],
             ErrorReporter::default()
@@ -2910,35 +2918,35 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Unless))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                 }),
             ],
             ErrorReporter::default()
@@ -2971,86 +2979,86 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), elifs: vec![
 Shared::new(Node {
                             kind: NodeKind::Elif { args: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("condition2".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into(), colon: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), then_branch: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("then_branch2".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Elif))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                         }),
 ].into(), else_branch: Some(Shared::new(Node {
                             kind: NodeKind::Else { colon: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), then_branch: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("else_branch".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Else))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::If))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3073,35 +3081,35 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), elifs: Elifs::new(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3131,71 +3139,71 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), elifs: vec![
 Shared::new(Node {
                             kind: NodeKind::Elif { args: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("condition2".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into(), colon: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), then_branch: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("then_branch2".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Elif))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                         }),
 ].into(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3216,20 +3224,20 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3251,38 +3259,38 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Call { args: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3310,49 +3318,49 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("item".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("collection".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3380,55 +3388,55 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("item".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("collection".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3457,68 +3465,68 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("item".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Call { args: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("arg".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Ident("get_items".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Foreach))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3545,37 +3553,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("comment".into())))), Trivia::NewLine],
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(4))))],
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3601,43 +3609,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3660,37 +3668,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("condition".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Until))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3712,19 +3720,19 @@ Shared::new(Node {
                     kind: NodeKind::Loop { colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("loop comment".into())))), Trivia::NewLine],
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("loop comment".into())))), Trivia::NewLine],
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Loop))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3739,8 +3747,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Selector { items: ArgList::new() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3761,31 +3769,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3808,43 +3816,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3862,13 +3870,13 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".checked".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".list".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3885,12 +3893,12 @@ Shared::new(Node {
                     kind: NodeKind::Ident { attr: Some(Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3907,12 +3915,12 @@ Shared::new(Node {
                     kind: NodeKind::Self_ { attr: Some(Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".name".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Self_))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3927,8 +3935,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::SelfAttr,
                     token: Some(Shared::new(token(TokenKind::Selector(".lang".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -3946,12 +3954,12 @@ Shared::new(Node {
                     kind: NodeKind::Include { path: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("module".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Include))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3969,12 +3977,12 @@ Shared::new(Node {
                     kind: NodeKind::Import { path: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("module".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), as_token: None, alias: None },
                     token: Some(Shared::new(token(TokenKind::Import))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -3996,22 +4004,22 @@ Shared::new(Node {
                     kind: NodeKind::Import { path: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("module".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         }), as_token: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::As))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         })), alias: Some(Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("m".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Import))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -4028,14 +4036,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::SemiColon))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::Ident("y".into()))))], 100)
@@ -4062,37 +4070,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("arg1".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("param comment".into())))), Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Comment(Shared::new(token(TokenKind::Comment("param comment".into())))), Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("arg2".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4107,8 +4115,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::InterpolatedString,
                     token: Some(Shared::new(token(TokenKind::InterpolatedString(vec![StringSegment::Expr("val".into(), Range::default()), StringSegment::Text("hello".into(), Range::default())])))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4124,8 +4132,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Nodes,
                     token: Some(Shared::new(token(TokenKind::Nodes))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -4149,49 +4157,49 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Fn))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4214,43 +4222,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Fn))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
 
             ],
@@ -4276,55 +4284,55 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param2".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("result".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Fn))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4342,19 +4350,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4373,25 +4381,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4414,49 +4422,49 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("hello".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4484,41 +4492,41 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: vec![
+                            leading_trivia: smallvec![
                                 Trivia::NewLine,
                                 Trivia::Comment(Shared::new(token(TokenKind::Comment("array element".into())))),
                                 Trivia::NewLine
                             ],
-                            trailing_trivia: Vec::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: vec![Trivia::NewLine],
-                                trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: smallvec![Trivia::NewLine],
+                                trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
-                    trailing_trivia: vec![],
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4543,75 +4551,75 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Array { items: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Array { items: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4631,30 +4639,30 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Spread { operand: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::DotDotDot))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4672,19 +4680,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4705,40 +4713,40 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::DictEntry { key: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), value: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4763,67 +4771,67 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::DictEntry { key: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), value: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::DictEntry { key: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("foo".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), value: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4843,30 +4851,30 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Spread { operand: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::DotDotDot))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBrace))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4884,17 +4892,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Equal, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::EqEq))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4914,17 +4922,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::NotEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::NeEq))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -4942,17 +4950,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Plus))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4970,17 +4978,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Coalesce, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Coalesce))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -4998,17 +5006,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Lt, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Lt))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5026,17 +5034,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Lte, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Lte))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5054,17 +5062,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Gt, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Gt))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5082,17 +5090,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Gte, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Gte))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5110,17 +5118,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::RangeOp, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::DoubleDot))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5138,17 +5146,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Minus, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Minus))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5166,17 +5174,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Division, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Slash))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5194,17 +5202,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Modulo, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Percent))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5222,17 +5230,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Multiplication, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Asterisk))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5250,17 +5258,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::LeftShift, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::LeftShift))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5278,17 +5286,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::RightShift, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::RightShift))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5306,17 +5314,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Convert, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Convert))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5340,35 +5348,35 @@ Shared::new(Node {
                                     kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                                             kind: NodeKind::Ident { attr: None },
                                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }), rhs: Shared::new(Node {
                                             kind: NodeKind::Ident { attr: None },
                                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }) },
                                     token: Some(Shared::new(token(TokenKind::Plus))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Minus))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("d".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Asterisk))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5393,26 +5401,26 @@ Shared::new(Node {
                             kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Plus))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("z".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Minus))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -5427,8 +5435,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Literal,
                     token: Some(Shared::new(token(TokenKind::StringLiteral("\\x1b[2J\\x1b[H".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5445,17 +5453,17 @@ Shared::new(Node {
                     kind: NodeKind::Symbol { colon: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), name: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5472,17 +5480,17 @@ Shared::new(Node {
                     kind: NodeKind::Symbol { colon: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), name: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5499,12 +5507,12 @@ Shared::new(Node {
                     kind: NodeKind::UnaryOp { op: UnaryOp::Not, operand: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::BoolLiteral(true)))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Not))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5526,37 +5534,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::BoolLiteral(true)))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Break { colon: None, value: None },
                             token: Some(Shared::new(token(TokenKind::Break))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5581,53 +5589,53 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::BoolLiteral(true)))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Break { colon: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), value: Some(Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::BoolLiteral(false)))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Break))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5649,37 +5657,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::BoolLiteral(true)))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Continue,
                             token: Some(Shared::new(token(TokenKind::Continue))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::While))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5717,25 +5725,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(5.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5755,25 +5763,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("key".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("dict".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5806,30 +5814,30 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::UnaryOp { op: UnaryOp::Not, operand: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Not))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5852,43 +5860,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5911,43 +5919,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("start".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("end".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("items".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -5965,22 +5973,22 @@ Shared::new(Node {
                     kind: NodeKind::Group { lparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), expr: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6000,32 +6008,32 @@ Shared::new(Node {
                     kind: NodeKind::Group { lparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), expr: Shared::new(Node {
                             kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Plus))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6046,22 +6054,22 @@ Shared::new(Node {
                     kind: NodeKind::Group { lparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), expr: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }), rparen: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                         }) },
                     token: None,
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6096,45 +6104,45 @@ Shared::new(Node {
                             kind: NodeKind::Group { lparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), expr: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6157,45 +6165,45 @@ Shared::new(Node {
                             kind: NodeKind::Group { lparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), expr: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), args: vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6222,60 +6230,60 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Comma))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: None,
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6302,60 +6310,60 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Group { lparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), expr: Shared::new(Node {
                                     kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                                             kind: NodeKind::Ident { attr: None },
                                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }), rhs: Shared::new(Node {
                                             kind: NodeKind::Ident { attr: None },
                                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }) },
                                     token: Some(Shared::new(token(TokenKind::Plus))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rparen: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), then_branch: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("then_branch".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), elifs: Elifs::new(), else_branch: None },
                     token: Some(Shared::new(token(TokenKind::If))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                 }),
             ],
             ErrorReporter::default()
@@ -6375,25 +6383,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Self_))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6416,43 +6424,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6469,12 +6477,12 @@ Shared::new(Node {
                     kind: NodeKind::UnaryOp { op: UnaryOp::Negate, operand: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Minus))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6493,19 +6501,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("test".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6528,19 +6536,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("expression".into())))),
-                            leading_trivia: vec![Trivia::NewLine, Trivia::Tab(Shared::new(token(TokenKind::Tab(1))))],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine, Trivia::Tab(Shared::new(token(TokenKind::Tab(1))))],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(2))))],
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6561,19 +6569,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
-                            leading_trivia: vec![Trivia::Comment(Shared::new(token(TokenKind::Comment("inside block".into())))), Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::Comment(Shared::new(token(TokenKind::Comment("inside block".into())))), Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6589,8 +6597,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Block { program: ArgList::new() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnexpectedToken(Shared::new(token(TokenKind::End))), ParseError::UnexpectedEOFDetected], 100)
@@ -6613,30 +6621,30 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("inner".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::End,
                                     token: Some(Shared::new(token(TokenKind::End))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Do))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6657,32 +6665,32 @@ Shared::new(Node {
                     kind: NodeKind::Try { colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), body: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("try_body".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), catch: Some(Shared::new(Node {
                             kind: NodeKind::Catch { params: None, colon_or_do: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), body: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("catch_body".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Catch))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Try))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6700,17 +6708,17 @@ Shared::new(Node {
                     kind: NodeKind::Try { colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), body: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("try_body".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), catch: None },
                     token: Some(Shared::new(token(TokenKind::Try))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6731,31 +6739,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Question))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6786,94 +6794,94 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), arms: vec![
 Shared::new(Node {
                             kind: NodeKind::MatchArm { pipe: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), pattern: Shared::new(Node {
                                     kind: NodeKind::Pattern { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), if_token: None, guard_args: None, colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), body: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("one".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::MatchArm { pipe: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), pattern: Shared::new(Node {
                                     kind: NodeKind::Pattern { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::Ident("_".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), if_token: None, guard_args: None, colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), body: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("other".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), end_token: Some(Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Match))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -6907,94 +6915,94 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), arms: vec![
 Shared::new(Node {
                             kind: NodeKind::MatchArm { pipe: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), pattern: Shared::new(Node {
                                     kind: NodeKind::Pattern { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), if_token: None, guard_args: None, colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), body: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("one".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::MatchArm { pipe: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), pattern: Shared::new(Node {
                                     kind: NodeKind::Pattern { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::Ident("_".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), if_token: None, guard_args: None, colon: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), body: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("other".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: None,
-                            leading_trivia: vec![Trivia::NewLine],
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: smallvec![Trivia::NewLine],
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), end_token: Some(Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })) },
                     token: Some(Shared::new(token(TokenKind::Match))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7017,42 +7025,42 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), args: vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7072,25 +7080,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7112,37 +7120,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("mod2".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("value".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7165,43 +7173,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("arg".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7225,49 +7233,49 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("mod2".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("func".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7286,19 +7294,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::DoubleColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("mod1".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7329,93 +7337,93 @@ Shared::new(Node {
                     kind: NodeKind::Module { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("modname1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Let { lhs: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), eq_token: Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Equal))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::Let))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Def { name: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), params: Some(vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RParen))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into()), colon_or_do: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::End,
                                     token: Some(Shared::new(token(TokenKind::End))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Def))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::End,
                             token: Some(Shared::new(token(TokenKind::End))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Module))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7437,37 +7445,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RBracket))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7485,13 +7493,13 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7506,8 +7514,8 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Selector { items: ArgList::new() },
                     token: Some(Shared::new(token(TokenKind::Selector(".\"notfound\"".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7526,25 +7534,25 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"a\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"b\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"c\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".\"a\"".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7562,19 +7570,19 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"foo\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"bar\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".\"foo\"".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7594,22 +7602,22 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(Token {
@@ -7617,13 +7625,13 @@ Shared::new(Node {
                                 range: Range::default(),
                                 module_id: 1.into(),
                             })),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7644,28 +7652,28 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: vec![
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(0.0.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(Token {
@@ -7673,13 +7681,13 @@ Shared::new(Node {
                                 range: Range::default(),
                                 module_id: 1.into(),
                             })),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".\"items\"".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7700,31 +7708,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".level".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7741,14 +7749,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Self_ { attr: None },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7764,14 +7772,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Self_ { attr: None },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::SemiColon))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7787,14 +7795,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Self_ { attr: None },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::End,
                     token: Some(Shared::new(token(TokenKind::End))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7812,17 +7820,17 @@ Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
                             kind: NodeKind::Self_ { attr: None },
                             token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Plus))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7846,22 +7854,22 @@ Shared::new(Node {
                     kind: NodeKind::Let { lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), eq_token: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Equal))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Let))),
-                    leading_trivia: vec![],
-                    trailing_trivia: vec![],
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(
@@ -7888,38 +7896,38 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::End,
                                     token: Some(Shared::new(token(TokenKind::End))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -7943,44 +7951,44 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("baz".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8004,56 +8012,56 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8077,56 +8085,56 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8151,56 +8159,56 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8225,44 +8233,44 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: vec![Trivia::NewLine],
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: smallvec![Trivia::NewLine],
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8291,8 +8299,8 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Block { program: vec![
@@ -8301,60 +8309,60 @@ Shared::new(Node {
 Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::LParen))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }),
 Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::RParen))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                         }),
 ].into() },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: vec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(token(TokenKind::Whitespace(1))))],
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Call { args: vec![
 Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::LParen))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }),
 Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::RParen))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }),
 ].into() },
                                     token: Some(Shared::new(token(TokenKind::Ident("baz".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: None,
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8376,35 +8384,35 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Try { colon_or_do: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), body: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), catch: None },
                             token: Some(Shared::new(token(TokenKind::Try))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8429,50 +8437,50 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Try { colon_or_do: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Colon))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), body: Shared::new(Node {
                                     kind: NodeKind::Ident { attr: None },
                                     token: Some(Shared::new(token(TokenKind::Ident("bar".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), catch: Some(Shared::new(Node {
                                     kind: NodeKind::Catch { params: None, colon_or_do: Some(Shared::new(Node {
                                             kind: NodeKind::Token,
                                             token: Some(Shared::new(token(TokenKind::Colon))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         })), body: Shared::new(Node {
                                             kind: NodeKind::Ident { attr: None },
                                             token: Some(Shared::new(token(TokenKind::Ident("baz".into())))),
-                                            leading_trivia: Vec::new(),
-                                            trailing_trivia: Vec::new(),
+                                            leading_trivia: TriviaList::new(),
+                                            trailing_trivia: TriviaList::new(),
                                         }) },
                                     token: Some(Shared::new(token(TokenKind::Catch))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Try))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Ident("foo".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8491,23 +8499,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::Assign, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(10.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Equal))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8526,23 +8534,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::PlusEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(5.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PlusEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8561,23 +8569,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::MinusEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::MinusEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8596,23 +8604,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::MultiplicationEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("z".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::StarEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8631,23 +8639,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::DivisionEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(4.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::SlashEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8666,23 +8674,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::ModuloEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(7.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PercentEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8701,23 +8709,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::DoubleDivisionEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::DoubleSlashEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8739,28 +8747,28 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Selector { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Selector(".h1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("new_id".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PipeEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8781,27 +8789,27 @@ Shared::new(Node {
                             kind: NodeKind::Ident { attr: Some(Shared::new(Node {
                                     kind: NodeKind::Selector { items: ArgList::new() },
                                     token: Some(Shared::new(token(TokenKind::Selector(".value".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Ident("obj".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("John".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PipeEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8820,23 +8828,23 @@ Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::PipeEqual, lhs: Shared::new(Node {
                             kind: NodeKind::Self_ { attr: None },
                             token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(42.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PipeEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8862,62 +8870,62 @@ Shared::new(Node {
                     kind: NodeKind::Var { lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("count".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), eq_token: Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Equal))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Var))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Assign { op: BinaryOp::Assign, lhs: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("count".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(10.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Equal))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("count".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8941,40 +8949,40 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(10.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Equal))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -8998,40 +9006,40 @@ Shared::new(Node {
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::LBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(0.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::RBracket))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }),
 ].into() },
                             token: Some(Shared::new(token(TokenKind::Ident("arr".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::PlusEqual))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9059,77 +9067,77 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("greet".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("name".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Equal))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), default: Some(Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::StringLiteral("Hello".into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Ident("greeting".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("greeting".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9161,93 +9169,93 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Equal))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), default: Some(Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Equal))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), default: Some(Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })) },
                             token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Fn))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9271,49 +9279,49 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("x".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Arrow))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Token,
                     token: Some(Shared::new(token(TokenKind::Pipe))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Ident { attr: None },
                     token: Some(Shared::new(token(TokenKind::Ident("y".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9336,43 +9344,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("body".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Arrow))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9397,55 +9405,55 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param1".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Param { asterisk: None, eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("param2".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into(), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("result".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Arrow))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9470,61 +9478,61 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("f".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: Some(vec![
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 // Variadic param: Ident node with Asterisk token as single child
                         Shared::new(Node {
                             kind: NodeKind::Param { asterisk: Some(Shared::new(Node {
                                     kind: NodeKind::Token,
                                     token: Some(Shared::new(token(TokenKind::Asterisk))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 })), eq_token: None, default: None },
                             token: Some(Shared::new(token(TokenKind::Ident("args".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into()), colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("args".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9545,36 +9553,36 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("f".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: None, colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Colon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("args".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9595,36 +9603,36 @@ Shared::new(Node {
                     kind: NodeKind::Def { name: Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("f".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }), params: None, colon_or_do: Some(Shared::new(Node {
                             kind: NodeKind::Do,
                             token: Some(Shared::new(token(TokenKind::Do))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         })), program: vec![
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("args".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::SemiColon))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Def))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9645,31 +9653,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9692,43 +9700,43 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::Comma))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(2.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9749,31 +9757,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::StringLiteral("rust".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".code".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9796,42 +9804,42 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 // 1..3 is parsed as a BinaryOp(RangeOp) expression by parse_expr
                         Shared::new(Node {
                             kind: NodeKind::BinaryOp { op: BinaryOp::RangeOp, lhs: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }), rhs: Shared::new(Node {
                                     kind: NodeKind::Literal,
                                     token: Some(Shared::new(token(TokenKind::NumberLiteral(3.into())))),
-                                    leading_trivia: Vec::new(),
-                                    trailing_trivia: Vec::new(),
+                                    leading_trivia: TriviaList::new(),
+                                    trailing_trivia: TriviaList::new(),
                                 }) },
                             token: Some(Shared::new(token(TokenKind::DoubleDot))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9852,31 +9860,31 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Ident { attr: None },
                             token: Some(Shared::new(token(TokenKind::Ident("n".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9898,37 +9906,37 @@ Shared::new(Node {
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::LParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Literal,
                             token: Some(Shared::new(token(TokenKind::NumberLiteral(1.into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Token,
                             token: Some(Shared::new(token(TokenKind::RParen))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 Shared::new(Node {
                             kind: NodeKind::Selector { items: ArgList::new() },
                             token: Some(Shared::new(token(TokenKind::Selector(".depth".into())))),
-                            leading_trivia: Vec::new(),
-                            trailing_trivia: Vec::new(),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
                         }),
 ].into() },
                     token: Some(Shared::new(token(TokenKind::Selector(".h".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::Eof,
                     token: Some(Shared::new(token(TokenKind::Eof))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::default()
@@ -9948,14 +9956,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Self_ { attr: None },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::End,
                     token: Some(Shared::new(token(TokenKind::End))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)))], 100)
@@ -9977,14 +9985,14 @@ Shared::new(Node {
                 Shared::new(Node {
                     kind: NodeKind::Self_ { attr: None },
                     token: Some(Shared::new(token(TokenKind::Selector(".".into())))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
                 Shared::new(Node {
                     kind: NodeKind::End,
                     token: Some(Shared::new(token(TokenKind::End))),
-                    leading_trivia: Vec::new(),
-                    trailing_trivia: Vec::new(),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
                 }),
             ],
             ErrorReporter::with_error(vec![ParseError::UnmatchedEnd(Shared::new(token(TokenKind::End)))], 100)

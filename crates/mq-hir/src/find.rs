@@ -39,22 +39,17 @@ impl Hir {
     }
 
     pub fn find_scope_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<(ScopeId, Scope)> {
-        let source = self.sources.get(source_id);
+        self.sources.get(source_id)?;
 
-        source.and_then(|_| {
-            self.scopes
-                .iter()
-                .collect::<Vec<_>>()
-                .into_iter()
-                .rev()
-                .find(|(_, scope)| {
-                    scope.source.source_id.is_some()
-                        && scope.source.text_range.is_some()
-                        && scope.source.source_id.unwrap() == source_id
-                        && scope.source.text_range.as_ref().unwrap().contains(&position)
-                })
-                .map(|(scope_id, scope)| (scope_id, scope.clone()))
-        })
+        // Innermost scope: latest start, then earliest end.
+        self.scopes
+            .iter()
+            .filter_map(|(scope_id, scope)| {
+                let range = scope.source.text_range?;
+                (scope.source.source_id == Some(source_id) && range.contains(&position)).then_some((scope_id, range))
+            })
+            .max_by(|(_, a), (_, b)| a.start.cmp(&b.start).then_with(|| b.end.cmp(&a.end)))
+            .map(|(scope_id, _)| (scope_id, self.scopes[scope_id].clone()))
     }
 
     pub fn find_symbols_in_scope(&self, scope_id: ScopeId) -> Vec<Arc<Symbol>> {

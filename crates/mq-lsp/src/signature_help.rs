@@ -75,7 +75,7 @@ fn visit(node: &Shared<CstNode>, position: mq_lang::Position, best: &mut Option<
     ) {
         *best = Some(node.clone());
     }
-    for child in node.all_children().iter() {
+    for child in node.children() {
         visit(child, position, best);
     }
 }
@@ -89,8 +89,7 @@ fn active_parameter_index(call: &Shared<CstNode>, position: mq_lang::Position, p
     }
 
     let commas_before_cursor = call
-        .all_children()
-        .iter()
+        .children()
         .filter(|child| {
             child.is_token()
                 && child

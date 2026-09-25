@@ -113,6 +113,8 @@ pub use cst::node::NodeKind as CstNodeKind;
 #[cfg(feature = "cst")]
 pub use cst::node::Trivia as CstTrivia;
 #[cfg(feature = "cst")]
+pub use cst::node::TriviaList as CstTriviaList;
+#[cfg(feature = "cst")]
 pub use cst::node::UnaryOp as CstUnaryOp;
 #[cfg(feature = "cst")]
 pub use cst::parser::ErrorReporter as CstErrorReporter;

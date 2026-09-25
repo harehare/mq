@@ -3,8 +3,11 @@ use smol_str::SmolStr;
 use crate::{Hir, ScopeId, SourceId, Symbol, SymbolId, SymbolKind};
 
 impl Hir {
+    /// Resolves references that are unresolved or were resolved across sources.
+    ///
+    /// Scope-chain resolutions depend only on their own source, so they stay valid until
+    /// that source is replaced, which drops them from `references`.
     pub fn resolve(&mut self) {
-        // Extract only the fields we need instead of cloning the entire Symbol
         let symbols_to_resolve: Vec<_> = self
             .symbols
             .iter()
@@ -13,20 +16,35 @@ impl Hir {
                 | SymbolKind::Call
                 | SymbolKind::CallDynamic
                 | SymbolKind::Argument
-                | SymbolKind::QualifiedAccess => Some((ref_symbol_id, ref_symbol.scope, ref_symbol.value.clone())),
+                | SymbolKind::QualifiedAccess
+                    if !self.references.contains_key(&ref_symbol_id)
+                        || self.fallback_references.contains(&ref_symbol_id) =>
+                {
+                    ref_symbol
+                        .value
+                        .clone()
+                        .map(|name| (ref_symbol_id, ref_symbol.scope, name))
+                }
                 _ => None,
             })
             .collect();
 
-        for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
-            if let Some(ref_name) = ref_name {
-                let resolved = self
-                    .resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id)
-                    .or_else(|| self.resolve_ref_symbol_of_source(self.include_source_ids(), &ref_name));
+        let mut include_source_ids = None;
 
-                if let Some((symbol_id, _)) = resolved {
-                    self.references.insert(ref_symbol_id, symbol_id);
-                }
+        for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
+            if let Some(symbol_id) = self.resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id) {
+                self.references.insert(ref_symbol_id, symbol_id);
+                self.fallback_references.remove(&ref_symbol_id);
+                continue;
+            }
+
+            let source_ids = include_source_ids.get_or_insert_with(|| self.include_source_ids());
+            if let Some(symbol_id) = self.resolve_ref_symbol_of_source(source_ids, &ref_name) {
+                self.references.insert(ref_symbol_id, symbol_id);
+                self.fallback_references.insert(ref_symbol_id);
+            } else {
+                self.references.remove(&ref_symbol_id);
+                self.fallback_references.remove(&ref_symbol_id);
             }
         }
     }
@@ -67,37 +85,29 @@ impl Hir {
         }
     }
 
-    fn resolve_ref_symbol_of_source(
-        &self,
-        source_ids: Vec<SourceId>,
-        ref_name: &SmolStr,
-    ) -> Option<(SymbolId, Symbol)> {
-        let mut candidates = Vec::new();
+    fn resolve_ref_symbol_of_source(&self, source_ids: &[SourceId], ref_name: &SmolStr) -> Option<SymbolId> {
+        self.name_index
+            .get(ref_name)
+            .into_iter()
+            .flatten()
+            .filter_map(|&symbol_id| {
+                let symbol = self.symbols.get(symbol_id)?;
+                let source_id = symbol.source.source_id?;
+                (source_ids.contains(&source_id) && Self::is_resolvable_target(symbol))
+                    .then(|| (self.get_symbol_priority_for_cross_source(&symbol.kind), symbol_id))
+            })
+            .min_by_key(|(priority, _)| *priority)
+            .map(|(_, symbol_id)| symbol_id)
+    }
 
-        // Use the name index to avoid an O(n) full-symbol scan.
-        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
-            let Some(symbol) = self.symbols.get(symbol_id) else {
-                continue;
-            };
-            if let Some(source_id) = symbol.source.source_id
-                && source_ids.contains(&source_id)
-                && (symbol.is_function()
-                    || symbol.is_parameter()
-                    || symbol.is_variable()
-                    || symbol.is_argument()
-                    || symbol.is_pattern_variable()
-                    || symbol.is_ident())
-            {
-                let priority = self.get_symbol_priority_for_cross_source(&symbol.kind);
-                candidates.push((priority, symbol_id, symbol.clone()));
-            }
-        }
-
-        // Sort by priority and return the best match
-        candidates.sort_by_key(|(priority, _, _)| *priority);
-        candidates
-            .first()
-            .map(|(_, symbol_id, symbol)| (*symbol_id, symbol.clone()))
+    #[inline(always)]
+    fn is_resolvable_target(symbol: &Symbol) -> bool {
+        symbol.is_function()
+            || symbol.is_parameter()
+            || symbol.is_variable()
+            || symbol.is_argument()
+            || symbol.is_pattern_variable()
+            || symbol.is_ident()
     }
 
     #[inline(always)]
@@ -118,70 +128,51 @@ impl Hir {
         scope_id: ScopeId,
         ref_name: &SmolStr,
         ref_symbol_id: SymbolId,
-    ) -> Option<(SymbolId, Symbol)> {
-        // Get the Ref's source position for ordering checks.
+    ) -> Option<SymbolId> {
         let ref_start_line = self
             .symbols
             .get(ref_symbol_id)
             .and_then(|s| s.source.text_range)
             .map(|r| r.start.line);
+        let candidates = self.name_index.get(ref_name).map(Vec::as_slice).unwrap_or_default();
+        let mut scope_id = Some(scope_id);
 
-        // Find all matching symbols in current scope with priority order.
-        // Use the name index to avoid an O(n) full-symbol scan.
-        let mut candidates = Vec::new();
+        while let Some(current_scope_id) = scope_id {
+            // Lowest priority wins; among equal priorities, prefer the definition closest
+            // to (but before) the ref, i.e. the highest line.
+            let best = candidates
+                .iter()
+                .filter_map(|&symbol_id| {
+                    if symbol_id == ref_symbol_id {
+                        return None;
+                    }
+                    let symbol = self.symbols.get(symbol_id)?;
+                    if symbol.scope != current_scope_id || !Self::is_resolvable_target(symbol) {
+                        return None;
+                    }
+                    // `let` bindings must be declared before the use site; functions allow forward references.
+                    let line = symbol.source.text_range.map(|r| r.start.line);
+                    if symbol.is_variable()
+                        && let (Some(ref_line), Some(def_line)) = (ref_start_line, line)
+                        && def_line > ref_line
+                    {
+                        return None;
+                    }
+                    Some((
+                        self.get_symbol_priority_for_scope(&symbol.kind),
+                        std::cmp::Reverse(line.unwrap_or(0)),
+                        symbol_id,
+                    ))
+                })
+                .min_by_key(|(priority, line, _)| (*priority, *line));
 
-        for &symbol_id in self.name_index.get(ref_name).into_iter().flatten() {
-            if symbol_id == ref_symbol_id {
-                continue;
+            if let Some((_, _, symbol_id)) = best {
+                return Some(symbol_id);
             }
-            let Some(symbol) = self.symbols.get(symbol_id) else {
-                continue;
-            };
-            if symbol.scope != scope_id {
-                continue;
-            }
 
-            if !(symbol.is_function()
-                || symbol.is_parameter()
-                || symbol.is_variable()
-                || symbol.is_argument()
-                || symbol.is_pattern_variable()
-                || symbol.is_ident())
-            {
-                continue;
-            }
-
-            // Variable (`let`) bindings must be declared before the use site.
-            // Functions allow forward references.
-            if symbol.is_variable()
-                && let (Some(ref_line), Some(def_range)) = (ref_start_line, symbol.source.text_range)
-                && def_range.start.line > ref_line
-            {
-                continue;
-            }
-
-            let priority = self.get_symbol_priority_for_scope(&symbol.kind);
-            candidates.push((priority, symbol_id, symbol.clone()));
+            scope_id = self.scopes.get(current_scope_id).and_then(|scope| scope.parent_id);
         }
 
-        // Sort by priority (lower number = higher priority).
-        // For same-priority variables, prefer the one closest (highest line) before the ref.
-        candidates.sort_by(|(p1, _, s1), (p2, _, s2)| {
-            p1.cmp(p2).then_with(|| {
-                let line1 = s1.source.text_range.map(|r| r.start.line).unwrap_or(0);
-                let line2 = s2.source.text_range.map(|r| r.start.line).unwrap_or(0);
-                // Prefer the definition closest to (but before) the Ref — i.e., higher line number first.
-                line2.cmp(&line1)
-            })
-        });
-
-        if let Some((_, symbol_id, symbol)) = candidates.first() {
-            Some((*symbol_id, symbol.clone()))
-        } else {
-            // Search in parent scope
-            self.scopes[scope_id]
-                .parent_id
-                .and_then(|parent_scope_id| self.resolve_ref_symbol_of_scope(parent_scope_id, ref_name, ref_symbol_id))
-        }
+        None
     }
 }

@@ -6,11 +6,14 @@ use tower_lsp_server::ls_types::{FoldingRange, FoldingRangeKind};
 /// (block delimiters like `end`/`;` aren't lowered into HIR at all), but the CST's
 /// `node_range()` gives an exact span for every block construct.
 pub(crate) fn response(source_text: Option<&str>) -> Option<Vec<FoldingRange>> {
-    let source_text = source_text?;
-    let (nodes, _) = mq_lang::parse_recovery(source_text);
+    let (nodes, _) = mq_lang::parse_recovery(source_text?);
+    response_from_nodes(&nodes)
+}
 
+/// Like [`response`], reusing an already parsed CST.
+pub(crate) fn response_from_nodes(nodes: &[Shared<CstNode>]) -> Option<Vec<FoldingRange>> {
     let mut ranges = Vec::new();
-    for node in &nodes {
+    for node in nodes {
         visit(node, &mut ranges);
     }
 
@@ -34,7 +37,7 @@ fn visit(node: &Shared<CstNode>, ranges: &mut Vec<FoldingRange>) {
         }
     }
 
-    for child in node.all_children().iter() {
+    for child in node.children() {
         visit(child, ranges);
     }
 }

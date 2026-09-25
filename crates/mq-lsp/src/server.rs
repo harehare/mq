@@ -31,6 +31,8 @@ struct Backend {
     type_env_map: DashMap<String, mq_check::TypeEnv>,
     error_map: DashMap<String, Vec<LspError>>,
     text_map: DashMap<String, Arc<String>>,
+    /// CST of each open document, parsed once per change.
+    cst_map: DashMap<String, Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
     config: LspConfig,
 }
 
@@ -74,6 +76,7 @@ impl LanguageServer for Backend {
         // Remove error information for the closed file
         self.error_map.remove(&uri_string);
         self.text_map.remove(&uri_string);
+        self.cst_map.remove(&uri_string);
         self.type_env_map.remove(&uri_string);
 
         // Remove from source map
@@ -151,8 +154,11 @@ impl LanguageServer for Backend {
         &self,
         params: ls_types::FoldingRangeParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::FoldingRange>>> {
-        let uri = params.text_document.uri;
-        let source_text = self.text_map.get(&uri.to_string()).map(|text| Arc::clone(text.value()));
+        let uri = params.text_document.uri.to_string();
+        if let Some(nodes) = self.cst_map.get(&uri).map(|nodes| Arc::clone(nodes.value())) {
+            return Ok(folding_range::response_from_nodes(&nodes));
+        }
+        let source_text = self.text_map.get(&uri).map(|text| Arc::clone(text.value()));
 
         Ok(folding_range::response(source_text.as_deref().map(String::as_str)))
     }
@@ -321,13 +327,18 @@ impl LanguageServer for Backend {
             None
         };
 
-        let text = Arc::clone(&self.text_map.get(&params.text_document.uri.to_string()).unwrap());
+        let uri_string = params.text_document.uri.to_string();
+        let text = Arc::clone(&self.text_map.get(&uri_string).unwrap());
+        let nodes = self.cst_map.get(&uri_string).map(|nodes| Arc::clone(nodes.value()));
         let formatted_text = tokio::task::spawn_blocking(move || {
-            mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+            let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                 indent_width: 2,
                 ..Default::default()
-            }))
-            .format(&text)
+            }));
+            match nodes {
+                Some(nodes) => formatter.format_with_cst(&mut Vec::clone(&nodes)),
+                None => formatter.format(&text),
+            }
         })
         .await
         .map_err(|_| jsonrpc::Error::new(jsonrpc::ErrorCode::InternalError))?
@@ -446,6 +457,7 @@ impl Backend {
             mq_lang::parse_recovery(&text)
         };
         let (source_id, _) = self.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
+        let nodes = Arc::new(nodes);
 
         let uri_string = uri.to_string();
         let mut errors = errors
@@ -483,6 +495,7 @@ impl Backend {
 
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
         self.text_map.insert(uri_string.clone(), text.into());
+        self.cst_map.insert(uri_string.clone(), nodes);
         self.error_map.insert(uri_string, errors);
     }
 
@@ -637,6 +650,7 @@ pub async fn start(config: LspConfig) {
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
         text_map: DashMap::new(),
+        cst_map: DashMap::new(),
         config,
     });
 
@@ -658,6 +672,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -690,6 +705,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_formatting_and_folding_use_cached_cst() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            text_map: DashMap::new(),
+            cst_map: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///test.mq").unwrap();
+        let text = "def main():\n  if(true):1 else:2;\n| main()";
+        backend.on_change(uri.clone(), text.to_string()).await;
+        assert!(backend.cst_map.contains_key(&uri.to_string()));
+
+        let edits = backend
+            .formatting(ls_types::DocumentFormattingParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                options: Default::default(),
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let expected = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
+            indent_width: 2,
+            ..Default::default()
+        }))
+        .format(text)
+        .unwrap();
+        assert_eq!(edits[0].new_text, expected);
+
+        let folding = backend
+            .folding_range(ls_types::FoldingRangeParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(folding, folding_range::response(Some(text)));
+
+        backend
+            .did_close(ls_types::DidCloseTextDocumentParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+            })
+            .await;
+        assert!(!backend.cst_map.contains_key(&uri.to_string()));
+    }
+
+    #[tokio::test]
     async fn test_formatting() {
         let (service, _) = LspService::new(|client| Backend {
             client,
@@ -698,6 +767,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -743,6 +813,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -773,6 +844,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -802,6 +874,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -830,6 +903,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -877,6 +951,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -922,6 +997,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -982,6 +1058,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1020,6 +1097,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1072,6 +1150,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1144,6 +1223,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1214,6 +1294,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1253,6 +1334,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1290,6 +1372,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1322,6 +1405,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1399,6 +1483,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1443,6 +1528,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1516,6 +1602,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1561,6 +1648,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1608,6 +1696,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1654,6 +1743,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1689,6 +1779,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1726,6 +1817,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1759,6 +1851,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1810,6 +1903,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1864,6 +1958,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1899,6 +1994,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1943,6 +2039,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 false,
@@ -1996,6 +2093,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2031,6 +2129,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2076,6 +2175,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2127,6 +2227,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
@@ -2168,6 +2269,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
@@ -2208,6 +2310,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
@@ -2281,6 +2384,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 false,
@@ -2323,6 +2427,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2366,6 +2471,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2409,6 +2515,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2452,6 +2559,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2497,6 +2605,7 @@ mod tests {
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
             text_map: DashMap::new(),
+            cst_map: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
