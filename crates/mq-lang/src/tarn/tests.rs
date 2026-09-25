@@ -1520,6 +1520,45 @@ fn spread_instructions_reject_non_collection_sources(#[case] code: &str) {
     );
 }
 
+#[test]
+fn dict_literals_use_direct_dict_instructions() {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(r#"{first: 1, ...{second: 2}, "third": 3}"#, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let code = &compiled.chunks[0].code;
+
+    assert!(code.iter().any(|op| matches!(op, OpCode::DictNew)));
+    assert_eq!(code.iter().filter(|op| matches!(op, OpCode::DictInsert)).count(), 3);
+    assert!(code.iter().any(|op| matches!(op, OpCode::DictSpread)));
+    assert!(
+        !code
+            .iter()
+            .any(|op| matches!(op, OpCode::CallBuiltin(name, _) if *name == "dict".into()))
+    );
+}
+
+#[rstest]
+#[case::empty("{}", vec![])]
+#[case::symbol_and_string_keys(r#"{first: 1, "second": 2}"#, vec![("first", 1.0), ("second", 2.0)])]
+#[case::spread_and_override(
+    r#"{first: 1, ...{second: 2, first: 3}, second: 4}"#,
+    vec![("first", 3.0), ("second", 4.0)]
+)]
+fn dict_literal_instructions_preserve_entries(#[case] source: &str, #[case] expected: Vec<(&str, f64)>) {
+    let RuntimeValue::Dict(map) = run(source) else {
+        panic!("expected dict from {source}");
+    };
+    assert_eq!(map.len(), expected.len());
+    for (key, value) in expected {
+        assert_eq!(
+            map.get(&crate::Ident::new(key)),
+            Some(&RuntimeValue::Number(value.into()))
+        );
+    }
+}
+
 #[rstest]
 #[case::arithmetic_and_assignment("var total = 1 | foreach(x, [2, 3, 4]): total += x; | total")]
 #[case::recursive_closure("let make = fn(x): fn(y): x + y;; | let add_two = make(2) | add_two(40)")]

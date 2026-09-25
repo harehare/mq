@@ -338,6 +338,10 @@ pub(crate) enum OpCode {
     ArrayNewWithCapacityLocal(u16),
     ArrayPush,
     ArraySpread,
+    /// Creates an empty dictionary for a dictionary literal.
+    DictNew,
+    /// Inserts a key/value pair into a dictionary literal.
+    DictInsert,
     DictSpread,
     ToForeachIterable,
     ArrayLen,
@@ -513,6 +517,8 @@ impl OpCode {
             Self::ArrayNewWithCapacityLocal(_) => "ArrayNewWithCapacityLocal",
             Self::ArrayPush => "ArrayPush",
             Self::ArraySpread => "ArraySpread",
+            Self::DictNew => "DictNew",
+            Self::DictInsert => "DictInsert",
             Self::DictSpread => "DictSpread",
             Self::ToForeachIterable => "ToForeachIterable",
             Self::ArrayLen => "ArrayLen",
@@ -1492,6 +1498,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::MakeClosure(_)
         | OpCode::MakeStaticClosure(_)
         | OpCode::ArrayNew
+        | OpCode::DictNew
         | OpCode::ArrayNewWithCapacityLocal(_)
         | OpCode::ArrayLenLocal(_)
         | OpCode::ArrayGetLocalAt { .. }
@@ -1535,6 +1542,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::DictSpread
         | OpCode::ArrayGetAt
         | OpCode::ArraySliceFrom => (2, 1),
+        OpCode::DictInsert => (3, 1),
         OpCode::BinaryLocalLocal { .. } | OpCode::BinaryLocalConst { .. } | OpCode::BinaryLocalNumberConst { .. } => {
             (0, 1)
         }

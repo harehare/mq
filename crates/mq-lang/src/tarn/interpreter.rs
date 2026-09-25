@@ -1395,6 +1395,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let arr = pop_value!();
                 stack.push(StackValue::Value(array_spread(arr, source, chunk, ip)?));
             }
+            OpCode::DictNew => {
+                stack.push(StackValue::Value(RuntimeValue::new_dict()));
+            }
+            OpCode::DictInsert => {
+                let value = pop_value!();
+                let key = pop_value!();
+                let dict = pop_value!();
+                stack.push(StackValue::Value(dict_insert(dict, key, value, chunk, ip)?));
+            }
             OpCode::DictSpread => {
                 let source = pop_value!();
                 let arr = pop_value!();
@@ -2219,20 +2228,21 @@ fn array_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: 
 #[inline(never)]
 fn dict_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: usize) -> VmResult<RuntimeValue> {
     match source {
-        RuntimeValue::Dict(map) => {
-            let RuntimeValue::Array(array) = &mut arr else {
-                return Err(locate(
-                    chunk,
-                    ip,
-                    VmError::Corrupt("DictSpread accumulator is not an array"),
-                ));
-            };
-            runtime_value::array_mut(array).extend(
+        RuntimeValue::Dict(map) => match &mut arr {
+            RuntimeValue::Dict(dict) => runtime_value::dict_mut(dict).extend(Shared::unwrap_or_clone(map)),
+            RuntimeValue::Array(array) => runtime_value::array_mut(array).extend(
                 Shared::unwrap_or_clone(map)
                     .into_iter()
                     .map(|(k, v)| RuntimeValue::Array(Shared::new(vec![RuntimeValue::Symbol(k), v]))),
-            );
-        }
+            ),
+            _ => {
+                return Err(locate(
+                    chunk,
+                    ip,
+                    VmError::Corrupt("DictSpread accumulator is not a collection"),
+                ));
+            }
+        },
         RuntimeValue::None => {}
         other => {
             return Err(locate(
@@ -2243,6 +2253,29 @@ fn dict_spread(mut arr: RuntimeValue, source: RuntimeValue, chunk: &Chunk, ip: u
         }
     }
     Ok(arr)
+}
+
+#[inline(never)]
+fn dict_insert(
+    mut dict: RuntimeValue,
+    key: RuntimeValue,
+    value: RuntimeValue,
+    chunk: &Chunk,
+    ip: usize,
+) -> VmResult<RuntimeValue> {
+    let RuntimeValue::Dict(map) = &mut dict else {
+        return Err(locate(
+            chunk,
+            ip,
+            VmError::Corrupt("DictInsert accumulator is not a dictionary"),
+        ));
+    };
+    let key = match key {
+        RuntimeValue::Symbol(key) => key,
+        other => Ident::new(&other.to_string()),
+    };
+    runtime_value::dict_mut(map).insert(key, value);
+    Ok(dict)
 }
 
 /// Standalone equivalent of the `pop_value!` macro, for the cold handlers below.
