@@ -54,3 +54,27 @@ match engine.eval("halt(3)", input.into_iter()) {
     other => { /* ... */ }
 }
 ```
+
+## Reading results
+
+`RuntimeValues::into_markdown_nodes` turns results into Markdown nodes, rendering non-Markdown values as text. For plain values, use `as_str`, `as_f64`, `as_bool`, `as_array`, `as_dict`, and `get`:
+
+```rust
+let title = value.get("title").and_then(|v| v.as_str());
+```
+
+`mq_lang::from_value` deserializes a value into any `serde::Deserialize` type:
+
+```rust
+#[derive(serde::Deserialize)]
+struct Section {
+    title: String,
+    codes: Vec<String>,
+}
+
+let sections: Vec<Section> = output
+    .values()
+    .iter()
+    .map(mq_lang::from_value)
+    .collect::<Result<_, _>>()?;
+```

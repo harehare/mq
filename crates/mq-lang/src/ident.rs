@@ -25,6 +25,11 @@ impl Ident {
         Self(STRING_INTERNER.write().unwrap().get_or_intern(s))
     }
 
+    /// Returns the identifier for `s` only if it is already interned.
+    pub(crate) fn lookup(s: &str) -> Option<Self> {
+        STRING_INTERNER.read().unwrap().get(s).map(Self)
+    }
+
     /// Resolves the identifier to its string representation.
     ///
     /// Returns a new `String` with the identifier's content.
