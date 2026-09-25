@@ -2966,6 +2966,24 @@ mod tests {
     }
 
     #[test]
+    fn test_registered_host_and_builtin_calls_in_one_query() {
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("host_double", |args: &[RuntimeValue]| match args {
+            [RuntimeValue::Number(value)] => Ok(RuntimeValue::from(crate::number::Number::from(value.value() * 2.0))),
+            _ => Err(crate::HostFunctionError::new("host_double() expects one number")),
+        });
+
+        let result = engine.eval(
+            r#"[host_double(1), len("abc"), host_double(2)]"#,
+            crate::null_input().into_iter(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            vec![RuntimeValue::Array(Shared::new(vec![2.into(), 3.into(), 4.into()]))].into()
+        );
+    }
+
+    #[test]
     fn builtin_coroutine_combinators_are_lazy_and_collectable() {
         use crate::RuntimeValue;
 

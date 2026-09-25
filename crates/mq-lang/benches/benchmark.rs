@@ -196,6 +196,36 @@ fn eval_compiled_direct_builtin_calls(bencher: divan::Bencher) {
     );
 }
 
+/// Measures repeated host calls without a builtin of the same name.
+#[divan::bench]
+fn eval_compiled_registered_host_calls(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.register_fn("host_identity", |args: &[mq_lang::RuntimeValue]| {
+        Ok(args.first().cloned().unwrap_or(mq_lang::RuntimeValue::NONE))
+    });
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "foreach(i, range(0, 1000, 1)): host_identity(i);",
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
+/// Measures builtin calls when the engine also has registered host functions.
+#[divan::bench]
+fn eval_compiled_builtin_calls_with_registered_host(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.register_fn("unused_host", |_args: &[mq_lang::RuntimeValue]| {
+        Ok(mq_lang::RuntimeValue::NONE)
+    });
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"foreach(i, range(0, 1000, 1)): contains(upcase("value"), "A");"#,
+        || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
+    );
+}
+
 /// Exercises the local/string comparison-and-branch shape used by filters and section helpers.
 #[divan::bench]
 fn eval_compiled_string_comparison_branch(bencher: divan::Bencher) {
