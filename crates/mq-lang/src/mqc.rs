@@ -12,6 +12,7 @@
 //! let result = engine.eval_compiled(program.program(), input.into_iter()).unwrap();
 //! assert_eq!(result, vec!["HELLO".to_string().into()].into());
 //! ```
+mod code;
 mod compile_io;
 #[cfg(test)]
 mod tests;
@@ -21,7 +22,7 @@ use crate::engine::CompiledProgram;
 use crate::io::Io;
 use crate::lexer::token::{Token, TokenKind};
 use crate::runtime::builtin::{self, io_context};
-use crate::tarn::{self, mqc_code, split_program::SplitProgram};
+use crate::tarn::{self, split_program::SplitProgram};
 use crate::{Engine, Ident, ModuleResolver, Position, Range, Shared, error, parse, token_alloc};
 use sha2::{Digest, Sha256};
 use std::borrow::Cow;
@@ -229,7 +230,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 self.vm.module_loader.clone(),
             )))
         })?;
-        let encoded = mqc_code::encode(&split)?;
+        let encoded = code::encode(&split)?;
 
         let (files, spans) = self.source_table(code, &encoded.tokens, &context.module_loader)?;
         let dependencies = context
@@ -312,7 +313,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 )
             })
             .collect::<Vec<_>>();
-        let split = mqc_code::decode(payload(CODE, "CODE")?, &tokens, Shared::clone(&self.token_arena))?;
+        let split = code::decode(payload(CODE, "CODE")?, &tokens, Shared::clone(&self.token_arena))?;
 
         let source = files
             .into_iter()

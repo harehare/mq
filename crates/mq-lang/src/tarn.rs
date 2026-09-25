@@ -6,10 +6,10 @@
 //! This file is the front door (`Error`, `VmState`/`TarnVm`, session + run orchestration);
 //! `cache`, `nodes_split`, and `disasm` hold the parts that split out cleanly.
 
-mod bytecode;
+pub(crate) mod bytecode;
 #[cfg(not(feature = "debugger"))]
 mod cache;
-mod compiler;
+pub(crate) mod compiler;
 #[cfg(feature = "debugger")]
 mod debug_symbols;
 #[cfg(feature = "debugger")]
@@ -17,8 +17,6 @@ mod debugger;
 #[cfg(feature = "debug-trace")]
 mod disasm;
 pub(crate) mod interpreter;
-#[cfg(feature = "mqc")]
-pub(crate) mod mqc_code;
 mod nodes_split;
 mod peephole;
 mod resolver;
