@@ -539,6 +539,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     #[cfg(feature = "debug-trace")]
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
+        #[cfg(feature = "mqc")]
+        if let Some(precompiled) = &compiled.precompiled {
+            return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));
+        }
         let global_bindings = self.vm.global_bindings_snapshot();
         let vm_program = tarn::build_program(
             &compiled.program,
@@ -1569,6 +1573,19 @@ mod tests {
         assert!(dump.contains("Add"));
         assert!(dump.contains("Return"));
         assert!(dump.contains("[0] 1"));
+    }
+
+    #[cfg(all(feature = "debug-trace", feature = "mqc"))]
+    #[test]
+    fn test_dump_bytecode_renders_loaded_mqc_instructions() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let bytes = engine.compile_to_mqc("upcase()", &[]).unwrap();
+        let program = engine.load_mqc(&bytes).unwrap();
+
+        let dump = engine.dump_bytecode(program.program()).unwrap();
+
+        assert!(dump.contains("CallBuiltin upcase"), "{dump}");
     }
 
     // --- builtin cache tests ---

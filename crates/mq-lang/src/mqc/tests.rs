@@ -145,6 +145,16 @@ fn test_compile_to_mqc_rejects_compile_time_env_reads(#[case] query: &str) {
 }
 
 #[test]
+fn test_compile_to_mqc_rejects_module_level_runtime_names() {
+    let query = r#"module m: let v = arg end | m::v"#;
+    let error = engine().compile_to_mqc(query, &[]).unwrap_err();
+    assert!(
+        matches!(&error, MqcError::ModuleLevelNotDefined { name, .. } if name == "arg"),
+        "{error:?}"
+    );
+}
+
+#[test]
 fn test_mqc_reads_interpolated_env_at_run_time() {
     let bytes = compile(r#"s"${$MQC_RUNTIME_ENV}""#);
     let io = crate::io::MemIo::default().with_env("MQC_RUNTIME_ENV", "run");

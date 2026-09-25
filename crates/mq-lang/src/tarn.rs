@@ -28,6 +28,8 @@ pub(crate) mod value;
 pub(crate) use cache::CachedProgram;
 #[cfg(feature = "debug-trace")]
 pub(crate) use disasm::dump_bytecode;
+#[cfg(all(feature = "debug-trace", feature = "mqc"))]
+pub(crate) use disasm::dump_compiled_program;
 use nodes_split::{
     ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
     top_level_binding_names,

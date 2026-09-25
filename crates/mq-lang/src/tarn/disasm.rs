@@ -1,5 +1,7 @@
 //! Renders compiled Tarn bytecode as human-readable text for `mq --dump-bytecode` and tests.
 use super::nodes_split::{program_after_nodes, split_at_nodes};
+#[cfg(feature = "mqc")]
+use super::split_program::SplitProgram;
 use super::{Error, bytecode, compiler};
 use crate::TokenArena;
 use crate::ast::Program;
@@ -7,6 +9,21 @@ use crate::get_token;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver, Shared};
 use std::fmt::Write as _;
+
+/// Renders already-compiled bytecode, such as a loaded `.mqc` program, without recompiling.
+#[cfg(feature = "mqc")]
+pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &TokenArena) -> String {
+    let mut output = String::new();
+    match &compiled.after {
+        None => format_compiled_bytecode(&mut output, "main", &compiled.program, token_arena),
+        Some(after) => {
+            format_compiled_bytecode(&mut output, "per-input", &compiled.program, token_arena);
+            output.push('\n');
+            format_compiled_bytecode(&mut output, "nodes aggregate", after, token_arena);
+        }
+    }
+    output
+}
 
 /// Compiles a program exactly as the Engine VM path would and renders its bytecode for diagnosis.
 pub(crate) fn dump_bytecode<R: ModuleResolver>(
