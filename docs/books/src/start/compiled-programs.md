@@ -1,0 +1,54 @@
+# Compiled Programs
+
+`mq compile` saves a query as Tarn VM bytecode in a `.mqc` file, and `mq run` executes it. Modules, including HTTP imports, are resolved at compile time and stored in the file, so `mq run` needs no module files or network access.
+
+```sh
+mq compile query.mq -o query.mqc
+mq run query.mqc README.md
+```
+
+`mq run` accepts the usual input and output options, before or after the program path:
+
+```sh
+mq run query.mqc -F json docs/*.md
+cat notes.md | mq run query.mqc -U
+```
+
+## What is fixed at compile time
+
+These options shape the compiled program, so pass them to `mq compile`:
+
+| Option | At run time |
+| --- | --- |
+| `-L`, `-M`, `-m` | Rejected. The modules are already compiled in. |
+| `-A` | Must match the compile-time setting. |
+| `-I`, `--csv-delimiter`, `--no-header` | Must produce the same input handling. For example, a program compiled with `-I csv` runs on CSV input only. |
+| `--allow-http-import`, `--allowed-domain`, `--frozen`, `--lockfile` | Used only by `mq compile`. |
+
+Module-level `let` values are computed once, when the program is compiled.
+
+## What is read at run time
+
+- Values from `--args`, `--argjson`, `--rawfile`, `--slurpfile`, and `__FILE__`.
+- Permissions such as `--allow-read` and `--allow-net`. A compiled program gets no permission that `mq run` does not grant.
+- Environment variables read with interpolation, such as `s"${$HOME}"` (with `--allow-env`). `mq compile` rejects a bare `$VAR`, and any environment read in a module-level `let`, because the value would be saved in the file.
+
+## Compatibility
+
+A `.mqc` file runs only on the same mq version that compiled it. Recompile the source after upgrading mq. The file keeps the original query and module sources, so runtime errors point at the original code.
+
+`mq run` checks the file's structure and checksum and verifies its bytecode before running it. The checksum detects corruption. It does not show who created the file.
+
+## Embedding
+
+Rust applications can use the same format through `mq-lang` with the `mqc` feature:
+
+```rust
+let mut engine = mq_lang::DefaultEngine::default();
+engine.load_builtin_module();
+let bytes = engine.compile_to_mqc("upcase()", &[])?;
+
+let program = engine.load_mqc(&bytes)?;
+let input = mq_lang::parse_text_input("hello")?;
+let output = engine.eval_compiled(program.program(), input.into_iter())?;
+```

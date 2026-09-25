@@ -42,6 +42,9 @@ pub struct CompiledProgram {
     pub(crate) program: crate::ast::Program,
     #[cfg(not(feature = "debugger"))]
     vm_cache: Option<Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>>,
+    /// Bytecode loaded from a `.mqc` file; `program` is empty.
+    #[cfg(feature = "mqc")]
+    pub(crate) precompiled: Option<Shared<tarn::split_program::SplitProgram>>,
 }
 
 impl CompiledProgram {
@@ -53,6 +56,17 @@ impl CompiledProgram {
     /// Returns the underlying AST nodes.
     pub fn program(&self) -> &crate::ast::Program {
         &self.program
+    }
+
+    #[cfg(feature = "mqc")]
+    pub(crate) fn from_precompiled(source: String, program: tarn::split_program::SplitProgram) -> Self {
+        Self {
+            source,
+            program: Vec::new(),
+            #[cfg(not(feature = "debugger"))]
+            vm_cache: None,
+            precompiled: Some(Shared::new(program)),
+        }
     }
 
     #[cfg(not(feature = "debugger"))]
@@ -92,6 +106,8 @@ impl From<crate::ast::Program> for CompiledProgram {
             program,
             #[cfg(not(feature = "debugger"))]
             vm_cache: Some(Shared::new(SharedCell::new(None))),
+            #[cfg(feature = "mqc")]
+            precompiled: None,
         }
     }
 }
@@ -117,8 +133,8 @@ impl From<crate::ast::Program> for CompiledProgram {
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     /// VM state — see [`tarn::VmState`].
     pub(crate) vm: tarn::VmState<T, IO>,
-    token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-    vm_module_prelude: Vec<VmModulePrelude>,
+    pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
@@ -462,6 +478,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             program,
             #[cfg(not(feature = "debugger"))]
             vm_cache: None,
+            #[cfg(feature = "mqc")]
+            precompiled: None,
         };
         let result = self.eval_compiled_vm(&compiled, input.into_iter())?;
         self.persist_session_modules(&compiled.program);
@@ -498,6 +516,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 program: vec![],
                 #[cfg(not(feature = "debugger"))]
                 vm_cache: Some(Shared::new(SharedCell::new(None))),
+                #[cfg(feature = "mqc")]
+                precompiled: None,
             });
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
@@ -507,6 +527,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             program,
             #[cfg(not(feature = "debugger"))]
             vm_cache: Some(Shared::new(SharedCell::new(None))),
+            #[cfg(feature = "mqc")]
+            precompiled: None,
         })
     }
 

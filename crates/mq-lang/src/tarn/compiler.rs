@@ -157,6 +157,8 @@ struct Compiler<R: ModuleResolver> {
     /// and function-body semantics for names that are never read.
     defer_undefined_identifiers: bool,
     patterns: PatternState,
+    #[cfg(feature = "debugger")]
+    instrument: bool,
 }
 
 #[cfg(test)]
@@ -295,6 +297,36 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         external_globals,
         preresolved_module_vars,
     };
+    compile_engine_program(program, token_arena, module_loader, seeds, true)
+}
+
+/// Like [`compile_program_for_engine_with_bindings`], without debugger instrumentation.
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+pub(crate) fn compile_uninstrumented_program_for_engine<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    seed_bindings: &[Ident],
+    seed_immutable: &[Ident],
+    external_globals: &[Ident],
+    preresolved_module_vars: &ResolvedModuleVars,
+) -> CompileResult<CompiledProgram> {
+    let seeds = CompileSeeds {
+        seed_bindings,
+        seed_immutable,
+        external_globals,
+        preresolved_module_vars,
+    };
+    compile_engine_program(program, token_arena, module_loader, seeds, false)
+}
+
+fn compile_engine_program<R: ModuleResolver>(
+    program: &Program,
+    token_arena: TokenArena,
+    module_loader: ModuleLoader<R>,
+    seeds: CompileSeeds<'_>,
+    instrument: bool,
+) -> CompileResult<CompiledProgram> {
     let mut reachable = soft_builtin_names_in_program(program);
     for _ in 0..MAX_PRELUDE_ATTEMPTS {
         let prelude = if reachable.is_empty() {
@@ -306,7 +338,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
             program,
             Shared::clone(&token_arena),
             module_loader.clone(),
-            CompileOptions::new(prelude, true),
+            CompileOptions::new(prelude, true).with_instrumentation(instrument),
             seeds,
         ) {
             Ok((compiled, unresolved)) if unresolved.is_empty() => return Ok(compiled),
@@ -335,7 +367,7 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
         program,
         token_arena,
         module_loader,
-        CompileOptions::new(BuiltinPrelude::All, true),
+        CompileOptions::new(BuiltinPrelude::All, true).with_instrumentation(instrument),
         seeds,
     )
     .map(|(compiled, _)| compiled)
@@ -375,6 +407,8 @@ enum BuiltinPrelude<'a> {
 struct CompileOptions<'a> {
     builtin_prelude: BuiltinPrelude<'a>,
     defer_undefined_identifiers: bool,
+    #[cfg(feature = "debugger")]
+    instrument: bool,
 }
 
 impl<'a> CompileOptions<'a> {
@@ -382,7 +416,18 @@ impl<'a> CompileOptions<'a> {
         Self {
             builtin_prelude,
             defer_undefined_identifiers,
+            #[cfg(feature = "debugger")]
+            instrument: true,
         }
+    }
+
+    #[cfg_attr(not(feature = "debugger"), allow(unused_mut, unused_variables))]
+    const fn with_instrumentation(mut self, instrument: bool) -> Self {
+        #[cfg(feature = "debugger")]
+        {
+            self.instrument = instrument;
+        }
+        self
     }
 }
 
@@ -780,6 +825,8 @@ fn compile_program_impl<R: ModuleResolver>(
         in_fn_body: false,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         patterns: PatternState::default(),
+        #[cfg(feature = "debugger")]
+        instrument: options.instrument,
     };
     if !matches!(options.builtin_prelude, BuiltinPrelude::None) {
         let builtin_module = compiler
@@ -2167,7 +2214,7 @@ impl<R: ModuleResolver> Compiler<R> {
     fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
         self.current_token_id = node.token_id;
         #[cfg(feature = "debugger")]
-        {
+        if self.instrument {
             self.chunk_mut().debug_nodes.push((node.token_id, Shared::clone(node)));
             self.emit(OpCode::StmtBoundary(node.token_id));
         }
@@ -2409,24 +2456,20 @@ impl<R: ModuleResolver> Compiler<R> {
     fn set_call_token_id(&mut self, call_token_id: TokenId) {
         self.current_token_id = call_token_id;
         #[cfg(feature = "debugger")]
-        self.emit(OpCode::SyncCallNode(call_token_id));
+        if self.instrument {
+            self.emit(OpCode::SyncCallNode(call_token_id));
+        }
     }
 
     fn compile_call(&mut self, ident: Ident, args: &ast::Args) -> CompileResult<()> {
         let call_token_id = self.current_token_id;
 
-        #[cfg(feature = "debugger")]
+        // `breakpoint()` is a no-op unless the debugger instruments the bytecode.
         if ident == builtins::BREAKPOINT.into() {
-            self.emit(OpCode::Breakpoint(call_token_id));
-            self.emit(OpCode::GetLocal(SELF_SLOT));
-            return Ok(());
-        }
-
-        // `breakpoint()` is deliberately a no-op outside debugger builds. Keeping it
-        // callable lets scripts carry debugging probes without changing production
-        // feature sets.
-        #[cfg(not(feature = "debugger"))]
-        if ident == builtins::BREAKPOINT.into() {
+            #[cfg(feature = "debugger")]
+            if self.instrument {
+                self.emit(OpCode::Breakpoint(call_token_id));
+            }
             self.emit(OpCode::GetLocal(SELF_SLOT));
             return Ok(());
         }

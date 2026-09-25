@@ -359,6 +359,35 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.load_keyed(module_path, &name, &program, token_arena)
     }
 
+    /// Returns `(name, specifier, source)` for every file module this loader resolved.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn resolved_modules(&self) -> Vec<(String, String, &str)> {
+        let mut modules: Vec<_> = self
+            .source_cache
+            .iter()
+            .map(|(id, source)| {
+                let specifier = self.module_key(*id).into_owned();
+                (self.resolver.canonical_name(&specifier).to_string(), specifier, source.as_str())
+            })
+            .collect();
+        modules.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
+        modules
+    }
+
+    /// Registers a module's source for diagnostics without loading it.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn register_module_source(&mut self, name: &str, source: String) -> ModuleId {
+        match name {
+            Module::TOP_LEVEL_MODULE => Module::TOP_LEVEL_MODULE_ID,
+            Module::BUILTIN_MODULE => self.module_id_of(name),
+            _ => {
+                let id = self.module_id_of(name);
+                self.source_cache.insert(id, source);
+                id
+            }
+        }
+    }
+
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         #[cfg(feature = "http-import")]
         if self.http_depth > 0
