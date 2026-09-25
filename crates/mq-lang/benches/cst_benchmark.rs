@@ -1,11 +1,10 @@
-//! Regression benchmarks for the CST parser (`mq_lang::CstParser` /
-//! `mq_lang::IncrementalParser`), used by the formatter, LSP, and other tooling.
+//! Regression benchmarks for the CST parser (`mq_lang::CstParser`),
+//! used by the formatter, LSP, and other tooling.
 //!
 //! This is a separate binary from `benchmark.rs` because it exercises the CST
 //! parser specifically (`mq_lang::parse` in `benchmark.rs` goes through the
 //! separate AST parser and never touches this code path).
 
-use mq_lang::TextEdit;
 use std::sync::LazyLock;
 
 // Keep allocator behavior consistent with the `mq` CLI.
@@ -57,23 +56,4 @@ fn cst_parse_large_program() {
     });
     let (nodes, _) = mq_lang::parse_recovery(&CODE);
     debug_assert!(!nodes.is_empty());
-}
-
-/// Simulates interactive editing: a single small edit applied to an already-parsed
-/// medium-sized source, as an editor/LSP would do on every keystroke.
-#[divan::bench]
-fn cst_incremental_small_edit(bencher: divan::Bencher) {
-    static CODE: LazyLock<String> = LazyLock::new(|| {
-        (0..256)
-            .map(|i| format!("upcase() | downcase() | ltrim() | trim(\"{i}\")"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    });
-
-    bencher
-        .with_inputs(|| mq_lang::IncrementalParser::new(&CODE))
-        .bench_local_refs(|parser| {
-            let edit = TextEdit::new(0, 6, "downcase");
-            parser.apply_edit(&edit).unwrap();
-        });
 }

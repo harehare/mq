@@ -191,17 +191,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
-        let (nodes, _) = self.parse_program(true, false);
+        let nodes = self.parse_program(true, false);
         (nodes, self.errors.clone())
-    }
-
-    /// Parses the full program and also returns token index ranges for each top-level node group.
-    ///
-    /// Each entry `(start, end)` in the returned `Vec` corresponds to the node group at the same
-    /// index in `Vec<Shared<Node>>` and represents the half-open token index range `[start, end)`.
-    pub fn parse_with_ranges(&mut self) -> (Vec<Shared<Node>>, Vec<(usize, usize)>, ErrorReporter) {
-        let (nodes, ranges) = self.parse_program(true, false);
-        (nodes, ranges, self.errors.clone())
     }
 
     #[inline(always)]
@@ -239,14 +230,17 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_program(&mut self, root: bool, in_loop: bool) -> (Vec<Shared<Node>>, Vec<(usize, usize)>) {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity((self.tokens.len() - self.pos) / 4);
-        // token index ranges for each statement group (only populated when root=true)
-        let mut ranges: Vec<(usize, usize)> = Vec::new();
+    fn parse_program(&mut self, root: bool, in_loop: bool) -> Vec<Shared<Node>> {
+        // Nested programs usually contain only a few nodes. Reserving for the
+        // entire remaining token stream at every nesting level wastes memory.
+        let mut nodes: Vec<Shared<Node>> = if root {
+            Vec::with_capacity((self.tokens.len() - self.pos) / 4)
+        } else {
+            Vec::new()
+        };
         let mut leading_trivia = self.parse_leading_trivia();
 
         while self.peek().is_some() {
-            let stmt_start = self.pos.saturating_sub(leading_trivia.len());
             let node = self.parse_expr(leading_trivia, root, in_loop);
             match node {
                 Ok(node) => nodes.push(node),
@@ -276,9 +270,6 @@ impl<'a> Parser<'a> {
                         }));
                     }
 
-                    if root {
-                        ranges.push((stmt_start, self.pos));
-                    }
                     break;
                 }
                 TokenKind::Pipe => {
@@ -291,9 +282,6 @@ impl<'a> Parser<'a> {
                         leading_trivia,
                         trailing_trivia,
                     }));
-                    if root {
-                        ranges.push((stmt_start, self.pos));
-                    }
                     leading_trivia = self.parse_leading_trivia();
 
                     continue;
@@ -325,7 +313,6 @@ impl<'a> Parser<'a> {
                                     leading_trivia,
                                     trailing_trivia: Vec::new(),
                                 }));
-                                ranges.push((stmt_start, self.pos));
                                 break;
                             } else if matches!(next_token.kind, TokenKind::Pipe) {
                                 self.pos += 1;
@@ -335,7 +322,6 @@ impl<'a> Parser<'a> {
                                     leading_trivia,
                                     trailing_trivia: self.parse_trailing_trivia(),
                                 }));
-                                ranges.push((stmt_start, self.pos));
                                 leading_trivia = self.parse_leading_trivia();
                                 continue;
                             } else if is_end {
@@ -344,22 +330,13 @@ impl<'a> Parser<'a> {
                                 self.errors.report(ParseError::UnexpectedToken(next_token));
                             }
                         }
-                        ranges.push((stmt_start, self.pos));
                     }
 
                     break;
                 }
-                TokenKind::Def | TokenKind::Module => {
-                    if root {
-                        ranges.push((stmt_start, self.pos));
-                    }
-                }
+                TokenKind::Def | TokenKind::Module => {}
                 _ => {
-                    self.errors
-                        .report(ParseError::UnexpectedToken(Shared::new((*token).clone())));
-                    if root {
-                        ranges.push((stmt_start, self.pos));
-                    }
+                    self.errors.report(ParseError::UnexpectedToken(Shared::clone(&token)));
                     break;
                 }
             }
@@ -372,7 +349,7 @@ impl<'a> Parser<'a> {
             };
         }
 
-        (nodes, ranges)
+        nodes
     }
 
     fn parse_expr(
@@ -792,13 +769,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_args(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
+        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(4);
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
-        let mut list =
-            self.parse_separated_list(|kind| matches!(kind, TokenKind::RParen), |parser| parser.parse_arg())?;
-        nodes.append(&mut list);
+        self.parse_separated_list(
+            &mut nodes,
+            |kind| matches!(kind, TokenKind::RParen),
+            |parser| parser.parse_arg(),
+        )?;
 
         Ok(nodes)
     }
@@ -894,7 +873,7 @@ impl<'a> Parser<'a> {
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
 
-        let (program, _) = self.parse_program(false, false);
+        let program = self.parse_program(false, false);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Def {
@@ -915,7 +894,7 @@ impl<'a> Parser<'a> {
 
         let params = self.parse_params()?;
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let (program, _) = self.parse_program(false, in_loop);
+        let program = self.parse_program(false, in_loop);
 
         let node = Node {
             kind: NodeKind::Fn {
@@ -935,7 +914,7 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self, leading_trivia: Vec<Trivia>, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.advance();
         let trailing_trivia = self.parse_trailing_trivia();
-        let (program, _) = self.parse_program(false, in_loop);
+        let program = self.parse_program(false, in_loop);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Block {
@@ -1228,7 +1207,7 @@ impl<'a> Parser<'a> {
 
         // Parse program block (contains let, def, or module statements).
         // parse_program reports errors directly into self.errors, so no merging is needed here.
-        let (program, _) = self.parse_program(false, false);
+        let program = self.parse_program(false, false);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Module {
@@ -1402,7 +1381,8 @@ impl<'a> Parser<'a> {
 
         children.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LBracket), NodeKind::Token)?);
 
-        let mut list = self.parse_separated_list(
+        self.parse_separated_list(
+            &mut children,
             |kind| matches!(kind, TokenKind::RBracket),
             |parser| {
                 let leading_trivia = parser.parse_leading_trivia();
@@ -1413,7 +1393,6 @@ impl<'a> Parser<'a> {
                 }
             },
         )?;
-        children.append(&mut list);
 
         let array_node = Shared::new(Node {
             kind: NodeKind::Array { items: children.into() },
@@ -1657,7 +1636,7 @@ impl<'a> Parser<'a> {
         args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let (program, _) = self.parse_program(false, true);
+        let program = self.parse_program(false, true);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Foreach {
@@ -1700,7 +1679,7 @@ impl<'a> Parser<'a> {
         args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let (program, _) = self.parse_program(false, true);
+        let program = self.parse_program(false, true);
 
         Ok((token, trailing_trivia, args, colon_or_do, program.into()))
     }
@@ -1710,7 +1689,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let (program, _) = self.parse_program(false, true);
+        let program = self.parse_program(false, true);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Loop {
@@ -2126,13 +2105,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_params(&mut self) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
+        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(4);
 
         nodes.push(self.next_node(|token_kind| matches!(token_kind, TokenKind::LParen), NodeKind::Token)?);
 
-        let mut list =
-            self.parse_separated_list(|kind| matches!(kind, TokenKind::RParen), |parser| parser.parse_param())?;
-        nodes.append(&mut list);
+        self.parse_separated_list(
+            &mut nodes,
+            |kind| matches!(kind, TokenKind::RParen),
+            |parser| parser.parse_param(),
+        )?;
 
         Ok(nodes)
     }
@@ -2199,11 +2180,10 @@ impl<'a> Parser<'a> {
     /// in the form of early close, and produces Token nodes for commas and the closing delimiter.
     fn parse_separated_list(
         &mut self,
+        nodes: &mut Vec<Shared<Node>>,
         close_token: fn(&TokenKind) -> bool,
         mut parse_item: impl FnMut(&mut Self) -> Result<Shared<Node>, ParseError>,
-    ) -> Result<Vec<Shared<Node>>, ParseError> {
-        let mut nodes: Vec<Shared<Node>> = Vec::with_capacity(8);
-
+    ) -> Result<(), ParseError> {
         // Check for empty list
         let token = Shared::clone(self.peek_token()?);
         if close_token(&token.kind) {
@@ -2216,7 +2196,7 @@ impl<'a> Parser<'a> {
                 leading_trivia,
                 trailing_trivia,
             }));
-            return Ok(nodes);
+            return Ok(());
         }
 
         loop {
@@ -2266,7 +2246,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Ok(nodes)
+        Ok(())
     }
 
     #[inline(always)]

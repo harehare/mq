@@ -228,15 +228,15 @@ pub enum NodeKind {
     OrPattern {
         items: ArgList,
     },
-    /// Wildcard/literal/ident/type/array/dict pattern (one tag, several grammars,
-    /// like `Call`). Leaf patterns carry no items; array/dict patterns hold the
-    /// flat, token-interleaved `[...]`/`{...}` list.
     /// A `def`/`fn`/`catch` parameter; `token` is its name.
     Param {
         asterisk: Option<Shared<Node>>,
         eq_token: Option<Shared<Node>>,
         default: Option<Shared<Node>>,
     },
+    /// Wildcard/literal/ident/type/array/dict pattern (one tag, several grammars,
+    /// like `Call`). Leaf patterns carry no items; array/dict patterns hold the
+    /// flat, token-interleaved `[...]`/`{...}` list.
     Pattern {
         items: ArgList,
     },
@@ -393,14 +393,25 @@ impl Node {
         self.token.as_ref().map(|token| token.range).unwrap_or_default()
     }
 
+    /// Returns the source range covering this node and its nested children.
     pub fn node_range(&self) -> Range {
         let children = self.all_children();
-        if children.is_empty() {
-            self.range()
-        } else {
-            let start = self.range().start;
-            let end = children.last().map(|child| child.range().end).unwrap_or(start);
-            Range { start, end }
+        let first = children.first().map(|child| child.node_range());
+        let last = children.last().map(|child| child.node_range());
+        let own = self.token.as_ref().map(|token| token.range);
+        Range {
+            start: match (own, first) {
+                (Some(own), Some(first)) => own.start.min(first.start),
+                (Some(own), None) => own.start,
+                (None, Some(first)) => first.start,
+                (None, None) => Range::default().start,
+            },
+            end: match (own, last) {
+                (Some(own), Some(last)) => own.end.max(last.end),
+                (Some(own), None) => own.end,
+                (None, Some(last)) => last.end,
+                (None, None) => Range::default().end,
+            },
         }
     }
 
@@ -727,13 +738,11 @@ impl Node {
         }
     }
 
+    /// Returns the name of an identifier or definition node.
     pub fn get_identifier(&self) -> Option<String> {
-        match self {
-            Node {
-                kind: NodeKind::Ident { .. } | NodeKind::Def { .. },
-                token: Some(token),
-                ..
-            } => Some(token.to_string()),
+        match &self.kind {
+            NodeKind::Ident { .. } => self.token.as_ref().map(ToString::to_string),
+            NodeKind::Def { name, .. } => name.get_identifier(),
             _ => None,
         }
     }
@@ -746,6 +755,29 @@ mod tests {
 
     use super::*;
     use crate::arena::ArenaId;
+
+    #[test]
+    fn test_node_range_includes_binary_operands_and_nested_call() {
+        let (nodes, errors) = crate::parse_recovery("1 + foo(2)");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].node_range().start, crate::Position::new(1, 1));
+        assert_eq!(nodes[0].node_range().end, crate::Position::new(1, 11));
+    }
+
+    #[test]
+    fn test_node_range_includes_grouped_expression() {
+        let (nodes, errors) = crate::parse_recovery("(1 + 2)");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].node_range().start, crate::Position::new(1, 1));
+        assert_eq!(nodes[0].node_range().end, crate::Position::new(1, 8));
+    }
+
+    #[test]
+    fn test_def_identifier_is_name() {
+        let (nodes, errors) = crate::parse_recovery("def answer(): 42 end");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].get_identifier(), Some("answer".to_string()));
+    }
 
     #[rstest]
     #[case(

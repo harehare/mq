@@ -20,6 +20,9 @@
 //! assert_eq!(program.len(), 1);
 //! ```
 //!
+//! Enable the `cst` feature to use `parse_recovery` or `CstParser` for a complete
+//! source parse. The CST parser does not retain state between parses.
+//!
 //! ## Features
 //!
 //! - `ast-json`: Enables serialization and deserialization of the AST (Abstract Syntax Tree)
@@ -102,8 +105,6 @@ pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
 pub use suggest::{suggest_name, suggest_selector};
 
 #[cfg(feature = "cst")]
-pub use cst::incremental::{IncrementalParser, TextEdit};
-#[cfg(feature = "cst")]
 pub use cst::node::BinaryOp as CstBinaryOp;
 #[cfg(feature = "cst")]
 pub use cst::node::Node as CstNode;
@@ -150,19 +151,21 @@ pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
 /// ```
 #[cfg(feature = "cst")]
 pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
-    let tokens = match Lexer::new(lexer::Options {
+    let tokens = Lexer::new(lexer::Options {
         ignore_errors: true,
         include_spaces: true,
     })
-    .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-    {
+    .tokenize(code, Module::TOP_LEVEL_MODULE_ID);
+
+    let tokens = match tokens {
         Ok(tokens) => tokens,
-        Err(e) => {
-            let error = match e.token() {
-                Some(token) => cst::error::ParseError::UnexpectedToken(Shared::new(token.clone())),
-                None => cst::error::ParseError::UnexpectedEOFDetected,
-            };
-            return (Vec::new(), CstErrorReporter::with_error(vec![error], 1));
+        Err(error) => {
+            let parse_error = error
+                .token()
+                .map_or(cst::error::ParseError::UnexpectedEOFDetected, |token| {
+                    cst::error::ParseError::UnexpectedToken(Shared::new(token.clone()))
+                });
+            return (Vec::new(), CstErrorReporter::with_error(vec![parse_error], 100));
         }
     };
 
@@ -351,6 +354,14 @@ mod tests {
 
         assert!(errors.has_errors());
         assert!(cst_nodes.is_empty());
+    }
+
+    #[test]
+    #[cfg(feature = "cst")]
+    fn test_parse_recovery_with_invalid_unicode_escape() {
+        let (nodes, errors) = parse_recovery("\"\\u{ZZZZ}\"");
+        assert!(nodes.is_empty());
+        assert!(errors.has_errors());
     }
 
     #[test]
