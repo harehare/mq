@@ -13,6 +13,7 @@
   - [Debugger](start/debugger.md)
   - [External Subcommands](start/external_subcommands.md)
   - [Language Bindings](start/language_bindings.md)
+  - [Embed mq in Rust](start/embedding-rust.md)
   - [Example](start/example.md)
   - [Modules](start/modules.md)
 - [Cookbook](cookbook/index.md)
