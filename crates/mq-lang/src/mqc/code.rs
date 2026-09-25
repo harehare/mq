@@ -1,16 +1,16 @@
 //! `.mqc` CODE section codec. Instructions use fixed wire IDs; decoded code is verified.
-use super::bytecode::{
-    BinaryOp, Chunk, NodeSelectorKind, OpCode, ParamBinding, ParamShape, StaticExactCallTarget, TryCatchInfo,
-    UpvalueSource, verify_chunks,
-};
-use super::compiler::CompiledProgram;
-use super::split_program::SplitProgram;
+use super::MqcError;
+use super::wire::{Reader, Writer};
 use crate::ast::TokenId;
-use crate::mqc::MqcError;
-use crate::mqc::wire::{Reader, Writer};
 use crate::runtime::builtin;
 use crate::runtime::runtime_value::{ResumeBuiltin, RuntimeValue};
 use crate::selector::{AttrKind, Selector};
+use crate::tarn::bytecode::{
+    BinaryOp, Chunk, NodeSelectorKind, OpCode, ParamBinding, ParamShape, StaticExactCallTarget, TryCatchInfo,
+    UpvalueSource, verify_chunks,
+};
+use crate::tarn::compiler::CompiledProgram;
+use crate::tarn::split_program::SplitProgram;
 use crate::{DictMap, Ident, Shared, TokenArena};
 use rustc_hash::FxHashMap;
 
@@ -959,11 +959,11 @@ impl Decoder<'_> {
             if pc_start >= code.len()
                 || lines
                     .last()
-                    .is_some_and(|last: &super::bytecode::LineEntry| last.pc_start >= pc_start)
+                    .is_some_and(|last: &crate::tarn::bytecode::LineEntry| last.pc_start >= pc_start)
             {
                 return Err(invalid("source positions are out of order".to_string()));
             }
-            lines.push(super::bytecode::LineEntry { pc_start, token_id });
+            lines.push(crate::tarn::bytecode::LineEntry { pc_start, token_id });
         }
 
         chunk.code = code;
