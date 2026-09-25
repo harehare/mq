@@ -69,6 +69,17 @@ def lt(a, b): a < b;
 # Returns: bool
 def lte(a, b): a <= b;
 
+# Creates an array from the given values
+#
+# Example:
+# ```
+# array(1, 2, 3)
+# #=> [1, 2, 3]
+# ```
+#
+# Returns: array
+def array(*args): args;
+
 # Checks if input is an array
 #
 # Example:
