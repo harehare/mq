@@ -43,3 +43,14 @@ engine.load_builtin_module();
 ```
 
 Use `Engine::with_io(resolver, io)` if your application supplies its own module resolver. `Engine::set_timeout` and `Engine::set_max_call_stack_depth` can limit query execution.
+
+`print`, `stderr`, and `input` go through the same `Io`. Override `write_stdout_line`, `write_stderr_line`, and `read_stdin_line` to keep them away from the terminal, for example in a TUI.
+
+`halt(code)` does not exit the process. It returns an error that `try` cannot catch, and `Error::exit_code` gives the requested code:
+
+```rust
+match engine.eval("halt(3)", input.into_iter()) {
+    Err(err) if err.exit_code().is_some() => { /* stop, or exit with the code */ }
+    other => { /* ... */ }
+}
+```

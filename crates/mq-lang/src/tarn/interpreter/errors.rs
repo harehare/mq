@@ -251,6 +251,16 @@ pub(super) fn flow_break_value(e: &VmError) -> Option<Option<RuntimeValue>> {
     }
 }
 
+/// `halt` must reach the host, so `try` never catches it.
+pub(super) fn is_halt(e: &VmError) -> bool {
+    match e {
+        VmError::Builtin(builtin::Error::Halt(_)) => true,
+        VmError::Located(inner, _) | VmError::StackTrace(inner, _) => is_halt(inner),
+        VmError::CoroutineFailed(inner, _) => is_halt(inner),
+        _ => false,
+    }
+}
+
 pub(super) fn flow_continue(e: &VmError) -> bool {
     match e {
         VmError::FlowContinue => true,
@@ -321,6 +331,7 @@ mod tests {
         builtin::Error::InvalidConvert("bogus".to_string()),
         "Invalid convert: bogus"
     )]
+    #[case::halt(builtin::Error::Halt(2), "Halted with exit code 2")]
     fn builtin_error_message_matches_runtime_error_display(#[case] error: builtin::Error, #[case] expected: &str) {
         assert_eq!(error_message(&VmError::Builtin(error)), expected);
     }
@@ -341,7 +352,8 @@ mod tests {
             | builtin::Error::ZeroDivision
             | builtin::Error::AssignToImmutable(_)
             | builtin::Error::UndefinedVariable(_)
-            | builtin::Error::InvalidConvert(_) => {}
+            | builtin::Error::InvalidConvert(_)
+            | builtin::Error::Halt(_) => {}
         }
     }
 

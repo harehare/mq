@@ -1,6 +1,6 @@
 use super::{FileKind, FileMetadata, Io, IoError, IoReader};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -26,6 +26,14 @@ pub struct MemIo {
     home: Option<PathBuf>,
     cwd: Option<PathBuf>,
     open_readers: Arc<AtomicUsize>,
+    console: Option<Mutex<MemConsole>>,
+}
+
+#[derive(Debug, Default)]
+struct MemConsole {
+    stdout: Vec<String>,
+    stderr: Vec<String>,
+    stdin: VecDeque<String>,
 }
 
 /// Reader over a snapshot of a file that counts itself in [`MemIo::open_readers`] until dropped.
@@ -100,6 +108,35 @@ impl MemIo {
     pub fn with_cwd(mut self, path: impl Into<PathBuf>) -> Self {
         self.cwd = Some(path.into());
         self
+    }
+
+    /// Keeps `print`/`stderr`/`input` in memory instead of the process streams.
+    pub fn capture_console(mut self) -> Self {
+        self.console.get_or_insert_with(Default::default);
+        self
+    }
+
+    /// Queues a line for `input`. Implies [`Self::capture_console`].
+    pub fn with_stdin_line(self, line: impl Into<String>) -> Self {
+        let this = self.capture_console();
+        if let Some(console) = &this.console {
+            console.lock().unwrap().stdin.push_back(line.into());
+        }
+        this
+    }
+
+    pub fn stdout_lines(&self) -> Vec<String> {
+        self.console
+            .as_ref()
+            .map(|console| console.lock().unwrap().stdout.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn stderr_lines(&self) -> Vec<String> {
+        self.console
+            .as_ref()
+            .map(|console| console.lock().unwrap().stderr.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -230,6 +267,38 @@ impl Io for MemIo {
             .unwrap()
             .insert(url.to_string(), body.to_string());
         Ok(())
+    }
+
+    fn write_stdout_line(&self, line: &str) -> Result<(), IoError> {
+        match &self.console {
+            Some(console) => {
+                console.lock().unwrap().stdout.push(line.to_string());
+                Ok(())
+            }
+            None => super::process_stdout_line(line),
+        }
+    }
+
+    fn write_stderr_line(&self, line: &str) -> Result<(), IoError> {
+        match &self.console {
+            Some(console) => {
+                console.lock().unwrap().stderr.push(line.to_string());
+                Ok(())
+            }
+            None => super::process_stderr_line(line),
+        }
+    }
+
+    fn read_stdin_line(&self) -> Result<String, IoError> {
+        match &self.console {
+            Some(console) => console
+                .lock()
+                .unwrap()
+                .stdin
+                .pop_front()
+                .ok_or(IoError::NotFound(Cow::Borrowed("stdin line"))),
+            None => super::process_stdin_line(),
+        }
     }
 
     fn execute(&self, command: &str, args: &[String]) -> Result<String, IoError> {

@@ -40,7 +40,7 @@ use crate::vm_profile;
 use crate::{Ident, Shared};
 use errors::StackTraceFrame;
 pub(crate) use errors::VmError;
-use errors::{VmResult, error_dict, flow_break_value, flow_continue, locate};
+use errors::{VmResult, error_dict, flow_break_value, flow_continue, is_halt, locate};
 pub(crate) use frame::ExecutionPools;
 use frame::{Continuation, DeferredContinuation, ExecutionContext, ExecutionLimits, Frame, TryBody};
 use std::sync::LazyLock;
@@ -886,6 +886,7 @@ fn unwind_frames(
                 execution.limits.recycle_pending_locals(pending);
                 continue;
             }
+            DeferredContinuation::TryBody(_) if is_halt(&e) => continue,
             DeferredContinuation::TryBody(body) => {
                 let TryBody {
                     catch_closure,
