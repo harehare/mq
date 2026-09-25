@@ -23,6 +23,18 @@ fn to_uri(uri: &Url) -> ls_types::Uri {
     ls_types::Uri::from_str(uri.as_ref()).unwrap()
 }
 
+/// A document's text and parsed CST as of a single `on_change`, published together so
+/// readers never observe a text/CST pair from two different edits.
+#[derive(Debug)]
+struct DocumentSnapshot {
+    text: Arc<String>,
+    /// `None` when the document has never been parsed (only set directly in tests).
+    nodes: Option<Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
+}
+
+/// Text and CST of each open document, keyed by URI string, published atomically per change.
+type DocumentMap = DashMap<String, Arc<DocumentSnapshot>>;
+
 #[derive(Debug)]
 struct Backend {
     client: Client,
@@ -30,9 +42,7 @@ struct Backend {
     source_map: RwLock<BiMap<String, mq_hir::SourceId>>,
     type_env_map: DashMap<String, mq_check::TypeEnv>,
     error_map: DashMap<String, Vec<LspError>>,
-    text_map: DashMap<String, Arc<String>>,
-    /// CST of each open document, parsed once per change.
-    cst_map: DashMap<String, Arc<Vec<mq_lang::Shared<mq_lang::CstNode>>>>,
+    documents: DocumentMap,
     config: LspConfig,
 }
 
@@ -75,8 +85,7 @@ impl LanguageServer for Backend {
 
         // Remove error information for the closed file
         self.error_map.remove(&uri_string);
-        self.text_map.remove(&uri_string);
-        self.cst_map.remove(&uri_string);
+        self.documents.remove(&uri_string);
         self.type_env_map.remove(&uri_string);
 
         // Remove from source map
@@ -155,12 +164,15 @@ impl LanguageServer for Backend {
         params: ls_types::FoldingRangeParams,
     ) -> jsonrpc::Result<Option<Vec<ls_types::FoldingRange>>> {
         let uri = params.text_document.uri.to_string();
-        if let Some(nodes) = self.cst_map.get(&uri).map(|nodes| Arc::clone(nodes.value())) {
+        let snapshot = self.documents.get(&uri).map(|snapshot| Arc::clone(snapshot.value()));
+
+        if let Some(nodes) = snapshot.as_ref().and_then(|snapshot| snapshot.nodes.clone()) {
             return Ok(folding_range::response_from_nodes(&nodes));
         }
-        let source_text = self.text_map.get(&uri).map(|text| Arc::clone(text.value()));
 
-        Ok(folding_range::response(source_text.as_deref().map(String::as_str)))
+        Ok(folding_range::response(
+            snapshot.as_ref().map(|snapshot| snapshot.text.as_str()),
+        ))
     }
 
     async fn symbol(
@@ -209,7 +221,10 @@ impl LanguageServer for Backend {
     ) -> jsonrpc::Result<Option<ls_types::SignatureHelp>> {
         let url = params.text_document_position_params.text_document.uri;
         let position = params.text_document_position_params.position;
-        let source_text = self.text_map.get(&url.to_string()).map(|text| Arc::clone(text.value()));
+        let source_text = self
+            .documents
+            .get(&url.to_string())
+            .map(|snapshot| Arc::clone(&snapshot.text));
 
         Ok(signature_help::response(
             Arc::clone(&self.hir),
@@ -264,7 +279,10 @@ impl LanguageServer for Backend {
         let uri_string = params.text_document.uri.to_string();
 
         let source_id = self.source_map.read().unwrap().get_by_left(&uri_string).copied();
-        let source_text = self.text_map.get(&uri_string).map(|text| Arc::clone(text.value()));
+        let source_text = self
+            .documents
+            .get(&uri_string)
+            .map(|snapshot| Arc::clone(&snapshot.text));
         let lint_config = self.config.enable_lint.then(|| self.config.lint_config.clone());
 
         Ok(code_action::response(
@@ -328,8 +346,9 @@ impl LanguageServer for Backend {
         };
 
         let uri_string = params.text_document.uri.to_string();
-        let text = Arc::clone(&self.text_map.get(&uri_string).unwrap());
-        let nodes = self.cst_map.get(&uri_string).map(|nodes| Arc::clone(nodes.value()));
+        let snapshot = Arc::clone(self.documents.get(&uri_string).unwrap().value());
+        let text = Arc::clone(&snapshot.text);
+        let nodes = snapshot.nodes.clone();
         let formatted_text = tokio::task::spawn_blocking(move || {
             let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                 indent_width: 2,
@@ -368,8 +387,8 @@ impl LanguageServer for Backend {
             return Ok(None);
         }
 
-        let text = if let Some(text) = self.text_map.get(&params.text_document.uri.to_string()) {
-            Arc::clone(&text)
+        let text = if let Some(snapshot) = self.documents.get(&params.text_document.uri.to_string()) {
+            Arc::clone(&snapshot.text)
         } else {
             return Ok(None);
         };
@@ -494,8 +513,13 @@ impl Backend {
         }
 
         self.source_map.write().unwrap().insert(uri_string.clone(), source_id);
-        self.text_map.insert(uri_string.clone(), text.into());
-        self.cst_map.insert(uri_string.clone(), nodes);
+        self.documents.insert(
+            uri_string.clone(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text),
+                nodes: Some(nodes),
+            }),
+        );
         self.error_map.insert(uri_string, errors);
     }
 
@@ -649,8 +673,7 @@ pub async fn start(config: LspConfig) {
         source_map: RwLock::new(BiMap::new()),
         type_env_map: DashMap::new(),
         error_map: DashMap::new(),
-        text_map: DashMap::new(),
-        cst_map: DashMap::new(),
+        documents: DashMap::new(),
         config,
     });
 
@@ -671,8 +694,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -712,8 +734,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -721,7 +742,7 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
         let text = "def main():\n  if(true):1 else:2;\n| main()";
         backend.on_change(uri.clone(), text.to_string()).await;
-        assert!(backend.cst_map.contains_key(&uri.to_string()));
+        assert!(backend.documents.contains_key(&uri.to_string()));
 
         let edits = backend
             .formatting(ls_types::DocumentFormattingParams {
@@ -769,7 +790,7 @@ mod tests {
                 text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
             })
             .await;
-        assert!(!backend.cst_map.contains_key(&uri.to_string()));
+        assert!(!backend.documents.contains_key(&uri.to_string()));
     }
 
     #[tokio::test]
@@ -780,8 +801,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -790,7 +810,13 @@ mod tests {
         let text = "def main():1;";
 
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -826,8 +852,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -857,8 +882,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -887,8 +911,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -916,8 +939,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -964,8 +986,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1010,8 +1031,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1071,8 +1091,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1110,8 +1129,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1163,8 +1181,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1236,8 +1253,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1307,8 +1323,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1347,8 +1362,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1385,8 +1399,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1418,8 +1431,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1496,8 +1508,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1541,8 +1552,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1615,8 +1625,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1649,7 +1658,7 @@ mod tests {
             .await;
 
         // Check if content was updated
-        let text = backend.text_map.get(&uri.to_string());
+        let text = backend.documents.get(&uri.to_string());
         assert!(text.is_some());
     }
 
@@ -1661,8 +1670,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1683,7 +1691,7 @@ mod tests {
 
         // Verify data exists before close
         assert!(backend.error_map.contains_key(&uri.to_string()));
-        assert!(backend.text_map.contains_key(&uri.to_string()));
+        assert!(backend.documents.contains_key(&uri.to_string()));
         assert!(backend.source_map.read().unwrap().contains_left(&uri.to_string()));
 
         // Close the file
@@ -1697,7 +1705,7 @@ mod tests {
 
         // Verify data is cleaned up after close
         assert!(!backend.error_map.contains_key(&uri.to_string()));
-        assert!(!backend.text_map.contains_key(&uri.to_string()));
+        assert!(!backend.documents.contains_key(&uri.to_string()));
         assert!(!backend.source_map.read().unwrap().contains_left(&uri.to_string()));
     }
 
@@ -1709,8 +1717,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1720,7 +1727,13 @@ mod tests {
         // Setup some content with errors
         let text = "def main(): invalid_syntax";
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -1756,8 +1769,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1792,8 +1804,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1830,8 +1841,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1841,7 +1851,13 @@ mod tests {
         // Add content with parsing errors
         let text = "def main() 1;"; // Missing colon
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -1864,8 +1880,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1875,7 +1890,13 @@ mod tests {
         // Unlike `publish_diagnostics`, the pull model's response can be asserted on directly.
         let text = "let x = ;"; // Missing expression
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -1916,8 +1937,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -1926,7 +1946,13 @@ mod tests {
 
         let text = ".hedaing"; // Typo of the `.heading` selector
         let (_, errors) = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -1971,8 +1997,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2007,8 +2032,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2021,7 +2045,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2052,8 +2082,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 false,
@@ -2072,7 +2101,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2106,8 +2141,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2120,7 +2154,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2142,8 +2182,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2152,7 +2191,13 @@ mod tests {
 
         let text = "def main() 1;";
         let _ = mq_lang::parse_recovery(text);
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             vec![LspError::SyntaxError(mq_lang::Diagnostic {
@@ -2188,8 +2233,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
 
@@ -2202,7 +2246,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2240,12 +2290,17 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
@@ -2282,12 +2337,17 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
 
         let params = DocumentRangeFormattingParams {
             text_document: TextDocumentIdentifier {
@@ -2323,12 +2383,17 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::default(),
         });
         let backend = service.inner();
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             vec![LspError::SyntaxError(mq_lang::Diagnostic {
@@ -2397,8 +2462,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 false,
@@ -2417,7 +2481,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2440,8 +2510,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2460,7 +2529,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2484,8 +2559,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2528,8 +2602,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2544,7 +2617,13 @@ mod tests {
 
         // Manually insert a parse error so type checking is skipped
         let text = "def add(x, y): x + y;\n| add(1)";
-        backend.text_map.insert(uri.to_string(), text.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(text.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             vec![LspError::SyntaxError(mq_lang::Diagnostic {
@@ -2572,8 +2651,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2595,7 +2673,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
@@ -2618,8 +2702,7 @@ mod tests {
             source_map: RwLock::new(BiMap::new()),
             type_env_map: DashMap::new(),
             error_map: DashMap::new(),
-            text_map: DashMap::new(),
-            cst_map: DashMap::new(),
+            documents: DashMap::new(),
             config: LspConfig::new(
                 vec![],
                 true,
@@ -2641,7 +2724,13 @@ mod tests {
         let (source_id, _) = backend.hir.write().unwrap().add_nodes(uri.clone(), &nodes);
 
         backend.source_map.write().unwrap().insert(uri.to_string(), source_id);
-        backend.text_map.insert(uri.to_string(), code.to_string().into());
+        backend.documents.insert(
+            uri.to_string(),
+            Arc::new(DocumentSnapshot {
+                text: Arc::new(code.to_string()),
+                nodes: None,
+            }),
+        );
         backend.error_map.insert(
             uri.to_string(),
             errors
