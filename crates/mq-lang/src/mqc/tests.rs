@@ -144,14 +144,75 @@ fn test_compile_to_mqc_rejects_compile_time_env_reads(#[case] query: &str) {
     );
 }
 
-#[test]
-fn test_compile_to_mqc_rejects_module_level_runtime_names() {
-    let query = r#"module m: let v = arg end | m::v"#;
-    let error = engine().compile_to_mqc(query, &[]).unwrap_err();
-    assert!(
-        matches!(&error, MqcError::ModuleLevelNotDefined { name, .. } if name == "arg"),
-        "{error:?}"
-    );
+#[rstest]
+#[case::plain("arg", true)]
+#[case::binary_op(r#"arg + "!""#, true)]
+#[case::interpolation(r#"s"${arg}""#, false)]
+#[case::array("[1, arg]", true)]
+#[case::dict(r#"{"k": arg}"#, true)]
+#[case::condition("if (arg): 1 else: 2", true)]
+#[case::call_argument("upcase(arg)", true)]
+fn test_compile_to_mqc_rejects_runtime_names_in_module_let(#[case] initializer: &str, #[case] has_location: bool) {
+    let query = format!("module m: let v = {initializer} end | m::v");
+    let error = engine().compile_to_mqc(&query, &[]).unwrap_err();
+    let MqcError::ModuleLevelNotDefined { name, source } = &error else {
+        panic!("{error:?}");
+    };
+    assert_eq!(name, "arg");
+    // Names inside string interpolation carry no source position.
+    if has_location {
+        let offset = source.location.offset();
+        assert_eq!(&query[offset..offset + 3], "arg", "location: {offset}");
+    }
+}
+
+#[rstest]
+#[case::top_level_let("let v = arg | v")]
+#[case::interpolation(r#"s"${arg}!""#)]
+#[case::module_function("module m: def f(): arg; end | m::f()")]
+#[case::module_closure("module m: let f = fn(): arg; end | m::f()")]
+#[case::module_constant_and_function(r#"module m: let suffix = "!" | def f(): arg + suffix; end | m::f()"#)]
+fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
+    let with_arg = || {
+        let engine = engine();
+        engine.define_string_value("arg", "hello");
+        engine
+    };
+    let expected = with_arg().eval(query, crate::null_input().into_iter()).unwrap();
+    let mut engine = with_arg();
+    let program = engine.load_mqc(&compile(query)).unwrap();
+    let actual = engine
+        .eval_compiled(program.program(), crate::null_input().into_iter())
+        .unwrap();
+    assert_eq!(actual, expected, "query: {query}");
+}
+
+#[cfg(feature = "debug-trace")]
+#[rstest]
+#[case::single_phase("upcase()", &["phase: main", "CallBuiltin upcase"])]
+#[case::nodes_split(".h | nodes | len()", &["phase: per-input", "phase: nodes aggregate"])]
+#[case::user_function("def f(x): x + 1; | f(1)", &["chunks: 2"])]
+fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expected: &[&str]) {
+    let mut engine = engine();
+    let program = engine.load_mqc(&compile(query)).unwrap();
+    let dump = engine.dump_bytecode(program.program()).unwrap();
+    for text in expected {
+        assert!(dump.contains(text), "missing {text:?} in:\n{dump}");
+    }
+}
+
+#[cfg(feature = "debug-trace")]
+#[rstest]
+#[case::builtin_call("upcase()")]
+#[case::breakpoint("breakpoint() | upcase()")]
+#[case::user_function("def f(x): x + 1; | f(1)")]
+fn test_dump_bytecode_of_loaded_program_is_uninstrumented(#[case] query: &str) {
+    let mut engine = engine();
+    let program = engine.load_mqc(&compile(query)).unwrap();
+    let dump = engine.dump_bytecode(program.program()).unwrap();
+    for opcode in ["StmtBoundary", "SyncCallNode", "Breakpoint"] {
+        assert!(!dump.contains(opcode), "unexpected {opcode} in:\n{dump}");
+    }
 }
 
 #[test]
@@ -340,5 +401,98 @@ proptest! {
         if let Ok(program) = engine.load_mqc(&bytes) {
             let _ = engine.eval_compiled(program.program(), crate::null_input().into_iter());
         }
+    }
+}
+
+/// Expressions whose value is known when a `.mqc` file is compiled.
+fn constant_expr() -> impl Strategy<Value = String> {
+    let numbers = (0u32..1000)
+        .prop_map(|n| n.to_string())
+        .prop_recursive(3, 16, 2, |inner| {
+            (inner.clone(), prop::sample::select(vec!["+", "-", "*"]), inner)
+                .prop_map(|(left, op, right)| format!("({left} {op} {right})"))
+        });
+    let strings = "[a-z]{0,6}"
+        .prop_map(|s| format!("\"{s}\""))
+        .prop_recursive(2, 8, 2, |inner| {
+            prop_oneof![
+                (inner.clone(), inner.clone()).prop_map(|(left, right)| format!("({left} + {right})")),
+                inner.prop_map(|s| format!("upcase({s})")),
+            ]
+        });
+    prop_oneof![
+        numbers.clone(),
+        strings,
+        prop::collection::vec(numbers, 0..4).prop_map(|items| format!("[{}]", items.join(", "))),
+    ]
+}
+
+/// Names that only exist at run time, such as `--args` values.
+fn runtime_name() -> impl Strategy<Value = String> {
+    "rt_[a-z]{1,8}"
+}
+
+/// Uses of `NAME` that are valid when it is bound to a string.
+fn runtime_use() -> impl Strategy<Value = &'static str> {
+    prop::sample::select(vec![
+        "NAME",
+        r#"NAME + "!""#,
+        "[0, NAME]",
+        r#"s"${NAME}""#,
+        r#"{"k": NAME}"#,
+        "upcase(NAME)",
+    ])
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn test_mqc_constant_lets_match_eval(expr in constant_expr(), in_module in any::<bool>()) {
+        let query = if in_module {
+            format!("module m: let v = {expr} end | m::v")
+        } else {
+            format!("let v = {expr} | v")
+        };
+        let expected = engine().eval(&query, crate::null_input().into_iter()).unwrap();
+        let actual = run_mqc(&compile(&query), crate::null_input()).unwrap();
+        prop_assert_eq!(actual, expected, "query: {}", query);
+    }
+
+    #[test]
+    fn test_compile_to_mqc_is_deterministic(expr in constant_expr()) {
+        let query = format!("module m: let v = {expr} end | def f(x): x; | f(m::v)");
+        prop_assert_eq!(compile(&query), compile(&query));
+    }
+
+    #[test]
+    fn test_compile_to_mqc_rejects_runtime_names_in_any_module_let(name in runtime_name(), usage in runtime_use()) {
+        let query = format!("module m: let v = {} end | m::v", usage.replace("NAME", &name));
+        let error = engine().compile_to_mqc(&query, &[]).unwrap_err();
+        prop_assert!(
+            matches!(&error, MqcError::ModuleLevelNotDefined { name: found, .. } if *found == name),
+            "{:?}",
+            error
+        );
+    }
+
+    #[test]
+    fn test_mqc_reads_runtime_names_outside_module_let(
+        name in runtime_name(),
+        usage in runtime_use(),
+        value in "[a-z]{0,6}",
+    ) {
+        let query = format!("let v = {} | v", usage.replace("NAME", &name));
+        let with_value = || {
+            let engine = engine();
+            engine.define_string_value(&name, &value);
+            engine
+        };
+        let expected = with_value().eval(&query, crate::null_input().into_iter()).unwrap();
+        let mut engine = with_value();
+        let program = engine.load_mqc(&compile(&query)).unwrap();
+        prop_assert_eq!(program.external_globals(), [name.clone()]);
+        let actual = engine.eval_compiled(program.program(), crate::null_input().into_iter()).unwrap();
+        prop_assert_eq!(actual, expected, "query: {}", query);
     }
 }

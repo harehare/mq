@@ -1,7 +1,6 @@
-use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use miette::IntoDiagnostic;
-use miette::WrapErr;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
@@ -34,6 +33,12 @@ static HAD_DIFF: AtomicBool = AtomicBool::new(false);
 use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
+
+mod mqc;
+use mqc::BytecodeCommand;
+
+/// A file's query prefix and, for `mq run`, its input format.
+type ProgramKey = (Option<String>, Option<String>);
 
 fn parse_timeout(value: &str) -> Result<Duration, String> {
     let secs = value
@@ -136,18 +141,6 @@ pub struct Cli {
     /// The `.mqc` program for `mq run`, which replaces the query.
     #[arg(skip)]
     bytecode: std::sync::OnceLock<Vec<u8>>,
-}
-
-/// `.mqc` metadata keys recording how `mq compile` shaped the query.
-const MQC_QUERY_PREFIX: &str = "mq-run.query-prefix";
-const MQC_INPUT_FORMAT: &str = "mq-run.input-format";
-const MQC_AGGREGATE: &str = "mq-run.aggregate";
-
-/// Subcommands recognized from the first positional argument, so every query flag still applies.
-#[derive(Clone, Copy)]
-enum BytecodeCommand {
-    Compile,
-    Run,
 }
 
 #[cfg(unix)]
@@ -2207,33 +2200,12 @@ impl Cli {
         query: &str,
         file: &Option<PathBuf>,
     ) -> miette::Result<mq_lang::CompiledProgram> {
-        let Some(bytes) = self.bytecode.get() else {
-            return engine
+        match self.bytecode.get() {
+            Some(bytes) => self.load_mqc_program(engine, bytes, file),
+            None => engine
                 .compile(&self.effective_query(query, file))
-                .map_err(|error| miette::Report::new(*error));
-        };
-        let program = engine.load_mqc(bytes).map_err(miette::Report::new)?;
-        let compiled_prefix = program.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
-        let effective_format = self.input_format_name(file);
-        // Native formats (raw, markdown, html, ...) share an empty prefix, so also compare format.
-        let format_mismatch = match program.metadata(MQC_INPUT_FORMAT) {
-            Some(format) if !format.is_empty() => format != effective_format,
-            _ => false,
-        };
-        if compiled_prefix != self.auto_query_prefix(file).unwrap_or_default() || format_mismatch {
-            let compiled_format = match program.metadata(MQC_INPUT_FORMAT) {
-                Some(format) if !format.is_empty() => format,
-                _ => "markdown",
-            };
-            let target = file
-                .as_ref()
-                .map_or_else(|| "stdin".to_string(), |path| path.display().to_string());
-            return Err(miette!(
-                help = "Pass the same -I (and --csv-delimiter/--no-header) to `mq compile` and `mq run`.",
-                "The program was compiled for {compiled_format} input, but {target} is read as {effective_format} input"
-            ));
+                .map_err(|error| miette::Report::new(*error)),
         }
-        Ok(program.program().clone())
     }
 
     /// Evaluates the query, or the `mq run` program, against one input.
@@ -2254,109 +2226,6 @@ impl Cli {
         engine
             .eval(&self.effective_query(query, file), input.into_iter())
             .map_err(|error| miette::Report::new(*error))
-    }
-
-    fn input_format_name(&self, file: &Option<PathBuf>) -> String {
-        let format = self
-            .explicit_input_format()
-            .or_else(|| file.as_deref().map(InputFormat::from_path))
-            .unwrap_or_default();
-        format
-            .to_possible_value()
-            .map_or_else(|| format!("{format:?}"), |value| value.get_name().to_string())
-    }
-
-    fn bytecode_command(&self) -> Option<BytecodeCommand> {
-        if self.input.from_file || self.commands.is_some() {
-            return None;
-        }
-        match self.query.as_deref()? {
-            "compile" => Some(BytecodeCommand::Compile),
-            "run" => Some(BytecodeCommand::Run),
-            _ => None,
-        }
-    }
-
-    /// `mq compile QUERY_FILE -o OUTPUT.mqc`
-    fn compile_bytecode(&self) -> miette::Result<()> {
-        let [query_file] = self.files.as_deref().unwrap_or_default() else {
-            return Err(miette!("Usage: mq compile QUERY_FILE -o OUTPUT.mqc"));
-        };
-        let output = self
-            .output
-            .output_file
-            .as_ref()
-            .ok_or_else(|| miette!("mq compile requires -o/--output for the .mqc file"))?;
-        let query = fs::read_to_string(query_file)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", query_file.display()))?;
-        let query = if self.input.aggregate {
-            format!("nodes | {query}")
-        } else {
-            query
-        };
-        let prefix = self.auto_query_prefix(&None).unwrap_or_default();
-        let effective_query = if prefix.is_empty() {
-            query
-        } else {
-            format!("{prefix} | {query}")
-        };
-        let input_format = self
-            .explicit_input_format()
-            .and_then(|format| format.to_possible_value())
-            .map(|value| value.get_name().to_string())
-            .unwrap_or_default();
-
-        let mut engine = self.create_engine()?;
-        let bytes = engine
-            .compile_to_mqc(
-                &effective_query,
-                &[
-                    (MQC_QUERY_PREFIX, &prefix),
-                    (MQC_INPUT_FORMAT, &input_format),
-                    (MQC_AGGREGATE, if self.input.aggregate { "true" } else { "false" }),
-                ],
-            )
-            .map_err(miette::Report::new)?;
-        fs::write(output, bytes)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to write {}", output.display()))
-    }
-
-    /// Reads and validates the `mq run` program; the remaining positionals are its input files.
-    fn load_bytecode(&self) -> miette::Result<()> {
-        let Some(path) = self.files.as_deref().and_then(<[PathBuf]>::first) else {
-            return Err(miette!("Usage: mq run PROGRAM.mqc [FILES]..."));
-        };
-        for (flag, given) in [
-            ("-M/--module-names", self.input.module_names.is_some()),
-            ("-m/--import-module-names", self.input.import_module_names.is_some()),
-            ("-L/--directory", self.input.module_directories.is_some()),
-        ] {
-            if given {
-                return Err(miette!(
-                    "{flag} has no effect on mq run: modules are compiled into the program. Pass it to `mq compile` instead."
-                ));
-            }
-        }
-        let bytes = fs::read(path)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
-        let program = self
-            .create_engine()?
-            .load_mqc(&bytes)
-            .map_err(miette::Report::new)
-            .wrap_err_with(|| format!("Failed to load {}", path.display()))?;
-        let compiled_aggregate = program.metadata(MQC_AGGREGATE) == Some("true");
-        if compiled_aggregate != self.input.aggregate {
-            return Err(miette!(
-                "-A/--aggregate must match between `mq compile` and `mq run` (the program was compiled {} it)",
-                if compiled_aggregate { "with" } else { "without" }
-            ));
-        }
-        self.bytecode
-            .set(bytes)
-            .map_err(|_| miette!("The mq run program was already loaded"))
     }
 
     #[cfg(feature = "debug-trace")]
@@ -2428,13 +2297,18 @@ impl Cli {
         Ok(())
     }
 
-    /// Returns true if all files would produce the same effective query prefix.
-    fn all_files_same_prefix(&self, files: &[(Option<PathBuf>, ContentData)]) -> bool {
+    /// What the prepared program for `file` depends on.
+    fn program_key(&self, file: &Option<PathBuf>) -> ProgramKey {
+        (self.auto_query_prefix(file), self.mqc_input_format(file))
+    }
+
+    /// Returns true if one prepared program is valid for every file.
+    fn all_files_share_program(&self, files: &[(Option<PathBuf>, ContentData)]) -> bool {
         if files.is_empty() {
             return true;
         }
-        let first = self.auto_query_prefix(&files[0].0);
-        files[1..].iter().all(|(f, _)| self.auto_query_prefix(f) == first)
+        let first = self.program_key(&files[0].0);
+        files[1..].iter().all(|(f, _)| self.program_key(f) == first)
     }
 
     fn execute_once(&self) -> miette::Result<()> {
@@ -2525,11 +2399,7 @@ impl Cli {
     fn run_watch(&self) -> miette::Result<()> {
         use notify::Watcher as _;
 
-        if self.bytecode.get().is_some() {
-            return Err(miette!(
-                "--watch does not support `mq run PROGRAM.mqc`: the compiled program is loaded once and never reloaded"
-            ));
-        }
+        self.ensure_watch_supported()?;
 
         let watch_paths = self.watch_targets()?;
         let targets: rustc_hash::FxHashSet<(PathBuf, OsString)> = watch_paths
@@ -2610,7 +2480,7 @@ impl Cli {
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
             // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
-            let can_compile_per_worker = self.all_files_same_prefix(&files) && self.output.separator.is_none();
+            let can_compile_per_worker = self.all_files_share_program(&files) && self.output.separator.is_none();
             #[cfg(feature = "debug-trace")]
             // Preserve per-file bytecode diagnostics.
             let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
@@ -2639,7 +2509,7 @@ impl Cli {
             let mut engine = self.create_engine()?;
 
             // Pre-compile query if all files share the same effective query (same prefix)
-            if files.len() > 1 && self.all_files_same_prefix(&files) && self.output.separator.is_none() {
+            if files.len() > 1 && self.all_files_share_program(&files) && self.output.separator.is_none() {
                 let program = self.prepare_program(&mut engine, &query, &files[0].0)?;
                 self.dump_compiled_bytecode(&mut engine, &program)?;
                 for (file, content) in &files {
@@ -2657,7 +2527,7 @@ impl Cli {
 
     /// `__FILE__`-family vars aren't set here: no single file is "current" once combined.
     fn execute_eval_all(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
-        if !self.all_files_same_prefix(files) {
+        if !self.all_files_share_program(files) {
             return Err(miette!(
                 "--eval-all requires all input files to use the same input format"
             ));
@@ -2835,7 +2705,7 @@ impl Cli {
         // one set of file globals per file. Keep both pieces of state outside the per-line hot
         // path so short queries do not spend their time allocating query strings or recreating
         // `__FILE__` values.
-        let mut compiled_query: Option<(String, mq_lang::CompiledProgram)> = None;
+        let mut compiled_query: Option<(ProgramKey, mq_lang::CompiledProgram)> = None;
         let mut active_file: Option<Option<PathBuf>> = None;
 
         self.process_lines(|file, line| {
@@ -2851,14 +2721,11 @@ impl Cli {
                     self.set_file_vars(&mut engine, file);
                 }
 
-                let effective_query = self.effective_query(&query, current_file);
-                if compiled_query
-                    .as_ref()
-                    .is_none_or(|(cached_query, _)| cached_query != &effective_query)
-                {
+                let key = self.program_key(current_file);
+                if compiled_query.as_ref().is_none_or(|(cached_key, _)| cached_key != &key) {
                     let program = self.prepare_program(&mut engine, &query, current_file)?;
                     self.dump_compiled_bytecode(&mut engine, &program)?;
-                    compiled_query = Some((effective_query, program));
+                    compiled_query = Some((key, program));
                 }
             }
             let current_file = active_file
