@@ -817,6 +817,8 @@ fn parameter_uses_implicit_self(shape: &ParamShape, arg_count: usize) -> VmResul
     })
 }
 
+// Keep out of the dispatch loop to avoid code bloat.
+#[inline(never)]
 pub(super) fn call_builtin(
     ident: &Ident,
     args: &[RuntimeValue],
