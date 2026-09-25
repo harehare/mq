@@ -2214,7 +2214,13 @@ impl Cli {
         };
         let program = engine.load_mqc(bytes).map_err(miette::Report::new)?;
         let compiled_prefix = program.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
-        if compiled_prefix != self.auto_query_prefix(file).unwrap_or_default() {
+        let effective_format = self.input_format_name(file);
+        // Native formats (raw, markdown, html, ...) share an empty prefix, so also compare format.
+        let format_mismatch = match program.metadata(MQC_INPUT_FORMAT) {
+            Some(format) if !format.is_empty() => format != effective_format,
+            _ => false,
+        };
+        if compiled_prefix != self.auto_query_prefix(file).unwrap_or_default() || format_mismatch {
             let compiled_format = match program.metadata(MQC_INPUT_FORMAT) {
                 Some(format) if !format.is_empty() => format,
                 _ => "markdown",
@@ -2224,8 +2230,7 @@ impl Cli {
                 .map_or_else(|| "stdin".to_string(), |path| path.display().to_string());
             return Err(miette!(
                 help = "Pass the same -I (and --csv-delimiter/--no-header) to `mq compile` and `mq run`.",
-                "The program was compiled for {compiled_format} input, but {target} is read as {} input",
-                self.input_format_name(file)
+                "The program was compiled for {compiled_format} input, but {target} is read as {effective_format} input"
             ));
         }
         Ok(program.program().clone())
@@ -2519,6 +2524,12 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn run_watch(&self) -> miette::Result<()> {
         use notify::Watcher as _;
+
+        if self.bytecode.get().is_some() {
+            return Err(miette!(
+                "--watch does not support `mq run PROGRAM.mqc`: the compiled program is loaded once and never reloaded"
+            ));
+        }
 
         let watch_paths = self.watch_targets()?;
         let targets: rustc_hash::FxHashSet<(PathBuf, OsString)> = watch_paths

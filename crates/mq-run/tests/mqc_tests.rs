@@ -123,6 +123,7 @@ fn test_runtime_error_shows_original_source() {
 
 #[rstest]
 #[case::format_mismatch(&[], &["-I", "csv"], "compiled for markdown input")]
+#[case::native_format_mismatch(&["-I", "raw"], &["-I", "markdown"], "compiled for raw input")]
 #[case::aggregate_mismatch(&["-A"], &[], "-A/--aggregate must match")]
 #[case::module_flag_at_run(&[], &["-L", "modules"], "Pass it to `mq compile` instead")]
 fn test_run_rejects_mismatched_flags(
@@ -166,4 +167,19 @@ fn test_run_rejects_corrupted_program() {
 
     let error = stderr(mq(dir.path()).args(["run", "query.mqc"]).write_stdin("# a\n").assert());
     assert!(error.contains("checksum mismatch"), "{error}");
+}
+
+#[test]
+fn test_run_rejects_watch() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "self", &[]);
+    let input = write(dir.path(), "input.md", "# a\n");
+
+    let error = stderr(
+        mq(dir.path())
+            .args(["run", "query.mqc", "--watch"])
+            .arg(&input)
+            .assert(),
+    );
+    assert!(error.contains("--watch does not support"), "{error}");
 }

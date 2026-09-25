@@ -19,6 +19,7 @@ mod tests;
 pub(crate) mod wire;
 
 use crate::engine::CompiledProgram;
+use crate::error::runtime::RuntimeError;
 use crate::io::Io;
 use crate::lexer::token::{Token, TokenKind};
 use crate::runtime::builtin::{self, io_context};
@@ -103,6 +104,18 @@ pub enum MqcError {
     #[error("invalid bytecode: {0}")]
     #[diagnostic(code(mq::mqc::invalid_bytecode), help("{}", RECOMPILE_HELP))]
     InvalidBytecode(String),
+    #[error("module-level `let` cannot read \"{name}\" at compile time")]
+    #[diagnostic(
+        code(mq::mqc::module_let_runtime_value),
+        help(
+            "Module-level `let` values are computed once, when the .mqc file is compiled. If \"{name}\" should come from --args/--argjson/etc. at run time, move the read outside the module."
+        )
+    )]
+    ModuleLevelNotDefined {
+        name: String,
+        #[source]
+        source: Box<error::Error>,
+    },
     #[error(transparent)]
     #[diagnostic(transparent)]
     Compile(Box<error::Error>),
@@ -224,11 +237,21 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             preresolved_module_vars: Default::default(),
         };
         let split = SplitProgram::compile_standalone(program, &mut context).map_err(|error| {
-            MqcError::Compile(Box::new(error::Error::from_error(
-                code,
-                error.into_inner_error(Shared::clone(&self.token_arena)),
-                self.vm.module_loader.clone(),
-            )))
+            let inner = error.into_inner_error(Shared::clone(&self.token_arena));
+            // Module-level `let`s are baked to constants at compile time (unlike the rest of
+            // the query, which defers unresolved names to the VM), so a name that would only
+            // exist at run time (e.g. `--args`) surfaces here instead of at `mq run`.
+            let not_defined_name = match &inner {
+                error::InnerError::Runtime(
+                    RuntimeError::NotDefined(_, name, _) | RuntimeError::UndefinedReference(_, name, _),
+                ) => Some(name.clone()),
+                _ => None,
+            };
+            let source = Box::new(error::Error::from_error(code, inner, self.vm.module_loader.clone()));
+            match not_defined_name {
+                Some(name) => MqcError::ModuleLevelNotDefined { name, source },
+                None => MqcError::Compile(source),
+            }
         })?;
         let encoded = code::encode(&split)?;
 
