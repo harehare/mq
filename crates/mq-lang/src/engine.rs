@@ -197,6 +197,28 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
     }
 }
 
+impl<IO: Io> Engine<DefaultModuleResolver, IO> {
+    /// Creates an engine with the default module resolver and a shared [`Io`].
+    ///
+    /// The same `io` handles builtins and local `include`/`import` statements, so
+    /// filesystem access follows one permission policy. Standard modules remain available.
+    /// Use [`Engine::with_io`] when supplying a custom module resolver.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use mq_lang::{Engine, NativeIo, SandboxedIo, Shared};
+    ///
+    /// let io = Shared::new(SandboxedIo::new(NativeIo::default()));
+    /// let mut engine = Engine::with_default_io(io);
+    /// engine.load_builtin_module();
+    /// ```
+    pub fn with_default_io(io: Shared<IO>) -> Self {
+        let resolver = DefaultModuleResolver::with_io(Shared::clone(&io) as Shared<dyn Io>, vec![]);
+        Self::with_io(resolver, io)
+    }
+}
+
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Like the [`SandboxedIo<NativeIo>`]-pinned [`Engine::new`], but generic over `IO` and
     /// takes the [`Io`] value up front — for hosts that need to select the `Io` *type* at
@@ -702,7 +724,10 @@ mod tests {
     use super::CompiledProgram;
     use super::DefineValueError;
     use crate::DefaultEngine;
+    use crate::Engine;
+    use crate::NativeIo;
     use crate::RuntimeValue;
+    use crate::SandboxedIo;
     use crate::Shared;
     use crate::error;
     use rstest::rstest;
@@ -951,6 +976,27 @@ mod tests {
         let paths = vec![PathBuf::from("/test/path")];
         engine.set_search_paths(paths.clone());
         assert_eq!(engine.vm.module_loader.search_paths(), paths);
+    }
+
+    #[test]
+    fn test_with_default_io_applies_read_permission_to_local_modules() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp_dir.path().join("local.mq"), "def greeting(): \"hello\";").unwrap();
+        let paths = vec![temp_dir.path().to_path_buf()];
+
+        let denied_io = Shared::new(SandboxedIo::new(NativeIo::default()));
+        let mut denied_engine = Engine::with_default_io(denied_io);
+        denied_engine.set_search_paths(paths.clone());
+        assert!(denied_engine.load_module("local").is_err());
+
+        let allowed_io = Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(paths.clone()));
+        let mut allowed_engine = Engine::with_default_io(allowed_io);
+        allowed_engine.set_search_paths(paths);
+        allowed_engine.load_module("local").unwrap();
+        let output = allowed_engine
+            .eval("greeting()", std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(output.values(), &[RuntimeValue::from("hello".to_string())]);
     }
 
     #[test]
