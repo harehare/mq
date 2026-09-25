@@ -36,7 +36,7 @@ Module-level `let` values are computed once, when the program is compiled.
 
 ## Compatibility
 
-A `.mqc` file runs only on the same mq version that compiled it. Recompile the source after upgrading mq. The file keeps the original query and module sources, so runtime errors point at the original code.
+A `.mqc` file runs only on the same mq version that compiled it. Recompile the source after upgrading mq. The file keeps the original query and the sources of your own modules, so runtime errors point at the original code. Standard modules such as `csv` are not stored; their sources come from mq itself.
 
 `mq run` checks the file's structure and checksum and verifies its bytecode before running it. The checksum detects corruption. It does not show who created the file.
 
