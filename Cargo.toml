@@ -85,9 +85,9 @@ mimalloc = "0.1.48"
 nom = "8.0.0"
 nom_locate = "5.0.0"
 notify = "8.2.0"
-opentelemetry = "0.32"
-opentelemetry-otlp = {version = "0.32", features = ["grpc-tonic"]}
-opentelemetry_sdk = {version = "0.32", features = ["rt-tokio"]}
+opentelemetry = "0.33"
+opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic"]}
+opentelemetry_sdk = {version = "0.33", features = ["rt-tokio"]}
 opfs = "0.2.0"
 percent-encoding = "2.3.2"
 proptest = "1.11"
