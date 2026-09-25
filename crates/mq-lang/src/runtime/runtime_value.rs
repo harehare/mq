@@ -667,12 +667,11 @@ impl RuntimeValue {
     }
 
     /// Converts to a Markdown node: markdown values keep their (selected) node, anything else
-    /// becomes a text node of its string form.
-    pub fn into_markdown_node(self) -> Node {
+    pub fn into_markdown_node(self) -> Option<Node> {
         match self {
-            RuntimeValue::Markdown(node, None) => Shared::unwrap_or_clone(node),
-            value @ RuntimeValue::Markdown(_, Some(_)) => value.markdown_node().unwrap_or_else(|| "".into()),
-            value => value.to_string().into(),
+            RuntimeValue::Markdown(node, None) => Some(Shared::unwrap_or_clone(node)),
+            value @ RuntimeValue::Markdown(_, Some(_)) => value.markdown_node(),
+            value => Some(value.to_string().into()),
         }
     }
 
@@ -931,9 +930,13 @@ impl RuntimeValues {
         &self.0
     }
 
-    /// Converts every value with [`RuntimeValue::into_markdown_node`].
+    /// Converts every value with [`RuntimeValue::into_markdown_node`], dropping values whose
+    /// selector points at a child that no longer exists instead of exporting a phantom node.
     pub fn into_markdown_nodes(self) -> Vec<Node> {
-        self.0.into_iter().map(RuntimeValue::into_markdown_node).collect()
+        self.0
+            .into_iter()
+            .filter_map(RuntimeValue::into_markdown_node)
+            .collect()
     }
 
     /// Returns the number of values in this collection.
@@ -1077,10 +1080,30 @@ mod tests {
     }
 
     #[rstest]
-    #[case::markdown(RuntimeValue::new_markdown("text".into()), Node::from("text"))]
-    #[case::string("text".into(), Node::from("text"))]
-    #[case::number(RuntimeValue::Number(2.into()), Node::from("2"))]
-    fn test_into_markdown_node(#[case] value: RuntimeValue, #[case] expected: Node) {
+    #[case::markdown(RuntimeValue::new_markdown("text".into()), Some(Node::from("text")))]
+    #[case::string("text".into(), Some(Node::from("text")))]
+    #[case::number(RuntimeValue::Number(2.into()), Some(Node::from("2")))]
+    #[case::existing_selected_child(
+        RuntimeValue::Markdown(
+            Shared::new(Node::List(mq_markdown::List {
+                values: vec![Node::from("item")],
+                ..Default::default()
+            })),
+            Selector::index(0),
+        ),
+        Some(Node::from("item"))
+    )]
+    #[case::out_of_range_selected_child(
+        RuntimeValue::Markdown(
+            Shared::new(Node::List(mq_markdown::List {
+                values: vec![Node::from("item")],
+                ..Default::default()
+            })),
+            Selector::index(1),
+        ),
+        None
+    )]
+    fn test_into_markdown_node(#[case] value: RuntimeValue, #[case] expected: Option<Node>) {
         assert_eq!(value.into_markdown_node(), expected);
     }
 
