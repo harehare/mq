@@ -267,6 +267,30 @@ fn eval_compiled_dict_field_access(bencher: divan::Bencher) {
     );
 }
 
+/// Measures repeated construction of a dictionary literal without spread.
+#[divan::bench]
+fn eval_compiled_dict_literal(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "var i = 0 | while(i < 1000): let d = {a: i, b: i + 1, c: i + 2} | i += 1; | i",
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
+/// Measures repeated construction of a dictionary literal with spread.
+#[divan::bench]
+fn eval_compiled_dict_literal_spread(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "let base = {a: 1, b: 2} | var i = 0 | while(i < 1000): let d = {...base, c: i} | i += 1; | i",
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
 #[divan::bench]
 fn eval_compiled_large_dict_field_access(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();

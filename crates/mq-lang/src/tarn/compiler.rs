@@ -2236,10 +2236,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::Call(ident, args) => self.compile_call(ident.name, args),
             Expr::Array(args) => self.compile_array_call(args),
-            Expr::Dict(args) => {
-                let call_token_id = self.current_token_id;
-                self.compile_dict_call(args, call_token_id)
-            }
+            Expr::Dict(args) => self.compile_dict_literal(args),
             Expr::CallDynamic(callee, args) => {
                 let call_token_id = self.current_token_id;
                 self.compile_expr(callee)?;
@@ -2747,6 +2744,31 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.set_call_token_id(call_token_id);
         self.emit(OpCode::CallBuiltin(builtins::DICT.into(), 1));
+        Ok(())
+    }
+
+    fn compile_dict_literal(&mut self, args: &ast::Args) -> CompileResult<()> {
+        if args
+            .iter()
+            .any(|arg| !matches!(&arg.expr, Expr::Array(pair) if pair.len() == 2) && !Self::is_spread(arg))
+        {
+            return self.compile_dict_call(args, self.current_token_id);
+        }
+        self.emit(OpCode::DictNew);
+        for arg in args {
+            if let Expr::Call(spread_ident, spread_args) = &arg.expr
+                && spread_ident.name == builtins::SPREAD.into()
+            {
+                self.compile_expr(&spread_args[0])?;
+                self.emit(OpCode::DictSpread);
+            } else if let Expr::Array(pair) = &arg.expr
+                && pair.len() == 2
+            {
+                self.compile_expr(&pair[0])?;
+                self.compile_expr(&pair[1])?;
+                self.emit(OpCode::DictInsert);
+            }
+        }
         Ok(())
     }
 

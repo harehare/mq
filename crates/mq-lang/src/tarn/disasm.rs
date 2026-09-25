@@ -269,6 +269,8 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         }
         bytecode::OpCode::ArrayPush => "ArrayPush".to_string(),
         bytecode::OpCode::ArraySpread => "ArraySpread".to_string(),
+        bytecode::OpCode::DictNew => "DictNew".to_string(),
+        bytecode::OpCode::DictInsert => "DictInsert".to_string(),
         bytecode::OpCode::DictSpread => "DictSpread".to_string(),
         bytecode::OpCode::ToForeachIterable => "ToForeachIterable".to_string(),
         bytecode::OpCode::ArrayLen => "ArrayLen".to_string(),
