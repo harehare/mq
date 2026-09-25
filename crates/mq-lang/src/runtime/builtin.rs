@@ -292,11 +292,6 @@ fn status_impl(ident: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
     }
 }
 
-#[mq_macros::mq_fn(name = "array", params = Range(0, u8::MAX))]
-fn array_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(RuntimeValue::Array(Shared::new(args.into_vec())))
-}
-
 #[mq_macros::mq_fn(name = "flatten", params = Fixed(1))]
 fn flatten_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5613,7 +5608,6 @@ mq_macros::builtin_dispatch! {
     TYPE,
     CLOSE,
     STATUS,
-    ARRAY,
     FLATTEN,
     CONVERT,
     FROM_DATE,
@@ -7006,20 +7000,6 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             examples: &[BuiltinExample {
                 code: r#"tan(0)"#,
                 expected: r#"0"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new(constants::builtins::ARRAY),
-        BuiltinFunctionDoc {
-            description: "Creates an array from the given values.",
-            params: &["values"],
-            param_types: &["dynamic"],
-            returns: "array",
-            examples: &[BuiltinExample {
-                code: r#"array(1, 2, 3)"#,
-                expected: r#"[1, 2, 3]"#,
             }],
             capability: None,
         },
