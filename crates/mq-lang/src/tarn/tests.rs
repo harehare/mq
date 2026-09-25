@@ -2836,6 +2836,67 @@ fn unchanged_engine_globals_reuse_their_vm_snapshot() {
 
 #[cfg(not(feature = "debugger"))]
 #[test]
+fn batched_global_updates_publish_one_snapshot() {
+    let state = VmState::<DefaultModuleResolver>::default();
+    state.define_many([
+        ("__FILE__".into(), RuntimeValue::String(Shared::new("first.md".into()))),
+        (
+            "__FILE_NAME__".into(),
+            RuntimeValue::String(Shared::new("first.md".into())),
+        ),
+    ]);
+    let (_, first_key) = state.global_bindings_snapshot_with_key();
+
+    state.define_many([
+        ("__FILE__".into(), RuntimeValue::String(Shared::new("second.md".into()))),
+        (
+            "__FILE_NAME__".into(),
+            RuntimeValue::String(Shared::new("second.md".into())),
+        ),
+    ]);
+    let (snapshot, second_key) = state.global_bindings_snapshot_with_key();
+    assert_eq!(second_key.revision, first_key.revision + 1);
+    assert_eq!(second_key.names_revision, first_key.names_revision);
+    assert_eq!(snapshot.len(), 2);
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn cached_program_reuses_bytecode_when_only_global_values_change() {
+    let mut engine = crate::DefaultEngine::default();
+    engine.define_string_value("__FILE__", "first.md");
+    let compiled = engine.compile("__FILE__").unwrap();
+
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("first.md".into()))]
+    );
+    let first = compiled.cached_vm_program().flatten().unwrap();
+
+    engine.define_string_value("__FILE__", "second.md");
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("second.md".into()))]
+    );
+    let second = compiled.cached_vm_program().flatten().unwrap();
+    assert!(Shared::ptr_eq(&first, &second), "value updates should reuse bytecode");
+
+    engine.define_string_value("other", "new binding");
+    engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    let third = compiled.cached_vm_program().flatten().unwrap();
+    assert!(!Shared::ptr_eq(&second, &third), "new names must recompile bytecode");
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
 fn cached_program_reflects_updated_global_in_module_var_initializer() {
     let mut engine = crate::DefaultEngine::default();
     engine.define_value("g", RuntimeValue::Number(1.into())).unwrap();
@@ -2848,6 +2909,7 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
             .values(),
         &[RuntimeValue::Number(1.into())]
     );
+    let first = compiled.cached_vm_program().flatten().unwrap();
 
     // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
     // must invalidate that cache, not just the plain-global lookup environment.
@@ -2859,6 +2921,11 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
             .unwrap()
             .values(),
         &[RuntimeValue::Number(2.into())]
+    );
+    let second = compiled.cached_vm_program().flatten().unwrap();
+    assert!(
+        !Shared::ptr_eq(&first, &second),
+        "module initializers require recompilation"
     );
 }
 

@@ -1980,15 +1980,10 @@ impl Cli {
     }
 
     fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: &Path) {
-        engine.define_string_value("__FILE__", file.to_string_lossy().as_ref());
-        engine.define_string_value(
-            "__FILE_NAME__",
-            file.file_name().unwrap_or_default().to_string_lossy().as_ref(),
-        );
-        engine.define_string_value(
-            "__FILE_STEM__",
-            file.file_stem().unwrap_or_default().to_string_lossy().as_ref(),
-        );
+        let path = file.to_string_lossy();
+        let name = file.file_name().unwrap_or_default().to_string_lossy();
+        let stem = file.file_stem().unwrap_or_default().to_string_lossy();
+        engine.define_string_values(&[("__FILE__", &path), ("__FILE_NAME__", &name), ("__FILE_STEM__", &stem)]);
     }
 
     fn resolve_input(

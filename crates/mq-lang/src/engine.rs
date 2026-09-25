@@ -276,6 +276,23 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.define_value_unchecked(name, RuntimeValue::String(Shared::new(value.to_string())));
     }
 
+    /// Defines several string variables and publishes one VM global snapshot.
+    ///
+    /// Useful when updating related values, such as the file path variables for each input.
+    ///
+    /// ```
+    /// let engine = mq_lang::DefaultEngine::default();
+    /// engine.define_string_values(&[("__FILE__", "input.md"), ("__FILE_NAME__", "input.md")]);
+    /// ```
+    pub fn define_string_values(&self, values: &[(&str, &str)]) {
+        self.vm.define_many(values.iter().map(|(name, value)| {
+            (
+                Ident::new(name),
+                RuntimeValue::String(Shared::new((*value).to_string())),
+            )
+        }));
+    }
+
     /// Defines an arbitrary runtime value in the current environment.
     ///
     /// Values that retain VM execution state, such as coroutines and closures, cannot be

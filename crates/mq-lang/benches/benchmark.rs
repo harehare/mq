@@ -98,6 +98,32 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
     });
 }
 
+/// Measures repeated file-global updates and evaluation of one compiled query.
+#[divan::bench]
+fn eval_compiled_changing_file_globals(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.define_string_values(&[
+        ("__FILE__", "input-0.md"),
+        ("__FILE_NAME__", "input-0.md"),
+        ("__FILE_STEM__", "input-0"),
+    ]);
+    let compiled = engine.compile("__FILE__").unwrap();
+    engine
+        .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+        .unwrap();
+
+    let mut index = 0;
+    bencher.bench_local(|| {
+        index += 1;
+        let path = format!("input-{index}.md");
+        let stem = format!("input-{index}");
+        engine.define_string_values(&[("__FILE__", &path), ("__FILE_NAME__", &path), ("__FILE_STEM__", &stem)]);
+        engine
+            .eval_compiled(&compiled, std::iter::once(mq_lang::RuntimeValue::None))
+            .unwrap()
+    });
+}
+
 #[divan::bench]
 fn eval_compiled_array_map(bencher: divan::Bencher) {
     let mut engine = mq_lang::DefaultEngine::default();
@@ -261,6 +287,19 @@ fn eval_compiled_generator_yield_loop(bencher: divan::Bencher) {
         | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#,
         || vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))],
     );
+}
+
+/// Holds a fixed array across yields, separating suspend-time traversal from array rebuilding.
+#[divan::bench(args = [0, 100, 1000])]
+fn eval_compiled_generator_yield_with_fixed_array(bencher: divan::Bencher, size: usize) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    let code = format!(
+        r#"def g(n): let acc = range(0, {size}, 1) | var i = 0 | while (i < n): yield: i | i += 1; | len(acc); | let s = g(1000)
+        | var count = 0 | while (count < 1000): next(s) | count += 1; | count"#
+    );
+    bench_compiled(bencher, &mut engine, &code, || {
+        vec![mq_lang::RuntimeValue::String(Shared::new(String::new()))]
+    });
 }
 
 /// Same as above, but rebuilds a growing local array each iteration, which `downgrade_self_references` now scans per suspend.

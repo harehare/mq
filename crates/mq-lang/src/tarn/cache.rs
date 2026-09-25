@@ -7,6 +7,7 @@ use super::{
     resolve_module_prelude_globals,
 };
 use crate::ast::Program;
+use crate::ast::node::{AccessTarget, StringSegment};
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::tarn::{VmEnv, VmEnvCacheKey, VmModuleCacheKey};
 use crate::{ModuleResolver, Shared, SharedCell};
@@ -15,6 +16,64 @@ use std::fmt;
 use std::time::Instant;
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
 use web_time::Instant;
+
+/// Module initializers can capture external-global values in the compiled bytecode.
+/// Inspect nested expressions as well as top-level directives before allowing value-only
+/// global updates to reuse a program.
+fn contains_module_directive(program: &Program) -> bool {
+    fn contains(node: &crate::Shared<crate::ast::node::Node>) -> bool {
+        use super::Expr;
+
+        match &node.expr {
+            Expr::Include(_) | Expr::Import(_, _) | Expr::Module(_, _) => true,
+            Expr::Block(body) | Expr::Loop(body) => contains_module_directive(body),
+            Expr::Def(_, params, body) | Expr::Fn(params, body) => {
+                params.iter().any(|param| param.default.as_ref().is_some_and(contains))
+                    || contains_module_directive(body)
+            }
+            Expr::While(condition, body) | Expr::Until(condition, body) | Expr::Foreach(_, condition, body) => {
+                contains(condition) || contains_module_directive(body)
+            }
+            Expr::Call(_, args) | Expr::Array(args) | Expr::Dict(args) | Expr::SelectorCall(_, args) => {
+                args.iter().any(contains)
+            }
+            Expr::CallDynamic(callee, args) => contains(callee) || args.iter().any(contains),
+            Expr::As(_, value)
+            | Expr::Let(_, value)
+            | Expr::Var(_, value)
+            | Expr::Assign(_, value)
+            | Expr::Paren(value) => contains(value),
+            Expr::BinaryOp(_, left, right) | Expr::Try(left, _, right) => contains(left) || contains(right),
+            Expr::And(values) | Expr::Or(values) => values.iter().any(contains),
+            Expr::If(branches) | Expr::Unless(branches) => branches
+                .iter()
+                .any(|(condition, body)| condition.as_ref().is_some_and(contains) || contains(body)),
+            Expr::Match(value, arms) => {
+                contains(value)
+                    || arms
+                        .iter()
+                        .any(|arm| arm.guard.as_ref().is_some_and(contains) || contains(&arm.body))
+            }
+            Expr::InterpolatedString(segments) => segments.iter().any(|segment| match segment {
+                StringSegment::Expr(value) => contains(value),
+                _ => false,
+            }),
+            Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => args.iter().any(contains),
+            Expr::Break(Some(value)) | Expr::Yield(Some(value)) => contains(value),
+            Expr::Literal(_)
+            | Expr::Ident(_)
+            | Expr::Selector(_)
+            | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
+            | Expr::Self_
+            | Expr::Nodes
+            | Expr::Break(None)
+            | Expr::Continue
+            | Expr::Yield(None) => false,
+        }
+    }
+
+    program.iter().any(contains)
+}
 
 /// Bytecode retained for repeated VM evaluation.
 pub(crate) struct CachedProgram {
@@ -27,6 +86,8 @@ pub(crate) struct CachedProgram {
     /// Global snapshot used to bake module `let` initializers into constants; must still match
     /// for the cache to stay valid, since a global's value can change under the same name.
     baked_globals_key: VmEnvCacheKey,
+    /// Module initializers may bake external-global values into bytecode.
+    has_module_directives: bool,
     /// Cached bytecode includes module definitions, which are frozen per Engine.
     module_cache_key: VmModuleCacheKey,
     /// Frame storage retained between non-overlapping `eval_compiled` calls.
@@ -96,6 +157,9 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     // Resolve on `context.module_loader` itself so the clone below inherits already-loaded
     // (and AST-cached) modules instead of the real compile loading them again.
     let preresolved_module_vars = resolve_module_prelude_globals(program, context, deadline)?;
+    // Without module directives, external globals are read by GetExternalGlobal at run time.
+    // With modules, keep the value-sensitive invalidation: their initializers may be baked in.
+    let has_module_directives = contains_module_directive(program);
     let module_loader = context.module_loader.clone();
     let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
         let let_names = let_names_before_nodes(before);
@@ -147,6 +211,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         let_slots,
         configuration,
         baked_globals_key,
+        has_module_directives,
         module_cache_key,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
         environment: Shared::new(SharedCell::new(None)),
@@ -231,10 +296,12 @@ pub(super) fn cached_program_is_current(
     environment_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> bool {
-    // `VmEnvCacheKey` combines a process-unique bindings source with its revision. It therefore
-    // identifies both names and values without rescanning globals on every cache hit.
+    // The compiler needs the names of external globals. Their current values matter only when
+    // module initializers can bake those values into bytecode.
     if compiled.configuration != configuration
-        || compiled.baked_globals_key != environment_key
+        || compiled.baked_globals_key.source != environment_key.source
+        || compiled.baked_globals_key.names_revision != environment_key.names_revision
+        || (compiled.has_module_directives && compiled.baked_globals_key.revision != environment_key.revision)
         || compiled.module_cache_key != module_cache_key
     {
         return false;
@@ -336,4 +403,26 @@ where
     })();
     restore_execution_pools(compiled, pools);
     result
+}
+
+#[cfg(test)]
+mod module_directive_tests {
+    use super::contains_module_directive;
+    use crate::Shared;
+    use crate::ast::TokenId;
+    use crate::ast::node::{Expr, IdentWithToken, Node};
+
+    #[test]
+    fn finds_module_nested_in_function_body() {
+        let module = Shared::new(Node {
+            token_id: TokenId::new(0),
+            expr: Expr::Module(IdentWithToken::new("m"), Vec::new()),
+        });
+        let function = Shared::new(Node {
+            token_id: TokenId::new(0),
+            expr: Expr::Def(IdentWithToken::new("f"), Default::default(), vec![module]),
+        });
+
+        assert!(contains_module_directive(&vec![function]));
+    }
 }
