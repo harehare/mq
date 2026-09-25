@@ -104,11 +104,11 @@ pub enum MqcError {
     #[error("invalid bytecode: {0}")]
     #[diagnostic(code(mq::mqc::invalid_bytecode), help("{}", RECOMPILE_HELP))]
     InvalidBytecode(String),
-    #[error("module-level `let` cannot read \"{name}\" at compile time")]
+    #[error("\"{name}\" is not defined when module-level `let`s are computed")]
     #[diagnostic(
         code(mq::mqc::module_let_runtime_value),
         help(
-            "Module-level `let` values are computed once, when the .mqc file is compiled. If \"{name}\" should come from --args/--argjson/etc. at run time, move the read outside the module."
+            "Module-level `let` values are computed once, when the .mqc file is compiled, so they cannot read --args/--argjson values. Read \"{name}\" inside a function or outside the module instead."
         )
     )]
     ModuleLevelNotDefined {
@@ -238,9 +238,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         };
         let split = SplitProgram::compile_standalone(program, &mut context).map_err(|error| {
             let inner = error.into_inner_error(Shared::clone(&self.token_arena));
-            // Module-level `let`s are baked to constants at compile time (unlike the rest of
-            // the query, which defers unresolved names to the VM), so a name that would only
-            // exist at run time (e.g. `--args`) surfaces here instead of at `mq run`.
+            // Only module-level `let`s are evaluated here; other unresolved names defer to run time.
             let not_defined_name = match &inner {
                 error::InnerError::Runtime(
                     RuntimeError::NotDefined(_, name, _) | RuntimeError::UndefinedReference(_, name, _),

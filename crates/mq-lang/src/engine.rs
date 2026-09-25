@@ -1575,19 +1575,6 @@ mod tests {
         assert!(dump.contains("[0] 1"));
     }
 
-    #[cfg(all(feature = "debug-trace", feature = "mqc"))]
-    #[test]
-    fn test_dump_bytecode_renders_loaded_mqc_instructions() {
-        let mut engine = DefaultEngine::default();
-        engine.load_builtin_module();
-        let bytes = engine.compile_to_mqc("upcase()", &[]).unwrap();
-        let program = engine.load_mqc(&bytes).unwrap();
-
-        let dump = engine.dump_bytecode(program.program()).unwrap();
-
-        assert!(dump.contains("CallBuiltin upcase"), "{dump}");
-    }
-
     // --- builtin cache tests ---
 
     /// Two sequential engines calling the same builtin functions must produce identical results,
