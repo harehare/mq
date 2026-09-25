@@ -27,30 +27,36 @@ fn stderr(assert: assert_cmd::assert::Assert) -> String {
 fn compile(dir: &Path, query: &str, flags: &[&str]) {
     write(dir, "query.mq", query);
     mq(dir)
+        .arg("compile")
         .args(flags)
-        .args(["compile", "query.mq", "-o", "query.mqc"])
+        .args(["query.mq", "-o", "query.mqc"])
         .assert()
         .success();
 }
 
 #[rstest]
-#[case::selector(".h2", "# a\n\n## b\n", &[])]
-#[case::function("def shout(x): upcase(x); | .h | to_text() | shout()", "# a\n\n## b\n", &[])]
-#[case::update(".h | upcase()", "# a\n\ntext\n", &["-U"])]
-#[case::json_output(".h", "# a\n", &["-F", "json"])]
-#[case::aggregate("len()", "# a\n\ntext\n", &["-A"])]
-#[case::csv(r#"."a""#, "a,b\n1,2\n", &["-I", "csv"])]
-#[case::text_stream("upcase()", "a\nb\n", &["-I", "text", "--stream"])]
-fn test_run_matches_source_query(#[case] query: &str, #[case] input: &str, #[case] flags: &[&str]) {
+#[case::selector(".h2", "# a\n\n## b\n", &[], &[])]
+#[case::function("def shout(x): upcase(x); | .h | to_text() | shout()", "# a\n\n## b\n", &[], &[])]
+#[case::update(".h | upcase()", "# a\n\ntext\n", &[], &["-U"])]
+#[case::json_output(".h", "# a\n", &[], &["-F", "json"])]
+#[case::aggregate("len()", "# a\n\ntext\n", &["-A"], &["-A"])]
+#[case::csv(r#"."a""#, "a,b\n1,2\n", &["-I", "csv"], &["-I", "csv"])]
+#[case::text_stream("upcase()", "a\nb\n", &["-I", "text"], &["-I", "text", "--stream"])]
+fn test_run_matches_source_query(
+    #[case] query: &str,
+    #[case] input: &str,
+    #[case] compile_flags: &[&str],
+    #[case] run_flags: &[&str],
+) {
     let dir = TempDir::new().unwrap();
-    compile(dir.path(), query, flags);
+    compile(dir.path(), query, compile_flags);
     let input_file = write(dir.path(), "input.txt", input);
 
-    let expected = stdout(mq(dir.path()).args(flags).arg(query).arg(&input_file).assert());
+    let expected = stdout(mq(dir.path()).args(run_flags).arg(query).arg(&input_file).assert());
     let actual = stdout(
         mq(dir.path())
-            .args(flags)
-            .args(["run", "query.mqc"])
+            .args(run_flags)
+            .args(["query.mqc"])
             .arg(&input_file)
             .assert(),
     );
@@ -63,7 +69,7 @@ fn test_run_reads_stdin_and_flags_after_program() {
     compile(dir.path(), ".h | to_text()", &[]);
     let output = stdout(
         mq(dir.path())
-            .args(["run", "query.mqc", "-F", "json"])
+            .args(["query.mqc", "-F", "json"])
             .write_stdin("# title\n")
             .assert(),
     );
@@ -77,11 +83,36 @@ fn test_run_many_files_in_parallel() {
     let files: Vec<PathBuf> = (0..15)
         .map(|i| write(dir.path(), &format!("f{i:02}.md"), &format!("# f{i:02}\n")))
         .collect();
-    let output = stdout(mq(dir.path()).args(["run", "query.mqc"]).args(&files).assert());
+    let output = stdout(mq(dir.path()).args(["query.mqc"]).args(&files).assert());
     let mut lines: Vec<&str> = output.lines().collect();
     lines.sort_unstable();
     let expected: Vec<String> = (0..15).map(|i| format!("f{i:02}")).collect();
     assert_eq!(lines, expected);
+}
+
+#[test]
+fn test_compile_permissions_apply_to_module_level_lets() {
+    let dir = TempDir::new().unwrap();
+    let modules = dir.path().join("modules");
+    fs::create_dir(&modules).unwrap();
+    write(
+        &modules,
+        "m.mq",
+        "def get(): data;\nlet data = read_file(\"data.txt\");\n",
+    );
+    write(dir.path(), "data.txt", "hello");
+    write(dir.path(), "query.mq", r#"import "m" | m::get()"#);
+
+    let error = stderr(mq(dir.path()).args(["compile", "-L", "modules", "query.mq"]).assert());
+    assert!(error.contains("filesystem reads are disabled"), "{error}");
+
+    mq(dir.path())
+        .args(["compile", "-L", "modules", "-R", "query.mq"])
+        .assert()
+        .success();
+    fs::remove_file(dir.path().join("data.txt")).unwrap();
+    let output = stdout(mq(dir.path()).args(["query.mqc", "-I", "null"]).assert());
+    assert_eq!(output.trim(), "hello");
 }
 
 #[test]
@@ -97,7 +128,7 @@ fn test_run_needs_no_module_files() {
     );
     fs::remove_dir_all(&modules).unwrap();
 
-    let output = stdout(mq(dir.path()).args(["run", "query.mqc"]).write_stdin("# hi\n").assert());
+    let output = stdout(mq(dir.path()).args(["query.mqc"]).write_stdin("# hi\n").assert());
     assert_eq!(output.trim(), "hi!?");
 }
 
@@ -107,7 +138,7 @@ fn test_run_reads_args_at_run_time() {
     compile(dir.path(), r#"s"hello ${name}""#, &[]);
     let output = stdout(
         mq(dir.path())
-            .args(["run", "query.mqc", "-I", "null", "--args", "name", "mq"])
+            .args(["query.mqc", "-I", "null", "--args", "name", "mq"])
             .assert(),
     );
     assert_eq!(output.trim(), "hello mq");
@@ -117,14 +148,14 @@ fn test_run_reads_args_at_run_time() {
 fn test_runtime_error_shows_original_source() {
     let dir = TempDir::new().unwrap();
     compile(dir.path(), "def f(x): x / 0; | f(\"a\")", &[]);
-    let error = stderr(mq(dir.path()).args(["run", "query.mqc", "-I", "null"]).assert());
+    let error = stderr(mq(dir.path()).args(["query.mqc", "-I", "null"]).assert());
     assert!(error.contains("def f(x): x / 0;"), "{error}");
 }
 
 #[rstest]
 #[case::format_mismatch(&[], &["-I", "csv"], "compiled for markdown input")]
 #[case::aggregate_mismatch(&["-A"], &[], "-A/--aggregate must match")]
-#[case::module_flag_at_run(&[], &["-L", "modules"], "Pass it to `mq compile` instead")]
+#[case::module_flag_at_run(&[], &["-L", "modules"], "Pass them to `mq compile` instead")]
 fn test_run_rejects_mismatched_flags(
     #[case] compile_flags: &[&str],
     #[case] run_flags: &[&str],
@@ -134,7 +165,7 @@ fn test_run_rejects_mismatched_flags(
     compile(dir.path(), "self", compile_flags);
     let error = stderr(
         mq(dir.path())
-            .args(["run", "query.mqc"])
+            .args(["query.mqc"])
             .args(run_flags)
             .write_stdin("a,b\n")
             .assert(),
@@ -143,15 +174,39 @@ fn test_run_rejects_mismatched_flags(
 }
 
 #[rstest]
-#[case::compile_without_output(&["compile", "query.mq"], "requires -o/--output")]
-#[case::compile_without_query(&["compile", "-o", "out.mqc"], "Usage: mq compile")]
-#[case::run_without_program(&["run"], "Usage: mq run")]
-#[case::run_source_file(&["run", "query.mq"], "not an mq bytecode file")]
+#[case::compile_mqc_without_output(&["compile", "query.mqc"], "pass -o/--output")]
+#[case::compile_without_query(&["compile", "-o", "out.mqc"], "<QUERY_FILE>")]
+#[case::compile_flags_before_subcommand(&["-A", "compile", "query.mq"], "Pass compile options after `compile`")]
+#[case::compile_runtime_flag(&["compile", "--stream", "query.mq"], "unexpected argument '--stream'")]
+#[case::mqc_extension_not_bytecode(&["source.mqc"], "not an mq bytecode file")]
+#[case::from_file_mqc(&["-f", "source.mqc"], "-f does not accept .mqc files")]
 fn test_usage_errors(#[case] args: &[&str], #[case] message: &str) {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "query.mq", ".h");
+    write(dir.path(), "source.mqc", ".h");
     let error = stderr(mq(dir.path()).args(args).assert());
     assert!(error.contains(message), "{error}");
+}
+
+#[rstest]
+#[case::same_directory("query.mq", "query.mqc")]
+#[case::no_extension("query", "query.mqc")]
+#[case::subdirectory("sub/query.mq", "sub/query.mqc")]
+fn test_compile_defaults_output_to_mqc_extension(#[case] query_file: &str, #[case] expected: &str) {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("sub")).unwrap();
+    write(dir.path(), query_file, ".h");
+    mq(dir.path()).args(["compile", query_file]).assert().success();
+    let output = stdout(mq(dir.path()).args([expected]).write_stdin("# a\n").assert());
+    assert_eq!(output, "# a\n");
+}
+
+#[test]
+fn test_runs_mqc_given_as_query() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), ".h | upcase()", &[]);
+    let output = stdout(mq(dir.path()).args(["query.mqc"]).write_stdin("# a\n").assert());
+    assert_eq!(output, "# A\n");
 }
 
 #[test]
@@ -164,7 +219,7 @@ fn test_run_rejects_corrupted_program() {
     bytes[middle] ^= 0xFF;
     fs::write(&path, bytes).unwrap();
 
-    let error = stderr(mq(dir.path()).args(["run", "query.mqc"]).write_stdin("# a\n").assert());
+    let error = stderr(mq(dir.path()).args(["query.mqc"]).write_stdin("# a\n").assert());
     assert!(error.contains("checksum mismatch"), "{error}");
 }
 
@@ -174,12 +229,7 @@ fn test_run_rejects_watch() {
     compile(dir.path(), "self", &[]);
     let input = write(dir.path(), "input.md", "# a\n");
 
-    let error = stderr(
-        mq(dir.path())
-            .args(["run", "query.mqc", "--watch"])
-            .arg(&input)
-            .assert(),
-    );
+    let error = stderr(mq(dir.path()).args(["query.mqc", "--watch"]).arg(&input).assert());
     assert!(error.contains("--watch does not support"), "{error}");
 }
 
@@ -197,13 +247,7 @@ fn source_output(dir: &Path, query: &str, args: &[&str], stdin: &str) -> String 
 }
 
 fn run_output(dir: &Path, args: &[&str], stdin: &str) -> String {
-    stdout(
-        mq(dir)
-            .args(["run", "query.mqc"])
-            .args(args)
-            .write_stdin(stdin)
-            .assert(),
-    )
+    stdout(mq(dir).args(["query.mqc"]).args(args).write_stdin(stdin).assert())
 }
 
 #[rstest]
@@ -222,7 +266,7 @@ fn test_run_checks_native_input_format(
     }
     let error = message(&stderr(
         mq(dir.path())
-            .args(["run", "query.mqc", "-I", run])
+            .args(["query.mqc", "-I", run])
             .write_stdin("# a\n")
             .assert(),
     ));
@@ -242,7 +286,7 @@ fn test_run_checks_parsed_input_format(
     compile(dir.path(), "self", &["-I", compiled]);
     let error = message(&stderr(
         mq(dir.path())
-            .args(["run", "query.mqc", "-I", run])
+            .args(["query.mqc", "-I", run])
             .write_stdin("a\n")
             .assert(),
     ));
@@ -270,7 +314,7 @@ fn test_run_without_compile_time_format_rejects_parsed_formats(
     compile(dir.path(), "self", &[]);
     let error = message(&stderr(
         mq(dir.path())
-            .args(["run", "query.mqc", "-I", run])
+            .args(["query.mqc", "-I", run])
             .write_stdin("a\n")
             .assert(),
     ));
@@ -298,7 +342,7 @@ fn test_run_checks_format_inferred_from_extension(
     let dir = TempDir::new().unwrap();
     compile(dir.path(), "self", &["-I", compiled]);
     let mut command = mq(dir.path());
-    command.args(["run", "query.mqc"]).write_stdin("# a\n");
+    command.args(["query.mqc"]).write_stdin("# a\n");
     if let Some(file) = file {
         command.arg(write(dir.path(), file, "# a\n"));
     }
@@ -333,11 +377,7 @@ fn test_run_checks_every_input_file(#[case] mode: &[&str], #[case] expected: &st
         write(dir.path(), "c.txt", "# c\n"),
     ];
     let error = message(&stderr(
-        mq(dir.path())
-            .args(["run", "query.mqc"])
-            .args(mode)
-            .args(&files)
-            .assert(),
+        mq(dir.path()).args(["query.mqc"]).args(mode).args(&files).assert(),
     ));
     assert!(error.contains(expected), "{error}");
 }
@@ -360,13 +400,7 @@ fn test_run_accepts_files_matching_compiled_format(#[case] mode: &[&str]) {
         lines
     };
     let expected = stdout(mq(dir.path()).args(mode).arg(".h | to_text()").args(&files).assert());
-    let actual = stdout(
-        mq(dir.path())
-            .args(["run", "query.mqc"])
-            .args(mode)
-            .args(&files)
-            .assert(),
-    );
+    let actual = stdout(mq(dir.path()).args(["query.mqc"]).args(mode).args(&files).assert());
     assert_eq!(sorted_lines(actual), sorted_lines(expected));
 }
 
@@ -383,7 +417,7 @@ fn test_compile_rejects_runtime_names_in_module_let(#[case] query: &str) {
 
     let error = message(&stderr(
         mq(dir.path())
-            .args(["-L", "modules", "compile", "query.mq", "-o", "query.mqc"])
+            .args(["compile", "-L", "modules", "query.mq", "-o", "query.mqc"])
             .assert(),
     ));
     assert!(
@@ -409,7 +443,7 @@ fn test_run_reads_runtime_names_outside_module_let(#[case] query: &str) {
     for value in ["hello", "world"] {
         let output = stdout(
             mq(dir.path())
-                .args(["run", "query.mqc", "-I", "null", "--args", "arg", value])
+                .args(["query.mqc", "-I", "null", "--args", "arg", value])
                 .assert(),
         );
         assert_eq!(output.trim(), value);
@@ -425,7 +459,7 @@ fn test_run_dumps_loaded_bytecode(#[case] query: &str, #[case] expected: &[&str]
     let dir = TempDir::new().unwrap();
     compile(dir.path(), query, &[]);
     let output = mq(dir.path())
-        .args(["--dump-bytecode", "run", "query.mqc"])
+        .args(["--dump-bytecode", "query.mqc"])
         .write_stdin("# a\n")
         .assert()
         .success();
@@ -443,6 +477,6 @@ fn test_runtime_error_in_standard_module_matches_source(#[case] query: &str) {
     let dir = TempDir::new().unwrap();
     compile(dir.path(), query, &[]);
     let expected = stderr(mq(dir.path()).arg(query).write_stdin("# a\n").assert());
-    let actual = stderr(mq(dir.path()).args(["run", "query.mqc"]).write_stdin("# a\n").assert());
+    let actual = stderr(mq(dir.path()).args(["query.mqc"]).write_stdin("# a\n").assert());
     assert_eq!(actual, expected);
 }

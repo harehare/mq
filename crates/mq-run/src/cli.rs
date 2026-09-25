@@ -35,9 +35,8 @@ use crate::grep;
 use mq_help as help;
 
 mod mqc;
-use mqc::BytecodeCommand;
 
-/// A file's query prefix and, for `mq run`, its input format.
+/// A file's query prefix and, for a `.mqc` program, its input format.
 type ProgramKey = (Option<String>, Option<String>);
 
 fn parse_timeout(value: &str) -> Result<Duration, String> {
@@ -60,8 +59,8 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(after_help = "# Examples\n\n\
     mq 'query' file.md\n\n\
-    mq compile query.mq -o query.mqc\n\
-    mq run query.mqc file.md\n\n\
+    mq compile query.mq\n\
+    mq query.mqc file.md\n\n\
     Run `mq help examples` for more usage examples, or `mq help <name>` for\n\
     function/selector/module docs.\n")]
 #[command(
@@ -138,7 +137,7 @@ pub struct Cli {
     #[arg(long = "dump-bytecode", default_value_t = false)]
     dump_bytecode: bool,
 
-    /// The `.mqc` program for `mq run`, which replaces the query.
+    /// The `.mqc` program, which replaces the query.
     #[arg(skip)]
     bytecode: std::sync::OnceLock<Vec<u8>>,
 }
@@ -422,15 +421,12 @@ pub enum LinkUrlStyle {
     Angle,
 }
 
-#[derive(Clone, Debug, clap::Args, Default)]
-struct InputArgs {
+/// Flags that shape the compiled program or its permissions, shared by queries and `mq compile`.
+#[derive(Clone, Debug, clap::Args, Default, PartialEq)]
+struct ProgramArgs {
     /// Aggregate all input files/content into a single array
     #[arg(short = 'A', long, default_value_t = false)]
     aggregate: bool,
-
-    /// load filter from the file
-    #[arg(short, long, default_value_t = false)]
-    from_file: bool,
 
     /// Set input format
     #[arg(short = 'I', long, value_enum)]
@@ -459,46 +455,6 @@ struct InputArgs {
     /// Import modules by name, making them available as `name::fn()` in queries
     #[arg(short = 'm', long)]
     import_module_names: Option<Vec<String>>,
-
-    /// Sets a named string argument. NAME is accessible directly in queries, and also
-    /// via ARGS."named" when --args or --argv is given.
-    #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
-    args: Option<Vec<String>>,
-
-    /// Sets a named JSON argument. NAME is accessible directly in queries
-    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
-    argjson: Option<Vec<String>>,
-
-    /// Sets file contents that can be referenced at runtime
-    #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
-    raw_file: Option<Vec<String>>,
-
-    /// Sets a named argument from a JSON file. NAME is bound to an array of every JSON
-    /// value found in FILE (jq --slurpfile compatible), so a file containing a single
-    /// JSON value becomes a one-element array.
-    #[arg(long = "slurpfile", num_args = 2, value_names = ["NAME", "FILE"])]
-    slurp_file: Option<Vec<String>>,
-
-    /// Enable streaming mode for processing large files line by line
-    #[arg(long, default_value_t = false)]
-    stream: bool,
-
-    /// Watch the input file(s) for changes and automatically re-run the query whenever
-    /// they change. Requires at least one input file (stdin cannot be watched). With
-    /// --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a
-    /// query error is printed to stderr and watching continues rather than exiting.
-    #[cfg(feature = "watch")]
-    #[arg(long, default_value_t = false)]
-    watch: bool,
-
-    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
-    /// instead of once per file. Enables cross-file aggregation in a single query.
-    #[arg(
-        long = "eval-all",
-        default_value_t = false,
-        conflicts_with_all = ["update", "count", "stream", "separator"]
-    )]
-    eval_all: bool,
 
     /// Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
     #[cfg(feature = "http-import")]
@@ -610,7 +566,57 @@ struct InputArgs {
     sandbox: Option<SandboxProfile>,
 }
 
-impl InputArgs {
+#[derive(Clone, Debug, clap::Args, Default)]
+struct InputArgs {
+    #[clap(flatten)]
+    program: ProgramArgs,
+
+    /// load filter from the file
+    #[arg(short, long, default_value_t = false)]
+    from_file: bool,
+
+    /// Sets a named string argument. NAME is accessible directly in queries, and also
+    /// via ARGS."named" when --args or --argv is given.
+    #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
+    args: Option<Vec<String>>,
+
+    /// Sets a named JSON argument. NAME is accessible directly in queries
+    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
+    argjson: Option<Vec<String>>,
+
+    /// Sets file contents that can be referenced at runtime
+    #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
+    raw_file: Option<Vec<String>>,
+
+    /// Sets a named argument from a JSON file. NAME is bound to an array of every JSON
+    /// value found in FILE (jq --slurpfile compatible), so a file containing a single
+    /// JSON value becomes a one-element array.
+    #[arg(long = "slurpfile", num_args = 2, value_names = ["NAME", "FILE"])]
+    slurp_file: Option<Vec<String>>,
+
+    /// Enable streaming mode for processing large files line by line
+    #[arg(long, default_value_t = false)]
+    stream: bool,
+
+    /// Watch the input file(s) for changes and automatically re-run the query whenever
+    /// they change. Requires at least one input file (stdin cannot be watched). With
+    /// --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a
+    /// query error is printed to stderr and watching continues rather than exiting.
+    #[cfg(feature = "watch")]
+    #[arg(long, default_value_t = false)]
+    watch: bool,
+
+    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
+    /// instead of once per file. Enables cross-file aggregation in a single query.
+    #[arg(
+        long = "eval-all",
+        default_value_t = false,
+        conflicts_with_all = ["update", "count", "stream", "separator"]
+    )]
+    eval_all: bool,
+}
+
+impl ProgramArgs {
     /// Builds sandboxed IO permissions from `--sandbox` or the individual `--allow-*` flags.
     fn build_sandboxed_io(&self) -> mq_lang::SandboxedIo {
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
@@ -842,6 +848,16 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
+    /// Compile a query file to `.mqc` bytecode. Run it with `mq PROGRAM.mqc [FILES]...`
+    Compile {
+        /// Query file to compile
+        query_file: PathBuf,
+        /// Output file [default: QUERY_FILE with a `.mqc` extension]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[clap(flatten)]
+        program: Box<ProgramArgs>,
+    },
 }
 
 /// Shell targets supported by the `completion` subcommand.
@@ -1017,14 +1033,7 @@ impl Cli {
                 "  {} - Generate a shell completion script and print it to stdout",
                 "completion".green()
             ),
-            format!(
-                "  {} - Compile a query file to bytecode: mq compile QUERY_FILE -o OUTPUT.mqc",
-                "compile".green()
-            ),
-            format!(
-                "  {} - Run compiled bytecode: mq run PROGRAM.mqc [FILES]...",
-                "run".green()
-            ),
+            format!("  {} - Compile a query file to .mqc bytecode", "compile".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -1665,11 +1674,20 @@ impl Cli {
             ));
         }
 
-        match self.bytecode_command() {
-            Some(BytecodeCommand::Compile) => return self.compile_bytecode(),
-            Some(BytecodeCommand::Run) => self.load_bytecode()?,
-            None => {}
+        if let Some(Commands::Compile {
+            query_file,
+            output,
+            program,
+        }) = &self.commands
+        {
+            if self.input.program != ProgramArgs::default() {
+                return Err(miette!(
+                    "Pass compile options after `compile`: mq compile [OPTIONS] QUERY_FILE"
+                ));
+            }
+            return Self::compile_bytecode(query_file, output.as_deref(), program);
         }
+        self.load_bytecode()?;
 
         // Check if query is actually an external subcommand
         // This handles the case where clap parses "mq test arg1" as query="test", files=["arg1"]
@@ -1722,13 +1740,7 @@ impl Cli {
             return Err(miette!("--indent/--tab are only valid with -F json or -F xml"));
         }
 
-        if (self.input.csv_delimiter.is_some() || self.input.no_header)
-            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
-        {
-            return Err(miette!(
-                "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
-            ));
-        }
+        self.validate_csv_options()?;
 
         match &self.commands {
             Some(Commands::Repl { files }) => {
@@ -1756,6 +1768,7 @@ impl Cli {
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             Some(Commands::Help { name, json, markdown }) => Self::run_help(name.as_deref(), *json, *markdown),
+            Some(Commands::Compile { .. }) => unreachable!("handled before input validation"),
             #[cfg(feature = "watch")]
             None if self.input.watch => self.run_watch(),
             None => {
@@ -1784,26 +1797,26 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
-        let sandboxed_io = self.input.build_sandboxed_io();
+        let sandboxed_io = self.input.program.build_sandboxed_io();
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
 
-        if self.input.aggregate {
+        if self.input.program.aggregate {
             engine.import_module("section").map_err(|e| *e)?;
         }
 
-        if let Some(dirs) = &self.input.module_directories {
+        if let Some(dirs) = &self.input.program.module_directories {
             engine.set_search_paths(dirs.clone());
         }
 
-        if let Some(modules) = &self.input.module_names {
+        if let Some(modules) = &self.input.program.module_names {
             for module_name in modules {
                 engine.load_module(module_name).map_err(|e| *e)?;
             }
         }
 
-        if let Some(modules) = &self.input.import_module_names {
+        if let Some(modules) = &self.input.program.import_module_names {
             for module_name in modules {
                 engine.import_module(module_name).map_err(|e| *e)?;
             }
@@ -1895,23 +1908,25 @@ impl Cli {
         #[cfg(feature = "http-import")]
         {
             engine.set_http_import_enabled(
-                self.input.allow_http_import || self.input.allow_all || self.input.sandbox_enables_http_import(),
+                self.input.program.allow_http_import
+                    || self.input.program.allow_all
+                    || self.input.program.sandbox_enables_http_import(),
             );
-            if let Some(domains) = &self.input.allowed_domains {
+            if let Some(domains) = &self.input.program.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
             }
-            if self.input.no_lockfile {
+            if self.input.program.no_lockfile {
                 engine.set_lockfile_enabled(false);
             }
-            if self.input.frozen {
+            if self.input.program.frozen {
                 engine.set_lockfile_frozen(true);
             }
-            if let Some(path) = &self.input.lockfile_path {
+            if let Some(path) = &self.input.program.lockfile_path {
                 engine.set_lockfile_path(path.clone());
             }
-            if self.input.clear_cache {
+            if self.input.program.clear_cache {
                 engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
-            } else if self.input.refresh_modules {
+            } else if self.input.program.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }
@@ -1953,12 +1968,24 @@ impl Cli {
             None => return Err(miette!("Query is required")),
         };
 
-        let aggregate = self.input.aggregate.then_some("nodes");
+        let aggregate = self.input.program.aggregate.then_some("nodes");
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
+    }
+
+    fn validate_csv_options(&self) -> miette::Result<()> {
+        if (self.input.program.csv_delimiter.is_some() || self.input.program.no_header)
+            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
+        {
+            return Err(miette!(
+                "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
+            ));
+        }
+        Ok(())
     }
 
     fn explicit_input_format(&self) -> Option<InputFormat> {
         self.input
+            .program
             .input_format
             .clone()
             .or_else(|| self.format.clone().map(InputFormat::from))
@@ -1999,9 +2026,9 @@ impl Cli {
 
     /// `--csv-delimiter`/`--no-header`-aware prefix for csv/tsv/psv; `None` otherwise.
     fn tabular_query_prefix(&self, fmt: &InputFormat) -> Option<String> {
-        let has_header = !self.input.no_header;
+        let has_header = !self.input.program.no_header;
         match fmt {
-            InputFormat::Csv => Some(match self.input.csv_delimiter {
+            InputFormat::Csv => Some(match self.input.program.csv_delimiter {
                 Some(delimiter) => format!(
                     r#"import "csv" | csv::csv_parse_with_delimiter({:?}, {has_header})"#,
                     delimiter.to_string()
@@ -2193,7 +2220,7 @@ impl Cli {
         }
     }
 
-    /// Compiles the query for `file`, or loads the `mq run` program.
+    /// Compiles the query for `file`, or loads the `.mqc` program.
     fn prepare_program(
         &self,
         engine: &mut mq_lang::DefaultEngine,
@@ -2208,7 +2235,7 @@ impl Cli {
         }
     }
 
-    /// Evaluates the query, or the `mq run` program, against one input.
+    /// Evaluates the query, or the `.mqc` program, against one input.
     #[cfg_attr(feature = "debug-trace", allow(dead_code))]
     fn eval_query(
         &self,
@@ -2809,12 +2836,7 @@ impl Cli {
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
-        let files = match self.files.as_deref() {
-            // The first positional is the `mq run` program.
-            Some([_, inputs @ ..]) if self.bytecode.get().is_some() => (!inputs.is_empty()).then_some(inputs),
-            files => files,
-        };
-        files.map(Self::expand_glob_patterns).transpose()
+        self.files.as_deref().map(Self::expand_glob_patterns).transpose()
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
@@ -3278,7 +3300,10 @@ mod tests {
     fn test_cli_null_input() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3303,7 +3328,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3332,7 +3360,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3367,7 +3398,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3397,7 +3431,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3429,7 +3466,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3445,8 +3485,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_read: Some(vec![]),
+                program: ProgramArgs {
+                    allow_read: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3464,7 +3507,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3480,8 +3526,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_run: Some(vec![]),
+                program: ProgramArgs {
+                    allow_run: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3494,8 +3543,11 @@ mod tests {
 
         let restricted_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_run: Some(vec!["ls".to_string()]),
+                program: ProgramArgs {
+                    allow_run: Some(vec!["ls".to_string()]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3522,7 +3574,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3535,8 +3590,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_env: Some(vec![]),
+                program: ProgramArgs {
+                    allow_env: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3549,8 +3607,11 @@ mod tests {
 
         let restricted_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_env: Some(vec!["MQ_OTHER_VAR".to_string()]),
+                program: ProgramArgs {
+                    allow_env: Some(vec!["MQ_OTHER_VAR".to_string()]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3575,8 +3636,11 @@ mod tests {
 
         let base_cli = |query: &str, allow_all: bool| Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_all,
+                program: ProgramArgs {
+                    allow_all,
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3637,7 +3701,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_strict_denies_everything() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Strict),
             ..Default::default()
         }
@@ -3652,7 +3716,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_read_only_grants_read_only() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::ReadOnly),
             ..Default::default()
         }
@@ -3667,7 +3731,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_networked_grants_net_only() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Networked),
             ..Default::default()
         }
@@ -3682,7 +3746,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_unsafe_grants_every_capability() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Unsafe),
             ..Default::default()
         }
@@ -3698,28 +3762,18 @@ mod tests {
     #[cfg(feature = "http-import")]
     #[test]
     fn test_sandbox_http_import_enablement() {
-        assert!(!InputArgs::default().sandbox_enables_http_import());
-        assert!(
-            !InputArgs {
-                sandbox: Some(SandboxProfile::ReadOnly),
+        assert!(!ProgramArgs::default().sandbox_enables_http_import());
+        for (sandbox, expected) in [
+            (SandboxProfile::ReadOnly, false),
+            (SandboxProfile::Networked, true),
+            (SandboxProfile::Unsafe, true),
+        ] {
+            let args = ProgramArgs {
+                sandbox: Some(sandbox),
                 ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
-        assert!(
-            InputArgs {
-                sandbox: Some(SandboxProfile::Networked),
-                ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
-        assert!(
-            InputArgs {
-                sandbox: Some(SandboxProfile::Unsafe),
-                ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
+            };
+            assert_eq!(args.sandbox_enables_http_import(), expected);
+        }
     }
 
     #[cfg(feature = "http-import")]
@@ -3729,7 +3783,10 @@ mod tests {
         // request, so this stays fast and deterministic regardless of connectivity.
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3751,8 +3808,11 @@ mod tests {
     fn test_allowed_domain_alone_does_not_enable_http_import() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allowed_domains: Some(vec!["example.com".to_string()]),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    allowed_domains: Some(vec!["example.com".to_string()]),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3801,7 +3861,10 @@ mod tests {
     fn test_timeout_aborts_infinite_loop() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3819,7 +3882,10 @@ mod tests {
     fn test_timeout_allows_normal_query() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3903,7 +3969,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Text),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Text),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -4054,8 +4123,11 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                module_names: Some(vec!["math".to_string()]),
-                module_directories: Some(vec![temp_dir.clone()]),
+                program: ProgramArgs {
+                    module_names: Some(vec!["math".to_string()]),
+                    module_directories: Some(vec![temp_dir.clone()]),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -4251,7 +4323,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Mdx),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Mdx),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4287,7 +4362,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Html),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Html),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4649,7 +4727,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4687,7 +4768,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4780,7 +4864,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4815,7 +4902,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4854,7 +4944,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4890,7 +4983,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5043,7 +5139,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5087,7 +5186,10 @@ mod tests {
         // both files into a single collection before "nodes" runs, giving one total.
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -5281,7 +5383,10 @@ mod tests {
     fn test_update_with_non_markdown_input() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Html),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Html),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5715,7 +5820,10 @@ mod tests {
     fn test_auto_query_prefix_disabled_when_input_format_set() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Raw),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Raw),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -5752,9 +5860,12 @@ mod tests {
     ) {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(fmt.clone()),
-                csv_delimiter,
-                no_header,
+                program: ProgramArgs {
+                    input_format: Some(fmt.clone()),
+                    csv_delimiter,
+                    no_header,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -5970,7 +6081,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Markdown),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Markdown),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6011,9 +6125,12 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Csv),
-                csv_delimiter: Some(';'),
-                no_header: true,
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Csv),
+                    csv_delimiter: Some(';'),
+                    no_header: true,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6099,7 +6216,10 @@ mod tests {
     fn test_is_binary_format(#[case] fmt: Option<InputFormat>, #[case] expected: bool) {
         let cli = Cli {
             input: InputArgs {
-                input_format: fmt,
+                program: ProgramArgs {
+                    input_format: fmt,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -6124,7 +6244,10 @@ mod tests {
     fn test_binary_format_streaming_returns_error(#[case] fmt: InputFormat) {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(fmt),
+                program: ProgramArgs {
+                    input_format: Some(fmt),
+                    ..Default::default()
+                },
                 stream: true,
                 ..Default::default()
             },
@@ -6150,7 +6273,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Bytes),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Bytes),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6186,7 +6312,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Bytes),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Bytes),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6230,7 +6359,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: fmt,
+                program: ProgramArgs {
+                    input_format: fmt,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6314,7 +6446,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args,
                 ..Default::default()
             },
@@ -6388,7 +6523,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 argjson: Some(argjson),
                 ..Default::default()
             },
@@ -6410,7 +6548,10 @@ mod tests {
     fn test_argjson_invalid_json_errors() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 argjson: Some(vec!["name".to_string(), "not valid json".to_string()]),
                 ..Default::default()
             },
@@ -6437,7 +6578,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 argjson: Some(vec!["count".to_string(), "42".to_string()]),
                 ..Default::default()
@@ -6477,7 +6621,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
                 ..Default::default()
             },
@@ -6506,7 +6653,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
                 ..Default::default()
             },
@@ -6524,7 +6674,10 @@ mod tests {
     fn test_slurpfile_missing_file_errors() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), "/nonexistent/path/to/file.json".to_string()]),
                 ..Default::default()
             },
@@ -6552,7 +6705,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 argjson: Some(vec!["count".to_string(), "42".to_string()]),
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
@@ -6669,7 +6825,10 @@ mod tests {
         let pattern = temp_dir.join("mq_glob_expand_test_*.md");
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -6708,7 +6867,10 @@ mod tests {
         let pattern2 = temp_dir.join("mq_glob_multi_other_*.md");
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -6848,7 +7010,10 @@ mod tests {
     fn test_args_pair_works() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 ..Default::default()
             },
