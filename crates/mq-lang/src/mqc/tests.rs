@@ -123,13 +123,107 @@ fn test_mqc_runtime_error_points_at_original_source() {
     assert_eq!(&query[offset..offset + 1], "/", "location: {offset}");
 }
 
-#[test]
-fn test_mqc_module_error_points_at_module_source() {
-    let query = r#"import "csv" | csv::csv_parse(1, 2, 3)"#;
-    let bytes = compile(query);
-    let expected = engine().eval(query, crate::null_input().into_iter()).unwrap_err();
-    let actual = run_mqc(&bytes, crate::null_input()).unwrap_err();
+#[rstest]
+#[case::call_site(r#"import "csv" | csv::csv_parse(1, 2, 3)"#)]
+#[case::inside_imported_module(r#"import "csv" | csv::csv_parse(true)"#)]
+#[case::inside_included_module(r#"include "csv" | csv_parse(true)"#)]
+fn test_mqc_standard_module_error_matches_eval(#[case] query: &str) {
+    let expected = engine().eval(query, markdown("# a\n").into_iter()).unwrap_err();
+    let actual = run_mqc(&compile(query), markdown("# a\n")).unwrap_err();
     assert_eq!(actual.cause.to_string(), expected.cause.to_string());
+    assert_eq!(actual.source_code.name(), expected.source_code.name());
+    assert_eq!(actual.source_code.inner(), expected.source_code.inner());
+    assert_eq!(actual.location, expected.location);
+}
+
+fn source_files(bytes: &[u8]) -> Vec<SourceFile> {
+    let sections = read_container(bytes).unwrap();
+    let section = sections.iter().find(|section| section.tag == SOURCE).unwrap();
+    decode_source(&section.payload).unwrap().0
+}
+
+#[test]
+fn test_mqc_omits_every_standard_module_source() {
+    for (name, source) in crate::STANDARD_MODULES.iter() {
+        let functions: Vec<&str> = source()
+            .lines()
+            .filter_map(|line| line.strip_prefix("def ")?.split('(').next())
+            .collect();
+        let query = format!(r#"include "{name}" | len([{}])"#, functions.join(", "));
+        let bytes = compile(&query);
+        let files = source_files(&bytes);
+        assert!(
+            files.iter().any(|file| file.name == name.as_str()),
+            "{name} not referenced"
+        );
+        for file in &files {
+            let expected = (file.name == crate::Module::TOP_LEVEL_MODULE).then(|| query.clone());
+            assert_eq!(file.text, expected, "{name}: source of {}", file.name);
+        }
+        let cause = |result: crate::MqResult| result.map_err(|error| error.cause.to_string());
+        let expected = cause(engine().eval(&query, markdown("# a\n").into_iter()));
+        assert_eq!(cause(run_mqc(&bytes, markdown("# a\n"))), expected, "{name}");
+    }
+}
+
+#[rstest]
+#[case::inline_module(r#"module m: def f(): "inline"; end | m::f()"#, "inline")]
+#[case::shadowed_standard_module(r#"import "csv" | csv::label()"#, "shadow")]
+fn test_mqc_keeps_source_of_modules_not_bundled(#[case] query: &str, #[case] output: &str) {
+    const SHADOW_CSV: &str = r#"def label(): "shadow";"#;
+
+    #[derive(Clone, Default)]
+    struct ShadowingResolver;
+
+    impl crate::ModuleResolver for ShadowingResolver {
+        fn resolve(&self, name: &str) -> Result<String, crate::ModuleError> {
+            match name {
+                "csv" => Ok(SHADOW_CSV.to_string()),
+                _ => Err(crate::ModuleError::NotFound(format!("{name}.mq").into())),
+            }
+        }
+        fn get_path(&self, name: &str) -> Result<String, crate::ModuleError> {
+            Ok(name.to_string())
+        }
+        fn search_paths(&self) -> Vec<std::path::PathBuf> {
+            Vec::new()
+        }
+        fn set_search_paths(&mut self, _paths: Vec<std::path::PathBuf>) {}
+    }
+
+    let mut shadowing = Engine::new(ShadowingResolver);
+    shadowing.load_builtin_module();
+    let bytes = shadowing.compile_to_mqc(query, &[]).unwrap();
+    for file in source_files(&bytes) {
+        if file.name != crate::Module::BUILTIN_MODULE {
+            assert!(file.text.is_some(), "source of {} omitted", file.name);
+        }
+    }
+    assert!(
+        source_files(&bytes)
+            .iter()
+            .all(|file| file.text.as_deref() != Some(standard_module_source("csv").unwrap()))
+    );
+    // Runs without the resolver that produced the module.
+    let result = run_mqc(&bytes, crate::null_input()).unwrap();
+    assert_eq!(result, vec![output.to_string().into()].into());
+}
+
+#[test]
+fn test_load_mqc_rejects_missing_source_of_unbundled_module() {
+    let bytes = rewrite(&compile("upcase()"), |sections| {
+        let section = sections.iter_mut().find(|section| section.tag == SOURCE).unwrap();
+        let (mut files, spans) = decode_source(&section.payload).unwrap();
+        for file in &mut files {
+            file.text = None;
+        }
+        section.payload = Cow::Owned(encode_source(&files, &spans).unwrap());
+    });
+    let error = engine().load_mqc(&bytes).unwrap_err();
+    assert!(
+        matches!(&error, MqcError::Malformed(message) if message.contains(crate::Module::TOP_LEVEL_MODULE)),
+        "{error:?}"
+    );
 }
 
 #[rstest]

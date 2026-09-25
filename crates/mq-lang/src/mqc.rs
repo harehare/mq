@@ -177,7 +177,7 @@ struct Meta {
 
 struct SourceFile {
     name: String,
-    /// `None` for the builtin module, whose source ships with the matching mq version.
+    /// `None` for modules bundled in the binary.
     text: Option<String>,
 }
 
@@ -316,11 +316,16 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let module_ids = files
             .iter()
             .map(|file| {
-                self.vm
-                    .module_loader
-                    .register_module_source(&file.name, file.text.clone().unwrap_or_default())
+                let text = match (&file.text, file.name.as_str()) {
+                    (Some(text), _) => text.clone(),
+                    (None, crate::Module::BUILTIN_MODULE) => String::new(),
+                    (None, name) => standard_module_source(name)
+                        .ok_or_else(|| MqcError::Malformed(format!("no source for module {name}").into()))?
+                        .to_string(),
+                };
+                Ok(self.vm.module_loader.register_module_source(&file.name, text))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, MqcError>>()?;
         let tokens = spans
             .iter()
             .map(|span| {
@@ -386,8 +391,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                     let name = module_loader.module_name(token.module_id).into_owned();
                     let text = match name.as_str() {
                         crate::Module::BUILTIN_MODULE => None,
-                        _ => Some(
-                            module_loader
+                        _ => {
+                            let text = module_loader
                                 .get_source_code(token.module_id, code.to_string())
                                 .map_err(|error| {
                                     MqcError::Compile(Box::new(error::Error::from_error(
@@ -395,8 +400,9 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                                         error.into(),
                                         module_loader.clone(),
                                     )))
-                                })?,
-                        ),
+                                })?;
+                            (standard_module_source(&name) != Some(text.as_str())).then_some(text)
+                        }
                     };
                     let file = files.len() as u32;
                     files.push(SourceFile { name, text });
@@ -411,6 +417,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
         Ok((files, spans))
     }
+}
+
+/// Source of a standard module bundled in this binary.
+fn standard_module_source(name: &str) -> Option<&'static str> {
+    crate::STANDARD_MODULES.get(name).map(|source| source())
 }
 
 fn hex(bytes: &[u8]) -> String {

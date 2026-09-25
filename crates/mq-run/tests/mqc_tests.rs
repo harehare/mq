@@ -435,3 +435,14 @@ fn test_run_dumps_loaded_bytecode(#[case] query: &str, #[case] expected: &[&str]
     }
     assert!(!dump.contains("StmtBoundary"), "{dump}");
 }
+
+#[rstest]
+#[case::imported_module(r#"import "csv" | csv::csv_parse(true)"#)]
+#[case::included_module(r#"include "csv" | csv_parse(true)"#)]
+fn test_runtime_error_in_standard_module_matches_source(#[case] query: &str) {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), query, &[]);
+    let expected = stderr(mq(dir.path()).arg(query).write_stdin("# a\n").assert());
+    let actual = stderr(mq(dir.path()).args(["run", "query.mqc"]).write_stdin("# a\n").assert());
+    assert_eq!(actual, expected);
+}
