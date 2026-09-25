@@ -57,3 +57,9 @@ fn cst_parse_large_program() {
     let (nodes, _) = mq_lang::parse_recovery(&CODE);
     debug_assert!(!nodes.is_empty());
 }
+
+#[divan::bench]
+fn cst_parse_builtin_module() {
+    let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
+    debug_assert!(!nodes.is_empty());
+}

@@ -2730,6 +2730,7 @@ dependencies = [
 name = "mq-hir"
 version = "0.9.1"
 dependencies = [
+ "codspeed-divan-compat",
  "itertools 0.15.0",
  "mq-lang",
  "rstest",

@@ -74,3 +74,18 @@ fn format_large_array() {
     let mut formatter = Formatter::new(None);
     formatter.format(code).unwrap();
 }
+
+#[divan::bench]
+fn format_builtin_module() {
+    let mut formatter = Formatter::new(None);
+    formatter.format(mq_lang::BUILTIN_MODULE_FILE).unwrap();
+}
+
+/// Excludes parsing.
+#[divan::bench]
+fn format_builtin_module_with_cst(bencher: divan::Bencher) {
+    let (nodes, _) = mq_lang::parse_recovery(mq_lang::BUILTIN_MODULE_FILE);
+    bencher
+        .with_inputs(|| nodes.clone())
+        .bench_local_values(|mut nodes| Formatter::new(None).format_with_cst(&mut nodes).unwrap());
+}

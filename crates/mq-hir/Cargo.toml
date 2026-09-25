@@ -21,4 +21,9 @@ thiserror = {workspace = true}
 url = {workspace = true}
 
 [dev-dependencies]
+divan = {workspace = true}
 rstest = {workspace = true}
+
+[[bench]]
+harness = false
+name = "benchmark"
