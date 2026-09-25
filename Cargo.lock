@@ -2704,6 +2704,7 @@ dependencies = [
  "glob",
  "miette",
  "mq-lang",
+ "proptest",
  "rstest",
 ]
 
@@ -2733,6 +2734,7 @@ dependencies = [
  "codspeed-divan-compat",
  "itertools 0.15.0",
  "mq-lang",
+ "proptest",
  "rstest",
  "rustc-hash",
  "slotmap",

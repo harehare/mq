@@ -903,6 +903,23 @@ mod tests {
         node.children().for_each(|child| walk(child, f));
     }
 
+    /// The pre-iterator `node_range` algorithm, built on `all_children`.
+    fn reference_node_range(node: &Node) -> Range {
+        let children = node.all_children();
+        let first = children.first().map(|c| reference_node_range(c));
+        let last = children.last().map(|c| reference_node_range(c));
+        let own = node.token.as_ref().map(|t| t.range);
+        let start = [own.map(|r| r.start), first.map(|r| r.start)]
+            .into_iter()
+            .flatten()
+            .min();
+        let end = [own.map(|r| r.end), last.map(|r| r.end)].into_iter().flatten().max();
+        Range {
+            start: start.unwrap_or_default(),
+            end: end.unwrap_or_default(),
+        }
+    }
+
     #[rstest]
     #[case::if_elif_else("if (a): 1 elif (b): 2 else: 3")]
     #[case::def_and_call("def f(x, y = 1): x + y; | f(1)")]
@@ -911,12 +928,19 @@ mod tests {
     #[case::import_alias("import \"csv\" as c | c::parse(\"a\")")]
     #[case::loops("foreach (x, [1, 2]): x; | while (true): break: 1; | loop: continue;")]
     #[case::dict_group("{\"a\": (1 + 2), ...b} | .h1 | .[0]")]
+    #[case::strings_and_symbols("\"s\" | s\"${x}\" | :sym | $HOME | b\"ab\"")]
+    #[case::selectors(".h1.value | .[0][1] | .code(\"rust\") | self.depth")]
+    #[case::module_and_unless("module m: def g(): 1; end | unless (x): 1")]
+    #[case::var_assign("var x = 1 | x += 2 | x = 3")]
     fn test_children_matches_all_children(#[case] code: &str) {
         let (nodes, errors) = crate::parse_recovery(code);
         assert!(!errors.has_errors(), "{code}: {errors}");
 
         for node in &nodes {
             walk(node, &mut |node| {
+                assert_eq!(node.name(), node.token.as_ref().map(|t| SmolStr::new(t.to_string())));
+                assert_eq!(node.node_range(), reference_node_range(node));
+
                 let expected = node.all_children().to_vec();
                 assert_eq!(node.children().cloned().collect::<Vec<_>>(), expected);
                 assert_eq!(

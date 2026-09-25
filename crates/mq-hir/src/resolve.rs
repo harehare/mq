@@ -176,3 +176,221 @@ impl Hir {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+    use smol_str::SmolStr;
+    use url::Url;
+
+    use crate::{Hir, SymbolKind};
+
+    /// (ref url, ref name, ref line, target url, target name, target line), independent of slot ids.
+    type Resolution = (String, SmolStr, u32, String, SmolStr, u32);
+
+    fn resolutions(hir: &Hir) -> Vec<Resolution> {
+        let describe = |id| {
+            let symbol = &hir.symbols[id];
+            let url = symbol
+                .source
+                .source_id
+                .and_then(|source_id| hir.url_by_source(&source_id))
+                .map(Url::to_string)
+                .unwrap_or_default();
+            let line = symbol.source.text_range.map_or(0, |r| r.start.line);
+            (url, symbol.value.clone().unwrap_or_default(), line)
+        };
+        let mut pairs: Vec<Resolution> = hir
+            .references
+            .iter()
+            .map(|(ref_id, def_id)| {
+                let (ru, rn, rl) = describe(*ref_id);
+                let (du, dn, dl) = describe(*def_id);
+                (ru, rn, rl, du, dn, dl)
+            })
+            .collect();
+        pairs.sort();
+        pairs
+    }
+
+    fn hir_without_builtin() -> Hir {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir
+    }
+
+    fn add(hir: &mut Hir, url: &str, code: &str) {
+        let (nodes, _) = mq_lang::parse_recovery(code);
+        hir.add_nodes(Url::parse(url).unwrap(), &nodes);
+    }
+
+    /// Kind of the symbol that the call named `name` in `url` resolves to.
+    fn call_target(hir: &Hir, url: &str, name: &str) -> Option<(SymbolKind, String)> {
+        let source_id = hir.source_by_url(&Url::parse(url).unwrap())?;
+        let (call_id, _) = hir.symbols().find(|(_, s)| {
+            s.source.source_id == Some(source_id)
+                && s.value.as_deref() == Some(name)
+                && matches!(s.kind, SymbolKind::Call | SymbolKind::Ref)
+        })?;
+        let target = &hir.symbols[hir.resolve_reference_symbol(call_id)?];
+        let target_url = hir.url_by_source(&target.source.source_id?)?.to_string();
+        Some((target.kind.clone(), target_url))
+    }
+
+    const USER: &str = "file:///user.mq";
+    const LIB_A: &str = "file:///a.mq";
+    const LIB_B: &str = "file:///b.mq";
+
+    #[test]
+    fn test_unresolved_ref_resolves_once_a_module_defines_it() {
+        let mut hir = hir_without_builtin();
+        add(&mut hir, USER, "helper(1)");
+        assert_eq!(call_target(&hir, USER, "helper"), None);
+
+        add(&mut hir, LIB_A, "module a: def helper(x): x; end");
+        assert_eq!(
+            call_target(&hir, USER, "helper").map(|(_, url)| url),
+            Some(LIB_A.to_string())
+        );
+    }
+
+    #[test]
+    fn test_ref_becomes_unresolved_when_its_target_is_removed() {
+        let mut hir = hir_without_builtin();
+        add(&mut hir, LIB_A, "module a: def helper(x): x; end");
+        add(&mut hir, USER, "helper(1)");
+        assert!(call_target(&hir, USER, "helper").is_some());
+
+        add(&mut hir, LIB_A, "module a: def other(x): x; end");
+        assert_eq!(call_target(&hir, USER, "helper"), None);
+        assert!(hir.fallback_references.is_empty());
+    }
+
+    #[test]
+    fn test_cross_source_ref_switches_to_higher_priority_definition() {
+        let mut hir = hir_without_builtin();
+        add(&mut hir, LIB_A, "module a: let helper = 1 end");
+        add(&mut hir, USER, "helper");
+        assert!(matches!(
+            call_target(&hir, USER, "helper"),
+            Some((SymbolKind::Variable, _))
+        ));
+
+        // A function outranks a variable across sources, so the existing resolution must be revisited.
+        add(&mut hir, LIB_B, "module b: def helper(): 1; end");
+        assert_eq!(
+            call_target(&hir, USER, "helper"),
+            Some((SymbolKind::Function(Vec::new()), LIB_B.to_string()))
+        );
+    }
+
+    #[test]
+    fn test_scope_resolution_is_kept_and_not_tracked_as_fallback() {
+        let mut hir = hir_without_builtin();
+        add(&mut hir, USER, "def helper(): 1; | helper()");
+        add(&mut hir, LIB_A, "module a: def helper(): 2; end");
+
+        assert_eq!(
+            call_target(&hir, USER, "helper").map(|(_, url)| url),
+            Some(USER.to_string())
+        );
+        assert!(hir.fallback_references.is_empty());
+    }
+
+    #[test]
+    fn test_builtin_calls_resolve_to_builtin_after_re_add() {
+        let mut hir = Hir::default();
+        add(&mut hir, USER, "upcase() | to_string(1)");
+        add(&mut hir, USER, "upcase() | to_string(1)");
+
+        for name in ["upcase", "to_string"] {
+            let (kind, _) = hir
+                .symbols()
+                .find(|(_, s)| s.value.as_deref() == Some(name) && matches!(s.kind, SymbolKind::Call))
+                .and_then(|(id, _)| hir.resolve_reference_symbol(id))
+                .map(|id| (hir.symbols[id].kind.clone(), id))
+                .unwrap();
+            assert!(matches!(kind, SymbolKind::Function(_)), "{name}: {kind:?}");
+        }
+    }
+
+    #[rstest]
+    #[case::shadowed_let("let x = 1 | let x = 2 | x", 1)]
+    #[case::param_over_function("def x(): 1; | def f(x): x;", 1)]
+    #[case::forward_function_ref("f() | def f(): 1;", 1)]
+    #[case::let_on_a_later_line_is_skipped("x\n| let x = 1", 0)]
+    fn test_scope_resolution_matches_fresh_hir_after_re_add(#[case] code: &str, #[case] expected_refs: usize) {
+        let mut fresh = hir_without_builtin();
+        add(&mut fresh, USER, code);
+        let mut reused = hir_without_builtin();
+        add(&mut reused, USER, code);
+        add(&mut reused, USER, code);
+
+        let expected = resolutions(&fresh);
+        assert_eq!(
+            expected.iter().filter(|r| r.1 == "x" || r.1 == "f").count(),
+            expected_refs
+        );
+        assert_eq!(resolutions(&reused), expected);
+    }
+
+    fn statement() -> impl Strategy<Value = String> {
+        let (f, v) = (0..3usize, 0..3usize);
+        prop_oneof![
+            (f.clone(), v.clone()).prop_map(|(i, j)| format!("def f{i}(x): x + v{j};")),
+            (v.clone(), f.clone()).prop_map(|(i, j)| format!("let v{i} = f{j}(1)")),
+            v.clone().prop_map(|i| format!("v{i}")),
+            (f.clone(), v.clone()).prop_map(|(i, j)| format!("f{i}(v{j})")),
+            (v.clone(), v.clone(), f.clone()).prop_map(|(i, j, k)| format!("if (v{i}): v{j} else: f{k}(1)")),
+            v.prop_map(|i| format!("fn(x): x + v{i};")),
+        ]
+    }
+
+    fn program() -> impl Strategy<Value = String> {
+        prop::collection::vec(statement(), 1..6).prop_map(|stmts| stmts.join(" | "))
+    }
+
+    fn module() -> impl Strategy<Value = String> {
+        prop::collection::vec((0..3usize, 0..3usize), 1..4).prop_map(|defs| {
+            let body: Vec<String> = defs
+                .into_iter()
+                .map(|(i, j)| format!("def f{i}(x): x + v{j};"))
+                .collect();
+            format!("module m: {} end", body.join(" | "))
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        #[test]
+        fn prop_re_adding_source_matches_fresh_hir(code in program()) {
+            let mut fresh = hir_without_builtin();
+            add(&mut fresh, USER, &code);
+            let mut reused = hir_without_builtin();
+            add(&mut reused, USER, &code);
+            add(&mut reused, USER, &code);
+
+            prop_assert_eq!(resolutions(&reused), resolutions(&fresh));
+            prop_assert_eq!(reused.scopes.len(), fresh.scopes.len());
+            prop_assert_eq!(reused.symbols.len(), fresh.symbols.len());
+        }
+
+        #[test]
+        fn prop_incremental_multi_source_matches_fresh_hir(user in program(), lib in module()) {
+            let mut fresh = hir_without_builtin();
+            add(&mut fresh, LIB_A, &lib);
+            add(&mut fresh, USER, &user);
+
+            let mut incremental = hir_without_builtin();
+            add(&mut incremental, USER, &user);
+            add(&mut incremental, LIB_A, &lib);
+            add(&mut incremental, LIB_A, &lib);
+            add(&mut incremental, USER, &user);
+
+            prop_assert_eq!(resolutions(&incremental), resolutions(&fresh));
+            prop_assert_eq!(incremental.scopes.len(), fresh.scopes.len());
+        }
+    }
+}

@@ -750,6 +750,20 @@ mod tests {
             .unwrap();
         assert_eq!(folding, folding_range::response(Some(text)));
 
+        // A later change replaces the cached CST.
+        let changed = "def main():\n  1;\n| def other():\n  2;";
+        backend.on_change(uri.clone(), changed.to_string()).await;
+        let folding = backend
+            .folding_range(ls_types::FoldingRangeParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(folding, folding_range::response(Some(changed)));
+        assert_eq!(folding.map(|ranges| ranges.len()), Some(2));
+
         backend
             .did_close(ls_types::DidCloseTextDocumentParams {
                 text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },

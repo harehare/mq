@@ -10217,4 +10217,173 @@ Shared::new(Node {
         assert!(display.contains("Unexpected EOF detected"));
         assert!(display.contains("Unexpected token"));
     }
+
+    #[rstest]
+    #[case::binary_op_without_rhs("1 +")]
+    #[case::as_without_name("1 as")]
+    #[case::as_with_non_ident("1 as 2")]
+    #[case::let_only("let")]
+    #[case::let_without_rhs("let x =")]
+    #[case::var_only("var")]
+    #[case::def_only("def")]
+    #[case::def_without_body("def f(x):")]
+    #[case::fn_only("fn")]
+    #[case::include_only("include")]
+    #[case::import_only("import")]
+    #[case::import_as_without_alias("import \"csv\" as")]
+    #[case::if_only("if")]
+    #[case::if_without_then("if (1):")]
+    #[case::elif_without_if("elif (1): 1")]
+    #[case::match_only("match")]
+    #[case::match_arm_without_body("match (1): | x:")]
+    #[case::foreach_open_paren("foreach (")]
+    #[case::try_only("try")]
+    #[case::selector_bracket_open(".[")]
+    #[case::dict_unclosed("{\"a\": ")]
+    #[case::array_unclosed("[1, ")]
+    #[case::call_unclosed("f(1, ")]
+    #[case::trailing_pipe("1 |")]
+    #[case::unmatched_end("end")]
+    fn test_truncated_input_reports_error(#[case] code: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        assert!(errors.has_errors(), "{code}");
+    }
+
+    const TOKEN_SOUP: &[&str] = &[
+        "def",
+        "fn",
+        "let",
+        "var",
+        "if",
+        "elif",
+        "else",
+        "unless",
+        "while",
+        "until",
+        "loop",
+        "foreach",
+        "match",
+        "try",
+        "catch",
+        "do",
+        "end",
+        "module",
+        "import",
+        "include",
+        "as",
+        "break",
+        "continue",
+        "yield",
+        "self",
+        "nodes",
+        "(",
+        ")",
+        "[",
+        "]",
+        "{",
+        "}",
+        ":",
+        ";",
+        ",",
+        "|",
+        "=",
+        "+",
+        "-",
+        "*",
+        "/",
+        "==",
+        "..",
+        ".",
+        ".h1",
+        ".[0]",
+        "x",
+        "f",
+        "1",
+        "\"s\"",
+        "s\"${x}\"",
+        ":sym",
+        "$ENV",
+        "#c\n",
+        "\n",
+        " ",
+    ];
+
+    const STATEMENTS: &[&str] = &[
+        "def f(x, y = 1):\n  x + y;",
+        "let a = [1, 2]",
+        "if (a):\t1 elif (b): 2 else: 3",
+        "match (x): | [a, ..rest]: a | {k}: k | _: 0 end",
+        "foreach (v, a): v;",
+        "try: 1 catch(e): e",
+        ".h1.value",
+        ".[0][1]",
+        "{\"a\": 1, ...b}",
+        "fn(x): x;",
+        "s\"${a} b\"",
+        "import \"csv\" as c",
+        "module m: def g(): 1; end",
+        "while (a): break: 1;",
+        "loop do continue end",
+        "1 as n",
+        "x += 1",
+        "(a)(1)",
+    ];
+
+    const SEPARATORS: &[&str] = &[" | ", "\n| ", " |\n  ", "\t|\t", " | # comment\n", "\n\n| "];
+
+    proptest::proptest! {
+        #[test]
+        fn prop_parse_recovery_never_panics_on_ascii(code in "[ -~\\n\\t]{0,120}") {
+            let _ = crate::parse_recovery(&code);
+        }
+
+        #[test]
+        fn prop_parse_recovery_never_panics_on_token_soup(
+            tokens in proptest::collection::vec(proptest::sample::select(TOKEN_SOUP), 0..40)
+        ) {
+            let _ = crate::parse_recovery(&tokens.join(" "));
+        }
+
+        /// Parsing is lossless: every non-EOF token reappears in the CST, in order.
+        #[test]
+        fn prop_cst_keeps_every_token(
+            stmts in proptest::collection::vec(proptest::sample::select(STATEMENTS), 1..8),
+            seps in proptest::collection::vec(proptest::sample::select(SEPARATORS), 8),
+        ) {
+            let mut code = String::new();
+            for (i, stmt) in stmts.iter().enumerate() {
+                if i > 0 {
+                    code.push_str(seps[i]);
+                }
+                code.push_str(stmt);
+            }
+            let (nodes, errors) = crate::parse_recovery(&code);
+            proptest::prop_assert!(!errors.has_errors(), "{}: {}", code, errors);
+
+            fn collect(node: &Shared<Node>, out: &mut Vec<Range>) {
+                for trivia in node.leading_trivia.iter().chain(&node.trailing_trivia) {
+                    if !trivia.is_new_line() {
+                        out.push(trivia.range());
+                    }
+                }
+                if let Some(token) = node.token.as_ref().filter(|t| !matches!(t.kind, TokenKind::Eof)) {
+                    out.push(token.range);
+                }
+                node.children().for_each(|child| collect(child, out));
+            }
+
+            let mut ranges = Vec::new();
+            nodes.iter().for_each(|node| collect(node, &mut ranges));
+            ranges.sort();
+            ranges.dedup();
+
+            let expected: usize = crate::Lexer::new(crate::lexer::Options { ignore_errors: true, include_spaces: true })
+                .tokenize(&code, crate::Module::TOP_LEVEL_MODULE_ID)
+                .unwrap()
+                .iter()
+                .filter(|t| !matches!(t.kind, TokenKind::Eof | TokenKind::NewLine))
+                .count();
+            proptest::prop_assert_eq!(ranges.len(), expected, "{}", code);
+        }
+    }
 }

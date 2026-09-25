@@ -3017,4 +3017,82 @@ def func_a(): test;
             assert_eq!(once, twice, "not idempotent for {code:?}");
         }
     }
+
+    const FORMAT_STATEMENTS: &[&str] = &[
+        "def f(x):\n  x + 1;",
+        "let a = [1,2]",
+        "if(a):1 elif(b):2 else:3",
+        "foreach(v,a):v;",
+        "match(x): | 1: :a | _: :b end",
+        "{\"k\": 1}",
+        ".h1",
+        "try: 1 catch(e): e",
+        "fn(x): x;",
+        "while(a): break;",
+        "a[0](1)",
+        "1 as n",
+    ];
+
+    /// The previous allocating `is_let_line`, kept as an oracle.
+    fn reference_is_let_line(output: &str) -> bool {
+        let start = output.rfind('\n').map_or(0, |pos| pos + 1);
+        if start < output.len() {
+            let last_line = &output[start..];
+            (!last_line.starts_with("let ") && last_line.trim().starts_with("let "))
+                || last_line.trim().replace(" ", "").starts_with("|let")
+        } else {
+            false
+        }
+    }
+
+    fn is_let_line(output: &str) -> bool {
+        let mut formatter = Formatter::new(None);
+        formatter.output = output.to_string();
+        formatter.is_let_line()
+    }
+
+    #[rstest]
+    #[case::top_level_let("let x = 1", false)]
+    #[case::indented_let("  let x = 1", true)]
+    #[case::piped_let("| let x", true)]
+    #[case::piped_let_no_space("|let x", true)]
+    #[case::piped_let_spaced("|   let x", true)]
+    #[case::last_line_only("let a = 1\n  | let b", true)]
+    #[case::previous_line_ignored("  let a\nfoo", false)]
+    #[case::trailing_newline("  let a\n", false)]
+    #[case::empty("", false)]
+    #[case::not_let("  letter", false)]
+    #[case::pipe_other("| foo", false)]
+    fn test_is_let_line(#[case] output: &str, #[case] expected: bool) {
+        assert_eq!(is_let_line(output), expected);
+        assert_eq!(reference_is_let_line(output), expected);
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn prop_is_let_line_matches_reference(output in "[ |let\\na-z\\t]{0,24}") {
+            proptest::prop_assert_eq!(is_let_line(&output), reference_is_let_line(&output));
+        }
+
+        /// Formatting through a pre-parsed CST matches formatting from source.
+        #[test]
+        fn prop_format_with_cst_matches_format(
+            stmts in proptest::collection::vec(proptest::sample::select(FORMAT_STATEMENTS), 1..6)
+        ) {
+            let code = stmts.join(" | ");
+            let expected = Formatter::new(None).format(&code).unwrap();
+            let (mut nodes, _) = mq_lang::parse_recovery(&code);
+            let actual = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
+            proptest::prop_assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn prop_format_is_idempotent(
+            stmts in proptest::collection::vec(proptest::sample::select(FORMAT_STATEMENTS), 1..6)
+        ) {
+            let once = Formatter::new(None).format(&stmts.join(" | ")).unwrap();
+            let twice = Formatter::new(None).format(&once).unwrap();
+            proptest::prop_assert_eq!(twice, once);
+        }
+    }
 }

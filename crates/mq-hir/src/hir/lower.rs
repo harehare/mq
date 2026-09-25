@@ -1684,3 +1684,185 @@ impl Hir {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::mem::discriminant;
+
+    use rstest::rstest;
+
+    use crate::{Hir, Symbol, SymbolKind, symbol::ParamInfo};
+
+    fn lower(code: &str) -> Hir {
+        let (_, errors) = mq_lang::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors}");
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+        hir
+    }
+
+    fn find(hir: &Hir, pred: impl Fn(&Symbol) -> bool) -> Vec<(crate::SymbolId, &Symbol)> {
+        hir.symbols().filter(|(_, s)| pred(s)).collect()
+    }
+
+    fn parent_kind(hir: &Hir, symbol: &Symbol) -> Option<SymbolKind> {
+        symbol.parent.map(|id| hir.symbols[id].kind.clone())
+    }
+
+    #[rstest]
+    #[case::if_elif_else("let a = 1 | if (a): a elif (a): a else: a", "a", 5, SymbolKind::Variable)]
+    #[case::unless("let a = 1 | unless (a): a", "a", 2, SymbolKind::Variable)]
+    #[case::catch_binder("try: error(\"x\") catch(e): e", "e", 1, SymbolKind::Parameter)]
+    #[case::catch_binder_shadows_outer("let e = 1 | try: 1 catch(e): e", "e", 1, SymbolKind::Parameter)]
+    #[case::match_guard("match (1): | x if (x > 0): x | _: 0 end", "x", 2, SymbolKind::PatternVariable { is_rest: false })]
+    #[case::foreach_loop_var("foreach (v, [1, 2]): v;", "v", 1, SymbolKind::Variable)]
+    #[case::foreach_iterable("let xs = [1] | foreach (v, xs): v;", "xs", 1, SymbolKind::Variable)]
+    #[case::def_params("def f(a, b = 1): a + b;", "a", 1, SymbolKind::Parameter)]
+    #[case::def_default_param("def f(a, b = 1): a + b;", "b", 1, SymbolKind::Parameter)]
+    #[case::fn_params("let g = fn(x, y): x + y; | g(1, 2)", "y", 1, SymbolKind::Parameter)]
+    #[case::fn_call("let g = fn(x): x; | g(1)", "g", 1, SymbolKind::Variable)]
+    #[case::as_binding("1 as n | n", "n", 1, SymbolKind::Variable)]
+    #[case::destructuring_let("let [p, q] = [1, 2] | p + q", "q", 1, SymbolKind::PatternVariable { is_rest: false })]
+    #[case::call_dynamic("let fs = [fn(x): x;] | fs[0](1)", "fs", 1, SymbolKind::Variable)]
+    #[case::module_body("module m: let a = 1 | a end", "a", 1, SymbolKind::Variable)]
+    #[case::let_rhs("let a = 1 | let b = a + 1 | b", "a", 1, SymbolKind::Variable)]
+    fn test_refs_resolve_to_expected_kind(
+        #[case] code: &str,
+        #[case] name: &str,
+        #[case] expected_refs: usize,
+        #[case] expected: SymbolKind,
+    ) {
+        let hir = lower(code);
+        let refs = find(&hir, |s| {
+            s.value.as_deref() == Some(name) && matches!(s.kind, SymbolKind::Ref | SymbolKind::Call)
+        });
+
+        assert_eq!(refs.len(), expected_refs, "{code}");
+        for (ref_id, _) in refs {
+            let target = hir
+                .resolve_reference_symbol(ref_id)
+                .map(|id| hir.symbols[id].kind.clone());
+            assert!(
+                target
+                    .as_ref()
+                    .is_some_and(|t| discriminant(t) == discriminant(&expected)),
+                "{code}: `{name}` resolved to {target:?}, expected {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_elif_and_else_are_children_of_if() {
+        let hir = lower("if (1): 1 elif (2): 2 elif (3): 3 else: 4");
+        let elifs = find(&hir, |s| matches!(s.kind, SymbolKind::Elif));
+        let elses = find(&hir, |s| matches!(s.kind, SymbolKind::Else));
+
+        assert_eq!((elifs.len(), elses.len()), (2, 1));
+        for (_, symbol) in elifs.iter().chain(&elses) {
+            assert_eq!(parent_kind(&hir, symbol), Some(SymbolKind::If));
+        }
+        let numbers = find(&hir, |s| matches!(s.kind, SymbolKind::Number));
+        assert_eq!(numbers.len(), 7);
+    }
+
+    #[rstest]
+    #[case::with_guard("match (1): | x if (x > 0): x end", vec![true])]
+    #[case::without_guard("match (1): | x: x | _: 0 end", vec![false, false])]
+    #[case::mixed("match (1): | 1: :one | x if (x > 1): x | _: 0 end", vec![false, true, false])]
+    fn test_match_arm_guard_flag(#[case] code: &str, #[case] expected: Vec<bool>) {
+        let hir = lower(code);
+        let mut arms: Vec<_> = find(&hir, |s| matches!(s.kind, SymbolKind::MatchArm { .. }))
+            .into_iter()
+            .map(|(_, s)| (s.insertion_order, s.kind.clone()))
+            .collect();
+        arms.sort_by_key(|(order, _)| *order);
+
+        let flags: Vec<bool> = arms
+            .into_iter()
+            .map(|(_, kind)| matches!(kind, SymbolKind::MatchArm { has_guard: true }))
+            .collect();
+        assert_eq!(flags, expected);
+    }
+
+    #[rstest]
+    #[case::def("def f(a, b = 1, *c): a;", vec![("a", false, false), ("b", true, false), ("c", false, true)])]
+    #[case::fn_("fn(x, y = 2): x;", vec![("x", false, false), ("y", true, false)])]
+    #[case::no_params("def f(): 1;", vec![])]
+    fn test_function_param_info(#[case] code: &str, #[case] expected: Vec<(&str, bool, bool)>) {
+        let hir = lower(code);
+        let functions = find(&hir, |s| matches!(s.kind, SymbolKind::Function(_)));
+        assert_eq!(functions.len(), 1);
+
+        let SymbolKind::Function(params) = &functions[0].1.kind else {
+            unreachable!()
+        };
+        let expected: Vec<ParamInfo> = expected
+            .into_iter()
+            .map(|(name, has_default, is_variadic)| ParamInfo {
+                name: name.into(),
+                has_default,
+                is_variadic,
+            })
+            .collect();
+        assert_eq!(params, &expected);
+    }
+
+    #[test]
+    fn test_default_param_expr_gets_its_own_scope() {
+        let hir = lower("let d = 1 | def f(a = d): a;");
+        let (ref_id, symbol) = find(&hir, |s| {
+            s.value.as_deref() == Some("d") && matches!(s.kind, SymbolKind::Ref)
+        })[0];
+
+        assert!(matches!(
+            hir.scopes[symbol.scope].kind,
+            crate::ScopeKind::DefaultParam(_)
+        ));
+        let target = hir.resolve_reference_symbol(ref_id).unwrap();
+        assert_eq!(hir.symbols[target].kind, SymbolKind::Variable);
+    }
+
+    #[test]
+    fn test_module_registers_ident_and_owns_its_body() {
+        let hir = lower("module m: def f(): 1; end");
+
+        assert_eq!(
+            find(&hir, |s| s.value.as_deref() == Some("m")
+                && matches!(s.kind, SymbolKind::Ident))
+            .len(),
+            1
+        );
+        let (_, f) = find(&hir, |s| matches!(s.kind, SymbolKind::Function(_)))[0];
+        assert!(matches!(parent_kind(&hir, f), Some(SymbolKind::Module(_))));
+    }
+
+    #[rstest]
+    #[case::import_alias("import \"csv\" as c", Some("c"))]
+    #[case::import("import \"csv\"", None)]
+    fn test_import_registers_module_and_alias(#[case] code: &str, #[case] alias: Option<&str>) {
+        let hir = lower(code);
+
+        assert_eq!(
+            find(&hir, |s| s.value.as_deref() == Some("csv")
+                && matches!(s.kind, SymbolKind::Import(_)))
+            .len(),
+            1
+        );
+        let aliases = find(&hir, |s| matches!(s.kind, SymbolKind::Ident));
+        assert_eq!(aliases.first().and_then(|(_, s)| s.value.as_deref()), alias);
+    }
+
+    #[rstest]
+    #[case::string("\"s\"", SymbolKind::String)]
+    #[case::number("1", SymbolKind::Number)]
+    #[case::boolean("true", SymbolKind::Boolean)]
+    #[case::none("None", SymbolKind::None)]
+    #[case::bytes("b\"ab\"", SymbolKind::Bytes)]
+    #[case::symbol(":sym", SymbolKind::Symbol)]
+    fn test_literal_kinds(#[case] code: &str, #[case] expected: SymbolKind) {
+        let hir = lower(code);
+        let kinds: Vec<SymbolKind> = hir.symbols().map(|(_, s)| s.kind.clone()).collect();
+        assert_eq!(kinds, vec![expected]);
+    }
+}
