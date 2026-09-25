@@ -93,6 +93,7 @@ pub enum RuntimeValue {
     ///
     /// `Shared`-wrapped, not inline: `ClosureValue` is 64 bytes (chunks/upvalues/bound_args),
     /// which would otherwise force every `RuntimeValue` variant to that size.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     Closure(Shared<ClosureValue>),
     /// A dictionary mapping identifiers to runtime values.
@@ -106,14 +107,17 @@ pub enum RuntimeValue {
     /// A generator function's coroutine, see `tarn::interpreter::coroutine::CoroutineState`.
     /// `CoroutineState` is deliberately `pub(crate)`, so this variant is constructible only
     /// from within the crate. Cloning shares progress: every clone drives the same coroutine.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     Coroutine(CoroutineHandle),
     /// A coroutine downgraded to break a capture cycle. Only ever lives inside a
     /// `StackValue::NestedWeakCoroutine` cell, resolved before any other code sees it.
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     WeakCoroutine(CoroutineWeakHandle),
     /// An open read-only file handle from `open_file`. Cloning shares the handle.
     #[cfg(any(feature = "file-io", feature = "http"))]
+    #[doc(hidden)]
     #[allow(private_interfaces)]
     ReaderHandle(Shared<ReaderHandle>),
     /// An empty or null value.

@@ -1,36 +1,23 @@
-//! `mq-lang` provides a parser and evaluator for a [mq](https://github.com/harehare/mq).
+//! `mq-lang` provides a parser and evaluator for [mq](https://github.com/harehare/mq).
 //!
 //! ## Examples
 //!
-//! ```rs
-//! let code = "add(\"world!\")";
-//! let input = vec![mq_lang::Value::Markdown(
-//!   mq_markdown::Markdown::from_str("Hello,").unwrap()
-//! )].into_iter();
-//! let mut engine = mq_lang::DefaultEngine::default();
+//! ```rust
+//! use mq_lang::DefaultEngine;
 //!
-//! assert!(matches!(engine.eval(&code, input).unwrap(), mq_lang::Value::String("Hello,world!".to_string())));
+//! let mut engine = DefaultEngine::default();
+//! engine.load_builtin_module();
+//!
+//! let input = mq_lang::parse_markdown_input("Hello,").unwrap();
+//! let output = engine.eval(r#"add("world!")"#, input.into_iter()).unwrap();
+//! assert_eq!(output.into_markdown_nodes()[0].value(), "Hello,world!");
 //!
 //! // Parse code into AST nodes
-//! use mq_lang::{tokenize, LexerOptions, AstParser, Arena};
-//! use std::rc::Shared;
-//! use std::cell::SharedCell;
+//! use mq_lang::{Arena, Shared, SharedCell};
 //!
-//! let code = "1 + 2";
-//! let token_arena = Shared::new(SharedCell::new(Arena::new()));
-//! let ast = mq_lang::parse(code, token_arena).unwrap();
-//!
-//! assert_eq!(ast.nodes.len(), 1);
-//!
-//! // Parse code into CST nodes
-//! use mq_lang::{tokenize, LexerOptions, CstParser};
-//! use std::sync::Arc;
-//!
-//! let code = "1 + 2";
-//! let (cst_nodes, errors) = mq_lang::parse_recovery(code);
-//!
-//! assert!(!errors.has_errors());
-//! assert!(!cst_nodes.is_empty());
+//! let token_arena = Shared::new(SharedCell::new(Arena::new(16)));
+//! let program = mq_lang::parse("1 + 2", token_arena).unwrap();
+//! assert_eq!(program.len(), 1);
 //! ```
 //!
 //! ## Features
@@ -154,15 +141,30 @@ pub type SharedCell<T> = RwLock<T>;
 
 pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
 
+/// Parses `code` into CST nodes, collecting errors instead of stopping at the first one.
+///
+/// ```rust
+/// let (cst_nodes, errors) = mq_lang::parse_recovery("1 + 2");
+/// assert!(!errors.has_errors());
+/// assert!(!cst_nodes.is_empty());
+/// ```
 #[cfg(feature = "cst")]
 pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
-    let tokens = Lexer::new(lexer::Options {
+    let tokens = match Lexer::new(lexer::Options {
         ignore_errors: true,
         include_spaces: true,
     })
     .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-    .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
-    .unwrap();
+    {
+        Ok(tokens) => tokens,
+        Err(e) => {
+            let error = match e.token() {
+                Some(token) => cst::error::ParseError::UnexpectedToken(Shared::new(token.clone())),
+                None => cst::error::ParseError::UnexpectedEOFDetected,
+            };
+            return (Vec::new(), CstErrorReporter::with_error(vec![error], 1));
+        }
+    };
 
     let token_vec: Vec<Shared<Token>> = tokens.into_iter().map(Shared::new).collect();
     CstParser::new(&token_vec).parse()
@@ -331,6 +333,14 @@ mod tests {
 
         assert!(errors.has_errors());
         assert!(cst_nodes.is_empty());
+    }
+
+    #[cfg(feature = "cst")]
+    proptest::proptest! {
+        #[test]
+        fn parse_recovery_never_panics(code in "\\PC{0,64}") {
+            let _ = parse_recovery(&code);
+        }
     }
 
     #[test]
