@@ -1460,9 +1460,19 @@ impl Formatter {
         self.append_indent(indent_level);
         self.append_display(node);
 
-        // Format children (colon and expression if present)
-        for child in node.children() {
-            self.format_node(child, 0);
+        let (CstNodeKind::Break { colon, value } | CstNodeKind::Yield { colon, value }) = &node.kind else {
+            return;
+        };
+
+        if let Some(colon) = colon {
+            self.format_node(colon, 0);
+        }
+
+        if let Some(value) = value {
+            if colon.is_some() && !value.has_new_line() {
+                self.output.push(' ');
+            }
+            self.format_node(value, 0);
         }
     }
 
@@ -2896,15 +2906,16 @@ end
 ))
 "
     )]
-    #[case::yield_oneline("def g(): yield: 1;", "def g(): yield:1;")]
+    #[case::yield_oneline("def g(): yield: 1;", "def g(): yield: 1;")]
     #[case::yield_bare("def g(): yield;", "def g(): yield;")]
+    #[case::break_with_value("while (true): break: 1;", "while (true): break: 1;")]
     #[case::yield_multiline(
         "def g():
         yield: 1
         | yield: 2;",
         "def g():
-  yield:1
-  | yield:2;
+  yield: 1
+  | yield: 2;
 "
     )]
     #[case::def_with_comment_before_yield(
@@ -2913,7 +2924,7 @@ end
         yield: 1;",
         "def g():
   # a comment
-  yield:1;
+  yield: 1;
 "
     )]
     fn test_format(#[case] code: &str, #[case] expected: &str) {
