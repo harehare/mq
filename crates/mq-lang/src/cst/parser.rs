@@ -1488,6 +1488,22 @@ impl<'a> Parser<'a> {
                         leading_trivia,
                         trailing_trivia,
                     }));
+
+                    // Trailing comma
+                    let pos = self.pos;
+                    let leading_trivia = self.parse_leading_trivia();
+                    if matches!(self.peek_token()?.kind, TokenKind::RBrace) {
+                        let token = self.advance_or_eof()?;
+                        let trailing_trivia = self.parse_trailing_trivia();
+                        children.push(Shared::new(Node {
+                            kind: NodeKind::Token,
+                            token: Some(Shared::clone(token)),
+                            leading_trivia,
+                            trailing_trivia,
+                        }));
+                        break;
+                    }
+                    self.pos = pos;
                 }
                 TokenKind::RBrace => {
                     let token = self.advance_or_eof()?;
@@ -10240,6 +10256,7 @@ Shared::new(Node {
     #[case::try_only("try")]
     #[case::selector_bracket_open(".[")]
     #[case::dict_unclosed("{\"a\": ")]
+    #[case::dict_trailing_comma_unclosed("{\"a\": 1, ")]
     #[case::array_unclosed("[1, ")]
     #[case::call_unclosed("f(1, ")]
     #[case::trailing_pipe("1 |")]
@@ -10247,6 +10264,17 @@ Shared::new(Node {
     fn test_truncated_input_reports_error(#[case] code: &str) {
         let (_, errors) = crate::parse_recovery(code);
         assert!(errors.has_errors(), "{code}");
+    }
+
+    #[rstest]
+    #[case::single_line("{\"a\": 1,}")]
+    #[case::multi_entry("{\"a\": 1, \"b\": [1],}")]
+    #[case::multi_line("{\n  \"a\": 1,\n  # c\n}")]
+    #[case::spread("{...x, \"a\": 1,}")]
+    fn test_dict_trailing_comma(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors:?}");
+        assert!(matches!(nodes[0].kind, NodeKind::Dict { .. }), "{code}");
     }
 
     const TOKEN_SOUP: &[&str] = &[
