@@ -821,6 +821,13 @@ pub(crate) enum BytecodeError {
         required: usize,
         available: usize,
     },
+    #[cfg(feature = "mqc")]
+    MissingSelfSlot(usize),
+    #[cfg(feature = "mqc")]
+    FixedParamSlotInvalid {
+        chunk: usize,
+        param: usize,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -890,6 +897,12 @@ impl fmt::Display for BytecodeError {
                     f,
                     "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
                 )
+            }
+            #[cfg(feature = "mqc")]
+            Self::MissingSelfSlot(chunk) => write!(f, "chunk {chunk} has no local slot for self"),
+            #[cfg(feature = "mqc")]
+            Self::FixedParamSlotInvalid { chunk, param } => {
+                write!(f, "chunk {chunk} binds parameter {param} outside its fixed-arity slot")
             }
         }
     }
@@ -1418,6 +1431,28 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
             }
         }
         verify_stack_effects(chunk, chunk_index)?;
+        #[cfg(feature = "mqc")]
+        verify_frame_layout(chunk, chunk_index)?;
+    }
+    Ok(())
+}
+
+/// Calls write `self` to slot 0 and fixed-arity arguments to slots `1..=arity` directly.
+#[cfg(feature = "mqc")]
+fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
+    if usize::from(chunk.local_count) <= usize::from(SELF_SLOT) {
+        return Err(BytecodeError::MissingSelfSlot(chunk_index));
+    }
+    if chunk.param_shape.fixed_required_arity().is_some() {
+        for (param, binding) in chunk.param_shape.bindings.iter().enumerate() {
+            if !matches!(binding, ParamBinding::Required(slot) if usize::from(*slot) == usize::from(SELF_SLOT) + 1 + param)
+            {
+                return Err(BytecodeError::FixedParamSlotInvalid {
+                    chunk: chunk_index,
+                    param,
+                });
+            }
+        }
     }
     Ok(())
 }
