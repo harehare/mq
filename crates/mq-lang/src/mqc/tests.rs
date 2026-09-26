@@ -11,12 +11,16 @@ fn engine() -> DefaultEngine {
 }
 
 fn compile(code: &str) -> Vec<u8> {
-    engine().compile_to_mqc(code, &[]).expect("compile to .mqc")
+    engine().precompile(code, &[]).expect("compile to .mqc").into_bytes()
+}
+
+fn load<R: ModuleResolver, IO: Io>(engine: &mut Engine<R, IO>, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
+    engine.load(&Mqc::try_from(bytes.to_vec())?)
 }
 
 fn run_mqc(bytes: &[u8], input: Vec<RuntimeValue>) -> crate::MqResult {
     let mut engine = engine();
-    let program = engine.load_mqc(bytes).expect("load .mqc");
+    let program = load(&mut engine, bytes).expect("load .mqc");
     engine.eval_compiled(program.program(), input.into_iter())
 }
 
@@ -79,7 +83,7 @@ fn test_mqc_program_reads_engine_globals_at_run_time() {
     let bytes = compile("greeting + \" mq\"");
     let mut engine = engine();
     engine.define_string_value("greeting", "hello");
-    let program = engine.load_mqc(&bytes).unwrap();
+    let program = load(&mut engine, &bytes).unwrap();
     assert_eq!(program.external_globals(), ["greeting".to_string()]);
     let result = engine
         .eval_compiled(program.program(), crate::null_input().into_iter())
@@ -91,7 +95,7 @@ fn test_mqc_program_reads_engine_globals_at_run_time() {
 fn test_mqc_program_sees_globals_changed_between_runs() {
     let bytes = compile("greeting");
     let mut engine = engine();
-    let program = engine.load_mqc(&bytes).unwrap();
+    let program = load(&mut engine, &bytes).unwrap();
     for greeting in ["hello", "bye"] {
         engine.define_string_value("greeting", greeting);
         let result = engine
@@ -108,9 +112,12 @@ fn test_load_mqc_reuses_the_last_decoded_program() {
     let mut engine = engine();
     let precompiled = |program: &MqcProgram| Shared::clone(program.program().precompiled.as_ref().unwrap());
 
-    let first = precompiled(&engine.load_mqc(&upcase).unwrap());
-    assert!(Shared::ptr_eq(&first, &precompiled(&engine.load_mqc(&upcase).unwrap())));
-    let other = engine.load_mqc(&downcase).unwrap();
+    let first = precompiled(&load(&mut engine, &upcase).unwrap());
+    assert!(Shared::ptr_eq(
+        &first,
+        &precompiled(&load(&mut engine, &upcase).unwrap())
+    ));
+    let other = load(&mut engine, &downcase).unwrap();
     assert!(!Shared::ptr_eq(&first, &precompiled(&other)));
     let result = engine
         .eval_compiled(other.program(), crate::raw_input("MQ").into_iter())
@@ -122,7 +129,7 @@ fn test_load_mqc_reuses_the_last_decoded_program() {
 fn test_mqc_program_is_reusable_across_inputs() {
     let bytes = compile("upcase()");
     let mut engine = engine();
-    let program = engine.load_mqc(&bytes).unwrap();
+    let program = load(&mut engine, &bytes).unwrap();
     for word in ["a", "b"] {
         let result = engine
             .eval_compiled(program.program(), crate::raw_input(word).into_iter())
@@ -134,9 +141,10 @@ fn test_mqc_program_is_reusable_across_inputs() {
 #[test]
 fn test_mqc_metadata_and_dependencies_round_trip() {
     let bytes = engine()
-        .compile_to_mqc(r#"import "csv" | csv::csv_parse(true)"#, &[("input-format", "csv")])
-        .unwrap();
-    let program = engine().load_mqc(&bytes).unwrap();
+        .precompile(r#"import "csv" | csv::csv_parse(true)"#, &[("input-format", "csv")])
+        .unwrap()
+        .into_bytes();
+    let program = load(&mut engine(), &bytes).unwrap();
     assert_eq!(program.metadata("input-format"), Some("csv"));
     assert_eq!(program.metadata("missing"), None);
     let csv = program
@@ -149,21 +157,23 @@ fn test_mqc_metadata_and_dependencies_round_trip() {
 }
 
 #[test]
-fn test_read_mqc_metadata_without_loading() {
-    let bytes = engine().compile_to_mqc("upcase()", &[("key", "value")]).unwrap();
-    assert_eq!(
-        read_mqc_metadata(&bytes).unwrap(),
-        vec![("key".to_string(), "value".to_string())]
-    );
+fn test_mqc_metadata_without_loading() {
+    let bytes = engine()
+        .precompile("upcase()", &[("key", "value")])
+        .unwrap()
+        .into_bytes();
+    let mqc = Mqc::try_from(bytes).unwrap();
+    assert_eq!(mqc.metadata("key"), Some("value"));
+    assert_eq!(mqc.metadata("missing"), None);
 }
 
 #[rstest]
 #[case::corrupted(|bytes: &mut Vec<u8>| bytes[20] ^= 1, "checksum")]
 #[case::incompatible(|bytes: &mut Vec<u8>| *bytes = replace_meta(bytes, |meta| meta.vm_abi += 1), "abi")]
-fn test_read_mqc_metadata_rejects_unusable_files(#[case] edit: fn(&mut Vec<u8>), #[case] kind: &str) {
+fn test_mqc_try_from_rejects_unusable_files(#[case] edit: fn(&mut Vec<u8>), #[case] kind: &str) {
     let mut bytes = compile("upcase()");
     edit(&mut bytes);
-    let error = read_mqc_metadata(&bytes).unwrap_err();
+    let error = Mqc::try_from(bytes).unwrap_err();
     match kind {
         "checksum" => assert!(matches!(error, MqcError::ChecksumMismatch)),
         _ => assert!(matches!(error, MqcError::IncompatibleVm { .. })),
@@ -249,7 +259,7 @@ fn test_mqc_keeps_source_of_modules_not_bundled(#[case] query: &str, #[case] out
 
     let mut shadowing = Engine::new(ShadowingResolver);
     shadowing.load_builtin_module();
-    let bytes = shadowing.compile_to_mqc(query, &[]).unwrap();
+    let bytes = shadowing.precompile(query, &[]).unwrap().into_bytes();
     for file in source_files(&bytes) {
         if file.name != crate::Module::BUILTIN_MODULE {
             assert!(file.text.is_some(), "source of {} omitted", file.name);
@@ -275,7 +285,7 @@ fn test_load_mqc_rejects_missing_source_of_unbundled_module() {
         }
         section.payload = Cow::Owned(encode_source(&files, &spans).unwrap());
     });
-    let error = engine().load_mqc(&bytes).unwrap_err();
+    let error = load(&mut engine(), &bytes).unwrap_err();
     assert!(
         matches!(&error, MqcError::Malformed(message) if message.contains(crate::Module::TOP_LEVEL_MODULE)),
         "{error:?}"
@@ -286,8 +296,8 @@ fn test_load_mqc_rejects_missing_source_of_unbundled_module() {
 #[case::bare_env("$MQC_TEST_ENV")]
 #[case::module_let(r#"module m: let v = s"${$MQC_TEST_ENV}" end | m::v"#)]
 #[case::caught_in_module_let(r#"module m: let v = try: s"${$MQC_TEST_ENV}" catch: "fallback" end | m::v"#)]
-fn test_compile_to_mqc_rejects_compile_time_env_reads(#[case] query: &str) {
-    let error = engine().compile_to_mqc(query, &[]).unwrap_err();
+fn test_precompile_rejects_compile_time_env_reads(#[case] query: &str) {
+    let error = engine().precompile(query, &[]).unwrap_err();
     assert!(
         matches!(&error, MqcError::EnvironmentAtCompileTime(name) if name == "MQC_TEST_ENV"),
         "{error:?}"
@@ -302,9 +312,9 @@ fn test_compile_to_mqc_rejects_compile_time_env_reads(#[case] query: &str) {
 #[case::dict(r#"{"k": arg}"#, true)]
 #[case::condition("if (arg): 1 else: 2", true)]
 #[case::call_argument("upcase(arg)", true)]
-fn test_compile_to_mqc_rejects_runtime_names_in_module_let(#[case] initializer: &str, #[case] has_location: bool) {
+fn test_precompile_rejects_runtime_names_in_module_let(#[case] initializer: &str, #[case] has_location: bool) {
     let query = format!("module m: let v = {initializer} end | m::v");
-    let error = engine().compile_to_mqc(&query, &[]).unwrap_err();
+    let error = engine().precompile(&query, &[]).unwrap_err();
     let MqcError::ModuleLevelNotDefined { name, source } = &error else {
         panic!("{error:?}");
     };
@@ -330,7 +340,7 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
     };
     let expected = with_arg().eval(query, crate::null_input().into_iter()).unwrap();
     let mut engine = with_arg();
-    let program = engine.load_mqc(&compile(query)).unwrap();
+    let program = load(&mut engine, &compile(query)).unwrap();
     let actual = engine
         .eval_compiled(program.program(), crate::null_input().into_iter())
         .unwrap();
@@ -344,7 +354,7 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
 #[case::user_function("def f(x): x + 1; | f(1)", &["chunks: 2"])]
 fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expected: &[&str]) {
     let mut engine = engine();
-    let program = engine.load_mqc(&compile(query)).unwrap();
+    let program = load(&mut engine, &compile(query)).unwrap();
     let dump = engine.dump_bytecode(program.program()).unwrap();
     for text in expected {
         assert!(dump.contains(text), "missing {text:?} in:\n{dump}");
@@ -358,7 +368,7 @@ fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expect
 #[case::user_function("def f(x): x + 1; | f(1)")]
 fn test_dump_bytecode_of_loaded_program_is_uninstrumented(#[case] query: &str) {
     let mut engine = engine();
-    let program = engine.load_mqc(&compile(query)).unwrap();
+    let program = load(&mut engine, &compile(query)).unwrap();
     let dump = engine.dump_bytecode(program.program()).unwrap();
     for opcode in ["StmtBoundary", "SyncCallNode", "Breakpoint"] {
         assert!(!dump.contains(opcode), "unexpected {opcode} in:\n{dump}");
@@ -371,7 +381,7 @@ fn test_mqc_reads_interpolated_env_at_run_time() {
     let io = crate::io::MemIo::default().with_env("MQC_RUNTIME_ENV", "run");
     let mut engine = Engine::with_default_io(Shared::new(crate::SandboxedIo::new(io).allow_env(true)));
     engine.load_builtin_module();
-    let program = engine.load_mqc(&bytes).unwrap();
+    let program = load(&mut engine, &bytes).unwrap();
     let result = engine
         .eval_compiled(program.program(), crate::null_input().into_iter())
         .unwrap();
@@ -379,8 +389,8 @@ fn test_mqc_reads_interpolated_env_at_run_time() {
 }
 
 #[test]
-fn test_compile_to_mqc_reports_syntax_errors() {
-    let error = engine().compile_to_mqc("def f(:", &[]).unwrap_err();
+fn test_precompile_reports_syntax_errors() {
+    let error = engine().precompile("def f(:", &[]).unwrap_err();
     assert!(matches!(error, MqcError::Compile(_)), "{error:?}");
 }
 
@@ -397,7 +407,7 @@ fn test_mqc_round_trips_function_valued_module_let() {
 #[case::magic_only(b"MQC\0")]
 fn test_load_mqc_rejects_non_mqc_input(#[case] bytes: &[u8]) {
     assert!(matches!(
-        engine().load_mqc(bytes),
+        load(&mut engine(), bytes),
         Err(MqcError::NotMqc | MqcError::Malformed(_))
     ));
 }
@@ -407,14 +417,14 @@ fn test_load_mqc_detects_corruption() {
     let mut bytes = compile(".h1");
     let middle = bytes.len() / 2;
     bytes[middle] ^= 0xFF;
-    assert!(matches!(engine().load_mqc(&bytes), Err(MqcError::ChecksumMismatch)));
+    assert!(matches!(load(&mut engine(), &bytes), Err(MqcError::ChecksumMismatch)));
 }
 
 #[test]
 fn test_load_mqc_detects_truncation() {
     let bytes = compile(".h1");
     assert!(matches!(
-        engine().load_mqc(&bytes[..bytes.len() - 1]),
+        load(&mut engine(), &bytes[..bytes.len() - 1]),
         Err(MqcError::Malformed(_))
     ));
 }
@@ -427,7 +437,7 @@ fn test_load_mqc_rejects_unknown_container_version() {
     let checksum = Sha256::digest(&bytes[..len]);
     bytes[len..].copy_from_slice(&checksum);
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::UnsupportedContainerVersion(2))
     ));
 }
@@ -457,7 +467,7 @@ fn test_load_mqc_rejects_unknown_required_section() {
         });
     });
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::UnknownRequiredSection(tag)) if tag == "XTRA"
     ));
 }
@@ -472,7 +482,7 @@ fn test_load_mqc_rejects_duplicate_and_missing_sections() {
         });
     });
     assert!(matches!(
-        engine().load_mqc(&duplicated),
+        load(&mut engine(), &duplicated),
         Err(MqcError::DuplicateSection(_))
     ));
 
@@ -480,7 +490,7 @@ fn test_load_mqc_rejects_duplicate_and_missing_sections() {
         sections.retain(|section| section.tag != DEPS)
     });
     assert!(matches!(
-        engine().load_mqc(&missing),
+        load(&mut engine(), &missing),
         Err(MqcError::MissingSection("DEPS"))
     ));
 }
@@ -491,7 +501,7 @@ fn test_load_mqc_rejects_unknown_section_version() {
         sections.iter_mut().find(|section| section.tag == CODE).unwrap().version = 2;
     });
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::UnsupportedSectionVersion { version: 2, .. })
     ));
 }
@@ -502,7 +512,7 @@ fn test_load_mqc_rejects_unknown_section_version() {
 fn test_load_mqc_rejects_incompatible_vm(#[case] edit: fn(&mut Meta)) {
     let bytes = replace_meta(&compile(".h1"), edit);
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::IncompatibleVm { .. })
     ));
 }
@@ -513,7 +523,7 @@ fn test_load_mqc_rejects_missing_builtins() {
         meta.required_builtins.push("no_such_builtin".to_string())
     });
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::MissingBuiltins(names)) if names == ["no_such_builtin"]
     ));
 }
@@ -527,7 +537,7 @@ fn test_load_mqc_verifies_bytecode() {
         code.payload = Cow::Owned(payload);
     });
     assert!(matches!(
-        engine().load_mqc(&bytes),
+        load(&mut engine(), &bytes),
         Err(MqcError::Malformed(_) | MqcError::InvalidBytecode(_))
     ));
 }
@@ -535,7 +545,7 @@ fn test_load_mqc_verifies_bytecode() {
 proptest! {
     #[test]
     fn test_load_mqc_never_panics_on_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
-        let _ = engine().load_mqc(&bytes);
+        let _ = load(&mut engine(), &bytes);
     }
 
     #[test]
@@ -548,7 +558,7 @@ proptest! {
             code.payload = Cow::Owned(payload);
         });
         let mut engine = engine();
-        if let Ok(program) = engine.load_mqc(&bytes) {
+        if let Ok(program) = load(&mut engine, &bytes) {
             let _ = engine.eval_compiled(program.program(), crate::null_input().into_iter());
         }
     }
@@ -610,15 +620,15 @@ proptest! {
     }
 
     #[test]
-    fn test_compile_to_mqc_is_deterministic(expr in constant_expr()) {
+    fn test_precompile_is_deterministic(expr in constant_expr()) {
         let query = format!("module m: let v = {expr} end | def f(x): x; | f(m::v)");
         prop_assert_eq!(compile(&query), compile(&query));
     }
 
     #[test]
-    fn test_compile_to_mqc_rejects_runtime_names_in_any_module_let(name in runtime_name(), usage in runtime_use()) {
+    fn test_precompile_rejects_runtime_names_in_any_module_let(name in runtime_name(), usage in runtime_use()) {
         let query = format!("module m: let v = {} end | m::v", usage.replace("NAME", &name));
-        let error = engine().compile_to_mqc(&query, &[]).unwrap_err();
+        let error = engine().precompile(&query, &[]).unwrap_err();
         prop_assert!(
             matches!(&error, MqcError::ModuleLevelNotDefined { name: found, .. } if *found == name),
             "{:?}",
@@ -640,7 +650,7 @@ proptest! {
         };
         let expected = with_value().eval(&query, crate::null_input().into_iter()).unwrap();
         let mut engine = with_value();
-        let program = engine.load_mqc(&compile(&query)).unwrap();
+        let program = load(&mut engine, &compile(&query)).unwrap();
         prop_assert_eq!(program.external_globals(), [name.clone()]);
         let actual = engine.eval_compiled(program.program(), crate::null_input().into_iter()).unwrap();
         prop_assert_eq!(actual, expected, "query: {}", query);
@@ -707,5 +717,5 @@ fn retarget_exact_calls(chunk: &mut Chunk, local_count: u16) {
 #[case::no_self_slot("def f(): 1; | f()", no_self_slot)]
 fn test_load_mqc_rejects_frame_layout_the_vm_does_not_expect(#[case] query: &str, #[case] edit: fn(&mut [Chunk])) {
     let bytes = rewrite_chunks(&compile(query), edit);
-    assert!(matches!(engine().load_mqc(&bytes), Err(MqcError::InvalidBytecode(_))));
+    assert!(matches!(load(&mut engine(), &bytes), Err(MqcError::InvalidBytecode(_))));
 }

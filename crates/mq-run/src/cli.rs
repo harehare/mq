@@ -139,7 +139,7 @@ pub struct Cli {
 
     /// The `.mqc` program, which replaces the query.
     #[arg(skip)]
-    bytecode: std::sync::OnceLock<Vec<u8>>,
+    bytecode: std::sync::OnceLock<mq_lang::Mqc>,
 }
 
 #[cfg(unix)]
@@ -2233,7 +2233,7 @@ impl Cli {
         file: &Option<PathBuf>,
     ) -> miette::Result<mq_lang::CompiledProgram> {
         match self.bytecode.get() {
-            Some(bytes) => self.load_mqc_program(engine, bytes, file),
+            Some(mqc) => self.load_mqc_program(engine, mqc, file),
             None => engine
                 .compile(&self.effective_query(query, file))
                 .map_err(|error| miette::Report::new(*error)),

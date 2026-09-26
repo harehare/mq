@@ -3,11 +3,12 @@
 //! ```rust
 //! let mut engine = mq_lang::DefaultEngine::default();
 //! engine.load_builtin_module();
-//! let bytes = engine.compile_to_mqc("upcase()", &[]).unwrap();
+//! let bytes = engine.precompile("upcase()", &[]).unwrap().into_bytes();
 //!
 //! let mut engine = mq_lang::DefaultEngine::default();
 //! engine.load_builtin_module();
-//! let program = engine.load_mqc(&bytes).unwrap();
+//! let mqc = mq_lang::Mqc::try_from(bytes).unwrap();
+//! let program = engine.load(&mqc).unwrap();
 //! let input = mq_lang::parse_text_input("hello").unwrap();
 //! let result = engine.eval_compiled(program.program(), input.into_iter()).unwrap();
 //! assert_eq!(result, vec!["HELLO".to_string().into()].into());
@@ -151,9 +152,7 @@ impl MqcProgram {
 
     /// Returns a metadata value stored at compile time.
     pub fn metadata(&self, key: &str) -> Option<&str> {
-        self.metadata
-            .iter()
-            .find_map(|(name, value)| (name == key).then_some(value.as_str()))
+        find_metadata(&self.metadata, key)
     }
 
     /// Modules compiled into the program.
@@ -167,6 +166,50 @@ impl MqcProgram {
     }
 }
 
+/// A checked `.mqc` file. [`Engine::load`] verifies its bytecode.
+#[derive(Clone)]
+pub struct Mqc {
+    bytes: Vec<u8>,
+    meta: Meta,
+}
+
+impl TryFrom<Vec<u8>> for Mqc {
+    type Error = MqcError;
+
+    /// Checks untrusted `.mqc` bytes.
+    fn try_from(bytes: Vec<u8>) -> Result<Self, MqcError> {
+        let meta = read_compatible_meta(&read_container(&bytes)?)?;
+        Ok(Self { bytes, meta })
+    }
+}
+
+impl Mqc {
+    /// Returns a metadata value stored at compile time.
+    pub fn metadata(&self, key: &str) -> Option<&str> {
+        find_metadata(&self.meta.metadata, key)
+    }
+
+    /// The encoded file.
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
+    /// The encoded file.
+    pub fn into_bytes(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl std::fmt::Debug for Mqc {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Mqc")
+            .field("len", &self.bytes.len())
+            .field("metadata", &self.meta.metadata)
+            .finish()
+    }
+}
+
+#[derive(Clone)]
 struct Meta {
     vm_abi: u32,
     mq_version: String,
@@ -194,18 +237,18 @@ struct Section<'a> {
 }
 
 impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
-    /// Compiles `code` into `.mqc` bytes without evaluating any input.
+    /// Compiles `code` into a `.mqc` file without evaluating any input.
     ///
     /// Modules are resolved now and compiled in, and module-level `let` values are computed
     /// once and saved. Engine globals are not saved: the program reads them when it runs.
     /// `metadata` is stored as-is for the embedder (see [`MqcProgram::metadata`]).
-    pub fn compile_to_mqc(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Vec<u8>, MqcError> {
+    pub fn precompile(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
         let io = Shared::new(compile_io::CompileTimeIo::new(
             Shared::clone(&self.vm.io) as Shared<dyn Io>
         ));
         let result = {
             let _io_guard = io_context::scoped(Shared::clone(&io) as Shared<dyn Io>);
-            self.compile_to_mqc_inner(code, metadata)
+            self.precompile_inner(code, metadata)
         };
         // A read may also fail silently inside `try`, so check even on success.
         match io.env_read() {
@@ -214,7 +257,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
     }
 
-    fn compile_to_mqc_inner(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Vec<u8>, MqcError> {
+    fn precompile_inner(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
         let program = parse(code, Shared::clone(&self.token_arena)).map_err(MqcError::Compile)?;
         let prepared = tarn::build_program(&program, Shared::clone(&self.token_arena), &self.vm_module_prelude)
             .map_err(MqcError::Compile)?;
@@ -279,33 +322,35 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 .collect(),
         };
 
-        write_container(&[
+        let bytes = write_container(&[
             section(META, encode_meta(&meta)?),
             section(CODE, encoded.payload),
             section(DEPS, encode_deps(&dependencies)?),
             section(SOURCE, encode_source(&files, &spans)?),
-        ])
+        ])?;
+        Ok(Mqc { bytes, meta })
     }
 
-    /// Loads `.mqc` bytes produced by [`Engine::compile_to_mqc`].
+    /// Loads a `.mqc` file produced by [`Engine::precompile`].
     ///
-    /// The program needs no module resolution or network access. The file is treated as
-    /// untrusted: it is checked and its bytecode verified before anything runs.
-    pub fn load_mqc(&mut self, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
+    /// The program needs no module resolution or network access. Its bytecode is verified
+    /// before anything runs.
+    pub fn load(&mut self, mqc: &Mqc) -> Result<MqcProgram, MqcError> {
         if let Some((cached, program)) = &self.last_mqc
-            && cached.as_slice() == bytes
+            && cached.as_slice() == mqc.as_bytes()
         {
             return Ok(program.clone());
         }
-        let program = self.decode_mqc(bytes)?;
-        self.last_mqc = Some((bytes.to_vec(), program.clone()));
+        let program = self.decode_mqc(mqc)?;
+        self.last_mqc = Some((mqc.bytes.clone(), program.clone()));
         Ok(program)
     }
 
-    fn decode_mqc(&mut self, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
-        let sections = read_container(bytes)?;
+    fn decode_mqc(&mut self, mqc: &Mqc) -> Result<MqcProgram, MqcError> {
+        // Checked by `Mqc::try_from`.
+        let sections = read_sections(&mqc.bytes)?;
         let payload = |tag: [u8; 4], name: &'static str| section_payload(&sections, tag, name);
-        let meta = read_compatible_meta(&sections)?;
+        let meta = mqc.meta.clone();
         self.check_builtins(&meta.required_builtins)?;
         let dependencies = decode_deps(payload(DEPS, "DEPS")?)?;
         let (files, spans) = decode_source(payload(SOURCE, "SOURCE")?)?;
@@ -416,9 +461,10 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     }
 }
 
-/// Reads `.mqc` metadata, checking integrity and VM compatibility but not the bytecode.
-pub fn read_mqc_metadata(bytes: &[u8]) -> Result<Vec<(String, String)>, MqcError> {
-    read_compatible_meta(&read_container(bytes)?).map(|meta| meta.metadata)
+fn find_metadata<'a>(metadata: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    metadata
+        .iter()
+        .find_map(|(name, value)| (name == key).then_some(value.as_str()))
 }
 
 fn section_payload<'a>(sections: &'a [Section<'_>], tag: [u8; 4], name: &'static str) -> Result<&'a [u8], MqcError> {
@@ -507,10 +553,8 @@ fn read_container(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
     if bytes.len() < HEADER_LEN + CHECKSUM_LEN {
         return Err(MqcError::Malformed("file is truncated".into()));
     }
-    let mut header = Reader::new(&bytes[MAGIC.len()..HEADER_LEN]);
-    let version = header.u16()?;
-    let header_len = header.u16()? as usize;
-    let total_len = header.u64()?;
+    // Skips the version and header length.
+    let total_len = Reader::new(&bytes[MAGIC.len() + 4..HEADER_LEN]).u64()?;
     if total_len != bytes.len() as u64 {
         return Err(MqcError::Malformed("file length does not match its header".into()));
     }
@@ -518,6 +562,15 @@ fn read_container(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
     if Sha256::digest(content).as_slice() != checksum {
         return Err(MqcError::ChecksumMismatch);
     }
+    read_sections(bytes)
+}
+
+/// Skips the checksum; the caller has checked it.
+fn read_sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
+    let content = &bytes[..bytes.len() - CHECKSUM_LEN];
+    let mut header = Reader::new(&bytes[MAGIC.len()..HEADER_LEN]);
+    let version = header.u16()?;
+    let header_len = header.u16()? as usize;
     if version != CONTAINER_VERSION {
         return Err(MqcError::UnsupportedContainerVersion(version));
     }
