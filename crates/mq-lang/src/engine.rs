@@ -44,7 +44,8 @@ pub struct CompiledProgram {
 
 #[derive(Debug, Clone)]
 pub(crate) enum ProgramBody {
-    /// Compiled on each run (`Engine::eval`).
+    /// Compiled with debugger instrumentation on each run.
+    #[cfg(feature = "debugger")]
     Ast(crate::ast::Program),
     /// Bytecode is built on the first run and reused.
     #[cfg(not(feature = "debugger"))]
@@ -108,6 +109,7 @@ impl CompiledProgram {
     /// Returns the underlying AST nodes, or `None` for a program loaded from a `.mqc` file.
     pub fn program(&self) -> Option<&crate::ast::Program> {
         match &self.body {
+            #[cfg(feature = "debugger")]
             ProgramBody::Ast(program) => Some(program),
             #[cfg(not(feature = "debugger"))]
             ProgramBody::Cached { program, .. } => Some(program),
@@ -128,6 +130,7 @@ impl CompiledProgram {
     pub(crate) fn vm_cache(&self) -> Option<&VmCache> {
         match &self.body {
             ProgramBody::Cached { cache, .. } => Some(cache),
+            #[allow(unreachable_patterns)]
             _ => None,
         }
     }
@@ -508,12 +511,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
 
-        let compiled = CompiledProgram {
-            source: code.to_string(),
-            body: ProgramBody::Ast(program),
-        };
+        let compiled = CompiledProgram::cached(code.to_string(), program);
         let result = self.eval_compiled_vm(&compiled, input.into_iter())?;
-        self.persist_session_modules(&compiled.program);
+        if let Some(program) = compiled.program() {
+            self.persist_session_modules(program);
+        }
         Ok(result)
     }
 
@@ -574,7 +576,9 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
 
         let result = self.eval_compiled_vm(compiled, input)?;
-        self.persist_session_modules(&compiled.program);
+        if let Some(program) = compiled.program() {
+            self.persist_session_modules(program);
+        }
         Ok(result)
     }
 
@@ -586,6 +590,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
         let program = match &compiled.body {
+            #[cfg(feature = "debugger")]
             ProgramBody::Ast(program) => program,
             #[cfg(not(feature = "debugger"))]
             ProgramBody::Cached { program, .. } => program,
