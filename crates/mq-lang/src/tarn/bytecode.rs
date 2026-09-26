@@ -969,6 +969,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 | OpCode::TeeLocal(slot)
                 | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
+                | OpCode::CallBuiltinLocal { local: slot, .. }
                 | OpCode::ForeachCollect(slot)
                 | OpCode::ArrayLenLocal(slot)
                 | OpCode::ArrayNewWithCapacityLocal(slot) => {
@@ -1201,6 +1202,22 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             chunk: chunk_index,
                             pc,
                             index: *index,
+                        });
+                    }
+                }
+                OpCode::CallUpvalueLocal { index, local } => {
+                    if *index as usize >= chunk.upvalue_names.len() {
+                        return Err(BytecodeError::UpvalueOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
                         });
                     }
                 }
@@ -1899,6 +1916,10 @@ mod tests {
         OpCode::ForeachNext { array_slot: 0, index_slot: 0, value_slot: 0, exit_offset: 1 },
         OpCode::Return,
     ])]
+    #[case::call_builtin_local(vec![
+        OpCode::CallBuiltinLocal { builtin: Ident::new("f"), local: 0 },
+        OpCode::Return,
+    ])]
     fn verifier_rejects_out_of_bounds_local_slots(#[case] code: Vec<OpCode>) {
         let chunk = Chunk {
             code,
@@ -2150,6 +2171,23 @@ mod tests {
             verify_chunks(&[caller, generator]),
             Err(BytecodeError::StaticCallTargetInvalid { .. })
         ));
+    }
+
+    #[rstest]
+    #[case::upvalue(0, 1, BytecodeError::UpvalueOutOfBounds { chunk: 0, pc: 0, index: 0 })]
+    #[case::local(1, 0, BytecodeError::LocalOutOfBounds { chunk: 0, pc: 0, slot: 0 })]
+    fn verifier_rejects_out_of_bounds_call_upvalue_local(
+        #[case] upvalue_count: usize,
+        #[case] local_count: u16,
+        #[case] expected: BytecodeError,
+    ) {
+        let chunk = Chunk {
+            code: vec![OpCode::CallUpvalueLocal { index: 0, local: 0 }, OpCode::Return],
+            upvalue_names: vec![Ident::new("f"); upvalue_count],
+            local_count,
+            ..Default::default()
+        };
+        assert_eq!(verify_chunks(&[chunk]), Err(expected));
     }
 
     #[test]

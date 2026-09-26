@@ -3520,6 +3520,32 @@ fn drive_n_times(n: u32) -> bytecode::Chunk {
     chunk(code, Vec::new(), 2)
 }
 
+#[rstest]
+#[case::in_the_entry_chunk(vec![chunk(
+    vec![bytecode::OpCode::PushNone, bytecode::OpCode::Yield, bytecode::OpCode::Return],
+    Vec::new(),
+    1,
+)])]
+#[case::in_a_called_chunk(vec![
+    chunk(
+        vec![bytecode::OpCode::CallStatic(1, 0), bytecode::OpCode::Return],
+        Vec::new(),
+        1,
+    ),
+    chunk(
+        vec![bytecode::OpCode::PushNone, bytecode::OpCode::Yield, bytecode::OpCode::Return],
+        Vec::new(),
+        1,
+    ),
+])]
+fn yield_outside_a_generator_is_a_corrupt_bytecode_error(#[case] chunks: Vec<bytecode::Chunk>) {
+    let error = run_generator_program(&generator_program(chunks)).unwrap_err();
+    assert!(
+        matches!(error, interpreter::VmError::Corrupt(_)),
+        "expected Corrupt, got {error}"
+    );
+}
+
 #[test]
 fn next_before_first_resume_runs_to_the_first_yield() {
     let result = run_generator_program(&generator_program(vec![drive_n_times(1), yield_1_2_return_3()])).unwrap();
