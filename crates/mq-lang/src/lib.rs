@@ -91,7 +91,7 @@ pub use module::{
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
 #[cfg(feature = "mqc")]
-pub use mqc::{MqcDependency, MqcError, MqcProgram};
+pub use mqc::{MqcDependency, MqcError, MqcProgram, read_mqc_metadata};
 pub use range::{Position, Range};
 pub use runtime::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,

@@ -304,22 +304,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
     fn decode_mqc(&mut self, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
         let sections = read_container(bytes)?;
-        let payload = |tag: [u8; 4], name: &'static str| {
-            sections
-                .iter()
-                .find(|section| section.tag == tag)
-                .map(|section| section.payload.as_ref())
-                .ok_or(MqcError::MissingSection(name))
-        };
-        let meta = decode_meta(payload(META, "META")?)?;
-        if meta.vm_abi != MQC_VM_ABI || meta.mq_version != env!("CARGO_PKG_VERSION") {
-            return Err(MqcError::IncompatibleVm {
-                found_version: meta.mq_version,
-                found_abi: meta.vm_abi,
-                expected_version: env!("CARGO_PKG_VERSION").to_string(),
-                expected_abi: MQC_VM_ABI,
-            });
-        }
+        let payload = |tag: [u8; 4], name: &'static str| section_payload(&sections, tag, name);
+        let meta = read_compatible_meta(&sections)?;
         self.check_builtins(&meta.required_builtins)?;
         let dependencies = decode_deps(payload(DEPS, "DEPS")?)?;
         let (files, spans) = decode_source(payload(SOURCE, "SOURCE")?)?;
@@ -428,6 +414,32 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         }
         Ok((files, spans))
     }
+}
+
+/// Reads `.mqc` metadata, checking integrity and VM compatibility but not the bytecode.
+pub fn read_mqc_metadata(bytes: &[u8]) -> Result<Vec<(String, String)>, MqcError> {
+    read_compatible_meta(&read_container(bytes)?).map(|meta| meta.metadata)
+}
+
+fn section_payload<'a>(sections: &'a [Section<'_>], tag: [u8; 4], name: &'static str) -> Result<&'a [u8], MqcError> {
+    sections
+        .iter()
+        .find(|section| section.tag == tag)
+        .map(|section| section.payload.as_ref())
+        .ok_or(MqcError::MissingSection(name))
+}
+
+fn read_compatible_meta(sections: &[Section<'_>]) -> Result<Meta, MqcError> {
+    let meta = decode_meta(section_payload(sections, META, "META")?)?;
+    if meta.vm_abi != MQC_VM_ABI || meta.mq_version != env!("CARGO_PKG_VERSION") {
+        return Err(MqcError::IncompatibleVm {
+            found_version: meta.mq_version,
+            found_abi: meta.vm_abi,
+            expected_version: env!("CARGO_PKG_VERSION").to_string(),
+            expected_abi: MQC_VM_ABI,
+        });
+    }
+    Ok(meta)
 }
 
 /// Source of a standard module bundled in this binary.
