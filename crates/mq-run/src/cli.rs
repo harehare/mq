@@ -34,6 +34,19 @@ use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
 
+mod mqc;
+
+/// A file's query prefix and, for a `.mqc` program, its input format.
+type ProgramKey = (Option<String>, Option<String>);
+
+/// Programs prepared for one engine, reused across its inputs.
+#[derive(Default)]
+struct ProgramCache {
+    /// One program per [`ProgramKey`]; a run usually has one or two.
+    programs: Vec<(ProgramKey, mq_lang::CompiledProgram)>,
+    separator: Option<mq_lang::CompiledProgram>,
+}
+
 fn parse_timeout(value: &str) -> Result<Duration, String> {
     let secs = value
         .parse::<f64>()
@@ -54,6 +67,8 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(after_help = "# Examples\n\n\
     mq 'query' file.md\n\n\
+    mq compile -f query.mq\n\
+    mq query.mqc file.md\n\n\
     Run `mq help examples` for more usage examples, or `mq help <name>` for\n\
     function/selector/module docs.\n")]
 #[command(
@@ -129,6 +144,10 @@ pub struct Cli {
     #[cfg(feature = "debug-trace")]
     #[arg(long = "dump-bytecode", default_value_t = false)]
     dump_bytecode: bool,
+
+    /// The `.mqc` program, which replaces the query.
+    #[arg(skip)]
+    bytecode: std::sync::OnceLock<mq_lang::Mqc>,
 }
 
 #[cfg(unix)]
@@ -410,15 +429,12 @@ pub enum LinkUrlStyle {
     Angle,
 }
 
-#[derive(Clone, Debug, clap::Args, Default)]
-struct InputArgs {
+/// Flags that shape the compiled program or its permissions, shared by queries and `mq compile`.
+#[derive(Clone, Debug, clap::Args, Default, PartialEq)]
+struct ProgramArgs {
     /// Aggregate all input files/content into a single array
     #[arg(short = 'A', long, default_value_t = false)]
     aggregate: bool,
-
-    /// load filter from the file
-    #[arg(short, long, default_value_t = false)]
-    from_file: bool,
 
     /// Set input format
     #[arg(short = 'I', long, value_enum)]
@@ -447,46 +463,6 @@ struct InputArgs {
     /// Import modules by name, making them available as `name::fn()` in queries
     #[arg(short = 'm', long)]
     import_module_names: Option<Vec<String>>,
-
-    /// Sets a named string argument. NAME is accessible directly in queries, and also
-    /// via ARGS."named" when --args or --argv is given.
-    #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
-    args: Option<Vec<String>>,
-
-    /// Sets a named JSON argument. NAME is accessible directly in queries
-    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
-    argjson: Option<Vec<String>>,
-
-    /// Sets file contents that can be referenced at runtime
-    #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
-    raw_file: Option<Vec<String>>,
-
-    /// Sets a named argument from a JSON file. NAME is bound to an array of every JSON
-    /// value found in FILE (jq --slurpfile compatible), so a file containing a single
-    /// JSON value becomes a one-element array.
-    #[arg(long = "slurpfile", num_args = 2, value_names = ["NAME", "FILE"])]
-    slurp_file: Option<Vec<String>>,
-
-    /// Enable streaming mode for processing large files line by line
-    #[arg(long, default_value_t = false)]
-    stream: bool,
-
-    /// Watch the input file(s) for changes and automatically re-run the query whenever
-    /// they change. Requires at least one input file (stdin cannot be watched). With
-    /// --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a
-    /// query error is printed to stderr and watching continues rather than exiting.
-    #[cfg(feature = "watch")]
-    #[arg(long, default_value_t = false)]
-    watch: bool,
-
-    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
-    /// instead of once per file. Enables cross-file aggregation in a single query.
-    #[arg(
-        long = "eval-all",
-        default_value_t = false,
-        conflicts_with_all = ["update", "count", "stream", "separator"]
-    )]
-    eval_all: bool,
 
     /// Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
     #[cfg(feature = "http-import")]
@@ -598,7 +574,57 @@ struct InputArgs {
     sandbox: Option<SandboxProfile>,
 }
 
-impl InputArgs {
+#[derive(Clone, Debug, clap::Args, Default)]
+struct InputArgs {
+    #[clap(flatten)]
+    program: ProgramArgs,
+
+    /// load filter from the file
+    #[arg(short, long, default_value_t = false)]
+    from_file: bool,
+
+    /// Sets a named string argument. NAME is accessible directly in queries, and also
+    /// via ARGS."named" when --args or --argv is given.
+    #[arg(long, num_args = 2, value_names = ["NAME", "VALUE"], aliases = ["arg", "define"])]
+    args: Option<Vec<String>>,
+
+    /// Sets a named JSON argument. NAME is accessible directly in queries
+    #[arg(long, num_args = 2, value_names = ["NAME", "JSON_VALUE"])]
+    argjson: Option<Vec<String>>,
+
+    /// Sets file contents that can be referenced at runtime
+    #[arg(long="rawfile", num_args = 2, value_names = ["NAME", "FILE"])]
+    raw_file: Option<Vec<String>>,
+
+    /// Sets a named argument from a JSON file. NAME is bound to an array of every JSON
+    /// value found in FILE (jq --slurpfile compatible), so a file containing a single
+    /// JSON value becomes a one-element array.
+    #[arg(long = "slurpfile", num_args = 2, value_names = ["NAME", "FILE"])]
+    slurp_file: Option<Vec<String>>,
+
+    /// Enable streaming mode for processing large files line by line
+    #[arg(long, default_value_t = false)]
+    stream: bool,
+
+    /// Watch the input file(s) for changes and automatically re-run the query whenever
+    /// they change. Requires at least one input file (stdin cannot be watched). With
+    /// --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a
+    /// query error is printed to stderr and watching continues rather than exiting.
+    #[cfg(feature = "watch")]
+    #[arg(long, default_value_t = false)]
+    watch: bool,
+
+    /// Evaluate the query once against all input files combined (like yq's `eval-all`),
+    /// instead of once per file. Enables cross-file aggregation in a single query.
+    #[arg(
+        long = "eval-all",
+        default_value_t = false,
+        conflicts_with_all = ["update", "count", "stream", "separator"]
+    )]
+    eval_all: bool,
+}
+
+impl ProgramArgs {
     /// Builds sandboxed IO permissions from `--sandbox` or the individual `--allow-*` flags.
     fn build_sandboxed_io(&self) -> mq_lang::SandboxedIo {
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
@@ -830,6 +856,20 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
+    /// Compile a query to `.mqc` bytecode. Run it with `mq PROGRAM.mqc [FILES]...`
+    Compile {
+        /// Query to compile, or a query file with -f
+        #[arg(value_name = "QUERY OR FILE")]
+        query: String,
+        /// Load the query from the file
+        #[arg(short, long)]
+        from_file: bool,
+        /// Output file [default: the query file with a `.mqc` extension; required for a query string]
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        #[clap(flatten)]
+        program: Box<ProgramArgs>,
+    },
 }
 
 /// Shell targets supported by the `completion` subcommand.
@@ -1005,6 +1045,7 @@ impl Cli {
                 "  {} - Generate a shell completion script and print it to stdout",
                 "completion".green()
             ),
+            format!("  {} - Compile a query to .mqc bytecode", "compile".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -1645,10 +1686,32 @@ impl Cli {
             ));
         }
 
+        if let Some(Commands::Compile {
+            query,
+            from_file,
+            output,
+            program,
+        }) = &self.commands
+        {
+            if self.format.is_some() {
+                return Err(miette!(
+                    "-T/--format has no effect on `mq compile`; pass -I/--input-format after `compile` instead"
+                ));
+            }
+            if self.input.program != ProgramArgs::default() || self.input.from_file {
+                return Err(miette!(
+                    "Pass compile options after `compile`: mq compile [OPTIONS] QUERY"
+                ));
+            }
+            return Self::compile_bytecode(query, *from_file, output.as_deref(), program);
+        }
+        self.load_bytecode()?;
+
         // Check if query is actually an external subcommand
         // This handles the case where clap parses "mq test arg1" as query="test", files=["arg1"]
         if !self.input.from_file
             && self.commands.is_none()
+            && self.bytecode.get().is_none()
             && let Some(query_value) = &self.query
         {
             // Only treat as external command if query_value is a valid file name
@@ -1695,13 +1758,7 @@ impl Cli {
             return Err(miette!("--indent/--tab are only valid with -F json or -F xml"));
         }
 
-        if (self.input.csv_delimiter.is_some() || self.input.no_header)
-            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
-        {
-            return Err(miette!(
-                "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
-            ));
-        }
+        self.validate_csv_options()?;
 
         match &self.commands {
             Some(Commands::Repl { files }) => {
@@ -1729,6 +1786,7 @@ impl Cli {
             Some(Commands::Dap) => mq_dap::start().map_err(|e| miette!(e.to_string())),
             Some(Commands::Completion { shell }) => Self::generate_completion(shell),
             Some(Commands::Help { name, json, markdown }) => Self::run_help(name.as_deref(), *json, *markdown),
+            Some(Commands::Compile { .. }) => unreachable!("handled before input validation"),
             #[cfg(feature = "watch")]
             None if self.input.watch => self.run_watch(),
             None => {
@@ -1757,26 +1815,26 @@ impl Cli {
     }
 
     fn create_engine(&self) -> miette::Result<DefaultEngine> {
-        let sandboxed_io = self.input.build_sandboxed_io();
+        let sandboxed_io = self.input.program.build_sandboxed_io();
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
 
-        if self.input.aggregate {
+        if self.input.program.aggregate {
             engine.import_module("section").map_err(|e| *e)?;
         }
 
-        if let Some(dirs) = &self.input.module_directories {
+        if let Some(dirs) = &self.input.program.module_directories {
             engine.set_search_paths(dirs.clone());
         }
 
-        if let Some(modules) = &self.input.module_names {
+        if let Some(modules) = &self.input.program.module_names {
             for module_name in modules {
                 engine.load_module(module_name).map_err(|e| *e)?;
             }
         }
 
-        if let Some(modules) = &self.input.import_module_names {
+        if let Some(modules) = &self.input.program.import_module_names {
             for module_name in modules {
                 engine.import_module(module_name).map_err(|e| *e)?;
             }
@@ -1868,23 +1926,25 @@ impl Cli {
         #[cfg(feature = "http-import")]
         {
             engine.set_http_import_enabled(
-                self.input.allow_http_import || self.input.allow_all || self.input.sandbox_enables_http_import(),
+                self.input.program.allow_http_import
+                    || self.input.program.allow_all
+                    || self.input.program.sandbox_enables_http_import(),
             );
-            if let Some(domains) = &self.input.allowed_domains {
+            if let Some(domains) = &self.input.program.allowed_domains {
                 engine.set_http_allowed_domains(domains.clone());
             }
-            if self.input.no_lockfile {
+            if self.input.program.no_lockfile {
                 engine.set_lockfile_enabled(false);
             }
-            if self.input.frozen {
+            if self.input.program.frozen {
                 engine.set_lockfile_frozen(true);
             }
-            if let Some(path) = &self.input.lockfile_path {
+            if let Some(path) = &self.input.program.lockfile_path {
                 engine.set_lockfile_path(path.clone());
             }
-            if self.input.clear_cache {
+            if self.input.program.clear_cache {
                 engine.clear_http_cache_all().map_err(|e| miette!(e.to_string()))?;
-            } else if self.input.refresh_modules {
+            } else if self.input.program.refresh_modules {
                 engine.clear_http_cache().map_err(|e| miette!(e.to_string()))?;
             }
         }
@@ -1914,6 +1974,9 @@ impl Cli {
     }
 
     fn get_query(&self) -> miette::Result<String> {
+        if self.bytecode.get().is_some() {
+            return Ok(String::new());
+        }
         let query = match self.query.as_ref() {
             Some(q) if self.input.from_file => {
                 let path = PathBuf::from_str(q).into_diagnostic()?;
@@ -1923,12 +1986,24 @@ impl Cli {
             None => return Err(miette!("Query is required")),
         };
 
-        let aggregate = self.input.aggregate.then_some("nodes");
+        let aggregate = self.input.program.aggregate.then_some("nodes");
         Ok(aggregate.map(|agg| format!("{} | {}", agg, query)).unwrap_or(query))
+    }
+
+    fn validate_csv_options(&self) -> miette::Result<()> {
+        if (self.input.program.csv_delimiter.is_some() || self.input.program.no_header)
+            && matches!(self.explicit_input_format(), Some(fmt) if !matches!(fmt, InputFormat::Csv | InputFormat::Tsv | InputFormat::Psv))
+        {
+            return Err(miette!(
+                "--csv-delimiter/--no-header only apply to -I csv, -I tsv, or -I psv"
+            ));
+        }
+        Ok(())
     }
 
     fn explicit_input_format(&self) -> Option<InputFormat> {
         self.input
+            .program
             .input_format
             .clone()
             .or_else(|| self.format.clone().map(InputFormat::from))
@@ -1969,9 +2044,9 @@ impl Cli {
 
     /// `--csv-delimiter`/`--no-header`-aware prefix for csv/tsv/psv; `None` otherwise.
     fn tabular_query_prefix(&self, fmt: &InputFormat) -> Option<String> {
-        let has_header = !self.input.no_header;
+        let has_header = !self.input.program.no_header;
         match fmt {
-            InputFormat::Csv => Some(match self.input.csv_delimiter {
+            InputFormat::Csv => Some(match self.input.program.csv_delimiter {
                 Some(delimiter) => format!(
                     r#"import "csv" | csv::csv_parse_with_delimiter({:?}, {has_header})"#,
                     delimiter.to_string()
@@ -2094,74 +2169,27 @@ impl Cli {
     fn execute(
         &self,
         engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
         query: &str,
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
-        let effective_query;
-        let query = match self.auto_query_prefix(file) {
-            Some(prefix) => {
-                effective_query = format!("{} | {}", prefix, query);
-                effective_query.as_str()
-            }
-            None => query,
-        };
-
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
-
-        #[cfg(feature = "debug-trace")]
-        let program = engine.compile(query).map_err(|error| *error)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(engine, &program)?;
-
-        let input = self.resolve_input(file, content)?;
-        let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
-        let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
-
-        #[cfg(feature = "vm-profile")]
-        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-
-        let runtime_values = if self.output.update {
-            #[cfg(feature = "debug-trace")]
-            let results = engine
-                .eval_compiled(&program, input.clone().into_iter())
-                .map_err(|error| *error)?;
-            #[cfg(not(feature = "debug-trace"))]
-            let results = engine.eval(query, input.clone().into_iter()).map_err(|error| *error)?;
-            self.apply_update(input, results)?
-        } else {
-            #[cfg(feature = "debug-trace")]
-            {
-                engine
-                    .eval_compiled(&program, input.into_iter())
-                    .map_err(|error| *error)?
-            }
-            #[cfg(not(feature = "debug-trace"))]
-            {
-                engine.eval(query, input.into_iter()).map_err(|error| *error)?
-            }
-        };
-
-        #[cfg(feature = "vm-profile")]
-        self.emit_vm_profile(vm_profile, file);
-
-        if self.output.update && self.output.diff {
-            return self.emit_diff(&runtime_values, file, content);
+        let index = self.program_index(engine, cache, query, file)?;
+        if cache.separator.is_none()
+            && let Some(separator) = &self.output.separator
+        {
+            cache.separator = Some(engine.compile(separator).map_err(|error| *error)?);
         }
-
-        if let Some(separator) = &self.output.separator {
-            let separator = engine
-                .eval(
-                    separator,
-                    vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-                )
-                .map_err(|e| *e)?;
-            self.print(separator)?;
-        }
-
-        self.emit_results(runtime_values, grep_input, file)
+        self.run_program(
+            engine,
+            &cache.programs[index].1,
+            cache.separator.as_ref(),
+            file,
+            content,
+        )
     }
 
     /// Returns the effective query string combining any auto-prefix with the base query.
@@ -2170,6 +2198,39 @@ impl Cli {
             Some(prefix) => format!("{} | {}", prefix, query),
             None => query.to_string(),
         }
+    }
+
+    /// Compiles the query for `file`, or loads the `.mqc` program.
+    fn prepare_program(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        query: &str,
+        file: &Option<PathBuf>,
+    ) -> miette::Result<mq_lang::CompiledProgram> {
+        match self.bytecode.get() {
+            Some(mqc) => self.load_mqc_program(engine, mqc, file),
+            None => engine
+                .compile(&self.effective_query(query, file))
+                .map_err(|error| miette::Report::new(*error)),
+        }
+    }
+
+    /// Returns the index in `cache` of `file`'s program, preparing it once per [`ProgramKey`].
+    fn program_index(
+        &self,
+        engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
+        query: &str,
+        file: &Option<PathBuf>,
+    ) -> miette::Result<usize> {
+        let key = self.program_key(file);
+        if let Some(index) = cache.programs.iter().position(|(cached, _)| *cached == key) {
+            return Ok(index);
+        }
+        let program = self.prepare_program(engine, query, file)?;
+        self.dump_compiled_bytecode(engine, &program)?;
+        cache.programs.push((key, program));
+        Ok(cache.programs.len() - 1)
     }
 
     #[cfg(feature = "debug-trace")]
@@ -2241,13 +2302,18 @@ impl Cli {
         Ok(())
     }
 
-    /// Returns true if all files would produce the same effective query prefix.
-    fn all_files_same_prefix(&self, files: &[(Option<PathBuf>, ContentData)]) -> bool {
+    /// What the prepared program for `file` depends on.
+    fn program_key(&self, file: &Option<PathBuf>) -> ProgramKey {
+        (self.auto_query_prefix(file), self.mqc_input_format(file))
+    }
+
+    /// Returns true if one prepared program is valid for every file.
+    fn all_files_share_program(&self, files: &[(Option<PathBuf>, ContentData)]) -> bool {
         if files.is_empty() {
             return true;
         }
-        let first = self.auto_query_prefix(&files[0].0);
-        files[1..].iter().all(|(f, _)| self.auto_query_prefix(f) == first)
+        let first = self.program_key(&files[0].0);
+        files[1..].iter().all(|(f, _)| self.program_key(f) == first)
     }
 
     fn execute_once(&self) -> miette::Result<()> {
@@ -2338,6 +2404,8 @@ impl Cli {
     fn run_watch(&self) -> miette::Result<()> {
         use notify::Watcher as _;
 
+        self.ensure_watch_supported()?;
+
         let watch_paths = self.watch_targets()?;
         let targets: rustc_hash::FxHashSet<(PathBuf, OsString)> = watch_paths
             .iter()
@@ -2416,48 +2484,23 @@ impl Cli {
         // Keep --append sequential: parallel files racing the same read-then-rename
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
-            // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
-            let can_compile_per_worker = self.all_files_same_prefix(&files) && self.output.separator.is_none();
-            #[cfg(feature = "debug-trace")]
-            // Preserve per-file bytecode diagnostics.
-            let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
-
-            if can_compile_per_worker {
-                let effective_query = self.effective_query(&query, &files[0].0);
-                files.par_iter().try_for_each_init(
-                    || {
-                        let mut engine = self.create_engine()?;
-                        let program = engine.compile(&effective_query).map_err(|error| *error)?;
-                        Ok::<_, miette::Error>((engine, program))
-                    },
-                    |prepared, (file, content)| {
-                        let (engine, program) = prepared
-                            .as_mut()
-                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
-                        self.execute_compiled(engine, program, file, content)
-                    },
-                )?;
-            } else {
-                files.par_iter().try_for_each(|(file, content)| {
-                    let mut engine = self.create_engine()?;
-                    self.execute(&mut engine, &query, file, content)
-                })?;
-            }
+            // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
+            // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
+            let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
+            files.par_iter().with_min_len(min_len).try_for_each_init(
+                || Ok::<_, miette::Error>((self.create_engine()?, ProgramCache::default())),
+                |worker, (file, content)| {
+                    let (engine, cache) = worker
+                        .as_mut()
+                        .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                    self.execute(engine, cache, &query, file, content)
+                },
+            )?;
         } else {
             let mut engine = self.create_engine()?;
-
-            // Pre-compile query if all files share the same effective query (same prefix)
-            if files.len() > 1 && self.all_files_same_prefix(&files) && self.output.separator.is_none() {
-                let effective = self.effective_query(&query, &files[0].0);
-                let program = engine.compile(&effective).map_err(|e| *e)?;
-                self.dump_compiled_bytecode(&mut engine, &program)?;
-                for (file, content) in &files {
-                    self.execute_compiled(&mut engine, &program, file, content)?;
-                }
-            } else {
-                files
-                    .iter()
-                    .try_for_each(|(file, content)| self.execute(&mut engine, &query, file, content))?;
+            let mut cache = ProgramCache::default();
+            for (file, content) in &files {
+                self.execute(&mut engine, &mut cache, &query, file, content)?;
             }
         }
 
@@ -2466,13 +2509,13 @@ impl Cli {
 
     /// `__FILE__`-family vars aren't set here: no single file is "current" once combined.
     fn execute_eval_all(&self, query: &str, files: &[(Option<PathBuf>, ContentData)]) -> miette::Result<()> {
-        if !self.all_files_same_prefix(files) {
+        if !self.all_files_share_program(files) {
             return Err(miette!(
                 "--eval-all requires all input files to use the same input format"
             ));
         }
 
-        let effective_query = self.effective_query(query, files.first().map(|(f, _)| f).unwrap_or(&None));
+        let first_file = files.first().map(|(f, _)| f).unwrap_or(&None);
         let mut engine = self.create_engine()?;
 
         let mut combined_input = Vec::new();
@@ -2485,17 +2528,10 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "debug-trace")]
-        let program = engine.compile(&effective_query).map_err(|error| *error)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(&mut engine, &program)?;
-        #[cfg(feature = "debug-trace")]
+        let mut cache = ProgramCache::default();
+        let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
         let runtime_values = engine
-            .eval_compiled(&program, combined_input.into_iter())
-            .map_err(|error| *error)?;
-        #[cfg(not(feature = "debug-trace"))]
-        let runtime_values = engine
-            .eval(&effective_query, combined_input.into_iter())
+            .eval_compiled(&cache.programs[index].1, combined_input.into_iter())
             .map_err(|error| *error)?;
 
         #[cfg(feature = "vm-profile")]
@@ -2504,25 +2540,12 @@ impl Cli {
         self.emit_results(runtime_values, grep_input, &None)
     }
 
-    fn execute_compiled(
+    /// Runs `program` on one input, with any file-scoped globals already installed.
+    fn run_program(
         &self,
         engine: &mut mq_lang::DefaultEngine,
         program: &mq_lang::CompiledProgram,
-        file: &Option<PathBuf>,
-        content: &ContentData,
-    ) -> miette::Result<()> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
-
-        self.execute_compiled_prepared(engine, program, file, content)
-    }
-
-    /// Executes with any file-scoped globals already installed by the caller.
-    fn execute_compiled_prepared(
-        &self,
-        engine: &mut mq_lang::DefaultEngine,
-        program: &mq_lang::CompiledProgram,
+        separator: Option<&mq_lang::CompiledProgram>,
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
@@ -2549,40 +2572,37 @@ impl Cli {
             return self.emit_diff(&runtime_values, file, content);
         }
 
+        if let Some(separator) = separator {
+            let separator = engine
+                .eval_compiled(
+                    separator,
+                    vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
+                )
+                .map_err(|e| *e)?;
+            self.print(separator)?;
+        }
+
         self.emit_results(runtime_values, grep_input, file)
     }
 
     fn count_file(
         &self,
         engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
         query: &str,
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<usize> {
-        let effective_query;
-        let query = match self.auto_query_prefix(file) {
-            Some(prefix) => {
-                effective_query = format!("{} | {}", prefix, query);
-                effective_query.as_str()
-            }
-            None => query,
-        };
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "debug-trace")]
-        let program = engine.compile(query).map_err(|error| *error)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(engine, &program)?;
         let input = self.resolve_input(file, content)?;
-        #[cfg(feature = "debug-trace")]
         let runtime_values = engine
-            .eval_compiled(&program, input.into_iter())
+            .eval_compiled(&cache.programs[index].1, input.into_iter())
             .map_err(|error| *error)?;
-        #[cfg(not(feature = "debug-trace"))]
-        let runtime_values = engine.eval(query, input.into_iter()).map_err(|error| *error)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
@@ -2603,10 +2623,11 @@ impl Cli {
         let multiple_files = files.len() > 1;
         let mut total = 0usize;
         let mut engine = self.create_engine()?;
+        let mut cache = ProgramCache::default();
 
         if self.quiet {
             for (file, content) in files {
-                self.count_file(&mut engine, query, file, content)?;
+                self.count_file(&mut engine, &mut cache, query, file, content)?;
             }
             return Ok(());
         }
@@ -2620,7 +2641,7 @@ impl Cli {
         )?;
 
         for (file, content) in files {
-            let count = self.count_file(&mut engine, query, file, content)?;
+            let count = self.count_file(&mut engine, &mut cache, query, file, content)?;
             total += count;
             if multiple_files {
                 let name = file
@@ -2654,7 +2675,8 @@ impl Cli {
         // one set of file globals per file. Keep both pieces of state outside the per-line hot
         // path so short queries do not spend their time allocating query strings or recreating
         // `__FILE__` values.
-        let mut compiled_query: Option<(String, mq_lang::CompiledProgram)> = None;
+        let mut cache = ProgramCache::default();
+        let mut program_index = 0;
         let mut active_file: Option<Option<PathBuf>> = None;
 
         self.process_lines(|file, line| {
@@ -2670,23 +2692,18 @@ impl Cli {
                     self.set_file_vars(&mut engine, file);
                 }
 
-                let effective_query = self.effective_query(&query, current_file);
-                if compiled_query
-                    .as_ref()
-                    .is_none_or(|(cached_query, _)| cached_query != &effective_query)
-                {
-                    let program = engine.compile(&effective_query).map_err(|error| *error)?;
-                    self.dump_compiled_bytecode(&mut engine, &program)?;
-                    compiled_query = Some((effective_query, program));
-                }
+                program_index = self.program_index(&mut engine, &mut cache, &query, current_file)?;
             }
             let current_file = active_file
                 .as_ref()
                 .ok_or_else(|| miette!("streaming input did not select an active file"))?;
-            let (_, program) = compiled_query
-                .as_ref()
-                .ok_or_else(|| miette!("streaming query compilation did not produce a program"))?;
-            self.execute_compiled_prepared(&mut engine, program, current_file, &line.into())
+            self.run_program(
+                &mut engine,
+                &cache.programs[program_index].1,
+                None,
+                current_file,
+                &line.into(),
+            )
         })
     }
 
@@ -2761,10 +2778,7 @@ impl Cli {
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
-        self.files
-            .as_ref()
-            .map(|files| Self::expand_glob_patterns(files))
-            .transpose()
+        self.files.as_deref().map(Self::expand_glob_patterns).transpose()
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
@@ -3228,7 +3242,10 @@ mod tests {
     fn test_cli_null_input() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3253,7 +3270,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3282,7 +3302,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3317,7 +3340,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3347,7 +3373,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -3379,7 +3408,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3395,8 +3427,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_read: Some(vec![]),
+                program: ProgramArgs {
+                    allow_read: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3414,7 +3449,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3430,8 +3468,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_run: Some(vec![]),
+                program: ProgramArgs {
+                    allow_run: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3444,8 +3485,11 @@ mod tests {
 
         let restricted_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_run: Some(vec!["ls".to_string()]),
+                program: ProgramArgs {
+                    allow_run: Some(vec!["ls".to_string()]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3472,7 +3516,10 @@ mod tests {
 
         let blocked_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3485,8 +3532,11 @@ mod tests {
 
         let allowed_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_env: Some(vec![]),
+                program: ProgramArgs {
+                    allow_env: Some(vec![]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3499,8 +3549,11 @@ mod tests {
 
         let restricted_cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_env: Some(vec!["MQ_OTHER_VAR".to_string()]),
+                program: ProgramArgs {
+                    allow_env: Some(vec!["MQ_OTHER_VAR".to_string()]),
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3525,8 +3578,11 @@ mod tests {
 
         let base_cli = |query: &str, allow_all: bool| Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allow_all,
+                program: ProgramArgs {
+                    allow_all,
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3587,7 +3643,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_strict_denies_everything() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Strict),
             ..Default::default()
         }
@@ -3602,7 +3658,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_read_only_grants_read_only() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::ReadOnly),
             ..Default::default()
         }
@@ -3617,7 +3673,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_networked_grants_net_only() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Networked),
             ..Default::default()
         }
@@ -3632,7 +3688,7 @@ mod tests {
 
     #[test]
     fn test_sandbox_unsafe_grants_every_capability() {
-        let io = InputArgs {
+        let io = ProgramArgs {
             sandbox: Some(SandboxProfile::Unsafe),
             ..Default::default()
         }
@@ -3648,28 +3704,18 @@ mod tests {
     #[cfg(feature = "http-import")]
     #[test]
     fn test_sandbox_http_import_enablement() {
-        assert!(!InputArgs::default().sandbox_enables_http_import());
-        assert!(
-            !InputArgs {
-                sandbox: Some(SandboxProfile::ReadOnly),
+        assert!(!ProgramArgs::default().sandbox_enables_http_import());
+        for (sandbox, expected) in [
+            (SandboxProfile::ReadOnly, false),
+            (SandboxProfile::Networked, true),
+            (SandboxProfile::Unsafe, true),
+        ] {
+            let args = ProgramArgs {
+                sandbox: Some(sandbox),
                 ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
-        assert!(
-            InputArgs {
-                sandbox: Some(SandboxProfile::Networked),
-                ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
-        assert!(
-            InputArgs {
-                sandbox: Some(SandboxProfile::Unsafe),
-                ..Default::default()
-            }
-            .sandbox_enables_http_import()
-        );
+            };
+            assert_eq!(args.sandbox_enables_http_import(), expected);
+        }
     }
 
     #[cfg(feature = "http-import")]
@@ -3679,7 +3725,10 @@ mod tests {
         // request, so this stays fast and deterministic regardless of connectivity.
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3701,8 +3750,11 @@ mod tests {
     fn test_allowed_domain_alone_does_not_enable_http_import() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
-                allowed_domains: Some(vec!["example.com".to_string()]),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    allowed_domains: Some(vec!["example.com".to_string()]),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3751,7 +3803,10 @@ mod tests {
     fn test_timeout_aborts_infinite_loop() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3769,7 +3824,10 @@ mod tests {
     fn test_timeout_allows_normal_query() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -3853,7 +3911,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Text),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Text),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -4004,8 +4065,11 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                module_names: Some(vec!["math".to_string()]),
-                module_directories: Some(vec![temp_dir.clone()]),
+                program: ProgramArgs {
+                    module_names: Some(vec!["math".to_string()]),
+                    module_directories: Some(vec![temp_dir.clone()]),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs::default(),
@@ -4201,7 +4265,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Mdx),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Mdx),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4237,7 +4304,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Html),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Html),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4599,7 +4669,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4637,7 +4710,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4730,7 +4806,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4765,7 +4844,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4804,7 +4886,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4840,7 +4925,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -4993,7 +5081,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5037,7 +5128,10 @@ mod tests {
         // both files into a single collection before "nodes" runs, giving one total.
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -5231,7 +5325,10 @@ mod tests {
     fn test_update_with_non_markdown_input() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Html),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Html),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5665,7 +5762,10 @@ mod tests {
     fn test_auto_query_prefix_disabled_when_input_format_set() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Raw),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Raw),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -5702,9 +5802,12 @@ mod tests {
     ) {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(fmt.clone()),
-                csv_delimiter,
-                no_header,
+                program: ProgramArgs {
+                    input_format: Some(fmt.clone()),
+                    csv_delimiter,
+                    no_header,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -5920,7 +6023,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Markdown),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Markdown),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -5961,9 +6067,12 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Csv),
-                csv_delimiter: Some(';'),
-                no_header: true,
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Csv),
+                    csv_delimiter: Some(';'),
+                    no_header: true,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6049,7 +6158,10 @@ mod tests {
     fn test_is_binary_format(#[case] fmt: Option<InputFormat>, #[case] expected: bool) {
         let cli = Cli {
             input: InputArgs {
-                input_format: fmt,
+                program: ProgramArgs {
+                    input_format: fmt,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             ..Cli::default()
@@ -6074,7 +6186,10 @@ mod tests {
     fn test_binary_format_streaming_returns_error(#[case] fmt: InputFormat) {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(fmt),
+                program: ProgramArgs {
+                    input_format: Some(fmt),
+                    ..Default::default()
+                },
                 stream: true,
                 ..Default::default()
             },
@@ -6100,7 +6215,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Bytes),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Bytes),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6136,7 +6254,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Bytes),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Bytes),
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6180,7 +6301,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: fmt,
+                program: ProgramArgs {
+                    input_format: fmt,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             output: OutputArgs {
@@ -6264,7 +6388,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args,
                 ..Default::default()
             },
@@ -6338,7 +6465,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 argjson: Some(argjson),
                 ..Default::default()
             },
@@ -6360,7 +6490,10 @@ mod tests {
     fn test_argjson_invalid_json_errors() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 argjson: Some(vec!["name".to_string(), "not valid json".to_string()]),
                 ..Default::default()
             },
@@ -6387,7 +6520,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 argjson: Some(vec!["count".to_string(), "42".to_string()]),
                 ..Default::default()
@@ -6427,7 +6563,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
                 ..Default::default()
             },
@@ -6456,7 +6595,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
                 ..Default::default()
             },
@@ -6474,7 +6616,10 @@ mod tests {
     fn test_slurpfile_missing_file_errors() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 slurp_file: Some(vec!["data".to_string(), "/nonexistent/path/to/file.json".to_string()]),
                 ..Default::default()
             },
@@ -6502,7 +6647,10 @@ mod tests {
 
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 argjson: Some(vec!["count".to_string(), "42".to_string()]),
                 slurp_file: Some(vec!["data".to_string(), data_file.to_string_lossy().to_string()]),
@@ -6619,7 +6767,10 @@ mod tests {
         let pattern = temp_dir.join("mq_glob_expand_test_*.md");
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -6658,7 +6809,10 @@ mod tests {
         let pattern2 = temp_dir.join("mq_glob_multi_other_*.md");
         let cli = Cli {
             input: InputArgs {
-                aggregate: true,
+                program: ProgramArgs {
+                    aggregate: true,
+                    ..Default::default()
+                },
                 eval_all: true,
                 ..Default::default()
             },
@@ -6798,7 +6952,10 @@ mod tests {
     fn test_args_pair_works() {
         let cli = Cli {
             input: InputArgs {
-                input_format: Some(InputFormat::Null),
+                program: ProgramArgs {
+                    input_format: Some(InputFormat::Null),
+                    ..Default::default()
+                },
                 args: Some(vec!["name".to_string(), "Alice".to_string()]),
                 ..Default::default()
             },

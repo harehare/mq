@@ -23,6 +23,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     let compiled = engine.compile(program).unwrap();
     let regenerated = compiled
         .program()
+        .unwrap()
         .iter()
         .map(|node| node.to_code())
         .collect::<Vec<_>>()

@@ -35,47 +35,99 @@ pub enum DefineValueError {
 #[derive(Debug, Clone)]
 pub struct CompiledProgram {
     pub(crate) source: String,
-    pub(crate) program: crate::ast::Program,
+    pub(crate) body: ProgramBody,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ProgramBody {
+    /// Compiled with debugger instrumentation on each run.
+    #[cfg(feature = "debugger")]
+    Ast(crate::ast::Program),
+    /// Bytecode is built on the first run and reused.
     #[cfg(not(feature = "debugger"))]
-    vm_cache: Option<Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>>,
+    Cached {
+        program: crate::ast::Program,
+        cache: VmCache,
+    },
+    /// Loaded from a `.mqc` file.
+    #[cfg(feature = "mqc")]
+    Precompiled(Shared<tarn::split_program::SplitProgram>),
+}
+
+/// Bytecode built from a [`ProgramBody::Cached`] program, shared by its clones.
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone, Default)]
+pub(crate) struct VmCache(Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>);
+
+#[cfg(not(feature = "debugger"))]
+impl VmCache {
+    pub(crate) fn get(&self) -> Option<Shared<tarn::CachedProgram>> {
+        #[cfg(feature = "sync")]
+        {
+            self.0.read().unwrap().clone()
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            self.0.borrow().clone()
+        }
+    }
+
+    pub(crate) fn set(&self, program: Shared<tarn::CachedProgram>) {
+        #[cfg(feature = "sync")]
+        {
+            *self.0.write().unwrap() = Some(program);
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            *self.0.borrow_mut() = Some(program);
+        }
+    }
 }
 
 impl CompiledProgram {
+    /// Wraps `program` so its bytecode is cached across runs.
+    fn cached(source: String, program: crate::ast::Program) -> Self {
+        #[cfg(not(feature = "debugger"))]
+        let body = ProgramBody::Cached {
+            program,
+            cache: VmCache::default(),
+        };
+        #[cfg(feature = "debugger")]
+        let body = ProgramBody::Ast(program);
+        Self { source, body }
+    }
+
     /// Returns the original source code.
     pub fn source(&self) -> &str {
         &self.source
     }
 
-    /// Returns the underlying AST nodes.
-    pub fn program(&self) -> &crate::ast::Program {
-        &self.program
-    }
-
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) fn cached_vm_program(&self) -> Option<Option<Shared<tarn::CachedProgram>>> {
-        let cache = self.vm_cache.as_ref()?;
-        #[cfg(feature = "sync")]
-        {
-            Some(cache.read().unwrap().clone())
-        }
-        #[cfg(not(feature = "sync"))]
-        {
-            Some(cache.borrow().clone())
+    /// Returns the underlying AST nodes, or `None` for a program loaded from a `.mqc` file.
+    pub fn program(&self) -> Option<&crate::ast::Program> {
+        match &self.body {
+            #[cfg(feature = "debugger")]
+            ProgramBody::Ast(program) => Some(program),
+            #[cfg(not(feature = "debugger"))]
+            ProgramBody::Cached { program, .. } => Some(program),
+            #[cfg(feature = "mqc")]
+            ProgramBody::Precompiled(_) => None,
         }
     }
 
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) fn cache_vm_program(&self, program: Shared<tarn::CachedProgram>) {
-        let Some(cache) = &self.vm_cache else {
-            return;
-        };
-        #[cfg(feature = "sync")]
-        {
-            *cache.write().unwrap() = Some(program);
+    #[cfg(feature = "mqc")]
+    pub(crate) fn from_precompiled(source: String, program: tarn::split_program::SplitProgram) -> Self {
+        Self {
+            source,
+            body: ProgramBody::Precompiled(Shared::new(program)),
         }
-        #[cfg(not(feature = "sync"))]
-        {
-            *cache.borrow_mut() = Some(program);
+    }
+
+    #[cfg(all(test, not(feature = "debugger")))]
+    pub(crate) fn vm_cache(&self) -> Option<&VmCache> {
+        match &self.body {
+            ProgramBody::Cached { cache, .. } => Some(cache),
+            #[allow(unreachable_patterns)]
+            _ => None,
         }
     }
 }
@@ -83,12 +135,7 @@ impl CompiledProgram {
 impl From<crate::ast::Program> for CompiledProgram {
     /// Wraps a raw `Program` (e.g. from `ast_from_json`) with no source context.
     fn from(program: crate::ast::Program) -> Self {
-        Self {
-            source: String::new(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: Some(Shared::new(SharedCell::new(None))),
-        }
+        Self::cached(String::new(), program)
     }
 }
 
@@ -113,8 +160,11 @@ impl From<crate::ast::Program> for CompiledProgram {
 pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedIo<NativeIo>> {
     /// VM state — see [`tarn::VmState`].
     pub(crate) vm: tarn::VmState<T, IO>,
-    token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
-    vm_module_prelude: Vec<VmModulePrelude>,
+    pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
+    pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
+    /// The last `.mqc` file loaded, keyed by its checksum, so reloading it skips decoding.
+    #[cfg(feature = "mqc")]
+    pub(crate) last_mqc: Option<([u8; crate::mqc::CHECKSUM_LEN], CompiledProgram)>,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
@@ -159,6 +209,8 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm: tarn::VmState::with_module_loader(module_loader),
             token_arena,
             vm_module_prelude: Vec::new(),
+            #[cfg(feature = "mqc")]
+            last_mqc: None,
         }
     }
 
@@ -235,6 +287,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             vm: tarn::VmState::with_module_loader_and_io(module_loader, io),
             token_arena,
             vm_module_prelude: Vec::new(),
+            #[cfg(feature = "mqc")]
+            last_mqc: None,
         }
     }
 
@@ -452,12 +506,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
 
-        let compiled = CompiledProgram {
-            source: code.to_string(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: None,
-        };
+        let compiled = CompiledProgram::cached(code.to_string(), program);
         self.eval_compiled_vm(&compiled, input.into_iter())
     }
 
@@ -466,21 +515,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
     pub fn compile(&mut self, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
         if code.is_empty() {
-            return Ok(CompiledProgram {
-                source: String::new(),
-                program: vec![],
-                #[cfg(not(feature = "debugger"))]
-                vm_cache: Some(Shared::new(SharedCell::new(None))),
-            });
+            return Ok(CompiledProgram::cached(String::new(), Vec::new()));
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
-        Ok(CompiledProgram {
-            source: code.to_string(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: Some(Shared::new(SharedCell::new(None))),
-        })
+        Ok(CompiledProgram::cached(code.to_string(), program))
     }
 
     /// Evaluates a pre-compiled program against the given input.
@@ -517,13 +556,19 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     #[cfg(feature = "debug-trace")]
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
+        let program = match &compiled.body {
+            #[cfg(feature = "debugger")]
+            ProgramBody::Ast(program) => program,
+            #[cfg(not(feature = "debugger"))]
+            ProgramBody::Cached { program, .. } => program,
+            #[cfg(feature = "mqc")]
+            ProgramBody::Precompiled(precompiled) => {
+                return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));
+            }
+        };
         let global_bindings = self.vm.global_bindings_snapshot();
-        let vm_program = tarn::build_program(
-            &compiled.program,
-            Shared::clone(&self.token_arena),
-            &self.vm_module_prelude,
-        )?;
-        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+        let vm_program = tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude)?;
+        let vm_program = vm_program.as_ref().unwrap_or(program);
 
         tarn::dump_bytecode(
             vm_program,
@@ -561,13 +606,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let global_bindings = self.vm.global_bindings_snapshot();
 
         #[cfg(feature = "debugger")]
-        let vm_program = tarn::build_program(
-            &compiled.program,
-            Shared::clone(&self.token_arena),
-            &self.vm_module_prelude,
-        )?;
-        #[cfg(feature = "debugger")]
-        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+        let vm_program = compiled
+            .program()
+            .map(|program| tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude))
+            .transpose()?
+            .flatten();
 
         let (timeout, max_call_stack_depth, capture_stack_trace) = (
             self.vm.options.timeout,
@@ -607,9 +650,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         vm.run(
             compiled,
             #[cfg(feature = "debugger")]
-            vm_program,
-            #[cfg(not(feature = "debugger"))]
-            &compiled.program,
+            vm_program.as_ref(),
             input,
         )
         .map(Into::into)
@@ -844,8 +885,9 @@ mod tests {
                 #[cfg(not(feature = "debugger"))]
                 assert!(
                     !compiled
-                        .cached_vm_program()
-                        .flatten()
+                        .vm_cache()
+                        .unwrap()
+                        .get()
                         .unwrap()
                         .per_input_program_makes_closures()
                 );
@@ -926,7 +968,7 @@ mod tests {
                 assert_eq!(after.load(Ordering::SeqCst), evaluation + 1);
                 #[cfg(not(feature = "debugger"))]
                 {
-                    let cached = compiled.cached_vm_program().flatten().unwrap();
+                    let cached = compiled.vm_cache().unwrap().get().unwrap();
                     assert!(cached.has_available_execution_pools());
                     if let Some(previous) = &previous_cache {
                         assert!(crate::Shared::ptr_eq(previous, &cached), "must reuse bytecode");
@@ -947,9 +989,80 @@ mod tests {
             let compiled = engine.compile(query).unwrap();
             for input in [vec![], vec![1], vec![1, 2, 3]] {
                 engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
-                let cached = compiled.cached_vm_program().flatten().unwrap();
+                let cached = compiled.vm_cache().unwrap().get().unwrap();
                 assert!(!cached.per_input_program_makes_closures(), "{query}");
             }
+        }
+
+        #[cfg(not(feature = "debugger"))]
+        #[rstest]
+        #[case::called("def f(x): x + 1; | f(.)", &[2], false)]
+        #[case::unused("def f(x): x + 1; | def g(x): x; | . + 10", &[11], false)]
+        #[case::recursive("def f(n): if (n <= 0): 0 else: n + f(n - 1); | f(.)", &[1], false)]
+        #[case::value("def f(x): x + 1; | map([.], f)", &[2], true)]
+        #[case::captured_by_def("def f(x): x + 1; | def g(x): map([x], f); | g(.)", &[2], true)]
+        #[case::captured_by_fn("def f(x): x + 1; | let h = fn(x): f(x); | h(.)", &[2], true)]
+        fn unread_def_closures_are_not_made_per_input(
+            #[case] query: &str,
+            #[case] expected: &[i64],
+            #[case] makes_closures: bool,
+        ) {
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let compiled = engine.compile(query).unwrap();
+            let actual = engine.eval_compiled(&compiled, numbers(&[1]).into_iter()).unwrap();
+            let flattened = actual.values().iter().flat_map(|value| match value {
+                RuntimeValue::Array(values) => values.to_vec(),
+                value => vec![value.clone()],
+            });
+            assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+            let cached = compiled.vm_cache().unwrap().get().unwrap();
+            assert_eq!(cached.per_input_program_makes_closures(), makes_closures, "{query}");
+        }
+
+        #[rstest]
+        #[case::def_before_nodes("def f(x): x + 1; | . | nodes | map(f)", &[2, 3, 4])]
+        #[case::unused_def_before_nodes("def f(x): x + 1; | . * 2 | nodes | len()", &[3])]
+        #[case::seeded_let_and_def("let a = 1 | def f(x): x + a; | . | nodes | f(len())", &[4])]
+        #[case::seeded_let_between_defs(
+            "def g(x): x; | let a = 10 | def f(x): x + a; | . | nodes | f(len())",
+            &[13]
+        )]
+        #[case::def_after_nodes(". | nodes | def f(x): x * 2; | def g(x): x; | map(f)", &[2, 4, 6])]
+        #[case::def_shadowing_let("let f = 5 | def f(x): x; | . | nodes | len()", &[3])]
+        fn defs_around_nodes_keep_results_across_evaluations(#[case] query: &str, #[case] expected: &[i64]) {
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let compiled = engine.compile(query).unwrap();
+            for _ in 0..2 {
+                let actual = engine
+                    .eval_compiled(&compiled, numbers(&[1, 2, 3]).into_iter())
+                    .unwrap();
+                let flattened = actual.values().iter().flat_map(|value| match value {
+                    RuntimeValue::Array(values) => values.to_vec(),
+                    value => vec![value.clone()],
+                });
+                assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+            }
+        }
+
+        #[test]
+        fn error_after_dropped_def_points_at_its_source() {
+            let query = "def unused(x): x; | def fail(x): error(\"boom\"); | fail(.)";
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let error = engine.eval(query, numbers(&[1]).into_iter()).unwrap_err();
+            let span = format!("{:?}", error.cause);
+            assert!(span.contains("boom"), "{span}");
+            let offset = miette::Diagnostic::labels(&*error)
+                .and_then(|mut labels| labels.next())
+                .map(|label| label.offset())
+                .expect("error has a source label");
+            assert!(
+                query[offset..].starts_with("error"),
+                "label at {offset}: {}",
+                &query[offset..]
+            );
         }
 
         #[rstest]
@@ -966,8 +1079,9 @@ mod tests {
                 #[cfg(not(feature = "debugger"))]
                 assert!(
                     compiled
-                        .cached_vm_program()
-                        .flatten()
+                        .vm_cache()
+                        .unwrap()
+                        .get()
                         .unwrap()
                         .has_available_execution_pools()
                 );
@@ -1520,7 +1634,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile(query).unwrap();
         assert_eq!(compiled.source(), expected);
-        assert!(!compiled.program().is_empty());
+        assert!(!compiled.program().unwrap().is_empty());
         assert_eq!(compiled.clone().source(), expected);
     }
 
@@ -1530,7 +1644,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile(query).unwrap();
         assert_eq!(compiled.source(), "");
-        assert!(compiled.program().is_empty());
+        assert!(compiled.program().unwrap().is_empty());
     }
 
     #[cfg(feature = "debug-trace")]
@@ -1674,7 +1788,7 @@ mod tests {
     fn test_compiled_program_from_has_empty_source() {
         let compiled = CompiledProgram::from(vec![]);
         assert_eq!(compiled.source(), "");
-        assert!(compiled.program().is_empty());
+        assert!(compiled.program().unwrap().is_empty());
     }
 
     #[rstest]
@@ -1712,7 +1826,7 @@ mod tests {
     fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {
         let mut engine = DefaultEngine::default();
         let original = engine.compile(query).unwrap();
-        let no_source = CompiledProgram::from(original.program().clone());
+        let no_source = CompiledProgram::from(original.program().unwrap().clone());
         assert_eq!(no_source.source(), "");
         let err = engine
             .eval_compiled(&no_source, crate::null_input().into_iter())
@@ -1884,14 +1998,14 @@ mod tests {
 
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile("def twice(x): x * 2; | twice(21)").unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
 
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
         #[cfg(not(feature = "debugger"))]
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine
             .eval_compiled(
@@ -1922,7 +2036,7 @@ mod tests {
         let compiled = engine
             .compile("module m: let x = slow_init() end | m::x | loop: 1;")
             .unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
 
         let started = std::time::Instant::now();
         let err = engine
@@ -1980,7 +2094,7 @@ mod tests {
             first.values(),
             &[RuntimeValue::String(Shared::new("first".to_string()))]
         );
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         std::fs::write(&temp_file_path, r#"def greeting(): "second";"#).unwrap();
         let second = engine
@@ -2037,7 +2151,7 @@ mod tests {
 
         let first = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(first.values().len(), 1);
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(second.values(), first.values());
@@ -2056,7 +2170,7 @@ mod tests {
         let result = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(result.values(), &[RuntimeValue::Number(3.0.into())]);
 
-        let cached = compiled.cached_vm_program().flatten().unwrap();
+        let cached = compiled.vm_cache().unwrap().get().unwrap();
         assert!(!cached.per_input_program_makes_closures());
     }
 
@@ -2078,7 +2192,7 @@ mod tests {
 
         let first = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(3.0.into())]);
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(second.values(), first.values());
@@ -2366,7 +2480,7 @@ mod tests {
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
         let second = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
@@ -2505,7 +2619,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inline_module_var_initializer_referencing_enclosing_def_runs_once_per_eval() {
+    fn test_inline_module_var_initializer_calling_its_own_def_runs_once_per_eval() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -2519,7 +2633,7 @@ mod tests {
         });
 
         let compiled = engine
-            .compile("def helper(): bump_counter(); | module counters: let counter = helper() end | counters::counter")
+            .compile("module counters: def helper(): bump_counter(); let counter = helper() end | counters::counter")
             .unwrap();
         engine
             .eval_compiled(
@@ -2533,10 +2647,52 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            call_count.load(Ordering::SeqCst),
-            1,
-            "a module var initializer referencing an enclosing `def` must still run once per eval"
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[rstest]
+    #[case::input_transform_before_module(
+        r#"import "csv" | csv::csv_parse(true) | module m: let n = 1 end | m::n"#,
+        "x,y\n1,2\n",
+        RuntimeValue::Number(1.into())
+    )]
+    #[case::own_def_from_let("module m: def f(): 1; let y = f() end | m::y", "", RuntimeValue::Number(1.into()))]
+    #[case::own_import_from_def(
+        r#"module m: import "csv" | def f(): len(csv::csv_parse("a\n1", true)); end | m::f()"#,
+        "",
+        RuntimeValue::Number(1.into())
+    )]
+    #[case::earlier_inline_module(
+        "module a: def f(): 1; end | module b: def g(): a::f() + 1; end | b::g()",
+        "",
+        RuntimeValue::Number(2.into())
+    )]
+    #[case::builtin("module m: def f(): upcase(); end | m::f()", "abc", "ABC".to_string().into())]
+    fn test_module_sees_what_it_declares(#[case] query: &str, #[case] input: &str, #[case] expected: RuntimeValue) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let result = engine.eval(query, crate::raw_input(input).into_iter()).unwrap();
+        assert_eq!(result.values(), &[expected]);
+    }
+
+    #[rstest]
+    #[case::enclosing_let_from_def("let x = 1 | module m: def f(): x; end | m::f()", "x")]
+    #[case::enclosing_let_from_let("let x = 1 | module m: let y = x end | m::y", "x")]
+    #[case::enclosing_def("def g(): 1; | module m: let y = g() end | m::y", "g")]
+    #[case::enclosing_import(
+        r#"import "csv" | module m: def f(): csv::csv_parse("a", true); end | m::f()"#,
+        "csv::csv_parse"
+    )]
+    #[case::engine_global_from_def("module m: def f(): __FILE__; end | m::f()", "__FILE__")]
+    #[case::engine_global_from_let("module m: let v = __FILE__ end | m::v", "__FILE__")]
+    fn test_module_cannot_see_outside(#[case] query: &str, #[case] name: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.define_string_value("__FILE__", "a.md");
+        let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+        assert!(
+            error.to_string().contains(&format!("\"{name}\" is not defined")),
+            "{error}"
         );
     }
 
@@ -2802,7 +2958,7 @@ mod tests {
             ]))]
         );
         #[cfg(not(feature = "debugger"))]
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
     }
 
     #[cfg(not(feature = "debugger"))]

@@ -6,10 +6,10 @@
 //! This file is the front door (`Error`, `VmState`/`TarnVm`, session + run orchestration);
 //! `cache`, `nodes_split`, and `disasm` hold the parts that split out cleanly.
 
-mod bytecode;
+pub(crate) mod bytecode;
 #[cfg(not(feature = "debugger"))]
 mod cache;
-mod compiler;
+pub(crate) mod compiler;
 #[cfg(feature = "debugger")]
 mod debug_symbols;
 #[cfg(feature = "debugger")]
@@ -20,12 +20,16 @@ pub(crate) mod interpreter;
 mod nodes_split;
 mod peephole;
 mod resolver;
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+pub(crate) mod split_program;
 pub(crate) mod value;
 
 #[cfg(not(feature = "debugger"))]
 pub(crate) use cache::CachedProgram;
 #[cfg(feature = "debug-trace")]
 pub(crate) use disasm::dump_bytecode;
+#[cfg(all(feature = "debug-trace", feature = "mqc"))]
+pub(crate) use disasm::dump_compiled_program;
 use nodes_split::{
     ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
     top_level_binding_names,
@@ -558,9 +562,9 @@ pub(crate) fn build_program(
 fn collect_module_prelude_targets(
     program: &Program,
     paths: &mut Vec<String>,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
 ) {
-    for (index, node) in program.iter().enumerate() {
+    for node in program {
         match &node.expr {
             Expr::Include(Literal::String(path)) => {
                 if !paths.iter().any(|existing| existing == path) {
@@ -573,7 +577,7 @@ fn collect_module_prelude_targets(
                 }
             }
             Expr::Module(ident, body) => {
-                inline_modules.push((ident.clone(), program[..index].to_vec(), body.clone()));
+                inline_modules.push((ident.clone(), body.clone()));
                 collect_module_paths(body, paths);
             }
             _ => {}
@@ -609,11 +613,10 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     token_arena: &TokenArena,
     host_functions: &HostFunctions,
     max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
     module_loader: &mut ModuleLoader<R>,
     seen: &mut FxHashSet<String>,
     result: &mut compiler::ResolvedModuleVars,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
     deadline: Option<Instant>,
 ) -> Result<(), Error> {
     if !seen.insert(path.to_string()) {
@@ -635,7 +638,6 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
             token_arena,
             host_functions,
             max_call_stack_depth,
-            global_bindings,
             module_loader,
             seen,
             result,
@@ -669,27 +671,15 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
             timeout: remaining_timeout(deadline),
             max_call_stack_depth,
             capture_stack_trace: false,
-            global_bindings,
+            // A module can't see Engine globals.
+            global_bindings: &[],
         },
         &var_names,
         interpreter::ExecutionPools::default(),
     );
     run_result?;
-    #[cfg(not(feature = "debugger"))]
-    {
-        result.reads_globals |= reads_any_global(&compiled, global_bindings);
-    }
     result.by_path.insert(path.to_string(), captured);
     Ok(())
-}
-
-/// Whether `compiled` can read one of `global_bindings`.
-#[cfg(not(feature = "debugger"))]
-fn reads_any_global(compiled: &compiler::CompiledProgram, global_bindings: &[(Ident, RuntimeValue)]) -> bool {
-    !global_bindings.is_empty()
-        && compiled.chunks.iter().flat_map(|chunk| &chunk.code).any(|op| {
-            matches!(op, bytecode::OpCode::GetExternalGlobal(name) if global_bindings.iter().any(|(global, _)| global == name))
-        })
 }
 
 /// Collects every simple `let` declared by an inline module tree, retaining the qualified path
@@ -719,18 +709,16 @@ fn collect_inline_module_vars(
 /// constants instead of recompiling the initializer per input.
 ///
 /// An inline module's vars are only reachable via qualified access, so they're probed by
-/// compiling+running a throwaway `[..enclosing prefix, module { .. }, array(alias::a, ..)]`
-/// program, prefixed with the preceding top-level nodes so it sees the same enclosing
-/// `let`/`def` bindings the real compile would. A name still out of scope after that falls
-/// back to recompiling the module inline; any other probe failure is a real initializer bug
-/// and is propagated rather than retried once per input.
+/// running a throwaway `[module { .. }, array(alias::a, ..)]` program. A module sees nothing
+/// outside it, so the probe needs no enclosing nodes. A probe failure is a real initializer
+/// bug and is propagated.
 fn resolve_module_prelude_globals<R: ModuleResolver>(
     program: &Program,
     context: &mut EngineRunContext<'_, R>,
     deadline: Option<Instant>,
 ) -> Result<compiler::ResolvedModuleVars, Error> {
     let mut paths: Vec<String> = Vec::new();
-    let mut inline_modules: Vec<(ast::IdentWithToken, Program, Program)> = Vec::new();
+    let mut inline_modules: Vec<(ast::IdentWithToken, Program)> = Vec::new();
     collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
 
     let mut result = compiler::ResolvedModuleVars::default();
@@ -741,7 +729,6 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             &context.token_arena,
             context.host_functions,
             context.max_call_stack_depth,
-            context.global_bindings,
             &mut context.module_loader,
             &mut seen_paths,
             &mut result,
@@ -750,7 +737,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         )?;
     }
 
-    for (ident, prefix, body) in inline_modules {
+    for (ident, body) in inline_modules {
         let mut module_vars = Vec::new();
         collect_inline_module_vars(&ident, &body, &[], &mut module_vars);
         if module_vars.is_empty() {
@@ -769,18 +756,17 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 })
             })
             .collect();
-        let mut probe_program = prefix;
-        probe_program.push(Shared::new(Node {
-            token_id: TokenId::new(0),
-            expr: Expr::Module(ident.clone(), body),
-        }));
-        probe_program.push(Shared::new(Node {
-            token_id: TokenId::new(0),
-            expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
-        }));
+        let probe_program: Program = vec![
+            Shared::new(Node {
+                token_id: TokenId::new(0),
+                expr: Expr::Module(ident.clone(), body),
+            }),
+            Shared::new(Node {
+                token_id: TokenId::new(0),
+                expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
+            }),
+        ];
 
-        #[cfg(not(feature = "debugger"))]
-        let mut reads_globals = false;
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
             let compiled = compiler::compile_program_for_engine(
                 &probe_program,
@@ -789,10 +775,6 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 &[],
                 &result,
             )?;
-            #[cfg(not(feature = "debugger"))]
-            {
-                reads_globals = reads_any_global(&compiled, context.global_bindings);
-            }
             let value = interpreter::run_with_globals(
                 &compiled,
                 RuntimeValue::None,
@@ -809,10 +791,6 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
 
         match probed {
             Ok(values) if values.len() == module_vars.len() => {
-                #[cfg(not(feature = "debugger"))]
-                {
-                    result.reads_globals |= reads_globals;
-                }
                 for ((_, node), value) in module_vars.iter().zip(values) {
                     result.by_token.insert(node.token_id, value);
                 }
@@ -843,58 +821,22 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
 }
 
 impl<'a, R: ModuleResolver> TarnVm<'a, R> {
-    /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
+    /// Runs `compiled` against `input`, using cached bytecode when valid (non-debugger builds).
+    ///
+    /// `prepared` is `compiled`'s program after [`build_program`], when that changed it.
     pub(crate) fn run<I>(
         &self,
-        #[cfg_attr(feature = "debugger", allow(unused_variables))] compiled: &engine::CompiledProgram,
-        program: &Program,
+        compiled: &engine::CompiledProgram,
+        #[cfg(feature = "debugger")] prepared: Option<&Program>,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        #[cfg(not(feature = "debugger"))]
-        if self.engine.session.is_none()
-            && let Some(cached) = compiled.cached_vm_program()
-        {
-            // One deadline for the whole call: a cache-miss compile must not spend its own
-            // budget separately from the run that follows it.
-            let deadline = shared_deadline(self.engine.timeout);
-            let cached = match cached {
-                Some(cached)
-                    if cache::cached_program_is_current(
-                        &cached,
-                        self.module_prelude,
-                        self.environment_key,
-                        self.module_cache_key,
-                    ) =>
-                {
-                    cached
-                }
-                _ => {
-                    let mut cache_context = self.engine.fork_for_compilation();
-                    let prepared_program =
-                        build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
-                            .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
-                    let prepared_program = prepared_program.as_ref().unwrap_or(program);
-                    let cached = Shared::new(cache::compile_cached_program(
-                        prepared_program,
-                        &mut cache_context,
-                        self.module_prelude.to_vec(),
-                        deadline,
-                        self.environment_key,
-                        self.module_cache_key,
-                    )?);
-                    compiled.cache_vm_program(Shared::clone(&cached));
-                    cached
-                }
-            };
-            return cache::run_cached(&cached, input, &self.engine, deadline, self.environment_key);
-        }
-        #[cfg(feature = "debugger")]
-        {
-            compile_and_run_debugged(
-                program,
+        match &compiled.body {
+            #[cfg(feature = "debugger")]
+            engine::ProgramBody::Ast(program) => compile_and_run_debugged(
+                prepared.unwrap_or(program),
                 input,
                 DebugRunContext {
                     engine: self.engine.fork_for_compilation(),
@@ -902,15 +844,71 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     handler: Shared::clone(&self.debugger_handler),
                     source: self.source.clone(),
                 },
-            )
+            ),
+            #[cfg(not(feature = "debugger"))]
+            engine::ProgramBody::Cached { program, cache } => match self.engine.session {
+                Some(session) => {
+                    let prepared = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                        .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+                    compile_and_run_session(
+                        prepared.as_ref().unwrap_or(program),
+                        input,
+                        self.engine.fork_for_compilation(),
+                        session,
+                    )
+                }
+                None => self.run_cached(program, cache, input),
+            },
+            #[cfg(feature = "mqc")]
+            engine::ProgramBody::Precompiled(precompiled) => precompiled.run_reusing(
+                input,
+                &self.engine,
+                shared_deadline(self.engine.timeout),
+                #[cfg(not(feature = "debugger"))]
+                self.environment_key,
+            ),
         }
-        #[cfg(not(feature = "debugger"))]
-        {
-            let prepared_program = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
-                .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
-            let prepared_program = prepared_program.as_ref().unwrap_or(program);
-            compile_and_run_many(prepared_program, input, self.engine.fork_for_compilation())
-        }
+    }
+
+    /// Runs `program` from `cache`, rebuilding the bytecode when it is stale.
+    #[cfg(not(feature = "debugger"))]
+    fn run_cached<I>(&self, program: &Program, cache: &engine::VmCache, input: I) -> Result<Vec<RuntimeValue>, Error>
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
+        // One deadline for the whole call: a cache-miss compile must not spend its own
+        // budget separately from the run that follows it.
+        let deadline = shared_deadline(self.engine.timeout);
+        let cached = match cache.get() {
+            Some(cached)
+                if cache::cached_program_is_current(
+                    &cached,
+                    self.module_prelude,
+                    self.environment_key,
+                    self.module_cache_key,
+                ) =>
+            {
+                cached
+            }
+            _ => {
+                let mut cache_context = self.engine.fork_for_compilation();
+                let prepared_program =
+                    build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                        .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+                let prepared_program = prepared_program.as_ref().unwrap_or(program);
+                let cached = Shared::new(cache::compile_cached_program(
+                    prepared_program,
+                    &mut cache_context,
+                    self.module_prelude.to_vec(),
+                    deadline,
+                    self.environment_key,
+                    self.module_cache_key,
+                )?);
+                cache.set(Shared::clone(&cached));
+                cached
+            }
+        };
+        cache::run_cached(&cached, input, &self.engine, deadline, self.environment_key)
     }
 }
 
@@ -1033,6 +1031,7 @@ where
 }
 
 /// Runs each input through a single stateless evaluation step.
+#[cfg(feature = "debugger")]
 fn run_inputs<I, F>(inputs: I, mut run_one: F) -> Result<Vec<RuntimeValue>, interpreter::VmError>
 where
     I: Iterator<Item = RuntimeValue>,
@@ -1343,70 +1342,14 @@ where
     Ok(values)
 }
 
-fn run_nodes_aggregate<R: ModuleResolver>(
-    before: ProgramSlice<'_>,
-    after: ProgramSlice<'_>,
-    values: Vec<RuntimeValue>,
-    let_bindings: &[(Ident, RuntimeValue)],
-    context: &EngineRunContext<'_, R>,
-    // From the caller's shared deadline, not `context.timeout`.
-    timeout: Option<Duration>,
-) -> Result<Vec<RuntimeValue>, Error> {
-    let let_names: Vec<Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
-    let immutable_let_names = immutable_let_names_before_nodes(before);
-    let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    let program = program_after_nodes(before, after);
-    let input = RuntimeValue::Array(Shared::new(values));
-    let result = if let_names.is_empty() {
-        let compiled = compiler::compile_program_for_engine(
-            &program,
-            Shared::clone(&context.token_arena),
-            context.module_loader.clone(),
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        interpreter::run_with_globals(
-            &compiled,
-            input,
-            context.host_functions,
-            timeout,
-            context.max_call_stack_depth,
-            context.global_bindings,
-        )
-    } else {
-        let let_values = binding_values(let_bindings);
-        let compiled = compiler::compile_program_for_engine_with_bindings(
-            &program,
-            Shared::clone(&context.token_arena),
-            context.module_loader.clone(),
-            &let_names,
-            &immutable_let_names,
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        interpreter::run_with_globals_capturing_locals(
-            &compiled,
-            input,
-            &let_values,
-            context.run_options(timeout),
-            &[],
-            interpreter::ExecutionPools::default(),
-        )
-        .0
-    };
-    match result? {
-        RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
-        value => Ok(vec![value]),
-    }
-}
-
-// Used when the `debugger` feature is off; `compile_and_run_debugged` takes over below
-// when it's on, which is genuinely dead under `--all-features`.
+/// Compiles and runs `program`, keeping top-level bindings in `session`.
+// `compile_and_run_debugged` takes over when the `debugger` feature is on.
 #[cfg_attr(feature = "debugger", allow(dead_code))]
-fn compile_and_run_many<I, R: ModuleResolver>(
+fn compile_and_run_session<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
     mut context: EngineRunContext<'_, R>,
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
@@ -1414,79 +1357,7 @@ where
     let deadline = shared_deadline(context.timeout);
     context.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context, deadline)?;
     let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    if let Some(session) = context.session {
-        return run_with_session(program, inputs, &context, session, &global_names, deadline);
-    }
-    let Some((before, after)) = split_at_nodes(program) else {
-        let host_functions = context.host_functions;
-        let max_call_stack_depth = context.max_call_stack_depth;
-        let capture_stack_trace = context.capture_stack_trace;
-        let global_bindings = context.global_bindings;
-        let compiled = compiler::compile_program_for_engine(
-            program,
-            context.token_arena,
-            context.module_loader,
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        return run_inputs(inputs, |value| {
-            interpreter::run_with_global_options(
-                &compiled,
-                value,
-                interpreter::RunOptions {
-                    host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth,
-                    capture_stack_trace,
-                    global_bindings,
-                },
-            )
-        })
-        .map_err(Error::from);
-    };
-    let compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
-        Shared::clone(&context.token_arena),
-        context.module_loader.clone(),
-        &global_names,
-        &context.preresolved_module_vars,
-    )?;
-    let let_names = let_names_before_nodes(before);
-    let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
-    let values = if let_names.is_empty() {
-        run_inputs(inputs, |value| {
-            interpreter::run_with_global_options(&compiled, value, context.run_options(remaining_timeout(deadline)))
-        })
-        .map_err(Error::from)?
-    } else {
-        inputs
-            .map(|input| {
-                map_input_values(input, |v| {
-                    let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
-                        &compiled,
-                        v,
-                        &[],
-                        context.run_options(remaining_timeout(deadline)),
-                        &let_names,
-                        interpreter::ExecutionPools::default(),
-                    );
-                    if result.is_ok() {
-                        let_bindings = captured;
-                    }
-                    result
-                })
-                .map_err(Error::from)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    run_nodes_aggregate(
-        before,
-        after,
-        values,
-        &let_bindings,
-        &context,
-        remaining_timeout(deadline),
-    )
+    run_with_session(program, inputs, &context, session, &global_names, deadline)
 }
 
 #[cfg(feature = "debugger")]

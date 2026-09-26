@@ -37,6 +37,8 @@ mod ident;
 mod io;
 mod lexer;
 mod module;
+#[cfg(feature = "mqc")]
+pub mod mqc;
 mod number;
 mod range;
 mod runtime;
@@ -88,6 +90,8 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
+#[cfg(feature = "mqc")]
+pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
 pub use runtime::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,

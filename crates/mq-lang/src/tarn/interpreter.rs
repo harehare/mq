@@ -147,16 +147,6 @@ pub(crate) fn run_with_globals(
     .0
 }
 
-/// Runs a compiled program with explicit VM options.
-pub(crate) fn run_with_global_options(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-) -> VmResult<RuntimeValue> {
-    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
-    run_with_env_and_pools(compiled, input, options, &env, ExecutionPools::default()).0
-}
-
 /// Runs a compiled program and returns reusable execution pools.
 pub(crate) fn run_with_globals_and_pools(
     compiled: &CompiledProgram,
@@ -668,7 +658,18 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
         debug,
     ) {
         DriveOutcome::Completed(value, locals) => (Ok(value), locals),
-        DriveOutcome::Suspended(_) => unreachable!("top-level evaluation never yields"),
+        // Compiled programs never yield here, but a corrupted `.mqc` file can.
+        DriveOutcome::Suspended(_) => {
+            while frames.len() > 1 {
+                execution.limits.pop_frame(
+                    frames,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+            }
+            let finished = frames.pop().expect("the frame stack is never empty here");
+            (Err(VmError::Corrupt("yield outside a generator")), finished.locals)
+        }
         DriveOutcome::Failed(e, locals) => (Err(e), locals),
     }
 }

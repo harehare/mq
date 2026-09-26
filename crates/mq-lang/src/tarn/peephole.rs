@@ -3,7 +3,9 @@
 //! Fuses adjacent stack ops into superinstructions, drops dead `Push`/`Pop` pairs, and collapses
 //! no-op jumps.
 
-use super::bytecode::{Chunk, LineEntry, OpCode, StaticExactCallTarget, TryCatchInfo, jump_target};
+use super::bytecode::{
+    Chunk, LineEntry, OpCode, ParamBinding, SELF_SLOT, StaticExactCallTarget, TryCatchInfo, UpvalueSource, jump_target,
+};
 use crate::ast::TokenId;
 use crate::runtime::runtime_value::RuntimeValue;
 
@@ -331,7 +333,99 @@ fn optimize_chunk(chunk: &mut Chunk) {
         }
     }
 
-    let old_to_new = old_to_new_pc_map(&keep);
+    compact(chunk, old_code, &old_lines, &keep);
+}
+
+/// Drops closures stored into slots nothing reads, and those slots. Invalid when locals are
+/// read by name after the run; `seeded` slots are filled by position, so they keep their numbers.
+pub(crate) fn drop_unread_static_closures(chunks: &mut [Chunk], seeded: usize) {
+    for (index, chunk) in chunks.iter_mut().enumerate() {
+        drop_unread_static_closures_in(chunk, if index == 0 { seeded } else { 0 });
+    }
+}
+
+fn drop_unread_static_closures_in(chunk: &mut Chunk, seeded: usize) {
+    let mut uses = vec![0u32; chunk.local_count as usize];
+    let mut count = |slot: &mut u16| {
+        if let Some(uses) = uses.get_mut(*slot as usize) {
+            *uses += 1;
+        }
+    };
+    for op in &mut chunk.code {
+        op.for_each_local_slot_mut(&mut count);
+    }
+    for_each_param_slot_mut(chunk, &mut count);
+
+    let targets = jump_targets(&chunk.code);
+    let mut keep = vec![true; chunk.code.len()];
+    let mut dead = vec![false; chunk.local_count as usize];
+    for pc in 0..chunk.code.len().saturating_sub(1) {
+        if let (OpCode::MakeStaticClosure(_), OpCode::SetLocal(slot)) = (&chunk.code[pc], &chunk.code[pc + 1])
+            && *slot != SELF_SLOT
+            && uses.get(*slot as usize) == Some(&1)
+            && !targets.contains(&(pc + 1))
+        {
+            keep[pc] = false;
+            keep[pc + 1] = false;
+            let is_seeded = usize::from(*slot) <= usize::from(SELF_SLOT) + seeded;
+            dead[*slot as usize] = !is_seeded;
+        }
+    }
+    if keep.iter().all(|keep| *keep) {
+        return;
+    }
+    let old_code = std::mem::take(&mut chunk.code);
+    let old_lines = std::mem::take(&mut chunk.lines);
+    compact(chunk, old_code, &old_lines, &keep);
+
+    if dead.iter().any(|dead| *dead) {
+        remove_local_slots(chunk, &dead);
+    }
+}
+
+/// Keeps slot order, so `self` and parameters keep their numbers.
+fn remove_local_slots(chunk: &mut Chunk, dead: &[bool]) {
+    let mut renumbered = Vec::with_capacity(dead.len());
+    let mut next = 0u16;
+    for dead in dead {
+        renumbered.push(next);
+        if !dead {
+            next += 1;
+        }
+    }
+    let mut renumber = |slot: &mut u16| *slot = renumbered[*slot as usize];
+    for op in &mut chunk.code {
+        op.for_each_local_slot_mut(&mut renumber);
+    }
+    for_each_param_slot_mut(chunk, &mut renumber);
+    retain_live(&mut chunk.local_names, dead);
+    retain_live(&mut chunk.local_mutable, dead);
+    chunk.local_count = next;
+}
+
+fn retain_live<T>(values: &mut Vec<T>, dead: &[bool]) {
+    let mut dead = dead.iter();
+    values.retain(|_| !dead.next().copied().unwrap_or(false));
+}
+
+fn for_each_param_slot_mut(chunk: &mut Chunk, visit: &mut impl FnMut(&mut u16)) {
+    for binding in &mut chunk.param_shape.bindings {
+        match binding {
+            ParamBinding::Required(slot) | ParamBinding::Variadic(slot) => visit(slot),
+            ParamBinding::Optional(slot, _, sources) => {
+                visit(slot);
+                for source in sources {
+                    if let UpvalueSource::Local(slot) = source {
+                        visit(slot);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn compact(chunk: &mut Chunk, old_code: Vec<OpCode>, old_lines: &[LineEntry], keep: &[bool]) {
+    let old_to_new = old_to_new_pc_map(keep);
     let mut new_code = Vec::with_capacity(old_code.len());
     let mut new_lines: Vec<LineEntry> = Vec::with_capacity(old_lines.len());
     for (old_pc, op) in old_code.into_iter().enumerate() {
@@ -339,7 +433,7 @@ fn optimize_chunk(chunk: &mut Chunk) {
             continue;
         }
         let new_pc = new_code.len();
-        let token_id = token_at(&old_lines, old_pc);
+        let token_id = token_at(old_lines, old_pc);
         if new_lines.last().map(|entry| entry.token_id) != Some(token_id) {
             new_lines.push(LineEntry {
                 pc_start: new_pc,
@@ -525,7 +619,7 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
 
 #[cfg(test)]
 mod tests {
-    use super::super::bytecode::{BinaryOp, verify_chunks};
+    use super::super::bytecode::{BinaryOp, ParamShape, verify_chunks};
     use super::*;
     use crate::runtime::runtime_value::RuntimeValue;
 
@@ -934,6 +1028,211 @@ mod tests {
                 OpCode::PushNone,
                 OpCode::Return,
             ] if info.break_offset == Some(0) && info.continue_offset == Some(1)
+        ));
+    }
+
+    /// `chunks[0]` runs `code`; `chunks[1]` is the `def` its static closure points at.
+    fn def_program(code: Vec<OpCode>, local_count: u16) -> Vec<Chunk> {
+        let mut main = Chunk {
+            code,
+            local_count,
+            local_names: (0..local_count)
+                .map(|slot| crate::Ident::new(&format!("l{slot}")))
+                .collect(),
+            local_mutable: vec![false; local_count as usize],
+            ..Default::default()
+        };
+        main.push_static_closure(1);
+        let function = Chunk {
+            code: vec![OpCode::PushNone, OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+        vec![main, function]
+    }
+
+    fn slot_names(chunk: &Chunk) -> Vec<String> {
+        chunk.local_names.iter().map(|name| name.as_str()).collect()
+    }
+
+    #[rstest::rstest]
+    #[case::unread(
+        vec![OpCode::MakeStaticClosure(0), OpCode::SetLocal(1), OpCode::GetLocal(0), OpCode::Return],
+        2,
+        vec![OpCode::GetLocal(0), OpCode::Return],
+        &["l0"],
+    )]
+    #[case::later_slots_renumbered(
+        vec![
+            OpCode::MakeStaticClosure(0),
+            OpCode::SetLocal(1),
+            OpCode::PushNone,
+            OpCode::SetLocal(2),
+            OpCode::GetLocal(2),
+            OpCode::Return,
+        ],
+        3,
+        vec![OpCode::PushNone, OpCode::SetLocal(1), OpCode::GetLocal(1), OpCode::Return],
+        &["l0", "l2"],
+    )]
+    #[case::jump_over_the_pair_retargeted(
+        vec![
+            OpCode::Jump(2),
+            OpCode::MakeStaticClosure(0),
+            OpCode::SetLocal(1),
+            OpCode::GetLocal(0),
+            OpCode::Return,
+        ],
+        2,
+        vec![OpCode::Jump(0), OpCode::GetLocal(0), OpCode::Return],
+        &["l0"],
+    )]
+    #[case::several_defs(
+        vec![
+            OpCode::MakeStaticClosure(0),
+            OpCode::SetLocal(1),
+            OpCode::MakeStaticClosure(0),
+            OpCode::SetLocal(2),
+            OpCode::MakeStaticClosure(0),
+            OpCode::SetLocal(3),
+            OpCode::GetLocal(2),
+            OpCode::Return,
+        ],
+        4,
+        vec![OpCode::MakeStaticClosure(0), OpCode::SetLocal(1), OpCode::GetLocal(1), OpCode::Return],
+        &["l0", "l2"],
+    )]
+    fn unread_static_closures_are_dropped(
+        #[case] code: Vec<OpCode>,
+        #[case] local_count: u16,
+        #[case] expected: Vec<OpCode>,
+        #[case] names: &[&str],
+    ) {
+        let mut chunks = def_program(code, local_count);
+        drop_unread_static_closures(&mut chunks, 0);
+        assert_eq!(format!("{:?}", chunks[0].code), format!("{expected:?}"));
+        assert_eq!(chunks[0].local_count as usize, names.len());
+        assert_eq!(slot_names(&chunks[0]), names);
+        assert_eq!(chunks[0].local_mutable.len(), names.len());
+        assert_eq!(verify_chunks(&chunks), Ok(()));
+    }
+
+    #[rstest::rstest]
+    #[case::read_later(vec![OpCode::MakeStaticClosure(0), OpCode::SetLocal(1), OpCode::GetLocal(1), OpCode::Return])]
+    #[case::called_through_the_slot(vec![
+        OpCode::MakeStaticClosure(0),
+        OpCode::SetLocal(1),
+        OpCode::CallLocal(1, 0),
+        OpCode::Return,
+    ])]
+    #[case::captured(vec![
+        OpCode::MakeStaticClosure(0),
+        OpCode::SetLocal(1),
+        OpCode::MakeClosure(Box::new((1, vec![UpvalueSource::Local(1)]))),
+        OpCode::Return,
+    ])]
+    #[case::redefined(vec![
+        OpCode::MakeStaticClosure(0),
+        OpCode::SetLocal(1),
+        OpCode::MakeStaticClosure(0),
+        OpCode::SetLocal(1),
+        OpCode::GetLocal(0),
+        OpCode::Return,
+    ])]
+    #[case::store_is_a_jump_target(vec![
+        OpCode::PushNone,
+        OpCode::Jump(1),
+        OpCode::MakeStaticClosure(0),
+        OpCode::SetLocal(1),
+        OpCode::GetLocal(0),
+        OpCode::Return,
+    ])]
+    #[case::self_slot(vec![OpCode::MakeStaticClosure(0), OpCode::SetLocal(0), OpCode::GetLocal(0), OpCode::Return])]
+    #[case::other_value_stored(vec![OpCode::PushNone, OpCode::SetLocal(1), OpCode::GetLocal(0), OpCode::Return])]
+    fn read_or_unsafe_stores_are_kept(#[case] code: Vec<OpCode>) {
+        let mut chunks = def_program(code.clone(), 2);
+        drop_unread_static_closures(&mut chunks, 0);
+        assert_eq!(format!("{:?}", chunks[0].code), format!("{code:?}"));
+        assert_eq!(chunks[0].local_count, 2);
+    }
+
+    #[test]
+    fn seeded_slots_keep_their_numbers() {
+        let mut chunks = def_program(
+            vec![
+                OpCode::MakeStaticClosure(0),
+                OpCode::SetLocal(1),
+                OpCode::GetLocal(2),
+                OpCode::Return,
+            ],
+            3,
+        );
+        drop_unread_static_closures(&mut chunks, 1);
+        assert_eq!(
+            format!("{:?}", chunks[0].code),
+            format!("{:?}", vec![OpCode::GetLocal(2), OpCode::Return])
+        );
+        assert_eq!(chunks[0].local_count, 3);
+    }
+
+    #[test]
+    fn parameter_slots_and_default_captures_follow_renumbering() {
+        let mut chunks = def_program(
+            vec![
+                OpCode::MakeStaticClosure(0),
+                OpCode::SetLocal(3),
+                OpCode::GetLocal(4),
+                OpCode::Return,
+            ],
+            5,
+        );
+        chunks[0].param_shape = ParamShape {
+            bindings: vec![
+                ParamBinding::Required(1),
+                ParamBinding::Optional(2, 1, vec![UpvalueSource::Local(1)]),
+            ],
+            required: 1,
+            has_variadic: false,
+        };
+        drop_unread_static_closures(&mut chunks, 0);
+        assert_eq!(
+            format!("{:?}", chunks[0].code),
+            format!("{:?}", vec![OpCode::GetLocal(3), OpCode::Return])
+        );
+        assert_eq!(slot_names(&chunks[0]), ["l0", "l1", "l2", "l4"]);
+        assert!(matches!(
+            chunks[0].param_shape.bindings.as_slice(),
+            [ParamBinding::Required(1), ParamBinding::Optional(2, 1, sources)]
+                if matches!(sources.as_slice(), [UpvalueSource::Local(1)])
+        ));
+    }
+
+    #[test]
+    fn source_lines_follow_removed_instructions() {
+        let token = |id| crate::ast::TokenId::new(id);
+        let mut chunks = def_program(
+            vec![
+                OpCode::MakeStaticClosure(0),
+                OpCode::SetLocal(1),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
+            2,
+        );
+        chunks[0].lines = vec![
+            LineEntry {
+                pc_start: 0,
+                token_id: token(1),
+            },
+            LineEntry {
+                pc_start: 2,
+                token_id: token(2),
+            },
+        ];
+        drop_unread_static_closures(&mut chunks, 0);
+        assert!(matches!(
+            chunks[0].lines.as_slice(),
+            [LineEntry { pc_start: 0, token_id }] if *token_id == token(2)
         ));
     }
 }

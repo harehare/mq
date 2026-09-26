@@ -16,6 +16,7 @@
   - [Embed mq in Rust](start/embedding-rust.md)
   - [Example](start/example.md)
   - [Modules](start/modules.md)
+  - [Compiled Programs](start/compiled-programs.md)
 - [Cookbook](cookbook/index.md)
   - [Generate a table of contents from headings](cookbook/generate-toc-from-headings.md)
   - [Extract code blocks by language](cookbook/extract-code-blocks-by-language.md)
