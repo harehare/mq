@@ -23,6 +23,15 @@ fn to_uri(uri: &Url) -> ls_types::Uri {
     ls_types::Uri::from_str(uri.as_ref()).unwrap()
 }
 
+/// End position of `text` in UTF-16 columns.
+fn document_end_position(text: &str) -> ls_types::Position {
+    let last_line_start = text.rfind('\n').map_or(0, |i| i + 1);
+    ls_types::Position::new(
+        text.matches('\n').count() as u32,
+        text[last_line_start..].encode_utf16().count() as u32,
+    )
+}
+
 /// A document's text and parsed CST as of a single `on_change`, published together so
 /// readers never observe a text/CST pair from two different edits.
 #[derive(Debug)]
@@ -349,6 +358,8 @@ impl LanguageServer for Backend {
         let snapshot = Arc::clone(self.documents.get(&uri_string).unwrap().value());
         let text = Arc::clone(&snapshot.text);
         let nodes = snapshot.nodes.clone();
+        // Replace the whole original text, not the formatted length.
+        let end = document_end_position(&text);
         let formatted_text = tokio::task::spawn_blocking(move || {
             let mut formatter = mq_formatter::Formatter::new(Some(mq_formatter::FormatterConfig {
                 indent_width: 2,
@@ -369,10 +380,7 @@ impl LanguageServer for Backend {
         }
 
         Ok(Some(vec![ls_types::TextEdit {
-            range: ls_types::Range::new(
-                ls_types::Position::new(0, 0),
-                ls_types::Position::new(formatted_text.lines().count() as u32, u32::MAX),
-            ),
+            range: ls_types::Range::new(ls_types::Position::new(0, 0), end),
             new_text: formatted_text,
         }]))
     }
@@ -686,6 +694,58 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn test_document_end_position() {
+        for (text, expected) in [
+            ("", (0, 0)),
+            ("abc", (0, 3)),
+            ("abc\n", (1, 0)),
+            ("a\nbc", (1, 2)),
+            ("a\n\n", (2, 0)),
+            ("a\n🦀x", (1, 3)),
+        ] {
+            assert_eq!(
+                document_end_position(text),
+                ls_types::Position::new(expected.0, expected.1),
+                "text: {text:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_formatting_edit_covers_removed_trailing_lines() {
+        let (service, _) = LspService::new(|client| Backend {
+            client,
+            hir: Arc::new(RwLock::new(mq_hir::Hir::default())),
+            source_map: RwLock::new(BiMap::new()),
+            type_env_map: DashMap::new(),
+            error_map: DashMap::new(),
+            documents: DashMap::new(),
+            config: LspConfig::default(),
+        });
+
+        let backend = service.inner();
+        let uri = Url::parse("file:///shrink.mq").unwrap();
+        // Formatting removes lines here.
+        let text = "def f(x):\n  if (x): 1\n  else: 2\n  ;\nend\n\n\n";
+        backend.on_change(uri.clone(), text.to_string()).await;
+
+        let edits = backend
+            .formatting(ls_types::DocumentFormattingParams {
+                text_document: ls_types::TextDocumentIdentifier { uri: to_uri(&uri) },
+                options: Default::default(),
+                work_done_progress_params: Default::default(),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(edits.len(), 1);
+        assert!(edits[0].new_text.lines().count() < text.lines().count());
+        assert_eq!(edits[0].range.start, ls_types::Position::new(0, 0));
+        assert_eq!(edits[0].range.end, document_end_position(text));
+    }
+
     #[tokio::test]
     async fn test_did_open() {
         let (service, _) = LspService::new(|client| Backend {
@@ -760,6 +820,7 @@ mod tests {
         .format(text)
         .unwrap();
         assert_eq!(edits[0].new_text, expected);
+        assert_eq!(edits[0].range.end, document_end_position(text));
 
         let folding = backend
             .folding_range(ls_types::FoldingRangeParams {
