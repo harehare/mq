@@ -14,6 +14,39 @@ pub struct Formatter {
     config: FormatterConfig,
     output: String,
     indent_cache: Vec<String>,
+    source: Option<Source>,
+}
+
+/// The input being formatted, used to reproduce literals exactly as written.
+#[derive(Clone, Debug, Default)]
+struct Source {
+    text: String,
+    line_starts: Vec<usize>,
+}
+
+impl Source {
+    fn new(text: &str) -> Self {
+        let line_starts = std::iter::once(0)
+            .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+            .collect();
+        Self {
+            text: text.to_string(),
+            line_starts,
+        }
+    }
+
+    /// Converts a 1-based line and 1-based char column into a byte offset.
+    fn offset(&self, pos: &mq_lang::Position) -> Option<usize> {
+        let line_start = *self.line_starts.get((pos.line as usize).checked_sub(1)?)?;
+        let line = &self.text[line_start..];
+        let column = pos.column.checked_sub(1)?;
+        let byte = line.char_indices().nth(column).map(|(i, _)| i).unwrap_or(line.len());
+        Some(line_start + byte)
+    }
+
+    fn slice(&self, range: &mq_lang::Range) -> Option<&str> {
+        self.text.get(self.offset(&range.start)?..self.offset(&range.end)?)
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -83,6 +116,7 @@ impl Formatter {
             config: config.unwrap_or_default(),
             output: String::new(),
             indent_cache: Vec::new(),
+            source: None,
         }
     }
 
@@ -97,9 +131,14 @@ impl Formatter {
             return Err(errors);
         }
 
-        self.format_with_cst(&mut nodes)
+        self.source = Some(Source::new(code));
+        let result = self.format_with_cst(&mut nodes);
+        self.source = None;
+        result
     }
 
+    /// Formats an already parsed CST. Without the source text, string escapes such as
+    /// `\u{41}` are normalized to their decoded form; use [`Formatter::format`] to keep them.
     pub fn format_with_cst(
         &mut self,
         nodes: &mut Vec<mq_lang::Shared<mq_lang::CstNode>>,
@@ -376,11 +415,10 @@ impl Formatter {
             return;
         }
 
-        let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
-            self.current_line_indent()
-        } else if indent_level == 0 {
-            // If indent_level is 0, it means the array is on the same line (no newline)
-            // Use the current line indent to calculate the base indent for children
+        let indent_adjustment = if indent_level == 0 {
+            // Inline: children nest under the current line, counting a leading `| `.
+            self.current_line_content_indent()
+        } else if self.is_let_line() || self.is_last_line_pipe() {
             self.current_line_indent()
         } else {
             0
@@ -421,11 +459,10 @@ impl Formatter {
         self.append_indent(indent_level);
         let all_children = node.all_children();
         let len = all_children.len();
-        let indent_adjustment = if self.is_let_line() || self.is_last_line_pipe() {
-            self.current_line_indent()
-        } else if indent_level == 0 {
-            // If indent_level is 0, it means the dict is on the same line (no newline)
-            // Use the current line indent to calculate the base indent for children
+        let indent_adjustment = if indent_level == 0 {
+            // Inline: children nest under the current line, counting a leading `| `.
+            self.current_line_content_indent()
+        } else if self.is_let_line() || self.is_last_line_pipe() {
             self.current_line_indent()
         } else {
             0
@@ -454,7 +491,7 @@ impl Formatter {
                     } else if !self.output.ends_with(' ') {
                         self.append_space();
                     }
-                    self.append_display(comment);
+                    self.append_comment(comment);
                     has_comment = true;
                 }
                 _ => {}
@@ -1144,12 +1181,7 @@ impl Formatter {
         // If pattern has a token, it's a simple pattern (literal, ident, wildcard)
         if let Some(token) = &node.token {
             match &token.kind {
-                mq_lang::TokenKind::StringLiteral(s) => {
-                    let escaped = Self::escape_string(s);
-                    self.output.push('"');
-                    self.output.push_str(&escaped);
-                    self.output.push('"');
-                }
+                mq_lang::TokenKind::StringLiteral(s) => self.append_string_literal(token, s),
                 mq_lang::TokenKind::BytesLiteral(_) => {
                     self.append_display(token);
                 }
@@ -1298,7 +1330,7 @@ impl Formatter {
                         self.append_space();
                     }
 
-                    self.append_display(comment);
+                    self.append_comment(comment);
                 }
                 mq_lang::CstTrivia::NewLine => {
                     self.output.push('\n');
@@ -1340,12 +1372,7 @@ impl Formatter {
         {
             self.append_indent(indent_level);
             match &token.kind {
-                mq_lang::TokenKind::StringLiteral(s) => {
-                    let escaped = Self::escape_string(s);
-                    self.output.push('"');
-                    self.output.push_str(&escaped);
-                    self.output.push('"');
-                }
+                mq_lang::TokenKind::StringLiteral(s) => self.append_string_literal(token, s),
                 mq_lang::TokenKind::BytesLiteral(_) => {
                     self.append_display(token);
                 }
@@ -1374,12 +1401,7 @@ impl Formatter {
         if let Some(token) = &name.token {
             match &token.kind {
                 mq_lang::TokenKind::Ident(s) => self.output.push_str(s),
-                mq_lang::TokenKind::StringLiteral(s) => {
-                    let escaped = Self::escape_string(s);
-                    self.output.push('"');
-                    self.output.push_str(&escaped);
-                    self.output.push('"');
-                }
+                mq_lang::TokenKind::StringLiteral(s) => self.append_string_literal(token, s),
                 _ => {}
             }
         }
@@ -1393,6 +1415,12 @@ impl Formatter {
         } = &**node
         {
             self.append_indent(indent_level);
+            if let Some(raw) = self.raw_literal(token, "s\"") {
+                self.output.push_str("s\"");
+                Self::push_escaping_controls(&mut self.output, &raw, true);
+                self.output.push('"');
+                return;
+            }
             self.output.push_str("s\"");
             let escaped = token
                 .to_string()
@@ -1543,6 +1571,23 @@ impl Formatter {
         let _ = write!(self.output, "{value}");
     }
 
+    /// Appends a comment, keeping the whitespace after `#` so aligned comments stay aligned.
+    fn append_comment(&mut self, trivia: &mq_lang::CstTrivia) {
+        let mq_lang::CstTrivia::Comment(token) = trivia else {
+            return;
+        };
+        let mq_lang::TokenKind::Comment(text) = &token.kind else {
+            self.append_display(trivia);
+            return;
+        };
+        let text = text.trim_end();
+        if text.starts_with(char::is_whitespace) {
+            let _ = write!(self.output, "#{text}");
+        } else {
+            let _ = write!(self.output, "# {text}");
+        }
+    }
+
     #[inline(always)]
     fn append_space(&mut self) {
         self.output.push(' ');
@@ -1677,6 +1722,44 @@ impl Formatter {
             && !matches!(next.kind, mq_lang::CstNodeKind::MatchArm { .. })
         {
             self.append_space();
+        }
+    }
+
+    /// Writes a string literal, keeping escape sequences as written in the source.
+    fn append_string_literal(&mut self, token: &mq_lang::Token, value: &str) {
+        self.output.push('"');
+        match self.raw_literal(token, "\"") {
+            Some(raw) => Self::push_escaping_controls(&mut self.output, &raw, false),
+            None => self.output.push_str(&Self::escape_string(value)),
+        }
+        self.output.push('"');
+    }
+
+    /// Returns the source text between the quotes of a literal token.
+    fn raw_literal(&self, token: &mq_lang::Token, prefix: &str) -> Option<String> {
+        let raw = self.source.as_ref()?.slice(&token.range)?;
+        raw.strip_prefix(prefix)?.strip_suffix('"').map(str::to_string)
+    }
+
+    /// Escapes raw control characters, leaving existing escape sequences untouched.
+    /// Interpolated strings may span lines, so `keep_newlines` leaves raw newlines as is.
+    fn push_escaping_controls(output: &mut String, raw: &str, keep_newlines: bool) {
+        for ch in raw.chars() {
+            match ch {
+                '\n' if keep_newlines => output.push('\n'),
+                '\n' => output.push_str("\\n"),
+                '\t' => output.push_str("\\t"),
+                '\r' => output.push_str("\\r"),
+                c if c.is_control() => {
+                    let code = c as u32;
+                    if code <= 0xFF {
+                        let _ = write!(output, "\\x{:02x}", code);
+                    } else {
+                        let _ = write!(output, "\\u{{{:04x}}}", code);
+                    }
+                }
+                c => output.push(c),
+            }
         }
     }
 
@@ -2219,6 +2302,45 @@ process();"#,
     )]
     #[case::dict_index_access_inline("d[\"key\"]", "d[\"key\"]")]
     #[case::comment_first_line("# comment\nlet x = 1", "# comment\nlet x = 1\n")]
+    #[case::string_keeps_unicode_escape(r#"let x = "\u{D7FF}\u{E000}""#, r#"let x = "\u{D7FF}\u{E000}""#)]
+    #[case::string_keeps_hex_escape(r#"let x = "\x41""#, r#"let x = "\x41""#)]
+    #[case::string_keeps_regex_escapes(r#"let x = "\d+\s\/""#, r#"let x = "\d+\s\/""#)]
+    #[case::string_escapes_raw_tab("let x = \"a\tb\"", r#"let x = "a\tb""#)]
+    #[case::string_escapes_raw_newline("let x = \"a\nb\"", "let x = \"a\\nb\"")]
+    #[case::dict_key_keeps_unicode_escape(r#"{"\u{E000}": 1}"#, r#"{"\u{E000}": 1}"#)]
+    #[case::interpolated_string_keeps_unicode_escape(r#"s"\u{E000}${x}""#, r#"s"\u{E000}${x}""#)]
+    #[case::string_after_multibyte_text(r#"let s = "日本語" | let x = "\x41""#, r#"let s = "日本語" | let x = "\x41""#)]
+    #[case::string_after_leading_tab("\tlet x = \"\\u{41}\"", r#"let x = "\u{41}""#)]
+    #[case::string_with_crlf("let x = 1\r\n| let y = \"\\u{41}\"\r\n", "let x = 1\n| let y = \"\\u{41}\"\n")]
+    #[case::string_keeps_quote_and_backslash(r#"let x = "a\"b\\c""#, r#"let x = "a\"b\\c""#)]
+    #[case::string_empty(r#"let x = """#, r#"let x = """#)]
+    #[case::string_multiline_keeps_escape_on_second_line("let x = \"a\n  \\u{41}\"", r#"let x = "a\n  \u{41}""#)]
+    #[case::array_keeps_escapes(r#"["\u{41}", "\x42"]"#, r#"["\u{41}", "\x42"]"#)]
+    #[case::match_pattern_keeps_escape(
+        r#"match (x): | "\u{41}": 1 | _: 2 end"#,
+        r#"match (x): | "\u{41}": 1 | _: 2 end"#
+    )]
+    #[case::symbol_keeps_escape(r#":"\u{41}""#, r#":"\u{41}""#)]
+    #[case::interpolated_string_keeps_quote_and_backslash(r#"s"\"${a}\\""#, r#"s"\"${a}\\""#)]
+    #[case::interpolated_string_keeps_raw_newline("s\"a\n${x}\"", "s\"a\n${x}\"\n")]
+    #[case::array_arg_after_pipe(
+        "def f():\n  let r = 1\n  | g(r, [\n  1,\n  2,\n  ])\nend",
+        "def f():\n  let r = 1\n  | g(r, [\n      1,\n      2,\n    ])\nend\n"
+    )]
+    #[case::dict_arg_after_pipe(
+        "def f():\n  let r = 1\n  | g(r, {\n  \"a\": 1,\n  })\nend",
+        "def f():\n  let r = 1\n  | g(r, {\n      \"a\": 1,\n    })\nend\n"
+    )]
+    #[case::dict_after_pipe(
+        "def f():\n  let r = 1\n  | {\n  a: r\n  }\nend",
+        "def f():\n  let r = 1\n  | {\n      a: r\n    }\nend\n"
+    )]
+    #[case::array_arg_without_pipe("def f():\n  g(r, [\n  1,\n  ])\nend", "def f():\n  g(r, [\n    1,\n  ])\nend\n")]
+    #[case::comment_keeps_leading_spaces("#   [1, 2],\nlet x = 1", "#   [1, 2],\nlet x = 1\n")]
+    #[case::comment_keeps_leading_tab("#\tcomment\nlet x = 1", "#\tcomment\nlet x = 1\n")]
+    #[case::comment_adds_space_when_missing("#comment\nlet x = 1", "# comment\nlet x = 1\n")]
+    #[case::comment_trims_trailing_spaces("# comment   \nlet x = 1", "# comment\nlet x = 1\n")]
+    #[case::comment_keeps_leading_spaces_before_close("[\n  1,\n  #   c\n]", "[\n  1,\n  #   c\n]\n")]
     #[case::comment_inline("let x = 1 # inline comment", "let x = 1 # inline comment")]
     #[case::comment_multiline(
         "let x = 1\n# multiline comment\n| let y = 2",
@@ -2999,6 +3121,13 @@ end
     #[case::if_elif(&[(0, "if (t):"), (1, "1"), (0, "elif (t):"), (1, "2"), (0, "else:"), (1, "3")])]
     #[case::match_(&[(0, "match (t):"), (1, "| 1: \"one\""), (1, "| _: \"other\""), (0, "end")])]
     #[case::call_with_fn(&[(0, "map(t, fn(x):"), (1, "let y = x"), (1, "| y;"), (0, ")")])]
+    #[case::array(&[(0, "["), (1, "1,"), (1, "2"), (0, "]")])]
+    #[case::dict(&[(0, "{"), (1, "\"a\": 1,"), (1, "\"b\": 2"), (0, "}")])]
+    #[case::call_with_array(&[(0, "g(t, ["), (1, "1,"), (1, "2"), (0, "])")])]
+    #[case::call_with_dict(&[(0, "g(t, {"), (1, "\"a\": 1"), (0, "})")])]
+    #[case::array_of_dicts(&[(0, "g(t, ["), (1, "{\"a\": 1},"), (1, "{\"b\": 2},"), (0, "])")])]
+    #[case::nested_array_in_dict(&[(0, "{"), (1, "\"a\": ["), (2, "1"), (1, "]"), (0, "}")])]
+    #[case::array_comment_before_close(&[(0, "g(t, ["), (1, "1,"), (1, "# c"), (0, "])")])]
     fn test_format_block_indent(
         #[case] block: &[(usize, &str)],
         #[values("let b = ", "| let b = ", "| ")] prefix: &str,
@@ -3201,7 +3330,89 @@ def func_a(): test;
         assert_eq!(reference_is_let_line(output), expected);
     }
 
+    #[test]
+    fn test_format_with_cst_normalizes_escapes_without_source() {
+        let (mut nodes, _) = mq_lang::parse_recovery(r#""\u{41}\t""#);
+        let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
+        assert_eq!(result, r#""A\t""#);
+    }
+
+    #[test]
+    fn test_format_sort_fields_keeps_escapes() {
+        let config = FormatterConfig {
+            sort_fields: true,
+            ..FormatterConfig::default()
+        };
+        let result = Formatter::new(Some(config))
+            .format("let b = \"\\u{41}\"\n| let a = {\"\\u{E000}\": \"\\x42\"}")
+            .unwrap();
+        assert_eq!(result, "let a = {\"\\u{E000}\": \"\\x42\"}\n| let b = \"\\u{41}\"\n");
+    }
+
+    /// Escape sequences and raw characters a string literal can contain.
+    const STRING_PIECES: &[&str] = &[
+        "a",
+        "Z",
+        "0",
+        " ",
+        "日",
+        "é",
+        "😀",
+        "\\n",
+        "\\t",
+        "\\r",
+        "\\\"",
+        "\\\\",
+        "\\/",
+        "\\d",
+        "\\s",
+        "\\(",
+        "\\{",
+        "\\x41",
+        "\\x1b",
+        "\\u{41}",
+        "\\u{D7FF}",
+        "\\u{E000}",
+        "\\u{10FFFF}",
+    ];
+
     proptest::proptest! {
+        /// A string literal is written back exactly as in the source.
+        #[test]
+        fn prop_string_literal_is_preserved(
+            pieces in proptest::collection::vec(proptest::sample::select(STRING_PIECES), 0..12),
+            prefix in proptest::sample::select(&["let x = ", "| ", "f(", "[", "{\"k\": ", "s"][..]),
+        ) {
+            let body = pieces.concat();
+            let suffix = match prefix {
+                "f(" => ")",
+                "[" => "]",
+                "{\"k\": " => "}",
+                _ => "",
+            };
+            let code = format!("{prefix}\"{body}\"{suffix}");
+            let code = code.strip_prefix("| ").unwrap_or(&code).to_string();
+            // Interpolated strings accept fewer escapes than plain strings.
+            proptest::prop_assume!(!mq_lang::parse_recovery(&code).1.has_errors());
+            let once = Formatter::new(None).format(&code).unwrap();
+            proptest::prop_assert!(once.contains(&format!("\"{body}\"")), "{code:?} -> {once:?}");
+            let twice = Formatter::new(None).format(&once).unwrap();
+            proptest::prop_assert_eq!(twice, once);
+        }
+
+        /// Whitespace after `#` is kept; only a missing space is added.
+        #[test]
+        fn prop_comment_keeps_leading_whitespace(text in "[ \t]{0,3}[a-z\\[\\],\" ]{0,12}") {
+            let formatted = Formatter::new(None).format(&format!("#{text}\nlet x = 1")).unwrap();
+            let text = text.trim_end();
+            let expected = if text.is_empty() || text.starts_with([' ', '\t']) {
+                format!("#{text}")
+            } else {
+                format!("# {text}")
+            };
+            proptest::prop_assert_eq!(formatted.lines().next().unwrap(), expected.trim_end());
+        }
+
         #[test]
         fn prop_is_let_line_matches_reference(output in "[ |let\\na-z\\t]{0,24}") {
             proptest::prop_assert_eq!(is_let_line(&output), reference_is_let_line(&output));
