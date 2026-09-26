@@ -56,5 +56,5 @@ std::fs::write("upcase.mqc", mqc.as_bytes())?;
 let mqc = mq_lang::Mqc::try_from(std::fs::read("upcase.mqc")?)?;
 let program = engine.load(&mqc)?;
 let input = mq_lang::parse_text_input("hello")?;
-let output = engine.eval_compiled(program.program(), input.into_iter())?;
+let output = engine.eval_compiled(&program, input.into_iter())?;
 ```

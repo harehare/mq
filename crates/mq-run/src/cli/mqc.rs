@@ -137,19 +137,15 @@ impl Cli {
         mqc: &mq_lang::Mqc,
         file: &Option<PathBuf>,
     ) -> miette::Result<mq_lang::CompiledProgram> {
-        let program = engine
-            .load(mqc)
-            .map_err(miette::Report::new)
-            .wrap_err_with(|| format!("Failed to load {}", self.query.as_deref().unwrap_or_default()))?;
-        let compiled_prefix = program.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
+        let compiled_prefix = mqc.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
         let effective_format = self.input_format_name(file);
         // Native formats (raw, markdown, html, ...) share an empty prefix, so also compare format.
-        let format_mismatch = match program.metadata(MQC_INPUT_FORMAT) {
+        let format_mismatch = match mqc.metadata(MQC_INPUT_FORMAT) {
             Some(format) if !format.is_empty() => format != effective_format,
             _ => false,
         };
         if compiled_prefix != self.auto_query_prefix(file).unwrap_or_default() || format_mismatch {
-            let compiled_format = match program.metadata(MQC_INPUT_FORMAT) {
+            let compiled_format = match mqc.metadata(MQC_INPUT_FORMAT) {
                 Some(format) if !format.is_empty() => format,
                 _ => "markdown",
             };
@@ -161,7 +157,10 @@ impl Cli {
                 "The program was compiled for {compiled_format} input, but {target} is read as {effective_format} input"
             ));
         }
-        Ok(program.program().clone())
+        engine
+            .load(mqc)
+            .map_err(miette::Report::new)
+            .wrap_err_with(|| format!("Failed to load {}", self.query.as_deref().unwrap_or_default()))
     }
 
     /// The input format `file` is read as, when it matters to the `.mqc` program.
