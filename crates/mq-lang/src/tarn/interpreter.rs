@@ -668,7 +668,18 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
         debug,
     ) {
         DriveOutcome::Completed(value, locals) => (Ok(value), locals),
-        DriveOutcome::Suspended(_) => unreachable!("top-level evaluation never yields"),
+        // Compiled programs never yield here, but a corrupted `.mqc` file can.
+        DriveOutcome::Suspended(_) => {
+            while frames.len() > 1 {
+                execution.limits.pop_frame(
+                    frames,
+                    #[cfg(feature = "debugger")]
+                    debug,
+                );
+            }
+            let finished = frames.pop().expect("the frame stack is never empty here");
+            (Err(VmError::Corrupt("yield outside a generator")), finished.locals)
+        }
         DriveOutcome::Failed(e, locals) => (Err(e), locals),
     }
 }
