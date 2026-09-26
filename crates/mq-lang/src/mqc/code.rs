@@ -42,7 +42,7 @@ impl Tables {
             self.idents.push(ident);
             next
         });
-        writer.u32(index);
+        writer.var_u32(index);
     }
 
     fn token(&mut self, writer: &mut Writer, token_id: TokenId) {
@@ -51,7 +51,7 @@ impl Tables {
             self.tokens.push(token_id);
             next
         });
-        writer.u32(index);
+        writer.var_u32(index);
     }
 
     fn note_external_global(&mut self, ident: Ident) {
@@ -99,13 +99,13 @@ pub(crate) fn encode(program: &SplitProgram) -> Result<EncodedCode, MqcError> {
 /// `tokens` maps span IDs to tokens in `token_arena`.
 pub(crate) fn decode(payload: &[u8], tokens: &[TokenId], token_arena: TokenArena) -> Result<SplitProgram, MqcError> {
     let mut reader = Reader::new(payload);
-    let ident_count = reader.len(4)?;
+    let ident_count = reader.len(1)?;
     let idents = (0..ident_count)
         .map(|_| reader.string().map(|name| Ident::new(&name)))
         .collect::<Result<Vec<_>, _>>()?;
     let mut decoder = Decoder { reader, idents, tokens };
 
-    let let_name_count = decoder.reader.len(4)?;
+    let let_name_count = decoder.reader.len(1)?;
     let let_names = (0..let_name_count)
         .map(|_| decoder.ident())
         .collect::<Result<Vec<_>, _>>()?;
@@ -156,7 +156,7 @@ fn encode_chunk(writer: &mut Writer, tables: &mut Tables, chunk: &Chunk) -> Resu
     }
     writer.len(chunk.static_closures.len())?;
     for closure in &chunk.static_closures {
-        writer.u16(closure.chunk_index);
+        writer.var_u16(closure.chunk_index);
     }
 
     writer.len(chunk.code.len())?;
@@ -164,8 +164,10 @@ fn encode_chunk(writer: &mut Writer, tables: &mut Tables, chunk: &Chunk) -> Resu
         encode_op(writer, tables, op)?;
     }
     writer.len(chunk.lines.len())?;
+    let mut previous_pc = 0;
     for line in &chunk.lines {
-        writer.len(line.pc_start)?;
+        writer.len(line.pc_start - previous_pc)?;
+        previous_pc = line.pc_start;
         tables.token(writer, line.token_id);
     }
     Ok(())
@@ -177,17 +179,17 @@ fn encode_param_shape(writer: &mut Writer, shape: &ParamShape) -> Result<(), Mqc
         match binding {
             ParamBinding::Required(slot) => {
                 writer.u8(0);
-                writer.u16(*slot);
+                writer.var_u16(*slot);
             }
             ParamBinding::Optional(slot, default_chunk, sources) => {
                 writer.u8(1);
-                writer.u16(*slot);
-                writer.u16(*default_chunk);
+                writer.var_u16(*slot);
+                writer.var_u16(*default_chunk);
                 encode_upvalue_sources(writer, sources)?;
             }
             ParamBinding::Variadic(slot) => {
                 writer.u8(2);
-                writer.u16(*slot);
+                writer.var_u16(*slot);
             }
         }
     }
@@ -200,11 +202,11 @@ fn encode_upvalue_sources(writer: &mut Writer, sources: &[UpvalueSource]) -> Res
         match source {
             UpvalueSource::Local(slot) => {
                 writer.u8(0);
-                writer.u16(*slot);
+                writer.var_u16(*slot);
             }
             UpvalueSource::Upvalue(index) => {
                 writer.u8(1);
-                writer.u16(*index);
+                writer.var_u16(*index);
             }
         }
     }
@@ -383,7 +385,7 @@ fn encode_optional_index(writer: &mut Writer, value: Option<usize>) -> Result<()
         Some(value) => {
             writer.bool(true);
             let value = u64::try_from(value).map_err(|_| MqcError::UnsupportedValue("a selector index".into()))?;
-            writer.u64(value);
+            writer.var(value);
         }
         None => writer.bool(false),
     }
@@ -474,21 +476,21 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         }
         OpCode::Const(index) => {
             writer.u8(1);
-            writer.u16(*index);
+            writer.var_u16(*index);
         }
         OpCode::PushNone => writer.u8(2),
         OpCode::GetLocal(slot) => {
             writer.u8(3);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::SetLocal(slot) => {
             writer.u8(4);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::SetLocalAndCopy { source, destination } => {
             writer.u8(5);
-            writer.u16(*source);
-            writer.u16(*destination);
+            writer.var_u16(*source);
+            writer.var_u16(*destination);
         }
         OpCode::SetLocalAndCopyAndJump {
             source,
@@ -496,50 +498,50 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             offset,
         } => {
             writer.u8(6);
-            writer.u16(*source);
-            writer.u16(*destination);
-            writer.i32(*offset);
+            writer.var_u16(*source);
+            writer.var_u16(*destination);
+            writer.var_i32(*offset);
         }
         OpCode::SetLocalConst { local, constant } => {
             writer.u8(7);
-            writer.u16(*local);
-            writer.u16(*constant);
+            writer.var_u16(*local);
+            writer.var_u16(*constant);
         }
         OpCode::TeeLocal(slot) => {
             writer.u8(8);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::CopyLocal { source, destination } => {
             writer.u8(9);
-            writer.u16(*source);
-            writer.u16(*destination);
+            writer.var_u16(*source);
+            writer.var_u16(*destination);
         }
         OpCode::GetUpvalue(index) => {
             writer.u8(10);
-            writer.u16(*index);
+            writer.var_u16(*index);
         }
         OpCode::SetUpvalue(index) => {
             writer.u8(11);
-            writer.u16(*index);
+            writer.var_u16(*index);
         }
         OpCode::MakeClosure(payload) => {
             writer.u8(12);
-            writer.u16(payload.0);
+            writer.var_u16(payload.0);
             encode_upvalue_sources(writer, &payload.1)?;
         }
         OpCode::MakeStaticClosure(index) => {
             writer.u8(13);
-            writer.u16(*index);
+            writer.var_u16(*index);
         }
         OpCode::Pop => writer.u8(14),
         OpCode::Dup => writer.u8(15),
         OpCode::Jump(offset) => {
             writer.u8(16);
-            writer.i32(*offset);
+            writer.var_i32(*offset);
         }
         OpCode::JumpIfFalse(offset) => {
             writer.u8(17);
-            writer.i32(*offset);
+            writer.var_i32(*offset);
         }
         OpCode::Add => writer.u8(18),
         OpCode::Sub => writer.u8(19),
@@ -555,38 +557,38 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         OpCode::BinaryLocalLocal { op, left, right } => {
             writer.u8(29);
             writer.u8(binary_op_id(*op));
-            writer.u16(*left);
-            writer.u16(*right);
+            writer.var_u16(*left);
+            writer.var_u16(*right);
         }
         OpCode::BinaryLocalConst { op, local, constant } => {
             writer.u8(30);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.u16(*constant);
+            writer.var_u16(*local);
+            writer.var_u16(*constant);
         }
         OpCode::BinaryLocalNumberConst { op, local, constant } => {
             writer.u8(31);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.i32(*constant);
+            writer.var_u16(*local);
+            writer.var_i32(*constant);
         }
         OpCode::UpdateLocalConst { op, local, constant } => {
             writer.u8(32);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.u16(*constant);
+            writer.var_u16(*local);
+            writer.var_u16(*constant);
         }
         OpCode::UpdateLocalNumberConst { op, local, constant } => {
             writer.u8(33);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.i32(*constant);
+            writer.var_u16(*local);
+            writer.var_i32(*constant);
         }
         OpCode::UpdateLocalLocal { op, local, value } => {
             writer.u8(34);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.u16(*value);
+            writer.var_u16(*local);
+            writer.var_u16(*value);
         }
         OpCode::JumpIfFalseLocalLocal {
             op,
@@ -596,9 +598,9 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         } => {
             writer.u8(35);
             writer.u8(binary_op_id(*op));
-            writer.u16(*left);
-            writer.u16(*right);
-            writer.i32(*offset);
+            writer.var_u16(*left);
+            writer.var_u16(*right);
+            writer.var_i32(*offset);
         }
         OpCode::JumpIfFalseLocalConst {
             op,
@@ -608,9 +610,9 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         } => {
             writer.u8(36);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.u16(*constant);
-            writer.i32(*offset);
+            writer.var_u16(*local);
+            writer.var_u16(*constant);
+            writer.var_i32(*offset);
         }
         OpCode::JumpIfFalseLocalNumberConst {
             op,
@@ -620,16 +622,16 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         } => {
             writer.u8(37);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.i32(*constant);
-            writer.i32(*offset);
+            writer.var_u16(*local);
+            writer.var_i32(*constant);
+            writer.var_i32(*offset);
         }
         OpCode::Neg => writer.u8(38),
         OpCode::Not => writer.u8(39),
         OpCode::ArrayNew => writer.u8(40),
         OpCode::ArrayNewWithCapacityLocal(slot) => {
             writer.u8(41);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::ArrayPush => writer.u8(42),
         OpCode::ArraySpread => writer.u8(43),
@@ -641,12 +643,12 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         OpCode::ArrayGetAt => writer.u8(49),
         OpCode::ArrayLenLocal(slot) => {
             writer.u8(50);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
             writer.u8(51);
-            writer.u16(*array_slot);
-            writer.u16(*index_slot);
+            writer.var_u16(*array_slot);
+            writer.var_u16(*index_slot);
         }
         OpCode::ForeachNext {
             array_slot,
@@ -655,19 +657,19 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             exit_offset,
         } => {
             writer.u8(52);
-            writer.u16(*array_slot);
-            writer.u16(*index_slot);
-            writer.u16(*value_slot);
-            writer.i32(*exit_offset);
+            writer.var_u16(*array_slot);
+            writer.var_u16(*index_slot);
+            writer.var_u16(*value_slot);
+            writer.var_i32(*exit_offset);
         }
         OpCode::ForeachCollect(slot) => {
             writer.u8(53);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::ForeachCollectAndJump { slot, offset } => {
             writer.u8(54);
-            writer.u16(*slot);
-            writer.i32(*offset);
+            writer.var_u16(*slot);
+            writer.var_i32(*offset);
         }
         OpCode::ForeachBinaryLocalNumberConstAndJump {
             op,
@@ -678,10 +680,10 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         } => {
             writer.u8(55);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.i32(*constant);
-            writer.u16(*accumulator_slot);
-            writer.i32(*offset);
+            writer.var_u16(*local);
+            writer.var_i32(*constant);
+            writer.var_u16(*accumulator_slot);
+            writer.var_i32(*offset);
         }
         OpCode::ArraySliceFrom => writer.u8(56),
         OpCode::DictGetLocalOrFail {
@@ -690,9 +692,9 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             value_slot,
         } => {
             writer.u8(57);
-            writer.u16(*subject_slot);
+            writer.var_u16(*subject_slot);
             tables.ident(writer, *key);
-            writer.u16(*value_slot);
+            writer.var_u16(*value_slot);
         }
         OpCode::TypeCheck(ident) => {
             writer.u8(58);
@@ -700,7 +702,7 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         }
         OpCode::GetEnvVar(index) => {
             writer.u8(59);
-            writer.u16(*index);
+            writer.var_u16(*index);
         }
         OpCode::GetExternalGlobal(ident) => {
             writer.u8(60);
@@ -709,7 +711,7 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         }
         OpCode::InterpString(count) => {
             writer.u8(61);
-            writer.u16(*count);
+            writer.var_u16(*count);
         }
         OpCode::SelectorMatch(selector) => {
             writer.u8(62);
@@ -726,29 +728,29 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         OpCode::SelectorMatchWithArgs(payload) => {
             writer.u8(65);
             encode_selector(writer, tables, &payload.0)?;
-            writer.u16(payload.1);
+            writer.var_u16(payload.1);
         }
         OpCode::CallBuiltinLocal { builtin, local } => {
             writer.u8(66);
             tables.note_builtin(*builtin);
             tables.ident(writer, *builtin);
-            writer.u16(*local);
+            writer.var_u16(*local);
         }
         OpCode::CallBuiltin(ident, argc) => {
             writer.u8(67);
             tables.note_builtin(*ident);
             tables.ident(writer, *ident);
-            writer.u16(*argc);
+            writer.var_u16(*argc);
         }
         OpCode::CallStatic(target, argc) => {
             writer.u8(68);
-            writer.u16(*target);
-            writer.u16(*argc);
+            writer.var_u16(*target);
+            writer.var_u16(*argc);
         }
         OpCode::CallStaticExact(target, argc) => {
             writer.u8(69);
-            writer.u16(*target);
-            writer.u16(*argc);
+            writer.var_u16(*target);
+            writer.var_u16(*argc);
         }
         OpCode::CallStaticExact0(target) => {
             writer.u8(70);
@@ -764,42 +766,42 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         }
         OpCode::CallStaticImplicitSelf(target, argc) => {
             writer.u8(73);
-            writer.u16(*target);
-            writer.u16(*argc);
+            writer.var_u16(*target);
+            writer.var_u16(*argc);
         }
         OpCode::CallSelf(argc) => {
             writer.u8(74);
-            writer.u16(*argc);
+            writer.var_u16(*argc);
         }
         OpCode::CallSelfExact(argc) => {
             writer.u8(75);
-            writer.u16(*argc);
+            writer.var_u16(*argc);
         }
         OpCode::CallSelfExact0 => writer.u8(76),
         OpCode::CallSelfExact1 => writer.u8(77),
         OpCode::CallSelfExact2 => writer.u8(78),
         OpCode::CallSelfImplicitSelf(argc) => {
             writer.u8(79);
-            writer.u16(*argc);
+            writer.var_u16(*argc);
         }
         OpCode::CallLocal(slot, argc) => {
             writer.u8(80);
-            writer.u16(*slot);
-            writer.u16(*argc);
+            writer.var_u16(*slot);
+            writer.var_u16(*argc);
         }
         OpCode::CallUpvalue(index, argc) => {
             writer.u8(81);
-            writer.u16(*index);
-            writer.u16(*argc);
+            writer.var_u16(*index);
+            writer.var_u16(*argc);
         }
         OpCode::CallUpvalueLocal { index, local } => {
             writer.u8(82);
-            writer.u16(*index);
-            writer.u16(*local);
+            writer.var_u16(*index);
+            writer.var_u16(*local);
         }
         OpCode::CallValue(argc) => {
             writer.u8(83);
-            writer.u16(*argc);
+            writer.var_u16(*argc);
         }
         OpCode::MaybeAutoCall => writer.u8(84),
         OpCode::TryCatch(info) => {
@@ -818,25 +820,25 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
         OpCode::RaiseDestructuringFailed => writer.u8(88),
         OpCode::ReturnLocal(slot) => {
             writer.u8(89);
-            writer.u16(*slot);
+            writer.var_u16(*slot);
         }
         OpCode::ReturnBinaryLocalLocal { op, left, right } => {
             writer.u8(90);
             writer.u8(binary_op_id(*op));
-            writer.u16(*left);
-            writer.u16(*right);
+            writer.var_u16(*left);
+            writer.var_u16(*right);
         }
         OpCode::ReturnBinaryLocalConst { op, local, constant } => {
             writer.u8(91);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.u16(*constant);
+            writer.var_u16(*local);
+            writer.var_u16(*constant);
         }
         OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
             writer.u8(92);
             writer.u8(binary_op_id(*op));
-            writer.u16(*local);
-            writer.i32(*constant);
+            writer.var_u16(*local);
+            writer.var_i32(*constant);
         }
         OpCode::Return => writer.u8(93),
         OpCode::Yield => writer.u8(94),
@@ -849,15 +851,15 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
 }
 
 fn encode_static_target(writer: &mut Writer, target: &StaticExactCallTarget) {
-    writer.u16(target.chunk_index);
-    writer.u16(target.local_count);
+    writer.var_u16(target.chunk_index);
+    writer.var_u16(target.local_count);
 }
 
 fn encode_optional_u16(writer: &mut Writer, value: Option<u16>) {
     match value {
         Some(value) => {
             writer.bool(true);
-            writer.u16(value);
+            writer.var_u16(value);
         }
         None => writer.bool(false),
     }
@@ -867,7 +869,7 @@ fn encode_optional_i32(writer: &mut Writer, value: Option<i32>) {
     match value {
         Some(value) => {
             writer.bool(true);
-            writer.i32(value);
+            writer.var_i32(value);
         }
         None => writer.bool(false),
     }
@@ -885,7 +887,7 @@ struct Decoder<'a> {
 
 impl Decoder<'_> {
     fn ident(&mut self) -> Result<Ident, MqcError> {
-        let index = self.reader.u32()? as usize;
+        let index = self.reader.var_u32()? as usize;
         self.idents
             .get(index)
             .copied()
@@ -893,7 +895,7 @@ impl Decoder<'_> {
     }
 
     fn token(&mut self) -> Result<TokenId, MqcError> {
-        let index = self.reader.u32()? as usize;
+        let index = self.reader.var_u32()? as usize;
         self.tokens
             .get(index)
             .copied()
@@ -922,7 +924,7 @@ impl Decoder<'_> {
         let function_name = if self.reader.bool()? { Some(self.ident()?) } else { None };
         let is_generator = self.reader.bool()?;
 
-        let local_count = self.reader.len(5)?;
+        let local_count = self.reader.len(2)?;
         let local_count_u16 =
             u16::try_from(local_count).map_err(|_| invalid(format!("{local_count} locals exceed the VM limit")))?;
         let mut local_names = Vec::with_capacity(local_count);
@@ -931,7 +933,7 @@ impl Decoder<'_> {
             local_names.push(self.ident()?);
             local_mutable.push(self.reader.bool()?);
         }
-        let upvalue_count = self.reader.len(4)?;
+        let upvalue_count = self.reader.len(1)?;
         let upvalue_names = (0..upvalue_count)
             .map(|_| self.ident())
             .collect::<Result<Vec<_>, _>>()?;
@@ -942,19 +944,23 @@ impl Decoder<'_> {
         let constants = (0..constant_count)
             .map(|_| self.constant(0))
             .collect::<Result<Vec<_>, _>>()?;
-        let static_closure_count = self.reader.len(2)?;
+        let static_closure_count = self.reader.len(1)?;
         let mut chunk = Chunk::default();
         for _ in 0..static_closure_count {
-            let target = self.reader.u16()?;
+            let target = self.reader.var_u16()?;
             chunk.push_static_closure(target);
         }
 
         let op_count = self.reader.len(1)?;
         let code = (0..op_count).map(|_| self.op()).collect::<Result<Vec<_>, _>>()?;
-        let line_count = self.reader.len(8)?;
+        let line_count = self.reader.len(2)?;
         let mut lines = Vec::with_capacity(line_count);
+        let mut previous_pc = 0usize;
         for _ in 0..line_count {
-            let pc_start = self.reader.u32()? as usize;
+            let pc_start = previous_pc
+                .checked_add(self.reader.var_u32()? as usize)
+                .ok_or_else(|| invalid("source position is out of range".to_string()))?;
+            previous_pc = pc_start;
             let token_id = self.token()?;
             if pc_start >= code.len()
                 || lines
@@ -981,7 +987,7 @@ impl Decoder<'_> {
 
     /// Required, then optional, then at most one variadic.
     fn param_shape(&mut self) -> Result<ParamShape, MqcError> {
-        let count = self.reader.len(3)?;
+        let count = self.reader.len(2)?;
         let mut bindings = Vec::with_capacity(count);
         let mut required = 0;
         let mut has_variadic = false;
@@ -995,16 +1001,16 @@ impl Decoder<'_> {
                         return Err(invalid("a required parameter follows an optional one".to_string()));
                     }
                     required += 1;
-                    ParamBinding::Required(self.reader.u16()?)
+                    ParamBinding::Required(self.reader.var_u16()?)
                 }
                 1 => {
-                    let slot = self.reader.u16()?;
-                    let default_chunk = self.reader.u16()?;
+                    let slot = self.reader.var_u16()?;
+                    let default_chunk = self.reader.var_u16()?;
                     ParamBinding::Optional(slot, default_chunk, self.upvalue_sources()?)
                 }
                 2 => {
                     has_variadic = true;
-                    ParamBinding::Variadic(self.reader.u16()?)
+                    ParamBinding::Variadic(self.reader.var_u16()?)
                 }
                 other => return Err(invalid(format!("unknown parameter kind {other}"))),
             };
@@ -1018,11 +1024,11 @@ impl Decoder<'_> {
     }
 
     fn upvalue_sources(&mut self) -> Result<Vec<UpvalueSource>, MqcError> {
-        let count = self.reader.len(3)?;
+        let count = self.reader.len(2)?;
         (0..count)
             .map(|_| match self.reader.u8()? {
-                0 => Ok(UpvalueSource::Local(self.reader.u16()?)),
-                1 => Ok(UpvalueSource::Upvalue(self.reader.u16()?)),
+                0 => Ok(UpvalueSource::Local(self.reader.var_u16()?)),
+                1 => Ok(UpvalueSource::Upvalue(self.reader.var_u16()?)),
                 other => Err(invalid(format!("unknown capture kind {other}"))),
             })
             .collect()
@@ -1049,7 +1055,7 @@ impl Decoder<'_> {
                 RuntimeValue::Array(Shared::new(values))
             }
             7 => {
-                let count = self.reader.len(5)?;
+                let count = self.reader.len(2)?;
                 let mut map = DictMap::default();
                 for _ in 0..count {
                     let key = self.ident()?;
@@ -1072,7 +1078,7 @@ impl Decoder<'_> {
         if !self.reader.bool()? {
             return Ok(None);
         }
-        let value = self.reader.u64()?;
+        let value = self.reader.var()?;
         usize::try_from(value)
             .map(Some)
             .map_err(|_| invalid(format!("selector index {value} is too large")))
@@ -1145,14 +1151,14 @@ impl Decoder<'_> {
 
     fn static_target(&mut self) -> Result<StaticExactCallTarget, MqcError> {
         Ok(StaticExactCallTarget {
-            chunk_index: self.reader.u16()?,
-            local_count: self.reader.u16()?,
+            chunk_index: self.reader.var_u16()?,
+            local_count: self.reader.var_u16()?,
         })
     }
 
     fn optional_u16(&mut self) -> Result<Option<u16>, MqcError> {
         Ok(if self.reader.bool()? {
-            Some(self.reader.u16()?)
+            Some(self.reader.var_u16()?)
         } else {
             None
         })
@@ -1160,7 +1166,7 @@ impl Decoder<'_> {
 
     fn optional_i32(&mut self) -> Result<Option<i32>, MqcError> {
         Ok(if self.reader.bool()? {
-            Some(self.reader.i32()?)
+            Some(self.reader.var_i32()?)
         } else {
             None
         })
@@ -1169,39 +1175,39 @@ impl Decoder<'_> {
     fn op(&mut self) -> Result<OpCode, MqcError> {
         let r = &mut self.reader;
         Ok(match r.u8()? {
-            1 => OpCode::Const(r.u16()?),
+            1 => OpCode::Const(r.var_u16()?),
             2 => OpCode::PushNone,
-            3 => OpCode::GetLocal(r.u16()?),
-            4 => OpCode::SetLocal(r.u16()?),
+            3 => OpCode::GetLocal(r.var_u16()?),
+            4 => OpCode::SetLocal(r.var_u16()?),
             5 => OpCode::SetLocalAndCopy {
-                source: r.u16()?,
-                destination: r.u16()?,
+                source: r.var_u16()?,
+                destination: r.var_u16()?,
             },
             6 => OpCode::SetLocalAndCopyAndJump {
-                source: r.u16()?,
-                destination: r.u16()?,
-                offset: r.i32()?,
+                source: r.var_u16()?,
+                destination: r.var_u16()?,
+                offset: r.var_i32()?,
             },
             7 => OpCode::SetLocalConst {
-                local: r.u16()?,
-                constant: r.u16()?,
+                local: r.var_u16()?,
+                constant: r.var_u16()?,
             },
-            8 => OpCode::TeeLocal(r.u16()?),
+            8 => OpCode::TeeLocal(r.var_u16()?),
             9 => OpCode::CopyLocal {
-                source: r.u16()?,
-                destination: r.u16()?,
+                source: r.var_u16()?,
+                destination: r.var_u16()?,
             },
-            10 => OpCode::GetUpvalue(r.u16()?),
-            11 => OpCode::SetUpvalue(r.u16()?),
+            10 => OpCode::GetUpvalue(r.var_u16()?),
+            11 => OpCode::SetUpvalue(r.var_u16()?),
             12 => {
-                let target = r.u16()?;
+                let target = r.var_u16()?;
                 OpCode::MakeClosure(Box::new((target, self.upvalue_sources()?)))
             }
-            13 => OpCode::MakeStaticClosure(r.u16()?),
+            13 => OpCode::MakeStaticClosure(r.var_u16()?),
             14 => OpCode::Pop,
             15 => OpCode::Dup,
-            16 => OpCode::Jump(r.i32()?),
-            17 => OpCode::JumpIfFalse(r.i32()?),
+            16 => OpCode::Jump(r.var_i32()?),
+            17 => OpCode::JumpIfFalse(r.var_i32()?),
             18 => OpCode::Add,
             19 => OpCode::Sub,
             20 => OpCode::Mul,
@@ -1215,56 +1221,56 @@ impl Decoder<'_> {
             28 => OpCode::Ge,
             29 => OpCode::BinaryLocalLocal {
                 op: self.binary_op()?,
-                left: self.reader.u16()?,
-                right: self.reader.u16()?,
+                left: self.reader.var_u16()?,
+                right: self.reader.var_u16()?,
             },
             30 => OpCode::BinaryLocalConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.u16()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_u16()?,
             },
             31 => OpCode::BinaryLocalNumberConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_i32()?,
             },
             32 => OpCode::UpdateLocalConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.u16()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_u16()?,
             },
             33 => OpCode::UpdateLocalNumberConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_i32()?,
             },
             34 => OpCode::UpdateLocalLocal {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                value: self.reader.u16()?,
+                local: self.reader.var_u16()?,
+                value: self.reader.var_u16()?,
             },
             35 => OpCode::JumpIfFalseLocalLocal {
                 op: self.binary_op()?,
-                left: self.reader.u16()?,
-                right: self.reader.u16()?,
-                offset: self.reader.i32()?,
+                left: self.reader.var_u16()?,
+                right: self.reader.var_u16()?,
+                offset: self.reader.var_i32()?,
             },
             36 => OpCode::JumpIfFalseLocalConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.u16()?,
-                offset: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_u16()?,
+                offset: self.reader.var_i32()?,
             },
             37 => OpCode::JumpIfFalseLocalNumberConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.i32()?,
-                offset: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_i32()?,
+                offset: self.reader.var_i32()?,
             },
             38 => OpCode::Neg,
             39 => OpCode::Not,
             40 => OpCode::ArrayNew,
-            41 => OpCode::ArrayNewWithCapacityLocal(r.u16()?),
+            41 => OpCode::ArrayNewWithCapacityLocal(r.var_u16()?),
             42 => OpCode::ArrayPush,
             43 => OpCode::ArraySpread,
             44 => OpCode::DictNew,
@@ -1273,39 +1279,39 @@ impl Decoder<'_> {
             47 => OpCode::ToForeachIterable,
             48 => OpCode::ArrayLen,
             49 => OpCode::ArrayGetAt,
-            50 => OpCode::ArrayLenLocal(r.u16()?),
+            50 => OpCode::ArrayLenLocal(r.var_u16()?),
             51 => OpCode::ArrayGetLocalAt {
-                array_slot: r.u16()?,
-                index_slot: r.u16()?,
+                array_slot: r.var_u16()?,
+                index_slot: r.var_u16()?,
             },
             52 => OpCode::ForeachNext {
-                array_slot: r.u16()?,
-                index_slot: r.u16()?,
-                value_slot: r.u16()?,
-                exit_offset: r.i32()?,
+                array_slot: r.var_u16()?,
+                index_slot: r.var_u16()?,
+                value_slot: r.var_u16()?,
+                exit_offset: r.var_i32()?,
             },
-            53 => OpCode::ForeachCollect(r.u16()?),
+            53 => OpCode::ForeachCollect(r.var_u16()?),
             54 => OpCode::ForeachCollectAndJump {
-                slot: r.u16()?,
-                offset: r.i32()?,
+                slot: r.var_u16()?,
+                offset: r.var_i32()?,
             },
             55 => OpCode::ForeachBinaryLocalNumberConstAndJump {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.i32()?,
-                accumulator_slot: self.reader.u16()?,
-                offset: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_i32()?,
+                accumulator_slot: self.reader.var_u16()?,
+                offset: self.reader.var_i32()?,
             },
             56 => OpCode::ArraySliceFrom,
             57 => OpCode::DictGetLocalOrFail {
-                subject_slot: r.u16()?,
+                subject_slot: r.var_u16()?,
                 key: self.ident()?,
-                value_slot: self.reader.u16()?,
+                value_slot: self.reader.var_u16()?,
             },
             58 => OpCode::TypeCheck(self.ident()?),
-            59 => OpCode::GetEnvVar(r.u16()?),
+            59 => OpCode::GetEnvVar(r.var_u16()?),
             60 => OpCode::GetExternalGlobal(self.ident()?),
-            61 => OpCode::InterpString(r.u16()?),
+            61 => OpCode::InterpString(r.var_u16()?),
             62 => OpCode::SelectorMatch(Box::new(self.selector()?)),
             63 => {
                 let selector = self.selector()?;
@@ -1317,32 +1323,32 @@ impl Decoder<'_> {
             64 => OpCode::SelectorMatchHeading(r.u8()?),
             65 => {
                 let selector = self.selector()?;
-                OpCode::SelectorMatchWithArgs(Box::new((selector, self.reader.u16()?)))
+                OpCode::SelectorMatchWithArgs(Box::new((selector, self.reader.var_u16()?)))
             }
             66 => OpCode::CallBuiltinLocal {
                 builtin: self.ident()?,
-                local: self.reader.u16()?,
+                local: self.reader.var_u16()?,
             },
-            67 => OpCode::CallBuiltin(self.ident()?, self.reader.u16()?),
-            68 => OpCode::CallStatic(r.u16()?, r.u16()?),
-            69 => OpCode::CallStaticExact(r.u16()?, r.u16()?),
+            67 => OpCode::CallBuiltin(self.ident()?, self.reader.var_u16()?),
+            68 => OpCode::CallStatic(r.var_u16()?, r.var_u16()?),
+            69 => OpCode::CallStaticExact(r.var_u16()?, r.var_u16()?),
             70 => OpCode::CallStaticExact0(self.static_target()?),
             71 => OpCode::CallStaticExact1(self.static_target()?),
             72 => OpCode::CallStaticExact2(self.static_target()?),
-            73 => OpCode::CallStaticImplicitSelf(r.u16()?, r.u16()?),
-            74 => OpCode::CallSelf(r.u16()?),
-            75 => OpCode::CallSelfExact(r.u16()?),
+            73 => OpCode::CallStaticImplicitSelf(r.var_u16()?, r.var_u16()?),
+            74 => OpCode::CallSelf(r.var_u16()?),
+            75 => OpCode::CallSelfExact(r.var_u16()?),
             76 => OpCode::CallSelfExact0,
             77 => OpCode::CallSelfExact1,
             78 => OpCode::CallSelfExact2,
-            79 => OpCode::CallSelfImplicitSelf(r.u16()?),
-            80 => OpCode::CallLocal(r.u16()?, r.u16()?),
-            81 => OpCode::CallUpvalue(r.u16()?, r.u16()?),
+            79 => OpCode::CallSelfImplicitSelf(r.var_u16()?),
+            80 => OpCode::CallLocal(r.var_u16()?, r.var_u16()?),
+            81 => OpCode::CallUpvalue(r.var_u16()?, r.var_u16()?),
             82 => OpCode::CallUpvalueLocal {
-                index: r.u16()?,
-                local: r.u16()?,
+                index: r.var_u16()?,
+                local: r.var_u16()?,
             },
-            83 => OpCode::CallValue(r.u16()?),
+            83 => OpCode::CallValue(r.var_u16()?),
             84 => OpCode::MaybeAutoCall,
             85 => {
                 let has_binder = r.bool()?;
@@ -1357,21 +1363,21 @@ impl Decoder<'_> {
             86 => OpCode::FlowBreak(r.bool()?),
             87 => OpCode::FlowContinue,
             88 => OpCode::RaiseDestructuringFailed,
-            89 => OpCode::ReturnLocal(r.u16()?),
+            89 => OpCode::ReturnLocal(r.var_u16()?),
             90 => OpCode::ReturnBinaryLocalLocal {
                 op: self.binary_op()?,
-                left: self.reader.u16()?,
-                right: self.reader.u16()?,
+                left: self.reader.var_u16()?,
+                right: self.reader.var_u16()?,
             },
             91 => OpCode::ReturnBinaryLocalConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.u16()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_u16()?,
             },
             92 => OpCode::ReturnBinaryLocalNumberConst {
                 op: self.binary_op()?,
-                local: self.reader.u16()?,
-                constant: self.reader.i32()?,
+                local: self.reader.var_u16()?,
+                constant: self.reader.var_i32()?,
             },
             93 => OpCode::Return,
             94 => OpCode::Yield,

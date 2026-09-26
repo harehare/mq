@@ -553,7 +553,7 @@ fn write_strings(writer: &mut Writer, values: &[String]) -> Result<(), MqcError>
 }
 
 fn read_strings(reader: &mut Reader<'_>) -> Result<Vec<String>, MqcError> {
-    let len = reader.len(4)?;
+    let len = reader.len(1)?;
     (0..len).map(|_| reader.string()).collect()
 }
 
@@ -577,7 +577,7 @@ fn decode_meta(payload: &[u8]) -> Result<Meta, MqcError> {
     let mq_version = reader.string()?;
     let required_builtins = read_strings(&mut reader)?;
     let external_globals = read_strings(&mut reader)?;
-    let len = reader.len(8)?;
+    let len = reader.len(2)?;
     let metadata = (0..len)
         .map(|_| Ok((reader.string()?, reader.string()?)))
         .collect::<Result<Vec<_>, MqcError>>()?;
@@ -605,7 +605,7 @@ fn encode_deps(dependencies: &[MqcDependency]) -> Result<Vec<u8>, MqcError> {
 
 fn decode_deps(payload: &[u8]) -> Result<Vec<MqcDependency>, MqcError> {
     let mut reader = Reader::new(payload);
-    let len = reader.len(16)?;
+    let len = reader.len(4)?;
     let dependencies = (0..len)
         .map(|_| {
             Ok(MqcDependency {
@@ -635,10 +635,10 @@ fn encode_source(files: &[SourceFile], spans: &[Span]) -> Result<Vec<u8>, MqcErr
     }
     writer.len(spans.len())?;
     for span in spans {
-        writer.u32(span.file);
+        writer.var_u32(span.file);
         for position in [span.range.start, span.range.end] {
-            writer.u32(position.line);
-            writer.u32(u32::try_from(position.column).unwrap_or(u32::MAX));
+            writer.var_u32(position.line);
+            writer.var_u32(u32::try_from(position.column).unwrap_or(u32::MAX));
         }
     }
     Ok(writer.into_bytes())
@@ -646,7 +646,7 @@ fn encode_source(files: &[SourceFile], spans: &[Span]) -> Result<Vec<u8>, MqcErr
 
 fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcError> {
     let mut reader = Reader::new(payload);
-    let file_count = reader.len(5)?;
+    let file_count = reader.len(2)?;
     let files = (0..file_count)
         .map(|_| {
             let name = reader.string()?;
@@ -654,17 +654,17 @@ fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcErro
             Ok(SourceFile { name, text })
         })
         .collect::<Result<Vec<_>, MqcError>>()?;
-    let span_count = reader.len(20)?;
+    let span_count = reader.len(5)?;
     let mut spans = Vec::with_capacity(span_count);
     for _ in 0..span_count {
-        let file = reader.u32()?;
+        let file = reader.var_u32()?;
         if file as usize >= files.len() {
             return Err(MqcError::Malformed("source span refers to a missing file".into()));
         }
         let mut position = || -> Result<Position, MqcError> {
             Ok(Position {
-                line: reader.u32()?,
-                column: reader.u32()? as usize,
+                line: reader.var_u32()?,
+                column: reader.var_u32()? as usize,
             })
         };
         let start = position()?;
