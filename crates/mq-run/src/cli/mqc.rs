@@ -11,15 +11,17 @@ const MQC_INPUT_FORMAT: &str = "mq-run.input-format";
 const MQC_AGGREGATE: &str = "mq-run.aggregate";
 
 impl Cli {
-    /// `mq compile QUERY_FILE [-o OUTPUT.mqc]`
+    /// `mq compile [-f] QUERY [-o OUTPUT.mqc]`
     pub(super) fn compile_bytecode(
-        query_file: &Path,
+        query: &str,
+        from_file: bool,
         output: Option<&Path>,
         program: &ProgramArgs,
     ) -> miette::Result<()> {
-        let output = match output {
-            Some(output) => output.to_path_buf(),
-            None => {
+        let query_file = from_file.then(|| Path::new(query));
+        let output = match (output, query_file) {
+            (Some(output), _) => output.to_path_buf(),
+            (None, Some(query_file)) => {
                 let output = query_file.with_extension("mqc");
                 if output == query_file {
                     return Err(miette!(
@@ -29,8 +31,15 @@ impl Cli {
                 }
                 output
             }
+            (None, None) => {
+                return Err(miette!(
+                    help = "Or pass a query file with -f to write it next to the file.",
+                    "pass -o/--output to choose the output file for a query string"
+                ));
+            }
         };
-        if let (Ok(input), Ok(output)) = (fs::canonicalize(query_file), fs::canonicalize(&output))
+        if let Some(query_file) = query_file
+            && let (Ok(input), Ok(output)) = (fs::canonicalize(query_file), fs::canonicalize(&output))
             && input == output
         {
             return Err(miette!(
@@ -46,9 +55,12 @@ impl Cli {
             ..Default::default()
         };
         cli.validate_csv_options()?;
-        let query = fs::read_to_string(query_file)
-            .into_diagnostic()
-            .wrap_err_with(|| format!("Failed to read {}", query_file.display()))?;
+        let query = match query_file {
+            Some(query_file) => fs::read_to_string(query_file)
+                .into_diagnostic()
+                .wrap_err_with(|| format!("Failed to read {}", query_file.display()))?,
+            None => query.to_string(),
+        };
         let query = if cli.input.program.aggregate {
             format!("nodes | {query}")
         } else {

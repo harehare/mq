@@ -29,7 +29,7 @@ fn compile(dir: &Path, query: &str, flags: &[&str]) {
     mq(dir)
         .arg("compile")
         .args(flags)
-        .args(["query.mq", "-o", "query.mqc"])
+        .args(["-f", "query.mq", "-o", "query.mqc"])
         .assert()
         .success();
 }
@@ -103,11 +103,15 @@ fn test_compile_permissions_apply_to_module_level_lets() {
     write(dir.path(), "data.txt", "hello");
     write(dir.path(), "query.mq", r#"import "m" | m::get()"#);
 
-    let error = stderr(mq(dir.path()).args(["compile", "-L", "modules", "query.mq"]).assert());
+    let error = stderr(
+        mq(dir.path())
+            .args(["compile", "-L", "modules", "-f", "query.mq"])
+            .assert(),
+    );
     assert!(error.contains("filesystem reads are disabled"), "{error}");
 
     mq(dir.path())
-        .args(["compile", "-L", "modules", "-R", "query.mq"])
+        .args(["compile", "-L", "modules", "-R", "-f", "query.mq"])
         .assert()
         .success();
     fs::remove_file(dir.path().join("data.txt")).unwrap();
@@ -174,13 +178,15 @@ fn test_run_rejects_mismatched_flags(
 }
 
 #[rstest]
-#[case::compile_mqc_without_output(&["compile", "query.mqc"], "pass -o/--output")]
-#[case::compile_without_query(&["compile", "-o", "out.mqc"], "<QUERY_FILE>")]
-#[case::compile_flags_before_subcommand(&["-A", "compile", "query.mq"], "Pass compile options after `compile`")]
-#[case::compile_global_format(&["-T", "csv", "compile", "query.mq"], "-T/--format has no effect on `mq compile`")]
-#[case::compile_output_is_query(&["compile", "query.mq", "-o", "query.mq"], "is the query file")]
-#[case::compile_output_is_query_alias(&["compile", "query.mq", "-o", "./sub/../query.mq"], "is the query file")]
-#[case::compile_runtime_flag(&["compile", "--stream", "query.mq"], "unexpected argument '--stream'")]
+#[case::compile_mqc_without_output(&["compile", "-f", "query.mqc"], "pass -o/--output")]
+#[case::compile_query_string_without_output(&["compile", ".h"], "output file for a query string")]
+#[case::compile_without_query(&["compile", "-o", "out.mqc"], "<QUERY OR FILE>")]
+#[case::compile_flags_before_subcommand(&["-A", "compile", "-f", "query.mq"], "Pass compile options after `compile`")]
+#[case::compile_from_file_before_subcommand(&["-f", "compile", "query.mq"], "Pass compile options after `compile`")]
+#[case::compile_global_format(&["-T", "csv", "compile", "-f", "query.mq"], "-T/--format has no effect on `mq compile`")]
+#[case::compile_output_is_query(&["compile", "-f", "query.mq", "-o", "query.mq"], "is the query file")]
+#[case::compile_output_is_query_alias(&["compile", "-f", "query.mq", "-o", "./sub/../query.mq"], "is the query file")]
+#[case::compile_runtime_flag(&["compile", "--stream", "-f", "query.mq"], "unexpected argument '--stream'")]
 #[case::mqc_extension_not_bytecode(&["source.mqc"], "not an mq bytecode file")]
 #[case::from_file_mqc(&["-f", "source.mqc"], "-f does not accept .mqc files")]
 fn test_usage_errors(#[case] args: &[&str], #[case] message: &str) {
@@ -201,9 +207,20 @@ fn test_compile_defaults_output_to_mqc_extension(#[case] query_file: &str, #[cas
     let dir = TempDir::new().unwrap();
     fs::create_dir(dir.path().join("sub")).unwrap();
     write(dir.path(), query_file, ".h");
-    mq(dir.path()).args(["compile", query_file]).assert().success();
+    mq(dir.path()).args(["compile", "-f", query_file]).assert().success();
     let output = stdout(mq(dir.path()).args([expected]).write_stdin("# a\n").assert());
     assert_eq!(output, "# a\n");
+}
+
+#[test]
+fn test_compile_query_string() {
+    let dir = TempDir::new().unwrap();
+    mq(dir.path())
+        .args(["compile", ".h | upcase()", "-o", "query.mqc"])
+        .assert()
+        .success();
+    let output = stdout(mq(dir.path()).args(["query.mqc"]).write_stdin("# a\n").assert());
+    assert_eq!(output, "# A\n");
 }
 
 #[test]
@@ -422,7 +439,7 @@ fn test_compile_rejects_runtime_names_in_module_let(#[case] query: &str) {
 
     let error = message(&stderr(
         mq(dir.path())
-            .args(["compile", "-L", "modules", "query.mq", "-o", "query.mqc"])
+            .args(["compile", "-L", "modules", "-f", "query.mq", "-o", "query.mqc"])
             .assert(),
     ));
     assert!(
