@@ -286,6 +286,9 @@ struct GlobalBindings {
     snapshot: Shared<Vec<(Ident, RuntimeValue)>>,
     #[cfg(not(feature = "debugger"))]
     source: u64,
+    /// Changes only when the set of names visible to the compiler changes.
+    #[cfg(not(feature = "debugger"))]
+    names_revision: u64,
     revision: u64,
 }
 
@@ -316,15 +319,28 @@ impl Default for GlobalBindings {
             values: FxHashMap::default(),
             snapshot: Shared::new(Vec::new()),
             source: NEXT_GLOBAL_BINDINGS_SOURCE.fetch_add(1, Ordering::Relaxed),
+            names_revision: 0,
             revision: 0,
         }
     }
 }
 
 impl GlobalBindings {
-    /// Replaces one binding and publishes the immutable view used by VM evaluations.
-    fn insert(&mut self, name: Ident, value: RuntimeValue) {
-        self.values.insert(name, value);
+    /// Publishes one snapshot for a group of external-global updates.
+    fn insert_many(&mut self, values: impl IntoIterator<Item = (Ident, RuntimeValue)>) {
+        let mut changed = false;
+        for (name, value) in values {
+            #[cfg(not(feature = "debugger"))]
+            if self.values.insert(name, value).is_none() {
+                self.names_revision = self.names_revision.wrapping_add(1);
+            }
+            #[cfg(feature = "debugger")]
+            self.values.insert(name, value);
+            changed = true;
+        }
+        if !changed {
+            return;
+        }
         self.snapshot = Shared::new(self.values.iter().map(|(name, value)| (*name, value.clone())).collect());
         self.revision = self.revision.wrapping_add(1);
     }
@@ -338,6 +354,7 @@ impl GlobalBindings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct VmEnvCacheKey {
     source: u64,
+    names_revision: u64,
     revision: u64,
 }
 
@@ -398,15 +415,19 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
     }
 
     pub(crate) fn define(&self, name: Ident, value: RuntimeValue) {
+        self.define_many(std::iter::once((name, value)));
+    }
+
+    pub(crate) fn define_many(&self, values: impl IntoIterator<Item = (Ident, RuntimeValue)>) {
         #[cfg(not(feature = "sync"))]
         {
             let mut bindings = self.global_bindings.borrow_mut();
-            bindings.insert(name, value);
+            bindings.insert_many(values);
         }
         #[cfg(feature = "sync")]
         {
             let mut bindings = self.global_bindings.write().unwrap();
-            bindings.insert(name, value);
+            bindings.insert_many(values);
         }
     }
 
@@ -431,6 +452,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
         let bindings = self.global_bindings.read().unwrap();
         let key = VmEnvCacheKey {
             source: bindings.source,
+            names_revision: bindings.names_revision,
             revision: bindings.revision,
         };
         (Shared::clone(&bindings.snapshot), key)
@@ -653,8 +675,21 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
         interpreter::ExecutionPools::default(),
     );
     run_result?;
+    #[cfg(not(feature = "debugger"))]
+    {
+        result.reads_globals |= reads_any_global(&compiled, global_bindings);
+    }
     result.by_path.insert(path.to_string(), captured);
     Ok(())
+}
+
+/// Whether `compiled` can read one of `global_bindings`.
+#[cfg(not(feature = "debugger"))]
+fn reads_any_global(compiled: &compiler::CompiledProgram, global_bindings: &[(Ident, RuntimeValue)]) -> bool {
+    !global_bindings.is_empty()
+        && compiled.chunks.iter().flat_map(|chunk| &chunk.code).any(|op| {
+            matches!(op, bytecode::OpCode::GetExternalGlobal(name) if global_bindings.iter().any(|(global, _)| global == name))
+        })
 }
 
 /// Collects every simple `let` declared by an inline module tree, retaining the qualified path
@@ -744,6 +779,8 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
         }));
 
+        #[cfg(not(feature = "debugger"))]
+        let mut reads_globals = false;
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
             let compiled = compiler::compile_program_for_engine(
                 &probe_program,
@@ -752,6 +789,10 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 &[],
                 &result,
             )?;
+            #[cfg(not(feature = "debugger"))]
+            {
+                reads_globals = reads_any_global(&compiled, context.global_bindings);
+            }
             let value = interpreter::run_with_globals(
                 &compiled,
                 RuntimeValue::None,
@@ -768,6 +809,10 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
 
         match probed {
             Ok(values) if values.len() == module_vars.len() => {
+                #[cfg(not(feature = "debugger"))]
+                {
+                    result.reads_globals |= reads_globals;
+                }
                 for ((_, node), value) in module_vars.iter().zip(values) {
                     result.by_token.insert(node.token_id, value);
                 }

@@ -349,6 +349,9 @@ pub(crate) fn compile_program_for_engine_with_bindings<R: ModuleResolver>(
 pub(crate) struct ResolvedModuleVars {
     pub(super) by_path: FxHashMap<String, Vec<(Ident, RuntimeValue)>>,
     pub(super) by_token: FxHashMap<TokenId, RuntimeValue>,
+    /// Whether these values read engine globals.
+    #[cfg(not(feature = "debugger"))]
+    pub(super) reads_globals: bool,
 }
 
 /// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument

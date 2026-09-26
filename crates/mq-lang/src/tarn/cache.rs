@@ -27,6 +27,8 @@ pub(crate) struct CachedProgram {
     /// Global snapshot used to bake module `let` initializers into constants; must still match
     /// for the cache to stay valid, since a global's value can change under the same name.
     baked_globals_key: VmEnvCacheKey,
+    /// Baked module `let`s read engine globals.
+    bakes_globals: bool,
     /// Cached bytecode includes module definitions, which are frozen per Engine.
     module_cache_key: VmModuleCacheKey,
     /// Frame storage retained between non-overlapping `eval_compiled` calls.
@@ -147,6 +149,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         let_slots,
         configuration,
         baked_globals_key,
+        bakes_globals: preresolved_module_vars.reads_globals,
         module_cache_key,
         execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
         environment: Shared::new(SharedCell::new(None)),
@@ -231,10 +234,11 @@ pub(super) fn cached_program_is_current(
     environment_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> bool {
-    // `VmEnvCacheKey` combines a process-unique bindings source with its revision. It therefore
-    // identifies both names and values without rescanning globals on every cache hit.
+    // Global values matter only when baked into module `let`s.
     if compiled.configuration != configuration
-        || compiled.baked_globals_key != environment_key
+        || compiled.baked_globals_key.source != environment_key.source
+        || compiled.baked_globals_key.names_revision != environment_key.names_revision
+        || (compiled.bakes_globals && compiled.baked_globals_key.revision != environment_key.revision)
         || compiled.module_cache_key != module_cache_key
     {
         return false;
