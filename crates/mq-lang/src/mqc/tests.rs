@@ -147,6 +147,28 @@ fn test_mqc_metadata_and_dependencies_round_trip() {
 }
 
 #[test]
+fn test_read_mqc_metadata_without_loading() {
+    let bytes = engine().compile_to_mqc("upcase()", &[("key", "value")]).unwrap();
+    assert_eq!(
+        read_mqc_metadata(&bytes).unwrap(),
+        vec![("key".to_string(), "value".to_string())]
+    );
+}
+
+#[rstest]
+#[case::corrupted(|bytes: &mut Vec<u8>| bytes[20] ^= 1, "checksum")]
+#[case::incompatible(|bytes: &mut Vec<u8>| *bytes = replace_meta(bytes, |meta| meta.vm_abi += 1), "abi")]
+fn test_read_mqc_metadata_rejects_unusable_files(#[case] edit: fn(&mut Vec<u8>), #[case] kind: &str) {
+    let mut bytes = compile("upcase()");
+    edit(&mut bytes);
+    let error = read_mqc_metadata(&bytes).unwrap_err();
+    match kind {
+        "checksum" => assert!(matches!(error, MqcError::ChecksumMismatch)),
+        _ => assert!(matches!(error, MqcError::IncompatibleVm { .. })),
+    }
+}
+
+#[test]
 fn test_mqc_runtime_error_points_at_original_source() {
     let query = "def f(x):\n  x / 0;\n| f(1)";
     let error = run_mqc(&compile(query), crate::null_input()).unwrap_err();

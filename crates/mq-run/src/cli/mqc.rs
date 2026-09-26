@@ -107,12 +107,12 @@ impl Cli {
                 "-L/-M/-m have no effect on a .mqc program: modules are compiled into it. Pass them to `mq compile` instead."
             ));
         }
-        let program = self
-            .create_engine()?
-            .load_mqc(&bytes)
+        let metadata = mq_lang::read_mqc_metadata(&bytes)
             .map_err(miette::Report::new)
             .wrap_err_with(|| format!("Failed to load {}", path.display()))?;
-        let compiled_aggregate = program.metadata(MQC_AGGREGATE) == Some("true");
+        let compiled_aggregate = metadata
+            .iter()
+            .any(|(key, value)| key == MQC_AGGREGATE && value == "true");
         if compiled_aggregate != self.input.program.aggregate {
             return Err(miette!(
                 "-A/--aggregate must match between `mq compile` and running the .mqc program (it was compiled {} it)",
@@ -131,7 +131,10 @@ impl Cli {
         bytes: &[u8],
         file: &Option<PathBuf>,
     ) -> miette::Result<mq_lang::CompiledProgram> {
-        let program = engine.load_mqc(bytes).map_err(miette::Report::new)?;
+        let program = engine
+            .load_mqc(bytes)
+            .map_err(miette::Report::new)
+            .wrap_err_with(|| format!("Failed to load {}", self.query.as_deref().unwrap_or_default()))?;
         let compiled_prefix = program.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
         let effective_format = self.input_format_name(file);
         // Native formats (raw, markdown, html, ...) share an empty prefix, so also compare format.
