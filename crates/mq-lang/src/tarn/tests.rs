@@ -4286,3 +4286,123 @@ fn closing_a_running_coroutine_errors() {
     let message = close_error_message(vm_err).unwrap_or_else(|| panic!("expected a close error, got {err:?}"));
     assert!(message.contains("cannot close a running coroutine"));
 }
+
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone)]
+enum GeneratedDefBody {
+    AddConst(i8),
+    CallEarlier(usize, i8),
+    MapEarlier(usize),
+    ClosureOverEarlier(usize),
+    Recursive,
+    NestedDef { used: bool },
+}
+
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone)]
+enum GeneratedUse {
+    Call(usize),
+    Value(usize),
+    Input,
+}
+
+#[cfg(not(feature = "debugger"))]
+fn generated_def_program(bodies: &[GeneratedDefBody], uses: &[GeneratedUse], let_first: bool) -> String {
+    let earlier = |index: usize, def: usize| if def == 0 { None } else { Some(index % def) };
+    let mut parts = Vec::new();
+    if let_first {
+        parts.push("let base = 10".to_string());
+    }
+    for (def, body) in bodies.iter().enumerate() {
+        let body = match body {
+            GeneratedDefBody::AddConst(k) => format!("x + {k}"),
+            GeneratedDefBody::CallEarlier(index, k) => match earlier(*index, def) {
+                Some(j) => format!("f{j}(x) + {k}"),
+                None => format!("x - {k}"),
+            },
+            GeneratedDefBody::MapEarlier(index) => match earlier(*index, def) {
+                Some(j) => format!("len(map([x, 1], f{j}))"),
+                None => "x".to_string(),
+            },
+            GeneratedDefBody::ClosureOverEarlier(index) => match earlier(*index, def) {
+                Some(j) => format!("let g = fn(y): f{j}(y); | g(x)"),
+                None => "let g = fn(y): y; | g(x)".to_string(),
+            },
+            GeneratedDefBody::Recursive => format!("if (x <= 0): 0 else: f{def}(x - 1) + 1"),
+            GeneratedDefBody::NestedDef { used: true } => "def h(y): y * 2; | h(x)".to_string(),
+            GeneratedDefBody::NestedDef { used: false } => "def h(y): y * 2; | x".to_string(),
+        };
+        parts.push(format!("def f{def}(x): {body};"));
+    }
+    let uses = uses
+        .iter()
+        .map(|used| match used {
+            GeneratedUse::Call(index) if !bodies.is_empty() => format!("f{}(.)", index % bodies.len()),
+            GeneratedUse::Value(index) if !bodies.is_empty() => format!("map([.], f{})", index % bodies.len()),
+            _ => ".".to_string(),
+        })
+        .collect::<Vec<_>>();
+    let base = if let_first { " + base" } else { "" };
+    parts.push(format!("[{}]{base}", uses.join(", ")));
+    parts.join(" | ")
+}
+
+#[cfg(not(feature = "debugger"))]
+fn run_with_and_without_def_dropping(code: &str) -> (Result<RuntimeValue, String>, Result<RuntimeValue, String>) {
+    let run = |uninstrumented: bool| {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(1024)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).map_err(|error| format!("{error:?}"))?;
+        let loader = ModuleLoader::new(StdModuleResolver);
+        let resolved = compiler::ResolvedModuleVars::default();
+        let compiled = if uninstrumented {
+            compiler::compile_uninstrumented_program_for_engine(&program, token_arena, loader, &[], &[], &[], &resolved)
+        } else {
+            compiler::compile_program_for_engine_with_bindings(&program, token_arena, loader, &[], &[], &[], &resolved)
+        }
+        .map_err(|error| format!("{error:?}"))?;
+        interpreter::run_with_globals(
+            &compiled,
+            RuntimeValue::Number(3.into()),
+            &HostFunctions::default(),
+            None,
+            Options::default().max_call_stack_depth,
+            &[],
+        )
+        .map_err(|error| format!("{error:?}"))
+    };
+    (run(true), run(false))
+}
+
+#[cfg(not(feature = "debugger"))]
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn dropping_unread_def_closures_preserves_results(
+        bodies in proptest::collection::vec(
+            prop_oneof![
+                any::<i8>().prop_map(GeneratedDefBody::AddConst),
+                (any::<usize>(), any::<i8>()).prop_map(|(index, k)| GeneratedDefBody::CallEarlier(index, k)),
+                any::<usize>().prop_map(GeneratedDefBody::MapEarlier),
+                any::<usize>().prop_map(GeneratedDefBody::ClosureOverEarlier),
+                Just(GeneratedDefBody::Recursive),
+                any::<bool>().prop_map(|used| GeneratedDefBody::NestedDef { used }),
+            ],
+            0..8,
+        ),
+        uses in proptest::collection::vec(
+            prop_oneof![
+                any::<usize>().prop_map(GeneratedUse::Call),
+                any::<usize>().prop_map(GeneratedUse::Value),
+                Just(GeneratedUse::Input),
+            ],
+            1..4,
+        ),
+        let_first in any::<bool>(),
+    ) {
+        let code = generated_def_program(&bodies, &uses, let_first);
+        let (dropped, kept) = run_with_and_without_def_dropping(&code);
+        prop_assert!(kept.is_ok(), "{code}: {kept:?}");
+        prop_assert_eq!(dropped, kept, "{}", code);
+    }
+}

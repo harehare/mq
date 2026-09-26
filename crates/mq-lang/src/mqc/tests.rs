@@ -66,6 +66,8 @@ fn replace_meta(bytes: &[u8], edit: impl FnOnce(&mut Meta)) -> Vec<u8> {
 #[case::attr_selector(".link.url", "[mq](https://mqlang.org)\n")]
 #[case::table_selector(".[1][0]", "| a | b |\n|---|---|\n| 1 | 2 |\n")]
 #[case::list_selector(".[1]", "- one\n- two\n")]
+#[case::unused_defs("def unused(x): x; | def used(x): x + 1; | used(1)", "x\n")]
+#[case::defs_around_nodes("def f(x): x + 1; | def g(x): x; | .h | nodes | f(len())", "# a\n\n## b\n")]
 fn test_mqc_round_trip_matches_eval(#[case] query: &str, #[case] input: &str) {
     let expected = engine().eval(query, markdown(input).into_iter()).unwrap();
     let actual = run_mqc(&compile(query), markdown(input)).unwrap();

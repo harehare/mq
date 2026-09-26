@@ -985,6 +985,77 @@ mod tests {
             }
         }
 
+        #[cfg(not(feature = "debugger"))]
+        #[rstest]
+        #[case::called("def f(x): x + 1; | f(.)", &[2], false)]
+        #[case::unused("def f(x): x + 1; | def g(x): x; | . + 10", &[11], false)]
+        #[case::recursive("def f(n): if (n <= 0): 0 else: n + f(n - 1); | f(.)", &[1], false)]
+        #[case::value("def f(x): x + 1; | map([.], f)", &[2], true)]
+        #[case::captured_by_def("def f(x): x + 1; | def g(x): map([x], f); | g(.)", &[2], true)]
+        #[case::captured_by_fn("def f(x): x + 1; | let h = fn(x): f(x); | h(.)", &[2], true)]
+        fn unread_def_closures_are_not_made_per_input(
+            #[case] query: &str,
+            #[case] expected: &[i64],
+            #[case] makes_closures: bool,
+        ) {
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let compiled = engine.compile(query).unwrap();
+            let actual = engine.eval_compiled(&compiled, numbers(&[1]).into_iter()).unwrap();
+            let flattened = actual.values().iter().flat_map(|value| match value {
+                RuntimeValue::Array(values) => values.to_vec(),
+                value => vec![value.clone()],
+            });
+            assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+            let cached = compiled.cached_vm_program().flatten().unwrap();
+            assert_eq!(cached.per_input_program_makes_closures(), makes_closures, "{query}");
+        }
+
+        #[rstest]
+        #[case::def_before_nodes("def f(x): x + 1; | . | nodes | map(f)", &[2, 3, 4])]
+        #[case::unused_def_before_nodes("def f(x): x + 1; | . * 2 | nodes | len()", &[3])]
+        #[case::seeded_let_and_def("let a = 1 | def f(x): x + a; | . | nodes | f(len())", &[4])]
+        #[case::seeded_let_between_defs(
+            "def g(x): x; | let a = 10 | def f(x): x + a; | . | nodes | f(len())",
+            &[13]
+        )]
+        #[case::def_after_nodes(". | nodes | def f(x): x * 2; | def g(x): x; | map(f)", &[2, 4, 6])]
+        #[case::def_shadowing_let("let f = 5 | def f(x): x; | . | nodes | len()", &[3])]
+        fn defs_around_nodes_keep_results_across_evaluations(#[case] query: &str, #[case] expected: &[i64]) {
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let compiled = engine.compile(query).unwrap();
+            for _ in 0..2 {
+                let actual = engine
+                    .eval_compiled(&compiled, numbers(&[1, 2, 3]).into_iter())
+                    .unwrap();
+                let flattened = actual.values().iter().flat_map(|value| match value {
+                    RuntimeValue::Array(values) => values.to_vec(),
+                    value => vec![value.clone()],
+                });
+                assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+            }
+        }
+
+        #[test]
+        fn error_after_dropped_def_points_at_its_source() {
+            let query = "def unused(x): x; | def fail(x): error(\"boom\"); | fail(.)";
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            let error = engine.eval(query, numbers(&[1]).into_iter()).unwrap_err();
+            let span = format!("{:?}", error.cause);
+            assert!(span.contains("boom"), "{span}");
+            let offset = miette::Diagnostic::labels(&*error)
+                .and_then(|mut labels| labels.next())
+                .map(|label| label.offset())
+                .expect("error has a source label");
+            assert!(
+                query[offset..].starts_with("error"),
+                "label at {offset}: {}",
+                &query[offset..]
+            );
+        }
+
         #[rstest]
         #[case::before("10 / . | nodes")]
         #[case::after("nodes | map(fn(x): 10 / x;)")]
