@@ -1,4 +1,4 @@
-//! Bounds-checked little-endian primitives for `.mqc` payloads.
+//! Bounds-checked primitives for `.mqc` payloads.
 use super::MqcError;
 
 #[derive(Default)]
@@ -27,10 +27,6 @@ impl Writer {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
-    pub(crate) fn i32(&mut self, value: i32) {
-        self.bytes.extend_from_slice(&value.to_le_bytes());
-    }
-
     pub(crate) fn u64(&mut self, value: u64) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -39,9 +35,30 @@ impl Writer {
         self.u64(value.to_bits());
     }
 
+    pub(crate) fn var(&mut self, mut value: u64) {
+        while value >= 0x80 {
+            self.bytes.push(value as u8 | 0x80);
+            value >>= 7;
+        }
+        self.bytes.push(value as u8);
+    }
+
+    pub(crate) fn var_u16(&mut self, value: u16) {
+        self.var(u64::from(value));
+    }
+
+    pub(crate) fn var_u32(&mut self, value: u32) {
+        self.var(u64::from(value));
+    }
+
+    /// Zigzag, so small negatives stay short.
+    pub(crate) fn var_i32(&mut self, value: i32) {
+        self.var(u64::from(((value << 1) ^ (value >> 31)) as u32));
+    }
+
     pub(crate) fn len(&mut self, len: usize) -> Result<(), MqcError> {
         let len = u32::try_from(len).map_err(|_| MqcError::Malformed("collection too large to encode".into()))?;
-        self.u32(len);
+        self.var_u32(len);
         Ok(())
     }
 
@@ -117,10 +134,6 @@ impl<'a> Reader<'a> {
         self.array().map(u32::from_le_bytes)
     }
 
-    pub(crate) fn i32(&mut self) -> Result<i32, MqcError> {
-        self.array().map(i32::from_le_bytes)
-    }
-
     pub(crate) fn u64(&mut self) -> Result<u64, MqcError> {
         self.array().map(u64::from_le_bytes)
     }
@@ -129,9 +142,38 @@ impl<'a> Reader<'a> {
         self.u64().map(f64::from_bits)
     }
 
+    pub(crate) fn var(&mut self) -> Result<u64, MqcError> {
+        let mut value = 0u64;
+        for shift in (0..64).step_by(7) {
+            let byte = self.u8()?;
+            let part = u64::from(byte & 0x7f);
+            if part << shift >> shift != part {
+                break;
+            }
+            value |= part << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
+        }
+        Err(MqcError::Malformed("varint is too long".into()))
+    }
+
+    pub(crate) fn var_u16(&mut self) -> Result<u16, MqcError> {
+        u16::try_from(self.var()?).map_err(|_| MqcError::Malformed("value exceeds 16 bits".into()))
+    }
+
+    pub(crate) fn var_u32(&mut self) -> Result<u32, MqcError> {
+        u32::try_from(self.var()?).map_err(|_| MqcError::Malformed("value exceeds 32 bits".into()))
+    }
+
+    pub(crate) fn var_i32(&mut self) -> Result<i32, MqcError> {
+        let value = self.var_u32()?;
+        Ok((value >> 1) as i32 ^ -((value & 1) as i32))
+    }
+
     /// Rejects lengths the remaining bytes cannot hold, bounding allocations.
     pub(crate) fn len(&mut self, min_element_size: usize) -> Result<usize, MqcError> {
-        let len = self.u32()? as usize;
+        let len = self.var_u32()? as usize;
         if len.saturating_mul(min_element_size.max(1)) > self.remaining() {
             return Err(MqcError::Malformed(
                 "collection length exceeds the remaining data".into(),
@@ -156,6 +198,7 @@ impl<'a> Reader<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_primitives_round_trip() {
@@ -164,7 +207,10 @@ mod tests {
         writer.bool(true);
         writer.u16(0xBEEF);
         writer.u32(0xDEAD_BEEF);
-        writer.i32(-42);
+        writer.var_i32(-42);
+        writer.var_i32(i32::MIN);
+        writer.var_u16(u16::MAX);
+        writer.var(u64::MAX);
         writer.u64(u64::MAX);
         writer.f64(-1.5);
         writer.str("mq").unwrap();
@@ -175,7 +221,10 @@ mod tests {
         assert!(reader.bool().unwrap());
         assert_eq!(reader.u16().unwrap(), 0xBEEF);
         assert_eq!(reader.u32().unwrap(), 0xDEAD_BEEF);
-        assert_eq!(reader.i32().unwrap(), -42);
+        assert_eq!(reader.var_i32().unwrap(), -42);
+        assert_eq!(reader.var_i32().unwrap(), i32::MIN);
+        assert_eq!(reader.var_u16().unwrap(), u16::MAX);
+        assert_eq!(reader.var().unwrap(), u64::MAX);
         assert_eq!(reader.u64().unwrap(), u64::MAX);
         assert_eq!(reader.f64().unwrap(), -1.5);
         assert_eq!(reader.string().unwrap(), "mq");
@@ -188,10 +237,36 @@ mod tests {
         assert!(matches!(reader.u32(), Err(MqcError::Malformed(_))));
     }
 
+    #[rstest]
+    #[case::small(&[0x05], 5)]
+    #[case::two_bytes(&[0x80, 0x01], 128)]
+    #[case::max(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01], u64::MAX)]
+    fn test_varint_decoding(#[case] bytes: &[u8], #[case] expected: u64) {
+        let mut reader = Reader::new(bytes);
+        assert_eq!(reader.var().unwrap(), expected);
+        reader.finish("varint").unwrap();
+    }
+
+    #[rstest]
+    #[case::overflow(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x02])]
+    #[case::too_long(&[0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x00])]
+    #[case::truncated(&[0x80])]
+    fn test_varint_rejects_malformed_input(#[case] bytes: &[u8]) {
+        assert!(matches!(Reader::new(bytes).var(), Err(MqcError::Malformed(_))));
+    }
+
+    #[test]
+    fn test_var_u16_rejects_wider_values() {
+        let mut writer = Writer::default();
+        writer.var(u64::from(u16::MAX) + 1);
+        let bytes = writer.into_bytes();
+        assert!(matches!(Reader::new(&bytes).var_u16(), Err(MqcError::Malformed(_))));
+    }
+
     #[test]
     fn test_reader_rejects_length_beyond_payload() {
         let mut writer = Writer::default();
-        writer.u32(1_000_000);
+        writer.var_u32(1_000_000);
         let bytes = writer.into_bytes();
         assert!(matches!(Reader::new(&bytes).len(1), Err(MqcError::Malformed(_))));
     }
