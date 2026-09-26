@@ -25,6 +25,9 @@ pub(crate) struct SplitProgram {
     pub(crate) let_names: Vec<Ident>,
     /// Slots of `let_names` in `program`.
     let_slots: Vec<interpreter::CaptureSlot>,
+    /// Baked module `let`s read engine globals.
+    #[cfg(not(feature = "debugger"))]
+    pub(crate) bakes_globals: bool,
     reuse: RunReuse,
 }
 
@@ -105,6 +108,8 @@ impl SplitProgram {
             after,
             let_names,
             let_slots,
+            #[cfg(not(feature = "debugger"))]
+            bakes_globals: false,
             reuse: RunReuse::default(),
         }
     }
@@ -121,7 +126,35 @@ impl SplitProgram {
         // Resolve on the context's loader so the clone below reuses loaded modules.
         let preresolved_module_vars = super::resolve_module_prelude_globals(program, context, deadline)?;
         let module_loader = context.module_loader.clone();
-        let Some((before, after)) = split_at_nodes(program) else {
+        let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
+            let let_names = let_names_before_nodes(before);
+            let immutable_let_names = immutable_let_names_before_nodes(before);
+            // `after` re-declares these, so skip them per input.
+            let per_input = if before.iter().all(|node| is_declaration(node)) {
+                Program::new()
+            } else {
+                before.to_vec()
+            };
+            let program_before = compiler::compile_uninstrumented_program_for_engine(
+                &per_input,
+                Shared::clone(&token_arena),
+                module_loader.clone(),
+                &[],
+                &[],
+                &global_names,
+                &preresolved_module_vars,
+            )?;
+            let program_after = compiler::compile_uninstrumented_program_for_engine(
+                &program_after_nodes(before, after),
+                token_arena,
+                module_loader,
+                &let_names,
+                &immutable_let_names,
+                &global_names,
+                &preresolved_module_vars,
+            )?;
+            (program_before, Some(program_after), let_names)
+        } else {
             let program = compiler::compile_uninstrumented_program_for_engine(
                 program,
                 token_arena,
@@ -131,35 +164,15 @@ impl SplitProgram {
                 &global_names,
                 &preresolved_module_vars,
             )?;
-            return Ok(Self::new(program, None, Vec::new()));
+            (program, None, Vec::new())
         };
-        let let_names = let_names_before_nodes(before);
-        let immutable_let_names = immutable_let_names_before_nodes(before);
-        // `after` re-declares these, so skip them per input.
-        let per_input = if before.iter().all(|node| is_declaration(node)) {
-            Program::new()
-        } else {
-            before.to_vec()
-        };
-        let program_before = compiler::compile_uninstrumented_program_for_engine(
-            &per_input,
-            Shared::clone(&token_arena),
-            module_loader.clone(),
-            &[],
-            &[],
-            &global_names,
-            &preresolved_module_vars,
-        )?;
-        let program_after = compiler::compile_uninstrumented_program_for_engine(
-            &program_after_nodes(before, after),
-            token_arena,
-            module_loader,
-            &let_names,
-            &immutable_let_names,
-            &global_names,
-            &preresolved_module_vars,
-        )?;
-        Ok(Self::new(program_before, Some(program_after), let_names))
+        #[cfg_attr(feature = "debugger", allow(unused_mut))]
+        let mut split = Self::new(program, after, let_names);
+        #[cfg(not(feature = "debugger"))]
+        {
+            split.bakes_globals = preresolved_module_vars.reads_globals;
+        }
+        Ok(split)
     }
 
     /// Runs every input, then the `nodes` part over all results.

@@ -61,11 +61,12 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     baked_globals_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> Result<CachedProgram, Error> {
+    let split = SplitProgram::compile(program, context, deadline)?;
     Ok(CachedProgram {
-        split: SplitProgram::compile(program, context, deadline)?,
+        bakes_globals: split.bakes_globals,
+        split,
         configuration,
         baked_globals_key,
-        bakes_globals: preresolved_module_vars.reads_globals,
         module_cache_key,
     })
 }
