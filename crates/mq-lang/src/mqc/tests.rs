@@ -1,4 +1,5 @@
 use super::*;
+use crate::tarn::bytecode::{Chunk, OpCode, ParamBinding};
 use crate::{DefaultEngine, RuntimeValue};
 use proptest::prelude::*;
 use rstest::rstest;
@@ -589,4 +590,67 @@ proptest! {
         let actual = engine.eval_compiled(program.program(), crate::null_input().into_iter()).unwrap();
         prop_assert_eq!(actual, expected, "query: {}", query);
     }
+}
+
+/// Rewrites a valid file's decoded chunks, keeping its source spans.
+fn rewrite_chunks(bytes: &[u8], edit: impl FnOnce(&mut [Chunk])) -> Vec<u8> {
+    rewrite(bytes, |sections| {
+        let source = sections.iter().find(|section| section.tag == SOURCE).unwrap();
+        let (_, spans) = decode_source(&source.payload).unwrap();
+        let arena = Shared::clone(&engine().token_arena);
+        let tokens = spans
+            .iter()
+            .map(|_| {
+                crate::token_alloc(
+                    &arena,
+                    &Shared::new(Token {
+                        range: Range::default(),
+                        kind: TokenKind::Eof,
+                        module_id: crate::Module::TOP_LEVEL_MODULE_ID,
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+        let code = sections.iter_mut().find(|section| section.tag == CODE).unwrap();
+        let mut split = code::decode(&code.payload, &tokens, arena).unwrap();
+        edit(Shared::get_mut(&mut split.program.chunks).unwrap());
+        code.payload = Cow::Owned(code::encode(&split).unwrap().payload);
+    })
+}
+
+/// Moves a one-parameter function's argument into the `self` slot.
+fn param_in_self_slot(chunks: &mut [Chunk]) {
+    let callee = &mut chunks[1];
+    callee.local_names.truncate(1);
+    callee.local_mutable.truncate(1);
+    callee.local_count = 1;
+    callee.param_shape.bindings = vec![ParamBinding::Required(0)];
+    callee.code = vec![OpCode::ReturnLocal(0)];
+    callee.lines.truncate(1);
+    retarget_exact_calls(&mut chunks[0], 1);
+}
+
+/// Drops every local slot, including `self`, from a zero-parameter function.
+fn no_self_slot(chunks: &mut [Chunk]) {
+    let callee = &mut chunks[1];
+    callee.local_names.clear();
+    callee.local_mutable.clear();
+    callee.local_count = 0;
+    retarget_exact_calls(&mut chunks[0], 0);
+}
+
+fn retarget_exact_calls(chunk: &mut Chunk, local_count: u16) {
+    for op in &mut chunk.code {
+        if let OpCode::CallStaticExact0(target) | OpCode::CallStaticExact1(target) = op {
+            target.local_count = local_count;
+        }
+    }
+}
+
+#[rstest]
+#[case::param_in_self_slot("def f(x): x; | f(1)", param_in_self_slot)]
+#[case::no_self_slot("def f(): 1; | f()", no_self_slot)]
+fn test_load_mqc_rejects_frame_layout_the_vm_does_not_expect(#[case] query: &str, #[case] edit: fn(&mut [Chunk])) {
+    let bytes = rewrite_chunks(&compile(query), edit);
+    assert!(matches!(engine().load_mqc(&bytes), Err(MqcError::InvalidBytecode(_))));
 }
