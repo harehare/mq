@@ -675,8 +675,21 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
         interpreter::ExecutionPools::default(),
     );
     run_result?;
+    #[cfg(not(feature = "debugger"))]
+    {
+        result.reads_globals |= reads_any_global(&compiled, global_bindings);
+    }
     result.by_path.insert(path.to_string(), captured);
     Ok(())
+}
+
+/// Whether `compiled` can read one of `global_bindings`.
+#[cfg(not(feature = "debugger"))]
+fn reads_any_global(compiled: &compiler::CompiledProgram, global_bindings: &[(Ident, RuntimeValue)]) -> bool {
+    !global_bindings.is_empty()
+        && compiled.chunks.iter().flat_map(|chunk| &chunk.code).any(|op| {
+            matches!(op, bytecode::OpCode::GetExternalGlobal(name) if global_bindings.iter().any(|(global, _)| global == name))
+        })
 }
 
 /// Collects every simple `let` declared by an inline module tree, retaining the qualified path
@@ -766,6 +779,8 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
         }));
 
+        #[cfg(not(feature = "debugger"))]
+        let mut reads_globals = false;
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
             let compiled = compiler::compile_program_for_engine(
                 &probe_program,
@@ -774,6 +789,10 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 &[],
                 &result,
             )?;
+            #[cfg(not(feature = "debugger"))]
+            {
+                reads_globals = reads_any_global(&compiled, context.global_bindings);
+            }
             let value = interpreter::run_with_globals(
                 &compiled,
                 RuntimeValue::None,
@@ -790,6 +809,10 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
 
         match probed {
             Ok(values) if values.len() == module_vars.len() => {
+                #[cfg(not(feature = "debugger"))]
+                {
+                    result.reads_globals |= reads_globals;
+                }
                 for ((_, node), value) in module_vars.iter().zip(values) {
                     result.by_token.insert(node.token_id, value);
                 }

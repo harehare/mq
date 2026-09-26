@@ -2896,6 +2896,34 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
 }
 
 #[cfg(not(feature = "debugger"))]
+#[rstest]
+#[case::standard_module(r#"include "json" | s"${__FILE__}:${len(json_parse("[1]"))}""#, true)]
+// Conservative: module functions are scanned too.
+#[case::module_function_reads_global(r#"module m: let n = 1 | def f(): s"${__FILE__}:${n}"; end | m::f()"#, false)]
+#[case::module_let_reads_global(r#"module m: let v = s"${__FILE__}:1" end | m::v"#, false)]
+#[case::enclosing_let_reads_global(r#"let p = __FILE__ | module m: let v = s"${p}:1" end | m::v"#, false)]
+fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[case] query: &str, #[case] reused: bool) {
+    let mut engine = crate::DefaultEngine::default();
+    engine.load_builtin_module();
+    let compiled = engine.compile(query).unwrap();
+    let mut run = |file: &str| {
+        engine.define_string_value("__FILE__", file);
+        let values = engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap();
+        assert_eq!(
+            values.values(),
+            &[RuntimeValue::String(Shared::new(format!("{file}:1")))]
+        );
+        compiled.cached_vm_program().flatten().unwrap()
+    };
+
+    let first = run("first.md");
+    let second = run("second.md");
+    assert_eq!(Shared::ptr_eq(&first, &second), reused);
+}
+
+#[cfg(not(feature = "debugger"))]
 #[test]
 fn cached_program_reflects_updated_global_in_module_var_initializer() {
     let mut engine = crate::DefaultEngine::default();
