@@ -1746,6 +1746,7 @@ fn selector_does_not_match_non_markdown_input() {
     );
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 fn text_node(value: &str) -> mq_markdown::Node {
     mq_markdown::Node::Text(mq_markdown::Text {
         value: value.to_string(),
@@ -1762,6 +1763,30 @@ fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValu
         .unwrap()
         .values()
         .clone()
+}
+
+/// Compiles and runs `program` through the same split pipeline as `Engine::eval`.
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+fn run_split<I, R: ModuleResolver>(
+    program: &Program,
+    inputs: I,
+    mut context: EngineRunContext<'_, R>,
+) -> Result<Vec<RuntimeValue>, Error>
+where
+    I: Iterator<Item = RuntimeValue>,
+{
+    let split = split_program::SplitProgram::compile(program, &mut context, None)?;
+    split.run_reusing(
+        inputs,
+        &context,
+        None,
+        #[cfg(not(feature = "debugger"))]
+        VmEnvCacheKey {
+            source: 0,
+            names_revision: 0,
+            revision: 0,
+        },
+    )
 }
 
 fn assert_vm_executes(code: &str, inputs: Vec<RuntimeValue>) {
@@ -1834,13 +1859,14 @@ fn bare_soft_builtin_reference_inside_an_imported_module_becomes_reachable() {
     assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuring() {
     let code = "let [x] = [1] | let [x] = [2] | nodes | x";
     let inputs = vec![RuntimeValue::Number(1.0.into())];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -1900,6 +1926,7 @@ fn break_with_value_before_any_completed_iteration_returns_its_value(#[case] cod
     );
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_aggregates_per_input_results_into_one_run() {
     // `nodes` (see `split_at_nodes`/`run_nodes_aggregate`) collects every input's
@@ -1914,7 +1941,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
     ];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -1975,13 +2002,14 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
     assert_eq!(results, vec![RuntimeValue::Number(3.0.into())]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
     let code = ". * 10 | nodes | len()";
     let inputs = vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -2000,6 +2028,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     let fragment = mq_markdown::Node::Fragment(mq_markdown::Fragment {
@@ -2008,7 +2037,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     let code = r#"s"[${to_string(.)}]""#;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(RuntimeValue::new_markdown(fragment.clone())),
         EngineRunContext {
@@ -2028,6 +2057,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     assert_eq!(results[0].to_string(), "[a\nb]");
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_below() {
     let matching_child = mq_markdown::Node::Heading(mq_markdown::Heading {
@@ -2043,7 +2073,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
     let code = ".h1";
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(RuntimeValue::new_markdown(outer.clone())),
         EngineRunContext {
@@ -2062,11 +2092,12 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
     assert_eq!(results, vec![RuntimeValue::new_markdown(matching_child)]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn non_fragment_markdown_input_still_runs_the_query_once() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(".h1", Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(heading(1)),
         EngineRunContext {

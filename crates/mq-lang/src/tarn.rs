@@ -859,30 +859,9 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let program = match &compiled.body {
-            engine::ProgramBody::Ast(program) => program,
-            #[cfg(not(feature = "debugger"))]
-            engine::ProgramBody::Cached { program, cache } => {
-                if self.engine.session.is_some() {
-                    program
-                } else {
-                    return self.run_cached(program, cache, input);
-                }
-            }
-            #[cfg(feature = "mqc")]
-            engine::ProgramBody::Precompiled(precompiled) => {
-                return precompiled.run_reusing(
-                    input,
-                    &self.engine,
-                    shared_deadline(self.engine.timeout),
-                    #[cfg(not(feature = "debugger"))]
-                    self.environment_key,
-                );
-            }
-        };
-        #[cfg(feature = "debugger")]
-        {
-            compile_and_run_debugged(
+        match &compiled.body {
+            #[cfg(feature = "debugger")]
+            engine::ProgramBody::Ast(program) => compile_and_run_debugged(
                 prepared.unwrap_or(program),
                 input,
                 DebugRunContext {
@@ -891,14 +870,29 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                     handler: Shared::clone(&self.debugger_handler),
                     source: self.source.clone(),
                 },
-            )
-        }
-        #[cfg(not(feature = "debugger"))]
-        {
-            let prepared_program = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
-                .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
-            let prepared_program = prepared_program.as_ref().unwrap_or(program);
-            compile_and_run_many(prepared_program, input, self.engine.fork_for_compilation())
+            ),
+            #[cfg(not(feature = "debugger"))]
+            engine::ProgramBody::Cached { program, cache } => match self.engine.session {
+                Some(session) => {
+                    let prepared = build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                        .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+                    compile_and_run_session(
+                        prepared.as_ref().unwrap_or(program),
+                        input,
+                        self.engine.fork_for_compilation(),
+                        session,
+                    )
+                }
+                None => self.run_cached(program, cache, input),
+            },
+            #[cfg(feature = "mqc")]
+            engine::ProgramBody::Precompiled(precompiled) => precompiled.run_reusing(
+                input,
+                &self.engine,
+                shared_deadline(self.engine.timeout),
+                #[cfg(not(feature = "debugger"))]
+                self.environment_key,
+            ),
         }
     }
 
@@ -1063,6 +1057,7 @@ where
 }
 
 /// Runs each input through a single stateless evaluation step.
+#[cfg(feature = "debugger")]
 fn run_inputs<I, F>(inputs: I, mut run_one: F) -> Result<Vec<RuntimeValue>, interpreter::VmError>
 where
     I: Iterator<Item = RuntimeValue>,
@@ -1373,70 +1368,14 @@ where
     Ok(values)
 }
 
-fn run_nodes_aggregate<R: ModuleResolver>(
-    before: ProgramSlice<'_>,
-    after: ProgramSlice<'_>,
-    values: Vec<RuntimeValue>,
-    let_bindings: &[(Ident, RuntimeValue)],
-    context: &EngineRunContext<'_, R>,
-    // From the caller's shared deadline, not `context.timeout`.
-    timeout: Option<Duration>,
-) -> Result<Vec<RuntimeValue>, Error> {
-    let let_names: Vec<Ident> = let_bindings.iter().map(|(ident, _)| *ident).collect();
-    let immutable_let_names = immutable_let_names_before_nodes(before);
-    let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    let program = program_after_nodes(before, after);
-    let input = RuntimeValue::Array(Shared::new(values));
-    let result = if let_names.is_empty() {
-        let compiled = compiler::compile_program_for_engine(
-            &program,
-            Shared::clone(&context.token_arena),
-            context.module_loader.clone(),
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        interpreter::run_with_globals(
-            &compiled,
-            input,
-            context.host_functions,
-            timeout,
-            context.max_call_stack_depth,
-            context.global_bindings,
-        )
-    } else {
-        let let_values = binding_values(let_bindings);
-        let compiled = compiler::compile_program_for_engine_with_bindings(
-            &program,
-            Shared::clone(&context.token_arena),
-            context.module_loader.clone(),
-            &let_names,
-            &immutable_let_names,
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        interpreter::run_with_globals_capturing_locals(
-            &compiled,
-            input,
-            &let_values,
-            context.run_options(timeout),
-            &[],
-            interpreter::ExecutionPools::default(),
-        )
-        .0
-    };
-    match result? {
-        RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
-        value => Ok(vec![value]),
-    }
-}
-
-// Used when the `debugger` feature is off; `compile_and_run_debugged` takes over below
-// when it's on, which is genuinely dead under `--all-features`.
+/// Compiles and runs `program`, keeping top-level bindings in `session`.
+// `compile_and_run_debugged` takes over when the `debugger` feature is on.
 #[cfg_attr(feature = "debugger", allow(dead_code))]
-fn compile_and_run_many<I, R: ModuleResolver>(
+fn compile_and_run_session<I, R: ModuleResolver>(
     program: &Program,
     inputs: I,
     mut context: EngineRunContext<'_, R>,
+    session: &Shared<SharedCell<Vec<SessionBinding>>>,
 ) -> Result<Vec<RuntimeValue>, Error>
 where
     I: Iterator<Item = RuntimeValue>,
@@ -1444,79 +1383,7 @@ where
     let deadline = shared_deadline(context.timeout);
     context.preresolved_module_vars = resolve_module_prelude_globals(program, &mut context, deadline)?;
     let global_names: Vec<Ident> = context.global_bindings.iter().map(|(ident, _)| *ident).collect();
-    if let Some(session) = context.session {
-        return run_with_session(program, inputs, &context, session, &global_names, deadline);
-    }
-    let Some((before, after)) = split_at_nodes(program) else {
-        let host_functions = context.host_functions;
-        let max_call_stack_depth = context.max_call_stack_depth;
-        let capture_stack_trace = context.capture_stack_trace;
-        let global_bindings = context.global_bindings;
-        let compiled = compiler::compile_program_for_engine(
-            program,
-            context.token_arena,
-            context.module_loader,
-            &global_names,
-            &context.preresolved_module_vars,
-        )?;
-        return run_inputs(inputs, |value| {
-            interpreter::run_with_global_options(
-                &compiled,
-                value,
-                interpreter::RunOptions {
-                    host_functions,
-                    timeout: remaining_timeout(deadline),
-                    max_call_stack_depth,
-                    capture_stack_trace,
-                    global_bindings,
-                },
-            )
-        })
-        .map_err(Error::from);
-    };
-    let compiled = compiler::compile_program_for_engine(
-        &before.to_vec(),
-        Shared::clone(&context.token_arena),
-        context.module_loader.clone(),
-        &global_names,
-        &context.preresolved_module_vars,
-    )?;
-    let let_names = let_names_before_nodes(before);
-    let mut let_bindings: Vec<(Ident, RuntimeValue)> = Vec::new();
-    let values = if let_names.is_empty() {
-        run_inputs(inputs, |value| {
-            interpreter::run_with_global_options(&compiled, value, context.run_options(remaining_timeout(deadline)))
-        })
-        .map_err(Error::from)?
-    } else {
-        inputs
-            .map(|input| {
-                map_input_values(input, |v| {
-                    let (result, captured, _) = interpreter::run_with_globals_capturing_locals(
-                        &compiled,
-                        v,
-                        &[],
-                        context.run_options(remaining_timeout(deadline)),
-                        &let_names,
-                        interpreter::ExecutionPools::default(),
-                    );
-                    if result.is_ok() {
-                        let_bindings = captured;
-                    }
-                    result
-                })
-                .map_err(Error::from)
-            })
-            .collect::<Result<Vec<_>, _>>()?
-    };
-    run_nodes_aggregate(
-        before,
-        after,
-        values,
-        &let_bindings,
-        &context,
-        remaining_timeout(deadline),
-    )
+    run_with_session(program, inputs, &context, session, &global_names, deadline)
 }
 
 #[cfg(feature = "debugger")]

@@ -147,16 +147,6 @@ pub(crate) fn run_with_globals(
     .0
 }
 
-/// Runs a compiled program with explicit VM options.
-pub(crate) fn run_with_global_options(
-    compiled: &CompiledProgram,
-    input: RuntimeValue,
-    options: RunOptions<'_>,
-) -> VmResult<RuntimeValue> {
-    let env = VmEnv::from_bindings(options.global_bindings, Shared::clone(&compiled.token_arena));
-    run_with_env_and_pools(compiled, input, options, &env, ExecutionPools::default()).0
-}
-
 /// Runs a compiled program and returns reusable execution pools.
 pub(crate) fn run_with_globals_and_pools(
     compiled: &CompiledProgram,
