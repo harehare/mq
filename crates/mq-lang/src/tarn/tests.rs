@@ -2971,7 +2971,8 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
 // Conservative: module functions are scanned too.
 #[case::module_function_reads_global(r#"module m: let n = 1 | def f(): s"${__FILE__}:${n}"; end | m::f()"#, false)]
 #[case::module_let_reads_global(r#"module m: let v = s"${__FILE__}:1" end | m::v"#, false)]
-#[case::enclosing_let_reads_global(r#"let p = __FILE__ | module m: let v = s"${p}:1" end | m::v"#, false)]
+// Reads an enclosing `let`, so it isn't baked.
+#[case::enclosing_let_reads_global(r#"let p = __FILE__ | module m: let v = s"${p}:1" end | m::v"#, true)]
 fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[case] query: &str, #[case] reused: bool) {
     let mut engine = crate::DefaultEngine::default();
     engine.load_builtin_module();

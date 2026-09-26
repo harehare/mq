@@ -31,8 +31,8 @@ pub(crate) use disasm::dump_bytecode;
 #[cfg(all(feature = "debug-trace", feature = "mqc"))]
 pub(crate) use disasm::dump_compiled_program;
 use nodes_split::{
-    ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
-    top_level_binding_names,
+    ProgramSlice, immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes,
+    split_at_nodes, top_level_binding_names,
 };
 
 use crate::Shared;
@@ -723,11 +723,10 @@ fn collect_inline_module_vars(
 /// constants instead of recompiling the initializer per input.
 ///
 /// An inline module's vars are only reachable via qualified access, so they're probed by
-/// compiling+running a throwaway `[..enclosing prefix, module { .. }, array(alias::a, ..)]`
-/// program, prefixed with the preceding top-level nodes so it sees the same enclosing
-/// `let`/`def` bindings the real compile would. A name still out of scope after that falls
-/// back to recompiling the module inline; any other probe failure is a real initializer bug
-/// and is propagated rather than retried once per input.
+/// running a throwaway `[..declarations, module { .. }, array(alias::a, ..)]` program. The
+/// probe has no input, so it keeps only the enclosing declarations (`def`, `import`, ...).
+/// A var that reads an enclosing `let` or an undefined name is recompiled with the module
+/// instead; any other probe failure is a real initializer bug and is propagated.
 fn resolve_module_prelude_globals<R: ModuleResolver>(
     program: &Program,
     context: &mut EngineRunContext<'_, R>,
@@ -773,7 +772,9 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 })
             })
             .collect();
-        let mut probe_program = prefix;
+        let (mut probe_program, dropped): (Program, Program) =
+            prefix.into_iter().partition(|node| is_declaration(node));
+        let dropped_names = top_level_binding_names(&dropped);
         probe_program.push(Shared::new(Node {
             token_id: TokenId::new(0),
             expr: Expr::Module(ident.clone(), body),
@@ -822,11 +823,23 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 }
             }
             Ok(_) | Err(Error::Compile(compiler::CompileError::UndefinedIdent(..))) => {}
+            // Reads an enclosing `let`, so it runs with the program instead.
+            Err(Error::Vm(error))
+                if undefined_global(&error)
+                    .is_some_and(|name| dropped_names.iter().any(|dropped| dropped.as_str() == name)) => {}
             Err(error) => return Err(error),
         }
     }
 
     Ok(result)
+}
+
+fn undefined_global(error: &interpreter::VmError) -> Option<&str> {
+    match error {
+        interpreter::VmError::StackTrace(inner, _) | interpreter::VmError::Located(inner, _) => undefined_global(inner),
+        interpreter::VmError::UndefinedGlobal(name) => Some(name),
+        _ => None,
+    }
 }
 
 /// Everything `Engine::eval_compiled_vm` needs to run a compiled program on Tarn.

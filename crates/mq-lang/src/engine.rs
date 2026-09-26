@@ -2654,6 +2654,29 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::input_transform_before_module(
+        r#"import "csv" | csv::csv_parse(true) | module m: let n = 1 end | m::n"#,
+        "x,y\n1,2\n",
+        RuntimeValue::Number(1.into())
+    )]
+    #[case::enclosing_let_from_input(
+        "let x = upcase(self) | module m: let y = x end | m::y",
+        "abc",
+        "ABC".to_string().into()
+    )]
+    #[case::enclosing_constant_let("let x = 1 | module m: let y = x + 1 end | m::y", "abc", RuntimeValue::Number(2.into()))]
+    fn test_inline_module_var_initializer_is_not_probed_with_the_enclosing_pipeline(
+        #[case] query: &str,
+        #[case] input: &str,
+        #[case] expected: RuntimeValue,
+    ) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let result = engine.eval(query, crate::raw_input(input).into_iter()).unwrap();
+        assert_eq!(result.values(), &[expected]);
+    }
+
     #[test]
     fn test_inline_module_var_initializer_runtime_error_is_not_silently_retried() {
         use std::sync::Arc;
