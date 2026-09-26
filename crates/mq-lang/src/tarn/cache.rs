@@ -1,10 +1,10 @@
 //! Caches compiled bytecode across repeated evaluations of the same program (non-debugger builds).
 use super::split_program::SplitProgram;
-use super::{EngineRunContext, Error, engine, interpreter};
+use super::{EngineRunContext, Error, engine};
+use crate::ModuleResolver;
 use crate::ast::Program;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::tarn::{VmEnv, VmEnvCacheKey, VmModuleCacheKey};
-use crate::{ModuleResolver, Shared, SharedCell};
+use crate::tarn::{VmEnvCacheKey, VmModuleCacheKey};
 use std::fmt;
 #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
 use std::time::Instant;
@@ -22,19 +22,6 @@ pub(crate) struct CachedProgram {
     bakes_globals: bool,
     /// Cached bytecode includes module definitions, which are frozen per Engine.
     module_cache_key: VmModuleCacheKey,
-    /// Frame storage retained between non-overlapping `eval_compiled` calls.
-    ///
-    /// References to a cached program share this slot. A concurrent caller that finds it empty
-    /// simply allocates an independent pool, so bytecode remains safely reusable.
-    execution_pools: Shared<SharedCell<Option<interpreter::ExecutionPools>>>,
-    /// Lookup table for the most recently used engine-global snapshot. This is independent of
-    /// frame pools: concurrent callers can safely retain different environments.
-    environment: Shared<SharedCell<Option<CachedEnvironment>>>,
-}
-
-struct CachedEnvironment {
-    key: VmEnvCacheKey,
-    env: Shared<VmEnv>,
 }
 
 impl fmt::Debug for CachedProgram {
@@ -58,14 +45,7 @@ impl CachedProgram {
     }
 
     pub(crate) fn has_available_execution_pools(&self) -> bool {
-        #[cfg(not(feature = "sync"))]
-        {
-            self.execution_pools.borrow().is_some()
-        }
-        #[cfg(feature = "sync")]
-        {
-            self.execution_pools.read().unwrap().is_some()
-        }
+        self.split.has_available_execution_pools()
     }
 }
 
@@ -87,80 +67,7 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
         baked_globals_key,
         bakes_globals: preresolved_module_vars.reads_globals,
         module_cache_key,
-        execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
-        environment: Shared::new(SharedCell::new(None)),
     })
-}
-
-fn cached_environment(
-    compiled: &CachedProgram,
-    key: VmEnvCacheKey,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
-) -> Shared<VmEnv> {
-    #[cfg(not(feature = "sync"))]
-    {
-        let mut slot = compiled.environment.borrow_mut();
-        if let Some(environment) = slot.as_ref()
-            && environment.key == key
-        {
-            return Shared::clone(&environment.env);
-        }
-        let env = Shared::new(VmEnv::from_bindings(
-            global_bindings,
-            Shared::clone(&compiled.split.program.token_arena),
-        ));
-        *slot = Some(CachedEnvironment {
-            key,
-            env: Shared::clone(&env),
-        });
-        env
-    }
-    #[cfg(feature = "sync")]
-    {
-        let mut slot = compiled.environment.write().unwrap();
-        if let Some(environment) = slot.as_ref()
-            && environment.key == key
-        {
-            return Shared::clone(&environment.env);
-        }
-        let env = Shared::new(VmEnv::from_bindings(
-            global_bindings,
-            Shared::clone(&compiled.split.program.token_arena),
-        ));
-        *slot = Some(CachedEnvironment {
-            key,
-            env: Shared::clone(&env),
-        });
-        env
-    }
-}
-
-fn take_execution_pools(compiled: &CachedProgram) -> interpreter::ExecutionPools {
-    #[cfg(not(feature = "sync"))]
-    {
-        compiled.execution_pools.borrow_mut().take().unwrap_or_default()
-    }
-    #[cfg(feature = "sync")]
-    {
-        compiled.execution_pools.write().unwrap().take().unwrap_or_default()
-    }
-}
-
-fn restore_execution_pools(compiled: &CachedProgram, pools: interpreter::ExecutionPools) {
-    #[cfg(not(feature = "sync"))]
-    {
-        let mut slot = compiled.execution_pools.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(pools);
-        }
-    }
-    #[cfg(feature = "sync")]
-    {
-        let mut slot = compiled.execution_pools.write().unwrap();
-        if slot.is_none() {
-            *slot = Some(pools);
-        }
-    }
 }
 
 /// Returns whether bytecode was compiled with the same Engine configuration and frozen modules.
@@ -197,13 +104,5 @@ pub(super) fn run_cached<I>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    // Pools contain mutable frame storage, so a caller takes exclusive ownership for the
-    // duration of its evaluation and restores it on every exit path.
-    let mut pools = take_execution_pools(compiled);
-    // Reuse the map until this engine changes its globals. This also covers line-oriented
-    // callers, which invoke `eval_compiled` once per row.
-    let env = cached_environment(compiled, environment_key, context.global_bindings);
-    let result = compiled.split.run(inputs, context, deadline, &env, &mut pools);
-    restore_execution_pools(compiled, pools);
-    result
+    compiled.split.run_reusing(inputs, context, deadline, environment_key)
 }

@@ -86,6 +86,20 @@ fn test_mqc_program_reads_engine_globals_at_run_time() {
 }
 
 #[test]
+fn test_mqc_program_sees_globals_changed_between_runs() {
+    let bytes = compile("greeting");
+    let mut engine = engine();
+    let program = engine.load_mqc(&bytes).unwrap();
+    for greeting in ["hello", "bye"] {
+        engine.define_string_value("greeting", greeting);
+        let result = engine
+            .eval_compiled(program.program(), crate::null_input().into_iter())
+            .unwrap();
+        assert_eq!(result, vec![greeting.to_string().into()].into());
+    }
+}
+
+#[test]
 fn test_mqc_program_is_reusable_across_inputs() {
     let bytes = compile("upcase()");
     let mut engine = engine();

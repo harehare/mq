@@ -860,7 +860,13 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
     {
         #[cfg(feature = "mqc")]
         if let Some(precompiled) = &compiled.precompiled {
-            return precompiled.run_standalone(input, &self.engine);
+            return precompiled.run_reusing(
+                input,
+                &self.engine,
+                shared_deadline(self.engine.timeout),
+                #[cfg(not(feature = "debugger"))]
+                self.environment_key,
+            );
         }
         #[cfg(not(feature = "debugger"))]
         if self.engine.session.is_none()
