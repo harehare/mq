@@ -393,12 +393,7 @@ impl Formatter {
         }
 
         if let Some(last) = all_children.last() {
-            if is_multiline {
-                self.append_newline();
-                self.append_indent(indent_level + indent_adjustment);
-            }
-
-            self.format_node(last, indent_level + indent_adjustment);
+            self.format_closing(last, indent_level + indent_adjustment, is_multiline);
         }
     }
 
@@ -441,13 +436,40 @@ impl Formatter {
         }
 
         if let Some(last) = all_children.last() {
-            if last.has_new_line() {
-                self.append_newline();
-                self.append_indent(indent_level + indent_adjustment);
-            }
-
-            self.format_node(last, indent_level + indent_adjustment);
+            self.format_closing(last, indent_level + indent_adjustment, last.has_new_line());
         }
+    }
+
+    /// Formats a closing `]`/`}` with the comments before it.
+    fn format_closing(&mut self, last: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize, is_multiline: bool) {
+        let mut has_comment = false;
+        let mut after_newline = false;
+        for trivia in &last.leading_trivia {
+            match trivia {
+                mq_lang::CstTrivia::NewLine => after_newline = true,
+                comment @ mq_lang::CstTrivia::Comment(_) => {
+                    if after_newline || self.output.ends_with('\n') {
+                        self.append_newline();
+                        self.append_indent(indent_level + 1);
+                    } else if !self.output.ends_with(' ') {
+                        self.append_space();
+                    }
+                    self.append_display(comment);
+                    has_comment = true;
+                }
+                _ => {}
+            }
+        }
+
+        if is_multiline || has_comment {
+            self.append_newline();
+            self.append_indent(indent_level);
+        } else if self.output.ends_with(", ") {
+            // Single-line trailing comma: `[1, 2,]`
+            self.output.pop();
+        }
+
+        self.format_node(last, indent_level);
     }
 
     fn format_binary_op(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, block_indent_level: usize) {
@@ -1127,7 +1149,8 @@ impl Formatter {
                 mq_lang::TokenKind::BytesLiteral(_) => {
                     self.append_display(token);
                 }
-                mq_lang::TokenKind::NumberLiteral(n) => self.append_display(n),
+                // `Number`'s Display rounds to 6 decimals.
+                mq_lang::TokenKind::NumberLiteral(n) => self.append_display(&n.value()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.append_display(b),
                 mq_lang::TokenKind::None => self.append_display(token),
                 mq_lang::TokenKind::Ident(name) => self.output.push_str(name),
@@ -1322,7 +1345,8 @@ impl Formatter {
                 mq_lang::TokenKind::BytesLiteral(_) => {
                     self.append_display(token);
                 }
-                mq_lang::TokenKind::NumberLiteral(n) => self.append_display(n),
+                // `Number`'s Display rounds to 6 decimals.
+                mq_lang::TokenKind::NumberLiteral(n) => self.append_display(&n.value()),
                 mq_lang::TokenKind::BoolLiteral(b) => self.append_display(b),
                 mq_lang::TokenKind::None => self.append_display(token),
                 other => {
@@ -1956,6 +1980,16 @@ s"test${val1}"
 "
     )]
     #[case::fn_args("map( fn():program;)", "map(fn(): program;)")]
+    #[case::array_trailing_comma("[1, 2,]", "[1, 2,]")]
+    #[case::dict_trailing_comma("{\"a\": 1,}", "{\"a\": 1,}")]
+    #[case::dict_trailing_comma_multiline("{\n  \"a\": 1,\n  \"b\": 2,\n}", "{\n  \"a\": 1,\n  \"b\": 2,\n}\n")]
+    #[case::array_comment_before_close("[\n  1,\n  # c\n]", "[\n  1,\n  # c\n]\n")]
+    #[case::dict_comment_before_close("{\n  \"a\": 1\n  # c\n}", "{\n  \"a\": 1\n  # c\n}\n")]
+    #[case::array_same_line_comment_before_close("[1, 2, # c\n]", "[1, 2, # c\n]\n")]
+    #[case::array_comments_before_close("[\n  1,\n\n  # a\n  # b\n]", "[\n  1,\n  # a\n  # b\n]\n")]
+    #[case::number_small_fraction("1e-9", "0.000000001")]
+    #[case::number_long_fraction("3.14159265358979", "3.14159265358979")]
+    #[case::number_integral_float("2.0", "2")]
     #[case::array_empty("[]", "[]")]
     #[case::array_single_element("[1]", "[1]")]
     #[case::array_multiple_elements("[1,2,3]", "[1, 2, 3]")]
