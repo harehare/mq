@@ -80,7 +80,7 @@ pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Ve
 
     let mut functions = Vec::new();
     for (i, node) in nodes.iter().enumerate() {
-        if matches!(node.kind, CstNodeKind::Module) {
+        if matches!(node.kind, CstNodeKind::Module { .. }) {
             collect_module_functions(node, "", &mut functions);
             continue;
         }
@@ -98,18 +98,21 @@ pub fn extract_module(source: &str, skip_native: bool) -> (Option<ModuleDoc>, Ve
 
 /// Collects a `module` block's public functions as `name::function` (recursing into nested modules).
 fn collect_module_functions(module_node: &Shared<CstNode>, prefix: &str, out: &mut Vec<MqFnDoc>) {
-    let Some(name) = module_node.children.first().and_then(ident_text) else {
+    let CstNodeKind::Module { name, program, .. } = &module_node.kind else {
+        return;
+    };
+    let Some(name) = ident_text(name) else {
         return;
     };
     let qualified = format!("{prefix}{name}::");
 
-    for child in module_node.children.iter().skip(1) {
+    for child in program.iter() {
         if child.is_def() {
             if let Some(mut info) = def_info(child, false, 0) {
                 info.name = format!("{qualified}{}", info.name);
                 out.push(info);
             }
-        } else if matches!(child.kind, CstNodeKind::Module) {
+        } else if matches!(child.kind, CstNodeKind::Module { .. }) {
             collect_module_functions(child, &qualified, out);
         }
     }
@@ -171,20 +174,16 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
         return None;
     }
 
-    // Params: Ident children that sit between ( and ) — i.e. before the first
-    // Colon/Do token encountered after the function-name child.
-    let params: Vec<String> = node
-        .children
-        .iter()
-        .skip(1) // skip function name
-        .take_while(|c| {
-            c.token
-                .as_ref()
-                .is_none_or(|t| !matches!(t.kind, TokenKind::Colon | TokenKind::Do))
-        })
-        .filter(|c| matches!(c.kind, CstNodeKind::Ident))
-        .filter_map(ident_text)
-        .collect();
+    let params: Vec<String> = match &node.kind {
+        CstNodeKind::Def {
+            params: Some(params), ..
+        } => params
+            .iter()
+            .filter(|c| matches!(c.kind, CstNodeKind::Param { .. }))
+            .filter_map(ident_text)
+            .collect(),
+        _ => Vec::new(),
+    };
 
     let comments = node.comments().into_iter().map(|(_, s)| s).skip(skip_comment_lines);
     let (description, returns, examples) = parse_doc_comment(comments);
@@ -198,10 +197,11 @@ fn def_info(node: &Shared<CstNode>, skip_native: bool, skip_comment_lines: usize
     })
 }
 
-/// Function name: first child with `CstNodeKind::Ident`.
 fn def_name(node: &Shared<CstNode>) -> Option<String> {
-    let name_node = node.children.iter().find(|c| matches!(c.kind, CstNodeKind::Ident))?;
-    ident_text(name_node)
+    match &node.kind {
+        CstNodeKind::Def { name, .. } => ident_text(name),
+        _ => None,
+    }
 }
 
 /// One line of a doc comment outside any fenced code block, classified by its role in the

@@ -256,13 +256,13 @@ def title_contains(sections, text):
   else:
     do
       let section_contains = fn(section):
-              if (_is_section(section)):
-                do
-                  section[:header] | to_text() | contains(text)
-                end
-              else:
-                false
-            end
+        if (_is_section(section)):
+          do
+            section[:header] | to_text() | contains(text)
+          end
+        else:
+          false
+      end
       | filter(sections, section_contains)
     end
 end
@@ -283,13 +283,13 @@ def title_is(sections, text):
   else:
     do
       let section_eq = fn(section):
-              if (_is_section(section)):
-                do
-                  section[:header] | to_text() == text
-                end
-              else:
-                false
-            end
+        if (_is_section(section)):
+          do
+            section[:header] | to_text() == text
+          end
+        else:
+          false
+      end
       | filter(sections, section_eq)
     end
 end
@@ -309,13 +309,13 @@ def title_match(sections, pattern):
   else:
     do
       let section_filter = fn(section):
-              if (_is_section(section)):
-                do
-                  section[:header] | to_text() | regex_match(pattern) | !is_empty()
-                end
-              else:
-                false
-            end
+        if (_is_section(section)):
+          do
+            section[:header] | to_text() | regex_match(pattern) | !is_empty()
+          end
+        else:
+          false
+      end
       | filter(sections, section_filter)
     end
 end
@@ -425,8 +425,7 @@ module tree:
       do
         fold(idx_path, {level_nodes: roots, found: None}, fn(acc, i):
           let node = _nth(acc[:level_nodes], i)
-          | {level_nodes: _subs(node), found: node}
-        ;)
+          | {level_nodes: _subs(node), found: node};)
         | get(:found)
       end
   end
@@ -691,16 +690,16 @@ def toc(sections):
   else:
     do
       let create_toc_entry = fn(section):
-              if (_is_section(section)):
-                do
-                  let lvl = level(section)
-                  | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
-                  | let title_text = title(section)
-                  | indent + "- " + title_text
-                end
-              else:
-                ""
-            end
+        if (_is_section(section)):
+          do
+            let lvl = level(section)
+            | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
+            | let title_text = title(section)
+            | indent + "- " + title_text
+          end
+        else:
+          ""
+      end
       | map(sections, create_toc_entry)
     end
 end
@@ -726,19 +725,19 @@ def toc_markdown(sections):
       var seen = dict()
       | var result = []
       | foreach (section, sections):
-            if (_is_section(section)) do
-                let lvl = level(section)
-                | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
-                | let title_text = title(section)
-                | let base_slug = slugify(title_text)
-                | let count = get_or(seen, base_slug, -1)
-                | let slug = if (count < 0): base_slug else: base_slug + "-" + to_string(count + 1)
-                | seen = set(seen, base_slug, count + 1)
-                | result += [indent + "- [" + title_text + "](#" + slug + ")"]
-              end
-            else:
-              None
-          end
+          if (_is_section(section)) do
+              let lvl = level(section)
+              | let indent = join(map(range(0, lvl - 1), fn(_): "  ";), "")
+              | let title_text = title(section)
+              | let base_slug = slugify(title_text)
+              | let count = get_or(seen, base_slug, -1)
+              | let slug = if (count < 0): base_slug else: base_slug + "-" + to_string(count + 1)
+              | seen = set(seen, base_slug, count + 1)
+              | result += [indent + "- [" + title_text + "](#" + slug + ")"]
+            end
+          else:
+            None
+        end
       | result
     end
 end
@@ -792,14 +791,14 @@ def shift_level(section, delta):
   else:
     do
       let shift_node = fn(node):
-            if (_md_heading_level(node) > 0):
-              if (delta >= 0):
-                shift_right(node, delta)
-              else:
-                shift_left(node, 0 - delta)
-            else:
-              node
-          end
+        if (_md_heading_level(node) > 0):
+          if (delta >= 0):
+            shift_right(node, delta)
+          else:
+            shift_left(node, 0 - delta)
+        else:
+          node
+      end
       | let new_header = shift_node(section[:header])
       | let new_children = map(section[:children], shift_node)
       | set(set(section, :header, new_header), :children, new_children)

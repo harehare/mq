@@ -1805,7 +1805,42 @@ mod tests {
         }
     }
 
+    fn ident_range(code: &str, name: &str) -> Range {
+        Lexer::new(Options::default())
+            .tokenize(code, 1.into())
+            .unwrap()
+            .into_iter()
+            .find(|t| matches!(&t.kind, TokenKind::Ident(n) if n == name))
+            .unwrap()
+            .range
+    }
+
+    #[rstest]
+    #[case::ascii("\"ab\" | x", 1, 8)]
+    #[case::multibyte_string("\"あい\" | x", 1, 8)]
+    #[case::emoji_string("\"🎉🎉🎉\" | x", 1, 9)]
+    #[case::multibyte_on_previous_line("\"あいう\"\n| x", 2, 3)]
+    #[case::several_multibyte_tokens("\"あ\" + \"い\" | x", 1, 13)]
+    fn test_column_counts_chars_not_bytes(#[case] code: &str, #[case] line: u32, #[case] column: usize) {
+        let range = ident_range(code, "x");
+        assert_eq!(range.start, Position { line, column });
+        assert_eq!(
+            range.end,
+            Position {
+                line,
+                column: column + 1
+            }
+        );
+    }
+
     proptest! {
+        #[test]
+        fn prop_column_after_string_literal_counts_chars(s in "[^\"\\\\\\n\\r$]{0,20}") {
+            let code = format!("\"{s}\" | x");
+            let range = ident_range(&code, "x");
+            proptest::prop_assert_eq!(range.start.column, s.chars().count() + 6);
+        }
+
         #[test]
         fn dispatch_matches_exhaustive_alt_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
             assert_dispatch_matches_exhaustive_alt(&s);

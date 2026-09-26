@@ -274,19 +274,15 @@ impl BenchRunner {
         let mut benches = Vec::new();
 
         for node in nodes {
-            if node.kind == CstNodeKind::Module {
-                benches.extend(Self::discover_benches_in(&node.children));
+            if let CstNodeKind::Module { program, .. } = &node.kind {
+                benches.extend(Self::discover_benches_in(program));
                 continue;
             }
 
-            if node.kind != CstNodeKind::Def {
+            let CstNodeKind::Def { name, .. } = &node.kind else {
                 continue;
-            }
-
-            let func_name = match node.children.first() {
-                Some(child) => child.to_string(),
-                None => continue,
             };
+            let func_name = name.to_string();
 
             if func_name.is_empty() {
                 continue;
