@@ -1033,13 +1033,13 @@ impl Formatter {
         self.append_display(node);
         self.append_space();
 
-        let indent_level = if self.is_last_line_pipe() {
-            block_indent_level
+        let (indent_level, indent_adjustment) = if indent_level == 0 && self.is_let_line() {
+            (self.current_line_content_indent(), 0)
+        } else if self.is_last_line_pipe() {
+            (block_indent_level, self.calculate_indent_adjustment())
         } else {
-            indent_level
+            (indent_level, self.calculate_indent_adjustment())
         };
-
-        let indent_adjustment = self.calculate_indent_adjustment();
 
         let mq_lang::CstNodeKind::Match {
             args,
@@ -2957,6 +2957,65 @@ end
     fn test_format(#[case] code: &str, #[case] expected: &str) {
         let result = Formatter::new(None).format(code);
         assert_eq!(result.unwrap(), expected);
+    }
+
+    /// Builds a `def` whose let-bound block sits `depth` `do`s deep, indented as expected:
+    /// the block body goes one level below the `let` (which itself follows `| ` when `piped`).
+    fn let_bound_block_program(block: &[(usize, &str)], depth: usize, piped: bool) -> String {
+        let pad = |level: usize| "  ".repeat(level);
+        let line_indent = depth + 1;
+        let base = line_indent + usize::from(piped);
+        let mut lines = vec!["def f(t):".to_string()];
+        for d in 0..depth {
+            lines.push(format!("{}do", pad(d + 1)));
+        }
+        let (_, head) = block[0];
+        if piped {
+            lines.push(format!("{}let a = 1", pad(line_indent)));
+            lines.push(format!("{}| let b = {head}", pad(line_indent)));
+        } else {
+            lines.push(format!("{}let b = {head}", pad(line_indent)));
+        }
+        for (level, text) in &block[1..] {
+            lines.push(format!("{}{text}", pad(base + level)));
+        }
+        lines.push(format!("{}| b", pad(line_indent)));
+        for d in (0..depth).rev() {
+            lines.push(format!("{}end", pad(d + 1)));
+        }
+        lines.push("end".to_string());
+        lines.join("\n") + "\n"
+    }
+
+    #[rstest]
+    #[case::foreach(&[(0, "foreach (r, t):"), (1, "r"), (0, "end")])]
+    #[case::while_(&[(0, "while (t):"), (1, "r"), (0, "end")])]
+    #[case::until(&[(0, "until (t):"), (1, "r"), (0, "end")])]
+    #[case::loop_(&[(0, "loop:"), (1, "break"), (0, "end")])]
+    #[case::do_(&[(0, "do"), (1, "r"), (0, "end")])]
+    #[case::fn_(&[(0, "fn(x):"), (1, "x"), (0, "end")])]
+    #[case::if_else(&[(0, "if (t):"), (1, "1"), (0, "else:"), (1, "2")])]
+    #[case::if_elif(&[(0, "if (t):"), (1, "1"), (0, "elif (t):"), (1, "2"), (0, "else:"), (1, "3")])]
+    #[case::match_(&[(0, "match (t):"), (1, "| 1: \"one\""), (1, "| _: \"other\""), (0, "end")])]
+    #[case::call_with_fn(&[(0, "map(t, fn(x):"), (1, "let y = x"), (1, "| y;"), (0, ")")])]
+    fn test_format_let_bound_block_indent(
+        #[case] block: &[(usize, &str)],
+        #[values(0, 1, 2)] depth: usize,
+        #[values(false, true)] piped: bool,
+    ) {
+        let expected = let_bound_block_program(block, depth, piped);
+        let flattened = expected.lines().map(str::trim_start).collect::<Vec<_>>().join("\n");
+
+        assert_eq!(
+            Formatter::new(None).format(&expected).unwrap(),
+            expected,
+            "not idempotent"
+        );
+        assert_eq!(
+            Formatter::new(None).format(&flattened).unwrap(),
+            expected,
+            "from flattened input"
+        );
     }
 
     #[rstest]
