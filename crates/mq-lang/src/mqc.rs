@@ -667,7 +667,7 @@ fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcErro
         })
         .collect::<Result<Vec<_>, MqcError>>()?;
     let span_count = reader.len(5)?;
-    let mut spans = Vec::with_capacity(span_count);
+    let mut spans = Vec::with_capacity(span_count.min(code::MAX_PREALLOCATED));
     for _ in 0..span_count {
         let file = reader.var_u32()?;
         if file as usize >= files.len() {
