@@ -1,11 +1,14 @@
 //! Engine bytecode split around `nodes`, shared by the cache and `.mqc`.
+#[cfg(not(feature = "debugger"))]
+use super::VmEnvCacheKey;
 use super::nodes_split::{
     immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
 };
 use super::{EngineRunContext, Error, VmEnv, compiler, interpreter, map_input_values, remaining_timeout};
 use crate::ast::Program;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::{Ident, ModuleResolver, Shared};
+use crate::{Ident, ModuleResolver, Shared, SharedCell};
+use std::fmt;
 #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
 use std::time::Instant;
 #[cfg(all(target_arch = "wasm32", feature = "wasm"))]
@@ -22,6 +25,72 @@ pub(crate) struct SplitProgram {
     pub(crate) let_names: Vec<Ident>,
     /// Slots of `let_names` in `program`.
     let_slots: Vec<interpreter::CaptureSlot>,
+    reuse: RunReuse,
+}
+
+/// State reused between evaluations; a concurrent caller allocates its own pools.
+struct RunReuse {
+    execution_pools: SharedCell<Option<interpreter::ExecutionPools>>,
+    /// Keyed by the engine-global snapshot it was built from.
+    #[cfg(not(feature = "debugger"))]
+    environment: SharedCell<Option<(VmEnvCacheKey, Shared<VmEnv>)>>,
+}
+
+impl Default for RunReuse {
+    fn default() -> Self {
+        Self {
+            execution_pools: SharedCell::new(Some(interpreter::ExecutionPools::default())),
+            #[cfg(not(feature = "debugger"))]
+            environment: SharedCell::new(None),
+        }
+    }
+}
+
+impl fmt::Debug for RunReuse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RunReuse").finish_non_exhaustive()
+    }
+}
+
+impl RunReuse {
+    fn take_pools(&self) -> interpreter::ExecutionPools {
+        #[cfg(not(feature = "sync"))]
+        let pools = self.execution_pools.borrow_mut().take();
+        #[cfg(feature = "sync")]
+        let pools = self.execution_pools.write().unwrap().take();
+        pools.unwrap_or_default()
+    }
+
+    fn restore_pools(&self, pools: interpreter::ExecutionPools) {
+        #[cfg(not(feature = "sync"))]
+        let mut slot = self.execution_pools.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut slot = self.execution_pools.write().unwrap();
+        if slot.is_none() {
+            *slot = Some(pools);
+        }
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    fn environment(
+        &self,
+        key: VmEnvCacheKey,
+        global_bindings: &[(Ident, RuntimeValue)],
+        token_arena: &crate::TokenArena,
+    ) -> Shared<VmEnv> {
+        #[cfg(not(feature = "sync"))]
+        let mut slot = self.environment.borrow_mut();
+        #[cfg(feature = "sync")]
+        let mut slot = self.environment.write().unwrap();
+        if let Some((cached_key, env)) = slot.as_ref()
+            && *cached_key == key
+        {
+            return Shared::clone(env);
+        }
+        let env = Shared::new(VmEnv::from_bindings(global_bindings, Shared::clone(token_arena)));
+        *slot = Some((key, Shared::clone(&env)));
+        env
+    }
 }
 
 impl SplitProgram {
@@ -36,6 +105,7 @@ impl SplitProgram {
             after,
             let_names,
             let_slots,
+            reuse: RunReuse::default(),
         }
     }
 
@@ -93,7 +163,7 @@ impl SplitProgram {
     }
 
     /// Runs every input, then the `nodes` part over all results.
-    pub(crate) fn run<I>(
+    fn run<I>(
         &self,
         inputs: I,
         context: &EngineRunContext<'_, impl ModuleResolver>,
@@ -185,19 +255,35 @@ impl SplitProgram {
         Self::compile(program, context, deadline)
     }
 
-    /// Runs without Engine cache state, as for a loaded `.mqc` file.
-    #[cfg(feature = "mqc")]
-    pub(crate) fn run_standalone<I>(
+    /// Like `run`, reusing frame pools and the globals environment across calls.
+    pub(crate) fn run_reusing<I>(
         &self,
         inputs: I,
         context: &EngineRunContext<'_, impl ModuleResolver>,
+        deadline: Option<Instant>,
+        #[cfg(not(feature = "debugger"))] environment_key: VmEnvCacheKey,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        let deadline = super::shared_deadline(context.timeout);
+        let mut pools = self.reuse.take_pools();
+        #[cfg(not(feature = "debugger"))]
+        let env = self
+            .reuse
+            .environment(environment_key, context.global_bindings, &self.program.token_arena);
+        #[cfg(feature = "debugger")]
         let env = VmEnv::from_bindings(context.global_bindings, Shared::clone(&self.program.token_arena));
-        let mut pools = interpreter::ExecutionPools::default();
-        self.run(inputs, context, deadline, &env, &mut pools)
+        let result = self.run(inputs, context, deadline, &env, &mut pools);
+        self.reuse.restore_pools(pools);
+        result
+    }
+
+    #[cfg(all(test, not(feature = "debugger")))]
+    pub(crate) fn has_available_execution_pools(&self) -> bool {
+        #[cfg(not(feature = "sync"))]
+        let slot = self.reuse.execution_pools.borrow();
+        #[cfg(feature = "sync")]
+        let slot = self.reuse.execution_pools.read().unwrap();
+        slot.is_some()
     }
 }
