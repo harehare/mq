@@ -2176,8 +2176,8 @@ def safe_filename(name, max_length = 255):
       | let stem = if (has_ext): implode(slice(chars, 0, dot_idx)) else: cleaned
       | let ext = if (has_ext): implode(slice(chars, dot_idx, n)) else: ""
       | let reserved = ["CON", "PRN", "AUX", "NUL",
-        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
+          "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+          "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
       | let stem = if (in(reserved, upcase(stem))): stem + "_" else: stem
       | let max_stem_len = max(max_length - len(ext), 1)
       | truncate(stem, max_stem_len, "") + ext
@@ -2559,14 +2559,14 @@ def describe(arr):
     do
       let sorted = sort(arr)
       | {
-        min: first(sorted),
-        max: last(sorted),
-        mean: mean(arr),
-        median: percentile(arr, 0.5),
-        stddev: stddev(arr),
-        variance: variance(arr),
-        count: len(arr)
-      }
+          min: first(sorted),
+          max: last(sorted),
+          mean: mean(arr),
+          median: percentile(arr, 0.5),
+          stddev: stddev(arr),
+          variance: variance(arr),
+          count: len(arr)
+        }
     end
 end
 
@@ -2639,10 +2639,10 @@ def histogram(arr, buckets = 10):
           let count = counts[i]
           | let bar_len = if (max_count == 0): 0 else: round(count / max_count * 40)
           | {
-            range: to_string(round(100 * (lo + i * width)) / 100) + "-" + to_string(round(100 * (lo + (i + 1) * width)) / 100),
-            count: count,
-            bar: repeat("█", bar_len)
-          }
+              range: to_string(round(100 * (lo + i * width)) / 100) + "-" + to_string(round(100 * (lo + (i + 1) * width)) / 100),
+              count: count,
+              bar: repeat("█", bar_len)
+            }
         end
     end
 end

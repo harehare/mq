@@ -38,10 +38,10 @@ end
 # array of dicts used to dump each entry as an inline table (`{...}`) on its
 # own trailing-comma line instead of proper `[[key]]` sections.
 # @parametrize([
-# [{"tags": ["a", "b"]}],
-# [{"tags": []}],
-# [{"nums": [1, 2, 3]}],
-# [{"users": [{"name": "a"}, {"name": "b"}]}],
+#   [{"tags": ["a", "b"]}],
+#   [{"tags": []}],
+#   [{"nums": [1, 2, 3]}],
+#   [{"users": [{"name": "a"}, {"name": "b"}]}],
 # ])
 def test_toml_stringify_array_round_trips(input):
   let result = toml::toml_stringify(input)
@@ -60,8 +60,8 @@ end
 
 # Keys that are not bare (spaces, dots, quotes, empty) must be quoted, including in table headers.
 # @parametrize([
-# [{"a b": 1}], [{"a.b": 1}], [{"": 1}], [{"a\"b\\c": 1}],
-# [{"t": {"a b": 1}}], [{"a b": {"c d": {"e f": [1]}}}], [{"a b": [{"c d": 1}]}],
+#   [{"a b": 1}], [{"a.b": 1}], [{"": 1}], [{"a\"b\\c": 1}],
+#   [{"t": {"a b": 1}}], [{"a b": {"c d": {"e f": [1]}}}], [{"a b": [{"c d": 1}]}],
 # ])
 def test_toml_stringify_quotes_keys(input):
   assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
@@ -76,10 +76,10 @@ end
 # A key written after a `[table]` header would be parsed as a member of that table, so scalars
 # and arrays must be emitted before any table.
 # @parametrize([
-# [{"t": {"x": 2}, "z": 3}],
-# [{"t": {}, "z": 3}],
-# [{"arr": [{"a": 1}, {"a": 2}], "z": 1}],
-# [{"a": 1, "t": {"x": 2}, "z": [1, 2], "u": {"y": 3}}],
+#   [{"t": {"x": 2}, "z": 3}],
+#   [{"t": {}, "z": 3}],
+#   [{"arr": [{"a": 1}, {"a": 2}], "z": 1}],
+#   [{"a": 1, "t": {"x": 2}, "z": [1, 2], "u": {"y": 3}}],
 # ])
 def test_toml_stringify_keeps_scalars_out_of_tables(input):
   assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
@@ -87,10 +87,10 @@ end
 
 # TOML has no null: None-valued keys are omitted, and a null inside an array is an error.
 # @parametrize([
-# [{"a": 1, "k": None}, {"a": 1}],
-# [{"t": {"x": None, "y": 1}, "u": 1}, {"t": {"y": 1}, "u": 1}],
-# [{"t": {"x": None}}, {"t": {}}],
-# [{"arr": [{"a": 1, "b": None}]}, {"arr": [{"a": 1}]}],
+#   [{"a": 1, "k": None}, {"a": 1}],
+#   [{"t": {"x": None, "y": 1}, "u": 1}, {"t": {"y": 1}, "u": 1}],
+#   [{"t": {"x": None}}, {"t": {}}],
+#   [{"arr": [{"a": 1, "b": None}]}, {"arr": [{"a": 1}]}],
 # ])
 def test_toml_stringify_omits_none(input, expected):
   assert_eq(toml::toml_parse(toml::toml_stringify(input)), expected)

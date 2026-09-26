@@ -473,9 +473,9 @@ def _property_case_result(args, adapter):
             do
               let shrunk_result = adapter(shrunk)
               | {
-                "error": true,
-                "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
-              }
+                  "error": true,
+                  "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
+                }
             end
       end
     else:

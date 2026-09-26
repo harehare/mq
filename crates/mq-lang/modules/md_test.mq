@@ -83,8 +83,8 @@ def test_md_blockquote():
 end
 
 # @parametrize([
-# ["note body", "note", "", "> [!NOTE]\n> note body"],
-# ["warn body", "warning", "Careful", "> [!WARNING] Careful\n> warn body"],
+#   ["note body", "note", "", "> [!NOTE]\n> note body"],
+#   ["warn body", "warning", "Careful", "> [!WARNING] Careful\n> warn body"],
 # ])
 def test_md_callout(value, kind, title, expected):
   let result = to_string(md::callout(value, kind, title))
@@ -117,10 +117,10 @@ def test_md_image():
 end
 
 # @parametrize([
-# ["Item", 0, false, None, "- Item"],
-# ["Nested", 1, false, None, "  - Nested"],
-# ["Ordered", 0, true, None, "1. Ordered"],
-# ["Checked", 0, false, true, "- [x] Checked"],
+#   ["Item", 0, false, None, "- Item"],
+#   ["Nested", 1, false, None, "  - Nested"],
+#   ["Ordered", 0, true, None, "1. Ordered"],
+#   ["Checked", 0, false, true, "- [x] Checked"],
 # ])
 def test_md_list(value, level, ordered, checked, expected):
   let result = to_string(md::list(value, level, ordered, checked))

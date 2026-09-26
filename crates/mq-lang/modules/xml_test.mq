@@ -56,9 +56,9 @@ def test_xml_attr(name, expected):
 end
 
 # @parametrize([
-# ["<r><i>a</i><i>b</i></r>", "a b"],
-# ["<r><i></i></r>", ""],
-# ["<p>hi</p>", "hi"],
+#   ["<r><i>a</i><i>b</i></r>", "a b"],
+#   ["<r><i></i></r>", ""],
+#   ["<p>hi</p>", "hi"],
 # ])
 def test_xml_text(input, expected):
   assert_eq(xml::xml_text(xml::xml_parse(input)), expected)
