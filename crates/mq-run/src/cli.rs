@@ -59,7 +59,7 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
 #[command(version = env!("CARGO_PKG_VERSION"))]
 #[command(after_help = "# Examples\n\n\
     mq 'query' file.md\n\n\
-    mq compile query.mq\n\
+    mq compile -f query.mq\n\
     mq query.mqc file.md\n\n\
     Run `mq help examples` for more usage examples, or `mq help <name>` for\n\
     function/selector/module docs.\n")]
@@ -848,11 +848,15 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
-    /// Compile a query file to `.mqc` bytecode. Run it with `mq PROGRAM.mqc [FILES]...`
+    /// Compile a query to `.mqc` bytecode. Run it with `mq PROGRAM.mqc [FILES]...`
     Compile {
-        /// Query file to compile
-        query_file: PathBuf,
-        /// Output file [default: QUERY_FILE with a `.mqc` extension]
+        /// Query to compile, or a query file with -f
+        #[arg(value_name = "QUERY OR FILE")]
+        query: String,
+        /// Load the query from the file
+        #[arg(short, long)]
+        from_file: bool,
+        /// Output file [default: the query file with a `.mqc` extension; required for a query string]
         #[arg(short, long)]
         output: Option<PathBuf>,
         #[clap(flatten)]
@@ -1033,7 +1037,7 @@ impl Cli {
                 "  {} - Generate a shell completion script and print it to stdout",
                 "completion".green()
             ),
-            format!("  {} - Compile a query file to .mqc bytecode", "compile".green()),
+            format!("  {} - Compile a query to .mqc bytecode", "compile".green()),
         ];
 
         #[cfg(feature = "debugger")]
@@ -1675,7 +1679,8 @@ impl Cli {
         }
 
         if let Some(Commands::Compile {
-            query_file,
+            query,
+            from_file,
             output,
             program,
         }) = &self.commands
@@ -1685,12 +1690,12 @@ impl Cli {
                     "-T/--format has no effect on `mq compile`; pass -I/--input-format after `compile` instead"
                 ));
             }
-            if self.input.program != ProgramArgs::default() {
+            if self.input.program != ProgramArgs::default() || self.input.from_file {
                 return Err(miette!(
-                    "Pass compile options after `compile`: mq compile [OPTIONS] QUERY_FILE"
+                    "Pass compile options after `compile`: mq compile [OPTIONS] QUERY"
                 ));
             }
-            return Self::compile_bytecode(query_file, output.as_deref(), program);
+            return Self::compile_bytecode(query, *from_file, output.as_deref(), program);
         }
         self.load_bytecode()?;
 

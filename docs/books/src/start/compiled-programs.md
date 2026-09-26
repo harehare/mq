@@ -3,11 +3,12 @@
 `mq compile` saves a query as Tarn VM bytecode in a `.mqc` file. Pass the `.mqc` file in place of the query to run it. Modules, including HTTP imports, are resolved at compile time and stored in the file, so running it needs no module files or network access.
 
 ```sh
-mq compile query.mq          # writes query.mqc
+mq compile -f query.mq            # writes query.mqc
+mq compile '.h | to_text()' -o h.mqc
 mq query.mqc README.md
 ```
 
-Use `-o` to choose another output path. The program runs only when its path ends in `.mqc`, and `-f` does not accept it.
+As when running a query, `mq compile` takes a query string, or a query file with `-f`. A query file compiles to the same name with a `.mqc` extension; use `-o` to choose another path. A query string needs `-o`. The program runs only when its path ends in `.mqc`, and `-f` does not accept it.
 
 The usual input and output options apply:
 
@@ -18,7 +19,7 @@ cat notes.md | mq query.mqc -U
 
 ## What is fixed at compile time
 
-These options shape the compiled program, so pass them after `mq compile` (for example `mq compile -I csv query.mq`). `mq compile` rejects other options:
+These options shape the compiled program, so pass them after `mq compile` (for example `mq compile -I csv -f query.mq`). `mq compile` rejects other options:
 
 | Option | At run time |
 | --- | --- |
