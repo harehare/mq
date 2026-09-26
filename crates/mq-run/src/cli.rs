@@ -2994,6 +2994,9 @@ impl Cli {
                     &self.output.json_indent_unit(),
                 )?;
                 buf.extend_from_slice(json_str.as_bytes());
+                if !json_str.ends_with('\n') {
+                    buf.push(b'\n');
+                }
             }
             OutputFormat::Html => {
                 let markdown = self.build_markdown(runtime_values);
