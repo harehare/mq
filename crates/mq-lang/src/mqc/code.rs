@@ -15,6 +15,8 @@ use crate::{DictMap, Ident, Shared, TokenArena};
 use rustc_hash::FxHashMap;
 
 const MAX_CONSTANT_DEPTH: usize = 64;
+/// Caps up-front allocation, since counts come from untrusted input.
+pub(super) const MAX_PREALLOCATED: usize = 1 << 12;
 
 /// CODE payload plus data for the other sections.
 pub(crate) struct EncodedCode {
@@ -927,8 +929,8 @@ impl Decoder<'_> {
         let local_count = self.reader.len(2)?;
         let local_count_u16 =
             u16::try_from(local_count).map_err(|_| invalid(format!("{local_count} locals exceed the VM limit")))?;
-        let mut local_names = Vec::with_capacity(local_count);
-        let mut local_mutable = Vec::with_capacity(local_count);
+        let mut local_names = Vec::with_capacity(local_count.min(MAX_PREALLOCATED));
+        let mut local_mutable = Vec::with_capacity(local_count.min(MAX_PREALLOCATED));
         for _ in 0..local_count {
             local_names.push(self.ident()?);
             local_mutable.push(self.reader.bool()?);
@@ -954,7 +956,7 @@ impl Decoder<'_> {
         let op_count = self.reader.len(1)?;
         let code = (0..op_count).map(|_| self.op()).collect::<Result<Vec<_>, _>>()?;
         let line_count = self.reader.len(2)?;
-        let mut lines = Vec::with_capacity(line_count);
+        let mut lines = Vec::with_capacity(line_count.min(MAX_PREALLOCATED));
         let mut previous_pc = 0usize;
         for _ in 0..line_count {
             let pc_start = previous_pc
@@ -988,7 +990,7 @@ impl Decoder<'_> {
     /// Required, then optional, then at most one variadic.
     fn param_shape(&mut self) -> Result<ParamShape, MqcError> {
         let count = self.reader.len(2)?;
-        let mut bindings = Vec::with_capacity(count);
+        let mut bindings = Vec::with_capacity(count.min(MAX_PREALLOCATED));
         let mut required = 0;
         let mut has_variadic = false;
         for _ in 0..count {
