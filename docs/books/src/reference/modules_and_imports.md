@@ -34,6 +34,26 @@ end
 | math::mul(4, 2)  # Returns 8
 ```
 
+### Scope
+
+A module, inline or imported, sees only:
+
+- Its own functions and `let`/`var` values.
+- Built-in functions.
+- Modules it imports itself, and inline modules defined earlier (by qualified name).
+
+It does not see the query's own `let`, `var`, or `def` bindings, modules imported outside it, or runtime values such as `__FILE__` and `--args`. Referring to them is an error.
+
+```mq
+module csv_tools:
+  import "csv"
+  def rows(text): csv::csv_parse(text, true);
+end
+| csv_tools::rows("a,b\n1,2")
+```
+
+Module-level `let` values are computed once per run.
+
 ## Import
 
 Loads a module from an external file using the syntax `import "module_path"`.

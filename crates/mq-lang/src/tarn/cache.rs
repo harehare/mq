@@ -15,11 +15,8 @@ use web_time::Instant;
 pub(crate) struct CachedProgram {
     split: SplitProgram,
     configuration: Vec<engine::VmModulePrelude>,
-    /// Global snapshot used to bake module `let` initializers into constants; must still match
-    /// for the cache to stay valid, since a global's value can change under the same name.
-    baked_globals_key: VmEnvCacheKey,
-    /// Baked module `let`s read engine globals.
-    bakes_globals: bool,
+    /// Globals the bytecode was compiled against; a new global name changes how names resolve.
+    globals_key: VmEnvCacheKey,
     /// Cached bytecode includes module definitions, which are frozen per Engine.
     module_cache_key: VmModuleCacheKey,
 }
@@ -58,15 +55,13 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     context: &mut EngineRunContext<'_, R>,
     configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,
-    baked_globals_key: VmEnvCacheKey,
+    globals_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> Result<CachedProgram, Error> {
-    let split = SplitProgram::compile(program, context, deadline)?;
     Ok(CachedProgram {
-        bakes_globals: split.bakes_globals,
-        split,
+        split: SplitProgram::compile(program, context, deadline)?,
         configuration,
-        baked_globals_key,
+        globals_key,
         module_cache_key,
     })
 }
@@ -78,11 +73,10 @@ pub(super) fn cached_program_is_current(
     environment_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> bool {
-    // Global values matter only when baked into module `let`s.
+    // Global values are read at run time; only their names matter here.
     if compiled.configuration != configuration
-        || compiled.baked_globals_key.source != environment_key.source
-        || compiled.baked_globals_key.names_revision != environment_key.names_revision
-        || (compiled.bakes_globals && compiled.baked_globals_key.revision != environment_key.revision)
+        || compiled.globals_key.source != environment_key.source
+        || compiled.globals_key.names_revision != environment_key.names_revision
         || compiled.module_cache_key != module_cache_key
     {
         return false;

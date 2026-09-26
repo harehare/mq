@@ -56,7 +56,7 @@ fn test_batch_matches_single_file_runs(
     #[values(
         (r#"s"${__FILE_STEM__}: ${to_string(self)}""#, true),
         (r#"import "csv" | s"${__FILE_STEM__}""#, true),
-        ("module m: let n = __FILE_STEM__ end | m::n", true),
+        (r#"module m: let n = "!" end | s"${__FILE_STEM__}${m::n}""#, true),
         (".h | to_text()", false)
     )]
     case: (&str, bool),
@@ -90,7 +90,7 @@ fn test_update_matches_single_file_runs(#[values(&["-P", "1000"], &["-P", "0"])]
 #[rstest]
 #[case::mixed_formats(r#"s"${__FILE_STEM__}""#, true)]
 #[case::import(r#"import "csv" | s"${__FILE_STEM__}""#, true)]
-#[case::module_let_reads_file_global("module m: let n = __FILE_STEM__ end | m::n", true)]
+#[case::module_let(r#"module m: let n = "!" end | s"${__FILE_STEM__}${m::n}""#, true)]
 fn test_count_matches_single_file_counts(#[case] query: &str, #[case] with_csv: bool) {
     let dir = fixture();
     let files = if with_csv {
@@ -114,7 +114,7 @@ fn test_count_matches_single_file_counts(#[case] query: &str, #[case] with_csv: 
 
 #[rstest]
 #[case::file_global(r#"s"${__FILE_STEM__}: ${self}""#)]
-#[case::module_let_reads_file_global("module m: let n = __FILE_STEM__ end | s\"${m::n}: ${self}\"")]
+#[case::module_let(r#"module m: let n = "!" end | s"${__FILE_STEM__}${m::n}: ${self}""#)]
 fn test_stream_matches_single_file_runs(#[case] query: &str) {
     let dir = fixture();
     let args = ["--stream", "-I", "text", query];

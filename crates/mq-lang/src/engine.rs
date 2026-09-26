@@ -2619,7 +2619,7 @@ mod tests {
     }
 
     #[test]
-    fn test_inline_module_var_initializer_referencing_enclosing_def_runs_once_per_eval() {
+    fn test_inline_module_var_initializer_calling_its_own_def_runs_once_per_eval() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -2633,7 +2633,7 @@ mod tests {
         });
 
         let compiled = engine
-            .compile("def helper(): bump_counter(); | module counters: let counter = helper() end | counters::counter")
+            .compile("module counters: def helper(): bump_counter(); let counter = helper() end | counters::counter")
             .unwrap();
         engine
             .eval_compiled(
@@ -2647,11 +2647,7 @@ mod tests {
             )
             .unwrap();
 
-        assert_eq!(
-            call_count.load(Ordering::SeqCst),
-            1,
-            "a module var initializer referencing an enclosing `def` must still run once per eval"
-        );
+        assert_eq!(call_count.load(Ordering::SeqCst), 1);
     }
 
     #[rstest]
@@ -2660,21 +2656,44 @@ mod tests {
         "x,y\n1,2\n",
         RuntimeValue::Number(1.into())
     )]
-    #[case::enclosing_let_from_input(
-        "let x = upcase(self) | module m: let y = x end | m::y",
-        "abc",
-        "ABC".to_string().into()
+    #[case::own_def_from_let("module m: def f(): 1; let y = f() end | m::y", "", RuntimeValue::Number(1.into()))]
+    #[case::own_import_from_def(
+        r#"module m: import "csv" | def f(): len(csv::csv_parse("a\n1", true)); end | m::f()"#,
+        "",
+        RuntimeValue::Number(1.into())
     )]
-    #[case::enclosing_constant_let("let x = 1 | module m: let y = x + 1 end | m::y", "abc", RuntimeValue::Number(2.into()))]
-    fn test_inline_module_var_initializer_is_not_probed_with_the_enclosing_pipeline(
-        #[case] query: &str,
-        #[case] input: &str,
-        #[case] expected: RuntimeValue,
-    ) {
+    #[case::earlier_inline_module(
+        "module a: def f(): 1; end | module b: def g(): a::f() + 1; end | b::g()",
+        "",
+        RuntimeValue::Number(2.into())
+    )]
+    #[case::builtin("module m: def f(): upcase(); end | m::f()", "abc", "ABC".to_string().into())]
+    fn test_module_sees_what_it_declares(#[case] query: &str, #[case] input: &str, #[case] expected: RuntimeValue) {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
         let result = engine.eval(query, crate::raw_input(input).into_iter()).unwrap();
         assert_eq!(result.values(), &[expected]);
+    }
+
+    #[rstest]
+    #[case::enclosing_let_from_def("let x = 1 | module m: def f(): x; end | m::f()", "x")]
+    #[case::enclosing_let_from_let("let x = 1 | module m: let y = x end | m::y", "x")]
+    #[case::enclosing_def("def g(): 1; | module m: let y = g() end | m::y", "g")]
+    #[case::enclosing_import(
+        r#"import "csv" | module m: def f(): csv::csv_parse("a", true); end | m::f()"#,
+        "csv::csv_parse"
+    )]
+    #[case::engine_global_from_def("module m: def f(): __FILE__; end | m::f()", "__FILE__")]
+    #[case::engine_global_from_let("module m: let v = __FILE__ end | m::v", "__FILE__")]
+    fn test_module_cannot_see_outside(#[case] query: &str, #[case] name: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.define_string_value("__FILE__", "a.md");
+        let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+        assert!(
+            error.to_string().contains(&format!("\"{name}\" is not defined")),
+            "{error}"
+        );
     }
 
     #[test]

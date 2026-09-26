@@ -2968,11 +2968,8 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
 #[cfg(not(feature = "debugger"))]
 #[rstest]
 #[case::standard_module(r#"include "json" | s"${__FILE__}:${len(json_parse("[1]"))}""#, true)]
-// Conservative: module functions are scanned too.
-#[case::module_function_reads_global(r#"module m: let n = 1 | def f(): s"${__FILE__}:${n}"; end | m::f()"#, false)]
-#[case::module_let_reads_global(r#"module m: let v = s"${__FILE__}:1" end | m::v"#, false)]
-// Reads an enclosing `let`, so it isn't baked.
-#[case::enclosing_let_reads_global(r#"let p = __FILE__ | module m: let v = s"${p}:1" end | m::v"#, true)]
+// A module can't read globals, so its lets never depend on them.
+#[case::inline_module(r#"module m: let n = 1 end | s"${__FILE__}:${m::n}""#, true)]
 fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[case] query: &str, #[case] reused: bool) {
     let mut engine = crate::DefaultEngine::default();
     engine.load_builtin_module();
@@ -2992,40 +2989,6 @@ fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[cas
     let first = run("first.md");
     let second = run("second.md");
     assert_eq!(Shared::ptr_eq(&first, &second), reused);
-}
-
-#[cfg(not(feature = "debugger"))]
-#[test]
-fn cached_program_reflects_updated_global_in_module_var_initializer() {
-    let mut engine = crate::DefaultEngine::default();
-    engine.define_value("g", RuntimeValue::Number(1.into())).unwrap();
-    let compiled = engine.compile("module m: let x = g end | m::x").unwrap();
-
-    assert_eq!(
-        engine
-            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
-            .unwrap()
-            .values(),
-        &[RuntimeValue::Number(1.into())]
-    );
-    let first = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
-
-    // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
-    // must invalidate that cache, not just the plain-global lookup environment.
-    engine.define_value("g", RuntimeValue::Number(2.into())).unwrap();
-
-    assert_eq!(
-        engine
-            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
-            .unwrap()
-            .values(),
-        &[RuntimeValue::Number(2.into())]
-    );
-    let second = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
-    assert!(
-        !Shared::ptr_eq(&first, &second),
-        "module initializers require recompilation"
-    );
 }
 
 proptest! {

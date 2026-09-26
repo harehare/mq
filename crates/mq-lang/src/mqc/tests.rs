@@ -330,11 +330,16 @@ fn test_precompile_rejects_runtime_names_in_module_let(#[case] initializer: &str
 }
 
 #[rstest]
-#[case::top_level_let("let v = arg | v")]
-#[case::interpolation(r#"s"${arg}!""#)]
 #[case::module_function("module m: def f(): arg; end | m::f()")]
 #[case::module_closure("module m: let f = fn(): arg; end | m::f()")]
-#[case::module_constant_and_function(r#"module m: let suffix = "!" | def f(): arg + suffix; end | m::f()"#)]
+fn test_precompile_rejects_runtime_names_in_module(#[case] query: &str) {
+    let error = engine().precompile(query, &[]).unwrap_err();
+    assert!(error.to_string().contains(r#""arg" is not defined"#), "{error}");
+}
+
+#[rstest]
+#[case::top_level_let("let v = arg | v")]
+#[case::interpolation(r#"s"${arg}!""#)]
 fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
     let with_arg = || {
         let engine = engine();

@@ -33,7 +33,7 @@ Module-level `let` values are computed once, when the program is compiled.
 
 ## What is read at run time
 
-- Values from `--args`, `--argjson`, `--rawfile`, `--slurpfile`, and `__FILE__`.
+- Values from `--args`, `--argjson`, `--rawfile`, `--slurpfile`, and `__FILE__`, outside modules. A module can't read them.
 - Permissions such as `--allow-read` and `--allow-net`. A compiled program gets no permission that the running `mq` does not grant. Permissions passed to `mq compile` apply only while module-level `let` values are computed, and are not saved.
 - Environment variables read with interpolation, such as `s"${$HOME}"` (with `--allow-env`). `mq compile` rejects a bare `$VAR`, and any environment read in a module-level `let`, because the value would be saved in the file.
 

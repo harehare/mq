@@ -450,11 +450,26 @@ fn test_compile_rejects_runtime_names_in_module_let(#[case] query: &str) {
 }
 
 #[rstest]
-#[case::top_level_let("let label = arg | label")]
 #[case::inline_module_function("module m: def label(): arg; end | m::label()")]
 #[case::imported_module_function(r#"import "labels" | labels::label()"#)]
+fn test_compile_rejects_runtime_names_in_module(#[case] query: &str) {
+    let dir = TempDir::new().unwrap();
+    let modules = dir.path().join("modules");
+    fs::create_dir(&modules).unwrap();
+    write(&modules, "labels.mq", "def label(): arg;\n");
+    write(dir.path(), "query.mq", query);
+    let error = stderr(
+        mq(dir.path())
+            .args(["compile", "-L", "modules", "-f", "query.mq", "-o", "query.mqc"])
+            .assert(),
+    );
+    assert!(error.contains(r#""arg" is not defined"#), "{error}");
+}
+
+#[rstest]
+#[case::top_level_let("let label = arg | label")]
 #[case::included_module_function(r#"include "labels" | label()"#)]
-fn test_run_reads_runtime_names_outside_module_let(#[case] query: &str) {
+fn test_run_reads_runtime_names_outside_module(#[case] query: &str) {
     let dir = TempDir::new().unwrap();
     let modules = dir.path().join("modules");
     fs::create_dir(&modules).unwrap();

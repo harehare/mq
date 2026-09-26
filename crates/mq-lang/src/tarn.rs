@@ -31,8 +31,8 @@ pub(crate) use disasm::dump_bytecode;
 #[cfg(all(feature = "debug-trace", feature = "mqc"))]
 pub(crate) use disasm::dump_compiled_program;
 use nodes_split::{
-    ProgramSlice, immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes,
-    split_at_nodes, top_level_binding_names,
+    ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
+    top_level_binding_names,
 };
 
 use crate::Shared;
@@ -562,9 +562,9 @@ pub(crate) fn build_program(
 fn collect_module_prelude_targets(
     program: &Program,
     paths: &mut Vec<String>,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
 ) {
-    for (index, node) in program.iter().enumerate() {
+    for node in program {
         match &node.expr {
             Expr::Include(Literal::String(path)) => {
                 if !paths.iter().any(|existing| existing == path) {
@@ -577,7 +577,7 @@ fn collect_module_prelude_targets(
                 }
             }
             Expr::Module(ident, body) => {
-                inline_modules.push((ident.clone(), program[..index].to_vec(), body.clone()));
+                inline_modules.push((ident.clone(), body.clone()));
                 collect_module_paths(body, paths);
             }
             _ => {}
@@ -613,11 +613,10 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
     token_arena: &TokenArena,
     host_functions: &HostFunctions,
     max_call_stack_depth: u32,
-    global_bindings: &[(Ident, RuntimeValue)],
     module_loader: &mut ModuleLoader<R>,
     seen: &mut FxHashSet<String>,
     result: &mut compiler::ResolvedModuleVars,
-    inline_modules: &mut Vec<(ast::IdentWithToken, Program, Program)>,
+    inline_modules: &mut Vec<(ast::IdentWithToken, Program)>,
     deadline: Option<Instant>,
 ) -> Result<(), Error> {
     if !seen.insert(path.to_string()) {
@@ -639,7 +638,6 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
             token_arena,
             host_functions,
             max_call_stack_depth,
-            global_bindings,
             module_loader,
             seen,
             result,
@@ -673,27 +671,15 @@ fn resolve_external_module_prelude<R: ModuleResolver>(
             timeout: remaining_timeout(deadline),
             max_call_stack_depth,
             capture_stack_trace: false,
-            global_bindings,
+            // A module can't see Engine globals.
+            global_bindings: &[],
         },
         &var_names,
         interpreter::ExecutionPools::default(),
     );
     run_result?;
-    #[cfg(not(feature = "debugger"))]
-    {
-        result.reads_globals |= reads_any_global(&compiled, global_bindings);
-    }
     result.by_path.insert(path.to_string(), captured);
     Ok(())
-}
-
-/// Whether `compiled` can read one of `global_bindings`.
-#[cfg(not(feature = "debugger"))]
-fn reads_any_global(compiled: &compiler::CompiledProgram, global_bindings: &[(Ident, RuntimeValue)]) -> bool {
-    !global_bindings.is_empty()
-        && compiled.chunks.iter().flat_map(|chunk| &chunk.code).any(|op| {
-            matches!(op, bytecode::OpCode::GetExternalGlobal(name) if global_bindings.iter().any(|(global, _)| global == name))
-        })
 }
 
 /// Collects every simple `let` declared by an inline module tree, retaining the qualified path
@@ -723,17 +709,16 @@ fn collect_inline_module_vars(
 /// constants instead of recompiling the initializer per input.
 ///
 /// An inline module's vars are only reachable via qualified access, so they're probed by
-/// running a throwaway `[..declarations, module { .. }, array(alias::a, ..)]` program. The
-/// probe has no input, so it keeps only the enclosing declarations (`def`, `import`, ...).
-/// A var that reads an enclosing `let` or an undefined name is recompiled with the module
-/// instead; any other probe failure is a real initializer bug and is propagated.
+/// running a throwaway `[module { .. }, array(alias::a, ..)]` program. A module sees nothing
+/// outside it, so the probe needs no enclosing nodes. A probe failure is a real initializer
+/// bug and is propagated.
 fn resolve_module_prelude_globals<R: ModuleResolver>(
     program: &Program,
     context: &mut EngineRunContext<'_, R>,
     deadline: Option<Instant>,
 ) -> Result<compiler::ResolvedModuleVars, Error> {
     let mut paths: Vec<String> = Vec::new();
-    let mut inline_modules: Vec<(ast::IdentWithToken, Program, Program)> = Vec::new();
+    let mut inline_modules: Vec<(ast::IdentWithToken, Program)> = Vec::new();
     collect_module_prelude_targets(program, &mut paths, &mut inline_modules);
 
     let mut result = compiler::ResolvedModuleVars::default();
@@ -744,7 +729,6 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
             &context.token_arena,
             context.host_functions,
             context.max_call_stack_depth,
-            context.global_bindings,
             &mut context.module_loader,
             &mut seen_paths,
             &mut result,
@@ -753,7 +737,7 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
         )?;
     }
 
-    for (ident, prefix, body) in inline_modules {
+    for (ident, body) in inline_modules {
         let mut module_vars = Vec::new();
         collect_inline_module_vars(&ident, &body, &[], &mut module_vars);
         if module_vars.is_empty() {
@@ -772,20 +756,17 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 })
             })
             .collect();
-        let (mut probe_program, dropped): (Program, Program) =
-            prefix.into_iter().partition(|node| is_declaration(node));
-        let dropped_names = top_level_binding_names(&dropped);
-        probe_program.push(Shared::new(Node {
-            token_id: TokenId::new(0),
-            expr: Expr::Module(ident.clone(), body),
-        }));
-        probe_program.push(Shared::new(Node {
-            token_id: TokenId::new(0),
-            expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
-        }));
+        let probe_program: Program = vec![
+            Shared::new(Node {
+                token_id: TokenId::new(0),
+                expr: Expr::Module(ident.clone(), body),
+            }),
+            Shared::new(Node {
+                token_id: TokenId::new(0),
+                expr: Expr::Call(ast::IdentWithToken::new("array"), probe_args),
+            }),
+        ];
 
-        #[cfg(not(feature = "debugger"))]
-        let mut reads_globals = false;
         let probed: Result<Vec<RuntimeValue>, Error> = (|| {
             let compiled = compiler::compile_program_for_engine(
                 &probe_program,
@@ -794,10 +775,6 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
                 &[],
                 &result,
             )?;
-            #[cfg(not(feature = "debugger"))]
-            {
-                reads_globals = reads_any_global(&compiled, context.global_bindings);
-            }
             let value = interpreter::run_with_globals(
                 &compiled,
                 RuntimeValue::None,
@@ -814,32 +791,16 @@ fn resolve_module_prelude_globals<R: ModuleResolver>(
 
         match probed {
             Ok(values) if values.len() == module_vars.len() => {
-                #[cfg(not(feature = "debugger"))]
-                {
-                    result.reads_globals |= reads_globals;
-                }
                 for ((_, node), value) in module_vars.iter().zip(values) {
                     result.by_token.insert(node.token_id, value);
                 }
             }
             Ok(_) | Err(Error::Compile(compiler::CompileError::UndefinedIdent(..))) => {}
-            // Reads an enclosing `let`, so it runs with the program instead.
-            Err(Error::Vm(error))
-                if undefined_global(&error)
-                    .is_some_and(|name| dropped_names.iter().any(|dropped| dropped.as_str() == name)) => {}
             Err(error) => return Err(error),
         }
     }
 
     Ok(result)
-}
-
-fn undefined_global(error: &interpreter::VmError) -> Option<&str> {
-    match error {
-        interpreter::VmError::StackTrace(inner, _) | interpreter::VmError::Located(inner, _) => undefined_global(inner),
-        interpreter::VmError::UndefinedGlobal(name) => Some(name),
-        _ => None,
-    }
 }
 
 /// Everything `Engine::eval_compiled_vm` needs to run a compiled program on Tarn.
