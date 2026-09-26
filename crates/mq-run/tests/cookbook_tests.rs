@@ -1072,7 +1072,7 @@ fn cookbook_fuzzy_match_headings() {
     ]);
     let best: serde_json::Value = serde_json::from_str(best.trim()).unwrap();
     assert_eq!(best["text"], "Installation");
-    assert_eq!(best["score"], serde_json::json!(0.914141));
+    assert_eq!(best["score"], serde_json::json!(0.914141414141414));
 
     let section = run(&[
         r#"import "fuzzy" | import "section" | nodes | let best = fuzzy::fuzzy_best_match(map(filter(., is_h), to_text), "instalation") | section::section(get(best, "text"))"#,

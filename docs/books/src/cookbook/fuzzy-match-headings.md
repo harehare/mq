@@ -33,7 +33,7 @@ Common problems.
 ## Output
 
 ```
-{"text": "Installation", "score": 0.914141}
+{"text": "Installation", "score": 0.914141414141414}
 ```
 
 ## Extract the matching section
