@@ -847,69 +847,43 @@ pub(crate) struct TarnVm<'a, R: ModuleResolver> {
 }
 
 impl<'a, R: ModuleResolver> TarnVm<'a, R> {
-    /// Runs `program` against `input`, using cached bytecode when valid (non-debugger builds).
+    /// Runs `compiled` against `input`, using cached bytecode when valid (non-debugger builds).
+    ///
+    /// `prepared` is `compiled`'s program after [`build_program`], when that changed it.
     pub(crate) fn run<I>(
         &self,
-        #[cfg_attr(all(feature = "debugger", not(feature = "mqc")), allow(unused_variables))]
         compiled: &engine::CompiledProgram,
-        program: &Program,
+        #[cfg(feature = "debugger")] prepared: Option<&Program>,
         input: I,
     ) -> Result<Vec<RuntimeValue>, Error>
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        #[cfg(feature = "mqc")]
-        if let Some(precompiled) = &compiled.precompiled {
-            return precompiled.run_reusing(
-                input,
-                &self.engine,
-                shared_deadline(self.engine.timeout),
-                #[cfg(not(feature = "debugger"))]
-                self.environment_key,
-            );
-        }
-        #[cfg(not(feature = "debugger"))]
-        if self.engine.session.is_none()
-            && let Some(cached) = compiled.cached_vm_program()
-        {
-            // One deadline for the whole call: a cache-miss compile must not spend its own
-            // budget separately from the run that follows it.
-            let deadline = shared_deadline(self.engine.timeout);
-            let cached = match cached {
-                Some(cached)
-                    if cache::cached_program_is_current(
-                        &cached,
-                        self.module_prelude,
-                        self.environment_key,
-                        self.module_cache_key,
-                    ) =>
-                {
-                    cached
+        let program = match &compiled.body {
+            engine::ProgramBody::Ast(program) => program,
+            #[cfg(not(feature = "debugger"))]
+            engine::ProgramBody::Cached { program, cache } => {
+                if self.engine.session.is_some() {
+                    program
+                } else {
+                    return self.run_cached(program, cache, input);
                 }
-                _ => {
-                    let mut cache_context = self.engine.fork_for_compilation();
-                    let prepared_program =
-                        build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
-                            .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
-                    let prepared_program = prepared_program.as_ref().unwrap_or(program);
-                    let cached = Shared::new(cache::compile_cached_program(
-                        prepared_program,
-                        &mut cache_context,
-                        self.module_prelude.to_vec(),
-                        deadline,
-                        self.environment_key,
-                        self.module_cache_key,
-                    )?);
-                    compiled.cache_vm_program(Shared::clone(&cached));
-                    cached
-                }
-            };
-            return cache::run_cached(&cached, input, &self.engine, deadline, self.environment_key);
-        }
+            }
+            #[cfg(feature = "mqc")]
+            engine::ProgramBody::Precompiled(precompiled) => {
+                return precompiled.run_reusing(
+                    input,
+                    &self.engine,
+                    shared_deadline(self.engine.timeout),
+                    #[cfg(not(feature = "debugger"))]
+                    self.environment_key,
+                );
+            }
+        };
         #[cfg(feature = "debugger")]
         {
             compile_and_run_debugged(
-                program,
+                prepared.unwrap_or(program),
                 input,
                 DebugRunContext {
                     engine: self.engine.fork_for_compilation(),
@@ -926,6 +900,47 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
             let prepared_program = prepared_program.as_ref().unwrap_or(program);
             compile_and_run_many(prepared_program, input, self.engine.fork_for_compilation())
         }
+    }
+
+    /// Runs `program` from `cache`, rebuilding the bytecode when it is stale.
+    #[cfg(not(feature = "debugger"))]
+    fn run_cached<I>(&self, program: &Program, cache: &engine::VmCache, input: I) -> Result<Vec<RuntimeValue>, Error>
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
+        // One deadline for the whole call: a cache-miss compile must not spend its own
+        // budget separately from the run that follows it.
+        let deadline = shared_deadline(self.engine.timeout);
+        let cached = match cache.get() {
+            Some(cached)
+                if cache::cached_program_is_current(
+                    &cached,
+                    self.module_prelude,
+                    self.environment_key,
+                    self.module_cache_key,
+                ) =>
+            {
+                cached
+            }
+            _ => {
+                let mut cache_context = self.engine.fork_for_compilation();
+                let prepared_program =
+                    build_program(program, Shared::clone(&self.engine.token_arena), self.module_prelude)
+                        .map_err(|error| compiler::CompileError::InvalidBytecode(error.to_string()))?;
+                let prepared_program = prepared_program.as_ref().unwrap_or(program);
+                let cached = Shared::new(cache::compile_cached_program(
+                    prepared_program,
+                    &mut cache_context,
+                    self.module_prelude.to_vec(),
+                    deadline,
+                    self.environment_key,
+                    self.module_cache_key,
+                )?);
+                cache.set(Shared::clone(&cached));
+                cached
+            }
+        };
+        cache::run_cached(&cached, input, &self.engine, deadline, self.environment_key)
     }
 }
 

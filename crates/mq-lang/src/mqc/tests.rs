@@ -110,7 +110,10 @@ fn test_load_mqc_reuses_the_last_decoded_program() {
     let upcase = compile("upcase()");
     let downcase = compile("downcase()");
     let mut engine = engine();
-    let precompiled = |program: &MqcProgram| Shared::clone(program.program().precompiled.as_ref().unwrap());
+    let precompiled = |program: &MqcProgram| match &program.program().body {
+        crate::engine::ProgramBody::Precompiled(precompiled) => Shared::clone(precompiled),
+        _ => panic!("not precompiled"),
+    };
 
     let first = precompiled(&load(&mut engine, &upcase).unwrap());
     assert!(Shared::ptr_eq(

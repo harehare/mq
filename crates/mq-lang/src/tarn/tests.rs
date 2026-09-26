@@ -1873,7 +1873,7 @@ fn cached_nodes_capture_reuses_precomputed_slots() {
         .unwrap();
 
     assert_eq!(results.values(), &[RuntimeValue::Number(2.0.into())]);
-    assert!(compiled.cached_vm_program().flatten().is_some());
+    assert!(compiled.vm_cache().and_then(|cache| cache.get()).is_some());
 }
 
 #[rstest]
@@ -2848,8 +2848,8 @@ fn cached_program_restores_execution_pools_after_each_run() {
         );
         assert!(
             compiled
-                .cached_vm_program()
-                .flatten()
+                .vm_cache()
+                .and_then(|cache| cache.get())
                 .is_some_and(|cached| cached.has_available_execution_pools())
         );
     }
@@ -2913,7 +2913,7 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
             .values(),
         &[RuntimeValue::String(Shared::new("first.md".into()))]
     );
-    let first = compiled.cached_vm_program().flatten().unwrap();
+    let first = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
 
     engine.define_string_value("__FILE__", "second.md");
     assert_eq!(
@@ -2923,14 +2923,14 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
             .values(),
         &[RuntimeValue::String(Shared::new("second.md".into()))]
     );
-    let second = compiled.cached_vm_program().flatten().unwrap();
+    let second = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
     assert!(Shared::ptr_eq(&first, &second), "value updates should reuse bytecode");
 
     engine.define_string_value("other", "new binding");
     engine
         .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
         .unwrap();
-    let third = compiled.cached_vm_program().flatten().unwrap();
+    let third = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
     assert!(!Shared::ptr_eq(&second, &third), "new names must recompile bytecode");
 }
 
@@ -2954,7 +2954,7 @@ fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[cas
             values.values(),
             &[RuntimeValue::String(Shared::new(format!("{file}:1")))]
         );
-        compiled.cached_vm_program().flatten().unwrap()
+        compiled.vm_cache().and_then(|cache| cache.get()).unwrap()
     };
 
     let first = run("first.md");
@@ -2976,7 +2976,7 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
             .values(),
         &[RuntimeValue::Number(1.into())]
     );
-    let first = compiled.cached_vm_program().flatten().unwrap();
+    let first = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
 
     // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
     // must invalidate that cache, not just the plain-global lookup environment.
@@ -2989,7 +2989,7 @@ fn cached_program_reflects_updated_global_in_module_var_initializer() {
             .values(),
         &[RuntimeValue::Number(2.into())]
     );
-    let second = compiled.cached_vm_program().flatten().unwrap();
+    let second = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
     assert!(
         !Shared::ptr_eq(&first, &second),
         "module initializers require recompilation"

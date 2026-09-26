@@ -35,61 +35,96 @@ pub enum DefineValueError {
 #[derive(Debug, Clone)]
 pub struct CompiledProgram {
     pub(crate) source: String,
-    pub(crate) program: crate::ast::Program,
+    pub(crate) body: ProgramBody,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ProgramBody {
+    /// Compiled on each run (`Engine::eval`).
+    Ast(crate::ast::Program),
+    /// Bytecode is built on the first run and reused.
     #[cfg(not(feature = "debugger"))]
-    vm_cache: Option<Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>>,
-    /// Bytecode loaded from a `.mqc` file; `program` is empty.
+    Cached {
+        program: crate::ast::Program,
+        cache: VmCache,
+    },
+    /// Loaded from a `.mqc` file.
     #[cfg(feature = "mqc")]
-    pub(crate) precompiled: Option<Shared<tarn::split_program::SplitProgram>>,
+    Precompiled(Shared<tarn::split_program::SplitProgram>),
+}
+
+/// Bytecode built from a [`ProgramBody::Cached`] program, shared by its clones.
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone, Default)]
+pub(crate) struct VmCache(Shared<SharedCell<Option<Shared<tarn::CachedProgram>>>>);
+
+#[cfg(not(feature = "debugger"))]
+impl VmCache {
+    pub(crate) fn get(&self) -> Option<Shared<tarn::CachedProgram>> {
+        #[cfg(feature = "sync")]
+        {
+            self.0.read().unwrap().clone()
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            self.0.borrow().clone()
+        }
+    }
+
+    pub(crate) fn set(&self, program: Shared<tarn::CachedProgram>) {
+        #[cfg(feature = "sync")]
+        {
+            *self.0.write().unwrap() = Some(program);
+        }
+        #[cfg(not(feature = "sync"))]
+        {
+            *self.0.borrow_mut() = Some(program);
+        }
+    }
 }
 
 impl CompiledProgram {
+    /// Wraps `program` so its bytecode is cached across runs.
+    fn cached(source: String, program: crate::ast::Program) -> Self {
+        #[cfg(not(feature = "debugger"))]
+        let body = ProgramBody::Cached {
+            program,
+            cache: VmCache::default(),
+        };
+        #[cfg(feature = "debugger")]
+        let body = ProgramBody::Ast(program);
+        Self { source, body }
+    }
+
     /// Returns the original source code.
     pub fn source(&self) -> &str {
         &self.source
     }
 
-    /// Returns the underlying AST nodes.
-    pub fn program(&self) -> &crate::ast::Program {
-        &self.program
+    /// Returns the underlying AST nodes, or `None` for a program loaded from a `.mqc` file.
+    pub fn program(&self) -> Option<&crate::ast::Program> {
+        match &self.body {
+            ProgramBody::Ast(program) => Some(program),
+            #[cfg(not(feature = "debugger"))]
+            ProgramBody::Cached { program, .. } => Some(program),
+            #[cfg(feature = "mqc")]
+            ProgramBody::Precompiled(_) => None,
+        }
     }
 
     #[cfg(feature = "mqc")]
     pub(crate) fn from_precompiled(source: String, program: tarn::split_program::SplitProgram) -> Self {
         Self {
             source,
-            program: Vec::new(),
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: None,
-            precompiled: Some(Shared::new(program)),
+            body: ProgramBody::Precompiled(Shared::new(program)),
         }
     }
 
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) fn cached_vm_program(&self) -> Option<Option<Shared<tarn::CachedProgram>>> {
-        let cache = self.vm_cache.as_ref()?;
-        #[cfg(feature = "sync")]
-        {
-            Some(cache.read().unwrap().clone())
-        }
-        #[cfg(not(feature = "sync"))]
-        {
-            Some(cache.borrow().clone())
-        }
-    }
-
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) fn cache_vm_program(&self, program: Shared<tarn::CachedProgram>) {
-        let Some(cache) = &self.vm_cache else {
-            return;
-        };
-        #[cfg(feature = "sync")]
-        {
-            *cache.write().unwrap() = Some(program);
-        }
-        #[cfg(not(feature = "sync"))]
-        {
-            *cache.borrow_mut() = Some(program);
+    #[cfg(all(test, not(feature = "debugger")))]
+    pub(crate) fn vm_cache(&self) -> Option<&VmCache> {
+        match &self.body {
+            ProgramBody::Cached { cache, .. } => Some(cache),
+            _ => None,
         }
     }
 }
@@ -97,14 +132,7 @@ impl CompiledProgram {
 impl From<crate::ast::Program> for CompiledProgram {
     /// Wraps a raw `Program` (e.g. from `ast_from_json`) with no source context.
     fn from(program: crate::ast::Program) -> Self {
-        Self {
-            source: String::new(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: Some(Shared::new(SharedCell::new(None))),
-            #[cfg(feature = "mqc")]
-            precompiled: None,
-        }
+        Self::cached(String::new(), program)
     }
 }
 
@@ -477,11 +505,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
         let compiled = CompiledProgram {
             source: code.to_string(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: None,
-            #[cfg(feature = "mqc")]
-            precompiled: None,
+            body: ProgramBody::Ast(program),
         };
         self.eval_compiled_vm(&compiled, input.into_iter())
     }
@@ -491,25 +515,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Use this with `eval_compiled` to avoid re-parsing the same query for each input.
     pub fn compile(&mut self, code: &str) -> Result<CompiledProgram, Box<error::Error>> {
         if code.is_empty() {
-            return Ok(CompiledProgram {
-                source: String::new(),
-                program: vec![],
-                #[cfg(not(feature = "debugger"))]
-                vm_cache: Some(Shared::new(SharedCell::new(None))),
-                #[cfg(feature = "mqc")]
-                precompiled: None,
-            });
+            return Ok(CompiledProgram::cached(String::new(), Vec::new()));
         }
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let program = parse(code, Shared::clone(&self.token_arena))?;
-        Ok(CompiledProgram {
-            source: code.to_string(),
-            program,
-            #[cfg(not(feature = "debugger"))]
-            vm_cache: Some(Shared::new(SharedCell::new(None))),
-            #[cfg(feature = "mqc")]
-            precompiled: None,
-        })
+        Ok(CompiledProgram::cached(code.to_string(), program))
     }
 
     /// Evaluates a pre-compiled program against the given input.
@@ -546,17 +556,18 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     #[cfg(feature = "debug-trace")]
     pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
-        #[cfg(feature = "mqc")]
-        if let Some(precompiled) = &compiled.precompiled {
-            return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));
-        }
+        let program = match &compiled.body {
+            ProgramBody::Ast(program) => program,
+            #[cfg(not(feature = "debugger"))]
+            ProgramBody::Cached { program, .. } => program,
+            #[cfg(feature = "mqc")]
+            ProgramBody::Precompiled(precompiled) => {
+                return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));
+            }
+        };
         let global_bindings = self.vm.global_bindings_snapshot();
-        let vm_program = tarn::build_program(
-            &compiled.program,
-            Shared::clone(&self.token_arena),
-            &self.vm_module_prelude,
-        )?;
-        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+        let vm_program = tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude)?;
+        let vm_program = vm_program.as_ref().unwrap_or(program);
 
         tarn::dump_bytecode(
             vm_program,
@@ -594,13 +605,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let global_bindings = self.vm.global_bindings_snapshot();
 
         #[cfg(feature = "debugger")]
-        let vm_program = tarn::build_program(
-            &compiled.program,
-            Shared::clone(&self.token_arena),
-            &self.vm_module_prelude,
-        )?;
-        #[cfg(feature = "debugger")]
-        let vm_program = vm_program.as_ref().unwrap_or(&compiled.program);
+        let vm_program = compiled
+            .program()
+            .map(|program| tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude))
+            .transpose()?
+            .flatten();
 
         let (timeout, max_call_stack_depth, capture_stack_trace) = (
             self.vm.options.timeout,
@@ -640,9 +649,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         vm.run(
             compiled,
             #[cfg(feature = "debugger")]
-            vm_program,
-            #[cfg(not(feature = "debugger"))]
-            &compiled.program,
+            vm_program.as_ref(),
             input,
         )
         .map(Into::into)
@@ -877,8 +884,9 @@ mod tests {
                 #[cfg(not(feature = "debugger"))]
                 assert!(
                     !compiled
-                        .cached_vm_program()
-                        .flatten()
+                        .vm_cache()
+                        .unwrap()
+                        .get()
                         .unwrap()
                         .per_input_program_makes_closures()
                 );
@@ -959,7 +967,7 @@ mod tests {
                 assert_eq!(after.load(Ordering::SeqCst), evaluation + 1);
                 #[cfg(not(feature = "debugger"))]
                 {
-                    let cached = compiled.cached_vm_program().flatten().unwrap();
+                    let cached = compiled.vm_cache().unwrap().get().unwrap();
                     assert!(cached.has_available_execution_pools());
                     if let Some(previous) = &previous_cache {
                         assert!(crate::Shared::ptr_eq(previous, &cached), "must reuse bytecode");
@@ -980,7 +988,7 @@ mod tests {
             let compiled = engine.compile(query).unwrap();
             for input in [vec![], vec![1], vec![1, 2, 3]] {
                 engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
-                let cached = compiled.cached_vm_program().flatten().unwrap();
+                let cached = compiled.vm_cache().unwrap().get().unwrap();
                 assert!(!cached.per_input_program_makes_closures(), "{query}");
             }
         }
@@ -1007,7 +1015,7 @@ mod tests {
                 value => vec![value.clone()],
             });
             assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
-            let cached = compiled.cached_vm_program().flatten().unwrap();
+            let cached = compiled.vm_cache().unwrap().get().unwrap();
             assert_eq!(cached.per_input_program_makes_closures(), makes_closures, "{query}");
         }
 
@@ -1070,8 +1078,9 @@ mod tests {
                 #[cfg(not(feature = "debugger"))]
                 assert!(
                     compiled
-                        .cached_vm_program()
-                        .flatten()
+                        .vm_cache()
+                        .unwrap()
+                        .get()
                         .unwrap()
                         .has_available_execution_pools()
                 );
@@ -1624,7 +1633,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile(query).unwrap();
         assert_eq!(compiled.source(), expected);
-        assert!(!compiled.program().is_empty());
+        assert!(!compiled.program().unwrap().is_empty());
         assert_eq!(compiled.clone().source(), expected);
     }
 
@@ -1634,7 +1643,7 @@ mod tests {
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile(query).unwrap();
         assert_eq!(compiled.source(), "");
-        assert!(compiled.program().is_empty());
+        assert!(compiled.program().unwrap().is_empty());
     }
 
     #[cfg(feature = "debug-trace")]
@@ -1778,7 +1787,7 @@ mod tests {
     fn test_compiled_program_from_has_empty_source() {
         let compiled = CompiledProgram::from(vec![]);
         assert_eq!(compiled.source(), "");
-        assert!(compiled.program().is_empty());
+        assert!(compiled.program().unwrap().is_empty());
     }
 
     #[rstest]
@@ -1816,7 +1825,7 @@ mod tests {
     fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {
         let mut engine = DefaultEngine::default();
         let original = engine.compile(query).unwrap();
-        let no_source = CompiledProgram::from(original.program().clone());
+        let no_source = CompiledProgram::from(original.program().unwrap().clone());
         assert_eq!(no_source.source(), "");
         let err = engine
             .eval_compiled(&no_source, crate::null_input().into_iter())
@@ -1988,14 +1997,14 @@ mod tests {
 
         let mut engine = DefaultEngine::default();
         let compiled = engine.compile("def twice(x): x * 2; | twice(21)").unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
 
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
         #[cfg(not(feature = "debugger"))]
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine
             .eval_compiled(
@@ -2026,7 +2035,7 @@ mod tests {
         let compiled = engine
             .compile("module m: let x = slow_init() end | m::x | loop: 1;")
             .unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_none()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
 
         let started = std::time::Instant::now();
         let err = engine
@@ -2084,7 +2093,7 @@ mod tests {
             first.values(),
             &[RuntimeValue::String(Shared::new("first".to_string()))]
         );
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         std::fs::write(&temp_file_path, r#"def greeting(): "second";"#).unwrap();
         let second = engine
@@ -2141,7 +2150,7 @@ mod tests {
 
         let first = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(first.values().len(), 1);
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
         assert_eq!(second.values(), first.values());
@@ -2160,7 +2169,7 @@ mod tests {
         let result = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(result.values(), &[RuntimeValue::Number(3.0.into())]);
 
-        let cached = compiled.cached_vm_program().flatten().unwrap();
+        let cached = compiled.vm_cache().unwrap().get().unwrap();
         assert!(!cached.per_input_program_makes_closures());
     }
 
@@ -2182,7 +2191,7 @@ mod tests {
 
         let first = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(first.values(), &[RuntimeValue::Number(3.0.into())]);
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
 
         let second = engine.eval_compiled(&compiled, inputs()).unwrap();
         assert_eq!(second.values(), first.values());
@@ -2470,7 +2479,7 @@ mod tests {
         let first = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
         let second = engine
             .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
             .unwrap();
@@ -2906,7 +2915,7 @@ mod tests {
             ]))]
         );
         #[cfg(not(feature = "debugger"))]
-        assert!(compiled.cached_vm_program().is_some_and(|cache| cache.is_some()));
+        assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
     }
 
     #[cfg(not(feature = "debugger"))]
