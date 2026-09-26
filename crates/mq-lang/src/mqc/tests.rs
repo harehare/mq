@@ -100,6 +100,23 @@ fn test_mqc_program_sees_globals_changed_between_runs() {
 }
 
 #[test]
+fn test_load_mqc_reuses_the_last_decoded_program() {
+    let upcase = compile("upcase()");
+    let downcase = compile("downcase()");
+    let mut engine = engine();
+    let precompiled = |program: &MqcProgram| Shared::clone(program.program().precompiled.as_ref().unwrap());
+
+    let first = precompiled(&engine.load_mqc(&upcase).unwrap());
+    assert!(Shared::ptr_eq(&first, &precompiled(&engine.load_mqc(&upcase).unwrap())));
+    let other = engine.load_mqc(&downcase).unwrap();
+    assert!(!Shared::ptr_eq(&first, &precompiled(&other)));
+    let result = engine
+        .eval_compiled(other.program(), crate::raw_input("MQ").into_iter())
+        .unwrap();
+    assert_eq!(result, vec!["mq".to_string().into()].into());
+}
+
+#[test]
 fn test_mqc_program_is_reusable_across_inputs() {
     let bytes = compile("upcase()");
     let mut engine = engine();

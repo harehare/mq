@@ -292,6 +292,17 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// The program needs no module resolution or network access. The file is treated as
     /// untrusted: it is checked and its bytecode verified before anything runs.
     pub fn load_mqc(&mut self, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
+        if let Some((cached, program)) = &self.last_mqc
+            && cached.as_slice() == bytes
+        {
+            return Ok(program.clone());
+        }
+        let program = self.decode_mqc(bytes)?;
+        self.last_mqc = Some((bytes.to_vec(), program.clone()));
+        Ok(program)
+    }
+
+    fn decode_mqc(&mut self, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
         let sections = read_container(bytes)?;
         let payload = |tag: [u8; 4], name: &'static str| {
             sections
