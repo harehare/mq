@@ -196,7 +196,8 @@ fn test_compact_rejected_without_json_format() {
       }
     }
   }
-]"#)
+]
+"#)
 )]
 #[case::args(
     vec!["--unbuffered", "--args", "val1", "test", "select(contains(val1))"],
@@ -412,7 +413,12 @@ In {year}, the snowfall was above average.
 #[case::output_format_json_compact(
     vec!["--unbuffered", "-I", "json", "-F", "json", "--compact", "self"],
     r#"{"name": "Alice", "age": 30}"#,
-    Some("{\"name\":\"Alice\",\"age\":30}")
+    Some("{\"name\":\"Alice\",\"age\":30}\n")
+)]
+#[case::output_format_json_empty(
+    vec!["--unbuffered", "-F", "json", ".h"],
+    "text",
+    Some("[]\n")
 )]
 #[case::output_format_yaml(
     vec!["--unbuffered", "-I", "json", "-F", "yaml", "self"],
