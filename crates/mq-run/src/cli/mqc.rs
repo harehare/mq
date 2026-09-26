@@ -30,6 +30,14 @@ impl Cli {
                 output
             }
         };
+        if let (Ok(input), Ok(output)) = (fs::canonicalize(query_file), fs::canonicalize(&output))
+            && input == output
+        {
+            return Err(miette!(
+                "{} is the query file; choose a different -o/--output",
+                output.display()
+            ));
+        }
         let cli = Cli {
             input: InputArgs {
                 program: program.clone(),

@@ -177,6 +177,9 @@ fn test_run_rejects_mismatched_flags(
 #[case::compile_mqc_without_output(&["compile", "query.mqc"], "pass -o/--output")]
 #[case::compile_without_query(&["compile", "-o", "out.mqc"], "<QUERY_FILE>")]
 #[case::compile_flags_before_subcommand(&["-A", "compile", "query.mq"], "Pass compile options after `compile`")]
+#[case::compile_global_format(&["-T", "csv", "compile", "query.mq"], "-T/--format has no effect on `mq compile`")]
+#[case::compile_output_is_query(&["compile", "query.mq", "-o", "query.mq"], "is the query file")]
+#[case::compile_output_is_query_alias(&["compile", "query.mq", "-o", "./sub/../query.mq"], "is the query file")]
 #[case::compile_runtime_flag(&["compile", "--stream", "query.mq"], "unexpected argument '--stream'")]
 #[case::mqc_extension_not_bytecode(&["source.mqc"], "not an mq bytecode file")]
 #[case::from_file_mqc(&["-f", "source.mqc"], "-f does not accept .mqc files")]
@@ -184,8 +187,10 @@ fn test_usage_errors(#[case] args: &[&str], #[case] message: &str) {
     let dir = TempDir::new().unwrap();
     write(dir.path(), "query.mq", ".h");
     write(dir.path(), "source.mqc", ".h");
+    fs::create_dir(dir.path().join("sub")).unwrap();
     let error = stderr(mq(dir.path()).args(args).assert());
     assert!(error.contains(message), "{error}");
+    assert_eq!(fs::read_to_string(dir.path().join("query.mq")).unwrap(), ".h");
 }
 
 #[rstest]

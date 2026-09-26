@@ -1680,6 +1680,11 @@ impl Cli {
             program,
         }) = &self.commands
         {
+            if self.format.is_some() {
+                return Err(miette!(
+                    "-T/--format has no effect on `mq compile`; pass -I/--input-format after `compile` instead"
+                ));
+            }
             if self.input.program != ProgramArgs::default() {
                 return Err(miette!(
                     "Pass compile options after `compile`: mq compile [OPTIONS] QUERY_FILE"
