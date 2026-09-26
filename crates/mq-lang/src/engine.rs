@@ -162,9 +162,9 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
-    /// The last `.mqc` file loaded, so reloading the same bytes skips decoding.
+    /// The last `.mqc` file loaded, keyed by its checksum, so reloading it skips decoding.
     #[cfg(feature = "mqc")]
-    pub(crate) last_mqc: Option<(Vec<u8>, crate::MqcProgram)>,
+    pub(crate) last_mqc: Option<([u8; crate::mqc::CHECKSUM_LEN], CompiledProgram)>,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.

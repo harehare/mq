@@ -14,14 +14,18 @@ fn compile(code: &str) -> Vec<u8> {
     engine().precompile(code, &[]).expect("compile to .mqc").into_bytes()
 }
 
-fn load<R: ModuleResolver, IO: Io>(engine: &mut Engine<R, IO>, bytes: &[u8]) -> Result<MqcProgram, MqcError> {
+fn checked(bytes: &[u8]) -> Mqc {
+    Mqc::try_from(bytes.to_vec()).expect("checked .mqc")
+}
+
+fn load<R: ModuleResolver, IO: Io>(engine: &mut Engine<R, IO>, bytes: &[u8]) -> Result<CompiledProgram, MqcError> {
     engine.load(&Mqc::try_from(bytes.to_vec())?)
 }
 
 fn run_mqc(bytes: &[u8], input: Vec<RuntimeValue>) -> crate::MqResult {
     let mut engine = engine();
     let program = load(&mut engine, bytes).expect("load .mqc");
-    engine.eval_compiled(program.program(), input.into_iter())
+    engine.eval_compiled(&program, input.into_iter())
 }
 
 fn markdown(text: &str) -> Vec<RuntimeValue> {
@@ -83,11 +87,9 @@ fn test_mqc_program_reads_engine_globals_at_run_time() {
     let bytes = compile("greeting + \" mq\"");
     let mut engine = engine();
     engine.define_string_value("greeting", "hello");
+    assert_eq!(checked(&bytes).external_globals(), ["greeting".to_string()]);
     let program = load(&mut engine, &bytes).unwrap();
-    assert_eq!(program.external_globals(), ["greeting".to_string()]);
-    let result = engine
-        .eval_compiled(program.program(), crate::null_input().into_iter())
-        .unwrap();
+    let result = engine.eval_compiled(&program, crate::null_input().into_iter()).unwrap();
     assert_eq!(result, vec!["hello mq".to_string().into()].into());
 }
 
@@ -98,9 +100,7 @@ fn test_mqc_program_sees_globals_changed_between_runs() {
     let program = load(&mut engine, &bytes).unwrap();
     for greeting in ["hello", "bye"] {
         engine.define_string_value("greeting", greeting);
-        let result = engine
-            .eval_compiled(program.program(), crate::null_input().into_iter())
-            .unwrap();
+        let result = engine.eval_compiled(&program, crate::null_input().into_iter()).unwrap();
         assert_eq!(result, vec![greeting.to_string().into()].into());
     }
 }
@@ -110,7 +110,7 @@ fn test_load_mqc_reuses_the_last_decoded_program() {
     let upcase = compile("upcase()");
     let downcase = compile("downcase()");
     let mut engine = engine();
-    let precompiled = |program: &MqcProgram| match &program.program().body {
+    let precompiled = |program: &CompiledProgram| match &program.body {
         crate::engine::ProgramBody::Precompiled(precompiled) => Shared::clone(precompiled),
         _ => panic!("not precompiled"),
     };
@@ -123,7 +123,7 @@ fn test_load_mqc_reuses_the_last_decoded_program() {
     let other = load(&mut engine, &downcase).unwrap();
     assert!(!Shared::ptr_eq(&first, &precompiled(&other)));
     let result = engine
-        .eval_compiled(other.program(), crate::raw_input("MQ").into_iter())
+        .eval_compiled(&other, crate::raw_input("MQ").into_iter())
         .unwrap();
     assert_eq!(result, vec!["mq".to_string().into()].into());
 }
@@ -135,7 +135,7 @@ fn test_mqc_program_is_reusable_across_inputs() {
     let program = load(&mut engine, &bytes).unwrap();
     for word in ["a", "b"] {
         let result = engine
-            .eval_compiled(program.program(), crate::raw_input(word).into_iter())
+            .eval_compiled(&program, crate::raw_input(word).into_iter())
             .unwrap();
         assert_eq!(result, vec![word.to_uppercase().into()].into());
     }
@@ -147,10 +147,10 @@ fn test_mqc_metadata_and_dependencies_round_trip() {
         .precompile(r#"import "csv" | csv::csv_parse(true)"#, &[("input-format", "csv")])
         .unwrap()
         .into_bytes();
-    let program = load(&mut engine(), &bytes).unwrap();
-    assert_eq!(program.metadata("input-format"), Some("csv"));
-    assert_eq!(program.metadata("missing"), None);
-    let csv = program
+    let mqc = checked(&bytes);
+    assert_eq!(mqc.metadata("input-format"), Some("csv"));
+    assert_eq!(mqc.metadata("missing"), None);
+    let csv = mqc
         .dependencies()
         .iter()
         .find(|dependency| dependency.name == "csv")
@@ -344,9 +344,7 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
     let expected = with_arg().eval(query, crate::null_input().into_iter()).unwrap();
     let mut engine = with_arg();
     let program = load(&mut engine, &compile(query)).unwrap();
-    let actual = engine
-        .eval_compiled(program.program(), crate::null_input().into_iter())
-        .unwrap();
+    let actual = engine.eval_compiled(&program, crate::null_input().into_iter()).unwrap();
     assert_eq!(actual, expected, "query: {query}");
 }
 
@@ -358,7 +356,7 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
 fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expected: &[&str]) {
     let mut engine = engine();
     let program = load(&mut engine, &compile(query)).unwrap();
-    let dump = engine.dump_bytecode(program.program()).unwrap();
+    let dump = engine.dump_bytecode(&program).unwrap();
     for text in expected {
         assert!(dump.contains(text), "missing {text:?} in:\n{dump}");
     }
@@ -372,7 +370,7 @@ fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expect
 fn test_dump_bytecode_of_loaded_program_is_uninstrumented(#[case] query: &str) {
     let mut engine = engine();
     let program = load(&mut engine, &compile(query)).unwrap();
-    let dump = engine.dump_bytecode(program.program()).unwrap();
+    let dump = engine.dump_bytecode(&program).unwrap();
     for opcode in ["StmtBoundary", "SyncCallNode", "Breakpoint"] {
         assert!(!dump.contains(opcode), "unexpected {opcode} in:\n{dump}");
     }
@@ -385,9 +383,7 @@ fn test_mqc_reads_interpolated_env_at_run_time() {
     let mut engine = Engine::with_default_io(Shared::new(crate::SandboxedIo::new(io).allow_env(true)));
     engine.load_builtin_module();
     let program = load(&mut engine, &bytes).unwrap();
-    let result = engine
-        .eval_compiled(program.program(), crate::null_input().into_iter())
-        .unwrap();
+    let result = engine.eval_compiled(&program, crate::null_input().into_iter()).unwrap();
     assert_eq!(result, vec!["run".to_string().into()].into());
 }
 
@@ -562,7 +558,7 @@ proptest! {
         });
         let mut engine = engine();
         if let Ok(program) = load(&mut engine, &bytes) {
-            let _ = engine.eval_compiled(program.program(), crate::null_input().into_iter());
+            let _ = engine.eval_compiled(&program, crate::null_input().into_iter());
         }
     }
 }
@@ -653,9 +649,11 @@ proptest! {
         };
         let expected = with_value().eval(&query, crate::null_input().into_iter()).unwrap();
         let mut engine = with_value();
-        let program = load(&mut engine, &compile(&query)).unwrap();
-        prop_assert_eq!(program.external_globals(), [name.clone()]);
-        let actual = engine.eval_compiled(program.program(), crate::null_input().into_iter()).unwrap();
+        let bytes = compile(&query);
+        let mqc = checked(&bytes);
+        prop_assert_eq!(mqc.external_globals(), [name.clone()]);
+        let program = load(&mut engine, &bytes).unwrap();
+        let actual = engine.eval_compiled(&program, crate::null_input().into_iter()).unwrap();
         prop_assert_eq!(actual, expected, "query: {}", query);
     }
 }

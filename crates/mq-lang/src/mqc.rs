@@ -10,7 +10,7 @@
 //! let mqc = mq_lang::Mqc::try_from(bytes).unwrap();
 //! let program = engine.load(&mqc).unwrap();
 //! let input = mq_lang::parse_text_input("hello").unwrap();
-//! let result = engine.eval_compiled(program.program(), input.into_iter()).unwrap();
+//! let result = engine.eval_compiled(&program, input.into_iter()).unwrap();
 //! assert_eq!(result, vec!["HELLO".to_string().into()].into());
 //! ```
 mod code;
@@ -34,7 +34,7 @@ const MAGIC: &[u8; 4] = b"MQC\0";
 const CONTAINER_VERSION: u16 = 1;
 const HEADER_LEN: usize = 16;
 const SECTION_HEADER_LEN: usize = 16;
-const CHECKSUM_LEN: usize = 32;
+pub(crate) const CHECKSUM_LEN: usize = 32;
 const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
 const REQUIRED_FLAG: u16 = 1;
 
@@ -135,24 +135,34 @@ pub struct MqcDependency {
     pub sha256: String,
 }
 
-/// A loaded `.mqc` file, bound to the [`Engine`] that loaded it.
-#[derive(Debug, Clone)]
-pub struct MqcProgram {
-    program: CompiledProgram,
-    metadata: Vec<(String, String)>,
+/// A checked `.mqc` file. [`Engine::load`] verifies its bytecode.
+#[derive(Clone)]
+pub struct Mqc {
+    bytes: Vec<u8>,
+    meta: Meta,
     dependencies: Vec<MqcDependency>,
-    external_globals: Vec<String>,
 }
 
-impl MqcProgram {
-    /// The program to pass to [`Engine::eval_compiled`].
-    pub fn program(&self) -> &CompiledProgram {
-        &self.program
-    }
+impl TryFrom<Vec<u8>> for Mqc {
+    type Error = MqcError;
 
+    /// Checks untrusted `.mqc` bytes.
+    fn try_from(bytes: Vec<u8>) -> Result<Self, MqcError> {
+        let sections = read_container(&bytes)?;
+        let meta = read_compatible_meta(&sections)?;
+        let dependencies = decode_deps(section_payload(&sections, DEPS, "DEPS")?)?;
+        Ok(Self {
+            bytes,
+            meta,
+            dependencies,
+        })
+    }
+}
+
+impl Mqc {
     /// Returns a metadata value stored at compile time.
     pub fn metadata(&self, key: &str) -> Option<&str> {
-        find_metadata(&self.metadata, key)
+        find_metadata(&self.meta.metadata, key)
     }
 
     /// Modules compiled into the program.
@@ -162,31 +172,7 @@ impl MqcProgram {
 
     /// Engine globals the program reads at run time (e.g. `--args` values).
     pub fn external_globals(&self) -> &[String] {
-        &self.external_globals
-    }
-}
-
-/// A checked `.mqc` file. [`Engine::load`] verifies its bytecode.
-#[derive(Clone)]
-pub struct Mqc {
-    bytes: Vec<u8>,
-    meta: Meta,
-}
-
-impl TryFrom<Vec<u8>> for Mqc {
-    type Error = MqcError;
-
-    /// Checks untrusted `.mqc` bytes.
-    fn try_from(bytes: Vec<u8>) -> Result<Self, MqcError> {
-        let meta = read_compatible_meta(&read_container(&bytes)?)?;
-        Ok(Self { bytes, meta })
-    }
-}
-
-impl Mqc {
-    /// Returns a metadata value stored at compile time.
-    pub fn metadata(&self, key: &str) -> Option<&str> {
-        find_metadata(&self.meta.metadata, key)
+        &self.meta.external_globals
     }
 
     /// The encoded file.
@@ -197,6 +183,13 @@ impl Mqc {
     /// The encoded file.
     pub fn into_bytes(self) -> Vec<u8> {
         self.bytes
+    }
+
+    /// The SHA-256 checksum at the end of the file.
+    fn checksum(&self) -> [u8; CHECKSUM_LEN] {
+        self.bytes[self.bytes.len() - CHECKSUM_LEN..]
+            .try_into()
+            .expect("checked by `Mqc::try_from`")
     }
 }
 
@@ -241,7 +234,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     ///
     /// Modules are resolved now and compiled in, and module-level `let` values are computed
     /// once and saved. Engine globals are not saved: the program reads them when it runs.
-    /// `metadata` is stored as-is for the embedder (see [`MqcProgram::metadata`]).
+    /// `metadata` is stored as-is for the embedder (see [`Mqc::metadata`]).
     pub fn precompile(&mut self, code: &str, metadata: &[(&str, &str)]) -> Result<Mqc, MqcError> {
         let io = Shared::new(compile_io::CompileTimeIo::new(
             Shared::clone(&self.vm.io) as Shared<dyn Io>
@@ -328,31 +321,34 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             section(DEPS, encode_deps(&dependencies)?),
             section(SOURCE, encode_source(&files, &spans)?),
         ])?;
-        Ok(Mqc { bytes, meta })
+        Ok(Mqc {
+            bytes,
+            meta,
+            dependencies,
+        })
     }
 
     /// Loads a `.mqc` file produced by [`Engine::precompile`].
     ///
     /// The program needs no module resolution or network access. Its bytecode is verified
     /// before anything runs.
-    pub fn load(&mut self, mqc: &Mqc) -> Result<MqcProgram, MqcError> {
+    pub fn load(&mut self, mqc: &Mqc) -> Result<CompiledProgram, MqcError> {
+        let checksum = mqc.checksum();
         if let Some((cached, program)) = &self.last_mqc
-            && cached.as_slice() == mqc.as_bytes()
+            && *cached == checksum
         {
             return Ok(program.clone());
         }
         let program = self.decode_mqc(mqc)?;
-        self.last_mqc = Some((mqc.bytes.clone(), program.clone()));
+        self.last_mqc = Some((checksum, program.clone()));
         Ok(program)
     }
 
-    fn decode_mqc(&mut self, mqc: &Mqc) -> Result<MqcProgram, MqcError> {
+    fn decode_mqc(&mut self, mqc: &Mqc) -> Result<CompiledProgram, MqcError> {
         // Checked by `Mqc::try_from`.
         let sections = read_sections(&mqc.bytes)?;
         let payload = |tag: [u8; 4], name: &'static str| section_payload(&sections, tag, name);
-        let meta = mqc.meta.clone();
-        self.check_builtins(&meta.required_builtins)?;
-        let dependencies = decode_deps(payload(DEPS, "DEPS")?)?;
+        self.check_builtins(&mqc.meta.required_builtins)?;
         let (files, spans) = decode_source(payload(SOURCE, "SOURCE")?)?;
 
         let module_ids = files
@@ -388,12 +384,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .find(|file| file.name == crate::Module::TOP_LEVEL_MODULE)
             .and_then(|file| file.text)
             .unwrap_or_default();
-        Ok(MqcProgram {
-            program: CompiledProgram::from_precompiled(source, split),
-            metadata: meta.metadata,
-            dependencies,
-            external_globals: meta.external_globals,
-        })
+        Ok(CompiledProgram::from_precompiled(source, split))
     }
 
     fn check_builtins(&self, names: &[String]) -> Result<(), MqcError> {
