@@ -39,6 +39,14 @@ mod mqc;
 /// A file's query prefix and, for a `.mqc` program, its input format.
 type ProgramKey = (Option<String>, Option<String>);
 
+/// Programs prepared for one engine, reused across its inputs.
+#[derive(Default)]
+struct ProgramCache {
+    /// One program per [`ProgramKey`]; a run usually has one or two.
+    programs: Vec<(ProgramKey, mq_lang::CompiledProgram)>,
+    separator: Option<mq_lang::CompiledProgram>,
+}
+
 fn parse_timeout(value: &str) -> Result<Duration, String> {
     let secs = value
         .parse::<f64>()
@@ -2161,6 +2169,7 @@ impl Cli {
     fn execute(
         &self,
         engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
         query: &str,
         file: &Option<PathBuf>,
         content: &ContentData,
@@ -2168,58 +2177,19 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
-
-        #[cfg(feature = "debug-trace")]
-        let program = self.prepare_program(engine, query, file)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(engine, &program)?;
-
-        let input = self.resolve_input(file, content)?;
-        let is_grep = matches!(self.resolved_output_format(), OutputFormat::Grep);
-        let grep_input: Option<Vec<mq_lang::RuntimeValue>> = is_grep.then(|| input.clone());
-
-        #[cfg(feature = "vm-profile")]
-        let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-
-        let runtime_values = if self.output.update {
-            #[cfg(feature = "debug-trace")]
-            let results = engine
-                .eval_compiled(&program, input.clone().into_iter())
-                .map_err(|error| *error)?;
-            #[cfg(not(feature = "debug-trace"))]
-            let results = self.eval_query(engine, query, file, input.clone())?;
-            self.apply_update(input, results)?
-        } else {
-            #[cfg(feature = "debug-trace")]
-            {
-                engine
-                    .eval_compiled(&program, input.into_iter())
-                    .map_err(|error| *error)?
-            }
-            #[cfg(not(feature = "debug-trace"))]
-            {
-                self.eval_query(engine, query, file, input)?
-            }
-        };
-
-        #[cfg(feature = "vm-profile")]
-        self.emit_vm_profile(vm_profile, file);
-
-        if self.output.update && self.output.diff {
-            return self.emit_diff(&runtime_values, file, content);
+        let index = self.program_index(engine, cache, query, file)?;
+        if cache.separator.is_none()
+            && let Some(separator) = &self.output.separator
+        {
+            cache.separator = Some(engine.compile(separator).map_err(|error| *error)?);
         }
-
-        if let Some(separator) = &self.output.separator {
-            let separator = engine
-                .eval(
-                    separator,
-                    vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
-                )
-                .map_err(|e| *e)?;
-            self.print(separator)?;
-        }
-
-        self.emit_results(runtime_values, grep_input, file)
+        self.run_program(
+            engine,
+            &cache.programs[index].1,
+            cache.separator.as_ref(),
+            file,
+            content,
+        )
     }
 
     /// Returns the effective query string combining any auto-prefix with the base query.
@@ -2245,24 +2215,22 @@ impl Cli {
         }
     }
 
-    /// Evaluates the query, or the `.mqc` program, against one input.
-    #[cfg_attr(feature = "debug-trace", allow(dead_code))]
-    fn eval_query(
+    /// Returns the index in `cache` of `file`'s program, preparing it once per [`ProgramKey`].
+    fn program_index(
         &self,
         engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
         query: &str,
         file: &Option<PathBuf>,
-        input: Vec<mq_lang::RuntimeValue>,
-    ) -> miette::Result<mq_lang::RuntimeValues> {
-        if self.bytecode.get().is_some() {
-            let program = self.prepare_program(engine, query, file)?;
-            return engine
-                .eval_compiled(&program, input.into_iter())
-                .map_err(|error| miette::Report::new(*error));
+    ) -> miette::Result<usize> {
+        let key = self.program_key(file);
+        if let Some(index) = cache.programs.iter().position(|(cached, _)| *cached == key) {
+            return Ok(index);
         }
-        engine
-            .eval(&self.effective_query(query, file), input.into_iter())
-            .map_err(|error| miette::Report::new(*error))
+        let program = self.prepare_program(engine, query, file)?;
+        self.dump_compiled_bytecode(engine, &program)?;
+        cache.programs.push((key, program));
+        Ok(cache.programs.len() - 1)
     }
 
     #[cfg(feature = "debug-trace")]
@@ -2516,48 +2484,23 @@ impl Cli {
         // Keep --append sequential: parallel files racing the same read-then-rename
         // append could clobber each other.
         if files.len() > self.parallel_threshold && !self.output.append {
-            // `CompiledProgram` uses `Rc`; compile once per Rayon worker rather than sharing it.
-            let can_compile_per_worker = self.all_files_share_program(&files) && self.output.separator.is_none();
-            #[cfg(feature = "debug-trace")]
-            // Preserve per-file bytecode diagnostics.
-            let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
-
-            if can_compile_per_worker {
-                // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
-                let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
-                files.par_iter().with_min_len(min_len).try_for_each_init(
-                    || {
-                        let mut engine = self.create_engine()?;
-                        let program = self.prepare_program(&mut engine, &query, &files[0].0)?;
-                        Ok::<_, miette::Error>((engine, program))
-                    },
-                    |prepared, (file, content)| {
-                        let (engine, program) = prepared
-                            .as_mut()
-                            .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
-                        self.execute_compiled(engine, program, file, content)
-                    },
-                )?;
-            } else {
-                files.par_iter().try_for_each(|(file, content)| {
-                    let mut engine = self.create_engine()?;
-                    self.execute(&mut engine, &query, file, content)
-                })?;
-            }
+            // `CompiledProgram` uses `Rc`, so each worker keeps its own engine and programs.
+            // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
+            let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
+            files.par_iter().with_min_len(min_len).try_for_each_init(
+                || Ok::<_, miette::Error>((self.create_engine()?, ProgramCache::default())),
+                |worker, (file, content)| {
+                    let (engine, cache) = worker
+                        .as_mut()
+                        .map_err(|error| miette!("Failed to prepare parallel query worker: {error}"))?;
+                    self.execute(engine, cache, &query, file, content)
+                },
+            )?;
         } else {
             let mut engine = self.create_engine()?;
-
-            // Pre-compile query if all files share the same effective query (same prefix)
-            if files.len() > 1 && self.all_files_share_program(&files) && self.output.separator.is_none() {
-                let program = self.prepare_program(&mut engine, &query, &files[0].0)?;
-                self.dump_compiled_bytecode(&mut engine, &program)?;
-                for (file, content) in &files {
-                    self.execute_compiled(&mut engine, &program, file, content)?;
-                }
-            } else {
-                files
-                    .iter()
-                    .try_for_each(|(file, content)| self.execute(&mut engine, &query, file, content))?;
+            let mut cache = ProgramCache::default();
+            for (file, content) in &files {
+                self.execute(&mut engine, &mut cache, &query, file, content)?;
             }
         }
 
@@ -2585,16 +2528,11 @@ impl Cli {
 
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "debug-trace")]
-        let program = self.prepare_program(&mut engine, query, first_file)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(&mut engine, &program)?;
-        #[cfg(feature = "debug-trace")]
+        let mut cache = ProgramCache::default();
+        let index = self.program_index(&mut engine, &mut cache, query, first_file)?;
         let runtime_values = engine
-            .eval_compiled(&program, combined_input.into_iter())
+            .eval_compiled(&cache.programs[index].1, combined_input.into_iter())
             .map_err(|error| *error)?;
-        #[cfg(not(feature = "debug-trace"))]
-        let runtime_values = self.eval_query(&mut engine, query, first_file, combined_input)?;
 
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, &None);
@@ -2602,25 +2540,12 @@ impl Cli {
         self.emit_results(runtime_values, grep_input, &None)
     }
 
-    fn execute_compiled(
+    /// Runs `program` on one input, with any file-scoped globals already installed.
+    fn run_program(
         &self,
         engine: &mut mq_lang::DefaultEngine,
         program: &mq_lang::CompiledProgram,
-        file: &Option<PathBuf>,
-        content: &ContentData,
-    ) -> miette::Result<()> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
-
-        self.execute_compiled_prepared(engine, program, file, content)
-    }
-
-    /// Executes with any file-scoped globals already installed by the caller.
-    fn execute_compiled_prepared(
-        &self,
-        engine: &mut mq_lang::DefaultEngine,
-        program: &mq_lang::CompiledProgram,
+        separator: Option<&mq_lang::CompiledProgram>,
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
@@ -2647,12 +2572,23 @@ impl Cli {
             return self.emit_diff(&runtime_values, file, content);
         }
 
+        if let Some(separator) = separator {
+            let separator = engine
+                .eval_compiled(
+                    separator,
+                    vec![mq_lang::RuntimeValue::String(Shared::new("".to_string()))].into_iter(),
+                )
+                .map_err(|e| *e)?;
+            self.print(separator)?;
+        }
+
         self.emit_results(runtime_values, grep_input, file)
     }
 
     fn count_file(
         &self,
         engine: &mut mq_lang::DefaultEngine,
+        cache: &mut ProgramCache,
         query: &str,
         file: &Option<PathBuf>,
         content: &ContentData,
@@ -2660,19 +2596,13 @@ impl Cli {
         if let Some(f) = file {
             self.set_file_vars(engine, f);
         }
+        let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
-        #[cfg(feature = "debug-trace")]
-        let program = self.prepare_program(engine, query, file)?;
-        #[cfg(feature = "debug-trace")]
-        self.dump_compiled_bytecode(engine, &program)?;
         let input = self.resolve_input(file, content)?;
-        #[cfg(feature = "debug-trace")]
         let runtime_values = engine
-            .eval_compiled(&program, input.into_iter())
+            .eval_compiled(&cache.programs[index].1, input.into_iter())
             .map_err(|error| *error)?;
-        #[cfg(not(feature = "debug-trace"))]
-        let runtime_values = self.eval_query(engine, query, file, input)?;
         #[cfg(feature = "vm-profile")]
         self.emit_vm_profile(vm_profile, file);
         Ok(self.output.paginate(runtime_values.compact()).len())
@@ -2693,10 +2623,11 @@ impl Cli {
         let multiple_files = files.len() > 1;
         let mut total = 0usize;
         let mut engine = self.create_engine()?;
+        let mut cache = ProgramCache::default();
 
         if self.quiet {
             for (file, content) in files {
-                self.count_file(&mut engine, query, file, content)?;
+                self.count_file(&mut engine, &mut cache, query, file, content)?;
             }
             return Ok(());
         }
@@ -2710,7 +2641,7 @@ impl Cli {
         )?;
 
         for (file, content) in files {
-            let count = self.count_file(&mut engine, query, file, content)?;
+            let count = self.count_file(&mut engine, &mut cache, query, file, content)?;
             total += count;
             if multiple_files {
                 let name = file
@@ -2744,7 +2675,8 @@ impl Cli {
         // one set of file globals per file. Keep both pieces of state outside the per-line hot
         // path so short queries do not spend their time allocating query strings or recreating
         // `__FILE__` values.
-        let mut compiled_query: Option<(ProgramKey, mq_lang::CompiledProgram)> = None;
+        let mut cache = ProgramCache::default();
+        let mut program_index = 0;
         let mut active_file: Option<Option<PathBuf>> = None;
 
         self.process_lines(|file, line| {
@@ -2760,20 +2692,18 @@ impl Cli {
                     self.set_file_vars(&mut engine, file);
                 }
 
-                let key = self.program_key(current_file);
-                if compiled_query.as_ref().is_none_or(|(cached_key, _)| cached_key != &key) {
-                    let program = self.prepare_program(&mut engine, &query, current_file)?;
-                    self.dump_compiled_bytecode(&mut engine, &program)?;
-                    compiled_query = Some((key, program));
-                }
+                program_index = self.program_index(&mut engine, &mut cache, &query, current_file)?;
             }
             let current_file = active_file
                 .as_ref()
                 .ok_or_else(|| miette!("streaming input did not select an active file"))?;
-            let (_, program) = compiled_query
-                .as_ref()
-                .ok_or_else(|| miette!("streaming query compilation did not produce a program"))?;
-            self.execute_compiled_prepared(&mut engine, program, current_file, &line.into())
+            self.run_program(
+                &mut engine,
+                &cache.programs[program_index].1,
+                None,
+                current_file,
+                &line.into(),
+            )
         })
     }
 
