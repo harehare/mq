@@ -38,7 +38,9 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+#[cfg(feature = "file-io")]
+use rustc_hash::FxHashSet;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
@@ -2644,20 +2646,6 @@ fn extract_urls_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &Shared
         [RuntimeValue::None] => Ok(RuntimeValue::empty_array()),
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("extract_urls should always receive exactly one argument"),
-    }
-}
-
-#[mq_macros::mq_fn(name = "uniq", params = Fixed(1))]
-fn uniq_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    match args.as_mut_slice() {
-        [RuntimeValue::Array(array)] => {
-            let mut vec = std::mem::take(array);
-            let mut seen = FxHashSet::default();
-            runtime_value::array_mut(&mut vec).retain(|item| seen.insert(item.to_string()));
-            Ok(RuntimeValue::Array(vec))
-        }
-        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
-        _ => unreachable!("uniq should always receive exactly one argument"),
     }
 }
 
@@ -5708,7 +5696,6 @@ mq_macros::builtin_dispatch! {
     SPLIT,
     SPLIT_RECORDS,
     EXTRACT_URLS,
-    UNIQ,
     CEIL,
     FLOOR,
     ROUND,
@@ -8268,20 +8255,6 @@ world"# }],
             examples: &[BuiltinExample {
                 code: r#"sqrt(9)"#,
                 expected: r#"3"#,
-            }],
-            capability: None,
-        },
-    );
-    map.insert(
-        SmolStr::new("uniq"),
-        BuiltinFunctionDoc {
-            description: "Removes duplicate elements from the given array.",
-            params: &["array"],
-            param_types: &["array"],
-            returns: "array",
-            examples: &[BuiltinExample {
-                code: r#"uniq([1, 1, 2])"#,
-                expected: r#"[1, 2]"#,
             }],
             capability: None,
         },

@@ -129,9 +129,8 @@ impl fmt::Display for Number {
         } else if self.is_int() {
             write!(f, "{}", self.0)
         } else {
-            let s = format!("{:.6}", self.0);
-            let s = s.trim_end_matches('0').trim_end_matches('.');
-            write!(f, "{}", s)
+            // Shortest representation that round-trips, so no precision is lost.
+            write!(f, "{}", self.0)
         }
     }
 }
@@ -215,7 +214,9 @@ mod tests {
     #[case(42.0, "42")]
     #[case(42.123, "42.123")]
     #[case(42.100, "42.1")]
-    #[case(42.0000001, "42")]
+    #[case(42.0000001, "42.0000001")]
+    #[case(0.1234567, "0.1234567")]
+    #[case(1.0e-7, "0.0000001")]
     #[case(-42.0, "-42")]
     #[case(-42.123, "-42.123")]
     #[case(0.0, "0")]
@@ -236,7 +237,7 @@ mod tests {
 
     #[rstest]
     #[case(5.0, 2.0, "7", "3", "10", "2.5", "1")]
-    #[case(10.0, 3.0, "13", "7", "30", "3.333333", "1")]
+    #[case(10.0, 3.0, "13", "7", "30", "3.3333333333333335", "1")]
     #[case(-5.0, 2.0, "-3", "-7", "-10", "-2.5", "-1")]
     #[case(0.0, 1.0, "1", "-1", "0", "0", "0")]
     fn test_operations(

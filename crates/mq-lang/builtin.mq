@@ -1409,6 +1409,24 @@ def fold(arr, init, f):
     end
 end
 
+# Returns a dedup key for `v` that keeps types apart, so `1` and `"1"` differ.
+def _value_key(v): type(v) + ":" + to_string(v);
+
+# Removes duplicate elements from the given array, keeping the first occurrence.
+#
+# Example:
+# ```
+# uniq([1, 1, 2])
+# #=> [1, 2]
+# ```
+#
+# Returns: array
+def uniq(arr):
+  if (not(is_array(arr))):
+    error("uniq: argument must be an array")
+  else: unique_by(arr, identity)
+end
+
 # Returns a new array with duplicate elements removed, comparing by the result of the provided function.
 #
 # Example:
@@ -1429,7 +1447,7 @@ def unique_by(arr, f):
       | var i = 0
       | while (i != len(arr)):
           let item = get(arr, i)
-          | let key = to_string(f(item))
+          | let key = _value_key(f(item))
           | let already_seen = get(seen, key)
           | result = if (is_none(already_seen)): result + [item] else: result
           | seen = if (is_none(already_seen)): set(seen, key, true) else: seen
@@ -2547,7 +2565,7 @@ end
 # Example:
 # ```
 # describe([1, 2, 3, 4, 5])
-# #=> {"count": 5, "min": 1, "max": 5, "median": 3, "mean": 3, "variance": 2, "stddev": 1.414214}
+# #=> {"count": 5, "min": 1, "max": 5, "median": 3, "mean": 3, "variance": 2, "stddev": 1.4142135623730951}
 # ```
 #
 # Returns: dict
