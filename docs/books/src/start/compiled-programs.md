@@ -49,9 +49,12 @@ Rust applications can use the same format through `mq-lang` with the `mqc` featu
 ```rust
 let mut engine = mq_lang::DefaultEngine::default();
 engine.load_builtin_module();
-let bytes = engine.compile_to_mqc("upcase()", &[])?;
+let mqc = engine.precompile("upcase()", &[])?;
+std::fs::write("upcase.mqc", mqc.as_bytes())?;
 
-let program = engine.load_mqc(&bytes)?;
+// Checks the file's structure, checksum, and mq version.
+let mqc = mq_lang::Mqc::try_from(std::fs::read("upcase.mqc")?)?;
+let program = engine.load(&mqc)?;
 let input = mq_lang::parse_text_input("hello")?;
 let output = engine.eval_compiled(program.program(), input.into_iter())?;
 ```

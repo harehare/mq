@@ -67,8 +67,8 @@ impl Cli {
             .unwrap_or_default();
 
         let mut engine = cli.create_engine()?;
-        let bytes = engine
-            .compile_to_mqc(
+        let mqc = engine
+            .precompile(
                 &effective_query,
                 &[
                     (MQC_QUERY_PREFIX, &prefix),
@@ -80,7 +80,7 @@ impl Cli {
                 ],
             )
             .map_err(miette::Report::new)?;
-        fs::write(&output, bytes)
+        fs::write(&output, mqc.as_bytes())
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to write {}", output.display()))
     }
@@ -115,12 +115,10 @@ impl Cli {
                 "-L/-M/-m have no effect on a .mqc program: modules are compiled into it. Pass them to `mq compile` instead."
             ));
         }
-        let metadata = mq_lang::read_mqc_metadata(&bytes)
+        let mqc = mq_lang::Mqc::try_from(bytes)
             .map_err(miette::Report::new)
             .wrap_err_with(|| format!("Failed to load {}", path.display()))?;
-        let compiled_aggregate = metadata
-            .iter()
-            .any(|(key, value)| key == MQC_AGGREGATE && value == "true");
+        let compiled_aggregate = mqc.metadata(MQC_AGGREGATE) == Some("true");
         if compiled_aggregate != self.input.program.aggregate {
             return Err(miette!(
                 "-A/--aggregate must match between `mq compile` and running the .mqc program (it was compiled {} it)",
@@ -128,7 +126,7 @@ impl Cli {
             ));
         }
         self.bytecode
-            .set(bytes)
+            .set(mqc)
             .map_err(|_| miette!("The .mqc program was already loaded"))
     }
 
@@ -136,11 +134,11 @@ impl Cli {
     pub(super) fn load_mqc_program(
         &self,
         engine: &mut mq_lang::DefaultEngine,
-        bytes: &[u8],
+        mqc: &mq_lang::Mqc,
         file: &Option<PathBuf>,
     ) -> miette::Result<mq_lang::CompiledProgram> {
         let program = engine
-            .load_mqc(bytes)
+            .load(mqc)
             .map_err(miette::Report::new)
             .wrap_err_with(|| format!("Failed to load {}", self.query.as_deref().unwrap_or_default()))?;
         let compiled_prefix = program.metadata(MQC_QUERY_PREFIX).unwrap_or_default();
