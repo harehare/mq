@@ -109,7 +109,7 @@ pub enum MqcError {
     #[diagnostic(
         code(mq::mqc::module_let_runtime_value),
         help(
-            "Module-level `let` values are computed once, when the .mqc file is compiled, so they cannot read --args/--argjson values. Read \"{name}\" inside a function or outside the module instead."
+            "Module-level `let` values are computed once, when the .mqc file is compiled, so they cannot read --args/--argjson values. A module can't see them, so read \"{name}\" outside the module instead."
         )
     )]
     ModuleLevelNotDefined {

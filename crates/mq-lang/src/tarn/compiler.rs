@@ -157,8 +157,29 @@ struct Compiler<R: ModuleResolver> {
     /// and function-body semantics for names that are never read.
     defer_undefined_identifiers: bool,
     patterns: PatternState,
+    /// Open modules, innermost last. A module body sees only what it declares.
+    module_barriers: Vec<ModuleBarrier>,
+    /// Each imported module's barrier, by path, for binding its vars later.
+    import_members: FxHashMap<String, ModuleBarrier>,
+    /// Top-level inline modules, which any module can access qualified.
+    inline_module_roots: FxHashSet<Ident>,
+    /// Top-level slots holding builtin.mq functions, which modules can see.
+    prelude_slots: std::ops::Range<u16>,
     #[cfg(feature = "debugger")]
     instrument: bool,
+}
+
+/// Limits name resolution inside a module to what it declares.
+#[derive(Clone)]
+struct ModuleBarrier {
+    /// Scope the module's members live in.
+    depth: usize,
+    /// Slots from here on were declared inside the module.
+    first_slot: u16,
+    /// The module's `def`/`let`/`var` slots, for code compiled after they lose their names.
+    members: FxHashMap<Ident, u16>,
+    /// Module paths the module can access qualified.
+    roots: FxHashSet<Ident>,
 }
 
 #[cfg(test)]
@@ -381,9 +402,6 @@ fn compile_engine_program<R: ModuleResolver>(
 pub(crate) struct ResolvedModuleVars {
     pub(super) by_path: FxHashMap<String, Vec<(Ident, RuntimeValue)>>,
     pub(super) by_token: FxHashMap<TokenId, RuntimeValue>,
-    /// Whether these values read engine globals.
-    #[cfg(not(feature = "debugger"))]
-    pub(super) reads_globals: bool,
 }
 
 /// Bundles `compile_program_impl`'s predeclared-binding inputs so it takes one argument
@@ -829,10 +847,16 @@ fn compile_program_impl<R: ModuleResolver>(
         in_fn_body: false,
         defer_undefined_identifiers: options.defer_undefined_identifiers,
         patterns: PatternState::default(),
+        module_barriers: Vec::new(),
+        import_members: FxHashMap::default(),
+        inline_module_roots: FxHashSet::default(),
+        prelude_slots: 0..0,
         #[cfg(feature = "debugger")]
         instrument: options.instrument,
     };
     if !matches!(options.builtin_prelude, BuiltinPrelude::None) {
+        let prelude_start = compiler.scopes[0].local_count();
+        compiler.prelude_slots = prelude_start..u16::MAX;
         let builtin_module = compiler
             .module_loader
             .load_builtin(Shared::clone(&compiler.token_arena))
@@ -842,6 +866,7 @@ fn compile_program_impl<R: ModuleResolver>(
             BuiltinPrelude::Reachable(names) => compiler.compile_reachable_builtin_prelude(&builtin_module, names)?,
             BuiltinPrelude::None => unreachable!("handled above"),
         }
+        compiler.prelude_slots = prelude_start..compiler.scopes[0].local_count();
     }
 
     compiler.compile_top_level(program)?;
@@ -934,7 +959,7 @@ impl<R: ModuleResolver> Compiler<R> {
         enum Deferred {
             Statement(Shared<Node>),
             ModuleVars(String, Module, Option<Ident>),
-            InlineModuleRest(Vec<Ident>, usize, Program, FxHashMap<Ident, u16>),
+            InlineModuleRest(Vec<Ident>, usize, Program, FxHashMap<Ident, u16>, ModuleBarrier),
         }
         let mut deferred = Vec::with_capacity(program.len());
         let mut defs: Program = Vec::new();
@@ -989,8 +1014,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 Expr::Module(ident, inline_program) => {
                     let module_path = vec![ident.name];
                     let depth = self.scopes.len() - 1;
-                    let (rest, let_slots) = self.compile_module_functions(&module_path, inline_program)?;
-                    deferred.push(Deferred::InlineModuleRest(module_path, depth, rest, let_slots));
+                    let (rest, let_slots, barrier) = self.compile_module_functions(&module_path, inline_program)?;
+                    deferred.push(Deferred::InlineModuleRest(module_path, depth, rest, let_slots, barrier));
                 }
                 _ => deferred.push(Deferred::Statement(Shared::clone(node))),
             }
@@ -1027,8 +1052,8 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_module_vars_binding(path, module, *alias)?;
                     continue;
                 }
-                Deferred::InlineModuleRest(module_path, depth, rest, let_slots) => {
-                    self.compile_module_rest(module_path, *depth, rest, let_slots)?
+                Deferred::InlineModuleRest(module_path, depth, rest, let_slots, barrier) => {
+                    self.compile_module_rest(module_path, *depth, rest, let_slots, barrier)?
                 }
             }
             self.emit(OpCode::SetLocal(SELF_SLOT));
@@ -1047,8 +1072,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.compile_module_vars_binding(path, module, *alias)?;
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
-            Deferred::InlineModuleRest(module_path, depth, rest, let_slots) => {
-                self.compile_module_rest(module_path, *depth, rest, let_slots)?;
+            Deferred::InlineModuleRest(module_path, depth, rest, let_slots, barrier) => {
+                self.compile_module_rest(module_path, *depth, rest, let_slots, barrier)?;
                 self.emit(OpCode::SetLocal(SELF_SLOT));
                 self.emit(OpCode::GetLocal(SELF_SLOT));
             }
@@ -1363,7 +1388,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     let mut names = Vec::new();
                     collect_pattern_idents(pattern, &mut names);
                     for name in names {
-                        if let Some(slot) = self.scope_mut().resolve_local(name) {
+                        if let Some(slot) = self.visible_local(self.scopes.len() - 1, name) {
                             self.scope_mut().mark_immutable(slot);
                         }
                     }
@@ -1650,12 +1675,13 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn predeclare_module_var_slots(&mut self, vars: &Program) {
-        for node in vars {
-            if let Expr::Let(Pattern::Ident(ident), _) = &node.expr {
-                self.scope_mut().declare(ident.name);
-            }
-        }
+    fn predeclare_module_var_slots(&mut self, vars: &Program) -> FxHashMap<Ident, u16> {
+        vars.iter()
+            .filter_map(|node| match &node.expr {
+                Expr::Let(Pattern::Ident(ident), _) => Some((ident.name, self.scope_mut().declare(ident.name))),
+                _ => None,
+            })
+            .collect()
     }
 
     fn compile_module_vars(&mut self, path: &str, module: &Module, alias: Option<Ident>) -> CompileResult<()> {
@@ -1683,9 +1709,18 @@ impl<R: ModuleResolver> Compiler<R> {
             Vec::new()
         };
 
+        let barrier = alias.and_then(|_| self.import_members.get(path).cloned());
+        let has_barrier = barrier.is_some();
+        if let Some(barrier) = barrier {
+            let first_slot = self.scope_mut().local_count();
+            self.module_barriers.push(ModuleBarrier { first_slot, ..barrier });
+        }
         match self.preresolved_module_vars.by_path.get(path).cloned() {
             Some(known) => self.compile_module_vars_from_known(&module.vars, &known)?,
             None => self.compile_discarding(&module.vars)?,
+        }
+        if has_barrier {
+            self.module_barriers.pop();
         }
 
         if let Some(module_alias) = alias {
@@ -1905,6 +1940,8 @@ impl<R: ModuleResolver> Compiler<R> {
         };
         let module = self.load_module_or_reload(path)?;
         let module_alias = alias.map(|a| a.name).unwrap_or_else(|| Ident::new(&module.name));
+        let depth = self.scopes.len() - 1;
+        self.push_module_barrier(depth, module_alias);
 
         #[cfg(feature = "http-import")]
         self.module_loader.push_http_boundary();
@@ -1912,10 +1949,9 @@ impl<R: ModuleResolver> Compiler<R> {
         #[cfg(feature = "http-import")]
         self.module_loader.pop_http_boundary();
         directives_result?;
-        self.predeclare_module_var_slots(&module.vars);
+        let var_slots = self.predeclare_module_var_slots(&module.vars);
         let functions = self.reachable_module_functions(&module);
 
-        let depth = self.scopes.len() - 1;
         let mut slots = Vec::with_capacity(functions.len());
         for node in &functions {
             let Expr::Def(ident, _, _) = &node.expr else {
@@ -1939,6 +1975,15 @@ impl<R: ModuleResolver> Compiler<R> {
             self.register_static_function(*slot, chunk_idx, capture_free);
             self.insert_qualified_binding(&[module_alias], ident.name, QualifiedSlot { depth, slot: *slot });
         }
+        let mut barrier = self.module_barriers.pop().expect("pushed above");
+        barrier.members = var_slots;
+        for (node, slot) in functions.iter().zip(&slots) {
+            if let Expr::Def(ident, ..) = &node.expr {
+                barrier.members.insert(ident.name, *slot);
+            }
+        }
+        self.import_members.insert(path.clone(), barrier);
+        self.add_module_root(module_alias);
         // Only qualified names remain visible after compilation.
         for slot in slots {
             self.scope_mut().set_local_name(slot, Ident::default());
@@ -1960,16 +2005,20 @@ impl<R: ModuleResolver> Compiler<R> {
         let mut module_path = parent_path.to_vec();
         module_path.push(ident.name);
         let depth = self.scopes.len() - 1;
-        let (rest, let_slots) = self.compile_module_functions(&module_path, program)?;
-        self.compile_module_rest(&module_path, depth, &rest, &let_slots)
+        let (rest, let_slots, barrier) = self.compile_module_functions(&module_path, program)?;
+        self.compile_module_rest(&module_path, depth, &rest, &let_slots, &barrier)
     }
 
     fn compile_module_functions(
         &mut self,
         module_path: &[Ident],
         program: &Program,
-    ) -> CompileResult<(Program, FxHashMap<Ident, u16>)> {
+    ) -> CompileResult<(Program, FxHashMap<Ident, u16>, ModuleBarrier)> {
         let depth = self.scopes.len() - 1;
+        if let [root] = module_path {
+            self.inline_module_roots.insert(*root);
+        }
+        self.push_module_barrier(depth, module_path[0]);
 
         let mut def_slots = FxHashMap::default();
         let mut let_slots = FxHashMap::default();
@@ -1989,6 +2038,43 @@ impl<R: ModuleResolver> Compiler<R> {
                         let_slots.entry(name).or_insert_with(|| self.scope_mut().declare(name));
                     }
                 }
+                Expr::Module(nested, _) => self.add_module_root(nested.name),
+                _ => {}
+            }
+        }
+
+        // Imports first, so the module's functions can use them.
+        for node in program {
+            self.current_token_id = node.token_id;
+            match &node.expr {
+                Expr::Include(literal) => {
+                    // See `compile_discarding`: skip the discarded trailing self-value.
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "include target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
+                    let module = self.compile_include_functions(literal)?;
+                    self.compile_module_vars_binding(&path, &module, None)?;
+                }
+                Expr::Import(literal, alias) => {
+                    // This import's own alias, not the enclosing `module_alias`.
+                    let Literal::String(path) = literal else {
+                        return Err(CompileError::Unsupported(
+                            "import target must be a string literal",
+                            self.current_token_id,
+                        ));
+                    };
+                    let path = path.clone();
+                    let module = self.compile_import_functions(literal, alias.as_ref())?;
+                    let import_alias = alias
+                        .as_ref()
+                        .map(|a| a.name)
+                        .unwrap_or_else(|| Ident::new(&module.name));
+                    self.compile_module_vars_binding(&path, &module, Some(import_alias))?;
+                }
                 _ => {}
             }
         }
@@ -2005,7 +2091,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.register_static_function(slot, chunk_idx, capture_free);
                     self.insert_qualified_binding(module_path, def_ident.name, QualifiedSlot { depth, slot });
                 }
-                Expr::Include(_) | Expr::Let(_, _) | Expr::Var(_, _) | Expr::Import(_, _) | Expr::Module(_, _) => {
+                Expr::Let(_, _) | Expr::Var(_, _) | Expr::Module(_, _) => {
                     rest.push(Shared::clone(node));
                 }
                 _ => {}
@@ -2018,7 +2104,26 @@ impl<R: ModuleResolver> Compiler<R> {
         for slot in let_slots.values() {
             self.scope_mut().set_local_name(*slot, Ident::default());
         }
-        Ok((rest, let_slots))
+        let mut barrier = self.module_barriers.pop().expect("pushed above");
+        barrier.members = def_slots.into_iter().chain(let_slots.clone()).collect();
+        Ok((rest, let_slots, barrier))
+    }
+
+    /// Opens a module whose members are declared from here on.
+    fn push_module_barrier(&mut self, depth: usize, root: Ident) {
+        self.module_barriers.push(ModuleBarrier {
+            depth,
+            first_slot: self.scopes[depth].local_count(),
+            members: FxHashMap::default(),
+            roots: FxHashSet::from_iter([root]),
+        });
+    }
+
+    /// Lets the innermost module access `root` qualified.
+    fn add_module_root(&mut self, root: Ident) {
+        if let Some(barrier) = self.module_barriers.last_mut() {
+            barrier.roots.insert(root);
+        }
     }
 
     fn compile_module_rest(
@@ -2027,22 +2132,15 @@ impl<R: ModuleResolver> Compiler<R> {
         depth: usize,
         rest: &Program,
         let_slots: &FxHashMap<Ident, u16>,
+        barrier: &ModuleBarrier,
     ) -> CompileResult<()> {
+        self.module_barriers.push(ModuleBarrier {
+            first_slot: self.scopes[depth].local_count(),
+            ..barrier.clone()
+        });
         for node in rest {
             self.current_token_id = node.token_id;
             match &node.expr {
-                Expr::Include(literal) => {
-                    // See `compile_discarding`: skip the discarded trailing self-value.
-                    let Literal::String(path) = literal else {
-                        return Err(CompileError::Unsupported(
-                            "include target must be a string literal",
-                            self.current_token_id,
-                        ));
-                    };
-                    let path = path.clone();
-                    let module = self.compile_include_functions(literal)?;
-                    self.compile_module_vars_binding(&path, &module, None)?;
-                }
                 Expr::Let(pattern, value) | Expr::Var(pattern, value) => {
                     let mutable = matches!(&node.expr, Expr::Var(..));
                     let mut names = Vec::new();
@@ -2087,28 +2185,13 @@ impl<R: ModuleResolver> Compiler<R> {
                         );
                     }
                 }
-                Expr::Import(literal, alias) => {
-                    // This import's own alias, not the enclosing `module_alias`.
-                    let Literal::String(path) = literal else {
-                        return Err(CompileError::Unsupported(
-                            "import target must be a string literal",
-                            self.current_token_id,
-                        ));
-                    };
-                    let path = path.clone();
-                    let module = self.compile_import_functions(literal, alias.as_ref())?;
-                    let import_alias = alias
-                        .as_ref()
-                        .map(|a| a.name)
-                        .unwrap_or_else(|| Ident::new(&module.name));
-                    self.compile_module_vars_binding(&path, &module, Some(import_alias))?;
-                }
                 Expr::Module(nested_ident, nested_program) => {
                     self.compile_module(nested_ident, nested_program, module_path)?;
                 }
                 _ => {}
             }
         }
+        self.module_barriers.pop();
         self.emit(OpCode::GetLocal(SELF_SLOT));
         Ok(())
     }
@@ -2131,9 +2214,12 @@ impl<R: ModuleResolver> Compiler<R> {
             AccessTarget::Call(id, _) => id.name,
         };
         let module_path: Vec<Ident> = path.iter().map(|segment| segment.name).collect();
-        let QualifiedSlot { depth, slot } = *self
-            .qualified_bindings
-            .get(&QualifiedName::new(&module_path, member))
+        let visible = self.module_barriers.last().is_none_or(|barrier| {
+            barrier.roots.contains(&module_path[0]) || self.inline_module_roots.contains(&module_path[0])
+        });
+        let QualifiedSlot { depth, slot } = *visible
+            .then(|| self.qualified_bindings.get(&QualifiedName::new(&module_path, member)))
+            .flatten()
             .ok_or_else(|| {
                 CompileError::UndefinedIdent(
                     format!(
@@ -2193,8 +2279,25 @@ impl<R: ModuleResolver> Compiler<R> {
         self.resolve_at(self.scopes.len() - 1, name)
     }
 
+    /// Resolves `name` in the scope at `depth`, within the innermost module's barrier.
+    fn visible_local(&self, depth: usize, name: Ident) -> Option<u16> {
+        let scope = &self.scopes[depth];
+        let Some(barrier) = self.module_barriers.last().filter(|barrier| depth <= barrier.depth) else {
+            return scope.resolve_local(name);
+        };
+        if depth == barrier.depth {
+            let own = scope.resolve_local_where(name, |slot| slot >= barrier.first_slot);
+            if let Some(slot) = own.or_else(|| barrier.members.get(&name).copied()) {
+                return Some(slot);
+            }
+        }
+        (depth == 0)
+            .then(|| scope.resolve_local_where(name, |slot| self.prelude_slots.contains(&slot)))
+            .flatten()
+    }
+
     fn resolve_at(&mut self, depth: usize, name: Ident) -> Option<Resolved> {
-        if let Some(slot) = self.scopes[depth].resolve_local(name) {
+        if let Some(slot) = self.visible_local(depth, name) {
             return Some(Resolved::Local(slot));
         }
         if depth == 0 {
@@ -2418,7 +2521,8 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::GetUpvalue(idx));
                 Ok(())
             }
-            None if self.external_globals.contains(&name) => {
+            // A module can't see Engine globals, so its names all resolve at compile time.
+            None if self.external_globals.contains(&name) && self.module_barriers.is_empty() => {
                 self.emit(OpCode::GetExternalGlobal(name));
                 Ok(())
             }
@@ -2444,7 +2548,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
-            None if self.try_depth > 0 || self.defer_undefined_identifiers => {
+            None if (self.try_depth > 0 || self.defer_undefined_identifiers) && self.module_barriers.is_empty() => {
                 // Bare soft-builtin references need the same reachable-prelude tracking
                 // `compile_call` does for direct calls.
                 if SOFT_BUILTIN_NAMES.contains(&name) {
@@ -2492,11 +2596,7 @@ impl<R: ModuleResolver> Compiler<R> {
             .last()
             .and_then(|entry| *entry)
             .and_then(|(name, arity, is_generator)| (name == ident).then_some((arity?, is_generator)))
-            .filter(|_| {
-                self.scopes
-                    .last()
-                    .is_some_and(|scope| scope.resolve_local(ident).is_none())
-            });
+            .filter(|_| self.visible_local(self.scopes.len() - 1, ident).is_none());
         if !shadowed && let Some((arity, is_generator)) = direct_self_call {
             for arg in args {
                 self.compile_expr(arg)?;
@@ -2750,7 +2850,7 @@ impl<R: ModuleResolver> Compiler<R> {
         let Expr::Ident(ident) = &node.expr else {
             return None;
         };
-        self.scopes.last().and_then(|scope| scope.resolve_local(ident.name))
+        self.visible_local(self.scopes.len() - 1, ident.name)
     }
 
     fn is_spread(arg: &Node) -> bool {

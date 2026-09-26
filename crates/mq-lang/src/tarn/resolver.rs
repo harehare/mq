@@ -109,6 +109,17 @@ impl FunctionScope {
             .map(|(i, _)| i as u16)
     }
 
+    /// Like [`Self::resolve_local`], among the slots `visible` accepts.
+    pub(crate) fn resolve_local_where(&self, name: Ident, visible: impl Fn(u16) -> bool) -> Option<u16> {
+        self.locals
+            .iter()
+            .copied()
+            .enumerate()
+            .rev()
+            .find(|&(i, n)| n == name && self.active_blocks.contains(&self.local_block[i]) && visible(i as u16))
+            .map(|(i, _)| i as u16)
+    }
+
     pub(crate) fn resolve_upvalue(&self, name: Ident) -> Option<u16> {
         self.upvalues.iter().position(|(n, _)| *n == name).map(|i| i as u16)
     }

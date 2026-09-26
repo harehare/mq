@@ -25,9 +25,6 @@ pub(crate) struct SplitProgram {
     pub(crate) let_names: Vec<Ident>,
     /// Slots of `let_names` in `program`.
     let_slots: Vec<interpreter::CaptureSlot>,
-    /// Baked module `let`s read engine globals.
-    #[cfg(not(feature = "debugger"))]
-    pub(crate) bakes_globals: bool,
     reuse: RunReuse,
 }
 
@@ -108,8 +105,6 @@ impl SplitProgram {
             after,
             let_names,
             let_slots,
-            #[cfg(not(feature = "debugger"))]
-            bakes_globals: false,
             reuse: RunReuse::default(),
         }
     }
@@ -166,13 +161,7 @@ impl SplitProgram {
             )?;
             (program, None, Vec::new())
         };
-        #[cfg_attr(feature = "debugger", allow(unused_mut))]
-        let mut split = Self::new(program, after, let_names);
-        #[cfg(not(feature = "debugger"))]
-        {
-            split.bakes_globals = preresolved_module_vars.reads_globals;
-        }
-        Ok(split)
+        Ok(Self::new(program, after, let_names))
     }
 
     /// Runs every input, then the `nodes` part over all results.
