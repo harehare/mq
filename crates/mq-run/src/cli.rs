@@ -2523,7 +2523,9 @@ impl Cli {
             let can_compile_per_worker = can_compile_per_worker && !self.dump_bytecode;
 
             if can_compile_per_worker {
-                files.par_iter().try_for_each_init(
+                // `init` runs once per rayon split, not per worker; coarse splits keep it to a few per worker.
+                let min_len = files.len().div_ceil(rayon::current_num_threads() * 4);
+                files.par_iter().with_min_len(min_len).try_for_each_init(
                     || {
                         let mut engine = self.create_engine()?;
                         let program = self.prepare_program(&mut engine, &query, &files[0].0)?;
