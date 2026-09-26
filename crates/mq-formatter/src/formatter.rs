@@ -2959,27 +2959,28 @@ end
         assert_eq!(result.unwrap(), expected);
     }
 
-    /// Builds a `def` whose let-bound block sits `depth` `do`s deep, indented as expected:
-    /// the block body goes one level below the `let` (which itself follows `| ` when `piped`).
-    fn let_bound_block_program(block: &[(usize, &str)], depth: usize, piped: bool) -> String {
-        let pad = |level: usize| "  ".repeat(level);
+    /// Builds a `def` whose block expression sits `depth` `do`s deep after `prefix`
+    /// (`"let b = "`, `"| let b = "` or `"| "`), indented as expected: the block body goes
+    /// one level below where the expression's line content starts (after any `| `).
+    fn block_program(block: &[(usize, &str)], prefix: &str, depth: usize, indent_width: usize) -> String {
+        let pad = |level: usize| " ".repeat(level * indent_width);
         let line_indent = depth + 1;
+        let piped = prefix.starts_with('|');
         let base = line_indent + usize::from(piped);
         let mut lines = vec!["def f(t):".to_string()];
         for d in 0..depth {
             lines.push(format!("{}do", pad(d + 1)));
         }
-        let (_, head) = block[0];
         if piped {
             lines.push(format!("{}let a = 1", pad(line_indent)));
-            lines.push(format!("{}| let b = {head}", pad(line_indent)));
-        } else {
-            lines.push(format!("{}let b = {head}", pad(line_indent)));
         }
+        lines.push(format!("{}{prefix}{}", pad(line_indent), block[0].1));
         for (level, text) in &block[1..] {
             lines.push(format!("{}{text}", pad(base + level)));
         }
-        lines.push(format!("{}| b", pad(line_indent)));
+        if prefix.contains("let") {
+            lines.push(format!("{}| b", pad(line_indent)));
+        }
         for d in (0..depth).rev() {
             lines.push(format!("{}end", pad(d + 1)));
         }
@@ -2998,24 +2999,25 @@ end
     #[case::if_elif(&[(0, "if (t):"), (1, "1"), (0, "elif (t):"), (1, "2"), (0, "else:"), (1, "3")])]
     #[case::match_(&[(0, "match (t):"), (1, "| 1: \"one\""), (1, "| _: \"other\""), (0, "end")])]
     #[case::call_with_fn(&[(0, "map(t, fn(x):"), (1, "let y = x"), (1, "| y;"), (0, ")")])]
-    fn test_format_let_bound_block_indent(
+    fn test_format_block_indent(
         #[case] block: &[(usize, &str)],
+        #[values("let b = ", "| let b = ", "| ")] prefix: &str,
         #[values(0, 1, 2)] depth: usize,
-        #[values(false, true)] piped: bool,
+        #[values(2, 4)] indent_width: usize,
     ) {
-        let expected = let_bound_block_program(block, depth, piped);
+        let expected = block_program(block, prefix, depth, indent_width);
         let flattened = expected.lines().map(str::trim_start).collect::<Vec<_>>().join("\n");
+        let format = |code: &str| {
+            Formatter::new(Some(FormatterConfig {
+                indent_width,
+                ..FormatterConfig::default()
+            }))
+            .format(code)
+            .unwrap()
+        };
 
-        assert_eq!(
-            Formatter::new(None).format(&expected).unwrap(),
-            expected,
-            "not idempotent"
-        );
-        assert_eq!(
-            Formatter::new(None).format(&flattened).unwrap(),
-            expected,
-            "from flattened input"
-        );
+        assert_eq!(format(&expected), expected, "not idempotent");
+        assert_eq!(format(&flattened), expected, "from flattened input");
     }
 
     #[rstest]
