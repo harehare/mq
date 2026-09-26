@@ -576,7 +576,12 @@ impl Formatter {
         append_space_after_keyword: bool,
     ) {
         let is_prev_pipe = self.is_prev_pipe();
-        let indent_adjustment = self.calculate_indent_adjustment();
+        // Inline, the base below already comes from the current line.
+        let indent_adjustment = if indent_level == 0 {
+            0
+        } else {
+            self.calculate_indent_adjustment()
+        };
 
         if node.has_new_line() {
             self.append_indent(indent_level);
@@ -585,10 +590,12 @@ impl Formatter {
 
         // Re-derive from the actual line when inline, since the parent's
         // block_indent_level may not match where this node was written.
-        let block_indent_level = if indent_level == 0 {
+        let block_indent_level = if indent_level != 0 {
+            block_indent_level
+        } else if is_prev_pipe {
             self.current_line_indent()
         } else {
-            block_indent_level
+            self.current_line_content_indent()
         };
 
         if append_space_after_keyword {
@@ -700,11 +707,7 @@ impl Formatter {
         }
 
         let is_prev_pipe = self.is_prev_pipe();
-        let indent_adjustment = if self.is_let_line() {
-            self.current_line_indent()
-        } else {
-            0
-        };
+        let inline_let_indent = (indent_level == 0 && self.is_let_line()).then(|| self.current_line_content_indent());
 
         if node.has_new_line() {
             self.append_indent(indent_level);
@@ -721,10 +724,10 @@ impl Formatter {
         let base_indent = if indent_level > 0 {
             indent_level
         } else {
-            block_indent_level
+            inline_let_indent.unwrap_or(block_indent_level)
         };
 
-        let child_indent_level = if is_prev_pipe { base_indent + 2 } else { base_indent + 1 } + indent_adjustment;
+        let child_indent_level = if is_prev_pipe { base_indent + 2 } else { base_indent + 1 };
 
         expr_nodes.for_each(|child| {
             self.format_node(child, child_indent_level);
@@ -777,7 +780,7 @@ impl Formatter {
         self.append_display(node);
 
         let current_line_indent = if indent_level == 0 {
-            self.current_line_indent()
+            self.current_line_content_indent()
         } else {
             indent_level
         };
@@ -837,12 +840,13 @@ impl Formatter {
         self.append_display(node);
         self.append_space();
 
-        let indent_level = if self.is_last_line_pipe() {
-            block_indent_level
+        let (indent_level, indent_adjustment) = if indent_level == 0 && self.is_let_line() {
+            (self.current_line_content_indent(), 0)
+        } else if self.is_last_line_pipe() {
+            (block_indent_level, self.calculate_indent_adjustment())
         } else {
-            indent_level
+            (indent_level, self.calculate_indent_adjustment())
         };
-        let indent_adjustment = self.calculate_indent_adjustment();
 
         let then_indent_level = (if is_prev_pipe {
             indent_level + 2
@@ -1562,6 +1566,17 @@ impl Formatter {
         last_line.chars().take_while(|c| *c == ' ').count() / self.config.indent_width
     }
 
+    /// `current_line_indent` plus one level for a leading `| `.
+    fn current_line_content_indent(&self) -> usize {
+        let indent = self.current_line_indent();
+        let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
+        if self.output[start..].trim_start().starts_with('|') {
+            indent + 1
+        } else {
+            indent
+        }
+    }
+
     #[inline(always)]
     fn current_line_width(&self) -> usize {
         let start = self.output.rfind('\n').map_or(0, |pos| pos + 1);
@@ -2181,8 +2196,20 @@ process();"#,
 process();"#,
         r#""test"
 | let x = while (condition()):
-  process();
+    process();
 "#
+    )]
+    #[case::pipe_let_block_in_nested_do(
+        "def f(t):\n  if (t): 1\n  else: do\n      let a = 1\n      | let b = foreach (r, t):\n      r\n      end\n      | let c = if (a):\n      b\n      else:\n      a\n      | c\n    end\nend",
+        "def f(t):\n  if (t): 1\n  else: do\n      let a = 1\n      | let b = foreach (r, t):\n          r\n        end\n      | let c = if (a):\n          b\n        else:\n          a\n      | c\n    end\nend\n"
+    )]
+    #[case::fn_arg_after_pipe(
+        "def f(xs):\n  let t = 1\n  | fold(xs, 0, fn(acc, x):\n  let y = x + 1\n  | acc + y;\n  )\nend",
+        "def f(xs):\n  let t = 1\n  | fold(xs, 0, fn(acc, x):\n      let y = x + 1\n      | acc + y;\n    )\nend\n"
+    )]
+    #[case::fn_arg_after_pipe_in_do(
+        "let t = 1\n| do\n    let u = 2\n    | filter(xs, fn(x):\n    x > u;\n    )\n  end",
+        "let t = 1\n| do\n    let u = 2\n    | filter(xs, fn(x):\n        x > u;\n      )\n  end\n"
     )]
     #[case::array_index_access("let arr = [1, 2, 3]\n|arr[1]", "let arr = [1, 2, 3]\n| arr[1]\n")]
     #[case::array_index_access_inline("arr[0]", "arr[0]")]
