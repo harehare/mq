@@ -13,7 +13,7 @@ end
 
 def test_float_within_unit_range():
   let v = (gen::float())(7)
-  | assert_true(v >= 0.0 && v < 1.0)
+  | assert_true(v >= 0 && v < 1)
 end
 
 def test_bool_is_boolean():

@@ -19,14 +19,14 @@ end
 # True when a plain scalar would be read back as something other than the same string.
 def _yaml_needs_quotes(str):
   is_empty(str)
-  || test(str, "^\\s|\\s$")
-  || test(str, "[\\x00-\\x1f\\x7f\"']")
-  || test(str, "^[-?:,\\[\\]{}#&*!|>%@`]|^\\.\\.\\.")
-  || test(str, ": | #|:$")
-  || contains(["true", "false", "null", "yes", "no", "on", "off", "~"], downcase(str))
-  || test(str, "^[-+]?(\\.[0-9]+|[0-9][0-9_]*(\\.[0-9_]*)?)([eE][-+]?[0-9]+)?$")
-  || test(str, "^0[xo][0-9a-fA-F]+$")
-  || test(downcase(str), "^[-+]?\\.inf$|^\\.nan$")
+   || test(str, "^\\s|\\s$")
+   || test(str, "[\\x00-\\x1f\\x7f\"']")
+   || test(str, "^[-?:,\\[\\]{}#&*!|>%@`]|^\\.\\.\\.")
+   || test(str, ": | #|:$")
+   || contains(["true", "false", "null", "yes", "no", "on", "off", "~"], downcase(str))
+   || test(str, "^[-+]?(\\.[0-9]+|[0-9][0-9_]*(\\.[0-9_]*)?)([eE][-+]?[0-9]+)?$")
+   || test(str, "^0[xo][0-9a-fA-F]+$")
+   || test(downcase(str), "^[-+]?\\.inf$|^\\.nan$")
 end
 
 def _yaml_scalar(str):
@@ -136,8 +136,8 @@ def yaml_to_markdown_table(data):
       | let header_row = "| " + join(headers, " | ") + " |"
       | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
       | let data_rows = map(data, fn(row):
-              "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-            end)
+          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+        end)
       | [header_row, separator_row] + data_rows
       | join("\n")
     end
@@ -147,8 +147,8 @@ def yaml_to_markdown_table(data):
       | let header_row = "| " + join(headers, " | ") + " |"
       | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
       | let data_rows = map(keys(data), fn(key):
-              "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-            end)
+          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+        end)
       | [header_row, separator_row] + data_rows
       | join("\n")
     end

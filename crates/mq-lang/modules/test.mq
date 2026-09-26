@@ -62,32 +62,32 @@ def assert_eq(actual, expected):
       let is_array_diff = is_array(expected) && is_array(actual)
       | let diff_res = _diff(expected, actual)
       | let diff_lines = foreach (change, diff_res):
-              let tag = change["tag"]
-              | let value = change["value"]
-              | let text = if (is_string(value)):
-                              do
-                                let s = gsub(gsub(value, "\n", ""), " ", "·")
-                                | if (is_array_diff):
-                                    "\"" + s + "\""
-                                  else:
-                                    s
-                              end
-                            else:
-                              to_string(value)
-              | let rendered = if (contains(change, "inline") && not(is_array_diff)):
-                              if (tag == "delete"):
-                                _render_inline_delete(change["inline"])
-                              else:
-                                _render_inline_insert(change["inline"])
-                            else:
-                              text
-              | if (tag == "insert"):
-                  "+ " + rendered
-                elif (tag == "delete"):
-                  "- " + rendered
-                else:
-                  "  " + text
-            end
+          let tag = change["tag"]
+          | let value = change["value"]
+          | let text = if (is_string(value)):
+              do
+                let s = gsub(gsub(value, "\n", ""), " ", "·")
+                | if (is_array_diff):
+                    "\"" + s + "\""
+                  else:
+                    s
+              end
+            else:
+              to_string(value)
+          | let rendered = if (contains(change, "inline") && not(is_array_diff)):
+              if (tag == "delete"):
+                _render_inline_delete(change["inline"])
+              else:
+                _render_inline_insert(change["inline"])
+            else:
+              text
+          | if (tag == "insert"):
+              "+ " + rendered
+            elif (tag == "delete"):
+              "- " + rendered
+            else:
+              "  " + text
+        end
       | let diff_str = join(diff_lines, "\n")
       | {"error": true, "message": "Assertion failed\n\n" + diff_str}
     end
@@ -146,7 +146,7 @@ end
 # Example:
 # ```
 # None | include "test" | assert_none(None)
-# #=> 
+# #=>
 # ```
 #
 # Returns: dynamic
@@ -343,17 +343,17 @@ end
 # `run_tests`). Shared by `run_tests` (Markdown report) and `run_tests_data` (raw results).
 def _run_tests_results(tests):
   foreach (test, tests):
-      if (is_dict(test) && contains(test, "name") && contains(test, "func")):
-        do
-          let result = _run_test(get(test, "name"), get(test, "func"))
-          | let duration_str = _format_duration(result["duration"])
-          | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
-          | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
-          | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
-        end
-      else:
-        error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
-    end
+    if (is_dict(test) && contains(test, "name") && contains(test, "func")):
+      do
+        let result = _run_test(get(test, "name"), get(test, "func"))
+        | let duration_str = _format_duration(result["duration"])
+        | let status_str = if (result["status"] == "passed"): "✅" else: "❌"
+        | let row = "| " + status_str + " | `" + duration_str + "` | " + result["name"] + " |"
+        | {"name": result["name"], "status": result["status"], "duration": result["duration"], "error": result["error"], "row": row}
+      end
+    else:
+      error("Invalid test format: each test must be a dict with 'name' and 'func' keys")
+  end
 end
 
 # Executes multiple test functions.
@@ -369,7 +369,7 @@ def run_tests(tests):
   let final_test_count = len(tests)
   | let file_name = try: TEST_FILE catch: ""
   | let header = "# " + file_name + "\n\nStarting " + to_string(final_test_count) + " tests...\n\n" +
-      "| Status | Duration | Test Name |\n| :--- | :--- | :--- |"
+    "| Status | Duration | Test Name |\n| :--- | :--- | :--- |"
   | let test_results = _run_tests_results(tests)
   | let rows = join(map(test_results, fn(r): r["row"];), "\n")
   | let final_failed_count = len(filter(test_results, fn(r): r["status"] == "failed";))
@@ -400,7 +400,7 @@ def run_tests(tests):
   | let passed_str = "✅ " + to_string(passed_count)
   | let failed_str = "❌ " + to_string(final_failed_count)
   | let summary = "\n## Summary\n\n| Duration | Tests | Passed | Failed |\n| :--- | :--- | :--- | :--- |\n" +
-      "| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |\n\n---\n"
+    "| `" + summary_duration + "` | " + to_string(final_test_count) + " | " + passed_str + " | " + failed_str + " |\n\n---\n"
 
   | let _ = print(header + "\n" + rows + "\n" + failures_section + summary)
 
@@ -473,9 +473,9 @@ def _property_case_result(args, adapter):
             do
               let shrunk_result = adapter(shrunk)
               | {
-                  "error": true,
-                  "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
-                }
+                "error": true,
+                "message": shrunk_result["message"] + "\n\nShrunk from " + to_string(args) + " to " + to_string(shrunk)
+              }
             end
       end
     else:

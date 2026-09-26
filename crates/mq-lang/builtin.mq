@@ -281,8 +281,7 @@ def regex_replace(text, pattern, f):
             | if (is_string(replacement)):
                 acc + replacement + pair[1]
               else:
-                error("regex_replace: callback must return a string")
-              ;
+                error("regex_replace: callback must return a string");
           )
       end
 end
@@ -477,7 +476,7 @@ def _take_coroutine(stream, n):
           break
         else:
           yield: step["value"]
-          | i += 1
+      | i += 1
     end
 end
 
@@ -1125,12 +1124,12 @@ end
 # Returns: dynamic
 def find(arr, f):
   let _find_impl = fn(arr, f, idx):
-      if (idx == len(arr)):
-        None
-      elif (f(get(arr, idx))):
-        get(arr, idx)
-      else:
-        _find_impl(arr, f, idx + 1);
+    if (idx == len(arr)):
+      None
+    elif (f(get(arr, idx))):
+      get(arr, idx)
+    else:
+      _find_impl(arr, f, idx + 1);
 
   | if (is_coroutine(arr)):
       do
@@ -1158,12 +1157,12 @@ end
 # Returns: number
 def find_index(arr, f):
   let _find_index_impl = fn(arr, f, idx):
-      if (idx == len(arr)):
-        -1
-      elif (f(get(arr, idx))):
-        idx
-      else:
-        _find_index_impl(arr, f, idx + 1);
+    if (idx == len(arr)):
+      -1
+    elif (f(get(arr, idx))):
+      idx
+    else:
+      _find_index_impl(arr, f, idx + 1);
 
   | if (is_coroutine(arr)):
       do
@@ -1741,50 +1740,50 @@ def join_by(left, right, left_key, right_key, kind = "inner"):
   elif (kind == "semi" || kind == "anti"):
     do
       let right_key_set = fold(right, dict(), fn(acc, r):
-              let k = get(r, right_key)
-              | if (is_none(k)): acc else: set(acc, to_string(k), true);
+        let k = get(r, right_key)
+        | if (is_none(k)): acc else: set(acc, to_string(k), true);
       )
       | let keep_if_found = kind == "semi"
       | filter(left, fn(l):
-              let k = get(l, left_key)
-              | let found = if (is_none(k)): false else: !is_none(get(right_key_set, to_string(k)))
-              | found == keep_if_found;
-      )
+          let k = get(l, left_key)
+          | let found = if (is_none(k)): false else: !is_none(get(right_key_set, to_string(k)))
+          | found == keep_if_found;
+        )
     end
   else:
     do
       let schema_of = fn(records): unique_by(flat_map(records, keys), identity);
       | let fill_missing = fn(record, schema):
-              fold(schema, record, fn(acc, k): if (in(keys(acc), k)): acc else: set(acc, k, None););
+          fold(schema, record, fn(acc, k): if (in(keys(acc), k)): acc else: set(acc, k, None););
       | let right_matchable = filter(right, fn(r): !is_none(get(r, right_key));)
       | let right_unmatchable = filter(right, fn(r): is_none(get(r, right_key));)
       | let right_by_key = group_by(right_matchable, fn(r): get(r, right_key);)
       | let right_schema = if (kind == "left" || kind == "full"): schema_of(right) else: []
       | let left_schema = if (kind == "right" || kind == "full"): schema_of(left) else: []
       | let left_keys_str = map(left, fn(l):
-              let k = get(l, left_key)
-              | if (is_none(k)): None else: to_string(k);
-      )
+          let k = get(l, left_key)
+          | if (is_none(k)): None else: to_string(k);
+        )
       | let matched_group_keys = unique_by(
-        filter(left_keys_str, fn(k): !is_none(k) && !is_none(get(right_by_key, k));),
-        identity
-      )
+          filter(left_keys_str, fn(k): !is_none(k) && !is_none(get(right_by_key, k));),
+          identity
+        )
       | let left_side = flat_map(left, fn(l):
-              let k = get(l, left_key)
-              | let group = if (is_none(k)): None else: get(right_by_key, to_string(k))
-              | if (is_none(group)):
-                  if (kind == "left" || kind == "full"): [fill_missing(l, right_schema)] else: []
-                else:
-                  map(group, fn(r): l + r;);
-      )
-      | let right_unmatched_grouped = flat_map(
-        filter(entries(right_by_key), fn(e): !in(matched_group_keys, e[0]);),
-        fn(e): e[1];
-      )
-      | let right_side = if (kind == "right" || kind == "full"):
-              map(right_unmatched_grouped + right_unmatchable, fn(r): fill_missing(r, left_schema);)
+          let k = get(l, left_key)
+          | let group = if (is_none(k)): None else: get(right_by_key, to_string(k))
+          | if (is_none(group)):
+              if (kind == "left" || kind == "full"): [fill_missing(l, right_schema)] else: []
             else:
-              []
+              map(group, fn(r): l + r;);
+        )
+      | let right_unmatched_grouped = flat_map(
+          filter(entries(right_by_key), fn(e): !in(matched_group_keys, e[0]);),
+          fn(e): e[1];
+        )
+      | let right_side = if (kind == "right" || kind == "full"):
+          map(right_unmatched_grouped + right_unmatchable, fn(r): fill_missing(r, left_schema);)
+        else:
+          []
       | left_side + right_side
     end
 end
@@ -2117,19 +2116,19 @@ def bsearch(arr, target):
     error("first argument must be an array")
   else: do
       let _bsearch_impl = fn(arr, target, low, high):
-              if (low > high):
-                -1
+        if (low > high):
+          -1
+        else:
+          do
+            let mid = floor((low + high) / 2)
+            | let mid_val = arr[mid]
+            | if (mid_val == target):
+                mid
+              elif (mid_val < target):
+                _bsearch_impl(arr, target, mid + 1, high)
               else:
-                do
-                  let mid = floor((low + high) / 2)
-                  | let mid_val = arr[mid]
-                  | if (mid_val == target):
-                      mid
-                    elif (mid_val < target):
-                      _bsearch_impl(arr, target, mid + 1, high)
-                    else:
-                      _bsearch_impl(arr, target, low, mid - 1);
-            end
+                _bsearch_impl(arr, target, low, mid - 1);
+      end
       | _bsearch_impl(arr, target, 0, len(arr) - 1)
     end
 end
@@ -2177,8 +2176,8 @@ def safe_filename(name, max_length = 255):
       | let stem = if (has_ext): implode(slice(chars, 0, dot_idx)) else: cleaned
       | let ext = if (has_ext): implode(slice(chars, dot_idx, n)) else: ""
       | let reserved = ["CON", "PRN", "AUX", "NUL",
-          "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-          "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"]
       | let stem = if (in(reserved, upcase(stem))): stem + "_" else: stem
       | let max_stem_len = max(max_length - len(ext), 1)
       | truncate(stem, max_stem_len, "") + ext
@@ -2591,15 +2590,15 @@ def stats_by(arr, group_f, value_f, aggs = ["sum", "mean", "min", "max", "stddev
     map(entries(group_by(arr, group_f)), fn(e):
       let values = map(e[1], value_f)
       | fold(aggs, {group: e[0], count: len(values)}, fn(acc, agg):
-        if (agg == "sum"): set(acc, "sum", sum(values))
-        elif (agg == "mean"): set(acc, "mean", mean(values))
-        elif (agg == "min"): set(acc, "min", first(sort(values)))
-        elif (agg == "max"): set(acc, "max", last(sort(values)))
-        elif (agg == "stddev"): set(acc, "stddev", stddev(values))
-        elif (agg == "median"): set(acc, "median", median(values))
-        elif (agg == "variance"): set(acc, "variance", variance(values))
-        else: error("stats_by: unknown agg \"" + agg + "\"");
-      );
+          if (agg == "sum"): set(acc, "sum", sum(values))
+          elif (agg == "mean"): set(acc, "mean", mean(values))
+          elif (agg == "min"): set(acc, "min", first(sort(values)))
+          elif (agg == "max"): set(acc, "max", last(sort(values)))
+          elif (agg == "stddev"): set(acc, "stddev", stddev(values))
+          elif (agg == "median"): set(acc, "median", median(values))
+          elif (agg == "variance"): set(acc, "variance", variance(values))
+          else: error("stats_by: unknown agg \"" + agg + "\"");
+        );
     )
 end
 
@@ -2630,11 +2629,11 @@ def histogram(arr, buckets = 10):
       | let span = if (hi == lo): 1 else: hi - lo
       | let width = span / buckets
       | let bucket_of = fn(x):
-              let idx = floor((x - lo) / width)
-              | if (idx >= buckets): buckets - 1 else: idx;
+          let idx = floor((x - lo) / width)
+          | if (idx >= buckets): buckets - 1 else: idx;
       | let counts = fold(arr, foreach (i, range(0, buckets - 1)): 0;, fn(acc, x):
-              set(acc, bucket_of(x), acc[bucket_of(x)] + 1);
-      )
+          set(acc, bucket_of(x), acc[bucket_of(x)] + 1);
+        )
       | let max_count = max_by(counts, identity)
       | foreach (i, range(0, buckets - 1)):
           let count = counts[i]
@@ -3308,8 +3307,7 @@ def redact(value, rules):
         | if (is_none(key_rule)):
             [k, redact(entry[1], rules)]
           else:
-            [k, get_or(key_rule, :replacement, "[REDACTED]")]
-      ;)
+            [k, get_or(key_rule, :replacement, "[REDACTED]")];)
     | :array:
       map(value, fn(x): redact(x, rules);)
     | :markdown:

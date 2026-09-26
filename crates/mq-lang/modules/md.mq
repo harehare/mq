@@ -437,9 +437,9 @@ def reference_index(md_nodes):
   | let link_groups = group_by(filter(agg_nodes, _is_definition), fn(d): attr(d, "ident");)
   | let footnote_groups = group_by(filter(agg_nodes, _is_footnote_def), fn(d): attr(d, "ident");)
   | {
-      links: map(link_groups, fn(e): [e[0], map(e[1], _link_def_entry)];),
-      footnotes: map(footnote_groups, fn(e): [e[0], map(e[1], _footnote_def_entry)];)
-    }
+    links: map(link_groups, fn(e): [e[0], map(e[1], _link_def_entry)];),
+    footnotes: map(footnote_groups, fn(e): [e[0], map(e[1], _footnote_def_entry)];)
+  }
 end
 
 def _resolve_ref(n, idx):
@@ -448,15 +448,15 @@ def _resolve_ref(n, idx):
   | let defs = get_or(table, ident, [])
   | let resolved = !is_empty(defs)
   | {
-      type: to_md_name(n),
-      ident: ident,
-      label: attr(n, "label"),
-      location: get_location(n),
-      resolved: resolved,
-      duplicate: len(defs) > 1,
-      definition: if (resolved): first(defs) else: None,
-      definitions: defs
-    }
+    type: to_md_name(n),
+    ident: ident,
+    label: attr(n, "label"),
+    location: get_location(n),
+    resolved: resolved,
+    duplicate: len(defs) > 1,
+    definition: if (resolved): first(defs) else: None,
+    definitions: defs
+  }
 end
 
 # Resolves every reference-style link (`[text][ident]`, including the shortcut

@@ -154,12 +154,12 @@ end
 # table's existing header/rows and should error rather than silently
 # producing a header/row column-count mismatch.
 # @parametrize([
-#   [fn(table): table::add_row(table, ["x"]);],
-#   [fn(table): table::add_column(table, ["c", "x"]);],
-#   [fn(table): table::insert_row(table, 0, ["x"]);],
-#   [fn(table): table::insert_column(table, 0, ["c", "x"]);],
-#   [fn(table): table::set_cell(table, 99, 0, "x");],
-#   [fn(table): table::set_cell(table, 0, 99, "x");],
+# [fn(table): table::add_row(table, ["x"]);],
+# [fn(table): table::add_column(table, ["c", "x"]);],
+# [fn(table): table::insert_row(table, 0, ["x"]);],
+# [fn(table): table::insert_column(table, 0, ["c", "x"]);],
+# [fn(table): table::set_cell(table, 99, 0, "x");],
+# [fn(table): table::set_cell(table, 0, 99, "x");],
 # ])
 def test_table_shape_mismatch_errors(op):
   let t = first(table::tables(table_nodes))
@@ -174,9 +174,9 @@ def test_table_map_cells():
 end
 
 # @parametrize([
-#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
-#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
-#   ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 1 | 2 |", "a,b\n1,2"],
+# ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
+# ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |", "a,b\n1,2\n3,4"],
+# ["| a | b |\n| --- | --- |\n| 1 | 2 |\n| 1 | 2 |\n| 1 | 2 |", "a,b\n1,2"],
 # ])
 def test_table_dedupe_rows(markdown, expected_csv):
   let md_nodes = to_markdown(markdown)
@@ -406,13 +406,13 @@ def test_table_pivot_wider_missing_combination():
 end
 
 # @parametrize([
-#   [[{"id": "1", "tags": "a;b;c"}, {"id": "2", "tags": "x"}], [
-#     {"id": "1", "tags": "a"},
-#     {"id": "1", "tags": "b"},
-#     {"id": "1", "tags": "c"},
-#     {"id": "2", "tags": "x"},
-#   ]],
-#   [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
+# [[{"id": "1", "tags": "a;b;c"}, {"id": "2", "tags": "x"}], [
+# {"id": "1", "tags": "a"},
+# {"id": "1", "tags": "b"},
+# {"id": "1", "tags": "c"},
+# {"id": "2", "tags": "x"},
+# ]],
+# [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
 # ])
 def test_table_nest_rows(records, expected):
   let t = table::from_array(records)
@@ -421,11 +421,11 @@ def test_table_nest_rows(records, expected):
 end
 
 # @parametrize([
-#   [[{"id": "1", "tags": "a"}, {"id": "1", "tags": "b"}, {"id": "2", "tags": "x"}], [
-#     {"id": "1", "tags": "a;b"},
-#     {"id": "2", "tags": "x"},
-#   ]],
-#   [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
+# [[{"id": "1", "tags": "a"}, {"id": "1", "tags": "b"}, {"id": "2", "tags": "x"}], [
+# {"id": "1", "tags": "a;b"},
+# {"id": "2", "tags": "x"},
+# ]],
+# [[{"id": "1", "tags": "a"}], [{"id": "1", "tags": "a"}]],
 # ])
 def test_table_unnest_rows(records, expected):
   let t = table::from_array(records)

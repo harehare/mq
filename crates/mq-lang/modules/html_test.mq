@@ -89,9 +89,9 @@ def test_html_attr(name, expected):
 end
 
 # @parametrize([
-#   ["<p>hi <b>there</b></p>", "hi there"],
-#   ["<p><span></span></p>", ""],
-#   ["<div><p>a</p><p>b</p></div>", "a b"],
+# ["<p>hi <b>there</b></p>", "hi there"],
+# ["<p><span></span></p>", ""],
+# ["<div><p>a</p><p>b</p></div>", "a b"],
 # ])
 def test_html_text(input, expected):
   assert_eq(html::html_text(html::html_parse(input)), expected)
@@ -104,8 +104,8 @@ def test_html_to_json_roundtrips():
 end
 
 # @parametrize([
-#   [{"tag": "a"}, "{\"tag\": \"a\"}"],
-#   [{"tag": "br", "attributes": {}, "children": [], "text": None}, "{\"tag\": \"br\", \"attributes\": {}, \"children\": [], \"text\": null}"],
+# [{"tag": "a"}, "{\"tag\": \"a\"}"],
+# [{"tag": "br", "attributes": {}, "children": [], "text": None}, "{\"tag\": \"br\", \"attributes\": {}, \"children\": [], \"text\": null}"],
 # ])
 def test_html_to_json_simple(data, expected):
   assert_eq(html::html_to_json(data), expected)

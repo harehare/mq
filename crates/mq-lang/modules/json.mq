@@ -208,11 +208,11 @@ def _diff_dict(a, b, path):
       [{op: "remove", path: path + [k], old: a[k]}]
   end)
   | let added = flat_map(keys(b), fn(k):
-    if (has(a, k)):
-      []
-    else:
-      [{op: "add", path: path + [k], value: b[k]}]
-  end)
+      if (has(a, k)):
+        []
+      else:
+        [{op: "add", path: path + [k], value: b[k]}]
+    end)
   | changed + added
 end
 
@@ -254,12 +254,12 @@ def _find_moves(ops):
   | let add_idx = filter(idx, fn(i): ops[i][:op] == "add" && _is_key_path(ops[i][:path]) && !is_none(ops[i][:value]) end)
   | let rem_idx = filter(idx, fn(i): ops[i][:op] == "remove" && _is_key_path(ops[i][:path]) && !is_none(ops[i][:old]) end)
   | fold(add_idx, {moves: {}, used: []}, fn(acc, i):
-    let j = first(filter(rem_idx, fn(r): !in(acc[:used], r) && ops[r][:old] == ops[i][:value] end))
-    | if (is_none(j)):
-        acc
-      else:
-        {moves: set(acc[:moves], to_string(i), j), used: acc[:used] + [j]}
-  end)
+      let j = first(filter(rem_idx, fn(r): !in(acc[:used], r) && ops[r][:old] == ops[i][:value] end))
+      | if (is_none(j)):
+          acc
+        else:
+          {moves: set(acc[:moves], to_string(i), j), used: acc[:used] + [j]}
+    end)
 end
 
 def _finalize_ops(ops, detect_moves):
@@ -268,20 +268,20 @@ def _finalize_ops(ops, detect_moves):
   else:
     do
       let plan = if (detect_moves):
-          _find_moves(ops)
-        else:
-          {moves: {}, used: []}
+        _find_moves(ops)
+      else:
+        {moves: {}, used: []}
       | flat_map(range(0, len(ops) - 1), fn(i):
-        let op = ops[i]
-        | if (in(plan[:used], i)):
-            []
-          elif (has(plan[:moves], to_string(i))):
-            [{op: "move", from: json_pointer_from_path(ops[plan[:moves][to_string(i)]][:path]), path: json_pointer_from_path(op[:path])}]
-          elif (op[:op] == "remove"):
-            [{op: "remove", path: json_pointer_from_path(op[:path])}]
-          else:
-            [{op: op[:op], path: json_pointer_from_path(op[:path]), value: op[:value]}]
-      end)
+          let op = ops[i]
+          | if (in(plan[:used], i)):
+              []
+            elif (has(plan[:moves], to_string(i))):
+              [{op: "move", from: json_pointer_from_path(ops[plan[:moves][to_string(i)]][:path]), path: json_pointer_from_path(op[:path])}]
+            elif (op[:op] == "remove"):
+              [{op: "remove", path: json_pointer_from_path(op[:path])}]
+            else:
+              [{op: op[:op], path: json_pointer_from_path(op[:path]), value: op[:value]}]
+        end)
     end
 end
 
@@ -308,19 +308,19 @@ def _patch_add(doc, path, value):
     value
   else:
     let parent_path = take(path, len(path) - 1)
-    | let key = last(path)
-    | let parent = get_path(doc, parent_path)
-    | if (is_array(parent)):
-        if (!is_number(key) || key < 0 || key > len(parent)):
-          error("json_patch: array index out of range")
-        elif (is_empty(parent_path)):
-          take(parent, key) + [value] + skip(parent, key)
-        else:
-          set_path(doc, parent_path, take(parent, key) + [value] + skip(parent, key))
-      elif (is_dict(parent)):
-        set_path(doc, path, value)
+  | let key = last(path)
+  | let parent = get_path(doc, parent_path)
+  | if (is_array(parent)):
+      if (!is_number(key) || key < 0 || key > len(parent)):
+        error("json_patch: array index out of range")
+      elif (is_empty(parent_path)):
+        take(parent, key) + [value] + skip(parent, key)
       else:
-        error("json_patch: the parent of the target is not an object or array")
+        set_path(doc, parent_path, take(parent, key) + [value] + skip(parent, key))
+    elif (is_dict(parent)):
+      set_path(doc, path, value)
+    else:
+      error("json_patch: the parent of the target is not an object or array")
 end
 
 def _patch_move_copy(doc, op, kind, pointer):
@@ -410,12 +410,12 @@ def json_merge_patch(doc, patch):
     do
       let base = if (is_dict(doc)): doc else: {}
       | fold(keys(patch), base, fn(acc, k):
-        let v = patch[k]
-        | if (is_none(v)):
-            if (has(acc, k)): del(acc, k) else: acc
-          else:
-            set(acc, k, json_merge_patch(get_or(acc, k, None), v))
-      end)
+          let v = patch[k]
+          | if (is_none(v)):
+              if (has(acc, k)): del(acc, k) else: acc
+            else:
+              set(acc, k, json_merge_patch(get_or(acc, k, None), v))
+        end)
     end
 end
 
@@ -500,8 +500,8 @@ def json_to_markdown_table(data):
     | let header_row = "| " + join(headers, " | ") + " |"
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
     | let data_rows = map(data, fn(row):
-          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-        end)
+        "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+      end)
     | [header_row, separator_row] + data_rows
     | join("\n")
   end
@@ -511,8 +511,8 @@ def json_to_markdown_table(data):
     | let header_row = "| " + join(headers, " | ") + " |"
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
     | let data_rows = map(keys(data), fn(key):
-          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-        end)
+        "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+      end)
     | [header_row, separator_row] + data_rows
     | join("\n")
   end

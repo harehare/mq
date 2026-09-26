@@ -54,10 +54,10 @@ end
 
 # Strings that a plain scalar would read back as a bool, null, number, or a different structure.
 # @parametrize([
-#   ["true"], ["False"], ["null"], ["~"], ["yes"], ["off"], ["123"], ["-5"], ["1.5"], ["1e3"], [".inf"], [".NaN"],
-#   ["0x1F"], ["0o17"], [""], [" "], [" a"], ["a "], ["a: b"], ["a #b"], ["a:"], ["#x"], ["- x"], ["-"], ["&a"],
-#   ["*a"], ["!t"], ["|"], [">"], ["[a]"], ["{a}"], ["a,b"], ["it's"], ["a\nb"], ["a\tb"], ["a\rb"], ["a\u0001b"],
-#   ["---"], ["..."], ["plain"], ["é😀"],
+# ["true"], ["False"], ["null"], ["~"], ["yes"], ["off"], ["123"], ["-5"], ["1.5"], ["1e3"], [".inf"], [".NaN"],
+# ["0x1F"], ["0o17"], [""], [" "], [" a"], ["a "], ["a: b"], ["a #b"], ["a:"], ["#x"], ["- x"], ["-"], ["&a"],
+# ["*a"], ["!t"], ["|"], [">"], ["[a]"], ["{a}"], ["a,b"], ["it's"], ["a\nb"], ["a\tb"], ["a\rb"], ["a\u0001b"],
+# ["---"], ["..."], ["plain"], ["é😀"],
 # ])
 def test_yaml_stringify_string_round_trips(s):
   let data = dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]])
