@@ -38,7 +38,9 @@ use base64::Engine;
 use chrono::{DateTime, Datelike, Local, NaiveDate, Timelike};
 use csv::ReaderBuilder;
 use itertools::Itertools;
-use rustc_hash::{FxBuildHasher, FxHashMap, FxHashSet};
+#[cfg(feature = "file-io")]
+use rustc_hash::FxHashSet;
+use rustc_hash::{FxBuildHasher, FxHashMap};
 use similar::{ChangeTag, TextDiff};
 use smallvec::SmallVec;
 use smol_str::SmolStr;
