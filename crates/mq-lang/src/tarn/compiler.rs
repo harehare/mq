@@ -409,6 +409,8 @@ struct CompileOptions<'a> {
     defer_undefined_identifiers: bool,
     #[cfg(feature = "debugger")]
     instrument: bool,
+    /// No one reads locals by name after the run.
+    locals_unobserved: bool,
 }
 
 impl<'a> CompileOptions<'a> {
@@ -418,6 +420,7 @@ impl<'a> CompileOptions<'a> {
             defer_undefined_identifiers,
             #[cfg(feature = "debugger")]
             instrument: true,
+            locals_unobserved: false,
         }
     }
 
@@ -427,6 +430,7 @@ impl<'a> CompileOptions<'a> {
         {
             self.instrument = instrument;
         }
+        self.locals_unobserved = !instrument;
         self
     }
 }
@@ -847,6 +851,9 @@ fn compile_program_impl<R: ModuleResolver>(
     compiler.chunks[0].local_mutable = compiler.scopes[0].local_mutable();
     compiler.chunks[0].upvalue_names = compiler.scopes[0].upvalue_names();
     super::peephole::optimize_chunks(&mut compiler.chunks);
+    if options.locals_unobserved {
+        super::peephole::drop_unread_static_closures(&mut compiler.chunks, seeds.seed_bindings.len());
+    }
     for chunk in &mut compiler.chunks {
         chunk.refresh_captured_local_slots();
     }

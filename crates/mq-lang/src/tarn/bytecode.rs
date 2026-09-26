@@ -463,6 +463,156 @@ pub(crate) enum OpCode {
     Resume(u8),
 }
 
+impl OpCode {
+    /// Visits explicit local slot operands (not the implicit `self` slot).
+    pub(crate) fn for_each_local_slot_mut(&mut self, mut visit: impl FnMut(&mut u16)) {
+        match self {
+            Self::GetLocal(slot)
+            | Self::SetLocal(slot)
+            | Self::TeeLocal(slot)
+            | Self::ArrayNewWithCapacityLocal(slot)
+            | Self::ArrayLenLocal(slot)
+            | Self::ForeachCollect(slot)
+            | Self::ForeachCollectAndJump { slot, .. }
+            | Self::CallBuiltinLocal { local: slot, .. }
+            | Self::CallLocal(slot, _)
+            | Self::CallUpvalueLocal { local: slot, .. }
+            | Self::ReturnLocal(slot)
+            | Self::SetLocalConst { local: slot, .. }
+            | Self::BinaryLocalConst { local: slot, .. }
+            | Self::BinaryLocalNumberConst { local: slot, .. }
+            | Self::UpdateLocalConst { local: slot, .. }
+            | Self::UpdateLocalNumberConst { local: slot, .. }
+            | Self::JumpIfFalseLocalConst { local: slot, .. }
+            | Self::JumpIfFalseLocalNumberConst { local: slot, .. }
+            | Self::ReturnBinaryLocalConst { local: slot, .. }
+            | Self::ReturnBinaryLocalNumberConst { local: slot, .. } => visit(slot),
+            Self::SetLocalAndCopy { source, destination }
+            | Self::SetLocalAndCopyAndJump {
+                source, destination, ..
+            }
+            | Self::CopyLocal { source, destination } => {
+                visit(source);
+                visit(destination);
+            }
+            Self::BinaryLocalLocal { left, right, .. }
+            | Self::JumpIfFalseLocalLocal { left, right, .. }
+            | Self::ReturnBinaryLocalLocal { left, right, .. }
+            | Self::UpdateLocalLocal {
+                local: left,
+                value: right,
+                ..
+            }
+            | Self::ArrayGetLocalAt {
+                array_slot: left,
+                index_slot: right,
+            }
+            | Self::DictGetLocalOrFail {
+                subject_slot: left,
+                value_slot: right,
+                ..
+            }
+            | Self::ForeachBinaryLocalNumberConstAndJump {
+                local: left,
+                accumulator_slot: right,
+                ..
+            } => {
+                visit(left);
+                visit(right);
+            }
+            Self::ForeachNext {
+                array_slot,
+                index_slot,
+                value_slot,
+                ..
+            } => {
+                visit(array_slot);
+                visit(index_slot);
+                visit(value_slot);
+            }
+            Self::MakeClosure(payload) => {
+                for source in &mut payload.1 {
+                    if let UpvalueSource::Local(slot) = source {
+                        visit(slot);
+                    }
+                }
+            }
+            Self::TryCatch(info) => {
+                if let Some(slot) = &mut info.break_acc_slot {
+                    visit(slot);
+                }
+                if let Some(slot) = &mut info.break_completed_iteration_slot {
+                    visit(slot);
+                }
+            }
+            #[cfg(feature = "debugger")]
+            Self::StmtBoundary(_) | Self::SyncCallNode(_) | Self::Breakpoint(_) => {}
+            Self::Const(_)
+            | Self::PushNone
+            | Self::GetUpvalue(_)
+            | Self::SetUpvalue(_)
+            | Self::MakeStaticClosure(_)
+            | Self::Pop
+            | Self::Dup
+            | Self::Jump(_)
+            | Self::JumpIfFalse(_)
+            | Self::Add
+            | Self::Sub
+            | Self::Mul
+            | Self::Div
+            | Self::Mod
+            | Self::Eq
+            | Self::Ne
+            | Self::Lt
+            | Self::Le
+            | Self::Gt
+            | Self::Ge
+            | Self::Neg
+            | Self::Not
+            | Self::ArrayNew
+            | Self::ArrayPush
+            | Self::ArraySpread
+            | Self::DictNew
+            | Self::DictInsert
+            | Self::DictSpread
+            | Self::ToForeachIterable
+            | Self::ArrayLen
+            | Self::ArrayGetAt
+            | Self::ArraySliceFrom
+            | Self::TypeCheck(_)
+            | Self::GetEnvVar(_)
+            | Self::GetExternalGlobal(_)
+            | Self::InterpString(_)
+            | Self::SelectorMatch(_)
+            | Self::SelectorMatchKind(_)
+            | Self::SelectorMatchHeading(_)
+            | Self::SelectorMatchWithArgs(_)
+            | Self::CallBuiltin(..)
+            | Self::CallStatic(..)
+            | Self::CallStaticExact(..)
+            | Self::CallStaticExact0(_)
+            | Self::CallStaticExact1(_)
+            | Self::CallStaticExact2(_)
+            | Self::CallStaticImplicitSelf(..)
+            | Self::CallSelf(_)
+            | Self::CallSelfExact(_)
+            | Self::CallSelfExact0
+            | Self::CallSelfExact1
+            | Self::CallSelfExact2
+            | Self::CallSelfImplicitSelf(_)
+            | Self::CallUpvalue(..)
+            | Self::CallValue(_)
+            | Self::MaybeAutoCall
+            | Self::FlowBreak(_)
+            | Self::FlowContinue
+            | Self::RaiseDestructuringFailed
+            | Self::Return
+            | Self::Yield
+            | Self::Resume(_) => {}
+        }
+    }
+}
+
 #[cfg(feature = "vm-profile")]
 impl OpCode {
     /// Returns a stable opcode name for execution-count profiling.
