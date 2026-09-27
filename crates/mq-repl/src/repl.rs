@@ -460,9 +460,7 @@ impl Repl {
     }
 
     /// Creates a REPL from a pre-configured engine (e.g. with capabilities already set).
-    pub fn with_engine(mut engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
-        engine.enable_query_session();
-
+    pub fn with_engine(engine: mq_lang::DefaultEngine, input: Vec<mq_lang::RuntimeValue>) -> Self {
         Self {
             command_context: Rc::new(RefCell::new(CommandContext::new(engine, input))),
         }

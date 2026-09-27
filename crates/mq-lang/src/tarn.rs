@@ -252,13 +252,16 @@ fn markdown_child_result(value: RuntimeValue, fallback: Shared<mq_markdown::Node
     }
 }
 
-/// One captured top-level `let`/`var`/`def` binding for [`engine::Engine::enable_query_session`].
+/// One captured top-level `let`/`var`/`def` binding of a [`crate::Session`].
 #[derive(Debug, Clone)]
 pub(crate) struct SessionBinding {
     pub(crate) name: Ident,
     pub(crate) mutable: bool,
     pub(crate) value: RuntimeValue,
 }
+
+/// The top-level bindings a query session carries from one query to the next.
+pub(crate) type SessionBindings = Shared<SharedCell<Vec<SessionBinding>>>;
 
 /// VM-only state, held directly by `Engine` (independent of `Evaluator`).
 #[derive(Debug)]
@@ -271,9 +274,6 @@ pub(crate) struct VmState<T: ModuleResolver = DefaultModuleResolver, IO: Io = Sa
     /// Distinguishes frozen module bytecode when a `CompiledProgram` is shared by Engines.
     #[cfg(not(feature = "debugger"))]
     pub(crate) module_cache_key: VmModuleCacheKey,
-    /// `Some` once [`engine::Engine::enable_query_session`] is on; holds the captured top-level
-    /// bindings carried from one `eval()` call to the next.
-    pub(crate) session: Option<Shared<SharedCell<Vec<SessionBinding>>>>,
     #[cfg(feature = "debugger")]
     pub(crate) debugger: Shared<SharedCell<Debugger>>,
     #[cfg(feature = "debugger")]
@@ -379,7 +379,6 @@ impl<T: ModuleResolver, IO: Io> Clone for VmState<T, IO> {
             // The loader is cloned rather than shared, so its frozen modules need a fresh key.
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
-            session: self.session.clone(),
             #[cfg(feature = "debugger")]
             debugger: Shared::clone(&self.debugger),
             #[cfg(feature = "debugger")]
@@ -405,7 +404,6 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
             global_bindings: Shared::new(SharedCell::new(GlobalBindings::default())),
             #[cfg(not(feature = "debugger"))]
             module_cache_key: next_vm_module_cache_key(),
-            session: None,
             #[cfg_attr(feature = "sync", allow(clippy::arc_with_non_send_sync))]
             #[cfg(feature = "debugger")]
             debugger: Shared::new(SharedCell::new(Debugger::new())),
@@ -486,8 +484,8 @@ pub(crate) struct EngineRunContext<'a, R: ModuleResolver> {
     pub(crate) token_arena: TokenArena,
     pub(crate) module_loader: ModuleLoader<R>,
     pub(crate) global_bindings: &'a [(Ident, RuntimeValue)],
-    /// `Some` when [`engine::Engine::enable_query_session`] is on.
-    pub(crate) session: Option<&'a Shared<SharedCell<Vec<SessionBinding>>>>,
+    /// `Some` when running a [`crate::Session`] query.
+    pub(crate) session: Option<&'a SessionBindings>,
     /// Module var values computed once per eval. See [`resolve_module_prelude_globals`].
     pub(crate) preresolved_module_vars: compiler::ResolvedModuleVars,
 }

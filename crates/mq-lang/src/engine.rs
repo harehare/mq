@@ -2,18 +2,19 @@
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+mod session;
+
+pub use session::Session;
+
 #[cfg(feature = "debugger")]
 use crate::Source;
-use crate::ast::{
-    Program,
-    node::{Expr, Literal},
-};
 use crate::io::{Io, NativeIo, SandboxedIo};
+#[cfg(feature = "debugger")]
 use crate::module::ModuleId;
-use crate::tarn;
+use crate::tarn::{self, SessionBindings};
 use crate::{
-    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind, layered_token_arena,
-    module::resolver::DefaultModuleResolver, token_alloc,
+    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, RuntimeValues, Shared, SharedCell, TokenKind,
+    layered_token_arena, module::resolver::DefaultModuleResolver, token_alloc,
 };
 
 #[cfg(feature = "debugger")]
@@ -22,7 +23,7 @@ use crate::{
     ModuleLoader, Token, TokenArena,
     arena::Arena,
     error::{self},
-    parse, parse_in_module,
+    parse,
     runtime::builtin::io_context,
 };
 
@@ -165,15 +166,10 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
-    /// Source of each query evaluated in a query session, indexed by its module id.
-    session_sources: Vec<String>,
     /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
     pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
 }
-
-/// Marks module ids of query-session sources, which the module loader never assigns.
-const SESSION_SOURCE_BIT: u32 = 1 << 31;
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
 /// The VM needs their AST declarations present while it statically resolves the user's query.
@@ -218,7 +214,6 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm: tarn::VmState::with_module_loader(module_loader),
             token_arena,
             vm_module_prelude: Vec::new(),
-            session_sources: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
         }
@@ -297,7 +292,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             vm: tarn::VmState::with_module_loader_and_io(module_loader, io),
             token_arena,
             vm_module_prelude: Vec::new(),
-            session_sources: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
         }
@@ -324,12 +318,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Enables traces for uncaught VM errors.
     pub fn set_capture_stack_trace(&mut self, enabled: bool) {
         self.vm.options.capture_stack_trace = enabled;
-    }
-
-    /// Makes top-level `let`/`var`/`def` bindings from one `eval()` call visible to the next
-    /// (e.g. a REPL). Opt-in since it costs a capture/reseed pass per call.
-    pub fn enable_query_session(&mut self) {
-        self.vm.session = Some(Shared::new(SharedCell::new(Vec::new())));
     }
 
     /// Sets the [`Io`] this engine uses for file, environment-variable, and network
@@ -513,49 +501,14 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         // Scoped before `parse`, not just `eval_compiled_vm`, so bare `$VAR` resolution sees this engine's `Io`.
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let token_arena = self.query_token_arena();
-        let program = match self.vm.session {
-            // Each query gets its own source, so errors in its defs show it in later queries.
-            Some(_) => {
-                self.session_sources.push(code.to_string());
-                let module_id = ModuleId::new(SESSION_SOURCE_BIT | (self.session_sources.len() - 1) as u32);
-                parse_in_module(code, Shared::clone(&token_arena), module_id).map_err(|error| {
-                    let error = self.error_from(code, error);
-                    self.session_sources.pop();
-                    Box::new(error)
-                })?
-            }
-            None => parse(code, Shared::clone(&token_arena))?,
-        };
+        let program = parse(code, Shared::clone(&token_arena))?;
 
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
 
         let compiled = CompiledProgram::cached(code.to_string(), program);
-        let result = self.eval_compiled_vm_in(&compiled, input.into_iter(), token_arena)?;
-        if let Some(program) = compiled.program() {
-            self.persist_session_modules(program);
-        }
-        Ok(result)
-    }
-
-    /// Keeps top-level `import`/`include` directives from a successful session `eval()` so the
-    /// modules stay available to later calls, like top-level `let`/`def` bindings do.
-    fn persist_session_modules(&mut self, program: &Program) {
-        if self.vm.session.is_none() {
-            return;
-        }
-        for node in program {
-            let module = match &node.expr {
-                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.clone()),
-                Expr::Import(Literal::String(name), alias) => {
-                    VmModulePrelude::Import(name.clone(), alias.as_ref().map(|alias| alias.name.to_string()))
-                }
-                _ => continue,
-            };
-            if !self.vm_module_prelude.contains(&module) {
-                self.vm_module_prelude.push(module);
-            }
-        }
+        self.run_compiled(&compiled, input, token_arena, None)
+            .map_err(|cause| Box::new(error::Error::from_error(code, cause, self.vm.module_loader.clone())))
     }
 
     /// Compiles mq code into a [`CompiledProgram`] that can be evaluated multiple times.
@@ -594,11 +547,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(compiled.source.clone());
 
-        let result = self.eval_compiled_vm(compiled, input)?;
-        if let Some(program) = compiled.program() {
-            self.persist_session_modules(program);
-        }
-        Ok(result)
+        self.eval_compiled_vm(compiled, input)
     }
 
     /// Renders the Tarn bytecode that would be executed for `compiled`.
@@ -642,24 +591,34 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
-        self.eval_compiled_vm_in(compiled, input, Shared::clone(&self.token_arena))
+        self.run_compiled(compiled, input, Shared::clone(&self.token_arena), None)
+            .map_err(|cause| {
+                Box::new(error::Error::from_error(
+                    &compiled.source,
+                    cause,
+                    self.vm.module_loader.clone(),
+                ))
+            })
     }
 
-    /// The arena for one `eval` query's tokens, freed once it has run. A session keeps them,
-    /// since its bindings outlive the query, and so does a debugger, which reads them later.
+    /// The arena for one `eval` query's tokens, freed once it has run. A debugger keeps them,
+    /// since it reads them later.
     fn query_token_arena(&self) -> TokenArena {
-        if self.vm.session.is_some() || cfg!(feature = "debugger") {
+        if cfg!(feature = "debugger") {
             Shared::clone(&self.token_arena)
         } else {
             layered_token_arena(&self.token_arena)
         }
     }
 
-    /// Runs `compiled`, resolving its tokens in `token_arena`.
-    fn eval_compiled_vm_in<I>(&mut self, compiled: &CompiledProgram, input: I, token_arena: TokenArena) -> MqResult
-    where
-        I: Iterator<Item = RuntimeValue>,
-    {
+    /// Runs `compiled`, resolving its tokens in `token_arena` and carrying `session`'s bindings.
+    pub(crate) fn run_compiled(
+        &mut self,
+        compiled: &CompiledProgram,
+        input: impl Iterator<Item = RuntimeValue>,
+        token_arena: TokenArena,
+        session: Option<&SessionBindings>,
+    ) -> Result<RuntimeValues, error::InnerError> {
         // Scoped like `eval`/`eval_compiled`, so bare `$VAR` resolution (and anything else
         // reading the ambient `Io`) inside VM-executed builtins sees this engine's `Io`
         // rather than whatever the previous scope (or none) left in place.
@@ -679,7 +638,8 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         let vm_program = compiled
             .program()
             .map(|program| tarn::build_program(program, Shared::clone(&token_arena), &self.vm_module_prelude))
-            .transpose()?
+            .transpose()
+            .map_err(|error| error.cause)?
             .flatten();
 
         let (timeout, max_call_stack_depth, capture_stack_trace) = (
@@ -698,7 +658,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 token_arena: Shared::clone(&token_arena),
                 module_loader,
                 global_bindings: &global_bindings,
-                session: self.vm.session.as_ref(),
+                session,
                 preresolved_module_vars: Default::default(),
             },
             #[cfg(not(feature = "debugger"))]
@@ -724,29 +684,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             input,
         )
         .map(Into::into)
-        .map_err(|error| Box::new(self.error_from(&compiled.source, error.into_inner_error(token_arena))))
-    }
-
-    /// Builds a diagnostic for `cause`, showing the query source it happened in.
-    fn error_from(&self, source: &str, cause: error::InnerError) -> error::Error {
-        if self.session_sources.is_empty() {
-            return error::Error::from_error(source, cause, self.vm.module_loader.clone());
-        }
-        error::Error::from_error_with(cause, |module_id| match module_id {
-            Some(module_id) if module_id.raw() & SESSION_SOURCE_BIT != 0 => {
-                let index = (module_id.raw() & !SESSION_SOURCE_BIT) as usize;
-                let source = self.session_sources.get(index).cloned().unwrap_or_default();
-                (format!("repl#{}", index + 1), source)
-            }
-            Some(module_id) => (
-                self.vm.module_loader.module_file_name(module_id),
-                self.vm
-                    .module_loader
-                    .get_source_code(module_id, source.to_string())
-                    .unwrap_or_default(),
-            ),
-            None => (String::new(), source.to_string()),
-        })
+        .map_err(|error| error.into_inner_error(token_arena))
     }
 
     /// Returns a reference to the debugger instance.
@@ -876,6 +814,7 @@ impl Engine<DefaultModuleResolver> {
 mod tests {
     use super::CompiledProgram;
     use super::DefineValueError;
+    use super::Session;
     use crate::DefaultEngine;
     use crate::Engine;
     use crate::NativeIo;
@@ -1501,10 +1440,10 @@ mod tests {
     fn test_query_session_error_in_an_earlier_def_shows_its_query() {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
-        engine.enable_query_session();
+        let mut session = Session::new(engine);
         let definition = r#"def fail(): let x = 1 | error("boom");"#;
-        engine.eval(definition, null_input().into_iter()).unwrap();
-        let error = engine
+        session.eval(definition, null_input().into_iter()).unwrap();
+        let error = session
             .eval(r#"upcase("abc") | fail()"#, null_input().into_iter())
             .unwrap_err();
         let (name, source, offset) = diagnostic(&error);
@@ -1518,9 +1457,9 @@ mod tests {
     fn test_query_session_error_shows_the_current_query(#[case] query: &str, #[case] at: &str) {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
-        engine.enable_query_session();
-        engine.eval("let x = 1", null_input().into_iter()).unwrap();
-        let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+        let mut session = Session::new(engine);
+        session.eval("let x = 1", null_input().into_iter()).unwrap();
+        let error = session.eval(query, null_input().into_iter()).unwrap_err();
         let (name, source, offset) = diagnostic(&error);
         assert_eq!((name.as_str(), source.as_str()), ("repl#2", query));
         assert!(query[offset.min(query.len())..].starts_with(at), "label at {offset}");
@@ -1528,10 +1467,10 @@ mod tests {
 
     #[test]
     fn test_query_session_forgets_a_query_that_does_not_parse() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
-        engine.eval("1 +", null_input().into_iter()).unwrap_err();
-        let error = engine.eval("1 / 0", null_input().into_iter()).unwrap_err();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
+        session.eval("1 +", null_input().into_iter()).unwrap_err();
+        let error = session.eval("1 / 0", null_input().into_iter()).unwrap_err();
         assert_eq!(error.source_code.name(), "repl#1");
     }
 
@@ -1544,69 +1483,69 @@ mod tests {
 
     #[test]
     fn test_query_session_persists_let_across_eval_calls() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("let x = 41", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval("x + 1", vec!["".to_string().into()].into_iter());
+        let result = session.eval("x + 1", vec!["".to_string().into()].into_iter());
 
         assert_eq!(result.unwrap(), vec![42.into()].into());
     }
 
     #[test]
     fn test_query_session_persists_var_mutation_across_eval_calls() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("var x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
-        engine.eval("x += 1", vec!["".to_string().into()].into_iter()).unwrap();
-        let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+        session.eval("x += 1", vec!["".to_string().into()].into_iter()).unwrap();
+        let result = session.eval("x", vec!["".to_string().into()].into_iter());
 
         assert_eq!(result.unwrap(), vec![2.into()].into());
     }
 
     #[test]
     fn test_query_session_var_redeclaration_updates_value() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("var x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
-        engine
+        session
             .eval("var x = 2", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+        let result = session.eval("x", vec!["".to_string().into()].into_iter());
 
         assert_eq!(result.unwrap(), vec![2.into()].into());
     }
 
     #[test]
     fn test_query_session_persists_def_across_eval_calls() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("def add_one(x): x + 1;", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval("add_one(5)", vec!["".to_string().into()].into_iter());
+        let result = session.eval("add_one(5)", vec!["".to_string().into()].into_iter());
 
         assert_eq!(result.unwrap(), vec![6.into()].into());
     }
 
     #[test]
     fn test_query_session_bindings_are_available_and_updated_across_nodes() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("let base = 41", vec![RuntimeValue::None].into_iter())
             .unwrap();
-        let values = engine
+        let values = session
             .eval(
                 "nodes | let derived = base + 1 | derived",
                 vec![RuntimeValue::None].into_iter(),
@@ -1614,57 +1553,57 @@ mod tests {
             .unwrap();
         assert_eq!(values.values(), &[RuntimeValue::Number(42.into())]);
 
-        let persisted = engine.eval("derived", vec![RuntimeValue::None].into_iter()).unwrap();
+        let persisted = session.eval("derived", vec![RuntimeValue::None].into_iter()).unwrap();
         assert_eq!(persisted.values(), &[RuntimeValue::Number(42.into())]);
     }
 
     #[test]
     fn test_query_session_var_mutation_carries_forward_across_inputs_in_one_eval() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("var x = 0", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval(
+        let result = session.eval(
             "x += 1 | x",
             vec!["".to_string().into(), "".to_string().into(), "".to_string().into()].into_iter(),
         );
 
         assert_eq!(result.unwrap(), vec![1.into(), 2.into(), 3.into()].into());
 
-        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
         assert_eq!(persisted.unwrap(), vec![3.into()].into());
     }
 
     #[test]
     fn test_query_session_empty_input_iterator_preserves_bindings() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("let x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval("x + 1", std::iter::empty());
+        let result = session.eval("x + 1", std::iter::empty());
         assert_eq!(result.unwrap(), Vec::<RuntimeValue>::new().into());
 
-        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
         assert_eq!(persisted.unwrap(), vec![1.into()].into());
     }
 
     #[test]
     fn test_query_session_nodes_over_empty_input_preserves_let_binding() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("let x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
         // Aggregate runs once regardless of input count; must see seeded x == 1, not None.
-        let result = engine.eval("nodes | x + 1", std::iter::empty());
+        let result = session.eval("nodes | x + 1", std::iter::empty());
         assert_eq!(result.unwrap(), vec![2.into()].into());
 
-        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
         assert_eq!(
             persisted.unwrap(),
             vec![1.into()].into(),
@@ -1674,16 +1613,16 @@ mod tests {
 
     #[test]
     fn test_query_session_nodes_over_empty_input_preserves_var_binding() {
-        let mut engine = DefaultEngine::default();
-        engine.enable_query_session();
+        let engine = DefaultEngine::default();
+        let mut session = Session::new(engine);
 
-        engine
+        session
             .eval("var x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
-        let result = engine.eval("nodes | x + 1", std::iter::empty());
+        let result = session.eval("nodes | x + 1", std::iter::empty());
         assert_eq!(result.unwrap(), vec![2.into()].into());
 
-        let persisted = engine.eval("x", vec!["".to_string().into()].into_iter());
+        let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
         assert_eq!(
             persisted.unwrap(),
             vec![1.into()].into(),
@@ -1736,10 +1675,12 @@ mod tests {
     fn test_query_session_persists_modules_across_eval_calls(#[case] directive: &str, #[case] query: &str) {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
-        engine.enable_query_session();
+        let mut session = Session::new(engine);
 
-        engine.eval(directive, vec!["".to_string().into()].into_iter()).unwrap();
-        let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+        session
+            .eval(directive, vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = session.eval(query, vec!["".to_string().into()].into_iter());
 
         assert_eq!(
             result.unwrap(),
@@ -1757,14 +1698,14 @@ mod tests {
     fn test_query_session_failed_import_is_not_persisted() {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
-        engine.enable_query_session();
+        let mut session = Session::new(engine);
 
         assert!(
-            engine
+            session
                 .eval(r#"import "not_found_module""#, vec!["".to_string().into()].into_iter())
                 .is_err()
         );
-        let result = engine.eval("1", vec!["".to_string().into()].into_iter());
+        let result = session.eval("1", vec!["".to_string().into()].into_iter());
 
         assert_eq!(result.unwrap(), vec![1.into()].into());
     }
@@ -2800,19 +2741,21 @@ mod tests {
 
         let mut engine = DefaultEngine::default();
         engine.set_search_paths(vec![temp_dir]);
-        engine.enable_query_session();
+        let mut session = Session::new(engine);
 
         let call_count = Arc::new(AtomicI64::new(0));
         let call_count_clone = Arc::clone(&call_count);
-        engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
-            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
-            Ok(RuntimeValue::Number(value.into()))
-        });
+        session
+            .engine_mut()
+            .register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+                let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+                Ok(RuntimeValue::Number(value.into()))
+            });
 
-        engine.load_module("side_effect_counter_session").unwrap();
+        session.engine_mut().load_module("side_effect_counter_session").unwrap();
         let baseline = call_count.load(Ordering::SeqCst);
 
-        engine
+        session
             .eval(
                 ". | nodes | get_counter()",
                 [
