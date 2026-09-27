@@ -1389,6 +1389,30 @@ impl Decoder<'_> {
     }
 }
 
+/// The wire id `op` is encoded with.
+#[cfg(test)]
+pub(super) fn instruction_id(op: &OpCode) -> u8 {
+    let mut writer = Writer::default();
+    encode_op(&mut writer, &mut Tables::default(), op).expect("encodable instruction");
+    writer.into_bytes()[0]
+}
+
+/// Every wire id the decoder accepts as an instruction.
+#[cfg(test)]
+pub(super) fn known_instruction_ids() -> Vec<u8> {
+    (0..=u8::MAX)
+        .filter(|id| {
+            let mut decoder = Decoder {
+                reader: Reader::new(std::slice::from_ref(id)),
+                idents: Vec::new(),
+                tokens: &[],
+            };
+            // Operands are missing, so only an unknown id fails with this message.
+            !matches!(decoder.op(), Err(MqcError::InvalidBytecode(message)) if message.starts_with("unknown instruction"))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

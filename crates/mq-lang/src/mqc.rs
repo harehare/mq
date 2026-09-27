@@ -16,6 +16,8 @@
 mod code;
 mod compile_io;
 #[cfg(test)]
+mod fuzz_tests;
+#[cfg(test)]
 mod tests;
 pub(crate) mod wire;
 
