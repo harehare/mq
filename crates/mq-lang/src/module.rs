@@ -79,8 +79,8 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     /// The id registered for each `.mqc` module name and source.
     #[cfg(feature = "mqc")]
     precompiled_ids: FxHashMap<(SmolStr, Shared<str>), ModuleId>,
-    /// Parsed builtin AST tied to the token arena it was created in.
-    builtin_module_cache: Option<(TokenArena, Module)>,
+    /// Parsed builtin AST tied to the token arena it was created in, shared by derived loaders.
+    builtin_module_cache: Option<(TokenArena, Shared<Module>)>,
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
     /// instead of reparsing its cached source.
     module_ast_cache: FxHashMap<ModuleId, Module>,
@@ -180,10 +180,25 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub(crate) fn with_same_resolver(&self) -> Self {
-        let mut loader = Self::new(self.resolver.clone());
-        loader.module_names = Shared::clone(&self.module_names);
-        loader.builtin_module_cache = self.builtin_module_cache.clone();
-        loader
+        // Built directly: `new` would allocate a module-name arena only to replace it.
+        let mut loaded_modules = FxHashSet::default();
+        loaded_modules.insert(Module::TOP_LEVEL_MODULE_ID);
+        Self {
+            loaded_modules,
+            module_names: Shared::clone(&self.module_names),
+            #[cfg(feature = "debugger")]
+            source_code: None,
+            source_cache: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_sources: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_ids: FxHashMap::default(),
+            builtin_module_cache: self.builtin_module_cache.clone(),
+            module_ast_cache: FxHashMap::default(),
+            resolver: self.resolver.clone(),
+            #[cfg(feature = "http-import")]
+            http_depth: 0,
+        }
     }
 
     /// Returns the id of `name`, registering it first if it has none yet.
@@ -463,7 +478,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         {
             let module_id = self.module_id_of(Module::BUILTIN_MODULE);
             self.loaded_modules.insert(module_id);
-            return Ok(module.clone());
+            return Ok(Module::clone(module));
         }
 
         // Cache is only valid when both arenas are in their initial state (builtin
@@ -493,13 +508,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 }
                 let module_id = self.module_id_of(Module::BUILTIN_MODULE);
                 self.loaded_modules.insert(module_id);
-                self.builtin_module_cache = Some((token_arena, module.clone()));
+                self.builtin_module_cache = Some((token_arena, Shared::new(module.clone())));
                 return Ok(module);
             }
         }
 
         let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
-        self.builtin_module_cache = Some((Shared::clone(&token_arena), module.clone()));
+        self.builtin_module_cache = Some((Shared::clone(&token_arena), Shared::new(module.clone())));
 
         if pristine {
             let tokens = {
