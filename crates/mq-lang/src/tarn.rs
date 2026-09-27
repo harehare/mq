@@ -537,7 +537,8 @@ pub(crate) fn build_program(
     for module in module_prelude {
         let directive = match module {
             engine::VmModulePrelude::Include(name) => format!("include {name:?}"),
-            engine::VmModulePrelude::Import(name) => format!("import {name:?}"),
+            engine::VmModulePrelude::Import(name, None) => format!("import {name:?}"),
+            engine::VmModulePrelude::Import(name, Some(alias)) => format!("import {name:?} as {alias}"),
         };
         prelude_program.extend(parse(&directive, Shared::clone(&token_arena))?);
     }

@@ -4,6 +4,10 @@ use std::path::PathBuf;
 
 #[cfg(feature = "debugger")]
 use crate::Source;
+use crate::ast::{
+    Program,
+    node::{Expr, Literal},
+};
 use crate::io::{Io, NativeIo, SandboxedIo};
 #[cfg(feature = "debugger")]
 use crate::module::ModuleId;
@@ -122,7 +126,8 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum VmModulePrelude {
     Include(String),
-    Import(String),
+    /// Module name and optional `as` alias.
+    Import(String, Option<String>),
 }
 
 fn create_default_token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
@@ -406,7 +411,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .load_from_file(module_name, Shared::clone(&self.token_arena))
             .map_err(|e| Box::new(error::Error::from_error("", e.into(), self.vm.module_loader.clone())))?;
         self.vm_module_prelude
-            .push(VmModulePrelude::Import(module_name.to_string()));
+            .push(VmModulePrelude::Import(module_name.to_string(), None));
         Ok(())
     }
 
@@ -458,7 +463,29 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             #[cfg(not(feature = "debugger"))]
             vm_cache: None,
         };
-        self.eval_compiled_vm(&compiled, input.into_iter())
+        let result = self.eval_compiled_vm(&compiled, input.into_iter())?;
+        self.persist_session_modules(&compiled.program);
+        Ok(result)
+    }
+
+    /// Keeps top-level `import`/`include` directives from a successful session `eval()` so the
+    /// modules stay available to later calls, like top-level `let`/`def` bindings do.
+    fn persist_session_modules(&mut self, program: &Program) {
+        if self.vm.session.is_none() {
+            return;
+        }
+        for node in program {
+            let module = match &node.expr {
+                Expr::Include(Literal::String(name)) => VmModulePrelude::Include(name.clone()),
+                Expr::Import(Literal::String(name), alias) => {
+                    VmModulePrelude::Import(name.clone(), alias.as_ref().map(|alias| alias.name.to_string()))
+                }
+                _ => continue,
+            };
+            if !self.vm_module_prelude.contains(&module) {
+                self.vm_module_prelude.push(module);
+            }
+        }
     }
 
     /// Compiles mq code into a [`CompiledProgram`] that can be evaluated multiple times.
@@ -507,7 +534,9 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(compiled.source.clone());
 
-        self.eval_compiled_vm(compiled, input)
+        let result = self.eval_compiled_vm(compiled, input)?;
+        self.persist_session_modules(&compiled.program);
+        Ok(result)
     }
 
     /// Renders the Tarn bytecode that would be executed for `compiled`.
@@ -1382,6 +1411,62 @@ mod tests {
             .eval("let x = 1", vec!["".to_string().into()].into_iter())
             .unwrap();
         let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[case::import(r#"import "csv""#, r#"csv::csv_parse("a,b", false)"#)]
+    #[case::import_alias(r#"import "csv" as c"#, r#"c::csv_parse("a,b", false)"#)]
+    #[case::include(r#"include "csv""#, r#"csv_parse("a,b", false)"#)]
+    fn test_query_session_persists_modules_across_eval_calls(#[case] directive: &str, #[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.enable_query_session();
+
+        engine.eval(directive, vec!["".to_string().into()].into_iter()).unwrap();
+        let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+
+        assert_eq!(
+            result.unwrap(),
+            vec![RuntimeValue::Array(
+                vec![RuntimeValue::Array(
+                    vec!["a".to_string().into(), "b".to_string().into()].into()
+                )]
+                .into()
+            )]
+            .into()
+        );
+    }
+
+    #[test]
+    fn test_query_session_failed_import_is_not_persisted() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.enable_query_session();
+
+        assert!(
+            engine
+                .eval(r#"import "not_found_module""#, vec!["".to_string().into()].into_iter())
+                .is_err()
+        );
+        let result = engine.eval("1", vec!["".to_string().into()].into_iter());
+
+        assert_eq!(result.unwrap(), vec![1.into()].into());
+    }
+
+    #[test]
+    fn test_modules_are_not_persisted_without_query_session() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+
+        engine
+            .eval(r#"import "csv""#, vec!["".to_string().into()].into_iter())
+            .unwrap();
+        let result = engine.eval(
+            r#"csv::csv_parse("a,b", false)"#,
+            vec!["".to_string().into()].into_iter(),
+        );
 
         assert!(result.is_err());
     }
