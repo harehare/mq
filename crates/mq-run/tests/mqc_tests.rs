@@ -258,6 +258,13 @@ fn test_run_rejects_corrupted_program() {
 }
 
 #[test]
+fn test_run_reports_missing_program() {
+    let dir = TempDir::new().unwrap();
+    let error = stderr(mq(dir.path()).args(["missing.mqc"]).write_stdin("# a\n").assert());
+    assert!(error.contains("Failed to read missing.mqc"), "{error}");
+}
+
+#[test]
 fn test_run_rejects_watch() {
     let dir = TempDir::new().unwrap();
     compile(dir.path(), "self", &[]);

@@ -112,9 +112,6 @@ impl Cli {
                 "-f does not accept .mqc files"
             ));
         }
-        if !path.is_file() {
-            return Ok(());
-        }
         let bytes = fs::read(path)
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
