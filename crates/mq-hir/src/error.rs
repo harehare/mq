@@ -34,7 +34,8 @@ impl Hir {
             .iter()
             .filter_map(|(symbol_id, symbol)| match symbol.kind {
                 SymbolKind::Call | SymbolKind::Ref => {
-                    if self.references.contains_key(&symbol_id) {
+                    // builtin.mq may call functions gated behind mq-lang features this build lacks.
+                    if self.references.contains_key(&symbol_id) || self.is_builtin_symbol(symbol) {
                         None
                     } else {
                         Some(HirError::UnresolvedSymbol {
@@ -434,6 +435,17 @@ mod tests {
         let _ = hir.add_code(None, "module m: def f(): upcase(); end | m::f()");
 
         assert!(!unresolved_names(&hir).contains(&"upcase".to_string()));
+    }
+
+    #[test]
+    fn test_errors_skip_the_builtin_module() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "1");
+
+        assert!(hir.errors().iter().all(|error| match error {
+            HirError::UnresolvedSymbol { symbol, .. } => !hir.is_builtin_symbol(symbol),
+            _ => true,
+        }));
     }
 
     #[test]
