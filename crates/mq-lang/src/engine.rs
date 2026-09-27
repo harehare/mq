@@ -676,6 +676,15 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.vm.module_loader.module_name(module_id)
     }
 
+    /// Resolves the module `module_id` to the path its resolver loaded it from.
+    #[cfg(feature = "debugger")]
+    pub fn get_module_path_by_id(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
+        let module_loader = &self.vm.module_loader;
+        module_loader
+            .module_path(module_id)
+            .map_err(|e| Box::new(error::Error::from_error("", e.into(), module_loader.clone())))
+    }
+
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, Box<error::Error>> {
         let module_loader = &self.vm.module_loader;
@@ -3360,5 +3369,60 @@ mod tests {
             result.unwrap(),
             vec![crate::RuntimeValue::from(crate::number::Number::from(9_i64))].into()
         );
+    }
+    const REMOTE_UTIL_B: &str = "def who(): \"b\";\ndef fail():\n  1 / 0;";
+
+    /// Remote modules are named by their last path segment, like the HTTP resolver does.
+    #[derive(Clone, Default)]
+    struct RemoteUtilResolver;
+
+    impl crate::ModuleResolver for RemoteUtilResolver {
+        fn resolve(&self, name: &str) -> Result<String, crate::ModuleError> {
+            match name {
+                "https://a.example/util.mq" => Ok(r#"def who(): "a";"#.to_string()),
+                "https://b.example/util.mq" => Ok(REMOTE_UTIL_B.to_string()),
+                _ => Err(crate::ModuleError::NotFound(name.to_string().into())),
+            }
+        }
+        fn get_path(&self, name: &str) -> Result<String, crate::ModuleError> {
+            Ok(name.to_string())
+        }
+        fn search_paths(&self) -> Vec<PathBuf> {
+            Vec::new()
+        }
+        fn set_search_paths(&mut self, _paths: Vec<PathBuf>) {}
+        fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+            let file = module_path.rsplit('/').next().unwrap_or(module_path);
+            file.strip_suffix(".mq").unwrap_or(file)
+        }
+    }
+
+    fn remote_util_engine() -> Engine<RemoteUtilResolver> {
+        let mut engine = Engine::new(RemoteUtilResolver);
+        engine.load_builtin_module();
+        engine
+    }
+
+    #[rstest]
+    #[case::aliased(
+        r#"import "https://a.example/util.mq" as a | import "https://b.example/util.mq" as b | a::who() + b::who()"#,
+        "ab"
+    )]
+    #[case::default_alias(r#"import "https://a.example/util.mq" | util::who()"#, "a")]
+    fn test_remote_modules_with_same_name_stay_distinct(#[case] query: &str, #[case] expected: &str) {
+        let result = remote_util_engine()
+            .eval(query, crate::null_input().into_iter())
+            .unwrap();
+        assert_eq!(result, vec![RuntimeValue::from(expected)].into());
+    }
+
+    #[test]
+    fn test_remote_module_error_shows_its_own_source() {
+        let query = r#"import "https://a.example/util.mq" as a | import "https://b.example/util.mq" as b | b::fail()"#;
+        let error = remote_util_engine()
+            .eval(query, crate::null_input().into_iter())
+            .unwrap_err();
+        assert_eq!(error.source_code.name(), "util.mq");
+        assert_eq!(error.source_code.inner(), REMOTE_UTIL_B);
     }
 }
