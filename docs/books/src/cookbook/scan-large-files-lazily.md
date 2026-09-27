@@ -57,7 +57,7 @@ $ mq -I null --allow-read 'stream_lines("app.log") | fold(0, fn(n, line): if (co
 
 ## Notes
 
-- `collect()` is required to turn a coroutine into an array. Without it, the output shows an opaque `coroutine` placeholder.
+- `filter`, `map`, `take` and similar return a coroutine, so end the chain with `collect()` to get an array. Without it, the output shows an opaque `coroutine` placeholder. `any`, `all`, `first`, `last` and `fold` consume the stream and return a plain value, so they need no `collect()`.
 - `stream_chunks(path, size)` and `stream_bytes(path)` read binary data the same way, and `http_lines(:get, url)` streams an HTTP response body line by line (requires `--allow-net`).
 - Stopping early with `take`, `first` or `any` does not close the file. Call `close(stream)` if the script keeps running afterwards.
 - See [Generators](../reference/generators.md) for the full list of coroutine-aware functions.
