@@ -53,30 +53,68 @@ impl Hir {
     }
 
     pub fn find_symbols_in_scope(&self, scope_id: ScopeId) -> Vec<Arc<Symbol>> {
-        let mut symbols = Vec::with_capacity(self.symbols.len());
+        self.symbol_ids_in_scope(scope_id)
+            .into_iter()
+            .map(|symbol_id| Arc::new(self.symbols[symbol_id].clone()))
+            .collect()
+    }
 
-        self.symbols.iter().for_each(|(_, symbol)| {
-            if symbol.scope == scope_id
-                && (symbol.is_function()
-                    || symbol.is_parameter()
-                    || symbol.is_variable()
-                    || symbol.is_module()
-                    || symbol.is_argument()
-                    || symbol.is_ident())
-            {
-                symbols.push(Arc::new(symbol.clone()));
-            }
-        });
+    /// Like [`Self::find_symbols_in_scope`], limited to what code at `position` can see.
+    /// Inside an inline module, that is only the module's own symbols.
+    pub fn find_visible_symbols_in_scope(
+        &self,
+        scope_id: ScopeId,
+        source_id: SourceId,
+        position: mq_lang::Position,
+    ) -> Vec<Arc<Symbol>> {
+        let module = self.find_inline_module_in_position(source_id, position);
+        self.symbol_ids_in_scope(scope_id)
+            .into_iter()
+            .filter(|symbol_id| module.is_none_or(|module| self.is_inside(*symbol_id, module)))
+            .map(|symbol_id| Arc::new(self.symbols[symbol_id].clone()))
+            .collect()
+    }
 
-        let scope_id = self.scopes[scope_id].parent_id;
+    /// The innermost inline `module` whose body contains `position`.
+    pub fn find_inline_module_in_position(&self, source_id: SourceId, position: mq_lang::Position) -> Option<SymbolId> {
+        let in_source = |symbol: &Symbol| symbol.source.source_id == Some(source_id);
+        self.symbols
+            .iter()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Module(_)) && in_source(symbol))
+            .filter_map(|(module_id, module)| {
+                let start = module.source.text_range?.start;
+                // The module symbol spans only its keyword, so its body ends where its last symbol does.
+                let end = self
+                    .symbols
+                    .iter()
+                    .filter(|(symbol_id, symbol)| in_source(symbol) && self.is_inside(*symbol_id, module_id))
+                    .filter_map(|(_, symbol)| symbol.source.text_range.map(|range| range.end))
+                    .max()?;
+                (start <= position && position <= end).then_some((module_id, start))
+            })
+            .max_by_key(|(_, start)| *start)
+            .map(|(module_id, _)| module_id)
+    }
 
-        symbols.extend(
-            scope_id
-                .map(|scope_id| self.find_symbols_in_scope(scope_id))
-                .unwrap_or_default(),
-        );
+    fn symbol_ids_in_scope(&self, scope_id: ScopeId) -> Vec<SymbolId> {
+        let mut symbol_ids = Vec::new();
+        let mut scope_id = Some(scope_id);
 
-        symbols
+        while let Some(id) = scope_id {
+            symbol_ids.extend(self.symbols.iter().filter_map(|(symbol_id, symbol)| {
+                (symbol.scope == id
+                    && (symbol.is_function()
+                        || symbol.is_parameter()
+                        || symbol.is_variable()
+                        || symbol.is_module()
+                        || symbol.is_argument()
+                        || symbol.is_ident()))
+                .then_some(symbol_id)
+            }));
+            scope_id = self.scopes[id].parent_id;
+        }
+
+        symbol_ids
     }
 
     pub fn find_symbols_in_source(&self, source_id: SourceId) -> Vec<Arc<Symbol>> {
