@@ -858,15 +858,6 @@ impl<'a, R: ModuleResolver> TarnVm<'a, R> {
                 }
                 None => self.run_cached(program, cache, input),
             },
-            // Its bindings would not reach the session, so later queries could not read them.
-            #[cfg(feature = "mqc")]
-            engine::ProgramBody::Precompiled(_) if self.engine.session.is_some() => {
-                Err(compiler::CompileError::Unsupported(
-                    "running a precompiled program in a query session",
-                    TokenId::new(0),
-                )
-                .into())
-            }
             #[cfg(feature = "mqc")]
             engine::ProgramBody::Precompiled(precompiled) => precompiled.run_reusing(
                 input,
