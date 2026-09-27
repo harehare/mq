@@ -3307,7 +3307,8 @@ mod tests {
         }
         fn set_search_paths(&mut self, _paths: Vec<PathBuf>) {}
         fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
-            crate::http_import::extract_module_name(module_path)
+            let file = module_path.rsplit('/').next().unwrap_or(module_path);
+            file.strip_suffix(".mq").unwrap_or(file)
         }
     }
 
