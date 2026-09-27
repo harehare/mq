@@ -9,7 +9,6 @@ use crate::ast::{
     node::{Expr, Literal},
 };
 use crate::io::{Io, NativeIo, SandboxedIo};
-#[cfg(feature = "debugger")]
 use crate::module::ModuleId;
 use crate::tarn;
 use crate::{
@@ -23,7 +22,7 @@ use crate::{
     ModuleLoader, Token, TokenArena,
     arena::Arena,
     error::{self},
-    parse,
+    parse, parse_in_module,
     runtime::builtin::io_context,
 };
 
@@ -166,10 +165,15 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
+    /// Source of each query evaluated in a query session, indexed by its module id.
+    session_sources: Vec<String>,
     /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
     pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
 }
+
+/// Marks module ids of query-session sources, which the module loader never assigns.
+const SESSION_SOURCE_BIT: u32 = 1 << 31;
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
 /// The VM needs their AST declarations present while it statically resolves the user's query.
@@ -214,6 +218,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             vm: tarn::VmState::with_module_loader(module_loader),
             token_arena,
             vm_module_prelude: Vec::new(),
+            session_sources: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
         }
@@ -292,6 +297,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             vm: tarn::VmState::with_module_loader_and_io(module_loader, io),
             token_arena,
             vm_module_prelude: Vec::new(),
+            session_sources: Vec::new(),
             #[cfg(feature = "mqc")]
             mqc_programs: Default::default(),
         }
@@ -507,7 +513,19 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         // Scoped before `parse`, not just `eval_compiled_vm`, so bare `$VAR` resolution sees this engine's `Io`.
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
         let token_arena = self.query_token_arena();
-        let program = parse(code, Shared::clone(&token_arena))?;
+        let program = match self.vm.session {
+            // Each query gets its own source, so errors in its defs show it in later queries.
+            Some(_) => {
+                self.session_sources.push(code.to_string());
+                let module_id = ModuleId::new(SESSION_SOURCE_BIT | (self.session_sources.len() - 1) as u32);
+                parse_in_module(code, Shared::clone(&token_arena), module_id).map_err(|error| {
+                    let error = self.error_from(code, error);
+                    self.session_sources.pop();
+                    Box::new(error)
+                })?
+            }
+            None => parse(code, Shared::clone(&token_arena))?,
+        };
 
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
@@ -706,12 +724,28 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             input,
         )
         .map(Into::into)
-        .map_err(|error| {
-            Box::new(error::Error::from_error(
-                &compiled.source,
-                error.into_inner_error(token_arena),
-                self.vm.module_loader.clone(),
-            ))
+        .map_err(|error| Box::new(self.error_from(&compiled.source, error.into_inner_error(token_arena))))
+    }
+
+    /// Builds a diagnostic for `cause`, showing the query source it happened in.
+    fn error_from(&self, source: &str, cause: error::InnerError) -> error::Error {
+        if self.session_sources.is_empty() {
+            return error::Error::from_error(source, cause, self.vm.module_loader.clone());
+        }
+        error::Error::from_error_with(cause, |module_id| match module_id {
+            Some(module_id) if module_id.raw() & SESSION_SOURCE_BIT != 0 => {
+                let index = (module_id.raw() & !SESSION_SOURCE_BIT) as usize;
+                let source = self.session_sources.get(index).cloned().unwrap_or_default();
+                (format!("repl#{}", index + 1), source)
+            }
+            Some(module_id) => (
+                self.vm.module_loader.module_file_name(module_id),
+                self.vm
+                    .module_loader
+                    .get_source_code(module_id, source.to_string())
+                    .unwrap_or_default(),
+            ),
+            None => (String::new(), source.to_string()),
         })
     }
 
@@ -849,6 +883,9 @@ mod tests {
     use crate::SandboxedIo;
     use crate::Shared;
     use crate::error;
+    use crate::null_input;
+    #[cfg(not(feature = "debugger"))]
+    use crate::raw_input;
     use rstest::rstest;
     use scopeguard::defer;
     use std::io::Write;
@@ -1420,7 +1457,7 @@ mod tests {
         engine.load_builtin_module();
         let tokens = token_count(&engine);
         for _ in 0..3 {
-            let result = engine.eval(r#"upcase() | . + "!""#, crate::raw_input("a").into_iter());
+            let result = engine.eval(r#"upcase() | . + "!""#, raw_input("a").into_iter());
             assert_eq!(result.unwrap().values(), &["A!".to_string().into()]);
         }
         assert_eq!(token_count(&engine), tokens);
@@ -1434,7 +1471,7 @@ mod tests {
         let tokens = token_count(&engine);
         let query = r#"import "csv" | csv::csv_parse("a,b\n1,2", true) | len()"#;
         for _ in 0..2 {
-            let result = engine.eval(query, crate::null_input().into_iter()).unwrap();
+            let result = engine.eval(query, null_input().into_iter()).unwrap();
             assert_eq!(result.values(), &[1.into()]);
         }
         assert_eq!(token_count(&engine), tokens);
@@ -1446,9 +1483,63 @@ mod tests {
     fn test_eval_error_points_at_the_query(#[case] query: &str) {
         let mut engine = DefaultEngine::default();
         engine.load_builtin_module();
-        let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+        let error = engine.eval(query, null_input().into_iter()).unwrap_err();
         let offset = label_offset(&error);
         assert!(query[offset..].starts_with("error"), "label at {offset}: {query}");
+    }
+
+    /// The diagnostic's source name, source text, and label offset.
+    fn diagnostic(error: &error::Error) -> (String, String, usize) {
+        (
+            error.source_code.name().to_string(),
+            error.source_code.inner().clone(),
+            label_offset(error),
+        )
+    }
+
+    #[test]
+    fn test_query_session_error_in_an_earlier_def_shows_its_query() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.enable_query_session();
+        let definition = r#"def fail(): let x = 1 | error("boom");"#;
+        engine.eval(definition, null_input().into_iter()).unwrap();
+        let error = engine
+            .eval(r#"upcase("abc") | fail()"#, null_input().into_iter())
+            .unwrap_err();
+        let (name, source, offset) = diagnostic(&error);
+        assert_eq!((name.as_str(), source.as_str()), ("repl#1", definition));
+        assert!(definition[offset..].starts_with("error"), "label at {offset}");
+    }
+
+    #[rstest]
+    #[case::runtime("1 / 0", "/")]
+    #[case::syntax("1 +", "")]
+    fn test_query_session_error_shows_the_current_query(#[case] query: &str, #[case] at: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.enable_query_session();
+        engine.eval("let x = 1", null_input().into_iter()).unwrap();
+        let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+        let (name, source, offset) = diagnostic(&error);
+        assert_eq!((name.as_str(), source.as_str()), ("repl#2", query));
+        assert!(query[offset.min(query.len())..].starts_with(at), "label at {offset}");
+    }
+
+    #[test]
+    fn test_query_session_forgets_a_query_that_does_not_parse() {
+        let mut engine = DefaultEngine::default();
+        engine.enable_query_session();
+        engine.eval("1 +", null_input().into_iter()).unwrap_err();
+        let error = engine.eval("1 / 0", null_input().into_iter()).unwrap_err();
+        assert_eq!(error.source_code.name(), "repl#1");
+    }
+
+    #[test]
+    fn test_eval_error_outside_a_session_has_no_source_name() {
+        let mut engine = DefaultEngine::default();
+        let error = engine.eval("1 / 0", null_input().into_iter()).unwrap_err();
+        assert_eq!(error.source_code.name(), "");
     }
 
     #[test]

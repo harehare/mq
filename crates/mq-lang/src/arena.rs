@@ -55,6 +55,11 @@ impl<T> ArenaId<T> {
             _phantom_data: PhantomData,
         }
     }
+
+    /// The raw `u32` index.
+    pub(crate) const fn raw(self) -> u32 {
+        self.id
+    }
 }
 
 /// An arena allocator for efficiently storing and accessing elements.

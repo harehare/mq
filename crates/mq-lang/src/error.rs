@@ -5,7 +5,7 @@ use miette::{Diagnostic, NamedSource, SourceOffset, SourceSpan};
 use std::borrow::Cow;
 
 use crate::{
-    ModuleLoader, ModuleResolver, Token, TokenKind,
+    ModuleId, ModuleLoader, ModuleResolver, Token, TokenKind,
     error::{runtime::RuntimeError, syntax::SyntaxError},
     module::{self, error::ModuleError},
     selector,
@@ -88,14 +88,26 @@ impl Error {
         module_loader: ModuleLoader<impl ModuleResolver>,
     ) -> Self {
         let source_code = top_level_source_code.into();
+        Self::from_error_with(cause, |module_id| match module_id {
+            Some(module_id) => (
+                module_loader.module_file_name(module_id),
+                module_loader
+                    .get_source_code(module_id, source_code.clone())
+                    .unwrap_or_default(),
+            ),
+            None => (String::new(), source_code.clone()),
+        })
+    }
+
+    /// Like [`Self::from_error`], with `source` returning the name and text of a module's
+    /// source (`None` for the top-level query).
+    #[cold]
+    pub(crate) fn from_error_with(cause: InnerError, source: impl Fn(Option<ModuleId>) -> (String, String)) -> Self {
         let token = cause.token();
 
         match token {
             Some(token) => {
-                let source_str = module_loader
-                    .get_source_code(token.module_id, source_code)
-                    .unwrap_or_default();
-                let source_name = module_loader.module_file_name(token.module_id);
+                let (source_name, source_str) = source(Some(token.module_id));
 
                 let span_for = |t: &Token| {
                     SourceSpan::new(
@@ -136,17 +148,7 @@ impl Error {
                     _ => (None, false),
                 };
 
-                let source_name = module_id
-                    .map(|id| module_loader.module_file_name(*id))
-                    .unwrap_or_default();
-
-                let source_str = module_id
-                    .map(|id| {
-                        module_loader
-                            .get_source_code(*id, source_code.clone())
-                            .unwrap_or_default()
-                    })
-                    .unwrap_or(source_code);
+                let (source_name, source_str) = source(module_id.copied());
 
                 let location = if is_eof {
                     let lines = source_str.lines();

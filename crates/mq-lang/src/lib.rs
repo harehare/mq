@@ -180,9 +180,17 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
 }
 
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
-    let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))?;
+    parse_in_module(code, token_arena, Module::TOP_LEVEL_MODULE_ID)
+        .map_err(|e| Box::new(error::Error::from_error(code, e, DefaultModuleLoader::default())))
+}
+
+/// Parses `code` as the source of `module_id`.
+pub(crate) fn parse_in_module(
+    code: &str,
+    token_arena: TokenArena,
+    module_id: ModuleId,
+) -> Result<Program, error::InnerError> {
+    let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
     let mut token_arena = {
         #[cfg(not(feature = "sync"))]
         {
@@ -195,9 +203,7 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         }
     };
 
-    AstParser::new(tokens.iter(), &mut token_arena, Module::TOP_LEVEL_MODULE_ID)
-        .parse()
-        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+    Ok(AstParser::new(tokens.iter(), &mut token_arena, module_id).parse()?)
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
