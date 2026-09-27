@@ -28,6 +28,9 @@ thread_local! {
 pub type ModuleId = ArenaId<ModuleName>;
 
 type ModuleName = SmolStr;
+
+/// Marks module names registered from `.mqc` programs; never part of a real module name.
+const PRECOMPILED_NAME_PREFIX: char = '\0';
 type StandardModules = FxHashMap<SmolStr, fn() -> &'static str>;
 
 impl<T: ModuleResolver> Default for ModuleLoader<T> {
@@ -69,6 +72,9 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<ModuleId, String>,
+    /// Sources of modules registered from `.mqc` programs, keyed by the id their tokens carry.
+    #[cfg(feature = "mqc")]
+    precompiled_sources: FxHashMap<ModuleId, String>,
     /// Parsed builtin AST tied to the token arena it was created in.
     builtin_module_cache: Option<(TokenArena, Module)>,
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
@@ -147,6 +153,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_sources: FxHashMap::default(),
             builtin_module_cache: None,
             module_ast_cache: FxHashMap::default(),
             resolver,
@@ -216,7 +224,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
                 names
                     .get(module_id)
-                    .map(|s| Cow::Owned(s.to_string()))
+                    .map(|s| Cow::Owned(s.strip_prefix(PRECOMPILED_NAME_PREFIX).unwrap_or(s).to_string()))
                     .unwrap_or_else(|| Cow::Borrowed("<unknown>"))
             }
         }
@@ -381,8 +389,25 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             Module::TOP_LEVEL_MODULE => Module::TOP_LEVEL_MODULE_ID,
             Module::BUILTIN_MODULE => self.module_id_of(name),
             _ => {
-                let id = self.module_id_of(name);
-                self.source_cache.insert(id, source);
+                // Each distinct source gets its own id, so programs loaded earlier keep
+                // their own text. The prefix keeps name lookups from ever resolving to it.
+                let key = SmolStr::new(format!("{PRECOMPILED_NAME_PREFIX}{name}"));
+                #[cfg(not(feature = "sync"))]
+                let mut names = self.module_names.borrow_mut();
+                #[cfg(feature = "sync")]
+                let mut names = self.module_names.write().unwrap();
+                let existing = names
+                    .as_slice()
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, n)| **n == key)
+                    .map(|(id, _)| ModuleId::from(id))
+                    .find(|id| self.precompiled_sources.get(id) == Some(&source));
+                if let Some(id) = existing {
+                    return id;
+                }
+                let id = names.alloc(key);
+                self.precompiled_sources.insert(id, source);
                 id
             }
         }
@@ -482,6 +507,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
+        #[cfg(feature = "mqc")]
+        if let Some(source) = self.precompiled_sources.get(&module_id) {
+            return Ok(source.clone());
+        }
         let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
@@ -497,6 +526,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cold]
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
+        #[cfg(feature = "mqc")]
+        if let Some(source) = self.precompiled_sources.get(&module_id) {
+            return Ok(source.clone());
+        }
         let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(source_code),

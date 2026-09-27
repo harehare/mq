@@ -278,6 +278,59 @@ fn test_mqc_keeps_source_of_modules_not_bundled(#[case] query: &str, #[case] out
     assert_eq!(result, vec![output.to_string().into()].into());
 }
 
+#[derive(Clone, Default)]
+struct UtilResolver(&'static str);
+
+impl crate::ModuleResolver for UtilResolver {
+    fn resolve(&self, name: &str) -> Result<String, crate::ModuleError> {
+        match name {
+            "util" => Ok(self.0.to_string()),
+            _ => Err(crate::ModuleError::NotFound(format!("{name}.mq").into())),
+        }
+    }
+    fn get_path(&self, name: &str) -> Result<String, crate::ModuleError> {
+        Ok(name.to_string())
+    }
+    fn search_paths(&self) -> Vec<std::path::PathBuf> {
+        Vec::new()
+    }
+    fn set_search_paths(&mut self, _paths: Vec<std::path::PathBuf>) {}
+}
+
+fn util_engine(source: &'static str) -> Engine<UtilResolver> {
+    let mut engine = Engine::new(UtilResolver(source));
+    engine.load_builtin_module();
+    engine
+}
+
+#[rstest]
+#[case::later_mqc(true)]
+#[case::later_source_import(false)]
+fn test_mqc_error_keeps_its_own_module_source(#[case] later_is_mqc: bool) {
+    const UTIL_A: &str = "def fail(): 1 / 0;";
+    const UTIL_B: &str = "def fail():\n  1 / 0;";
+    const QUERY: &str = r#"import "util" | util::fail()"#;
+
+    let a = util_engine(UTIL_A).precompile(QUERY, &[]).unwrap().into_bytes();
+    let mut engine = util_engine(UTIL_B);
+    let program = load(&mut engine, &a).unwrap();
+    if later_is_mqc {
+        let b = util_engine(UTIL_B).precompile(QUERY, &[]).unwrap().into_bytes();
+        load(&mut engine, &b).unwrap();
+    } else {
+        let error = engine.eval(QUERY, crate::null_input().into_iter()).unwrap_err();
+        assert_eq!(error.source_code.inner(), UTIL_B);
+    }
+
+    let error = engine
+        .eval_compiled(&program, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(error.source_code.name(), "util.mq");
+    assert_eq!(error.source_code.inner(), UTIL_A);
+    let offset = error.location.offset();
+    assert_eq!(&UTIL_A[offset..offset + 1], "/", "location: {offset}");
+}
+
 #[test]
 fn test_load_mqc_rejects_missing_source_of_unbundled_module() {
     let bytes = rewrite(&compile("upcase()"), |sections| {
