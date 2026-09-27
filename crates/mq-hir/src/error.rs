@@ -409,6 +409,25 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::bare_top_level("import \"csv\" | csv_parse(\"a\", true)", true)]
+    #[case::bare_in_module("module m: import \"csv\" | def f(): csv_parse(\"a\", true); end | m::f()", true)]
+    #[case::qualified_top_level("import \"csv\" | csv::csv_parse(\"a\", true)", false)]
+    #[case::qualified_in_module(
+        "module m: import \"csv\" | def f(): csv::csv_parse(\"a\", true); end | m::f()",
+        false
+    )]
+    fn test_imported_names_need_qualification(#[case] code: &str, #[case] unresolved: bool) {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, code);
+
+        assert_eq!(
+            unresolved_names(&hir).contains(&"csv_parse".to_string()),
+            unresolved,
+            "{code}"
+        );
+    }
+
     #[test]
     fn test_module_sees_builtins() {
         let mut hir = Hir::default();

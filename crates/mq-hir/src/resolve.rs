@@ -30,8 +30,8 @@ impl Hir {
             })
             .collect();
 
-        // Built once per module.
-        let mut source_ids_by_module: FxHashMap<Option<SymbolId>, Vec<SourceId>> = FxHashMap::default();
+        // Built once per module and per qualified-ness.
+        let mut source_ids_by_module: FxHashMap<(Option<SymbolId>, bool), Vec<SourceId>> = FxHashMap::default();
 
         for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
             let module = self.enclosing_inline_module(ref_symbol_id);
@@ -41,9 +41,10 @@ impl Hir {
                 continue;
             }
 
+            let qualified = self.is_qualified_member(ref_symbol_id);
             let source_ids = source_ids_by_module
-                .entry(module)
-                .or_insert_with(|| self.include_source_ids(module));
+                .entry((module, qualified))
+                .or_insert_with(|| self.include_source_ids(module, qualified));
             if let Some(symbol_id) = self.resolve_ref_symbol_of_source(source_ids, &ref_name) {
                 self.references.insert(ref_symbol_id, symbol_id);
                 self.fallback_references.insert(ref_symbol_id);
@@ -84,24 +85,29 @@ impl Hir {
         false
     }
 
+    /// Whether `symbol_id` is the member part of `module::member`.
+    fn is_qualified_member(&self, symbol_id: SymbolId) -> bool {
+        self.symbols
+            .get(symbol_id)
+            .and_then(|symbol| symbol.parent)
+            .and_then(|parent| self.symbols.get(parent))
+            .is_some_and(|parent| matches!(parent.kind, SymbolKind::QualifiedAccess))
+    }
+
     /// Sources a reference can see; inside an inline module, only its own includes.
-    fn include_source_ids(&self, module: Option<SymbolId>) -> Vec<SourceId> {
+    /// Imported sources are visible only to qualified members, as at runtime.
+    fn include_source_ids(&self, module: Option<SymbolId>, qualified: bool) -> Vec<SourceId> {
         let mut source_ids = Vec::new();
 
         for (symbol_id, symbol) in &self.symbols {
-            match (&symbol.kind, module) {
-                (
-                    SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id),
-                    None,
-                ) => {
-                    source_ids.push(*source_id);
-                }
-                (SymbolKind::Include(source_id) | SymbolKind::Import(source_id), Some(module))
-                    if self.is_inside(symbol_id, module) =>
-                {
-                    source_ids.push(*source_id);
-                }
-                _ => {}
+            let source_id = match &symbol.kind {
+                SymbolKind::Include(source_id) => source_id,
+                SymbolKind::Import(source_id) if qualified => source_id,
+                SymbolKind::Module(source_id) if module.is_none() => source_id,
+                _ => continue,
+            };
+            if module.is_none_or(|module| self.is_inside(symbol_id, module)) {
+                source_ids.push(*source_id);
             }
         }
 
