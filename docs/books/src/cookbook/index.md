@@ -80,6 +80,11 @@ Every recipe follows the same four parts:
 
 - [Fetch a web page and filter it](fetch-and-filter-a-web-page.md)
 
+## Lazy streams and generators
+
+- [Scan a large file lazily and stop early](scan-large-files-lazily.md)
+- [Find skipped heading levels with a generator](find-skipped-heading-levels.md)
+
 ## Multi-file and LLM workflows
 
 - [Merge multiple Markdown files into one stream](merge-multiple-files.md)

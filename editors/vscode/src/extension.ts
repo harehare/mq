@@ -60,6 +60,27 @@ import "yaml" | if (.yaml): yaml::yaml_parse() | get(:title)
 # Sum with fold
 fold([1, 2, 3, 4, 5], 0, fn(acc, x): acc + x;)
 
+# Take from an infinite stream (values are computed lazily)
+stream_range(1, None) | map(fn(x): x * x;) | take(5) | collect()
+
+# Generator function with yield
+def fib():
+  var a = 0 | var b = 1
+  | while (true):
+      yield: a
+      | let t = a + b
+      | a = b
+      | b = t
+    end
+end
+| fib() | take_while(fn(x): x < 100;) | collect()
+
+# Stop at the first matching node
+nodes | to_coroutine() | filter(fn(n): is_code(n) && attr(n, "lang") == "rust";) | first()
+
+# Read a large file lazily (run with --allow-read)
+stream_lines("app.log") | filter(fn(line): contains(line, "ERROR");) | take(10) | collect()
+
 # Pick specific dict fields
 {"name": "mq", "version": "0.7.0", "internal_id": 42}
 | pick(["name", "version"])

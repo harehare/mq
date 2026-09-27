@@ -70,6 +70,8 @@
   - [Parse LTSV logs](cookbook/parse-ltsv-logs.md)
   - [Turn command output into structured data](cookbook/parse-command-output.md)
   - [Fetch a web page and filter it](cookbook/fetch-and-filter-a-web-page.md)
+  - [Scan a large file lazily and stop early](cookbook/scan-large-files-lazily.md)
+  - [Find skipped heading levels with a generator](cookbook/find-skipped-heading-levels.md)
 - [Reference](reference/index.md)
   - [CLI](reference/cli.md)
   - [Values and Types](reference/types_and_values.md)
