@@ -160,6 +160,25 @@ fn test_mqc_metadata_and_dependencies_round_trip() {
 }
 
 #[test]
+fn test_mqc_is_the_same_wherever_its_modules_live() {
+    let compile_in = |dir: &std::path::Path| {
+        std::fs::write(dir.join("util.mq"), "def hi(): \"hi\";").unwrap();
+        let mut engine = engine();
+        engine.set_search_paths(vec![dir.to_path_buf()]);
+        engine
+            .precompile(r#"import "util" | util::hi()"#, &[])
+            .unwrap()
+            .into_bytes()
+    };
+    let (first, second) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let bytes = compile_in(first.path());
+
+    assert_eq!(bytes, compile_in(second.path()));
+    let path = first.path().to_string_lossy();
+    assert!(!String::from_utf8_lossy(&bytes).contains(path.as_ref()));
+}
+
+#[test]
 fn test_mqc_metadata_without_loading() {
     let bytes = engine()
         .precompile("upcase()", &[("key", "value")])

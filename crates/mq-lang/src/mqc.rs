@@ -129,8 +129,6 @@ pub struct MqcDependency {
     pub name: String,
     /// The path given to `import`/`include`.
     pub specifier: String,
-    /// Where the source came from (a file path or URL).
-    pub origin: String,
     /// Hex SHA-256 of the module source.
     pub sha256: String,
 }
@@ -295,10 +293,6 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .resolved_modules()
             .into_iter()
             .map(|module| MqcDependency {
-                origin: context
-                    .module_loader
-                    .get_module_path(&module.specifier)
-                    .unwrap_or_else(|_| module.specifier.clone()),
                 sha256: hex(&Sha256::digest(module.source.as_bytes())),
                 name: module.name,
                 specifier: module.specifier,
@@ -651,7 +645,6 @@ fn encode_deps(dependencies: &[MqcDependency]) -> Result<Vec<u8>, MqcError> {
     for dependency in dependencies {
         writer.str(&dependency.name)?;
         writer.str(&dependency.specifier)?;
-        writer.str(&dependency.origin)?;
         writer.str(&dependency.sha256)?;
     }
     Ok(writer.into_bytes())
@@ -659,13 +652,12 @@ fn encode_deps(dependencies: &[MqcDependency]) -> Result<Vec<u8>, MqcError> {
 
 fn decode_deps(payload: &[u8]) -> Result<Vec<MqcDependency>, MqcError> {
     let mut reader = Reader::new(payload);
-    let len = reader.len(4)?;
+    let len = reader.len(3)?;
     let dependencies = (0..len)
         .map(|_| {
             Ok(MqcDependency {
                 name: reader.string()?,
                 specifier: reader.string()?,
-                origin: reader.string()?,
                 sha256: reader.string()?,
             })
         })
