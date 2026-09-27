@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 1f23220bc38963ad8f5776bac4f179c72db835d40d4303c5ddb5ed01805096db # shrinks to program = "var c = 0 | let inc = fn(): c += 1; | inc() | inc() | c", part = Index(0), mutations = [UpvalueCount(Index(0), 1), CopyCode(Index(9223372036854775808), Index(0))]

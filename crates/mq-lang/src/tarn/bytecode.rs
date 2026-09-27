@@ -974,6 +974,8 @@ pub(crate) enum BytecodeError {
     #[cfg(feature = "mqc")]
     MissingSelfSlot(usize),
     #[cfg(feature = "mqc")]
+    EntryChunkCaptures,
+    #[cfg(feature = "mqc")]
     FixedParamSlotInvalid {
         chunk: usize,
         param: usize,
@@ -1050,6 +1052,8 @@ impl fmt::Display for BytecodeError {
             }
             #[cfg(feature = "mqc")]
             Self::MissingSelfSlot(chunk) => write!(f, "chunk {chunk} has no local slot for self"),
+            #[cfg(feature = "mqc")]
+            Self::EntryChunkCaptures => write!(f, "the entry chunk captures values, but nothing can supply them"),
             #[cfg(feature = "mqc")]
             Self::FixedParamSlotInvalid { chunk, param } => {
                 write!(f, "chunk {chunk} binds parameter {param} outside its fixed-arity slot")
@@ -1592,6 +1596,10 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
 fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
     if usize::from(chunk.local_count) <= usize::from(SELF_SLOT) {
         return Err(BytecodeError::MissingSelfSlot(chunk_index));
+    }
+    // The entry chunk runs without a closure, so it has no captured values.
+    if chunk_index == 0 && !chunk.upvalue_names.is_empty() {
+        return Err(BytecodeError::EntryChunkCaptures);
     }
     if chunk.param_shape.fixed_required_arity().is_some() {
         for (param, binding) in chunk.param_shape.bindings.iter().enumerate() {

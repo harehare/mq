@@ -754,6 +754,11 @@ fn param_in_self_slot(chunks: &mut [Chunk]) {
     retarget_exact_calls(&mut chunks[0], 1);
 }
 
+/// Gives the entry chunk a captured value, which nothing can supply when it runs.
+fn entry_chunk_captures(chunks: &mut [Chunk]) {
+    chunks[0].upvalue_names.push(Ident::new("captured"));
+}
+
 /// Drops every local slot, including `self`, from a zero-parameter function.
 fn no_self_slot(chunks: &mut [Chunk]) {
     let callee = &mut chunks[1];
@@ -774,6 +779,7 @@ fn retarget_exact_calls(chunk: &mut Chunk, local_count: u16) {
 #[rstest]
 #[case::param_in_self_slot("def f(x): x; | f(1)", param_in_self_slot)]
 #[case::no_self_slot("def f(): 1; | f()", no_self_slot)]
+#[case::entry_chunk_captures("1", entry_chunk_captures)]
 fn test_load_mqc_rejects_frame_layout_the_vm_does_not_expect(#[case] query: &str, #[case] edit: fn(&mut [Chunk])) {
     let bytes = rewrite_chunks(&compile(query), edit);
     assert!(matches!(load(&mut engine(), &bytes), Err(MqcError::InvalidBytecode(_))));
