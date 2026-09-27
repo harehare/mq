@@ -1,6 +1,7 @@
 //! [`CompiledProgram`]: a query compiled once and evaluated many times.
 #[cfg(not(feature = "debugger"))]
 use crate::SharedCell;
+#[cfg(any(not(feature = "debugger"), feature = "mqc"))]
 use crate::{Shared, tarn};
 
 /// A compiled mq program bundled with its original source, returned by [`Engine::compile`].
