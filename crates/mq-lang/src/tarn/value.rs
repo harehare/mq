@@ -344,6 +344,7 @@ impl Locals {
     }
 
     /// Reads a local slot.
+    #[inline(always)]
     pub(crate) fn get(&self, slot: u16) -> StackValue {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -362,6 +363,7 @@ impl Locals {
     }
 
     /// Writes a local slot.
+    #[inline(always)]
     pub(crate) fn set(&mut self, slot: u16, value: StackValue) {
         match self {
             #[cfg(not(feature = "sync"))]
@@ -379,96 +381,30 @@ impl Locals {
         }
     }
 
-    /// Like [`Locals::get`], without the bounds check.
-    ///
-    /// # Safety
-    /// `slot` must be `< self.len()` (guaranteed by `bytecode::verify_chunks` for any
-    /// GetLocal/SetLocal/TeeLocal/BinaryLocalLocal/BinaryLocalConst/UpdateLocalConst/
-    /// UpdateLocalNumberConst/UpdateLocalLocal/ArrayLenLocal/ArrayGetLocalAt opcode slot).
-    #[inline(always)]
-    pub(crate) unsafe fn get_unchecked(&self, slot: u16) -> StackValue {
-        match self {
-            #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => {
-                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                unsafe { slots.get_unchecked(slot as usize) }.upgraded()
-            }
-            #[cfg(not(feature = "sync"))]
-            Locals::Hybrid(hybrid) => {
-                let HybridLocals { slots, captured } = &**hybrid;
-                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                match unsafe { captured.get_unchecked(slot as usize) } {
-                    Some(cell) => read_cell(cell),
-                    // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                    None => unsafe { slots.get_unchecked(slot as usize) }.upgraded(),
-                }
-            }
-            Locals::Boxed(slots) => {
-                // SAFETY: inherited from `Locals::get_unchecked`'s caller contract.
-                read_cell(unsafe { slots.get_unchecked(slot as usize) })
-            }
-        }
-    }
-
     /// Borrows a directly stored runtime value without cloning it.
     ///
     /// Returns `None` for boxed/captured slots and internal coroutine markers, whose reads need
-    /// the normal upgrade path in [`Self::get_unchecked`].
-    ///
-    /// # Safety
-    /// `slot` must be `< self.len()`.
+    /// the normal upgrade path in [`Self::get`].
     #[inline(always)]
-    pub(crate) unsafe fn direct_runtime_value_unchecked(&self, _slot: u16) -> Option<&RuntimeValue> {
+    pub(crate) fn direct_runtime_value(&self, _slot: u16) -> Option<&RuntimeValue> {
         match self {
             #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => {
-                // SAFETY: inherited from this method's caller contract.
-                match unsafe { slots.get_unchecked(_slot as usize) } {
-                    StackValue::Value(value) => Some(value),
-                    _ => None,
-                }
-            }
+            Locals::Flat(slots) => match &slots[_slot as usize] {
+                StackValue::Value(value) => Some(value),
+                _ => None,
+            },
             #[cfg(not(feature = "sync"))]
             Locals::Hybrid(hybrid) => {
                 let HybridLocals { slots, captured } = &**hybrid;
-                // SAFETY: inherited from this method's caller contract.
-                if unsafe { captured.get_unchecked(_slot as usize) }.is_some() {
+                if captured[_slot as usize].is_some() {
                     return None;
                 }
-                // SAFETY: inherited from this method's caller contract.
-                match unsafe { slots.get_unchecked(_slot as usize) } {
+                match &slots[_slot as usize] {
                     StackValue::Value(value) => Some(value),
                     _ => None,
                 }
             }
             Locals::Boxed(_) => None,
-        }
-    }
-
-    /// Like [`Locals::set`], without the bounds check. See [`Locals::get_unchecked`].
-    #[inline(always)]
-    pub(crate) unsafe fn set_unchecked(&mut self, slot: u16, value: StackValue) {
-        match self {
-            #[cfg(not(feature = "sync"))]
-            Locals::Flat(slots) => {
-                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
-                *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
-            }
-            #[cfg(not(feature = "sync"))]
-            Locals::Hybrid(hybrid) => {
-                let HybridLocals { slots, captured } = &mut **hybrid;
-                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
-                if let Some(cell) = unsafe { captured.get_unchecked(slot as usize) } {
-                    write_cell(cell, value);
-                } else {
-                    // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
-                    *unsafe { slots.get_unchecked_mut(slot as usize) } = value;
-                }
-            }
-            Locals::Boxed(slots) => {
-                // SAFETY: inherited from `Locals::set_unchecked`'s caller contract.
-                write_cell(unsafe { slots.get_unchecked(slot as usize) }, value);
-            }
         }
     }
 
@@ -588,12 +524,8 @@ impl Locals {
     /// Returns whether an element was available. The caller only needs this control-flow
     /// result, so keeping the element in the local slots avoids an otherwise unused clone on
     /// every iteration.
-    ///
-    /// # Safety
-    /// `array_slot`, `index_slot`, and `value_slot` must be valid local slots. The bytecode
-    /// verifier establishes this for every `ForeachNext` instruction before execution.
     #[inline(always)]
-    pub(crate) unsafe fn advance_foreach(
+    pub(crate) fn advance_foreach(
         &mut self,
         array_slot: u16,
         index_slot: u16,
@@ -603,18 +535,16 @@ impl Locals {
         match self {
             #[cfg(not(feature = "sync"))]
             Locals::Flat(slots) => {
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let index_value = {
-                    let index = unsafe { slots.get_unchecked(index_slot as usize) };
+                    let index = &slots[index_slot as usize];
                     let StackValue::Value(RuntimeValue::Number(index)) = index else {
                         return Err("ForeachNext has invalid loop state");
                     };
                     index.value()
                 };
 
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 let value = {
-                    let array = unsafe { slots.get_unchecked(array_slot as usize) };
+                    let array = &slots[array_slot as usize];
                     let StackValue::Value(RuntimeValue::Array(array)) = array else {
                         return Err("ForeachNext array slot is not an array");
                     };
@@ -624,30 +554,25 @@ impl Locals {
                     array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None)
                 };
 
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 // The loop index was checked above. Update its payload directly so each
                 // iteration does not run `StackValue`'s drop path for the old number.
-                let index = unsafe { slots.get_unchecked_mut(index_slot as usize) };
+                let index = &mut slots[index_slot as usize];
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     return Err("ForeachNext has invalid loop state");
                 };
                 *index = Number::new(index_value + 1.0);
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                *unsafe { slots.get_unchecked_mut(value_slot as usize) } = StackValue::Value(value.clone());
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                *unsafe { slots.get_unchecked_mut(self_slot as usize) } = StackValue::Value(value);
+                slots[value_slot as usize] = StackValue::Value(value.clone());
+                slots[self_slot as usize] = StackValue::Value(value);
                 Ok(true)
             }
             #[cfg(not(feature = "sync"))]
             Locals::Hybrid(_) => {
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                let index = unsafe { self.get_unchecked(index_slot) };
+                let index = self.get(index_slot);
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     return Err("ForeachNext has invalid loop state");
                 };
                 let index_value = index.value();
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                let array = unsafe { self.get_unchecked(array_slot) };
+                let array = self.get(array_slot);
                 let StackValue::Value(RuntimeValue::Array(array)) = array else {
                     return Err("ForeachNext array slot is not an array");
                 };
@@ -655,26 +580,21 @@ impl Locals {
                     return Ok(false);
                 }
                 let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                unsafe {
-                    self.set_unchecked(
-                        index_slot,
-                        StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
-                    );
-                    self.set_unchecked(value_slot, StackValue::Value(value.clone()));
-                    self.set_unchecked(self_slot, StackValue::Value(value));
-                }
+                self.set(
+                    index_slot,
+                    StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
+                );
+                self.set(value_slot, StackValue::Value(value.clone()));
+                self.set(self_slot, StackValue::Value(value));
                 Ok(true)
             }
             Locals::Boxed(slots) => {
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                let index = read_cell(unsafe { slots.get_unchecked(index_slot as usize) });
+                let index = read_cell(&slots[index_slot as usize]);
                 let StackValue::Value(RuntimeValue::Number(index)) = index else {
                     return Err("ForeachNext has invalid loop state");
                 };
                 let index_value = index.value();
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                let array = read_cell(unsafe { slots.get_unchecked(array_slot as usize) });
+                let array = read_cell(&slots[array_slot as usize]);
                 let StackValue::Value(RuntimeValue::Array(array)) = array else {
                     return Err("ForeachNext array slot is not an array");
                 };
@@ -683,21 +603,12 @@ impl Locals {
                 }
                 let value = array.get(index_value as usize).cloned().unwrap_or(RuntimeValue::None);
 
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
                 write_cell(
-                    unsafe { slots.get_unchecked(index_slot as usize) },
+                    &slots[index_slot as usize],
                     StackValue::Value(RuntimeValue::Number(Number::new(index_value + 1.0))),
                 );
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                write_cell(
-                    unsafe { slots.get_unchecked(value_slot as usize) },
-                    StackValue::Value(value.clone()),
-                );
-                // SAFETY: inherited from `Locals::advance_foreach`'s caller contract.
-                write_cell(
-                    unsafe { slots.get_unchecked(self_slot as usize) },
-                    StackValue::Value(value),
-                );
+                write_cell(&slots[value_slot as usize], StackValue::Value(value.clone()));
+                write_cell(&slots[self_slot as usize], StackValue::Value(value));
                 Ok(true)
             }
         }
@@ -831,8 +742,7 @@ mod tests {
         locals.set(1, StackValue::Value(values));
         locals.set(2, StackValue::Value(RuntimeValue::Number(0.into())));
 
-        // SAFETY: all slots passed below are within this four-slot frame.
-        assert!(unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
+        assert!(locals.advance_foreach(1, 2, 3, 0).unwrap());
         assert_eq!(
             into_value(locals.get(2)),
             RuntimeValue::Number(1.into()),
@@ -841,10 +751,8 @@ mod tests {
         assert_eq!(into_value(locals.get(3)), RuntimeValue::Number(10.into()));
         assert_eq!(into_value(locals.get(0)), RuntimeValue::Number(10.into()));
 
-        // SAFETY: all slots passed below are within this four-slot frame.
-        assert!(unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
-        // SAFETY: all slots passed below are within this four-slot frame.
-        assert!(!unsafe { locals.advance_foreach(1, 2, 3, 0) }.unwrap());
+        assert!(locals.advance_foreach(1, 2, 3, 0).unwrap());
+        assert!(!locals.advance_foreach(1, 2, 3, 0).unwrap());
         assert_eq!(into_value(locals.get(3)), RuntimeValue::Number(20.into()));
         assert_eq!(into_value(locals.get(0)), RuntimeValue::Number(20.into()));
     }
