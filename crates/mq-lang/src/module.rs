@@ -86,6 +86,16 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     http_depth: usize,
 }
 
+/// A file module a [`ModuleLoader`] resolved.
+#[cfg(feature = "mqc")]
+pub(crate) struct ResolvedModule<'a> {
+    /// The display name, which is also the default import alias (e.g. `csv`).
+    pub(crate) name: String,
+    /// The path given to `import`/`include`, which identifies the module.
+    pub(crate) specifier: String,
+    pub(crate) source: &'a str,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
     pub name: String,
@@ -367,18 +377,22 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.load_keyed(module_path, &name, &program, token_arena)
     }
 
-    /// Returns `(name, specifier, source)` for every file module this loader resolved.
+    /// Returns every file module this loader resolved, sorted by specifier.
     #[cfg(feature = "mqc")]
-    pub(crate) fn resolved_modules(&self) -> Vec<(String, String, &str)> {
+    pub(crate) fn resolved_modules(&self) -> Vec<ResolvedModule<'_>> {
         let mut modules: Vec<_> = self
             .source_cache
             .iter()
             .map(|(id, source)| {
                 let specifier = self.module_key(*id).into_owned();
-                (self.resolver.canonical_name(&specifier).to_string(), specifier, source.as_str())
+                ResolvedModule {
+                    name: self.resolver.canonical_name(&specifier).to_string(),
+                    specifier,
+                    source,
+                }
             })
             .collect();
-        modules.sort_unstable_by(|(_, a, _), (_, b, _)| a.cmp(b));
+        modules.sort_unstable_by(|a, b| a.specifier.cmp(&b.specifier));
         modules
     }
 

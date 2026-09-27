@@ -294,14 +294,14 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             .module_loader
             .resolved_modules()
             .into_iter()
-            .map(|(name, specifier, source)| MqcDependency {
-                name: name.to_string(),
-                specifier: specifier.to_string(),
+            .map(|module| MqcDependency {
                 origin: context
                     .module_loader
-                    .get_module_path(&specifier)
-                    .unwrap_or_else(|_| specifier.to_string()),
-                sha256: hex(&Sha256::digest(source.as_bytes())),
+                    .get_module_path(&module.specifier)
+                    .unwrap_or_else(|_| module.specifier.clone()),
+                sha256: hex(&Sha256::digest(module.source.as_bytes())),
+                name: module.name,
+                specifier: module.specifier,
             })
             .collect::<Vec<_>>();
         let meta = Meta {
