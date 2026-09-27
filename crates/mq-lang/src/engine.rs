@@ -166,9 +166,10 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
-    /// The last `.mqc` file loaded, keyed by its checksum, so reloading it skips decoding.
+    /// Every `.mqc` program loaded, keyed by its checksum, so loading one again reuses it
+    /// instead of allocating its tokens anew.
     #[cfg(feature = "mqc")]
-    pub(crate) last_mqc: Option<([u8; crate::mqc::CHECKSUM_LEN], CompiledProgram)>,
+    pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
 }
 
 /// A module explicitly prepared through the Engine API, replayed before VM compilation.
@@ -215,7 +216,7 @@ impl<T: ModuleResolver> Engine<T, SandboxedIo<NativeIo>> {
             token_arena,
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
-            last_mqc: None,
+            mqc_programs: Default::default(),
         }
     }
 
@@ -293,7 +294,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
             token_arena,
             vm_module_prelude: Vec::new(),
             #[cfg(feature = "mqc")]
-            last_mqc: None,
+            mqc_programs: Default::default(),
         }
     }
 

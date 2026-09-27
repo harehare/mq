@@ -334,13 +334,11 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// before anything runs.
     pub fn load(&mut self, mqc: &Mqc) -> Result<CompiledProgram, MqcError> {
         let checksum = mqc.checksum();
-        if let Some((cached, program)) = &self.last_mqc
-            && *cached == checksum
-        {
+        if let Some(program) = self.mqc_programs.get(&checksum) {
             return Ok(program.clone());
         }
         let program = self.decode_mqc(mqc)?;
-        self.last_mqc = Some((checksum, program.clone()));
+        self.mqc_programs.insert(checksum, program.clone());
         Ok(program)
     }
 

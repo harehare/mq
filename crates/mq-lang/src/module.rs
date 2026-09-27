@@ -74,7 +74,10 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     source_cache: FxHashMap<ModuleId, String>,
     /// Sources of modules registered from `.mqc` programs, keyed by the id their tokens carry.
     #[cfg(feature = "mqc")]
-    precompiled_sources: FxHashMap<ModuleId, String>,
+    precompiled_sources: FxHashMap<ModuleId, Shared<str>>,
+    /// The id registered for each `.mqc` module name and source.
+    #[cfg(feature = "mqc")]
+    precompiled_ids: FxHashMap<(SmolStr, Shared<str>), ModuleId>,
     /// Parsed builtin AST tied to the token arena it was created in.
     builtin_module_cache: Option<(TokenArena, Module)>,
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
@@ -165,6 +168,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             source_cache: FxHashMap::default(),
             #[cfg(feature = "mqc")]
             precompiled_sources: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_ids: FxHashMap::default(),
             builtin_module_cache: None,
             module_ast_cache: FxHashMap::default(),
             resolver,
@@ -406,22 +411,16 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 // Each distinct source gets its own id, so programs loaded earlier keep
                 // their own text. The prefix keeps name lookups from ever resolving to it.
                 let key = SmolStr::new(format!("{PRECOMPILED_NAME_PREFIX}{name}"));
-                #[cfg(not(feature = "sync"))]
-                let mut names = self.module_names.borrow_mut();
-                #[cfg(feature = "sync")]
-                let mut names = self.module_names.write().unwrap();
-                let existing = names
-                    .as_slice()
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, n)| **n == key)
-                    .map(|(id, _)| ModuleId::from(id))
-                    .find(|id| self.precompiled_sources.get(id) == Some(&source));
-                if let Some(id) = existing {
-                    return id;
+                let source: Shared<str> = Shared::from(source);
+                if let Some(id) = self.precompiled_ids.get(&(key.clone(), Shared::clone(&source))) {
+                    return *id;
                 }
-                let id = names.alloc(key);
-                self.precompiled_sources.insert(id, source);
+                #[cfg(not(feature = "sync"))]
+                let id = self.module_names.borrow_mut().alloc(key.clone());
+                #[cfg(feature = "sync")]
+                let id = self.module_names.write().unwrap().alloc(key.clone());
+                self.precompiled_sources.insert(id, Shared::clone(&source));
+                self.precompiled_ids.insert((key, source), id);
                 id
             }
         }
@@ -523,7 +522,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
         #[cfg(feature = "mqc")]
         if let Some(source) = self.precompiled_sources.get(&module_id) {
-            return Ok(source.clone());
+            return Ok(source.to_string());
         }
         let name = self.module_key(module_id);
         match name.as_ref() {
@@ -542,7 +541,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
         #[cfg(feature = "mqc")]
         if let Some(source) = self.precompiled_sources.get(&module_id) {
-            return Ok(source.clone());
+            return Ok(source.to_string());
         }
         let name = self.module_key(module_id);
         match name.as_ref() {
