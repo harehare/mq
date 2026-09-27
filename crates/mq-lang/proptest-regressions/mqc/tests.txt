@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 3267f8ac1907cccd92bdc29b8ffeb7e97a34cf00aeed39e902f602e958c6235a # shrinks to program = "try: error(\"boom\") catch(e): s\"caught ${e}\"", mutations = [Splice(Index(0), Index(1676976733973595602))]

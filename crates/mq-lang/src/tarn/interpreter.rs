@@ -2128,6 +2128,14 @@ fn try_catch_from_stack(
             VmError::Corrupt("TryCatch try operand is not a closure"),
         ));
     };
+    // The error is bound to slot 1 when `catch` runs; untrusted `.mqc` bytecode can pass any closure.
+    if info.has_binder && chunks[catch_closure.chunk_index as usize].local_count <= SELF_SLOT + 1 {
+        return Err(locate(
+            chunk,
+            ip,
+            VmError::Corrupt("TryCatch catch closure has no slot for its error"),
+        ));
+    }
     let try_chunk = &chunks[try_closure.chunk_index as usize];
     let mut try_locals = execution
         .limits

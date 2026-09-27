@@ -621,6 +621,163 @@ proptest! {
     }
 }
 
+/// Programs covering the VM's instruction families, to mutate in `.mqc` fuzz tests.
+const FUZZ_PROGRAMS: &[&str] = &[
+    r#"def f(x): x + 1; | [f(1), .h1, s"${self}"]"#,
+    "let add = fn(a): fn(b): a + b;; | let inc = add(1) | inc(2)",
+    "def fact(n): if (n <= 1): 1 else: n * fact(n - 1); | fact(5)",
+    "var s = 0 | foreach(x, range(1, 10)): s += x; | s",
+    r#"try: error("boom") catch(e): s"caught ${e}""#,
+    "def gen(): yield 1 | yield 2; | let g = gen() | [next(g), next(g)]",
+    r#"def greet(name, greeting = "hi"): s"${greeting} ${name}"; | greet("mq")"#,
+    r#"{"a": 1, "b": [1, 2, {"c": true}]}"#,
+    ".h | let last = to_text() | nodes | last",
+];
+
+/// A structural edit to decoded bytecode, placed with indexes into the program.
+#[derive(Debug, Clone)]
+enum CodeMutation {
+    /// Overwrites an instruction with a copy of another one, possibly from another chunk.
+    Splice(prop::sample::Index, prop::sample::Index),
+    Swap(prop::sample::Index, prop::sample::Index),
+    Remove(prop::sample::Index),
+    Duplicate(prop::sample::Index),
+    /// Sets one local slot operand of an instruction.
+    Slot(prop::sample::Index, prop::sample::Index, u16),
+    /// Grows or shrinks a chunk's locals.
+    LocalCount(prop::sample::Index, u16),
+    /// Replaces a chunk's code with another chunk's.
+    CopyCode(prop::sample::Index, prop::sample::Index),
+}
+
+fn code_mutation() -> impl Strategy<Value = CodeMutation> {
+    use prop::sample::Index;
+    prop_oneof![
+        (any::<Index>(), any::<Index>()).prop_map(|(from, to)| CodeMutation::Splice(from, to)),
+        (any::<Index>(), any::<Index>()).prop_map(|(a, b)| CodeMutation::Swap(a, b)),
+        any::<Index>().prop_map(CodeMutation::Remove),
+        any::<Index>().prop_map(CodeMutation::Duplicate),
+        (any::<Index>(), any::<Index>(), 0u16..8).prop_map(|(op, slot, value)| CodeMutation::Slot(op, slot, value)),
+        (any::<Index>(), 0u16..8).prop_map(|(chunk, count)| CodeMutation::LocalCount(chunk, count)),
+        (any::<Index>(), any::<Index>()).prop_map(|(from, to)| CodeMutation::CopyCode(from, to)),
+    ]
+}
+
+/// The `(chunk, pc)` an index picks among every instruction of `chunks`.
+fn instruction_at(chunks: &[Chunk], index: &prop::sample::Index) -> (usize, usize) {
+    let total = chunks.iter().map(|chunk| chunk.code.len()).sum::<usize>();
+    let mut pc = index.index(total.max(1));
+    for (chunk_index, chunk) in chunks.iter().enumerate() {
+        if pc < chunk.code.len() {
+            return (chunk_index, pc);
+        }
+        pc -= chunk.code.len();
+    }
+    (0, 0)
+}
+
+fn apply_code_mutation(chunks: &mut [Chunk], mutation: &CodeMutation) {
+    match mutation {
+        CodeMutation::Splice(from, to) => {
+            let (from_chunk, from_pc) = instruction_at(chunks, from);
+            let (to_chunk, to_pc) = instruction_at(chunks, to);
+            chunks[to_chunk].code[to_pc] = chunks[from_chunk].code[from_pc].clone();
+        }
+        CodeMutation::Swap(a, b) => {
+            let (a_chunk, a_pc) = instruction_at(chunks, a);
+            let (b_chunk, b_pc) = instruction_at(chunks, b);
+            let a_op = chunks[a_chunk].code[a_pc].clone();
+            chunks[a_chunk].code[a_pc] = std::mem::replace(&mut chunks[b_chunk].code[b_pc], a_op);
+        }
+        CodeMutation::Remove(index) => {
+            let (chunk, pc) = instruction_at(chunks, index);
+            if chunks[chunk].code.len() > 1 {
+                chunks[chunk].code.remove(pc);
+            }
+        }
+        CodeMutation::Duplicate(index) => {
+            let (chunk, pc) = instruction_at(chunks, index);
+            let op = chunks[chunk].code[pc].clone();
+            chunks[chunk].code.insert(pc, op);
+        }
+        CodeMutation::Slot(index, slot, value) => {
+            let (chunk, pc) = instruction_at(chunks, index);
+            let mut slots = 0;
+            chunks[chunk].code[pc].for_each_local_slot_mut(|_| slots += 1);
+            if slots > 0 {
+                let target = slot.index(slots);
+                let mut seen = 0;
+                chunks[chunk].code[pc].for_each_local_slot_mut(|slot| {
+                    if seen == target {
+                        *slot = *value;
+                    }
+                    seen += 1;
+                });
+            }
+        }
+        CodeMutation::LocalCount(index, count) => {
+            let chunk = &mut chunks[index.index(chunks.len())];
+            chunk.local_names.resize(usize::from(*count), Ident::new("fuzz"));
+            chunk.local_mutable.resize(usize::from(*count), true);
+            chunk.local_count = *count;
+        }
+        CodeMutation::CopyCode(from, to) => {
+            let code = chunks[from.index(chunks.len())].code.clone();
+            chunks[to.index(chunks.len())].code = code;
+        }
+    }
+    // Keeps source positions valid so the decoder reaches the verifier.
+    for chunk in chunks.iter_mut() {
+        let len = chunk.code.len();
+        chunk.lines.retain(|line| line.pc_start < len);
+    }
+}
+
+fn run_with_limits(bytes: &[u8]) {
+    let mut engine = engine();
+    engine.set_timeout(std::time::Duration::from_millis(50));
+    engine.set_max_call_stack_depth(64);
+    if let Ok(program) = load(&mut engine, bytes) {
+        let _ = engine.eval_compiled(&program, markdown("# a\n\n## b\n").into_iter());
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(512))]
+
+    /// Verified bytecode must never reach the VM's unchecked fast paths out of bounds, which
+    /// debug builds turn into panics.
+    #[test]
+    fn test_load_mqc_never_panics_on_mutated_bytecode(
+        program in prop::sample::select(FUZZ_PROGRAMS),
+        mutations in prop::collection::vec(code_mutation(), 1..4),
+    ) {
+        let bytes = rewrite_chunks(&compile(program), |chunks| {
+            for mutation in &mutations {
+                apply_code_mutation(chunks, mutation);
+            }
+        });
+        run_with_limits(&bytes);
+    }
+
+    #[test]
+    fn test_load_mqc_never_panics_on_corrupted_code_bytes(
+        program in prop::sample::select(FUZZ_PROGRAMS),
+        edits in prop::collection::vec((any::<prop::sample::Index>(), any::<u8>()), 1..4),
+    ) {
+        let bytes = rewrite(&compile(program), |sections| {
+            let code = sections.iter_mut().find(|section| section.tag == CODE).unwrap();
+            let mut payload = code.payload.to_vec();
+            for (index, value) in &edits {
+                let position = index.index(payload.len());
+                payload[position] = *value;
+            }
+            code.payload = Cow::Owned(payload);
+        });
+        run_with_limits(&bytes);
+    }
+}
+
 /// Expressions whose value is known when a `.mqc` file is compiled.
 fn constant_expr() -> impl Strategy<Value = String> {
     let numbers = (0u32..1000)
@@ -777,4 +934,24 @@ fn retarget_exact_calls(chunk: &mut Chunk, local_count: u16) {
 fn test_load_mqc_rejects_frame_layout_the_vm_does_not_expect(#[case] query: &str, #[case] edit: fn(&mut [Chunk])) {
     let bytes = rewrite_chunks(&compile(query), edit);
     assert!(matches!(load(&mut engine(), &bytes), Err(MqcError::InvalidBytecode(_))));
+}
+
+#[test]
+fn test_mqc_catch_closure_without_error_slot_fails_instead_of_panicking() {
+    let bytes = rewrite_chunks(&compile(r#"try: error("boom") catch(e): s"caught ${e}""#), |chunks| {
+        // Passes the try body, which has no parameter, as the catch closure too.
+        let main = &mut chunks[0];
+        let catch = main
+            .code
+            .iter()
+            .rposition(|op| matches!(op, OpCode::MakeStaticClosure(_)))
+            .unwrap();
+        main.code[catch] = OpCode::MakeStaticClosure(0);
+    });
+    let mut engine = engine();
+    let program = load(&mut engine, &bytes).unwrap();
+    let error = engine
+        .eval_compiled(&program, crate::null_input().into_iter())
+        .unwrap_err();
+    assert!(error.to_string().contains("no slot for its error"), "{error}");
 }
