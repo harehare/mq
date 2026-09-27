@@ -765,6 +765,148 @@ Keyboard, Accessories, $80, 35
     ],
   },
   {
+    name: "Generators and Streams",
+    examples: [
+      {
+        name: "Take from an infinite stream",
+        code: `# Values are computed only as take() pulls them
+stream_range(1, None)
+| map(fn(x): x * x;)
+| filter(fn(x): x % 3 == 0;)
+| take(5)
+| collect()`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Fibonacci generator",
+        code: `def fib():
+  var a = 0 | var b = 1
+  | while (true):
+      yield: a
+      | let t = a + b
+      | a = b
+      | b = t
+    end
+end
+| fib()
+| take_while(fn(x): x < 100;)
+| collect()`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Batch items with a generator",
+        code: `def batches(xs, size):
+  var i = 0
+  | while (i < len(xs)):
+      yield: xs[i:i + size]
+      | i += size
+    end
+end
+| batches(["a", "b", "c", "d", "e"], 2)
+| collect()`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Running average with send",
+        code: `# send() resumes the coroutine and becomes the value of yield
+def averager():
+  var total = 0 | var count = 0 | var avg = None
+  | while (true):
+      let x = yield: avg
+      | total += x
+      | count += 1
+      | avg = total / count
+    end
+end
+| let avg = averager()
+| next(avg)
+| [send(avg, 10), send(avg, 20), send(avg, 60)]
+| map(fn(r): r["value"];)`,
+        markdown: ``,
+        isUpdate: false,
+        format: "null",
+      },
+      {
+        name: "Stop at the first match",
+        code: `# first() stops pulling as soon as a node matches
+nodes
+| to_coroutine()
+| filter(fn(n): is_code(n) && attr(n, "lang") == "rust";)
+| first()
+| to_text()`,
+        markdown: `# Snippets
+
+\`\`\`js
+console.log("js")
+\`\`\`
+
+\`\`\`rust
+fn main() {}
+\`\`\`
+
+\`\`\`rust
+fn second() {}
+\`\`\`
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Find skipped heading levels",
+        code: `def pairs(xs):
+  var i = 1
+  | while (i < len(xs)):
+      yield: [xs[i - 1], xs[i]]
+      | i += 1
+    end
+end
+| nodes
+| filter(is_h)
+| pairs()
+| filter(fn(p): attr(p[1], "depth") - attr(p[0], "depth") > 1;)
+| map(fn(p): s"\${to_text(p[0])} (h\${attr(p[0], "depth")}) -> \${to_text(p[1])} (h\${attr(p[1], "depth")})";)
+| collect()`,
+        markdown: `# Guide
+
+## Install
+
+#### Details
+
+## Usage
+
+### Basic
+
+##### Deep
+`,
+        isUpdate: false,
+        format: "markdown",
+      },
+      {
+        name: "Filter log lines lazily",
+        code: `split("\\n")
+| to_coroutine()
+| filter(fn(line): contains(line, " ERROR ");)
+| map(fn(line): split(line, " ")[0];)
+| take(2)
+| collect()`,
+        markdown: `2026-09-01T10:00:01 INFO  server started
+2026-09-01T10:00:05 ERROR db connection refused
+2026-09-01T10:00:09 INFO  retrying
+2026-09-01T10:00:12 ERROR db connection refused
+2026-09-01T10:00:31 ERROR disk full
+`,
+        isUpdate: false,
+        format: "raw",
+      },
+    ],
+  },
+  {
     name: "Date and Time",
     examples: [
       {

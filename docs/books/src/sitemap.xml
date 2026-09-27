@@ -289,6 +289,14 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/cookbook/scan-large-files-lazily</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://mqlang.org/book/cookbook/find-skipped-heading-levels</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/reference</loc>
     <priority>1.0</priority>
   </url>
