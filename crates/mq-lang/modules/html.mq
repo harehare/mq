@@ -3,19 +3,19 @@
 let _void_tags = ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]
 
 | def _escape_text(str):
-  replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
-end
+    replace(replace(replace(str, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+  end
 
 | def _escape_attr(str):
-  replace(_escape_text(str), "\"", "&quot;")
-end
+    replace(_escape_text(str), "\"", "&quot;")
+  end
 
 | def _format_attributes(attributes):
-  if (is_empty(keys(attributes))):
-    ""
-  else:
-    " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + _escape_attr(last(entry)) + "\"";), " ")
-end
+    if (is_empty(keys(attributes))):
+      ""
+    else:
+      " " + join(map(entries(attributes), fn(entry): first(entry) + "=\"" + _escape_attr(last(entry)) + "\"";), " ")
+  end
 
 # Parses an HTML string into the `{tag, attributes, children, text}` tree rooted at `<html>`,
 # the same shape `xml::xml_parse` produces.
@@ -50,9 +50,9 @@ def _html_stringify(data):
     else:
       ""
     | let child_content = if (!is_empty(children)):
-          join(map(children, _html_stringify), "")
-        else:
-          ""
+        join(map(children, _html_stringify), "")
+      else:
+        ""
     | let all_content = content + child_content
     | "<" + tag + attr_str + ">" + all_content + "</" + tag + ">"
   end

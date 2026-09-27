@@ -4229,9 +4229,10 @@ mod implicit_pipeline_cst {
         let (nodes, _) = parse_recovery(code);
         let call = &nodes[0];
         let arg = call
-            .children
+            .all_children()
             .iter()
-            .find(|c| !matches!(c.kind, CstNodeKind::Token | CstNodeKind::Eof));
+            .find(|c| !matches!(c.kind, CstNodeKind::Token | CstNodeKind::Eof))
+            .cloned();
         arg.unwrap().kind.clone()
     }
 
@@ -4247,9 +4248,9 @@ mod implicit_pipeline_cst {
     }
 
     #[rstest]
-    #[case::pipeline_arg_is_block("foo(a | b)", CstNodeKind::Block)]
-    #[case::single_expr_arg_is_not_block("foo(a)", CstNodeKind::Ident)]
-    fn first_arg_node_kind(#[case] code: &str, #[case] expected: CstNodeKind) {
-        assert_eq!(first_arg_kind(code), expected);
+    #[case::pipeline_arg_is_block("foo(a | b)", true)]
+    #[case::single_expr_arg_is_not_block("foo(a)", false)]
+    fn first_arg_node_kind(#[case] code: &str, #[case] is_block: bool) {
+        assert_eq!(matches!(first_arg_kind(code), CstNodeKind::Block { .. }), is_block);
     }
 }

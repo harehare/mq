@@ -56,14 +56,13 @@ impl<'a> From<Span<'a>> for Range {
             fragment
         };
 
+        let line = span.location_line();
+        let column = span.get_utf8_column();
         Range {
-            start: Position {
-                line: span.location_line(),
-                column: span.get_utf8_column(),
-            },
+            start: Position { line, column },
             end: Position {
-                line: span.location_line(),
-                column: span.get_utf8_column() + fragment.chars().count(),
+                line,
+                column: column + fragment.chars().count(),
             },
         }
     }

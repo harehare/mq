@@ -510,9 +510,9 @@ def test_top_by_grouped():
   ]
   | let result = top_by(value, fn(x): get(x, "v");, 2, fn(x): get(x, "g");)
   | assert_eq(result, {
-    "a": [{"g": "a", "v": 3}, {"g": "a", "v": 2}],
-    "b": [{"g": "b", "v": 5}],
-  })
+      "a": [{"g": "a", "v": 3}, {"g": "a", "v": 2}],
+      "b": [{"g": "b", "v": 5}],
+    })
 end
 
 def test_top_by_non_array_errors():
@@ -1320,9 +1320,9 @@ def test_stats_by():
   let value = [{"g": "a", "v": 1}, {"g": "a", "v": 3}, {"g": "b", "v": 2}]
   | let result = stats_by(value, fn(x): get(x, "g");, fn(x): get(x, "v");)
   | assert_eq(result, [
-    {"group": "a", "count": 2, "sum": 4, "mean": 2, "min": 1, "max": 3, "stddev": 1},
-    {"group": "b", "count": 1, "sum": 2, "mean": 2, "min": 2, "max": 2, "stddev": 0},
-  ])
+      {"group": "a", "count": 2, "sum": 4, "mean": 2, "min": 1, "max": 3, "stddev": 1},
+      {"group": "b", "count": 1, "sum": 2, "mean": 2, "min": 2, "max": 2, "stddev": 0},
+    ])
 end
 
 # @parametrize([

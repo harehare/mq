@@ -18,8 +18,8 @@ def sitemap(items, base_url):
   ]
   | let footer = "</urlset>"
   | [headers,
-    do map(items, fn(item): to_text(item);) | filter(fn(item): !is_empty(item);) | uniq() | map(fn(path): sitemap_item(path, base_url););,
-    footer]
+      do map(items, fn(item): to_text(item);) | filter(fn(item): !is_empty(item);) | uniq() | map(fn(path): sitemap_item(path, base_url););,
+      footer]
   | flatten()
   | join("\n")
 end

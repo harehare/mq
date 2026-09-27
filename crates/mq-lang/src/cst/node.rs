@@ -1,11 +1,22 @@
+use std::borrow::Cow;
 use std::fmt::{self, Display};
 
+use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 
 use crate::{Module, Range, Token};
 use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
+
+/// A flat, source-ordered list of child nodes for a variable-arity construct
+/// (e.g. call arguments), including any structural tokens (parens, commas)
+/// interleaved with them so lossless formatting stays possible.
+pub type ArgList = SmallVec<[Shared<Node>; 2]>;
+/// Trivia around a node; most nodes have at most one piece (e.g. a trailing space).
+pub type TriviaList = SmallVec<[Trivia; 1]>;
+/// `elif` clauses attached to an `if`.
+pub type Elifs = SmallVec<[Shared<Node>; 2]>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Trivia {
@@ -67,64 +78,228 @@ impl Trivia {
 pub struct Node {
     pub kind: NodeKind,
     pub token: Option<Shared<Token>>,
-    pub leading_trivia: Vec<Trivia>,
-    pub trailing_trivia: Vec<Trivia>,
-    pub children: Vec<Shared<Node>>,
+    pub leading_trivia: TriviaList,
+    pub trailing_trivia: TriviaList,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum NodeKind {
-    Array,
-    As,
-    Assign,
-    BinaryOp(BinaryOp),
-    Block,
-    Break,
-    Call,
-    CallDynamic,
+    Array {
+        items: ArgList,
+    },
+    As {
+        expr: Shared<Node>,
+        name: Shared<Node>,
+    },
+    /// `lhs = rhs` or a compound assignment (`+=`, `-=`, ...); `op` identifies which.
+    Assign {
+        op: BinaryOp,
+        lhs: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    BinaryOp {
+        op: BinaryOp,
+        lhs: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    /// A `do...end` block, an implicit pipeline (`foo(a | b)`), or a selector
+    /// descendant-chain grouping; all share the same flat `program` shape.
+    Block {
+        program: ArgList,
+    },
+    /// `break` or `break: value`.
+    Break {
+        colon: Option<Shared<Node>>,
+        value: Option<Shared<Node>>,
+    },
+    /// A function call (`ident(args)`) or a bracket/slice access desugared to the
+    /// same shape (`target[index]` -> args holds `[`, index expr(s), `]`).
+    /// `args` is the flat, token-interleaved list `parse_args`/`parse_bracket_access`
+    /// produce, in source order.
+    Call {
+        args: ArgList,
+    },
+    /// A call whose callee is an arbitrary expression, e.g. `(f)(x)` or `a[0](x)`.
+    CallDynamic {
+        callee: Shared<Node>,
+        args: ArgList,
+    },
     Continue,
-    Def,
-    Dict,
-    DictEntry,
+    Def {
+        name: Shared<Node>,
+        params: Option<ArgList>,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Dict {
+        entries: ArgList,
+    },
+    DictEntry {
+        key: Shared<Node>,
+        colon: Shared<Node>,
+        value: Shared<Node>,
+    },
     Do,
     End,
-    Elif,
-    Else,
+    Elif {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
+    Else {
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
     Env,
     #[default]
     Eof,
-    Fn,
-    Foreach,
-    Group,
-    Ident,
-    If,
-    Import,
-    Include,
+    Fn {
+        params: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Foreach {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Group {
+        lparen: Shared<Node>,
+        expr: Shared<Node>,
+        rparen: Shared<Node>,
+    },
+    /// An identifier; `attr` is a trailing attribute selector (`x.attr`).
+    Ident {
+        attr: Option<Shared<Node>>,
+    },
+    If {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+        elifs: Elifs,
+        else_branch: Option<Shared<Node>>,
+    },
+    /// `import "path"` or `import "path" as alias`.
+    Import {
+        path: Shared<Node>,
+        as_token: Option<Shared<Node>>,
+        alias: Option<Shared<Node>>,
+    },
+    Include {
+        path: Shared<Node>,
+    },
     InterpolatedString,
-    Let,
-    Loop,
-    Var,
+    Let {
+        lhs: Shared<Node>,
+        eq_token: Shared<Node>,
+        rhs: Shared<Node>,
+    },
+    Loop {
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Var {
+        lhs: Shared<Node>,
+        eq_token: Shared<Node>,
+        rhs: Shared<Node>,
+    },
     Literal,
-    Match,
-    MatchArm,
-    Module,
+    Match {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        arms: ArgList,
+        end_token: Option<Shared<Node>>,
+    },
+    /// `| pattern [if (guard)]: body`. `guard_args` is the flat, token-interleaved
+    /// `(...)` list `parse_args` produces (present iff `if_token` is).
+    MatchArm {
+        pipe: Shared<Node>,
+        pattern: Shared<Node>,
+        if_token: Option<Shared<Node>>,
+        guard_args: Option<ArgList>,
+        colon: Shared<Node>,
+        body: Shared<Node>,
+    },
+    Module {
+        name: Shared<Node>,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
     Nodes,
-    OrPattern,
-    Pattern,
-    QualifiedAccess,
-    Selector,
-    SelectorCall,
-    Self_,
+    /// `p1 || p2 || ...`; `items` interleaves the patterns with their `||` tokens.
+    OrPattern {
+        items: ArgList,
+    },
+    /// A `def`/`fn`/`catch` parameter; `token` is its name.
+    Param {
+        asterisk: Option<Shared<Node>>,
+        eq_token: Option<Shared<Node>>,
+        default: Option<Shared<Node>>,
+    },
+    /// Wildcard/literal/ident/type/array/dict pattern (one tag, several grammars,
+    /// like `Call`). Leaf patterns carry no items; array/dict patterns hold the
+    /// flat, token-interleaved `[...]`/`{...}` list.
+    Pattern {
+        items: ArgList,
+    },
+    /// `a::b::c` or `a::b(args)`; `items` interleaves idents, `::` tokens and any call args.
+    QualifiedAccess {
+        items: ArgList,
+    },
+    /// A selector. `items` holds bracket tokens for `.[n]` or a trailing attribute selector.
+    Selector {
+        items: ArgList,
+    },
+    /// A `:name` symbol literal.
+    Symbol {
+        colon: Shared<Node>,
+        name: Shared<Node>,
+    },
+    SelectorCall {
+        args: ArgList,
+    },
+    Self_ {
+        attr: Option<Shared<Node>>,
+    },
     SelfAttr,
-    Spread,
+    Spread {
+        operand: Shared<Node>,
+    },
     Token,
-    Try,
-    Catch,
-    Unless,
-    Until,
-    UnaryOp(UnaryOp),
-    While,
-    Yield,
+    Try {
+        colon_or_do: Option<Shared<Node>>,
+        body: Shared<Node>,
+        catch: Option<Shared<Node>>,
+    },
+    /// `params` is the optional `(e)` error binder.
+    Catch {
+        params: Option<ArgList>,
+        colon_or_do: Option<Shared<Node>>,
+        body: Shared<Node>,
+    },
+    Unless {
+        args: ArgList,
+        colon: Option<Shared<Node>>,
+        then_branch: Shared<Node>,
+    },
+    Until {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    UnaryOp {
+        op: UnaryOp,
+        operand: Shared<Node>,
+    },
+    While {
+        args: ArgList,
+        colon_or_do: Option<Shared<Node>>,
+        program: ArgList,
+    },
+    Yield {
+        colon: Option<Shared<Node>>,
+        value: Option<Shared<Node>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -183,14 +358,10 @@ pub enum UnaryOp {
 
 impl Display for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.token
-                .as_ref()
-                .map(|token| token.kind.to_string())
-                .unwrap_or_default()
-        )
+        match &self.token {
+            Some(token) => write!(f, "{}", token.kind),
+            None => Ok(()),
+        }
     }
 }
 
@@ -203,13 +374,16 @@ impl Node {
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             })),
-            leading_trivia: if with_new_line { vec![Trivia::NewLine] } else { vec![] },
-            trailing_trivia: vec![Trivia::Whitespace(Shared::new(Token {
+            leading_trivia: if with_new_line {
+                smallvec![Trivia::NewLine]
+            } else {
+                TriviaList::new()
+            },
+            trailing_trivia: smallvec![Trivia::Whitespace(Shared::new(Token {
                 kind: TokenKind::Whitespace(1),
                 range: Range::default(),
                 module_id: Module::TOP_LEVEL_MODULE_ID,
             }))],
-            children: Vec::new(),
         }
     }
 
@@ -221,18 +395,191 @@ impl Node {
         self.token.as_ref().map(|token| token.range).unwrap_or_default()
     }
 
+    /// Returns the source range covering this node and its nested children.
     pub fn node_range(&self) -> Range {
-        if self.children.is_empty() {
-            self.range()
-        } else {
-            let start = self.range().start;
-            let end = self.children.last().map(|child| child.range().end).unwrap_or(start);
-            Range { start, end }
+        let mut children = self.children();
+        let first = children.next().map(|child| child.node_range());
+        let last = children.next_back().map(|child| child.node_range()).or(first);
+        let own = self.token.as_ref().map(|token| token.range);
+        Range {
+            start: match (own, first) {
+                (Some(own), Some(first)) => own.start.min(first.start),
+                (Some(own), None) => own.start,
+                (None, Some(first)) => first.start,
+                (None, None) => Range::default().start,
+            },
+            end: match (own, last) {
+                (Some(own), Some(last)) => own.end.max(last.end),
+                (Some(own), None) => own.end,
+                (None, Some(last)) => last.end,
+                (None, None) => Range::default().end,
+            },
+        }
+    }
+
+    /// Immediate child nodes in source order (structural tokens included), without allocating.
+    pub fn children(&self) -> impl DoubleEndedIterator<Item = &Shared<Node>> {
+        self.child_parts().into_iter().flatten()
+    }
+
+    /// Immediate child nodes as a slice; allocates unless the children are already contiguous.
+    pub fn all_children(&self) -> Cow<'_, [Shared<Node>]> {
+        let parts = self.child_parts();
+        let mut non_empty = parts.iter().filter(|part| !part.is_empty());
+        match (non_empty.next(), non_empty.next()) {
+            (None, _) => Cow::Borrowed(&[]),
+            (Some(part), None) => Cow::Borrowed(part),
+            _ => Cow::Owned(parts.into_iter().flatten().cloned().collect()),
+        }
+    }
+
+    /// The children as up to six contiguous runs, in source order.
+    fn child_parts(&self) -> [&[Shared<Node>]; 6] {
+        const E: &[Shared<Node>] = &[];
+        let one = std::slice::from_ref;
+
+        match &self.kind {
+            NodeKind::Call { args } => [args, E, E, E, E, E],
+            NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => [one(lhs), one(rhs), E, E, E, E],
+            NodeKind::UnaryOp { operand, .. } | NodeKind::Spread { operand } => [one(operand), E, E, E, E, E],
+            NodeKind::If {
+                args,
+                colon,
+                then_branch,
+                elifs,
+                else_branch,
+            } => [
+                args,
+                colon.as_slice(),
+                one(then_branch),
+                elifs,
+                else_branch.as_slice(),
+                E,
+            ],
+            NodeKind::Elif {
+                args,
+                colon,
+                then_branch,
+            }
+            | NodeKind::Unless {
+                args,
+                colon,
+                then_branch,
+            } => [args, colon.as_slice(), one(then_branch), E, E, E],
+            NodeKind::Else { colon, then_branch } => [colon.as_slice(), one(then_branch), E, E, E, E],
+            NodeKind::Block { program } => [program, E, E, E, E, E],
+            NodeKind::Def {
+                name,
+                params,
+                colon_or_do,
+                program,
+            } => [
+                one(name),
+                params.as_deref().unwrap_or(E),
+                colon_or_do.as_slice(),
+                program,
+                E,
+                E,
+            ],
+            NodeKind::Fn {
+                params: args,
+                colon_or_do,
+                program,
+            }
+            | NodeKind::Foreach {
+                args,
+                colon_or_do,
+                program,
+            }
+            | NodeKind::While {
+                args,
+                colon_or_do,
+                program,
+            }
+            | NodeKind::Until {
+                args,
+                colon_or_do,
+                program,
+            } => [args, colon_or_do.as_slice(), program, E, E, E],
+            NodeKind::Let { lhs, eq_token, rhs } | NodeKind::Var { lhs, eq_token, rhs } => {
+                [one(lhs), one(eq_token), one(rhs), E, E, E]
+            }
+            NodeKind::Array { items } => [items, E, E, E, E, E],
+            NodeKind::Dict { entries } => [entries, E, E, E, E, E],
+            NodeKind::DictEntry { key, colon, value } => [one(key), one(colon), one(value), E, E, E],
+            NodeKind::Match {
+                args,
+                colon_or_do,
+                arms,
+                end_token,
+            } => [args, colon_or_do.as_slice(), arms, end_token.as_slice(), E, E],
+            NodeKind::MatchArm {
+                pipe,
+                pattern,
+                if_token,
+                guard_args,
+                colon,
+                body,
+            } => [
+                one(pipe),
+                one(pattern),
+                if_token.as_slice(),
+                guard_args.as_deref().unwrap_or(E),
+                one(colon),
+                one(body),
+            ],
+            NodeKind::OrPattern { items }
+            | NodeKind::Pattern { items }
+            | NodeKind::QualifiedAccess { items }
+            | NodeKind::Selector { items }
+            | NodeKind::SelectorCall { args: items } => [items, E, E, E, E, E],
+            NodeKind::Loop { colon_or_do, program } => [colon_or_do.as_slice(), program, E, E, E, E],
+            NodeKind::Try {
+                colon_or_do,
+                body,
+                catch,
+            } => [colon_or_do.as_slice(), one(body), catch.as_slice(), E, E, E],
+            NodeKind::Catch {
+                params,
+                colon_or_do,
+                body,
+            } => [
+                params.as_deref().unwrap_or(E),
+                colon_or_do.as_slice(),
+                one(body),
+                E,
+                E,
+                E,
+            ],
+            NodeKind::As { expr, name } => [one(expr), one(name), E, E, E, E],
+            NodeKind::Break { colon, value } | NodeKind::Yield { colon, value } => {
+                [colon.as_slice(), value.as_slice(), E, E, E, E]
+            }
+            NodeKind::CallDynamic { callee, args } => [one(callee), args, E, E, E, E],
+            NodeKind::Group { lparen, expr, rparen } => [one(lparen), one(expr), one(rparen), E, E, E],
+            NodeKind::Import { path, as_token, alias } => [one(path), as_token.as_slice(), alias.as_slice(), E, E, E],
+            NodeKind::Include { path } => [one(path), E, E, E, E, E],
+            NodeKind::Module {
+                name,
+                colon_or_do,
+                program,
+            } => [one(name), colon_or_do.as_slice(), program, E, E, E],
+            NodeKind::Ident { attr } | NodeKind::Self_ { attr } => [attr.as_slice(), E, E, E, E, E],
+            NodeKind::Param {
+                asterisk,
+                eq_token,
+                default,
+            } => [asterisk.as_slice(), eq_token.as_slice(), default.as_slice(), E, E, E],
+            NodeKind::Symbol { colon, name } => [one(colon), one(name), E, E, E, E],
+            _ => [E; 6],
         }
     }
 
     pub fn name(&self) -> Option<SmolStr> {
-        self.token.as_ref().map(|token| token.to_string().into())
+        self.token.as_ref().map(|token| match &token.kind {
+            TokenKind::Ident(name) | TokenKind::Selector(name) => name.clone(),
+            kind => SmolStr::new(kind.to_string()),
+        })
     }
 
     pub fn is_token(&self) -> bool {
@@ -244,11 +591,11 @@ impl Node {
     }
 
     pub fn is_fn(&self) -> bool {
-        matches!(self.kind, NodeKind::Fn)
+        matches!(self.kind, NodeKind::Fn { .. })
     }
 
     pub fn is_def(&self) -> bool {
-        matches!(self.kind, NodeKind::Def)
+        matches!(self.kind, NodeKind::Def { .. })
     }
 
     pub fn is_pipe(&self) -> bool {
@@ -264,16 +611,46 @@ impl Node {
             .collect::<Vec<_>>()
     }
 
-    pub fn children_without_token(&self) -> Vec<Shared<Node>> {
-        self.children
-            .iter()
-            .filter(|child| !child.is_token())
-            .cloned()
-            .collect::<Vec<_>>()
+    /// Like [`children`](Self::children), skipping structural tokens.
+    pub fn non_token_children(&self) -> impl DoubleEndedIterator<Item = &Shared<Node>> {
+        self.children().filter(|child| !child.is_token())
+    }
+
+    pub fn children_without_token(&self) -> SmallVec<[Shared<Node>; 4]> {
+        self.children().filter(|child| !child.is_token()).cloned().collect()
     }
 
     pub fn split_cond_and_program(&self) -> (Vec<Shared<Node>>, Vec<Shared<Node>>) {
-        let colon_index = self.children.iter().position(|child| {
+        match &self.kind {
+            NodeKind::Def {
+                name,
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let mut cond = vec![Shared::clone(name)];
+                if let Some(p) = params {
+                    cond.extend(p.iter().filter(|c| !c.is_token()).cloned());
+                }
+                let mut prog: Vec<Shared<Node>> = colon_or_do.iter().filter(|c| !c.is_token()).cloned().collect();
+                prog.extend(program.iter().filter(|c| !c.is_token()).cloned());
+                return (cond, prog);
+            }
+            NodeKind::Fn {
+                params,
+                colon_or_do,
+                program,
+            } => {
+                let cond: Vec<Shared<Node>> = params.iter().filter(|c| !c.is_token()).cloned().collect();
+                let mut prog: Vec<Shared<Node>> = colon_or_do.iter().filter(|c| !c.is_token()).cloned().collect();
+                prog.extend(program.iter().filter(|c| !c.is_token()).cloned());
+                return (cond, prog);
+            }
+            _ => {}
+        }
+
+        let children = self.all_children();
+        let colon_index = children.iter().position(|child| {
             child
                 .token
                 .as_ref()
@@ -284,8 +661,7 @@ impl Node {
         // If there's no colon, split before the right parenthesis
         let index = match colon_index {
             Some(index) => index,
-            None => self
-                .children
+            None => children
                 .iter()
                 .position(|child| {
                     child
@@ -299,13 +675,13 @@ impl Node {
         };
 
         (
-            self.children
+            children
                 .iter()
                 .take(index)
                 .filter(|child| !child.is_token())
                 .cloned()
                 .collect::<Vec<_>>(),
-            self.children
+            children
                 .iter()
                 .skip(index)
                 .filter(|child| !child.is_token())
@@ -314,33 +690,25 @@ impl Node {
         )
     }
 
-    pub fn binary_op(&self) -> Option<(Shared<Node>, Shared<Node>)> {
-        if matches!(self.kind, NodeKind::BinaryOp(_) | NodeKind::Assign) {
-            let mut non_token_children = self.children.iter().filter(|child| !child.is_token());
-            let left = non_token_children.next()?;
-            let right = non_token_children.next()?;
-            Some((Shared::clone(left), Shared::clone(right)))
-        } else {
-            None
+    pub fn binary_op(&self) -> Option<(&Shared<Node>, &Shared<Node>)> {
+        match &self.kind {
+            NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => Some((lhs, rhs)),
+            _ => None,
         }
     }
 
     pub fn unary_op(&self) -> Option<Shared<Node>> {
-        if let NodeKind::UnaryOp(_) = self.kind {
-            let operand = self.children.iter().find(|child| !child.is_token())?;
-            Some(Shared::clone(operand))
-        } else {
-            None
+        match &self.kind {
+            NodeKind::UnaryOp { operand, .. } => Some(Shared::clone(operand)),
+            _ => None,
         }
     }
 
+    /// Returns the name of an identifier or definition node.
     pub fn get_identifier(&self) -> Option<String> {
-        match self {
-            Node {
-                kind: NodeKind::Ident | NodeKind::Def,
-                token: Some(token),
-                ..
-            } => Some(token.to_string()),
+        match &self.kind {
+            NodeKind::Ident { .. } => self.token.as_ref().map(ToString::to_string),
+            NodeKind::Def { name, .. } => name.get_identifier(),
             _ => None,
         }
     }
@@ -353,6 +721,29 @@ mod tests {
 
     use super::*;
     use crate::arena::ArenaId;
+
+    #[test]
+    fn test_node_range_includes_binary_operands_and_nested_call() {
+        let (nodes, errors) = crate::parse_recovery("1 + foo(2)");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].node_range().start, crate::Position::new(1, 1));
+        assert_eq!(nodes[0].node_range().end, crate::Position::new(1, 11));
+    }
+
+    #[test]
+    fn test_node_range_includes_grouped_expression() {
+        let (nodes, errors) = crate::parse_recovery("(1 + 2)");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].node_range().start, crate::Position::new(1, 1));
+        assert_eq!(nodes[0].node_range().end, crate::Position::new(1, 8));
+    }
+
+    #[test]
+    fn test_def_identifier_is_name() {
+        let (nodes, errors) = crate::parse_recovery("def answer(): 42 end");
+        assert!(!errors.has_errors(), "{errors}");
+        assert_eq!(nodes[0].get_identifier(), Some("answer".to_string()));
+    }
 
     #[rstest]
     #[case(
@@ -446,15 +837,14 @@ mod tests {
 
     #[rstest]
     #[case(NodeKind::Token, true)]
-    #[case(NodeKind::Call, false)]
-    #[case(NodeKind::Def, false)]
+    #[case(NodeKind::Call { args: ArgList::new() }, false)]
+    #[case(NodeKind::Env, false)]
     fn test_node_is_token(#[case] kind: NodeKind, #[case] expected: bool) {
         let node = Node {
             kind,
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
-            children: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         };
         assert_eq!(node.is_token(), expected);
     }
@@ -462,20 +852,18 @@ mod tests {
     #[test]
     fn test_node_has_new_line() {
         let node = Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
-            leading_trivia: vec![Trivia::NewLine],
-            trailing_trivia: Vec::new(),
-            children: Vec::new(),
+            leading_trivia: smallvec![Trivia::NewLine],
+            trailing_trivia: TriviaList::new(),
         };
         assert!(node.has_new_line());
 
         let node_without_newline = Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
-            children: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         };
         assert!(!node_without_newline.has_new_line());
     }
@@ -485,29 +873,81 @@ mod tests {
         let token_node = Shared::new(Node {
             kind: NodeKind::Token,
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
-            children: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         });
 
         let call_node = Shared::new(Node {
-            kind: NodeKind::Call,
+            kind: NodeKind::Call { args: ArgList::new() },
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
-            children: Vec::new(),
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         });
 
         let parent = Node {
-            kind: NodeKind::Def,
+            kind: NodeKind::Array {
+                items: vec![token_node, call_node.clone()].into(),
+            },
             token: None,
-            leading_trivia: Vec::new(),
-            trailing_trivia: Vec::new(),
-            children: vec![token_node, call_node.clone()],
+            leading_trivia: TriviaList::new(),
+            trailing_trivia: TriviaList::new(),
         };
 
         let result = parent.children_without_token();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0], call_node);
+    }
+
+    fn walk(node: &Shared<Node>, f: &mut impl FnMut(&Shared<Node>)) {
+        f(node);
+        node.children().for_each(|child| walk(child, f));
+    }
+
+    /// The pre-iterator `node_range` algorithm, built on `all_children`.
+    fn reference_node_range(node: &Node) -> Range {
+        let children = node.all_children();
+        let first = children.first().map(|c| reference_node_range(c));
+        let last = children.last().map(|c| reference_node_range(c));
+        let own = node.token.as_ref().map(|t| t.range);
+        let start = [own.map(|r| r.start), first.map(|r| r.start)]
+            .into_iter()
+            .flatten()
+            .min();
+        let end = [own.map(|r| r.end), last.map(|r| r.end)].into_iter().flatten().max();
+        Range {
+            start: start.unwrap_or_default(),
+            end: end.unwrap_or_default(),
+        }
+    }
+
+    #[rstest]
+    #[case::if_elif_else("if (a): 1 elif (b): 2 else: 3")]
+    #[case::def_and_call("def f(x, y = 1): x + y; | f(1)")]
+    #[case::match_guard("match (x): | [a, b] if (a > b): a | _: 0 end")]
+    #[case::try_catch("try: error(1) catch(e): e")]
+    #[case::import_alias("import \"csv\" as c | c::parse(\"a\")")]
+    #[case::loops("foreach (x, [1, 2]): x; | while (true): break: 1; | loop: continue;")]
+    #[case::dict_group("{\"a\": (1 + 2), ...b} | .h1 | .[0]")]
+    #[case::strings_and_symbols("\"s\" | s\"${x}\" | :sym | $HOME | b\"ab\"")]
+    #[case::selectors(".h1.value | .[0][1] | .code(\"rust\") | self.depth")]
+    #[case::module_and_unless("module m: def g(): 1; end | unless (x): 1")]
+    #[case::var_assign("var x = 1 | x += 2 | x = 3")]
+    fn test_children_matches_all_children(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "{code}: {errors}");
+
+        for node in &nodes {
+            walk(node, &mut |node| {
+                assert_eq!(node.name(), node.token.as_ref().map(|t| SmolStr::new(t.to_string())));
+                assert_eq!(node.node_range(), reference_node_range(node));
+
+                let expected = node.all_children().to_vec();
+                assert_eq!(node.children().cloned().collect::<Vec<_>>(), expected);
+                assert_eq!(
+                    node.children().rev().cloned().collect::<Vec<_>>(),
+                    expected.into_iter().rev().collect::<Vec<_>>()
+                );
+            });
+        }
     }
 }

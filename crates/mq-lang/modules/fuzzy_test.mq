@@ -65,6 +65,6 @@ end
 # @property(50, [gen::string("abcdefghijklmnopqrstuvwxyz", 6), gen::string("abcdefghijklmnopqrstuvwxyz", 6)])
 def test_jaro_winkler_is_bounded_and_symmetric(a, b):
   let score = fuzzy::jaro_winkler(a, b)
-  | assert_true(score >= 0.0 && score <= 1.0)
+  | assert_true(score >= 0 && score <= 1)
   | assert_eq(score, fuzzy::jaro_winkler(b, a))
 end

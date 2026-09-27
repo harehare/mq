@@ -1,4 +1,4 @@
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use slotmap::SlotMap;
 use smol_str::SmolStr;
 use url::Url;
@@ -22,6 +22,8 @@ pub struct Hir {
     pub(crate) sources: SlotMap<SourceId, Source>,
     pub(crate) source_scopes: FxHashMap<SourceId, ScopeId>,
     pub(crate) references: FxHashMap<SymbolId, SymbolId>,
+    /// Refs resolved via included sources rather than their own scope chain.
+    pub(crate) fallback_references: FxHashSet<SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
     pub(crate) symbol_insertion_counter: u32,
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
@@ -60,6 +62,7 @@ impl Hir {
             module_loader,
             source_scopes,
             references: FxHashMap::default(),
+            fallback_references: FxHashSet::default(),
             source_symbols: FxHashMap::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
@@ -178,28 +181,8 @@ impl Hir {
 
         let source_id = self
             .source_by_url(&url)
-            .inspect(|source_id| {
-                // Remove symbols from this source
-                self.symbols
-                    .retain(|_, symbol| symbol.source.source_id != Some(*source_id));
-                // Clear the index for this source
-                self.source_symbols.remove(source_id);
-            })
+            .inspect(|source_id| self.remove_source_contents(*source_id))
             .unwrap_or_else(|| self.add_source(Source::new(Some(url))));
-
-        // Clean up stale entries in the auxiliary maps whose symbols were removed above.
-        // Without this, these maps accumulate dead entries across multiple `add_nodes`
-        // calls (e.g. repeated LSP saves).
-        {
-            let symbols = &self.symbols;
-            self.references
-                .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
-            // Prune name_index: remove dead SymbolIds, then drop empty name entries.
-            self.name_index.retain(|_, ids| {
-                ids.retain(|id| symbols.contains_key(*id));
-                !ids.is_empty()
-            });
-        }
 
         let scope_id = self.scope_by_source(&source_id).unwrap_or_else(|| {
             self.add_scope(Scope::new(
@@ -232,13 +215,32 @@ impl Hir {
     }
 
     fn scope_by_source(&self, source_id: &SourceId) -> Option<ScopeId> {
-        self.scopes.iter().find_map(|(s, data)| {
-            if data.source.source_id == Some(*source_id) {
-                Some(s)
-            } else {
-                None
-            }
-        })
+        self.source_scopes.get(source_id).copied()
+    }
+
+    /// Removes a source's symbols and nested scopes, keeping its module scope for reuse.
+    fn remove_source_contents(&mut self, source_id: SourceId) {
+        self.symbols
+            .retain(|_, symbol| symbol.source.source_id != Some(source_id));
+        self.source_symbols.remove(&source_id);
+
+        let module_scope_id = self.scope_by_source(&source_id);
+        self.scopes
+            .retain(|scope_id, scope| scope.source.source_id != Some(source_id) || Some(scope_id) == module_scope_id);
+        if let Some(scope) = module_scope_id.and_then(|id| self.scopes.get_mut(id)) {
+            scope.children.clear();
+        }
+
+        let symbols = &self.symbols;
+        self.references
+            .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
+        let references = &self.references;
+        self.fallback_references
+            .retain(|ref_id| references.contains_key(ref_id));
+        self.name_index.retain(|_, ids| {
+            ids.retain(|id| symbols.contains_key(*id));
+            !ids.is_empty()
+        });
     }
 
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
@@ -1127,5 +1129,65 @@ end"#;
         assert!(assign_symbol.is_some(), "Should have an Assign symbol for +=");
 
         assert!(hir.errors().is_empty(), "Should have no errors");
+    }
+
+    /// (ref name, ref line, target name, target line), independent of slot ids.
+    type ResolvedPair = (Option<SmolStr>, Option<u32>, Option<SmolStr>, Option<u32>);
+
+    fn resolved_pairs(hir: &Hir) -> Vec<ResolvedPair> {
+        let line = |symbol: &Symbol| symbol.source.text_range.map(|r| r.start.line);
+        hir.references
+            .iter()
+            .map(|(ref_id, def_id)| {
+                let (r, d) = (&hir.symbols[*ref_id], &hir.symbols[*def_id]);
+                (r.value.clone(), line(r), d.value.clone(), line(d))
+            })
+            .sorted()
+            .collect()
+    }
+
+    #[rstest]
+    #[case::def("def f(x): let y = x + 1 | y; | f(1)")]
+    #[case::nested("def f(x): fn(y): do let z = x + y | z end; end | f(1)")]
+    #[case::match_arm("match (1): | [a, b]: a + b | _: upcase(\"a\") end")]
+    #[case::builtin_calls("map([1, 2], fn(v): add(v, 1);) | to_string()")]
+    fn test_re_adding_source_matches_fresh_hir(#[case] code: &str) {
+        let url = Url::parse("file:///test.mq").unwrap();
+        let (nodes, _) = mq_lang::parse_recovery(code);
+
+        let mut fresh = Hir::default();
+        fresh.add_nodes(url.clone(), &nodes);
+
+        let mut reused = Hir::default();
+        reused.add_nodes(url.clone(), &nodes);
+        reused.add_nodes(url.clone(), &nodes);
+        reused.add_nodes(url, &nodes);
+
+        assert_eq!(
+            reused.scopes.len(),
+            fresh.scopes.len(),
+            "scopes must not leak on re-add"
+        );
+        assert_eq!(reused.symbols.len(), fresh.symbols.len());
+        assert_eq!(resolved_pairs(&reused), resolved_pairs(&fresh));
+    }
+
+    #[test]
+    fn test_find_scope_in_position_after_re_adding_source() {
+        let url = Url::parse("file:///test.mq").unwrap();
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_nodes(url.clone(), &mq_lang::parse_recovery("def a(): 1; | def b(): 2;").0);
+        let (source_id, _) = hir.add_nodes(url, &mq_lang::parse_recovery("def f(x):\n  fn(y): x + y;;").0);
+
+        let (_, scope) = hir
+            .find_scope_in_position(source_id, mq_lang::Position { line: 2, column: 12 })
+            .unwrap();
+        // Innermost is the `fn`, nested inside `def f`.
+        assert!(matches!(scope.kind, ScopeKind::Function(_)));
+        assert!(matches!(
+            hir.scopes[scope.parent_id.unwrap()].kind,
+            ScopeKind::Function(_)
+        ));
     }
 }

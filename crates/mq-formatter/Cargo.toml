@@ -20,6 +20,7 @@ mq-lang = {workspace = true, features = ["cst"]}
 [dev-dependencies]
 assert_cmd = {workspace = true}
 divan = {workspace = true}
+proptest = {workspace = true}
 rstest = {workspace = true}
 
 [[bench]]

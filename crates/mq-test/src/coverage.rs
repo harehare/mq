@@ -195,17 +195,17 @@ impl LineStatus {
 fn is_structural(kind: &CstNodeKind) -> bool {
     matches!(
         kind,
-        CstNodeKind::Module
+        CstNodeKind::Module { .. }
             | CstNodeKind::Nodes
-            | CstNodeKind::Block
+            | CstNodeKind::Block { .. }
             | CstNodeKind::End
-            | CstNodeKind::Pattern
-            | CstNodeKind::OrPattern
+            | CstNodeKind::Pattern { .. }
+            | CstNodeKind::OrPattern { .. }
             | CstNodeKind::Token
             | CstNodeKind::Eof
-            | CstNodeKind::Def
-            | CstNodeKind::Include
-            | CstNodeKind::Import
+            | CstNodeKind::Def { .. }
+            | CstNodeKind::Include { .. }
+            | CstNodeKind::Import { .. }
     )
 }
 
@@ -223,13 +223,13 @@ fn collect_executable_lines(nodes: &[Shared<CstNode>], max_line: usize, lines: &
         match node.kind {
             // Only the function body counts toward coverage — the signature
             // (name + params) is declaration syntax, not a per-step execution.
-            CstNodeKind::Def => {
+            CstNodeKind::Def { .. } => {
                 let (_, program) = node.split_cond_and_program();
                 collect_executable_lines(&program, max_line, lines);
             }
             // Single-statement declarations have no body worth descending into.
-            CstNodeKind::Include | CstNodeKind::Import => {}
-            _ => collect_executable_lines(&node.children, max_line, lines),
+            CstNodeKind::Include { .. } | CstNodeKind::Import { .. } => {}
+            _ => collect_executable_lines(&node.all_children(), max_line, lines),
         }
     }
 }

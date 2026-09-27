@@ -70,9 +70,9 @@ def _xml_stringify(data):
     else:
       ""
     | let child_content = if (!is_empty(children)):
-          join(map(children, _xml_stringify), "")
-        else:
-          ""
+        join(map(children, _xml_stringify), "")
+      else:
+        ""
     | let all_content = content + child_content
     | "<" + tag + attr_str + ">" + all_content + "</" + tag + ">"
   end
@@ -105,13 +105,13 @@ def _xml_to_markdown_table(data, depth):
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
     | let tag_value = element["tag"]
     | let attributes_value = if (is_empty(keys(element["attributes"]))):
-          ""
-        else:
-          join(map(entries(element["attributes"]), fn(entry): first(entry) + "=" + last(entry);), ", ")
+        ""
+      else:
+        join(map(entries(element["attributes"]), fn(entry): first(entry) + "=" + last(entry);), ", ")
     | let text_value = if (is_none(element["text"])):
-          ""
-        else:
-          replace(element["text"], "\n", "\\n")
+        ""
+      else:
+        replace(element["text"], "\n", "\\n")
     | let children_count = to_string(len(element["children"]))
     | let data_row = "| " + tag_value + " | " + attributes_value + " | " + text_value + " | " + children_count + " |"
     | join([header_row, separator_row, data_row], "\n")
@@ -123,26 +123,26 @@ def _xml_to_markdown_table(data, depth):
     | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
     | let children_len = len(children) - 1
     | let data_rows = map(range(0, children_len), fn(i):
-          let child = children[i]
-          | let tag_value = child["tag"]
-          | let attributes_value = if (is_empty(keys(child["attributes"]))):
-                      ""
-                    elif (!is_none(child["attributes"])):
-                      join(map(entries(child["attributes"]), fn(entry): first(entry) + "=" + last(entry);), ", ")
-                    else: ""
-          | let text_value = if (is_none(child["text"])):
-                      ""
-                    else:
-                      replace(child["text"], "\n", "\\n")
-          | "| " + to_string(i) + " | " + tag_value + " | " + attributes_value + " | " + text_value + " |"
-        end)
+        let child = children[i]
+        | let tag_value = child["tag"]
+        | let attributes_value = if (is_empty(keys(child["attributes"]))):
+            ""
+          elif (!is_none(child["attributes"])):
+            join(map(entries(child["attributes"]), fn(entry): first(entry) + "=" + last(entry);), ", ")
+          else: ""
+        | let text_value = if (is_none(child["text"])):
+            ""
+          else:
+            replace(child["text"], "\n", "\\n")
+        | "| " + to_string(i) + " | " + tag_value + " | " + attributes_value + " | " + text_value + " |"
+      end)
     | let main_table = join([header_row, separator_row] + data_rows, "\n")
     | let child_tables = map(children, fn(child):
-          if (!is_empty(child["tag"])):
-            "\n\n" + repeat("#", depth + 1) + " Children of " + child["tag"] + ":\n\n" + _xml_to_markdown_table(child, depth + 1)
-          else:
-            ""
-        end)
+        if (!is_empty(child["tag"])):
+          "\n\n" + repeat("#", depth + 1) + " Children of " + child["tag"] + ":\n\n" + _xml_to_markdown_table(child, depth + 1)
+        else:
+          ""
+      end)
     | main_table + join(child_tables, "")
   end
 

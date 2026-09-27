@@ -68,10 +68,16 @@ pub(crate) fn response(
                 module_symbols
             } else {
                 let scope_symbols = hir_guard.find_symbols_in_scope(scope_id);
-                let builtin_symbols = hir_guard.find_symbols_in_source(hir_guard.builtin.source_id);
+                let builtin_scope_id = hir_guard.builtin.scope_id;
+                // Top-level only; builtin.mq calls/locals would shadow builtins.
+                let builtin_symbols = hir_guard
+                    .find_symbols_in_source(hir_guard.builtin.source_id)
+                    .into_iter()
+                    .filter(move |s| s.scope == builtin_scope_id);
                 scope_symbols
                     .into_iter()
                     .chain(builtin_symbols)
+                    .filter(|s| is_completable(&s.kind))
                     .unique_by(|s| s.value.clone())
                     .collect::<Vec<_>>()
             };
@@ -146,6 +152,18 @@ pub(crate) fn response(
         }
         None => None,
     }
+}
+
+fn is_completable(kind: &mq_hir::SymbolKind) -> bool {
+    matches!(
+        kind,
+        mq_hir::SymbolKind::Function(_)
+            | mq_hir::SymbolKind::Parameter
+            | mq_hir::SymbolKind::Variable
+            | mq_hir::SymbolKind::DestructuringBinding
+            | mq_hir::SymbolKind::PatternVariable { .. }
+            | mq_hir::SymbolKind::Selector(_)
+    )
 }
 
 #[cfg(test)]
@@ -292,6 +310,47 @@ def old_func(x): x + 1;"#;
             if let Some(item) = old_func_item {
                 assert_eq!(item.deprecated, Some(true), "old_func should be marked as deprecated");
             }
+        }
+    }
+
+    #[test]
+    fn test_completion_includes_every_builtin_function() {
+        for code in ["", "upcase(\"a\") | len() | def f(): downcase(\"A\");"] {
+            let mut hir = Hir::default();
+            let mut source_map = BiMap::new();
+            let url = Url::parse("file:///test.mq").unwrap();
+            let (source_id, _) = hir.add_code(Some(url.clone()), code);
+            source_map.insert(url.to_string(), source_id);
+
+            let Some(CompletionResponse::Array(items)) =
+                response(Arc::new(RwLock::new(hir)), url, Position::new(0, 0), &source_map)
+            else {
+                panic!("expected completion items for {code:?}");
+            };
+            let missing = mq_lang::BUILTIN_FUNCTION_DOC
+                .keys()
+                .filter(|name| {
+                    !items
+                        .iter()
+                        .any(|item| item.label == name.as_str() && item.kind == Some(CompletionItemKind::FUNCTION))
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                missing.is_empty(),
+                "missing builtin completions for {code:?}: {missing:?}"
+            );
+            assert!(
+                items.iter().any(|item| item.label == "is_dict"),
+                "builtin.mq def missing"
+            );
+            assert!(
+                items.iter().any(|item| item.kind == Some(CompletionItemKind::METHOD)),
+                "selectors missing"
+            );
+            assert!(
+                !items.iter().any(|item| item.label == "map_dict"),
+                "builtin.mq locals must not leak"
+            );
         }
     }
 }

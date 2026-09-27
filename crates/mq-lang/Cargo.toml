@@ -34,7 +34,6 @@ nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
 rand = {workspace = true}
 regex = {workspace = true}
-ropey = {workspace = true, optional = true}
 rustc-hash = {workspace = true}
 ego-tree = {workspace = true, optional = true}
 scraper = {workspace = true, optional = true}
@@ -75,7 +74,7 @@ debug-trace = []
 vm-profile = []
 # Use the browser clock for VM deadlines when targeting WebAssembly.
 wasm = ["dep:web-time"]
-cst = ["dep:ropey"]
+cst = []
 css-selector = ["dep:ego-tree", "dep:scraper"]
 debugger = ["sync"]
 default = ["std", "html-to-markdown"]
@@ -101,3 +100,8 @@ tempfile = {workspace = true}
 [[bench]]
 harness = false
 name = "benchmark"
+
+[[bench]]
+harness = false
+name = "cst_benchmark"
+required-features = ["cst"]

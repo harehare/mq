@@ -70,22 +70,22 @@ def tables(md_nodes):
                         | current_row = []
                       end
                     | if (!is_empty(current_rows)) do
-                        let normalized_rows = _normalize_table_rows(current_rows)
-                        | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
-                      end
+                          let normalized_rows = _normalize_table_rows(current_rows)
+                          | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+                        end
                     | current_align = []
                     | current_rows = []
                     | current_row_index = -1
                   end
                 | if (node.row != current_row_index) do
-                    if (!is_empty(current_row)):
-                      current_rows += [current_row]
-                    | current_row = []
-                    | current_row_index = node.row
-                    | current_row = [node]
-                  end
-                else:
-                  current_row += node
+                      if (!is_empty(current_row)):
+                        current_rows += [current_row]
+                      | current_row = []
+                      | current_row_index = node.row
+                      | current_row = [node]
+                    end
+                  else:
+                    current_row += node
               end
             elif (is_table_align(node)): current_align = node
             else: do
@@ -95,13 +95,13 @@ def tables(md_nodes):
                     | current_row_index = -1
                   end
                 | if (!is_empty(current_rows)) do
-                    let normalized_rows = _normalize_table_rows(current_rows)
-                    | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
-                    | current_align = []
-                    | current_rows = []
-                    | current_row = []
-                    | current_row_index = -1
-                  end
+                      let normalized_rows = _normalize_table_rows(current_rows)
+                      | tables += [{type: :table, align: current_align, header: normalized_rows[0], rows: normalized_rows[1:]}]
+                      | current_align = []
+                      | current_rows = []
+                      | current_row = []
+                      | current_row_index = -1
+                    end
               end
           | i = i + 1
           | None
@@ -240,9 +240,9 @@ def add_row(table, row):
   else: do
       var i = 0
       | let cells = foreach (cell, row):
-              to_md_table_cell(cell, len(table[:rows]) + 1, i)
-              | i += 1
-            end
+          to_md_table_cell(cell, len(table[:rows]) + 1, i)
+          | i += 1
+        end
       | set(table, :rows, table[:rows] + [cells])
     end
 end
@@ -268,15 +268,15 @@ def insert_row(table, index, row):
       let new_rows_raw = insert(table[:rows], index, row)
       | var row_num = 0
       | let new_rows = foreach (r, new_rows_raw):
-            row_num += 1
-            | var c = 0
-            | let cells = foreach (v, r):
-                  let cell = to_md_table_cell(to_string(v), row_num, c)
-                  | c += 1
-                  | cell
-                end
-            | cells
-          end
+          row_num += 1
+          | var c = 0
+          | let cells = foreach (v, r):
+              let cell = to_md_table_cell(to_string(v), row_num, c)
+              | c += 1
+              | cell
+            end
+          | cells
+        end
       | set(table, :rows, new_rows)
     end
 end
@@ -300,11 +300,11 @@ def add_column(table, col):
       | let new_header = table[:header] + [header_cell]
       | var i = 1
       | let new_rows = foreach (row, table[:rows]):
-              let first_cell = row[0]
-              | let cell = to_md_table_cell(col[i], first_cell.row, len(row))
-              | i += 1
-              | row + [cell]
-            end
+          let first_cell = row[0]
+          | let cell = to_md_table_cell(col[i], first_cell.row, len(row))
+          | i += 1
+          | row + [cell]
+        end
       | let table_with_header = set(table, :header, new_header)
       | set(table_with_header, :rows, new_rows)
     end
@@ -331,24 +331,24 @@ def insert_column(table, index, col):
       let new_header_values = insert(map(table[:header], to_string), index, to_string(col[0]))
       | var c = 0
       | let new_header = foreach (h, new_header_values):
-            let cell = to_md_table_cell(h, 0, c)
-            | c += 1
-            | cell
-          end
+          let cell = to_md_table_cell(h, 0, c)
+          | c += 1
+          | cell
+        end
       | let align_tokens = split(attr(table[:align], "align"), ",")
       | let new_align = to_md_table_align(insert(align_tokens, index, "none"))
       | var row_num = 0
       | let new_rows = foreach (row, table[:rows]):
-            row_num += 1
-            | let values = insert(map(row, to_string), index, to_string(col[row_num]))
-            | var c = 0
-            | let cells = foreach (v, values):
-                  let cell = to_md_table_cell(v, row_num, c)
-                  | c += 1
-                  | cell
-                end
-            | cells
-          end
+          row_num += 1
+          | let values = insert(map(row, to_string), index, to_string(col[row_num]))
+          | var c = 0
+          | let cells = foreach (v, values):
+              let cell = to_md_table_cell(v, row_num, c)
+              | c += 1
+              | cell
+            end
+          | cells
+        end
       | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
     end
 end
@@ -373,15 +373,15 @@ def union(table_a, table_b):
   else: do
       var row_num = len(table_a[:rows])
       | let appended_rows = foreach (row, table_b[:rows]):
-            row_num += 1
-            | var c = 0
-            | let cells = foreach (v, row):
-                  let cell = to_md_table_cell(to_string(v), row_num, c)
-                  | c += 1
-                  | cell
-                end
-            | cells
-          end
+          row_num += 1
+          | var c = 0
+          | let cells = foreach (v, row):
+              let cell = to_md_table_cell(to_string(v), row_num, c)
+              | c += 1
+              | cell
+            end
+          | cells
+        end
       | set(table_a, :rows, table_a[:rows] + appended_rows)
     end
 end
@@ -416,25 +416,25 @@ def select_columns(table, indices):
   let align_tokens = split(attr(table[:align], "align"), ",")
   | var col = 0
   | let new_header = foreach (i, indices):
-        let cell = to_md_table_cell(to_string(table[:header][i]), 0, col)
-        | col += 1
-        | cell
-      end
+      let cell = to_md_table_cell(to_string(table[:header][i]), 0, col)
+      | col += 1
+      | cell
+    end
   | let new_align_tokens = foreach (i, indices):
-        align_tokens[i]
-      end
+      align_tokens[i]
+    end
   | let new_align = to_md_table_align(new_align_tokens)
   | var row_num = 0
   | let new_rows = foreach (row, table[:rows]):
-        row_num += 1
-        | var c = 0
-        | let cells = foreach (i, indices):
-              let cell = to_md_table_cell(to_string(row[i]), row_num, c)
-              | c += 1
-              | cell
-            end
-        | cells
-      end
+      row_num += 1
+      | var c = 0
+      | let cells = foreach (i, indices):
+          let cell = to_md_table_cell(to_string(row[i]), row_num, c)
+          | c += 1
+          | cell
+        end
+      | cells
+    end
   | {type: :table, align: new_align, header: new_header, rows: new_rows}
 end
 
@@ -494,8 +494,8 @@ end
 # Returns: dict
 def map_cells(table, f):
   let new_rows = map(table[:rows], fn(row):
-        map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
-      )
+    map(row, fn(cell): to_md_table_cell(f(to_string(cell)), cell.row, cell.column););
+  )
   | set(table, :rows, new_rows)
 end
 
@@ -563,15 +563,15 @@ def dedupe_rows(table):
   let unique_rows = unique_by(table[:rows], fn(row): map(row, to_string);)
   | var row_num = 0
   | let new_rows = foreach (row, unique_rows):
-        row_num += 1
-        | var c = 0
-        | let cells = foreach (v, row):
-              let cell = to_md_table_cell(to_string(v), row_num, c)
-              | c += 1
-              | cell
-            end
-        | cells
-      end
+      row_num += 1
+      | var c = 0
+      | let cells = foreach (v, row):
+          let cell = to_md_table_cell(to_string(v), row_num, c)
+          | c += 1
+          | cell
+        end
+      | cells
+    end
   | set(table, :rows, new_rows)
 end
 
@@ -619,8 +619,8 @@ end
 def to_array(table)
   let headers = map(table[:header], to_string)
   | map(table[:rows], fn(row):
-        fold(range(0, len(headers) - 1), dict(), fn(acc, i): set(acc, headers[i], to_string(row[i])););
-      )
+      fold(range(0, len(headers) - 1), dict(), fn(acc, i): set(acc, headers[i], to_string(row[i])););
+    )
 end
 
 # Builds a table structure from an array of dict records keyed by column
@@ -644,22 +644,22 @@ def from_array(records):
       let headers = map(keys(first(records)), to_string)
       | var col = 0
       | let header_cells = foreach (h, headers):
-            let cell = to_md_table_cell(h, 0, col)
-            | col += 1
-            | cell
-          end
+          let cell = to_md_table_cell(h, 0, col)
+          | col += 1
+          | cell
+        end
       | let align = to_md_table_align(map(headers, fn(_): "none";))
       | var row_num = 0
       | let rows = foreach (record, records):
-            row_num += 1
-            | var c = 0
-            | let cells = foreach (h, headers):
-                  let cell = to_md_table_cell(to_string(get_or(record, h, "")), row_num, c)
-                  | c += 1
-                  | cell
-                end
-            | cells
-          end
+          row_num += 1
+          | var c = 0
+          | let cells = foreach (h, headers):
+              let cell = to_md_table_cell(to_string(get_or(record, h, "")), row_num, c)
+              | c += 1
+              | cell
+            end
+          | cells
+        end
       | {type: :table, align: align, header: header_cells, rows: rows}
     end
 end
@@ -749,30 +749,30 @@ def pivot_longer(table, value_columns, names_to = "name", values_to = "value"):
   | let id_columns = filter(range(0, len(header) - 1), fn(i): !in(value_columns, i);)
   | var col = 0
   | let id_header_cells = foreach (i, id_columns):
-        let cell = to_md_table_cell(to_string(header[i]), 0, col)
-        | col += 1
-        | cell
-      end
+      let cell = to_md_table_cell(to_string(header[i]), 0, col)
+      | col += 1
+      | cell
+    end
   | let new_header = id_header_cells + [to_md_table_cell(names_to, 0, col), to_md_table_cell(values_to, 0, col + 1)]
   | let new_align = to_md_table_align(map(range(0, len(new_header) - 1), fn(_): "none";))
   | let new_rows = fold(table[:rows], [], fn(acc, row):
-        let base_row = len(acc) + 1
-        | var k = 0
-        | let expanded = foreach (vc, value_columns):
-              let row_num = base_row + k
-              | var c = 0
-              | let id_cells = foreach (i, id_columns):
-                    let cell = to_md_table_cell(to_string(row[i]), row_num, c)
-                    | c += 1
-                    | cell
-                  end
-              | let name_cell = to_md_table_cell(to_string(header[vc]), row_num, c)
-              | let value_cell = to_md_table_cell(to_string(row[vc]), row_num, c + 1)
-              | k += 1
-              | id_cells + [name_cell, value_cell]
+      let base_row = len(acc) + 1
+      | var k = 0
+      | let expanded = foreach (vc, value_columns):
+          let row_num = base_row + k
+          | var c = 0
+          | let id_cells = foreach (i, id_columns):
+              let cell = to_md_table_cell(to_string(row[i]), row_num, c)
+              | c += 1
+              | cell
             end
-        | acc + expanded;
-      )
+          | let name_cell = to_md_table_cell(to_string(header[vc]), row_num, c)
+          | let value_cell = to_md_table_cell(to_string(row[vc]), row_num, c + 1)
+          | k += 1
+          | id_cells + [name_cell, value_cell]
+        end
+      | acc + expanded;
+    )
   | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
 end
 
@@ -799,36 +799,36 @@ def pivot_wider(table, names_from, values_from):
   | let group_keys = unique_by(map(table[:rows], key_of), identity)
   | var col = 0
   | let id_header_cells = foreach (i, id_columns):
-        let cell = to_md_table_cell(to_string(header[i]), 0, col)
-        | col += 1
-        | cell
-      end
+      let cell = to_md_table_cell(to_string(header[i]), 0, col)
+      | col += 1
+      | cell
+    end
   | let name_header_cells = foreach (name, names):
-        let cell = to_md_table_cell(name, 0, col)
-        | col += 1
-        | cell
-      end
+      let cell = to_md_table_cell(name, 0, col)
+      | col += 1
+      | cell
+    end
   | let new_header = id_header_cells + name_header_cells
   | let new_align = to_md_table_align(map(range(0, len(new_header) - 1), fn(_): "none";))
   | let new_rows = fold(group_keys, [], fn(acc, key):
-        let rows_for_key = get(groups, key)
-        | let first_row = first(rows_for_key)
-        | let row_num = len(acc) + 1
-        | var c = 0
-        | let id_cells = foreach (i, id_columns):
-              let cell = to_md_table_cell(to_string(first_row[i]), row_num, c)
-              | c += 1
-              | cell
-            end
-        | let value_map = fold(rows_for_key, dict(), fn(m, r): set(m, to_string(r[names_from]), to_string(r[values_from])); )
-        | let name_cells = foreach (name, names):
-              let v = get_or(value_map, name, "")
-              | let cell = to_md_table_cell(v, row_num, c)
-              | c += 1
-              | cell
-            end
-        | acc + [id_cells + name_cells];
-      )
+      let rows_for_key = get(groups, key)
+      | let first_row = first(rows_for_key)
+      | let row_num = len(acc) + 1
+      | var c = 0
+      | let id_cells = foreach (i, id_columns):
+          let cell = to_md_table_cell(to_string(first_row[i]), row_num, c)
+          | c += 1
+          | cell
+        end
+      | let value_map = fold(rows_for_key, dict(), fn(m, r): set(m, to_string(r[names_from]), to_string(r[values_from]));)
+      | let name_cells = foreach (name, names):
+          let v = get_or(value_map, name, "")
+          | let cell = to_md_table_cell(v, row_num, c)
+          | c += 1
+          | cell
+        end
+      | acc + [id_cells + name_cells];
+    )
   | set(set(set(table, :header, new_header), :rows, new_rows), :align, new_align)
 end
 

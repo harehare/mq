@@ -34,12 +34,14 @@ impl LintRule for UnreachableCode {
 
             // Any sibling (same parent) that starts after this break's end position
             // and is not a structural keyword (like "end") is unreachable.
+            // `elif`/`else` share the `if` parent with the then-branch body but are
+            // alternative branches, so they stay reachable.
             let unreachable: Vec<_> = ctx
                 .all_symbols()
                 .filter(|(_, s)| {
                     s.parent == parent_id
                         && s.source.text_range.is_some_and(|r| r.start > break_end)
-                        && !matches!(s.kind, SymbolKind::Keyword)
+                        && !matches!(s.kind, SymbolKind::Keyword | SymbolKind::Elif | SymbolKind::Else)
                 })
                 .collect();
 
@@ -87,6 +89,9 @@ mod tests {
     #[rstest]
     #[case(".h1 | .value")]
     #[case("loop break end")]
+    #[case("loop if (true): break else: .h1 end")]
+    #[case("loop if (true): continue elif (false): .h1 else: .h2 end")]
+    #[case("while (true): if (true): break else: .h1 | .h2 end")]
     fn no_diagnostic(#[case] code: &str) {
         let diags = check(code);
         assert_eq!(diags.len(), 0);

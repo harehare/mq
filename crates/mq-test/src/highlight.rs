@@ -62,13 +62,15 @@ struct Span {
 /// and its parent context.
 fn classify_ident(node_kind: &CstNodeKind, parent: Option<&CstNodeKind>, index_in_parent: usize) -> TokenClass {
     match node_kind {
-        CstNodeKind::Call | CstNodeKind::CallDynamic => TokenClass::Function,
-        CstNodeKind::QualifiedAccess => TokenClass::Module,
+        CstNodeKind::Call { .. } | CstNodeKind::CallDynamic { .. } => TokenClass::Function,
+        CstNodeKind::QualifiedAccess { .. } => TokenClass::Module,
         _ => match parent {
-            Some(CstNodeKind::Def) if index_in_parent == 0 => TokenClass::Function,
-            Some(CstNodeKind::Import) | Some(CstNodeKind::Include) | Some(CstNodeKind::Module) => TokenClass::Module,
-            Some(CstNodeKind::DictEntry) if index_in_parent == 0 => TokenClass::Property,
-            Some(CstNodeKind::QualifiedAccess) => TokenClass::Function,
+            Some(CstNodeKind::Def { .. }) if index_in_parent == 0 => TokenClass::Function,
+            Some(CstNodeKind::Import { .. }) | Some(CstNodeKind::Include { .. }) | Some(CstNodeKind::Module { .. }) => {
+                TokenClass::Module
+            }
+            Some(CstNodeKind::DictEntry { .. }) if index_in_parent == 0 => TokenClass::Property,
+            Some(CstNodeKind::QualifiedAccess { .. }) => TokenClass::Function,
             _ => TokenClass::Variable,
         },
     }
@@ -128,7 +130,7 @@ fn collect_spans(nodes: &[Shared<CstNode>], parent: Option<&CstNodeKind>, out: &
             });
         }
 
-        collect_spans(&node.children, Some(&node.kind), out);
+        collect_spans(&node.all_children(), Some(&node.kind), out);
     }
 }
 

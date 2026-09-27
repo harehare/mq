@@ -46,8 +46,8 @@ def _semver_compare_pre(a_pre, b_pre):
         | var i = 0
         | var result = 0
         | let _ = while (i < min_len && result == 0):
-                  result = _semver_compare_pre_part(a_parts[i], b_parts[i]) | i += 1 | result
-                end
+            result = _semver_compare_pre_part(a_parts[i], b_parts[i]) | i += 1 | result
+          end
         | if (result != 0): result
           elif (a_len < b_len): -1
           elif (a_len > b_len): 1
@@ -238,24 +238,24 @@ def semver_sort(versions):
         var arr = versions
         | var i = 0
         | let _ = while (i < n - 1):
-                  var j = 0
-                  | let _ = while (j < n - i - 1):
-                                      let cmp = semver_compare(arr[j], arr[j + 1])
-                                      | if (cmp > 0):
-                                          do
-                                            let tmp = arr[j]
-                                            | arr = set(arr, j, arr[j + 1])
-                                            | arr = set(arr, j + 1, tmp)
-                                            | arr
-                                          end
-                                        else:
-                                          arr
-                                      | j += 1
-                                      | arr
-                                    end
-                  | i += 1
-                  | arr
-                end
+            var j = 0
+            | let _ = while (j < n - i - 1):
+                let cmp = semver_compare(arr[j], arr[j + 1])
+                | if (cmp > 0):
+                    do
+                      let tmp = arr[j]
+                      | arr = set(arr, j, arr[j + 1])
+                      | arr = set(arr, j + 1, tmp)
+                      | arr
+                    end
+                  else:
+                    arr
+                | j += 1
+                | arr
+              end
+            | i += 1
+            | arr
+          end
         | arr
       end
 end

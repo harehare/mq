@@ -38,9 +38,9 @@ end
 
 # @parametrize([["a\u0001b"], ["cr\rlf"], ["\u001f"], ["\u0000"], ["mix\u0002\n\t\"\\é😀"]])
 def test_json_stringify_escapes_control_characters(s):
-  let result = json::json_stringify({"k\u0001": s})
+  let result = json::json_stringify({"k\x01": s})
   | assert(!test(result, "[\\x00-\\x1f]"))
-  | assert_eq(json::json_parse(result), {"k\u0001": s})
+  | assert_eq(json::json_parse(result), {"k\x01": s})
 end
 
 def test_json_stringify_escapes_key():
