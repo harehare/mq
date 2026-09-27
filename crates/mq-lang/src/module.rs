@@ -10,7 +10,7 @@ use crate::{
         resolver::{DefaultModuleResolver, ModuleResolver},
     },
 };
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
 use std::{borrow::Cow, cell::RefCell, path::PathBuf, sync::LazyLock};
 
@@ -61,19 +61,19 @@ fn get_module_name(name: &str) -> Cow<'static, str> {
 
 #[derive(Debug, Clone)]
 pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
-    /// Names of the modules this loader has loaded. Tracks load state only; module ids come from `module_names`.
-    pub(crate) loaded_modules: Arena<ModuleName>,
-    /// Maps module ids to names. Shared with every loader derived from this one (`clone`,
+    /// Ids of the modules this loader has loaded.
+    pub(crate) loaded_modules: FxHashSet<ModuleId>,
+    /// Maps module ids to the specifiers they were loaded by. Shared with every loader derived from this one (`clone`,
     /// `with_same_resolver`), so a token's `module_id` means the same module in all of them.
     module_names: Shared<SharedCell<Arena<ModuleName>>>,
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
-    source_cache: FxHashMap<SmolStr, String>,
+    source_cache: FxHashMap<ModuleId, String>,
     /// Parsed builtin AST tied to the token arena it was created in.
     builtin_module_cache: Option<(TokenArena, Module)>,
-    /// Parsed `Module`s, keyed by canonical name, so `reload_cached` can reuse an AST already
-    /// parsed by this loader instead of reparsing its cached source.
-    module_ast_cache: FxHashMap<SmolStr, Module>,
+    /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
+    /// instead of reparsing its cached source.
+    module_ast_cache: FxHashMap<ModuleId, Module>,
     resolver: T,
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
@@ -136,8 +136,8 @@ pub const BUILTIN_FILE: &str = include_str!("../builtin.mq");
 
 impl<T: ModuleResolver> ModuleLoader<T> {
     pub fn new(resolver: T) -> Self {
-        let mut loaded_modules = Arena::new(10);
-        loaded_modules.alloc(Module::TOP_LEVEL_MODULE.into());
+        let mut loaded_modules = FxHashSet::default();
+        loaded_modules.insert(Module::TOP_LEVEL_MODULE_ID);
         let mut module_names = Arena::new(10);
         module_names.alloc(Module::TOP_LEVEL_MODULE.into());
 
@@ -190,8 +190,22 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             .into()
     }
 
+    fn is_loaded(&self, key: &str) -> bool {
+        self.loaded_modules.contains(&self.peek_module_id_of(key))
+    }
+
+    /// Returns the display name of a module, which is also its default import alias.
     #[cold]
     pub fn module_name(&self, module_id: ModuleId) -> Cow<'static, str> {
+        match self.module_key(module_id) {
+            Cow::Owned(key) => Cow::Owned(self.resolver.canonical_name(&key).to_string()),
+            name => name,
+        }
+    }
+
+    /// Returns the specifier a module was loaded by, which identifies it within this loader.
+    #[cold]
+    fn module_key(&self, module_id: ModuleId) -> Cow<'static, str> {
         match module_id {
             Module::TOP_LEVEL_MODULE_ID => Cow::Borrowed(Module::TOP_LEVEL_MODULE),
             _ => {
@@ -212,6 +226,11 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.resolver.get_path(module_name)
     }
 
+    /// Resolves the module `module_id` to the path it was loaded from.
+    pub fn module_path(&self, module_id: ModuleId) -> Result<String, ModuleError> {
+        self.resolver.get_path(&self.module_key(module_id))
+    }
+
     #[cfg(feature = "debugger")]
     pub fn set_source_code(&mut self, source_code: String) {
         self.source_code = Some(source_code);
@@ -226,26 +245,45 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load(&mut self, module_name: &str, code: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        if self.loaded_modules.contains(module_name.into()) {
-            return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
+        self.load_keyed(module_name, module_name, code, token_arena)
+    }
+
+    /// Loads `code` as the module identified by `key`, named `module_name`.
+    fn load_keyed(
+        &mut self,
+        key: &str,
+        module_name: &str,
+        code: &str,
+        token_arena: TokenArena,
+    ) -> Result<Module, ModuleError> {
+        if self.is_loaded(key) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(key.to_string())));
         }
 
         // Registered before parsing so an error inside this module can still name its file.
-        let module_id = self.module_id_of(module_name);
-        let mut program = Self::parse_program(code, module_id, token_arena)?;
+        let module_id = self.module_id_of(key);
+        let program = Self::parse_program(code, module_id, token_arena)?;
 
-        self.load_from_ast(module_name, &mut program)
+        self.register_loaded(module_id, module_name, &program)
     }
 
     pub fn load_from_ast(&mut self, module_name: &str, program: &mut Program) -> Result<Module, ModuleError> {
-        if self.loaded_modules.contains(module_name.into()) {
+        if self.is_loaded(module_name) {
             return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_name.to_string())));
         }
+        let module_id = self.module_id_of(module_name);
+        self.register_loaded(module_id, module_name, program)
+    }
 
+    fn register_loaded(
+        &mut self,
+        module_id: ModuleId,
+        module_name: &str,
+        program: &Program,
+    ) -> Result<Module, ModuleError> {
         let module = Self::classify_module(module_name, program)?;
-        self.module_id_of(module_name);
-        self.loaded_modules.alloc(module_name.into());
-        self.module_ast_cache.insert(SmolStr::new(module_name), module.clone());
+        self.loaded_modules.insert(module_id);
+        self.module_ast_cache.insert(module_id, module.clone());
         Ok(module)
     }
 
@@ -288,23 +326,19 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub(crate) fn reload_cached(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        let name = self.resolver.canonical_name(module_path).to_owned();
         // Already parsed by this same loader (e.g. a prelude pre-pass ran ahead of the real
         // compile): reuse that AST instead of reparsing the cached source from scratch.
-        if let Some(module) = self.module_ast_cache.get(name.as_str()) {
+        let module_id = self.peek_module_id_of(module_path);
+        if let Some(module) = self.module_ast_cache.get(&module_id) {
             return Ok(module.clone());
         }
         let code = self
             .source_cache
-            .get(name.as_str())
+            .get(&module_id)
             .cloned()
-            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(name.clone())))?;
-        self.loaded_modules.alloc(SmolStr::new(&name));
-        let module_id = self.module_id_of(&name);
+            .ok_or_else(|| ModuleError::NotFound(Cow::Owned(module_path.to_string())))?;
         let program = Self::parse_program(&code, module_id, token_arena)?;
-        let module = Self::classify_module(&name, &program)?;
-        self.module_ast_cache.insert(SmolStr::new(&name), module.clone());
-        Ok(module)
+        self.register_loaded(module_id, self.resolver.canonical_name(module_path), &program)
     }
 
     pub fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
@@ -313,14 +347,16 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     pub fn load_from_file(&mut self, module_path: &str, token_arena: TokenArena) -> Result<Module, ModuleError> {
         // Check before resolving to avoid unnecessary I/O (disk read or network fetch)
-        // when the same module is imported more than once.
-        let name = self.resolver.canonical_name(module_path).to_owned();
-        if self.loaded_modules.contains(name.as_str().into()) {
-            return Err(ModuleError::AlreadyLoaded(Cow::Owned(name)));
+        // when the same module is imported more than once. Modules are keyed by the full
+        // specifier: remote modules sharing a short name are still different modules.
+        if self.is_loaded(module_path) {
+            return Err(ModuleError::AlreadyLoaded(Cow::Owned(module_path.to_string())));
         }
         let program = self.resolve(module_path)?;
-        self.source_cache.insert(SmolStr::new(&name), program.clone());
-        self.load(&name, &program, token_arena)
+        let module_id = self.module_id_of(module_path);
+        self.source_cache.insert(module_id, program.clone());
+        let name = self.resolver.canonical_name(module_path).to_owned();
+        self.load_keyed(module_path, &name, &program, token_arena)
     }
 
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
@@ -348,15 +384,15 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
-        if self.loaded_modules.contains(Module::BUILTIN_MODULE.into()) {
+        if self.is_loaded(Module::BUILTIN_MODULE) {
             return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
 
         if let Some((cached_arena, module)) = &self.builtin_module_cache
             && Shared::ptr_eq(cached_arena, &token_arena)
         {
-            self.module_id_of(Module::BUILTIN_MODULE);
-            self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+            let module_id = self.module_id_of(Module::BUILTIN_MODULE);
+            self.loaded_modules.insert(module_id);
             return Ok(module.clone());
         }
 
@@ -385,8 +421,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                     #[cfg(feature = "sync")]
                     token_arena.write().unwrap().extend_from_slice(&tokens);
                 }
-                self.module_id_of(Module::BUILTIN_MODULE);
-                self.loaded_modules.alloc(Module::BUILTIN_MODULE.into());
+                let module_id = self.module_id_of(Module::BUILTIN_MODULE);
+                self.loaded_modules.insert(module_id);
                 self.builtin_module_cache = Some((token_arena, module.clone()));
                 return Ok(module);
             }
@@ -417,12 +453,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
-        let name = self.module_name(module_id);
+        let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
             module_name => {
-                if let Some(cached) = self.source_cache.get(module_name) {
+                if let Some(cached) = self.source_cache.get(&module_id) {
                     return Ok(cached.clone());
                 }
                 self.resolve(module_name)
@@ -432,12 +468,12 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cold]
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
-        let name = self.module_name(module_id);
+        let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(source_code),
             Module::BUILTIN_MODULE => Ok(BUILTIN_FILE.to_string()),
             module_name => {
-                if let Some(cached) = self.source_cache.get(module_name) {
+                if let Some(cached) = self.source_cache.get(&module_id) {
                     return Ok(cached.clone());
                 }
                 self.resolve(module_name)
@@ -835,7 +871,7 @@ mod tests {
         loader.load_builtin(pristine_token_arena).unwrap();
 
         assert_eq!(loader.loaded_modules.len(), 2);
-        assert!(loader.loaded_modules.contains(Module::BUILTIN_MODULE.into()));
+        assert!(loader.is_loaded(Module::BUILTIN_MODULE));
     }
 
     /// All tokens injected from cache must carry module_id == 1 (BUILTIN_MODULE_ID),

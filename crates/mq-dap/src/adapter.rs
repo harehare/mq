@@ -300,7 +300,7 @@ impl MqAdapter {
         }
 
         let module_name = self.engine.get_module_name(module_id);
-        match self.engine.get_module_path(&module_name) {
+        match self.engine.get_module_path_by_id(module_id) {
             Ok(path) => Some(types::Source {
                 name: PathBuf::from(&path)
                     .file_name()
