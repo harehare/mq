@@ -1302,9 +1302,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 locals.set(*local, StackValue::Value(value));
             }
             OpCode::UpdateLocalNumberConst { op, local, constant } => {
-                let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                locals.set(*local, StackValue::Value(value));
+                if let Some(number) = locals.direct_number_mut(*local)
+                    && let Some(result) = number_arithmetic(*op, *number, Number::new(*constant as f64))
+                {
+                    *number = result;
+                } else {
+                    let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    locals.set(*local, StackValue::Value(value));
+                }
             }
             OpCode::UpdateLocalLocal { op, local, value } => {
                 let a = local_runtime_value(locals, *local, chunks)?;
@@ -1343,9 +1349,17 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 constant,
                 offset,
             } => {
-                let cond = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                if !cond.is_truthy() {
+                let compared = match locals.direct_runtime_value(*local) {
+                    Some(RuntimeValue::Number(value)) => compare_numbers(*op, *value, Number::new(*constant as f64)),
+                    _ => None,
+                };
+                let truthy = match compared {
+                    Some(truthy) => truthy,
+                    None => eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
+                        .map_err(|e| locate(chunk, ip, e))?
+                        .is_truthy(),
+                };
+                if !truthy {
                     ip = (ip as i64 + *offset as i64) as usize;
                 }
             }
@@ -2549,6 +2563,34 @@ fn eval_local_number_const_binary_op(
     )
 }
 
+/// `left op right` for an arithmetic `op`, or `None` when it fails or is not arithmetic.
+#[inline(always)]
+fn number_arithmetic(op: BinaryOp, left: Number, right: Number) -> Option<Number> {
+    match op {
+        BinaryOp::Add => Some(left + right),
+        BinaryOp::Sub => Some(left - right),
+        BinaryOp::Mul => Some(left * right),
+        BinaryOp::Div if !right.is_zero() => Some(left / right),
+        BinaryOp::Mod => Some(left % right),
+        _ => None,
+    }
+}
+
+/// `left op right` for a comparison `op`, or `None` for any other `op`.
+#[inline(always)]
+fn compare_numbers(op: BinaryOp, left: Number, right: Number) -> Option<bool> {
+    match op {
+        BinaryOp::Eq => Some(left == right),
+        BinaryOp::Ne => Some(left != right),
+        BinaryOp::Lt => Some(left < right),
+        BinaryOp::Le => Some(left <= right),
+        BinaryOp::Gt => Some(left > right),
+        BinaryOp::Ge => Some(left >= right),
+        _ => None,
+    }
+}
+
+#[inline(always)]
 fn eval_number_binary_op(op: BinaryOp, left: Number, right: Number) -> VmResult<RuntimeValue> {
     let value = match op {
         BinaryOp::Add => RuntimeValue::Number(left + right),
