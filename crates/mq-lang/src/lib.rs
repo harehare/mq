@@ -232,6 +232,19 @@ pub fn parse_text_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     Ok(input.lines().map(|line| line.to_string().into()).collect())
 }
 
+/// Returns whether `name` is a function implemented natively by mq (e.g. `len`, `upcase`).
+///
+/// Functions written in mq itself, such as those in the builtin module, are not included.
+///
+/// ```rust
+/// assert!(mq_lang::is_builtin_function("len"));
+/// assert!(!mq_lang::is_builtin_function("my_function"));
+/// ```
+pub fn is_builtin_function(name: &str) -> bool {
+    use ast::constants::builtins::{NEXT, SEND};
+    name == NEXT || name == SEND || runtime::builtin::get_builtin_functions(&Ident::new(name)).is_some()
+}
+
 /// Returns a vector containing a single `Value` representing an empty input.
 pub fn null_input() -> Vec<RuntimeValue> {
     vec!["".to_string().into()]

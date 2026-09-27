@@ -148,6 +148,18 @@ fn test_run_reads_args_at_run_time() {
     assert_eq!(output.trim(), "hello mq");
 }
 
+#[rstest]
+#[case::args(&["--args", "len", "5"], "--args len")]
+#[case::argjson(&["--argjson", "upcase", "1"], "--argjson upcase")]
+#[case::coroutine_builtin(&["--args", "next", "x"], "--args next")]
+#[case::later_pair(&["--args", "name", "mq", "--args", "len", "5"], "--args len")]
+fn test_run_rejects_globals_named_after_builtins(#[case] flags: &[&str], #[case] expected: &str) {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "len", &[]);
+    let error = stderr(mq(dir.path()).args(["query.mqc", "-I", "null"]).args(flags).assert());
+    assert!(error.contains(expected), "{error}");
+}
+
 #[test]
 fn test_runtime_error_shows_original_source() {
     let dir = TempDir::new().unwrap();

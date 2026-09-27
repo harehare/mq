@@ -127,6 +127,7 @@ impl Cli {
                 "-L/-M/-m have no effect on a .mqc program: modules are compiled into it. Pass them to `mq compile` instead."
             ));
         }
+        self.reject_builtin_named_globals()?;
         let mqc = mq_lang::Mqc::try_from(bytes)
             .map_err(miette::Report::new)
             .wrap_err_with(|| format!("Failed to load {}", path.display()))?;
@@ -140,6 +141,33 @@ impl Cli {
         self.bytecode
             .set(mqc)
             .map_err(|_| miette!("The .mqc program was already loaded"))
+    }
+
+    /// A `.mqc` program resolves builtin names when it is compiled, so a global named after a
+    /// builtin would not shadow it as it does when running the query from source.
+    fn reject_builtin_named_globals(&self) -> miette::Result<()> {
+        let options = [
+            ("--args", &self.input.args),
+            ("--argjson", &self.input.argjson),
+            ("--rawfile", &self.input.raw_file),
+            ("--slurpfile", &self.input.slurp_file),
+        ];
+        for (option, values) in options {
+            let Some(values) = values else {
+                continue;
+            };
+            if let Some(name) = values
+                .chunks(2)
+                .map(|pair| pair[0].as_str())
+                .find(|name| mq_lang::is_builtin_function(name))
+            {
+                return Err(miette!(
+                    help = "Rename the variable, or run the query from source instead of the .mqc program.",
+                    "{option} {name}: a .mqc program can't read a variable named after the builtin function `{name}`"
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Loads the `.mqc` program, checking it was compiled for `file`'s input handling.
