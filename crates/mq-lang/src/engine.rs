@@ -13,14 +13,14 @@ use crate::io::{Io, NativeIo, SandboxedIo};
 use crate::module::ModuleId;
 use crate::tarn;
 use crate::{
-    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind,
+    ArenaId, Ident, ModuleResolver, MqResult, Range, RuntimeValue, Shared, SharedCell, TokenKind, layered_token_arena,
     module::resolver::DefaultModuleResolver, token_alloc,
 };
 
 #[cfg(feature = "debugger")]
 use crate::{Debugger, DebuggerHandler};
 use crate::{
-    ModuleLoader, Token,
+    ModuleLoader, Token, TokenArena,
     arena::Arena,
     error::{self},
     parse,
@@ -506,13 +506,14 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
 
         // Scoped before `parse`, not just `eval_compiled_vm`, so bare `$VAR` resolution sees this engine's `Io`.
         let _io_guard = io_context::scoped(Shared::clone(&self.vm.io) as Shared<dyn Io>);
-        let program = parse(code, Shared::clone(&self.token_arena))?;
+        let token_arena = self.query_token_arena();
+        let program = parse(code, Shared::clone(&token_arena))?;
 
         #[cfg(feature = "debugger")]
         self.vm.module_loader.set_source_code(code.to_string());
 
         let compiled = CompiledProgram::cached(code.to_string(), program);
-        let result = self.eval_compiled_vm(&compiled, input.into_iter())?;
+        let result = self.eval_compiled_vm_in(&compiled, input.into_iter(), token_arena)?;
         if let Some(program) = compiled.program() {
             self.persist_session_modules(program);
         }
@@ -623,6 +624,24 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     where
         I: Iterator<Item = RuntimeValue>,
     {
+        self.eval_compiled_vm_in(compiled, input, Shared::clone(&self.token_arena))
+    }
+
+    /// The arena for one `eval` query's tokens, freed once it has run. A session keeps them,
+    /// since its bindings outlive the query, and so does a debugger, which reads them later.
+    fn query_token_arena(&self) -> TokenArena {
+        if self.vm.session.is_some() || cfg!(feature = "debugger") {
+            Shared::clone(&self.token_arena)
+        } else {
+            layered_token_arena(&self.token_arena)
+        }
+    }
+
+    /// Runs `compiled`, resolving its tokens in `token_arena`.
+    fn eval_compiled_vm_in<I>(&mut self, compiled: &CompiledProgram, input: I, token_arena: TokenArena) -> MqResult
+    where
+        I: Iterator<Item = RuntimeValue>,
+    {
         // Scoped like `eval`/`eval_compiled`, so bare `$VAR` resolution (and anything else
         // reading the ambient `Io`) inside VM-executed builtins sees this engine's `Io`
         // rather than whatever the previous scope (or none) left in place.
@@ -641,7 +660,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         #[cfg(feature = "debugger")]
         let vm_program = compiled
             .program()
-            .map(|program| tarn::build_program(program, Shared::clone(&self.token_arena), &self.vm_module_prelude))
+            .map(|program| tarn::build_program(program, Shared::clone(&token_arena), &self.vm_module_prelude))
             .transpose()?
             .flatten();
 
@@ -658,7 +677,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
                 timeout,
                 max_call_stack_depth,
                 capture_stack_trace,
-                token_arena: Shared::clone(&self.token_arena),
+                token_arena: Shared::clone(&token_arena),
                 module_loader,
                 global_bindings: &global_bindings,
                 session: self.vm.session.as_ref(),
@@ -690,7 +709,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         .map_err(|error| {
             Box::new(error::Error::from_error(
                 &compiled.source,
-                error.into_inner_error(Shared::clone(&self.token_arena)),
+                error.into_inner_error(token_arena),
                 self.vm.module_loader.clone(),
             ))
         })
@@ -1375,6 +1394,61 @@ mod tests {
             result.unwrap_err().cause,
             error::InnerError::Runtime(error::runtime::RuntimeError::RecursionError(_))
         ));
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    fn token_count(engine: &DefaultEngine) -> usize {
+        #[cfg(not(feature = "sync"))]
+        let len = engine.token_arena.borrow().len();
+        #[cfg(feature = "sync")]
+        let len = engine.token_arena.read().unwrap().len();
+        len
+    }
+
+    /// Byte offset of the first source label on `error`.
+    fn label_offset(error: &error::Error) -> usize {
+        miette::Diagnostic::labels(error)
+            .and_then(|mut labels| labels.next())
+            .map(|label| label.offset())
+            .expect("error has a source label")
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[test]
+    fn test_eval_frees_query_tokens() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let tokens = token_count(&engine);
+        for _ in 0..3 {
+            let result = engine.eval(r#"upcase() | . + "!""#, crate::raw_input("a").into_iter());
+            assert_eq!(result.unwrap().values(), &["A!".to_string().into()]);
+        }
+        assert_eq!(token_count(&engine), tokens);
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[test]
+    fn test_eval_frees_tokens_of_modules_it_imports() {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let tokens = token_count(&engine);
+        let query = r#"import "csv" | csv::csv_parse("a,b\n1,2", true) | len()"#;
+        for _ in 0..2 {
+            let result = engine.eval(query, crate::null_input().into_iter()).unwrap();
+            assert_eq!(result.values(), &[1.into()]);
+        }
+        assert_eq!(token_count(&engine), tokens);
+    }
+
+    #[rstest]
+    #[case::query("def fail(): error(\"boom\"); | fail()")]
+    #[case::after_builtin_call(r#"upcase("a") | error("boom")"#)]
+    fn test_eval_error_points_at_the_query(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+        let offset = label_offset(&error);
+        assert!(query[offset..].starts_with("error"), "label at {offset}: {query}");
     }
 
     #[test]

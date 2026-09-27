@@ -273,17 +273,37 @@ pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId 
     }
 }
 
+/// Resolves `token_id`, or returns an EOF token at the start of the top-level query when the
+/// token is gone, e.g. from an `eval` arena that was dropped.
 #[inline(always)]
 pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
     #[cfg(not(feature = "sync"))]
-    {
-        Shared::clone(&arena.borrow()[token_id])
-    }
-
+    let found = arena.borrow().get_cloned(token_id);
     #[cfg(feature = "sync")]
-    {
-        Shared::clone(&arena.read().unwrap()[token_id])
-    }
+    let found = arena.read().unwrap().get_cloned(token_id);
+
+    found.unwrap_or_else(|| {
+        Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: Module::TOP_LEVEL_MODULE_ID,
+        })
+    })
+}
+
+/// The arena `arena` is layered on, or `arena` itself.
+pub(crate) fn root_token_arena(arena: &TokenArena) -> TokenArena {
+    #[cfg(not(feature = "sync"))]
+    let parent = arena.borrow().parent().cloned();
+    #[cfg(feature = "sync")]
+    let parent = arena.read().unwrap().parent().cloned();
+
+    parent.unwrap_or_else(|| Shared::clone(arena))
+}
+
+/// A token arena layered on `parent`, freed with its last reference.
+pub(crate) fn layered_token_arena(parent: &TokenArena) -> TokenArena {
+    Shared::new(SharedCell::new(Arena::layered(Shared::clone(parent))))
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::{Shared, SharedCell};
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
 use std::{marker::PhantomData, ops::Index};
@@ -61,24 +62,61 @@ impl<T> ArenaId<T> {
 /// The arena allocates elements sequentially and returns type-safe [`ArenaId`]s
 /// that can be used to retrieve elements later. This pattern provides fast allocation
 /// and cache-friendly access.
+///
+/// A layered arena (see [`Arena::layered`]) sits on a parent arena: it allocates its own
+/// elements and still resolves the parent's ids, so it can be dropped once its ids are unused.
 #[derive(Debug, Clone, Default)]
 pub struct Arena<T> {
     items: Vec<T>,
+    parent: Option<Shared<SharedCell<Arena<T>>>>,
 }
+
+/// Marks ids allocated in a layered arena, keeping them apart from its parent's.
+const LAYER_BIT: u32 = 1 << 31;
 
 impl<T: Clone + PartialEq> Arena<T> {
     /// Creates a new arena with the specified initial capacity.
     pub fn new(size: usize) -> Self {
         Arena {
             items: Vec::with_capacity(size),
+            parent: None,
+        }
+    }
+
+    /// Creates an arena layered on `parent`.
+    pub(crate) fn layered(parent: Shared<SharedCell<Arena<T>>>) -> Self {
+        Arena {
+            items: Vec::new(),
+            parent: Some(parent),
         }
     }
 
     /// Allocates a value in the arena and returns its identifier.
     pub fn alloc(&mut self, value: T) -> ArenaId<T> {
-        let arena_id = self.items.len() as u32;
+        let index = self.items.len() as u32;
         self.items.push(value);
-        ArenaId::new(arena_id)
+        match self.parent {
+            Some(_) => ArenaId::new(index | LAYER_BIT),
+            None => ArenaId::new(index),
+        }
+    }
+
+    /// Returns a clone of the element at `id`, looking through to the parent arena.
+    pub(crate) fn get_cloned(&self, id: ArenaId<T>) -> Option<T> {
+        if let Some(item) = self.get(id) {
+            return Some(item.clone());
+        }
+        let parent = self.parent.as_ref()?;
+        #[cfg(not(feature = "sync"))]
+        let parent = parent.borrow();
+        #[cfg(feature = "sync")]
+        let parent = parent.read().unwrap();
+        parent.get_cloned(id)
+    }
+
+    /// The parent of a layered arena.
+    pub(crate) fn parent(&self) -> Option<&Shared<SharedCell<Arena<T>>>> {
+        self.parent.as_ref()
     }
 
     /// Returns the number of elements in the arena.
@@ -106,14 +144,19 @@ impl<T> Index<ArenaId<T>> for Arena<T> {
     type Output = T;
 
     fn index(&self, index: ArenaId<T>) -> &Self::Output {
-        &self.items[index.id as usize]
+        self.get(index).expect("id belongs to this arena")
     }
 }
 
 impl<T> Arena<T> {
-    /// Returns a reference to the element at the given `ArenaId`, or `None` if out of bounds.
+    /// Returns a reference to the element this arena itself holds at `id`, or `None` if out of
+    /// bounds or held by a parent arena.
     pub fn get(&self, id: ArenaId<T>) -> Option<&T> {
-        self.items.get(id.id as usize)
+        let layered = id.id & LAYER_BIT != 0;
+        if layered != self.parent.is_some() {
+            return None;
+        }
+        self.items.get((id.id & !LAYER_BIT) as usize)
     }
 
     /// Returns a slice of all elements in the arena.
@@ -172,6 +215,31 @@ mod tests {
             arena.alloc(v);
         }
         assert_eq!(arena.is_empty(), expected);
+    }
+
+    #[test]
+    fn test_layered_arena_resolves_its_own_and_parent_ids() {
+        let parent = Shared::new(SharedCell::new(Arena::new(1)));
+        let parent_id = {
+            #[cfg(not(feature = "sync"))]
+            let mut parent = parent.borrow_mut();
+            #[cfg(feature = "sync")]
+            let mut parent = parent.write().unwrap();
+            parent.alloc(1)
+        };
+        let mut layered = Arena::layered(Shared::clone(&parent));
+        let own_id = layered.alloc(2);
+
+        assert_eq!(layered.get_cloned(own_id), Some(2));
+        assert_eq!(layered.get_cloned(parent_id), Some(1));
+        assert_eq!(layered.get(parent_id), None);
+        assert_eq!(layered[own_id], 2);
+        #[cfg(not(feature = "sync"))]
+        let parent = parent.borrow();
+        #[cfg(feature = "sync")]
+        let parent = parent.read().unwrap();
+        assert_eq!(parent.get_cloned(own_id), None);
+        assert_eq!(parent.get(own_id), None);
     }
 
     #[test]

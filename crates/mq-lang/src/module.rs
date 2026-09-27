@@ -9,6 +9,7 @@ use crate::{
         error::ModuleError,
         resolver::{DefaultModuleResolver, ModuleResolver},
     },
+    root_token_arena,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -451,6 +452,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        // The builtin module outlives any one query, so its tokens stay in the engine's arena.
+        let token_arena = root_token_arena(&token_arena);
         if self.is_loaded(Module::BUILTIN_MODULE) {
             return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
