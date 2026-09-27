@@ -658,20 +658,33 @@ fn drive_initial_frame<const CHECK_TIMEOUT: bool>(
         debug,
     ) {
         DriveOutcome::Completed(value, locals) => (Ok(value), locals),
-        // Compiled programs never yield here, but a corrupted `.mqc` file can.
-        DriveOutcome::Suspended(_) => {
-            while frames.len() > 1 {
-                execution.limits.pop_frame(
-                    frames,
-                    #[cfg(feature = "debugger")]
-                    debug,
-                );
-            }
-            let finished = frames.pop().expect("the frame stack is never empty here");
-            (Err(VmError::Corrupt("yield outside a generator")), finished.locals)
-        }
+        DriveOutcome::Suspended(_) => yield_outside_generator(
+            frames,
+            execution,
+            #[cfg(feature = "debugger")]
+            debug,
+        ),
         DriveOutcome::Failed(e, locals) => (Err(e), locals),
     }
+}
+
+/// Only a corrupted `.mqc` file yields at the top level.
+#[cold]
+#[inline(never)]
+fn yield_outside_generator(
+    frames: &mut Vec<Frame>,
+    execution: &mut ExecutionContext<'_>,
+    #[cfg(feature = "debugger")] debug: &mut DebugRuntime<'_>,
+) -> (VmResult<StackValue>, Locals) {
+    while frames.len() > 1 {
+        execution.limits.pop_frame(
+            frames,
+            #[cfg(feature = "debugger")]
+            debug,
+        );
+    }
+    let finished = frames.pop().expect("the frame stack is never empty here");
+    (Err(VmError::Corrupt("yield outside a generator")), finished.locals)
 }
 
 /// Shared by `drive_initial_frame` (seeds a single fresh frame) and `OpCode::Resume` (restores a
@@ -2128,7 +2141,7 @@ fn try_catch_from_stack(
             VmError::Corrupt("TryCatch try operand is not a closure"),
         ));
     };
-    // The error is bound to slot 1 when `catch` runs; untrusted `.mqc` bytecode can pass any closure.
+    // A corrupted `.mqc` file can pass a catch closure without the error slot.
     if info.has_binder && chunks[catch_closure.chunk_index as usize].local_count <= SELF_SLOT + 1 {
         return Err(locate(
             chunk,
