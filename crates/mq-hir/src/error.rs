@@ -379,6 +379,10 @@ mod tests {
     #[case::enclosing_let_from_let("let x = 1 | module m: let y = x end | m::y", "x")]
     #[case::enclosing_def("def g(): 1; | module m: let y = g() end | m::y", "g")]
     #[case::nested_module_sees_outer_module("module a: def f(): 1; module b: def g(): f(); end end | a::b::g()", "f")]
+    #[case::enclosing_let_beside_nested_module(
+        "let x = 1 | module m: module n: def g(): 1; end | def f(): x; end | m::f()",
+        "x"
+    )]
     fn test_module_cannot_see_outside(#[case] code: &str, #[case] name: &str) {
         let mut hir = Hir::default();
         hir.builtin.disabled = true;

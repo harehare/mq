@@ -59,8 +59,7 @@ impl Hir {
             .collect()
     }
 
-    /// Like [`Self::find_symbols_in_scope`], limited to what code at `position` can see.
-    /// Inside an inline module, that is only the module's own symbols.
+    /// Like [`Self::find_symbols_in_scope`], but inside an inline module only its own symbols.
     pub fn find_visible_symbols_in_scope(
         &self,
         scope_id: ScopeId,
@@ -83,7 +82,7 @@ impl Hir {
             .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Module(_)) && in_source(symbol))
             .filter_map(|(module_id, module)| {
                 let start = module.source.text_range?.start;
-                // The module symbol spans only its keyword, so its body ends where its last symbol does.
+                // The module symbol spans only its keyword.
                 let end = self
                     .symbols
                     .iter()
