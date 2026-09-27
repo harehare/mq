@@ -1,0 +1,2899 @@
+use super::CompiledProgram;
+use super::DefineValueError;
+use super::Session;
+use crate::DefaultEngine;
+use crate::Engine;
+use crate::NativeIo;
+use crate::RuntimeValue;
+use crate::SandboxedIo;
+use crate::Shared;
+use crate::error;
+use crate::null_input;
+#[cfg(not(feature = "debugger"))]
+use crate::raw_input;
+use rstest::rstest;
+use scopeguard::defer;
+use std::io::Write;
+use std::{fs::File, path::PathBuf};
+
+mod nodes {
+    //! Regression coverage for the per-input/aggregate boundary and reused programs.
+    use crate::{DefaultEngine, RuntimeValue};
+    use rstest::rstest;
+
+    fn numbers(values: &[i64]) -> Vec<RuntimeValue> {
+        values.iter().map(|&value| RuntimeValue::Number(value.into())).collect()
+    }
+
+    #[rstest]
+    #[case::identity("nodes", vec![2, 5], vec![2, 5])]
+    #[case::empty("nodes | len()", vec![], vec![0])]
+    #[case::singleton(". * 2 | nodes | map(fn(x): x + 1;)", vec![3], vec![7])]
+    #[case::both_sides(". * 2 | nodes | map(fn(x): x + 1;)", vec![2, 5], vec![5, 11])]
+    #[case::def_before("def twice(x): x * 2; | twice(.) | nodes | map(twice)", vec![2, 5], vec![8, 20])]
+    #[case::def_after(". * 2 | nodes | def twice(x): x * 2; | map(twice)", vec![2, 5], vec![8, 20])]
+    #[case::module_before("module m: def twice(x): x * 2; end | m::twice(.) | nodes | map(m::twice)", vec![2, 5], vec![8, 20])]
+    #[case::declaration_empty("def twice(x): x * 2; | nodes | twice(len())", vec![], vec![0])]
+    #[case::last_let("let x = . | nodes | x", vec![2, 5], vec![5])]
+    #[case::last_as(". as x | nodes | x", vec![2, 5], vec![5])]
+    #[case::captured_def("let x = . | def get(): x; | nodes | get()", vec![2, 5], vec![5])]
+    #[case::captured_closure("let x = . | let f = fn(): x; | nodes | f()", vec![2, 5], vec![5])]
+    #[case::destructure("let [a, b] = [., . + 1] | nodes | a + b", vec![2, 5], vec![11])]
+    #[case::mutable("var x = . | nodes | x += 1 | x", vec![2, 5], vec![6])]
+    #[case::shadowing("let x = 100 | var x = . | nodes | x += 1 | x", vec![2, 5], vec![6])]
+    #[case::import("import \"json\" | nodes | json::json_parse(\"42\")", vec![2, 5], vec![42])]
+    #[case::include("include \"json\" | nodes | json_parse(\"42\")", vec![2, 5], vec![42])]
+    fn nodes_eval_and_compiled_agree(#[case] query: &str, #[case] input: Vec<i64>, #[case] expected: Vec<i64>) {
+        let mut engine = DefaultEngine::default();
+        let actual = engine.eval(query, numbers(&input).into_iter()).unwrap();
+        assert_eq!(actual.values(), &numbers(&expected), "eval: {query}");
+
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        for _ in 0..2 {
+            let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&expected), "eval_compiled: {query}");
+        }
+    }
+
+    #[rstest]
+    #[case::aggregate("nodes | map(fn(x): x * 2;)")]
+    #[case::binding("let x = . * 2 | nodes | x")]
+    fn nodes_repeated_evaluation_uses_current_inputs(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        for input in [vec![1, 2, 3], vec![9], vec![4, 5], vec![1, 2, 3]] {
+            let expected = if query.starts_with("let") {
+                vec![input.last().unwrap() * 2]
+            } else {
+                input.iter().map(|x| x * 2).collect()
+            };
+            let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&expected));
+        }
+    }
+
+    #[rstest]
+    // Streaming Markdown keeps unmatched nodes as fragments; selecting from the
+    // collected array returns None for non-headings, which compact removes.
+    #[case::selector_before(".h | nodes | compact() | len()", [3, 0, 1, 1])]
+    #[case::selector_after("nodes | .h | compact() | len()", [2, 0, 0, 1])]
+    fn nodes_markdown_selectors_survive_repeated_evaluation(#[case] query: &str, #[case] counts: [i64; 4]) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        for (markdown, count) in ["# A\n\nbody\n\n## B", "", "plain text", "# C"].into_iter().zip(counts) {
+            let input = crate::parse_markdown_input(markdown).unwrap();
+            let actual = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&[count]), "{query}: {markdown}");
+        }
+    }
+
+    #[rstest]
+    #[case::loaded("nodes | tree(.) | tree::flatten(.) | len()", true)]
+    #[case::included("include \"section\" | nodes | tree(.) | tree::flatten(.) | len()", false)]
+    #[case::imported(
+        "import \"section\" | nodes | section::tree(.) | section::tree::flatten(.) | len()",
+        false
+    )]
+    fn nodes_section_tree_declarations_survive_repeated_evaluation(#[case] query: &str, #[case] load_module: bool) {
+        let mut engine = DefaultEngine::default();
+        if load_module {
+            engine.load_module("section").unwrap();
+        }
+        let compiled = engine.compile(query).unwrap();
+        for (markdown, count) in [("# A\n\n## B\n\n### C\n\n# D", 4), ("", 0), ("# E", 1)] {
+            let input = crate::parse_markdown_input(markdown).unwrap();
+            let actual = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&[count]), "{query}: {markdown}");
+            #[cfg(not(feature = "debugger"))]
+            assert!(
+                !compiled
+                    .vm_cache()
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .per_input_program_makes_closures()
+            );
+        }
+    }
+
+    #[test]
+    fn nodes_repeated_evaluation_observes_updated_globals_in_both_phases() {
+        let mut engine = DefaultEngine::default();
+        engine.define_value("offset", RuntimeValue::Number(1.into())).unwrap();
+        let compiled = engine.compile(". + offset | nodes | map(fn(x): x + offset;)").unwrap();
+        for offset in [1, 10, -2] {
+            engine
+                .define_value("offset", RuntimeValue::Number(offset.into()))
+                .unwrap();
+            let actual = engine.eval_compiled(&compiled, numbers(&[2, 5]).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&[2 + offset * 2, 5 + offset * 2]));
+        }
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[rstest]
+    #[case::declarations_only("module m: let value = initialize() end | nodes | m::value")]
+    #[case::mixed("module m: let value = initialize() end | . + m::value | nodes | m::value")]
+    fn nodes_cached_module_initializer_is_not_repeated(#[case] query: &str) {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let count = Arc::new(AtomicUsize::new(0));
+        let captured = count.clone();
+        let mut engine = DefaultEngine::default();
+        engine.register_fn("initialize", move |_args: &[RuntimeValue]| {
+            captured.fetch_add(1, Ordering::SeqCst);
+            Ok(RuntimeValue::Number(42.into()))
+        });
+        let compiled = engine.compile(query).unwrap();
+        for input in [vec![1, 2, 3], vec![], vec![9]] {
+            let actual = engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&[42]));
+            assert_eq!(
+                count.load(Ordering::SeqCst),
+                1,
+                "initializer is baked into cached bytecode"
+            );
+        }
+    }
+
+    #[test]
+    fn nodes_runs_each_phase_exactly_once_and_reuses_cache() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        let mut engine = DefaultEngine::default();
+        let before = Arc::new(AtomicUsize::new(0));
+        let after = Arc::new(AtomicUsize::new(0));
+        for (name, count) in [("before", before.clone()), ("after", after.clone())] {
+            engine.register_fn(name, move |args: &[RuntimeValue]| {
+                count.fetch_add(1, Ordering::SeqCst);
+                Ok(args[0].clone())
+            });
+        }
+        let compiled = engine
+            .compile("def f(x): before(x); | f(.) | nodes | after(.)")
+            .unwrap();
+        assert_eq!(before.load(Ordering::SeqCst), 0, "compile must not evaluate inputs");
+        assert_eq!(after.load(Ordering::SeqCst), 0);
+        #[cfg(not(feature = "debugger"))]
+        let mut previous_cache = None;
+        let mut total = 0;
+        for (evaluation, size) in [3, 0, 1, 128, 0].into_iter().enumerate() {
+            let input = numbers(&(0..size).collect::<Vec<_>>());
+            let actual = engine.eval_compiled(&compiled, input.clone().into_iter()).unwrap();
+            assert_eq!(actual.values(), &input);
+            total += size as usize;
+            assert_eq!(before.load(Ordering::SeqCst), total);
+            assert_eq!(after.load(Ordering::SeqCst), evaluation + 1);
+            #[cfg(not(feature = "debugger"))]
+            {
+                let cached = compiled.vm_cache().unwrap().get().unwrap();
+                assert!(cached.has_available_execution_pools());
+                if let Some(previous) = &previous_cache {
+                    assert!(crate::Shared::ptr_eq(previous, &cached), "must reuse bytecode");
+                }
+                previous_cache = Some(cached);
+            }
+        }
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[rstest]
+    #[case::def("def f(x): x + 1; | nodes | map(f)")]
+    #[case::module("module m: def f(x): x + 1; end | nodes | map(m::f)")]
+    #[case::include("include \"json\" | nodes | len()")]
+    #[case::import("import \"json\" | nodes | len()")]
+    fn nodes_declarations_do_not_allocate_closures_per_input(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        for input in [vec![], vec![1], vec![1, 2, 3]] {
+            engine.eval_compiled(&compiled, numbers(&input).into_iter()).unwrap();
+            let cached = compiled.vm_cache().unwrap().get().unwrap();
+            assert!(!cached.per_input_program_makes_closures(), "{query}");
+        }
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[rstest]
+    #[case::called("def f(x): x + 1; | f(.)", &[2], false)]
+    #[case::unused("def f(x): x + 1; | def g(x): x; | . + 10", &[11], false)]
+    #[case::recursive("def f(n): if (n <= 0): 0 else: n + f(n - 1); | f(.)", &[1], false)]
+    #[case::value("def f(x): x + 1; | map([.], f)", &[2], true)]
+    #[case::captured_by_def("def f(x): x + 1; | def g(x): map([x], f); | g(.)", &[2], true)]
+    #[case::captured_by_fn("def f(x): x + 1; | let h = fn(x): f(x); | h(.)", &[2], true)]
+    fn unread_def_closures_are_not_made_per_input(
+        #[case] query: &str,
+        #[case] expected: &[i64],
+        #[case] makes_closures: bool,
+    ) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let compiled = engine.compile(query).unwrap();
+        let actual = engine.eval_compiled(&compiled, numbers(&[1]).into_iter()).unwrap();
+        let flattened = actual.values().iter().flat_map(|value| match value {
+            RuntimeValue::Array(values) => values.to_vec(),
+            value => vec![value.clone()],
+        });
+        assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+        let cached = compiled.vm_cache().unwrap().get().unwrap();
+        assert_eq!(cached.per_input_program_makes_closures(), makes_closures, "{query}");
+    }
+
+    #[cfg(not(feature = "debugger"))]
+    #[rstest]
+    #[case::host_function("host_double(.)", &[2])]
+    #[case::host_function_in_expression("host_double(.) + 1", &[3])]
+    fn host_function_calls_do_not_compile_every_builtin(#[case] query: &str, #[case] expected: &[i64]) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        engine.register_fn("host_double", |args: &[RuntimeValue]| match args.first() {
+            Some(RuntimeValue::Number(n)) => Ok(RuntimeValue::Number(*n * 2.into())),
+            _ => Ok(RuntimeValue::NONE),
+        });
+        let compiled = engine.compile(query).unwrap();
+        let actual = engine.eval_compiled(&compiled, numbers(&[1]).into_iter()).unwrap();
+        let flattened = actual.values().iter().flat_map(|value| match value {
+            RuntimeValue::Array(values) => values.to_vec(),
+            value => vec![value.clone()],
+        });
+        assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+        let cached = compiled.vm_cache().unwrap().get().unwrap();
+        assert!(!cached.per_input_program_makes_closures(), "{query}");
+    }
+
+    #[rstest]
+    #[case::def_before_nodes("def f(x): x + 1; | . | nodes | map(f)", &[2, 3, 4])]
+    #[case::unused_def_before_nodes("def f(x): x + 1; | . * 2 | nodes | len()", &[3])]
+    #[case::seeded_let_and_def("let a = 1 | def f(x): x + a; | . | nodes | f(len())", &[4])]
+    #[case::seeded_let_between_defs(
+            "def g(x): x; | let a = 10 | def f(x): x + a; | . | nodes | f(len())",
+            &[13]
+        )]
+    #[case::def_after_nodes(". | nodes | def f(x): x * 2; | def g(x): x; | map(f)", &[2, 4, 6])]
+    #[case::def_shadowing_let("let f = 5 | def f(x): x; | . | nodes | len()", &[3])]
+    fn defs_around_nodes_keep_results_across_evaluations(#[case] query: &str, #[case] expected: &[i64]) {
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let compiled = engine.compile(query).unwrap();
+        for _ in 0..2 {
+            let actual = engine
+                .eval_compiled(&compiled, numbers(&[1, 2, 3]).into_iter())
+                .unwrap();
+            let flattened = actual.values().iter().flat_map(|value| match value {
+                RuntimeValue::Array(values) => values.to_vec(),
+                value => vec![value.clone()],
+            });
+            assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+        }
+    }
+
+    #[test]
+    fn error_after_dropped_def_points_at_its_source() {
+        let query = "def unused(x): x; | def fail(x): error(\"boom\"); | fail(.)";
+        let mut engine = DefaultEngine::default();
+        engine.load_builtin_module();
+        let error = engine.eval(query, numbers(&[1]).into_iter()).unwrap_err();
+        let span = format!("{:?}", error.cause);
+        assert!(span.contains("boom"), "{span}");
+        let offset = miette::Diagnostic::labels(&*error)
+            .and_then(|mut labels| labels.next())
+            .map(|label| label.offset())
+            .expect("error has a source label");
+        assert!(
+            query[offset..].starts_with("error"),
+            "label at {offset}: {}",
+            &query[offset..]
+        );
+    }
+
+    #[rstest]
+    #[case::before("10 / . | nodes")]
+    #[case::after("nodes | map(fn(x): 10 / x;)")]
+    fn nodes_recovers_after_runtime_error(#[case] query: &str) {
+        let mut engine = DefaultEngine::default();
+        let compiled = engine.compile(query).unwrap();
+        for _ in 0..2 {
+            let error = engine
+                .eval_compiled(&compiled, numbers(&[2, 0]).into_iter())
+                .unwrap_err();
+            assert_eq!(error.source_code.inner(), query);
+            #[cfg(not(feature = "debugger"))]
+            assert!(
+                compiled
+                    .vm_cache()
+                    .unwrap()
+                    .get()
+                    .unwrap()
+                    .has_available_execution_pools()
+            );
+            let actual = engine.eval_compiled(&compiled, numbers(&[5, 2]).into_iter()).unwrap();
+            assert_eq!(actual.values(), &numbers(&[2, 5]));
+        }
+    }
+}
+
+fn create_file(name: &str, content: &str) -> (PathBuf, PathBuf) {
+    let temp_dir = std::env::temp_dir();
+    let temp_file_path = temp_dir.join(name);
+    let mut file = File::create(&temp_file_path).expect("Failed to create temp file");
+    file.write_all(content.as_bytes())
+        .expect("Failed to write to temp file");
+
+    (temp_dir, temp_file_path)
+}
+
+#[test]
+fn test_set_paths() {
+    let mut engine = DefaultEngine::default();
+    let paths = vec![PathBuf::from("/test/path")];
+    engine.set_search_paths(paths.clone());
+    assert_eq!(engine.vm.module_loader.search_paths(), paths);
+}
+
+#[test]
+fn test_console_builtins_use_engine_io() {
+    let io = Shared::new(crate::io::MemIo::default().with_stdin_line("typed"));
+    let mut engine = Engine::with_default_io(Shared::clone(&io));
+    engine.load_builtin_module();
+
+    let output = engine
+        .eval(
+            r#"print("out") | stderr("err") | input()"#,
+            std::iter::once(RuntimeValue::None),
+        )
+        .unwrap();
+
+    assert_eq!(output.values(), &[RuntimeValue::from("typed")]);
+    assert_eq!(io.stdout_lines(), vec!["out".to_string()]);
+    assert_eq!(io.stderr_lines(), vec!["err".to_string()]);
+}
+
+#[rstest]
+#[case::direct("halt(3)", 3)]
+#[case::inside_try("try: halt(4) catch: 0", 4)]
+#[case::inside_function("def f(): halt(5); | try: f() catch: 0", 5)]
+#[case::inside_map("map([1], fn(x): halt(6);)", 6)]
+fn test_halt_returns_exit_code(#[case] code: &str, #[case] expected: i32) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let err = engine.eval(code, std::iter::once(RuntimeValue::None)).unwrap_err();
+
+    assert_eq!(err.exit_code(), Some(expected));
+}
+
+#[test]
+fn test_exit_code_is_none_for_other_errors() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let err = engine
+        .eval(r#"error("boom")"#, std::iter::once(RuntimeValue::None))
+        .unwrap_err();
+
+    assert_eq!(err.exit_code(), None);
+}
+
+#[test]
+fn test_with_default_io_applies_read_permission_to_local_modules() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    std::fs::write(temp_dir.path().join("local.mq"), "def greeting(): \"hello\";").unwrap();
+    let paths = vec![temp_dir.path().to_path_buf()];
+
+    let denied_io = Shared::new(SandboxedIo::new(NativeIo::default()));
+    let mut denied_engine = Engine::with_default_io(denied_io);
+    denied_engine.set_search_paths(paths.clone());
+    assert!(denied_engine.load_module("local").is_err());
+
+    let allowed_io = Shared::new(SandboxedIo::new(NativeIo::default()).allow_read(paths.clone()));
+    let mut allowed_engine = Engine::with_default_io(allowed_io);
+    allowed_engine.set_search_paths(paths);
+    allowed_engine.load_module("local").unwrap();
+    let output = allowed_engine
+        .eval("greeting()", std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(output.values(), &[RuntimeValue::from("hello".to_string())]);
+}
+
+#[test]
+fn test_set_max_call_stack_depth() {
+    let mut engine = DefaultEngine::default();
+    let default_depth = engine.vm.options.max_call_stack_depth;
+    let new_depth = default_depth + 10;
+
+    engine.set_max_call_stack_depth(new_depth);
+    assert_eq!(engine.vm.options.max_call_stack_depth, new_depth);
+}
+
+#[test]
+fn test_set_timeout() {
+    let mut engine = DefaultEngine::default();
+    assert_eq!(engine.vm.options.timeout, None);
+
+    let timeout = std::time::Duration::from_secs(1);
+    engine.set_timeout(timeout);
+    assert_eq!(engine.vm.options.timeout, Some(timeout));
+}
+
+#[test]
+fn test_oversized_timeout_does_not_panic_during_vm_evaluation() {
+    let mut engine = DefaultEngine::default();
+    engine.set_timeout(std::time::Duration::MAX);
+
+    let input = std::iter::once(RuntimeValue::None);
+    assert_eq!(
+        engine.eval("1", input).unwrap().values(),
+        &[RuntimeValue::Number(1.into())]
+    );
+
+    let compiled = engine.compile("1").unwrap();
+    let input = std::iter::once(RuntimeValue::None);
+    assert_eq!(
+        engine.eval_compiled(&compiled, input).unwrap().values(),
+        &[RuntimeValue::Number(1.into())]
+    );
+}
+
+#[rstest]
+#[case::default(false, false)]
+#[case::enabled(true, true)]
+fn test_stack_trace_is_opt_in(#[case] enabled: bool, #[case] expected_trace: bool) {
+    let mut engine = DefaultEngine::default();
+    engine.set_capture_stack_trace(enabled);
+
+    let error = engine
+        .eval(
+            "def inner(): 1 / 0; def outer(): inner(); outer()",
+            std::iter::once(RuntimeValue::None),
+        )
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(error.contains("stack trace:"), expected_trace);
+    if expected_trace {
+        assert!(error.contains("at inner"), "{error}");
+        assert!(error.contains("at outer"), "{error}");
+    }
+}
+
+#[rstest]
+#[case::while_loop("while(true): 1;")]
+#[case::bare_loop("loop: 1;")]
+#[case::foreach_large_array("foreach(x, range(999999)): x;")]
+fn test_timeout_aborts_runaway_query(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    // A zero timeout guarantees the deadline is already passed by the first
+    // periodic check, regardless of how fast the machine running this test is.
+    engine.set_timeout(std::time::Duration::ZERO);
+
+    let started = std::time::Instant::now();
+    let result = engine.eval(query, vec!["".to_string().into()].into_iter());
+
+    assert!(matches!(
+        result.unwrap_err().cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+/// Yields `2000.0` (loop body never runs, so this input always "succeeds" instantly),
+/// then blocks `delay` before yielding `0.0` (loop runs ~2000 steps).
+struct DelayedSecondInput {
+    step: u8,
+    delay: std::time::Duration,
+}
+
+impl Iterator for DelayedSecondInput {
+    type Item = RuntimeValue;
+
+    fn next(&mut self) -> Option<RuntimeValue> {
+        match self.step {
+            0 => {
+                self.step = 1;
+                Some(2000.into())
+            }
+            1 => {
+                self.step = 2;
+                std::thread::sleep(self.delay);
+                Some(0.into())
+            }
+            _ => None,
+        }
+    }
+}
+
+#[test]
+fn test_timeout_is_shared_across_inputs_not_reset_per_input() {
+    let mut engine = DefaultEngine::default();
+    engine.set_timeout(std::time::Duration::from_millis(100));
+
+    let result = engine.eval(
+        "until(. >= 2000): . + 1;",
+        DelayedSecondInput {
+            step: 0,
+            delay: std::time::Duration::from_millis(500),
+        },
+    );
+
+    assert!(matches!(
+        result.unwrap_err().cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+}
+
+#[test]
+fn test_default_value_recursion_is_call_depth_limited() {
+    let mut engine = DefaultEngine::default();
+    engine.set_max_call_stack_depth(50);
+
+    let result = engine.eval("def f(x = f()): x; | f()", vec!["".to_string().into()].into_iter());
+
+    assert!(matches!(
+        result.unwrap_err().cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::RecursionError(_))
+    ));
+}
+
+#[cfg(not(feature = "debugger"))]
+fn token_count(engine: &DefaultEngine) -> usize {
+    #[cfg(not(feature = "sync"))]
+    let len = engine.token_arena.borrow().len();
+    #[cfg(feature = "sync")]
+    let len = engine.token_arena.read().unwrap().len();
+    len
+}
+
+/// Byte offset of the first source label on `error`.
+fn label_offset(error: &error::Error) -> usize {
+    miette::Diagnostic::labels(error)
+        .and_then(|mut labels| labels.next())
+        .map(|label| label.offset())
+        .expect("error has a source label")
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_frees_query_tokens() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let tokens = token_count(&engine);
+    for _ in 0..3 {
+        let result = engine.eval(r#"upcase() | . + "!""#, raw_input("a").into_iter());
+        assert_eq!(result.unwrap().values(), &["A!".to_string().into()]);
+    }
+    assert_eq!(token_count(&engine), tokens);
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_frees_tokens_of_modules_it_imports() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let tokens = token_count(&engine);
+    let query = r#"import "csv" | csv::csv_parse("a,b\n1,2", true) | len()"#;
+    for _ in 0..2 {
+        let result = engine.eval(query, null_input().into_iter()).unwrap();
+        assert_eq!(result.values(), &[1.into()]);
+    }
+    assert_eq!(token_count(&engine), tokens);
+}
+
+#[rstest]
+#[case::query("def fail(): error(\"boom\"); | fail()")]
+#[case::after_builtin_call(r#"upcase("a") | error("boom")"#)]
+fn test_eval_error_points_at_the_query(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let error = engine.eval(query, null_input().into_iter()).unwrap_err();
+    let offset = label_offset(&error);
+    assert!(query[offset..].starts_with("error"), "label at {offset}: {query}");
+}
+
+/// The diagnostic's source name, source text, and label offset.
+fn diagnostic(error: &error::Error) -> (String, String, usize) {
+    (
+        error.source_code.name().to_string(),
+        error.source_code.inner().clone(),
+        label_offset(error),
+    )
+}
+
+#[test]
+fn test_query_session_error_in_an_earlier_def_shows_its_query() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+    let definition = r#"def fail(): let x = 1 | error("boom");"#;
+    session.eval(definition, null_input().into_iter()).unwrap();
+    let error = session
+        .eval(r#"upcase("abc") | fail()"#, null_input().into_iter())
+        .unwrap_err();
+    let (name, source, offset) = diagnostic(&error);
+    assert_eq!((name.as_str(), source.as_str()), ("repl#1", definition));
+    assert!(definition[offset..].starts_with("error"), "label at {offset}");
+}
+
+#[rstest]
+#[case::runtime("1 / 0", "/")]
+#[case::syntax("1 +", "")]
+fn test_query_session_error_shows_the_current_query(#[case] query: &str, #[case] at: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+    session.eval("let x = 1", null_input().into_iter()).unwrap();
+    let error = session.eval(query, null_input().into_iter()).unwrap_err();
+    let (name, source, offset) = diagnostic(&error);
+    assert_eq!((name.as_str(), source.as_str()), ("repl#2", query));
+    assert!(query[offset.min(query.len())..].starts_with(at), "label at {offset}");
+}
+
+#[test]
+fn test_query_session_forgets_a_query_that_does_not_parse() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+    session.eval("1 +", null_input().into_iter()).unwrap_err();
+    let error = session.eval("1 / 0", null_input().into_iter()).unwrap_err();
+    assert_eq!(error.source_code.name(), "repl#1");
+}
+
+#[test]
+fn test_eval_error_outside_a_session_has_no_source_name() {
+    let mut engine = DefaultEngine::default();
+    let error = engine.eval("1 / 0", null_input().into_iter()).unwrap_err();
+    assert_eq!(error.source_code.name(), "");
+}
+
+#[test]
+fn test_query_session_persists_let_across_eval_calls() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("let x = 41", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval("x + 1", vec!["".to_string().into()].into_iter());
+
+    assert_eq!(result.unwrap(), vec![42.into()].into());
+}
+
+#[test]
+fn test_query_session_persists_var_mutation_across_eval_calls() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("var x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    session.eval("x += 1", vec!["".to_string().into()].into_iter()).unwrap();
+    let result = session.eval("x", vec!["".to_string().into()].into_iter());
+
+    assert_eq!(result.unwrap(), vec![2.into()].into());
+}
+
+#[test]
+fn test_query_session_var_redeclaration_updates_value() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("var x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    session
+        .eval("var x = 2", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval("x", vec!["".to_string().into()].into_iter());
+
+    assert_eq!(result.unwrap(), vec![2.into()].into());
+}
+
+#[test]
+fn test_query_session_persists_def_across_eval_calls() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("def add_one(x): x + 1;", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval("add_one(5)", vec!["".to_string().into()].into_iter());
+
+    assert_eq!(result.unwrap(), vec![6.into()].into());
+}
+
+#[test]
+fn test_query_session_bindings_are_available_and_updated_across_nodes() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("let base = 41", vec![RuntimeValue::None].into_iter())
+        .unwrap();
+    let values = session
+        .eval(
+            "nodes | let derived = base + 1 | derived",
+            vec![RuntimeValue::None].into_iter(),
+        )
+        .unwrap();
+    assert_eq!(values.values(), &[RuntimeValue::Number(42.into())]);
+
+    let persisted = session.eval("derived", vec![RuntimeValue::None].into_iter()).unwrap();
+    assert_eq!(persisted.values(), &[RuntimeValue::Number(42.into())]);
+}
+
+#[test]
+fn test_query_session_var_mutation_carries_forward_across_inputs_in_one_eval() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("var x = 0", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval(
+        "x += 1 | x",
+        vec!["".to_string().into(), "".to_string().into(), "".to_string().into()].into_iter(),
+    );
+
+    assert_eq!(result.unwrap(), vec![1.into(), 2.into(), 3.into()].into());
+
+    let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
+    assert_eq!(persisted.unwrap(), vec![3.into()].into());
+}
+
+#[test]
+fn test_query_session_empty_input_iterator_preserves_bindings() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("let x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval("x + 1", std::iter::empty());
+    assert_eq!(result.unwrap(), Vec::<RuntimeValue>::new().into());
+
+    let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
+    assert_eq!(persisted.unwrap(), vec![1.into()].into());
+}
+
+#[test]
+fn test_query_session_nodes_over_empty_input_preserves_let_binding() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("let x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    // Aggregate runs once regardless of input count; must see seeded x == 1, not None.
+    let result = session.eval("nodes | x + 1", std::iter::empty());
+    assert_eq!(result.unwrap(), vec![2.into()].into());
+
+    let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
+    assert_eq!(
+        persisted.unwrap(),
+        vec![1.into()].into(),
+        "a `nodes` query over an empty input iterator must not wipe a previously saved `let`"
+    );
+}
+
+#[test]
+fn test_query_session_nodes_over_empty_input_preserves_var_binding() {
+    let engine = DefaultEngine::default();
+    let mut session = Session::new(engine);
+
+    session
+        .eval("var x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval("nodes | x + 1", std::iter::empty());
+    assert_eq!(result.unwrap(), vec![2.into()].into());
+
+    let persisted = session.eval("x", vec!["".to_string().into()].into_iter());
+    assert_eq!(
+        persisted.unwrap(),
+        vec![1.into()].into(),
+        "a `nodes` query over an empty input iterator must not wipe a previously saved `var`"
+    );
+}
+
+#[test]
+fn test_uncached_nodes_split_preserves_let_immutability() {
+    let mut engine = DefaultEngine::default();
+
+    let error = engine
+        .eval("let x = 1 | nodes | x = 2 | x", vec![RuntimeValue::None].into_iter())
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("Cannot assign to immutable variable \"x\""),
+        "{error}"
+    );
+}
+
+#[test]
+fn test_nodes_split_captures_as_bindings() {
+    let mut engine = DefaultEngine::default();
+    let values = engine
+        .eval(
+            ". as x | nodes | x",
+            vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(values.values(), &[RuntimeValue::Number(2.into())]);
+}
+
+#[test]
+fn test_query_session_is_opt_in() {
+    let mut engine = DefaultEngine::default();
+
+    engine
+        .eval("let x = 1", vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = engine.eval("x", vec!["".to_string().into()].into_iter());
+
+    assert!(result.is_err());
+}
+
+#[rstest]
+#[case::import(r#"import "csv""#, r#"csv::csv_parse("a,b", false)"#)]
+#[case::import_alias(r#"import "csv" as c"#, r#"c::csv_parse("a,b", false)"#)]
+#[case::include(r#"include "csv""#, r#"csv_parse("a,b", false)"#)]
+fn test_query_session_persists_modules_across_eval_calls(#[case] directive: &str, #[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+
+    session
+        .eval(directive, vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = session.eval(query, vec!["".to_string().into()].into_iter());
+
+    assert_eq!(
+        result.unwrap(),
+        vec![RuntimeValue::Array(
+            vec![RuntimeValue::Array(
+                vec!["a".to_string().into(), "b".to_string().into()].into()
+            )]
+            .into()
+        )]
+        .into()
+    );
+}
+
+#[test]
+fn test_query_session_failed_import_is_not_persisted() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut session = Session::new(engine);
+
+    assert!(
+        session
+            .eval(r#"import "not_found_module""#, vec!["".to_string().into()].into_iter())
+            .is_err()
+    );
+    let result = session.eval("1", vec!["".to_string().into()].into_iter());
+
+    assert_eq!(result.unwrap(), vec![1.into()].into());
+}
+
+#[test]
+fn test_modules_are_not_persisted_without_query_session() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    engine
+        .eval(r#"import "csv""#, vec!["".to_string().into()].into_iter())
+        .unwrap();
+    let result = engine.eval(
+        r#"csv::csv_parse("a,b", false)"#,
+        vec!["".to_string().into()].into_iter(),
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_no_timeout_by_default() {
+    let mut engine = DefaultEngine::default();
+    let result = engine.eval("1 + 1", vec!["".to_string().into()].into_iter());
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_version() {
+    let version = DefaultEngine::version();
+    assert!(!version.is_empty());
+}
+
+#[test]
+fn test_load_module() {
+    let (temp_dir, temp_file_path) = create_file("test_module.mq", "def func1(): 42;");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let result = engine.load_module("test_module");
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_error_load_module() {
+    let (temp_dir, temp_file_path) = create_file("error.mq", "error");
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let result = engine.load_module("error");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_eval() {
+    let mut engine = DefaultEngine::default();
+    let result = engine.eval("add(1, 1)", vec!["".to_string().into()].into_iter());
+    assert!(result.is_ok());
+    let values = result.unwrap();
+    assert_eq!(values.len(), 1);
+}
+
+/// Errors raised inside an imported module must name that module's file and show its source,
+/// even when the engine already holds another module (so the module ids can't line up by luck).
+#[rstest]
+#[case::runtime_error(
+    "def boom(): error(\"boom\");",
+    "broken_module_runtime_error",
+    "broken_module_runtime_error::boom()"
+)]
+#[case::syntax_error(
+    "def f(t):\n  let rows = map(t, fn(row): map(row, to_string););\n  | rows\nend\n\ndef g(): 1;\n",
+    "broken_module_syntax_error",
+    "1"
+)]
+fn test_error_in_imported_module_names_module_file(#[case] content: &str, #[case] module: &str, #[case] call: &str) {
+    let (temp_dir, temp_file_path) = create_file(&format!("{module}.mq"), content);
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.load_builtin_module();
+    engine.load_module("section").unwrap();
+
+    let error = engine
+        .eval(
+            &format!(r#"import "{module}" | {call}"#),
+            vec!["".to_string().into()].into_iter(),
+        )
+        .unwrap_err();
+
+    assert_eq!(error.source_code.name(), format!("{module}.mq"), "{error:?}");
+}
+
+#[test]
+fn test_eval_import_as_alias() {
+    let (temp_dir, temp_file_path) =
+        create_file("greeter_engine_test.mq", r#"def greet(name): "Hello, " + name + "!";"#);
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let result = engine.eval(
+        r#"import "greeter_engine_test" as g | g::greet("World")"#,
+        vec!["".to_string().into()].into_iter(),
+    );
+    assert!(result.is_ok(), "{result:?}");
+    assert_eq!(
+        result.unwrap().into_iter().next(),
+        Some(crate::RuntimeValue::String(Shared::new("Hello, World!".to_string())))
+    );
+}
+
+#[rstest]
+#[case("add(1, 1)", "add(1, 1)")]
+#[case(".", ".")]
+#[case("length(.)", "length(.)")]
+fn test_compiled_program_source(#[case] query: &str, #[case] expected: &str) {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(query).unwrap();
+    assert_eq!(compiled.source(), expected);
+    assert!(!compiled.program().unwrap().is_empty());
+    assert_eq!(compiled.clone().source(), expected);
+}
+
+#[rstest]
+#[case("")]
+fn test_compile_empty_code(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(query).unwrap();
+    assert_eq!(compiled.source(), "");
+    assert!(compiled.program().unwrap().is_empty());
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_renders_vm_instructions() {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile("1 + 2").unwrap();
+
+    let dump = engine.dump_bytecode(&compiled).unwrap();
+
+    assert!(dump.contains("Tarn VM bytecode"));
+    assert!(dump.contains("phase: main"));
+    assert!(dump.contains("Const 0"));
+    assert!(dump.contains("Add"));
+    assert!(dump.contains("Return"));
+    assert!(dump.contains("[0] 1"));
+}
+
+// --- builtin cache tests ---
+
+/// Two sequential engines calling the same builtin functions must produce identical results,
+/// whether the builtin module was loaded from a fresh parse or replayed from the cache.
+#[rstest]
+#[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+#[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+#[case("to_string(42)", vec!["".to_string().into()], vec!["42".to_string().into()])]
+fn test_builtin_cache_sequential_engines_consistent(
+    #[case] query: &str,
+    #[case] input: Vec<crate::RuntimeValue>,
+    #[case] expected: Vec<crate::RuntimeValue>,
+) {
+    let mut engine1 = DefaultEngine::default();
+    engine1.load_builtin_module();
+    let result1 = engine1.eval(query, input.clone().into_iter()).unwrap();
+
+    let mut engine2 = DefaultEngine::default();
+    engine2.load_builtin_module();
+    let result2 = engine2.eval(query, input.into_iter()).unwrap();
+
+    assert_eq!(result1.values(), &expected);
+    assert_eq!(result2.values(), &expected);
+}
+
+/// Compiling and evaluating a builtin function call on a second engine (cache path) must
+/// produce the correct result — verifying that token_ids in the compiled program are valid
+/// when the builtin tokens were injected from cache rather than freshly parsed.
+#[rstest]
+#[case("add(1, 2)", vec!["".to_string().into()], vec![3.into()])]
+#[case("not(false)", vec!["".to_string().into()], vec![true.into()])]
+#[case("len(\"hello\")", vec!["".to_string().into()], vec![5.into()])]
+fn test_builtin_cache_eval_compiled_token_ids_valid(
+    #[case] query: &str,
+    #[case] input: Vec<crate::RuntimeValue>,
+    #[case] expected: Vec<crate::RuntimeValue>,
+) {
+    let mut engine1 = DefaultEngine::default();
+    engine1.load_builtin_module();
+
+    let mut engine2 = DefaultEngine::default();
+    engine2.load_builtin_module();
+    let compiled = engine2.compile(query).unwrap();
+    let result = engine2.eval_compiled(&compiled, input.into_iter()).unwrap();
+    assert_eq!(result.values(), &expected);
+}
+
+/// Runtime errors on a cache-using engine must carry the correct source_code.
+#[rstest]
+#[case("undefined_fn()", "undefined_fn()")]
+#[case("unknown_call(1, 2)", "unknown_call(1, 2)")]
+fn test_builtin_cache_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+    let mut engine1 = DefaultEngine::default();
+    engine1.load_builtin_module();
+
+    let mut engine2 = DefaultEngine::default();
+    engine2.load_builtin_module();
+    let compiled = engine2.compile(query).unwrap();
+    let err = engine2
+        .eval_compiled(&compiled, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(err.source_code.inner(), expected_source);
+}
+
+/// The error location (token offset + span) must point to the erroring identifier in
+/// source_code.  If cached tokens were injected at shifted positions the offset would
+/// land on the wrong character.
+#[rstest]
+#[case("undefined_fn()", "undefined_fn")]
+#[case("1 | undefined_fn()", "undefined_fn")]
+#[case("add(1) | unknown_fn()", "unknown_fn")]
+fn test_builtin_cache_runtime_error_token_location_correct(#[case] query: &str, #[case] expected_ident: &str) {
+    let mut engine1 = DefaultEngine::default();
+    engine1.load_builtin_module();
+
+    let mut engine2 = DefaultEngine::default();
+    engine2.load_builtin_module();
+    let compiled = engine2.compile(query).unwrap();
+    let err = engine2
+        .eval_compiled(&compiled, crate::null_input().into_iter())
+        .unwrap_err();
+
+    let offset = err.location.offset();
+    let len = err.location.len();
+    assert_eq!(
+        &err.source_code.inner()[offset..offset + len],
+        expected_ident,
+        "location must point to the erroring identifier, not a shifted position"
+    );
+    assert_eq!(offset, query.find(expected_ident).unwrap());
+}
+
+/// Two sequential engines (one possibly fresh-parse, one cache) must produce identical
+/// error locations — confirming that token_id indices are not shifted by cache replay.
+#[rstest]
+#[case("undefined_fn()")]
+#[case("1 | undefined_fn()")]
+#[case("add(1) | unknown_fn()")]
+fn test_builtin_cache_and_fresh_parse_error_location_identical(#[case] query: &str) {
+    let mut engine1 = DefaultEngine::default();
+    engine1.load_builtin_module();
+    let compiled1 = engine1.compile(query).unwrap();
+    let err1 = engine1
+        .eval_compiled(&compiled1, crate::null_input().into_iter())
+        .unwrap_err();
+
+    let mut engine2 = DefaultEngine::default();
+    engine2.load_builtin_module();
+    let compiled2 = engine2.compile(query).unwrap();
+    let err2 = engine2
+        .eval_compiled(&compiled2, crate::null_input().into_iter())
+        .unwrap_err();
+
+    assert_eq!(
+        err1.location, err2.location,
+        "error location must be identical regardless of whether builtin cache was used"
+    );
+}
+
+// --- CompiledProgram unit tests ---
+
+#[test]
+fn test_compiled_program_from_has_empty_source() {
+    let compiled = CompiledProgram::from(vec![]);
+    assert_eq!(compiled.source(), "");
+    assert!(compiled.program().unwrap().is_empty());
+}
+
+#[rstest]
+#[case("add(1, 1)", vec!["".to_string().into()], vec![2.into()])]
+#[case("add(\" world\")", vec!["hello".to_string().into()], vec!["hello world".to_string().into()])]
+#[case("add(\" world\")", vec!["hi".to_string().into()], vec!["hi world".to_string().into()])]
+fn test_eval_compiled(
+    #[case] query: &str,
+    #[case] input: Vec<crate::RuntimeValue>,
+    #[case] expected: Vec<crate::RuntimeValue>,
+) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let compiled = engine.compile(query).unwrap();
+    let result = engine.eval_compiled(&compiled, input.into_iter());
+    assert!(result.is_ok());
+    assert_eq!(result.unwrap().values(), &expected);
+}
+
+#[rstest]
+#[case("undefined_fn()", "undefined_fn()")]
+#[case("unknown()", "unknown()")]
+fn test_eval_compiled_runtime_error_preserves_source(#[case] query: &str, #[case] expected_source: &str) {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(query).unwrap();
+    let err = engine
+        .eval_compiled(&compiled, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(err.source_code.inner(), expected_source);
+}
+
+#[rstest]
+#[case("undefined_fn()")]
+#[case("unknown()")]
+fn test_eval_compiled_from_program_has_empty_source_in_error(#[case] query: &str) {
+    let mut engine = DefaultEngine::default();
+    let original = engine.compile(query).unwrap();
+    let no_source = CompiledProgram::from(original.program().unwrap().clone());
+    assert_eq!(no_source.source(), "");
+    let err = engine
+        .eval_compiled(&no_source, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(err.source_code.inner(), "");
+}
+
+#[test]
+fn test_eval_compiled_with_ast() {
+    use crate::{AstExpr, AstLiteral, AstNode, Shared};
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let program = vec![Shared::new(AstNode {
+        token_id: crate::arena::ArenaId::new(1),
+        expr: AstExpr::Literal(AstLiteral::String("hello".to_string())),
+    })];
+
+    let compiled = CompiledProgram::from(program);
+    let result = engine.eval_compiled(&compiled, crate::null_input().into_iter());
+    assert!(result.is_ok());
+    let values = result.unwrap();
+    assert_eq!(values.len(), 1);
+    assert_eq!(values[0], "hello".to_string().into());
+}
+
+#[cfg(feature = "sync")]
+#[test]
+fn test_engine_thread_usage_with_sync_feature() {
+    use std::sync::{Arc, Mutex};
+
+    use crate::Engine;
+
+    let engine: Arc<Mutex<Engine>> = Arc::new(Mutex::new(Engine::default()));
+    let engine_clone = Arc::clone(&engine);
+
+    let handle = std::thread::spawn(move || {
+        let mut engine = engine_clone.lock().unwrap();
+        let result = engine.eval("2 + 3", vec!["".to_string().into()].into_iter());
+        assert!(result.is_ok());
+        let values = result.unwrap();
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0], 5.into());
+    });
+
+    handle.join().expect("Threaded engine usage failed");
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn test_eval_debug_expression_vm() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    let bindings = [(crate::Ident::new("x"), RuntimeValue::Number(41.into()))];
+
+    assert_eq!(
+        engine
+            .eval_debug_expression("x + 1", RuntimeValue::NONE, &bindings)
+            .unwrap()[0],
+        RuntimeValue::Number(42.into())
+    );
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn test_eval_debug_expression_vm_sees_current_value_as_self() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+
+    assert_eq!(
+        engine
+            .eval_debug_expression(". + 1", RuntimeValue::Number(41.into()), &[])
+            .unwrap()[0],
+        RuntimeValue::Number(42.into())
+    );
+}
+
+// `eq` is a soft-prelude builtin, not native; a paused frame that never loaded
+// `builtin.mq` must still resolve a bare reference to it.
+#[cfg(feature = "debugger")]
+#[test]
+fn test_eval_debug_expression_vm_resolves_unbound_soft_builtin() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+
+    assert_eq!(
+        engine
+            .eval_debug_expression("let compare = eq | compare(1, 1)", RuntimeValue::NONE, &[])
+            .unwrap()[0],
+        RuntimeValue::Boolean(true)
+    );
+}
+
+// A paused-frame binding must still shadow a same-named soft builtin.
+#[cfg(feature = "debugger")]
+#[test]
+fn test_eval_debug_expression_vm_paused_frame_binding_shadows_soft_builtin() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    let bindings = [(crate::Ident::new("eq"), RuntimeValue::Number(7.into()))];
+
+    assert_eq!(
+        engine
+            .eval_debug_expression("eq", RuntimeValue::NONE, &bindings)
+            .unwrap()[0],
+        RuntimeValue::Number(7.into())
+    );
+}
+
+#[test]
+fn test_eval_compiled_vm_error_is_a_real_miette_diagnostic() {
+    use crate::RuntimeValue;
+
+    // `eval_compiled_vm` used to return a bare `Result<_, String>` — this checks it now
+    // produces the same public `error::Error` shape `eval_compiled` does: a real cause
+    // (not just a `Display` string) with a non-trivial source span pointing at the
+    // failing expression.
+    let code = "1 | 1 / 0";
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(code).unwrap();
+    let vm_err = engine
+        .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap_err();
+
+    assert!(matches!(
+        vm_err.cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::ZeroDivision(_))
+    ));
+    assert!(
+        !vm_err.location.is_empty(),
+        "span should cover the failing expression, not be empty"
+    );
+}
+
+#[test]
+fn test_eval_compiled_vm_uses_engine_host_functions() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.register_fn("double", |args: &[RuntimeValue]| {
+        let RuntimeValue::Number(value) = &args[0] else {
+            return Err("expected number".into());
+        };
+        Ok(RuntimeValue::Number((value.value() * 2.0).into()))
+    });
+    let compiled = engine.compile("double(21)").unwrap();
+
+    let values = engine
+        .eval_compiled_vm(
+            &compiled,
+            [RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())].into_iter(),
+        )
+        .unwrap();
+    assert_eq!(
+        values.values(),
+        &vec![RuntimeValue::Number(42.0.into()), RuntimeValue::Number(42.0.into())]
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_caches_module_free_bytecode() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile("def twice(x): x * 2; | twice(21)").unwrap();
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
+
+    let first = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(first.values(), &[RuntimeValue::Number(42.into())]);
+    #[cfg(not(feature = "debugger"))]
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+
+    let second = engine
+        .eval_compiled(
+            &compiled,
+            [RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+        )
+        .unwrap();
+    assert_eq!(
+        second.values(),
+        &[RuntimeValue::Number(42.into()), RuntimeValue::Number(42.into())]
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_cache_miss_shares_deadline_between_compile_and_run() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.register_fn("slow_init", |_args: &[RuntimeValue]| {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        Ok(RuntimeValue::NONE)
+    });
+    engine.set_timeout(std::time::Duration::from_millis(500));
+
+    // Cache miss: compiling this resolves `slow_init()` once (~300ms), then `loop: 1;`
+    // must run out the *remaining* budget, not a fresh 500ms.
+    let compiled = engine
+        .compile("module m: let x = slow_init() end | m::x | loop: 1;")
+        .unwrap();
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_none()));
+
+    let started = std::time::Instant::now();
+    let err = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap_err();
+    let elapsed = started.elapsed();
+
+    assert!(matches!(
+        err.cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+    assert!(
+        elapsed < std::time::Duration::from_millis(750),
+        "the compile-phase delay should count against the shared deadline instead of \
+             resetting it for the run phase: {elapsed:?}"
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_cached_bytecode_preserves_markdown_input_handling() {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(".h1").unwrap();
+    let input = crate::parse_markdown_input("# Heading\n\nBody").unwrap();
+
+    let first = engine.eval_compiled(&compiled, input.clone().into_iter()).unwrap();
+    let second = engine.eval_compiled(&compiled, input.into_iter()).unwrap();
+
+    assert_eq!(second, first);
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_keeps_external_module_bytecode_frozen() {
+    use crate::RuntimeValue;
+
+    let (temp_dir, temp_file_path) = create_file("cached_vm_module_test.mq", r#"def greeting(): "first";"#);
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    let compiled = engine
+        .compile(r#"include "cached_vm_module_test" | greeting()"#)
+        .unwrap();
+
+    let first = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(
+        first.values(),
+        &[RuntimeValue::String(Shared::new("first".to_string()))]
+    );
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+
+    std::fs::write(&temp_file_path, r#"def greeting(): "second";"#).unwrap();
+    let second = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(
+        second.values(),
+        &[RuntimeValue::String(Shared::new("first".to_string()))],
+        "a cached query keeps the module source it compiled"
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_vm_does_not_share_frozen_modules_between_engines() {
+    use crate::RuntimeValue;
+
+    let first_dir = tempfile::tempdir().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    std::fs::write(first_dir.path().join("greeting.mq"), r#"def greeting(): "first";"#).unwrap();
+    std::fs::write(second_dir.path().join("greeting.mq"), r#"def greeting(): "second";"#).unwrap();
+
+    let mut first_engine = DefaultEngine::default();
+    first_engine.set_search_paths(vec![first_dir.path().to_owned()]);
+    let compiled = first_engine.compile(r#"include "greeting" | greeting()"#).unwrap();
+    assert_eq!(
+        first_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("first".to_string()))]
+    );
+
+    let mut second_engine = DefaultEngine::default();
+    second_engine.set_search_paths(vec![second_dir.path().to_owned()]);
+    assert_eq!(
+        second_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("second".to_string()))]
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_caches_engine_loaded_module_bytecode() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_module("csv").unwrap();
+    let compiled = engine.compile("csv_parse(true)").unwrap();
+    let input = || RuntimeValue::String(Shared::new("name,age\nAda,36\n".to_string()));
+
+    let first = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
+    assert_eq!(first.values().len(), 1);
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+
+    let second = engine.eval_compiled(&compiled, std::iter::once(input())).unwrap();
+    assert_eq!(second.values(), first.values());
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_nodes_does_not_reinstantiate_module_defs_per_input() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_module("section").unwrap();
+    let compiled = engine.compile("nodes | len()").unwrap();
+    let inputs = || (0..3).map(|i| RuntimeValue::Number(f64::from(i).into()));
+
+    let result = engine.eval_compiled(&compiled, inputs()).unwrap();
+    assert_eq!(result.values(), &[RuntimeValue::Number(3.0.into())]);
+
+    let cached = compiled.vm_cache().unwrap().get().unwrap();
+    assert!(!cached.per_input_program_makes_closures());
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_caches_a_program_with_nodes() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile(". * 10 | nodes | len()").unwrap();
+    let inputs = || {
+        [
+            RuntimeValue::Number(1.0.into()),
+            RuntimeValue::Number(2.0.into()),
+            RuntimeValue::Number(3.0.into()),
+        ]
+        .into_iter()
+    };
+
+    let first = engine.eval_compiled(&compiled, inputs()).unwrap();
+    assert_eq!(first.values(), &[RuntimeValue::Number(3.0.into())]);
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+
+    let second = engine.eval_compiled(&compiled, inputs()).unwrap();
+    assert_eq!(second.values(), first.values());
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_eval_compiled_vm_recompiles_after_search_paths_change_on_same_engine() {
+    use crate::RuntimeValue;
+
+    let first_dir = tempfile::tempdir().unwrap();
+    let second_dir = tempfile::tempdir().unwrap();
+    std::fs::write(first_dir.path().join("greeting.mq"), r#"def greeting(): "first";"#).unwrap();
+    std::fs::write(second_dir.path().join("greeting.mq"), r#"def greeting(): "second";"#).unwrap();
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![first_dir.path().to_owned()]);
+    let compiled = engine.compile(r#"include "greeting" | greeting()"#).unwrap();
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("first".to_string()))]
+    );
+
+    // Same CompiledProgram, same engine — only search paths changed.
+    engine.set_search_paths(vec![second_dir.path().to_owned()]);
+    assert_eq!(
+        engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::String(Shared::new("second".to_string()))],
+        "changing search paths on the same engine must invalidate cached VM bytecode"
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_module_resolution_setters_invalidate_module_cache_key() {
+    let mut engine = DefaultEngine::default();
+
+    let key = engine.vm.module_cache_key;
+    engine.set_search_paths(vec![]);
+    assert_ne!(
+        engine.vm.module_cache_key, key,
+        "set_search_paths must bump the module cache key"
+    );
+
+    #[cfg(feature = "http-import-ureq")]
+    {
+        let key = engine.vm.module_cache_key;
+        engine.set_http_import_enabled(true);
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_http_import_enabled must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.set_http_allowed_domains(vec!["example.invalid".to_string()]);
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_http_allowed_domains must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.set_lockfile_enabled(false);
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_lockfile_enabled must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.set_lockfile_frozen(true);
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_lockfile_frozen must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.set_lockfile_path(std::path::PathBuf::from("custom/mq.lock"));
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "set_lockfile_path must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.clear_http_cache().unwrap();
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "clear_http_cache must bump the module cache key"
+        );
+
+        let key = engine.vm.module_cache_key;
+        engine.clear_http_cache_all().unwrap();
+        assert_ne!(
+            engine.vm.module_cache_key, key,
+            "clear_http_cache_all must bump the module cache key"
+        );
+    }
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_across_nodes_split() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_module.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    engine.load_module("side_effect_counter_module").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+
+    let compiled = engine.compile(". | nodes | get_counter()").unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        call_count.load(Ordering::SeqCst) - baseline,
+        1,
+        "a module-level initializer with a side effect must run exactly once per eval, \
+             not once per input and not again in the nodes aggregate phase"
+    );
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_without_nodes() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_plain.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    engine.load_module("side_effect_counter_plain").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+
+    let compiled = engine.compile("get_counter()").unwrap();
+    let result = engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        call_count.load(Ordering::SeqCst) - baseline,
+        1,
+        "the initializer must run once for the whole eval, not once per input row"
+    );
+    let expected = RuntimeValue::Number((baseline + 1).into());
+    assert_eq!(result.values(), &[expected.clone(), expected.clone(), expected]);
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_for_import() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_import.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    // `import` always addresses its vars through the qualified (aliased) compile path,
+    // unlike `include`'s plain named locals — a separate code path this fix must also cover.
+    engine.import_module("side_effect_counter_import").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+
+    let compiled = engine
+        .compile(". | nodes | side_effect_counter_import::get_counter()")
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 1);
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_module_var_initializer_value_is_pinned_across_cached_eval_calls() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_cache.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    engine.load_module("side_effect_counter_cache").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+    let compiled = engine.compile("get_counter()").unwrap();
+
+    let first = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+    let second = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+
+    assert_eq!(
+        second.values(),
+        first.values(),
+        "a cache hit must reuse the value baked in on first compile, not recompute it"
+    );
+    assert_eq!(
+        call_count.load(Ordering::SeqCst) - baseline,
+        1,
+        "the initializer must run only on the compile that populates the cache"
+    );
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_with_query_session() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_session.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    let mut session = Session::new(engine);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    session
+        .engine_mut()
+        .register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+            let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+            Ok(RuntimeValue::Number(value.into()))
+        });
+
+    session.engine_mut().load_module("side_effect_counter_session").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+
+    session
+        .eval(
+            ". | nodes | get_counter()",
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 1);
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_for_aliased_import() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_aliased_import.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    // An explicit `as` alias, unlike `import_module`'s default (module-name) alias.
+    let compiled = engine
+        .compile(r#"import "side_effect_counter_aliased_import" as counters | . | nodes | counters::get_counter()"#)
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_module_var_initializer_error_propagates() {
+    let (temp_dir, temp_file_path) = create_file(
+        "erroring_var_module.mq",
+        "let value = boom()\n| def get_value(): value;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    engine.register_fn("boom", |_args: &[RuntimeValue]| {
+        Err(crate::HostFunctionError::new("something went wrong"))
+    });
+
+    // Reference the module inline (not via `Engine::load_module`, which would eagerly
+    // prepare it and fail before Tarn's own resolution runs).
+    let compiled = engine
+        .compile(r#"include "erroring_var_module" | get_value()"#)
+        .unwrap();
+    let err = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap_err();
+
+    assert!(err.to_string().contains("something went wrong"), "{err}");
+}
+
+#[test]
+fn test_inline_module_var_initializer_calling_its_own_def_runs_once_per_eval() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let mut engine = DefaultEngine::default();
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    let compiled = engine
+        .compile("module counters: def helper(): bump_counter(); let counter = helper() end | counters::counter")
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[case::input_transform_before_module(
+        r#"import "csv" | csv::csv_parse(true) | module m: let n = 1 end | m::n"#,
+        "x,y\n1,2\n",
+        RuntimeValue::Number(1.into())
+    )]
+#[case::own_def_from_let("module m: def f(): 1; let y = f() end | m::y", "", RuntimeValue::Number(1.into()))]
+#[case::own_import_from_def(
+        r#"module m: import "csv" | def f(): len(csv::csv_parse("a\n1", true)); end | m::f()"#,
+        "",
+        RuntimeValue::Number(1.into())
+    )]
+#[case::earlier_inline_module(
+        "module a: def f(): 1; end | module b: def g(): a::f() + 1; end | b::g()",
+        "",
+        RuntimeValue::Number(2.into())
+    )]
+#[case::builtin("module m: def f(): upcase(); end | m::f()", "abc", "ABC".to_string().into())]
+fn test_module_sees_what_it_declares(#[case] query: &str, #[case] input: &str, #[case] expected: RuntimeValue) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    let result = engine.eval(query, crate::raw_input(input).into_iter()).unwrap();
+    assert_eq!(result.values(), &[expected]);
+}
+
+#[rstest]
+#[case::enclosing_let_from_def("let x = 1 | module m: def f(): x; end | m::f()", "x")]
+#[case::enclosing_let_from_let("let x = 1 | module m: let y = x end | m::y", "x")]
+#[case::enclosing_def("def g(): 1; | module m: let y = g() end | m::y", "g")]
+#[case::enclosing_import(
+    r#"import "csv" | module m: def f(): csv::csv_parse("a", true); end | m::f()"#,
+    "csv::csv_parse"
+)]
+#[case::engine_global_from_def("module m: def f(): __FILE__; end | m::f()", "__FILE__")]
+#[case::engine_global_from_let("module m: let v = __FILE__ end | m::v", "__FILE__")]
+fn test_module_cannot_see_outside(#[case] query: &str, #[case] name: &str) {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.define_string_value("__FILE__", "a.md");
+    let error = engine.eval(query, crate::null_input().into_iter()).unwrap_err();
+    assert!(
+        error.to_string().contains(&format!("\"{name}\" is not defined")),
+        "{error}"
+    );
+}
+
+#[test]
+fn test_inline_module_var_initializer_runtime_error_is_not_silently_retried() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let mut engine = DefaultEngine::default();
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    // No enclosing-scope dependency: the probe compiles fine and fails at runtime, so a
+    // silent probe-failure fallback would additionally retry this during real execution.
+    engine.register_fn("boom", move |_args: &[RuntimeValue]| {
+        call_count_clone.fetch_add(1, Ordering::SeqCst);
+        Err(crate::HostFunctionError::new("something went wrong"))
+    });
+
+    let compiled = engine
+        .compile("module counters: let counter = boom() end | counters::counter")
+        .unwrap();
+    let err = engine
+        .eval_compiled(
+            &compiled,
+            [RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())].into_iter(),
+        )
+        .unwrap_err();
+
+    assert!(err.to_string().contains("something went wrong"), "{err}");
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        1,
+        "a genuine initializer error must be surfaced once, not swallowed and retried during real execution"
+    );
+}
+
+#[test]
+fn test_inline_module_var_initializer_runs_once_per_eval_across_nodes_split() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let mut engine = DefaultEngine::default();
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    let compiled = engine
+        .compile("module counters: let counter = bump_counter() end | nodes | counters::counter")
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        1,
+        "an inline module's initializer must run exactly once per eval too"
+    );
+}
+
+#[test]
+fn test_module_var_initializer_runs_once_per_eval_when_imported_inside_an_inline_module() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, temp_file_path) = create_file(
+        "side_effect_counter_nested.mq",
+        "let counter = bump_counter()\n| def get_counter(): counter;\n",
+    );
+    let temp_file_path_cleanup = temp_file_path.clone();
+    defer! {
+        if temp_file_path_cleanup.exists() {
+            std::fs::remove_file(&temp_file_path_cleanup).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+
+    let call_count = Arc::new(AtomicI64::new(0));
+    let call_count_clone = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = call_count_clone.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    let compiled = engine
+        .compile(r#"module outer: import "side_effect_counter_nested" as m end | nodes | m::get_counter()"#)
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [
+                RuntimeValue::Number(1.0.into()),
+                RuntimeValue::Number(2.0.into()),
+                RuntimeValue::Number(3.0.into()),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_nested_external_module_var_initializer_runs_once_per_eval() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let (temp_dir, inner_path) = create_file(
+        "side_effect_counter_external_inner.mq",
+        "let counter = bump_counter()\n| def current_counter(): counter;\n",
+    );
+    let outer_path = temp_dir.join("side_effect_counter_external_outer.mq");
+    std::fs::write(
+            &outer_path,
+            "include \"side_effect_counter_external_inner\"\n| let outer_counter = bump_counter()\n| def get_counter(): current_counter() + outer_counter;\n",
+        )
+        .expect("Failed to write outer module");
+    defer! {
+        for path in [&inner_path, &outer_path] {
+            if path.exists() {
+                std::fs::remove_file(path).expect("Failed to delete temp module");
+            }
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    let call_count = Arc::new(AtomicI64::new(0));
+    let counter = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = counter.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    engine.load_module("side_effect_counter_external_outer").unwrap();
+    let baseline = call_count.load(Ordering::SeqCst);
+    let compiled = engine.compile("get_counter()").unwrap();
+    let result = engine
+        .eval_compiled(
+            &compiled,
+            [RuntimeValue::None, RuntimeValue::None, RuntimeValue::None].into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(call_count.load(Ordering::SeqCst) - baseline, 2);
+    assert_eq!(result.values().len(), 3);
+}
+
+#[test]
+fn test_nested_inline_module_var_initializers_run_once_each_per_eval() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicI64, Ordering};
+
+    let mut engine = DefaultEngine::default();
+    let call_count = Arc::new(AtomicI64::new(0));
+    let counter = Arc::clone(&call_count);
+    engine.register_fn("bump_counter", move |_args: &[RuntimeValue]| {
+        let value = counter.fetch_add(1, Ordering::SeqCst) + 1;
+        Ok(RuntimeValue::Number(value.into()))
+    });
+
+    let compiled = engine
+        .compile(
+            "module outer: let outer_counter = bump_counter() | \
+                 module inner: let inner_counter = bump_counter() end end | \
+                 nodes | outer::outer_counter",
+        )
+        .unwrap();
+    engine
+        .eval_compiled(
+            &compiled,
+            [RuntimeValue::None, RuntimeValue::None, RuntimeValue::None].into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        call_count.load(Ordering::SeqCst),
+        2,
+        "each initializer in a nested inline module tree must run exactly once"
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_nodes_split_preserves_let_immutability() {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile("let x = 1 | nodes | x = 2 | x").unwrap();
+
+    let error = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("Cannot assign to immutable variable \"x\""),
+        "{error}"
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_nodes_split_keeps_a_shadowing_var_mutable() {
+    let mut engine = DefaultEngine::default();
+    let compiled = engine.compile("let x = 1 | var x = 2 | nodes | x = 3 | x").unwrap();
+
+    let values = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(values.values(), &[RuntimeValue::Number(3.0.into())]);
+}
+
+// `eval_compiled_vm` reads `define_value`/`define_string_value` bindings from `self.vm`,
+// which only exists under `tarn`.
+#[test]
+fn test_eval_compiled_vm_resolves_names_defined_via_define_value() {
+    use crate::RuntimeValue;
+
+    // Regression test for the gap `mq-ffi`'s `test_define_string_value_and_use_in_eval`/
+    // `test_define_string_value_overwrites_previous` caught under `--all-features`
+    // (`OpCode::GetExternalGlobal`, seeded from `VmState::global_bindings_snapshot`).
+    let mut engine = DefaultEngine::default();
+    engine.define_string_value("greeting", "hello");
+    engine
+        .define_value("answer", RuntimeValue::Number(42.0.into()))
+        .unwrap();
+    let compiled = engine.compile("[greeting, answer]").unwrap();
+
+    let values = engine
+        .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(
+        values.values(),
+        &vec![RuntimeValue::Array(crate::Shared::new(vec![
+            RuntimeValue::String(Shared::new("hello".to_string())),
+            RuntimeValue::Number(42.0.into()),
+        ]))]
+    );
+
+    // Re-defining a value updates an existing cached program. The cache is keyed by
+    // global names, rather than values, so compiling once does not make later values stale.
+    engine.define_string_value("greeting", "goodbye");
+    let values = engine
+        .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(
+        values.values(),
+        &vec![RuntimeValue::Array(crate::Shared::new(vec![
+            RuntimeValue::String(Shared::new("goodbye".to_string())),
+            RuntimeValue::Number(42.0.into()),
+        ]))]
+    );
+    #[cfg(not(feature = "debugger"))]
+    assert!(compiled.vm_cache().is_some_and(|cache| cache.get().is_some()));
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_vm_reuses_current_globals_for_every_input() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.define_value("offset", RuntimeValue::Number(40.into())).unwrap();
+    let compiled = engine.compile(". + offset").unwrap();
+
+    let values = engine
+        .eval_compiled(
+            &compiled,
+            [RuntimeValue::Number(1.into()), RuntimeValue::Number(2.into())].into_iter(),
+        )
+        .unwrap();
+    assert_eq!(
+        values.values(),
+        &[RuntimeValue::Number(41.into()), RuntimeValue::Number(42.into())]
+    );
+
+    // Values are deliberately not part of the bytecode-cache key. Each batch must instead
+    // read a single, current global environment for all of its inputs.
+    engine.define_value("offset", RuntimeValue::Number(100.into())).unwrap();
+    let values = engine
+        .eval_compiled(&compiled, std::iter::once(RuntimeValue::Number(1.into())))
+        .unwrap();
+    assert_eq!(values.values(), &[RuntimeValue::Number(101.into())]);
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_vm_keeps_global_environments_separate_between_engines() {
+    use crate::RuntimeValue;
+
+    let mut first_engine = DefaultEngine::default();
+    first_engine
+        .define_value("offset", RuntimeValue::Number(1.into()))
+        .unwrap();
+    let compiled = first_engine.compile("offset").unwrap();
+    assert_eq!(
+        first_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(1.into())]
+    );
+
+    let mut second_engine = DefaultEngine::default();
+    second_engine
+        .define_value("offset", RuntimeValue::Number(2.into()))
+        .unwrap();
+    assert_eq!(
+        second_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(2.into())]
+    );
+
+    // Switching back must use the first engine's cached environment, not the last engine
+    // that happened to evaluate this shared CompiledProgram.
+    assert_eq!(
+        first_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(1.into())]
+    );
+}
+
+#[rstest::rstest]
+#[case::coroutine("def g(): yield: 1; | g()", "coroutine")]
+#[case::nested_coroutine("def g(): yield: 1; | [g()]", "coroutine")]
+#[case::closure("fn(): 1", "VM closure")]
+fn define_value_rejects_vm_bound_values(#[case] source: &str, #[case] kind: &'static str) {
+    let mut origin = DefaultEngine::default();
+    let value = origin
+        .eval(source, std::iter::once(RuntimeValue::None))
+        .unwrap()
+        .values()[0]
+        .clone();
+
+    let target = DefaultEngine::default();
+    assert_eq!(
+        target.define_value("value", value),
+        Err(DefineValueError::VmBoundValue(kind))
+    );
+}
+
+#[cfg(not(feature = "debugger"))]
+#[test]
+fn test_cached_vm_does_not_reuse_an_environment_after_its_engine_drops() {
+    use crate::RuntimeValue;
+
+    let compiled = {
+        let mut engine = DefaultEngine::default();
+        engine.define_value("offset", RuntimeValue::Number(1.into())).unwrap();
+        let compiled = engine.compile("offset").unwrap();
+        assert_eq!(
+            engine
+                .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+                .unwrap()
+                .values(),
+            &[RuntimeValue::Number(1.into())]
+        );
+        compiled
+    };
+
+    let mut next_engine = DefaultEngine::default();
+    next_engine
+        .define_value("offset", RuntimeValue::Number(2.into()))
+        .unwrap();
+    assert_eq!(
+        next_engine
+            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
+            .unwrap()
+            .values(),
+        &[RuntimeValue::Number(2.into())]
+    );
+}
+
+#[test]
+fn test_eval_compiled_vm_resolves_a_local_file_import() {
+    use crate::RuntimeValue;
+
+    // Mirrors `test_eval_import_as_alias`, but through `eval_compiled_vm` — this only works
+    // because `eval_compiled_vm` threads `self.vm.module_loader.clone()` into the VM
+    // compiler instead of it hardcoding an in-memory-only `StdModuleResolver`
+    // (`STANDARD_MODULES` only, no filesystem access).
+    let (temp_dir, temp_file_path) = create_file(
+        "greeter_vm_engine_test.mq",
+        r#"def greet(name): "Hello, " + name + "!";"#,
+    );
+    let temp_file_path_clone = temp_file_path.clone();
+
+    defer! {
+        if temp_file_path_clone.exists() {
+            std::fs::remove_file(&temp_file_path_clone).expect("Failed to delete temp file");
+        }
+    }
+
+    let mut engine = DefaultEngine::default();
+    engine.set_search_paths(vec![temp_dir]);
+    let compiled = engine
+        .compile(r#"import "greeter_vm_engine_test" as g | g::greet("World")"#)
+        .unwrap();
+
+    let values = engine
+        .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+        .unwrap();
+    assert_eq!(
+        values.values(),
+        &vec![RuntimeValue::String(Shared::new("Hello, World!".to_string()))]
+    );
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn test_eval_compiled_vm_notifies_debugger_of_uncaught_error() {
+    use crate::{DebugContext, DebuggerHandler, RuntimeValue};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Debug)]
+    struct ErrorHandler(Arc<Mutex<Vec<String>>>);
+
+    impl DebuggerHandler for ErrorHandler {
+        fn on_error(&self, message: &str, _context: &DebugContext) {
+            self.0.lock().unwrap().push(message.to_string());
+        }
+    }
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let mut engine = DefaultEngine::default();
+    engine.set_debugger_handler(Box::new(ErrorHandler(Arc::clone(&errors))));
+    engine.debugger().write().unwrap().activate();
+    let compiled = engine.compile("1 / 0").unwrap();
+
+    assert!(
+        engine
+            .eval_compiled_vm(&compiled, std::iter::once(RuntimeValue::None))
+            .is_err()
+    );
+    assert!(
+        errors
+            .lock()
+            .unwrap()
+            .iter()
+            // "Division by zero" — `RuntimeError::ZeroDivision`'s wording, the same the
+            // tree-walker uses; `notify_error` converts through it rather than using
+            // `VmError`'s own (not user-facing) `Display`. See `notify_error`'s doc comment.
+            .any(|message| message.contains("Division by zero"))
+    );
+}
+
+#[cfg(feature = "debugger")]
+#[test]
+fn test_get_source_code_for_debug() {
+    use crate::module::ModuleId;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let module_id = ModuleId::new(0);
+    let result = engine.get_source_code_for_debug(module_id);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_register_fn_basic() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("greet", |args: &[RuntimeValue]| match args {
+        [RuntimeValue::String(name)] => Ok(RuntimeValue::String(Shared::new(format!("Hello, {name}!")))),
+        _ => Err(crate::HostFunctionError::new("greet() expects one string argument")),
+    });
+
+    let result = engine.eval(r#"greet("World")"#, crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec!["Hello, World!".to_string().into()].into());
+}
+
+#[test]
+fn test_register_fn_receives_evaluated_args() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("identity", |args: &[RuntimeValue]| {
+        Ok(args.first().cloned().unwrap_or(RuntimeValue::NONE))
+    });
+
+    let result = engine.eval("identity(1 + 1)", crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec![2.into()].into());
+}
+
+#[test]
+fn test_register_fn_works_without_builtin_module_loaded() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.register_fn("triple", |args: &[RuntimeValue]| match args {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::from(crate::number::Number::from(n.value() * 3.0))),
+        _ => Err(crate::HostFunctionError::new("triple() expects one number")),
+    });
+
+    let result = engine.eval("triple(2)", crate::null_input().into_iter());
+    assert_eq!(
+        result.unwrap(),
+        vec![RuntimeValue::from(crate::number::Number::from(6_i64))].into()
+    );
+}
+
+#[test]
+fn test_register_fn_does_not_override_builtin_name() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.register_fn("len", |_args: &[RuntimeValue]| {
+        Ok(RuntimeValue::from(crate::number::Number::from(-1_i64)))
+    });
+
+    let result = engine.eval(r#"len("hello")"#, crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec![5.into()].into());
+}
+
+#[test]
+fn test_registered_host_and_builtin_calls_in_one_query() {
+    let mut engine = DefaultEngine::default();
+    engine.register_fn("host_double", |args: &[RuntimeValue]| match args {
+        [RuntimeValue::Number(value)] => Ok(RuntimeValue::from(crate::number::Number::from(value.value() * 2.0))),
+        _ => Err(crate::HostFunctionError::new("host_double() expects one number")),
+    });
+
+    let result = engine.eval(
+        r#"[host_double(1), len("abc"), host_double(2)]"#,
+        crate::null_input().into_iter(),
+    );
+    assert_eq!(
+        result.unwrap(),
+        vec![RuntimeValue::Array(Shared::new(vec![2.into(), 3.into(), 4.into()]))].into()
+    );
+}
+
+#[test]
+fn builtin_coroutine_combinators_are_lazy_and_collectable() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+
+    let result = engine
+        .eval(
+            "var pulls = 0 \
+                 | def source(): pulls += 1 | yield: pulls | pulls += 1 | yield: pulls | pulls += 1 | yield: pulls; \
+                 | let stream = source() \
+                 | let mapped = map(stream, fn(x): x * 10;) \
+                 | let limited = take(mapped, 2) \
+                 | [collect(limited), pulls]",
+            crate::null_input().into_iter(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        result.values(),
+        &[RuntimeValue::Array(Shared::new(vec![
+            RuntimeValue::Array(Shared::new(vec![10.into(), 20.into()])),
+            2.into(),
+        ]))]
+    );
+
+    let first = engine
+        .eval(
+            "def source(): yield: 10 | yield: 20; | first(map(source(), fn(x): x + 1;))",
+            crate::null_input().into_iter(),
+        )
+        .unwrap();
+    assert_eq!(first.values(), &[11.into()]);
+}
+
+#[test]
+fn test_register_fn_shadowed_by_user_def() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("answer", |_args: &[RuntimeValue]| {
+        Ok(RuntimeValue::from(crate::number::Number::from(1)))
+    });
+
+    let result = engine.eval("def answer(): 42; | answer()", crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec![42.into()].into());
+}
+
+#[test]
+fn test_register_fn_overwrite() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("f", |_args: &[RuntimeValue]| Ok(RuntimeValue::Boolean(false)));
+    engine.register_fn("f", |_args: &[RuntimeValue]| Ok(RuntimeValue::Boolean(true)));
+
+    let result = engine.eval("f()", crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec![true.into()].into());
+}
+
+#[test]
+fn test_register_fn_error_propagates() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("boom", |_args: &[RuntimeValue]| {
+        Err(crate::HostFunctionError::new("something went wrong"))
+    });
+
+    let err = engine.eval("boom()", crate::null_input().into_iter()).unwrap_err();
+    let message = err.to_string();
+    assert!(message.contains("boom"), "{message}");
+    assert!(message.contains("something went wrong"), "{message}");
+    assert!(matches!(
+        err.cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::HostFunctionError(_, _, _))
+    ));
+}
+
+#[test]
+fn test_register_fn_panic_is_caught() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("crash", |_args: &[RuntimeValue]| -> crate::HostFnResult {
+        panic!("host function bug");
+    });
+
+    let err = engine.eval("crash()", crate::null_input().into_iter()).unwrap_err();
+    assert!(err.to_string().contains("panic"), "{}", err.to_string());
+}
+
+#[test]
+fn test_register_fn_respects_timeout() {
+    use crate::RuntimeValue;
+
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("noop", |_args: &[RuntimeValue]| Ok(RuntimeValue::NONE));
+    // A zero timeout guarantees the deadline has already passed by the first
+    // periodic check inside the host function call, regardless of machine speed.
+    engine.set_timeout(std::time::Duration::ZERO);
+
+    let err = engine
+        .eval("while(true): noop(); ", crate::null_input().into_iter())
+        .unwrap_err();
+    assert!(matches!(
+        err.cause,
+        error::InnerError::Runtime(error::runtime::RuntimeError::Timeout(_))
+    ));
+}
+
+#[test]
+fn test_register_fn_typed_zero_args() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("answer", || Ok(42_i64));
+
+    let result = engine.eval("answer()", crate::null_input().into_iter());
+    assert_eq!(
+        result.unwrap(),
+        vec![crate::RuntimeValue::from(crate::number::Number::from(42_i64))].into()
+    );
+}
+
+#[test]
+fn test_register_fn_typed_one_arg() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("double", |n: i64| Ok(n * 2));
+
+    let result = engine.eval("double(21)", crate::null_input().into_iter());
+    assert_eq!(
+        result.unwrap(),
+        vec![crate::RuntimeValue::from(crate::number::Number::from(42_i64))].into()
+    );
+}
+
+#[test]
+fn test_register_fn_typed_multiple_args_and_types() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("repeat", |s: String, n: i64| Ok(s.repeat(n as usize)));
+
+    let result = engine.eval(r#"repeat("ab", 3)"#, crate::null_input().into_iter());
+    assert_eq!(result.unwrap(), vec!["ababab".to_string().into()].into());
+}
+
+#[test]
+fn test_register_fn_typed_wrong_type_reports_error() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("double", |n: i64| Ok(n * 2));
+
+    let err = engine
+        .eval(r#"double("not a number")"#, crate::null_input().into_iter())
+        .unwrap_err();
+    assert!(err.to_string().contains("double"), "{}", err.to_string());
+}
+
+#[test]
+fn test_register_fn_typed_vec_and_option() {
+    let mut engine = DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.register_fn("sum", |xs: Vec<i64>| Ok(xs.into_iter().sum::<i64>()));
+    engine.register_fn("first_or", |xs: Vec<i64>, default: Option<i64>| {
+        Ok(xs.into_iter().next().or(default))
+    });
+
+    let result = engine.eval("sum([1, 2, 3])", crate::null_input().into_iter());
+    assert_eq!(
+        result.unwrap(),
+        vec![crate::RuntimeValue::from(crate::number::Number::from(6_i64))].into()
+    );
+
+    let result = engine.eval("first_or([], 9)", crate::null_input().into_iter());
+    assert_eq!(
+        result.unwrap(),
+        vec![crate::RuntimeValue::from(crate::number::Number::from(9_i64))].into()
+    );
+}
+const REMOTE_UTIL_B: &str = "def who(): \"b\";\ndef fail():\n  1 / 0;";
+
+/// Remote modules are named by their last path segment, like the HTTP resolver does.
+#[derive(Clone, Default)]
+struct RemoteUtilResolver;
+
+impl crate::ModuleResolver for RemoteUtilResolver {
+    fn resolve(&self, name: &str) -> Result<String, crate::ModuleError> {
+        match name {
+            "https://a.example/util.mq" => Ok(r#"def who(): "a";"#.to_string()),
+            "https://b.example/util.mq" => Ok(REMOTE_UTIL_B.to_string()),
+            _ => Err(crate::ModuleError::NotFound(name.to_string().into())),
+        }
+    }
+    fn get_path(&self, name: &str) -> Result<String, crate::ModuleError> {
+        Ok(name.to_string())
+    }
+    fn search_paths(&self) -> Vec<PathBuf> {
+        Vec::new()
+    }
+    fn set_search_paths(&mut self, _paths: Vec<PathBuf>) {}
+    fn canonical_name<'a>(&self, module_path: &'a str) -> &'a str {
+        let file = module_path.rsplit('/').next().unwrap_or(module_path);
+        file.strip_suffix(".mq").unwrap_or(file)
+    }
+}
+
+fn remote_util_engine() -> Engine<RemoteUtilResolver> {
+    let mut engine = Engine::new(RemoteUtilResolver);
+    engine.load_builtin_module();
+    engine
+}
+
+#[rstest]
+#[case::aliased(
+    r#"import "https://a.example/util.mq" as a | import "https://b.example/util.mq" as b | a::who() + b::who()"#,
+    "ab"
+)]
+#[case::default_alias(r#"import "https://a.example/util.mq" | util::who()"#, "a")]
+fn test_remote_modules_with_same_name_stay_distinct(#[case] query: &str, #[case] expected: &str) {
+    let result = remote_util_engine()
+        .eval(query, crate::null_input().into_iter())
+        .unwrap();
+    assert_eq!(result, vec![RuntimeValue::from(expected)].into());
+}
+
+#[test]
+fn test_remote_module_error_shows_its_own_source() {
+    let query = r#"import "https://a.example/util.mq" as a | import "https://b.example/util.mq" as b | b::fail()"#;
+    let error = remote_util_engine()
+        .eval(query, crate::null_input().into_iter())
+        .unwrap_err();
+    assert_eq!(error.source_code.name(), "util.mq");
+    assert_eq!(error.source_code.inner(), REMOTE_UTIL_B);
+}
