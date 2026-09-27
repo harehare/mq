@@ -363,6 +363,10 @@ fn compile_engine_program<R: ModuleResolver>(
             seeds,
         ) {
             Ok((compiled, unresolved)) if unresolved.is_empty() => return Ok(compiled),
+            // Non-builtin names (e.g. host functions) resolve at run time.
+            Ok((compiled, unresolved)) if unresolved.iter().all(|name| !SOFT_BUILTIN_NAMES.contains(name)) => {
+                return Ok(compiled);
+            }
             Ok((_, unresolved)) => {
                 let mut grew = false;
                 for name in unresolved {

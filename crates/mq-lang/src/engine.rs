@@ -166,8 +166,7 @@ pub struct Engine<T: ModuleResolver = DefaultModuleResolver, IO: Io = SandboxedI
     pub(crate) vm: tarn::VmState<T, IO>,
     pub(crate) token_arena: Shared<SharedCell<Arena<Shared<Token>>>>,
     pub(crate) vm_module_prelude: Vec<VmModulePrelude>,
-    /// Every `.mqc` program loaded, keyed by its checksum, so loading one again reuses it
-    /// instead of allocating its tokens anew.
+    /// Loaded `.mqc` programs, keyed by checksum.
     #[cfg(feature = "mqc")]
     pub(crate) mqc_programs: rustc_hash::FxHashMap<[u8; crate::mqc::CHECKSUM_LEN], CompiledProgram>,
 }
@@ -1061,6 +1060,28 @@ mod tests {
             assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
             let cached = compiled.vm_cache().unwrap().get().unwrap();
             assert_eq!(cached.per_input_program_makes_closures(), makes_closures, "{query}");
+        }
+
+        #[cfg(not(feature = "debugger"))]
+        #[rstest]
+        #[case::host_function("host_double(.)", &[2])]
+        #[case::host_function_in_expression("host_double(.) + 1", &[3])]
+        fn host_function_calls_do_not_compile_every_builtin(#[case] query: &str, #[case] expected: &[i64]) {
+            let mut engine = DefaultEngine::default();
+            engine.load_builtin_module();
+            engine.register_fn("host_double", |args: &[RuntimeValue]| match args.first() {
+                Some(RuntimeValue::Number(n)) => Ok(RuntimeValue::Number(*n * 2.into())),
+                _ => Ok(RuntimeValue::NONE),
+            });
+            let compiled = engine.compile(query).unwrap();
+            let actual = engine.eval_compiled(&compiled, numbers(&[1]).into_iter()).unwrap();
+            let flattened = actual.values().iter().flat_map(|value| match value {
+                RuntimeValue::Array(values) => values.to_vec(),
+                value => vec![value.clone()],
+            });
+            assert_eq!(flattened.collect::<Vec<_>>(), numbers(expected), "{query}");
+            let cached = compiled.vm_cache().unwrap().get().unwrap();
+            assert!(!cached.per_input_program_makes_closures(), "{query}");
         }
 
         #[rstest]
