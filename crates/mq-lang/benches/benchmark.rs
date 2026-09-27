@@ -98,6 +98,22 @@ fn eval_compiled_reused_single_input_with_globals(bencher: divan::Bencher) {
     });
 }
 
+/// Evaluates a short query once per line with builtins loaded, as `mq --stream` does.
+#[divan::bench]
+fn eval_compiled_per_line_with_builtins(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    let compiled = engine.compile(r#"select(contains("ERROR"))"#).unwrap();
+    let line = || {
+        std::iter::once(mq_lang::RuntimeValue::String(Shared::new(
+            "2026 ERROR disk full".to_string(),
+        )))
+    };
+    engine.eval_compiled(&compiled, line()).unwrap();
+
+    bencher.bench_local(|| engine.eval_compiled(&compiled, line()).unwrap());
+}
+
 /// Measures repeated file-global updates and evaluation of one compiled query.
 #[divan::bench]
 fn eval_compiled_changing_file_globals(bencher: divan::Bencher) {
