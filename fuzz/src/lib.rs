@@ -1,5 +1,5 @@
-//! Shared arbitrary-script generation for the `interpreter` fuzz target, which feeds
-//! generated scripts through [`mq_lang::DefaultEngine`].
+//! Shared input generation for the fuzz targets: `interpreter` feeds generated scripts
+//! through [`mq_lang::DefaultEngine`], and `mqc` loads corrupted `.mqc` files.
 
 use arbitrary::Arbitrary;
 use itertools::Itertools;
@@ -72,5 +72,61 @@ pub fn eval_and_check(context: &Context) {
     if let Err(err) = result {
         println!("Fuzzing with context: {:?}", context);
         std::panic::resume_unwind(err);
+    }
+}
+
+/// Programs covering the VM's instruction families, compiled to `.mqc` and then corrupted.
+const MQC_PROGRAMS: &[&str] = &[
+    r#"def f(x): x + 1; | [f(1), .h1, s"${self}"]"#,
+    "let add = fn(a): fn(b): a + b;; | let inc = add(1) | inc(2)",
+    "def fact(n): if (n <= 1): 1 else: n * fact(n - 1); | fact(5)",
+    "var s = 0 | foreach(x, range(1, 10)): s += x; | s",
+    r#"try: error("boom") catch(e): s"caught ${e}""#,
+    "def gen(): yield 1 | yield 2; | let g = gen() | [next(g), next(g)]",
+    r#"def greet(name, greeting = "hi"): s"${greeting} ${name}"; | greet("mq")"#,
+    r#"{"a": 1, "b": [1, 2, {"c": true}]}"#,
+    ".h | let last = to_text() | nodes | last",
+];
+
+/// A `.mqc` file compiled from one of the fuzz programs, then corrupted.
+#[derive(Debug, Clone, Arbitrary)]
+pub struct MqcInput {
+    program: u8,
+    /// Byte overwrites, placed by position modulo the file's content length.
+    edits: Vec<(u32, u8)>,
+}
+
+/// Loads the corrupted `.mqc` file and, when it still loads, runs it.
+///
+/// The checksum is recomputed after the edits, so the input reaches the decoder and the
+/// bytecode verifier. Anything that passes verification must run without panicking.
+pub fn load_and_run_mqc(input: &MqcInput) {
+    use sha2::{Digest, Sha256};
+    const CHECKSUM_LEN: usize = 32;
+
+    let program = MQC_PROGRAMS[usize::from(input.program) % MQC_PROGRAMS.len()];
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    let mut bytes = engine
+        .precompile(program, &[])
+        .expect("fuzz programs compile")
+        .into_bytes();
+    let content_len = bytes.len() - CHECKSUM_LEN;
+    for (position, value) in &input.edits {
+        bytes[*position as usize % content_len] = *value;
+    }
+    let checksum = Sha256::digest(&bytes[..content_len]);
+    bytes[content_len..].copy_from_slice(&checksum);
+
+    let Ok(mqc) = mq_lang::Mqc::try_from(bytes) else {
+        return;
+    };
+    let mut engine = mq_lang::DefaultEngine::default();
+    engine.load_builtin_module();
+    engine.set_timeout(std::time::Duration::from_millis(100));
+    engine.set_max_call_stack_depth(64);
+    if let Ok(program) = engine.load(&mqc) {
+        let input = mq_lang::parse_markdown_input("# a\n\n## b\n").unwrap();
+        let _ = engine.eval_compiled(&program, input.into_iter());
     }
 }

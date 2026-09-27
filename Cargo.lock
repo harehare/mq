@@ -2716,6 +2716,7 @@ dependencies = [
  "itertools 0.15.0",
  "libfuzzer-sys",
  "mq-lang",
+ "sha2",
 ]
 
 [[package]]
