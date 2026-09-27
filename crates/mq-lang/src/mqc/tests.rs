@@ -106,6 +106,18 @@ fn test_mqc_program_sees_globals_changed_between_runs() {
 }
 
 #[test]
+fn test_mqc_program_is_rejected_in_query_session() {
+    let bytes = compile("let answer = 42");
+    let mut engine = engine();
+    engine.enable_query_session();
+    let program = load(&mut engine, &bytes).unwrap();
+    let error = engine
+        .eval_compiled(&program, crate::null_input().into_iter())
+        .unwrap_err();
+    assert!(error.to_string().contains("query session"), "{error}");
+}
+
+#[test]
 fn test_load_mqc_reuses_the_last_decoded_program() {
     let upcase = compile("upcase()");
     let downcase = compile("downcase()");

@@ -325,7 +325,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Loads a `.mqc` file produced by [`Engine::precompile`].
     ///
     /// The program needs no module resolution or network access. Its bytecode is verified
-    /// before anything runs.
+    /// before anything runs. It can't run with [`Engine::enable_query_session`] on.
     pub fn load(&mut self, mqc: &Mqc) -> Result<CompiledProgram, MqcError> {
         let checksum = mqc.checksum();
         if let Some(program) = self.mqc_programs.get(&checksum) {
