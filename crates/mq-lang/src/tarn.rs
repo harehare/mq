@@ -30,6 +30,8 @@ pub(crate) use cache::CachedProgram;
 pub(crate) use disasm::dump_bytecode;
 #[cfg(all(feature = "debug-trace", feature = "mqc"))]
 pub(crate) use disasm::dump_compiled_program;
+#[cfg(feature = "debug-trace")]
+pub use disasm::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 use nodes_split::{
     ProgramSlice, immutable_let_names_before_nodes, let_names_before_nodes, program_after_nodes, split_at_nodes,
     top_level_binding_names,
@@ -433,7 +435,7 @@ impl<T: ModuleResolver, IO: Io> VmState<T, IO> {
         }
     }
 
-    #[cfg(any(feature = "debugger", feature = "debug-trace"))]
+    #[cfg(feature = "debugger")]
     pub(crate) fn global_bindings_snapshot(&self) -> Vec<(Ident, RuntimeValue)> {
         #[cfg(not(feature = "sync"))]
         let bindings = self.global_bindings.borrow();

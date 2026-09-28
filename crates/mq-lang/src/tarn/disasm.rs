@@ -1,4 +1,4 @@
-//! Renders compiled Tarn bytecode as human-readable text for `mq --dump-bytecode` and tests.
+//! Builds a structured listing of compiled Tarn bytecode for `mq --dump-bytecode` and tests.
 use super::nodes_split::{program_after_nodes, split_at_nodes};
 #[cfg(feature = "mqc")]
 use super::split_program::SplitProgram;
@@ -8,32 +8,77 @@ use crate::ast::Program;
 use crate::get_token;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::{ModuleLoader, ModuleResolver, Shared};
-use std::fmt::Write as _;
+use serde::Serialize;
 
-/// Renders already-compiled bytecode, such as a loaded `.mqc` program, without recompiling.
-#[cfg(feature = "mqc")]
-pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &TokenArena) -> String {
-    let mut output = String::new();
-    match &compiled.after {
-        None => format_compiled_bytecode(&mut output, "main", &compiled.program, token_arena),
-        Some(after) => {
-            format_compiled_bytecode(&mut output, "per-input", &compiled.program, token_arena);
-            output.push('\n');
-            format_compiled_bytecode(&mut output, "nodes aggregate", after, token_arena);
-        }
-    }
-    output
+/// Compiled Tarn bytecode, one [`BytecodePhase`] per compiled program.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BytecodeDump {
+    /// `main`, or `per-input` and `nodes aggregate` for a query that uses `nodes`.
+    pub phases: Vec<BytecodePhase>,
 }
 
-/// Compiles a program exactly as the Engine VM path would and renders its bytecode for diagnosis.
+/// The bytecode of one phase.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BytecodePhase {
+    pub name: String,
+    /// Chunk 0 is the entry point.
+    pub chunks: Vec<BytecodeChunk>,
+}
+
+/// A function body or the entry point.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BytecodeChunk {
+    pub index: usize,
+    /// Includes the implicit `self` slot.
+    pub local_count: usize,
+    /// Slot names by index.
+    pub locals: Vec<String>,
+    /// Upvalue names by index.
+    pub upvalues: Vec<String>,
+    pub instructions: Vec<BytecodeInstruction>,
+    /// Rendered as text and truncated when long.
+    pub constants: Vec<String>,
+}
+
+/// One VM instruction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BytecodeInstruction {
+    pub pc: usize,
+    pub opcode: String,
+    /// Empty when the opcode has none.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub operands: String,
+    pub location: Option<BytecodeLocation>,
+}
+
+/// A one-based source position.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct BytecodeLocation {
+    pub line: usize,
+    pub column: usize,
+}
+
+/// Lists already-compiled bytecode, such as a loaded `.mqc` program.
+#[cfg(feature = "mqc")]
+pub(crate) fn dump_compiled_program(compiled: &SplitProgram, token_arena: &TokenArena) -> BytecodeDump {
+    let phases = match &compiled.after {
+        None => vec![build_phase("main", &compiled.program, token_arena)],
+        Some(after) => vec![
+            build_phase("per-input", &compiled.program, token_arena),
+            build_phase("nodes aggregate", after, token_arena),
+        ],
+    };
+    BytecodeDump { phases }
+}
+
+/// Compiles a program as the Engine VM path would and lists its bytecode.
 pub(crate) fn dump_bytecode<R: ModuleResolver>(
     program: &Program,
     token_arena: TokenArena,
     module_loader: ModuleLoader<R>,
     global_bindings: &[(crate::Ident, RuntimeValue)],
-) -> Result<String, Error> {
+) -> Result<BytecodeDump, Error> {
     let global_names: Vec<crate::Ident> = global_bindings.iter().map(|(ident, _)| *ident).collect();
-    let mut output = String::new();
 
     let Some((before, after)) = split_at_nodes(program) else {
         let compiled = compiler::compile_program_for_engine(
@@ -43,8 +88,9 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
             &global_names,
             &compiler::ResolvedModuleVars::default(),
         )?;
-        format_compiled_bytecode(&mut output, "main", &compiled, &token_arena);
-        return Ok(output);
+        return Ok(BytecodeDump {
+            phases: vec![build_phase("main", &compiled, &token_arena)],
+        });
     };
 
     let input_compiled = compiler::compile_program_for_engine(
@@ -54,8 +100,6 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
         &global_names,
         &compiler::ResolvedModuleVars::default(),
     )?;
-    format_compiled_bytecode(&mut output, "per-input", &input_compiled, &token_arena);
-
     let aggregate_compiled = compiler::compile_program_for_engine(
         &program_after_nodes(before, after),
         token_arena.clone(),
@@ -63,71 +107,63 @@ pub(crate) fn dump_bytecode<R: ModuleResolver>(
         &global_names,
         &compiler::ResolvedModuleVars::default(),
     )?;
-    output.push('\n');
-    format_compiled_bytecode(&mut output, "nodes aggregate", &aggregate_compiled, &token_arena);
-    Ok(output)
+    Ok(BytecodeDump {
+        phases: vec![
+            build_phase("per-input", &input_compiled, &token_arena),
+            build_phase("nodes aggregate", &aggregate_compiled, &token_arena),
+        ],
+    })
 }
 
-fn format_compiled_bytecode(
-    output: &mut String,
-    phase: &str,
-    compiled: &compiler::CompiledProgram,
-    token_arena: &TokenArena,
-) {
-    let _ = writeln!(output, "Tarn VM bytecode");
-    let _ = writeln!(output, "  phase: {phase}");
-    let _ = writeln!(output, "  chunks: {}", compiled.chunks.len());
-    for (chunk_index, chunk) in compiled.chunks.iter().enumerate() {
-        let _ = writeln!(output, "\nChunk {chunk_index}");
-        let _ = writeln!(output, "  frame");
-        let _ = writeln!(
-            output,
-            "    local slots: {} ({})",
-            chunk.local_count,
-            format_slot_names(&chunk.local_names)
-        );
-        let _ = writeln!(
-            output,
-            "    upvalues: {} ({})",
-            chunk.upvalue_names.len(),
-            format_slot_names(&chunk.upvalue_names)
-        );
-        let _ = writeln!(output, "  instructions");
-        for (pc, opcode) in chunk.code.iter().enumerate() {
-            let location = chunk.token_at(pc).map(|token_id| {
-                let token = get_token(Shared::clone(token_arena), token_id);
-                format!(" @ {}:{}", token.range.start.line + 1, token.range.start.column + 1)
-            });
-            let _ = writeln!(
-                output,
-                "    {pc:04}  {}{}",
-                format_opcode(opcode, chunk, pc),
-                location.unwrap_or_default()
-            );
-        }
-        if !chunk.constants.is_empty() {
-            let _ = writeln!(output, "  constants");
-            for (index, value) in chunk.constants.iter().enumerate() {
-                let _ = writeln!(output, "    [{index}] {}", format_value(value));
-            }
-        }
+fn build_phase(name: &str, compiled: &compiler::CompiledProgram, token_arena: &TokenArena) -> BytecodePhase {
+    let chunks = compiled
+        .chunks
+        .iter()
+        .enumerate()
+        .map(|(index, chunk)| BytecodeChunk {
+            index,
+            local_count: usize::from(chunk.local_count),
+            locals: slot_names(&chunk.local_names),
+            upvalues: slot_names(&chunk.upvalue_names),
+            instructions: chunk
+                .code
+                .iter()
+                .enumerate()
+                .map(|(pc, opcode)| {
+                    let text = format_opcode(opcode, chunk, pc);
+                    let (opcode, operands) = text.split_once(' ').unwrap_or((&text, ""));
+                    BytecodeInstruction {
+                        pc,
+                        opcode: opcode.to_string(),
+                        operands: operands.to_string(),
+                        location: chunk.token_at(pc).map(|token_id| {
+                            let token = get_token(Shared::clone(token_arena), token_id);
+                            BytecodeLocation {
+                                line: token.range.start.line as usize + 1,
+                                column: token.range.start.column as usize + 1,
+                            }
+                        }),
+                    }
+                })
+                .collect(),
+            constants: chunk.constants.iter().map(format_value).collect(),
+        })
+        .collect();
+
+    BytecodePhase {
+        name: name.to_string(),
+        chunks,
     }
 }
 
-fn format_slot_names(names: &[crate::Ident]) -> String {
+fn slot_names(names: &[crate::Ident]) -> Vec<String> {
     names
         .iter()
-        .enumerate()
-        .map(|(slot, name)| {
+        .map(|name| {
             let name = name.to_string();
-            if name.is_empty() {
-                format!("{slot}:self")
-            } else {
-                format!("{slot}:{name}")
-            }
+            if name.is_empty() { "self".to_string() } else { name }
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect()
 }
 
 fn slot_ref(names: &[crate::Ident], slot: u16) -> String {

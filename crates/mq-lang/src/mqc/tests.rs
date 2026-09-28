@@ -430,16 +430,31 @@ fn test_mqc_defers_runtime_names_outside_module_let(#[case] query: &str) {
 
 #[cfg(feature = "debug-trace")]
 #[rstest]
-#[case::single_phase("upcase()", &["phase: main", "CallBuiltin upcase"])]
-#[case::nodes_split(".h | nodes | len()", &["phase: per-input", "phase: nodes aggregate"])]
-#[case::user_function("def f(x): x + 1; | f(1)", &["chunks: 2"])]
-fn test_dump_bytecode_renders_loaded_program(#[case] query: &str, #[case] expected: &[&str]) {
+#[case::single_phase("upcase()", &["main"], 1)]
+#[case::nodes_split(".h | nodes | len()", &["per-input", "nodes aggregate"], 1)]
+#[case::user_function("def f(x): x + 1; | f(1)", &["main"], 2)]
+fn test_dump_bytecode_lists_loaded_program(#[case] query: &str, #[case] phases: &[&str], #[case] first_chunks: usize) {
     let mut engine = engine();
     let program = load(&mut engine, &compile(query)).unwrap();
     let dump = engine.dump_bytecode(&program).unwrap();
-    for text in expected {
-        assert!(dump.contains(text), "missing {text:?} in:\n{dump}");
-    }
+    let names: Vec<_> = dump.phases.iter().map(|phase| phase.name.as_str()).collect();
+    assert_eq!(names, phases);
+    assert_eq!(dump.phases[0].chunks.len(), first_chunks);
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_lists_builtin_call_with_location() {
+    let mut engine = engine();
+    let program = load(&mut engine, &compile("upcase()")).unwrap();
+    let dump = engine.dump_bytecode(&program).unwrap();
+    let call = dump.phases[0].chunks[0]
+        .instructions
+        .iter()
+        .find(|instruction| instruction.opcode == "CallBuiltin")
+        .unwrap();
+    assert!(call.operands.starts_with("upcase"), "{call:?}");
+    assert!(call.location.is_some(), "{call:?}");
 }
 
 #[cfg(feature = "debug-trace")]
@@ -451,8 +466,17 @@ fn test_dump_bytecode_of_loaded_program_is_uninstrumented(#[case] query: &str) {
     let mut engine = engine();
     let program = load(&mut engine, &compile(query)).unwrap();
     let dump = engine.dump_bytecode(&program).unwrap();
-    for opcode in ["StmtBoundary", "SyncCallNode", "Breakpoint"] {
-        assert!(!dump.contains(opcode), "unexpected {opcode} in:\n{dump}");
+    let opcodes = dump
+        .phases
+        .iter()
+        .flat_map(|phase| &phase.chunks)
+        .flat_map(|chunk| &chunk.instructions)
+        .map(|instruction| instruction.opcode.as_str());
+    for opcode in opcodes {
+        assert!(
+            !["StmtBoundary", "SyncCallNode", "Breakpoint"].contains(&opcode),
+            "unexpected {opcode}"
+        );
     }
 }
 

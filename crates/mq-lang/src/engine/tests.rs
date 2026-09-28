@@ -1063,12 +1063,21 @@ fn test_dump_bytecode_renders_vm_instructions() {
 
     let dump = engine.dump_bytecode(&compiled).unwrap();
 
-    assert!(dump.contains("Tarn VM bytecode"));
-    assert!(dump.contains("phase: main"));
-    assert!(dump.contains("Const 0"));
-    assert!(dump.contains("Add"));
-    assert!(dump.contains("Return"));
-    assert!(dump.contains("[0] 1"));
+    assert_eq!(dump.phases.len(), 1);
+    let phase = &dump.phases[0];
+    assert_eq!(phase.name, "main");
+    let chunk = &phase.chunks[0];
+    let instructions: Vec<_> = chunk
+        .instructions
+        .iter()
+        .filter(|instruction| !matches!(instruction.opcode.as_str(), "StmtBoundary" | "SyncCallNode"))
+        .map(|instruction| (instruction.opcode.as_str(), instruction.operands.as_str()))
+        .collect();
+    assert_eq!(
+        instructions,
+        [("Const", "0"), ("Const", "1"), ("Add", ""), ("Return", "")]
+    );
+    assert_eq!(chunk.constants, ["1", "2"]);
 }
 
 // --- builtin cache tests ---

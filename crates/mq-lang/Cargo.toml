@@ -66,9 +66,9 @@ web-time = {workspace = true, optional = true}
 
 [features]
 ast-json = ["smallvec/serde", "smol_str/serde"]
-# Captures VM operand-stack snapshots at debugger statement boundaries. Intended for
-# `mq-dbg` diagnosis; disabled by default to avoid snapshot allocations.
-debug-trace = []
+# Captures VM operand-stack snapshots at debugger statement boundaries and enables bytecode
+# dumps. Intended for `mq-dbg` diagnosis; disabled by default to avoid snapshot allocations.
+debug-trace = ["debugger"]
 # Enables execution-count profiling for Tarn bytecode instructions. This is intended for
 # development diagnostics and is deliberately excluded from normal builds.
 vm-profile = []

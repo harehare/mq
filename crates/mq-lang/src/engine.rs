@@ -409,18 +409,15 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
         self.eval_compiled_vm(compiled, input)
     }
 
-    /// Renders the Tarn bytecode that would be executed for `compiled`.
+    /// Lists the Tarn bytecode that would be executed for `compiled`, without running it.
     ///
-    /// This is available only with the `debug-trace` feature and is intended for diagnostic
-    /// tools such as `mq-dbg`; it does not execute the program.
+    /// Available only with the `debug-trace` feature, for tools such as `mq-dbg`.
     #[cfg(feature = "debug-trace")]
-    pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<String, Box<error::Error>> {
+    pub fn dump_bytecode(&mut self, compiled: &CompiledProgram) -> Result<crate::BytecodeDump, Box<error::Error>> {
         self.vm.module_loader.set_source_code(compiled.source.clone());
+        #[allow(clippy::infallible_destructuring_match)]
         let program = match &compiled.body {
-            #[cfg(feature = "debugger")]
             ProgramBody::Ast(program) => program,
-            #[cfg(not(feature = "debugger"))]
-            ProgramBody::Cached { program, .. } => program,
             #[cfg(feature = "mqc")]
             ProgramBody::Precompiled(precompiled) => {
                 return Ok(tarn::dump_compiled_program(precompiled, &self.token_arena));

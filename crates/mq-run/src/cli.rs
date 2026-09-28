@@ -34,6 +34,8 @@ use crate::atomic_output::{AtomicOutput, ClobberMode, OutputSink};
 use crate::grep;
 use mq_help as help;
 
+#[cfg(feature = "debug-trace")]
+mod bytecode;
 mod mqc;
 
 /// A file's query prefix and, for a `.mqc` program, its input format.
@@ -141,10 +143,18 @@ pub struct Cli {
     #[arg(long = "vm-profile", default_value_t = false)]
     vm_profile: bool,
 
-    /// Print the Tarn VM bytecode to stderr before execution (mq-dbg `debug-trace` build only).
+    /// Print the Tarn VM bytecode to stdout and exit without running the program or reading
+    /// input. Pass a format as `--dump-bytecode=json` (mq-dbg `debug-trace` build only).
     #[cfg(feature = "debug-trace")]
-    #[arg(long = "dump-bytecode", default_value_t = false)]
-    dump_bytecode: bool,
+    #[arg(
+        long = "dump-bytecode",
+        value_name = "FORMAT",
+        value_enum,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "text"
+    )]
+    dump_bytecode: Option<bytecode::BytecodeFormat>,
 
     /// The `.mqc` program, which replaces the query.
     #[arg(skip)]
@@ -2246,58 +2256,33 @@ impl Cli {
         engine: &mut mq_lang::DefaultEngine,
         program: &mq_lang::CompiledProgram,
     ) -> miette::Result<()> {
-        if self.dump_bytecode {
-            let bytecode = engine.dump_bytecode(program).map_err(|error| *error)?;
-            if self.output.color_output && !Self::is_no_color() {
-                eprint!("{}", Self::colorize_bytecode(&bytecode));
-            } else {
-                eprint!("{bytecode}");
-            }
+        if let Some(format) = self.dump_bytecode {
+            let dump = engine.dump_bytecode(program).map_err(|error| *error)?;
+            let color = self.output.color_output && !Self::is_no_color();
+            io::stdout()
+                .write_all(format.render(&dump, color).as_bytes())
+                .into_diagnostic()?;
         }
         Ok(())
     }
 
+    /// Dumps the bytecode of each distinct program without reading input or running it.
     #[cfg(feature = "debug-trace")]
-    fn colorize_bytecode(bytecode: &str) -> String {
-        let mut rendered = bytecode
-            .lines()
-            .map(|line| {
-                if line == "Tarn VM bytecode" {
-                    return line.bright_cyan().bold().to_string();
-                }
-                if line.starts_with("Chunk ") {
-                    return line.bright_yellow().bold().to_string();
-                }
-                if matches!(line, "  frame" | "  instructions" | "  constants") {
-                    return line.bright_green().bold().to_string();
-                }
-                if let Some((label, value)) = line.trim_start().split_once(": ") {
-                    let indent = &line[..line.len() - line.trim_start().len()];
-                    return format!("{indent}{}: {}", label.cyan(), value.dimmed());
-                }
-                if let Some(instruction) = line.strip_prefix("    ")
-                    && instruction
-                        .get(..4)
-                        .is_some_and(|pc| pc.bytes().all(|byte| byte.is_ascii_digit()))
-                {
-                    let (pc, rest) = instruction.split_at(4);
-                    let (opcode, location) = rest.trim_start().split_once(" @ ").unwrap_or((rest.trim_start(), ""));
-                    let location = (!location.is_empty()).then(|| format!(" @ {}", location.dimmed()));
-                    return format!(
-                        "    {}  {}{}",
-                        pc.dimmed(),
-                        opcode.bright_blue(),
-                        location.unwrap_or_default()
-                    );
-                }
-                line.to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if bytecode.ends_with('\n') {
-            rendered.push('\n');
+    fn dump_bytecode_only(&self) -> miette::Result<()> {
+        let query = self.get_query()?;
+        let files = match self.resolved_files()? {
+            Some(files) if !files.is_empty() => files.into_iter().map(Some).collect(),
+            _ => vec![None],
+        };
+        let mut engine = self.create_engine()?;
+        let mut cache = ProgramCache::default();
+        for file in &files {
+            if let Some(f) = file {
+                self.set_file_vars(&mut engine, f);
+            }
+            self.program_index(&mut engine, &mut cache, &query, file)?;
         }
-        rendered
+        Ok(())
     }
 
     #[cfg(not(feature = "debug-trace"))]
@@ -2324,6 +2309,10 @@ impl Cli {
     }
 
     fn execute_once(&self) -> miette::Result<()> {
+        #[cfg(feature = "debug-trace")]
+        if self.dump_bytecode.is_some() {
+            return self.dump_bytecode_only();
+        }
         if self.input.stream {
             self.process_streaming()
         } else {

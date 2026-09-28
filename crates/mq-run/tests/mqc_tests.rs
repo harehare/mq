@@ -530,11 +530,72 @@ fn test_run_dumps_loaded_bytecode(#[case] query: &str, #[case] expected: &[&str]
         .write_stdin("# a\n")
         .assert()
         .success();
-    let dump = String::from_utf8(output.get_output().stderr.clone()).unwrap();
+    let dump = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     for text in expected {
         assert!(dump.contains(text), "missing {text:?} in:\n{dump}");
     }
     assert!(!dump.contains("StmtBoundary"), "{dump}");
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_does_not_run_program() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "upcase()", &[]);
+    let output = mq(dir.path())
+        .args(["--dump-bytecode", "query.mqc"])
+        .write_stdin("# a\n")
+        .assert()
+        .success();
+    let dump = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(dump.contains("CallBuiltin upcase"), "{dump}");
+    assert!(!dump.contains("# A"), "{dump}");
+    assert!(output.get_output().stderr.is_empty());
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_json() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "upcase()", &[]);
+    let output = mq(dir.path())
+        .args(["--dump-bytecode=json", "query.mqc"])
+        .assert()
+        .success();
+    let value: serde_json::Value = serde_json::from_slice(&output.get_output().stdout).unwrap();
+    assert_eq!(value["phases"][0]["name"], "main");
+    let instructions = value["phases"][0]["chunks"][0]["instructions"].as_array().unwrap();
+    assert!(
+        instructions
+            .iter()
+            .any(|i| i["opcode"] == "CallBuiltin" && i["operands"].as_str().is_some_and(|o| o.starts_with("upcase")))
+    );
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_markdown() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "upcase()", &[]);
+    let output = mq(dir.path())
+        .args(["--dump-bytecode=markdown", "query.mqc"])
+        .assert()
+        .success();
+    let dump = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    assert!(dump.starts_with("# Tarn VM bytecode\n"), "{dump}");
+    assert!(dump.contains("| PC | Opcode | Location |"), "{dump}");
+    assert!(dump.contains("`CallBuiltin upcase"), "{dump}");
+}
+
+#[cfg(feature = "debug-trace")]
+#[test]
+fn test_dump_bytecode_rejects_unknown_format() {
+    let dir = TempDir::new().unwrap();
+    compile(dir.path(), "upcase()", &[]);
+    mq(dir.path())
+        .args(["--dump-bytecode=yaml", "query.mqc"])
+        .assert()
+        .failure();
 }
 
 #[rstest]

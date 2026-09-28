@@ -103,6 +103,8 @@ pub use runtime::builtin::{
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use runtime::runtime_value::{DictMap, FromValueError, RuntimeValue, RuntimeValues, from_value};
 pub use selector::{AttrKind, Selector};
+#[cfg(feature = "debug-trace")]
+pub use tarn::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
 pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
