@@ -885,6 +885,7 @@ fn compile_program_impl<R: ModuleResolver>(
     }
     for chunk in &mut compiler.chunks {
         chunk.refresh_captured_local_slots();
+        chunk.finish_constants();
     }
     super::peephole::specialize_static_exact_calls(&mut compiler.chunks);
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;

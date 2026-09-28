@@ -8,6 +8,7 @@ use crate::ast::TokenId;
 use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
+use rustc_hash::FxHashMap;
 use std::fmt;
 
 /// The implicit pipeline value (`.` / `self`) slot.
@@ -765,6 +766,7 @@ pub(crate) struct LineEntry {
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
     pub(crate) constants: Vec<RuntimeValue>,
+    pub(crate) constant_indexes: FxHashMap<ConstantKey, u16>,
     pub(crate) static_closures: Vec<Shared<Closure>>,
     pub(crate) local_count: u16,
     pub(crate) local_names: Vec<Ident>,
@@ -784,6 +786,34 @@ pub(crate) struct Chunk {
     /// Whether this chunk's body directly contains a `yield`. Calling it binds arguments as
     /// usual but wraps the resulting frame as a `RuntimeValue::Coroutine` instead of entering it.
     pub(crate) is_generator: bool,
+}
+
+/// Values that can safely share one constant-pool entry.
+///
+/// Runtime objects such as arrays, nodes, and closures are deliberately excluded. Numbers use
+/// their bit pattern so signed zero and distinct NaN representations are preserved.
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) enum ConstantKey {
+    Number(u64),
+    Boolean(bool),
+    String(Shared<String>),
+    Symbol(Ident),
+    Bytes(Shared<Vec<u8>>),
+    None,
+}
+
+impl ConstantKey {
+    fn from_value(value: &RuntimeValue) -> Option<Self> {
+        Some(match value {
+            RuntimeValue::Number(number) => Self::Number(number.value().to_bits()),
+            RuntimeValue::Boolean(value) => Self::Boolean(*value),
+            RuntimeValue::String(value) => Self::String(Shared::clone(value)),
+            RuntimeValue::Symbol(value) => Self::Symbol(*value),
+            RuntimeValue::Bytes(value) => Self::Bytes(Shared::clone(value)),
+            RuntimeValue::None => Self::None,
+            _ => return None,
+        })
+    }
 }
 
 impl Chunk {
@@ -838,10 +868,23 @@ impl Chunk {
         &self.captured_local_slots
     }
 
-    /// Adds a constant and returns its index.
+    /// Adds a constant and returns its index, reusing safe scalar constants within this chunk.
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
+        let key = ConstantKey::from_value(&value);
+        if let Some(index) = key.as_ref().and_then(|key| self.constant_indexes.get(key)) {
+            return *index;
+        }
         self.constants.push(value);
-        (self.constants.len() - 1) as u16
+        let index = (self.constants.len() - 1) as u16;
+        if let Some(key) = key {
+            self.constant_indexes.insert(key, index);
+        }
+        index
+    }
+
+    /// Drops the compile-time lookup table before the chunk is retained for execution.
+    pub(crate) fn finish_constants(&mut self) {
+        self.constant_indexes = FxHashMap::default();
     }
 
     /// Appends an instruction and its source token.
@@ -1930,6 +1973,55 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[test]
+    fn push_const_reuses_safe_values_within_each_chunk() {
+        let values = [
+            RuntimeValue::Number(3.0.into()),
+            RuntimeValue::Boolean(true),
+            RuntimeValue::from("repeated"),
+            RuntimeValue::Symbol(Ident::new("repeated")),
+            RuntimeValue::from(vec![1_u8, 2_u8]),
+            RuntimeValue::None,
+        ];
+        let mut first = Chunk::default();
+        for (expected, value) in values.iter().enumerate() {
+            assert_eq!(first.push_const(value.clone()), expected as u16);
+            assert_eq!(first.push_const(value.clone()), expected as u16);
+        }
+        assert_eq!(first.constants.len(), values.len());
+
+        let mut second = Chunk::default();
+        assert_eq!(second.push_const(values[0].clone()), 0);
+    }
+
+    #[test]
+    fn push_const_keeps_signed_zero_and_runtime_objects_distinct() {
+        let mut chunk = Chunk::default();
+        assert_eq!(chunk.push_const(RuntimeValue::Number(0.0.into())), 0);
+        assert_eq!(chunk.push_const(RuntimeValue::Number((-0.0).into())), 1);
+        assert_eq!(chunk.push_const(RuntimeValue::Number(0.0.into())), 0);
+
+        let array = RuntimeValue::empty_array();
+        assert_eq!(chunk.push_const(array.clone()), 2);
+        assert_eq!(chunk.push_const(array), 3);
+
+        let function = RuntimeValue::NativeFunction(Ident::new("len"));
+        assert_eq!(chunk.push_const(function.clone()), 4);
+        assert_eq!(chunk.push_const(function), 5);
+    }
+
+    #[test]
+    fn shared_string_constant_is_not_changed_by_mutating_a_loaded_copy() {
+        let mut chunk = Chunk::default();
+        let index = chunk.push_const(RuntimeValue::from("original"));
+        assert_eq!(chunk.push_const(RuntimeValue::from("original")), index);
+        let RuntimeValue::String(mut loaded) = chunk.constants[index as usize].clone() else {
+            panic!("expected a string constant");
+        };
+        crate::runtime::runtime_value::string_mut(&mut loaded).push_str(" changed");
+        assert_eq!(chunk.constants[index as usize], RuntimeValue::from("original"));
+    }
 
     #[test]
     fn opcode_stays_compact() {
