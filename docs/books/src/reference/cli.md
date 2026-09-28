@@ -10,6 +10,7 @@ Commands:
   repl        Start a REPL session for interactive query execution. Optional FILES are combined as the initial input (same file/format handling as `mq QUERY FILES...`)
   completion  Generate a shell completion script and print it to stdout
   help        Show documentation for a builtin function, selector, standard module, standard-module function, or the `examples` topic
+  compile     Compile a query to experimental `.mqc` bytecode
 
 Arguments:
   [QUERY OR FILE]  
@@ -20,8 +21,6 @@ Options:
           Suppress normal query output while preserving diagnostics, exit status, and query side effects
   -A, --aggregate
           Aggregate all input files/content into a single array
-  -f, --from-file
-          load filter from the file
   -I, --input-format <INPUT_FORMAT>
           Set input format [possible values: markdown, mdx, html, text, null, raw, bytes, cbor, csv, gron, json, psv, toml, toon, tsv, xml, yaml]
       --csv-delimiter <CHAR>
@@ -34,20 +33,6 @@ Options:
           Load additional modules from specified files
   -m, --import-module-names <IMPORT_MODULE_NAMES>
           Import modules by name, making them available as `name::fn()` in queries
-      --args <NAME> <VALUE>
-          Sets a named string argument. NAME is accessible directly in queries, and also via ARGS."named" when --args or --argv is given
-      --argjson <NAME> <JSON_VALUE>
-          Sets a named JSON argument. NAME is accessible directly in queries
-      --rawfile <NAME> <FILE>
-          Sets file contents that can be referenced at runtime
-      --slurpfile <NAME> <FILE>
-          Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
-      --stream
-          Enable streaming mode for processing large files line by line
-      --watch
-          Watch the input file(s) for changes and automatically re-run the query whenever they change. Requires at least one input file (stdin cannot be watched). With --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a query error is printed to stderr and watching continues rather than exiting
-      --eval-all
-          Evaluate the query once against all input files combined (like yq's `eval-all`), instead of once per file. Enables cross-file aggregation in a single query
       --allow-http-import
           Allow `import`/`include` to fetch modules over HTTP(S). Disabled by default
       --allowed-domain <ALLOWED_DOMAINS>
@@ -76,6 +61,22 @@ Options:
           Grant every sandboxed permission at once (read/write/net/run/env), and also enable HTTP module imports as if --allow-http-import were passed. Disabled by default. Cannot be combined with the individual --allow-* flags above
       --sandbox <SANDBOX>
           Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags [possible values: strict, read-only, networked, unsafe]
+  -f, --from-file
+          load filter from the file
+      --args <NAME> <VALUE>
+          Sets a named string argument. NAME is accessible directly in queries, and also via ARGS."named" when --args or --argv is given
+      --argjson <NAME> <JSON_VALUE>
+          Sets a named JSON argument. NAME is accessible directly in queries
+      --rawfile <NAME> <FILE>
+          Sets file contents that can be referenced at runtime
+      --slurpfile <NAME> <FILE>
+          Sets a named argument from a JSON file. NAME is bound to an array of every JSON value found in FILE (jq --slurpfile compatible), so a file containing a single JSON value becomes a one-element array
+      --stream
+          Enable streaming mode for processing large files line by line
+      --watch
+          Watch the input file(s) for changes and automatically re-run the query whenever they change. Requires at least one input file (stdin cannot be watched). With --from-file, the query file is watched too. Runs until interrupted (Ctrl-C); a query error is printed to stderr and watching continues rather than exiting
+      --eval-all
+          Evaluate the query once against all input files combined (like yq's `eval-all`), instead of once per file. Enables cross-file aggregation in a single query
   -F, --output-format <OUTPUT_FORMAT>
           Set output format. When omitted, inferred from the `-o`/`--output` file extension if given (e.g. `.json` -> json, `.csv` -> csv), else defaults to markdown [possible values: markdown, html, text, json, table, grep, gron, raw, csv, toml, toon, xml, yaml, shell, none]
   -U, --update
@@ -146,6 +147,11 @@ Options:
 # Examples
 
 mq 'query' file.md
+
+mq compile -f query.mq
+mq query.mqc file.md
+
+Compiled .mqc programs are experimental. Recompile them after upgrading mq.
 
 Run `mq help examples` for more usage examples, or `mq help <name>` for
 function/selector/module docs.
