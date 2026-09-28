@@ -1,3 +1,4 @@
+use rustc_hash::FxHashMap;
 use smol_str::SmolStr;
 
 use crate::{Hir, ScopeId, SourceId, Symbol, SymbolId, SymbolKind};
@@ -29,16 +30,21 @@ impl Hir {
             })
             .collect();
 
-        let mut include_source_ids = None;
+        // Built once per module and per qualified-ness.
+        let mut source_ids_by_module: FxHashMap<(Option<SymbolId>, bool), Vec<SourceId>> = FxHashMap::default();
 
         for (ref_symbol_id, scope, ref_name) in symbols_to_resolve {
-            if let Some(symbol_id) = self.resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id) {
+            let module = self.enclosing_inline_module(ref_symbol_id);
+            if let Some(symbol_id) = self.resolve_ref_symbol_of_scope(scope, &ref_name, ref_symbol_id, module) {
                 self.references.insert(ref_symbol_id, symbol_id);
                 self.fallback_references.remove(&ref_symbol_id);
                 continue;
             }
 
-            let source_ids = include_source_ids.get_or_insert_with(|| self.include_source_ids());
+            let qualified = self.is_qualified_member(ref_symbol_id);
+            let source_ids = source_ids_by_module
+                .entry((module, qualified))
+                .or_insert_with(|| self.include_source_ids(module, qualified));
             if let Some(symbol_id) = self.resolve_ref_symbol_of_source(source_ids, &ref_name) {
                 self.references.insert(ref_symbol_id, symbol_id);
                 self.fallback_references.insert(ref_symbol_id);
@@ -54,16 +60,54 @@ impl Hir {
         self.references.get(&ref_symbol_id).copied()
     }
 
-    #[inline(always)]
-    fn include_source_ids(&self) -> Vec<SourceId> {
+    /// The innermost inline `module` containing `symbol_id`, found through parent symbols.
+    fn enclosing_inline_module(&self, symbol_id: SymbolId) -> Option<SymbolId> {
+        let mut parent_id = self.symbols.get(symbol_id)?.parent;
+        while let Some(id) = parent_id {
+            let parent = self.symbols.get(id)?;
+            if matches!(parent.kind, SymbolKind::Module(_)) {
+                return Some(id);
+            }
+            parent_id = parent.parent;
+        }
+        None
+    }
+
+    /// Whether `symbol_id` is declared inside `module`.
+    pub(crate) fn is_inside(&self, symbol_id: SymbolId, module: SymbolId) -> bool {
+        let mut parent_id = self.symbols.get(symbol_id).and_then(|symbol| symbol.parent);
+        while let Some(id) = parent_id {
+            if id == module {
+                return true;
+            }
+            parent_id = self.symbols.get(id).and_then(|symbol| symbol.parent);
+        }
+        false
+    }
+
+    /// Whether `symbol_id` is the member part of `module::member`.
+    fn is_qualified_member(&self, symbol_id: SymbolId) -> bool {
+        self.symbols
+            .get(symbol_id)
+            .and_then(|symbol| symbol.parent)
+            .and_then(|parent| self.symbols.get(parent))
+            .is_some_and(|parent| matches!(parent.kind, SymbolKind::QualifiedAccess))
+    }
+
+    /// Sources a reference can see; inside an inline module, only its own includes.
+    /// Imported sources are visible only to qualified members, as at runtime.
+    fn include_source_ids(&self, module: Option<SymbolId>, qualified: bool) -> Vec<SourceId> {
         let mut source_ids = Vec::new();
 
-        for (_, symbol) in &self.symbols {
-            match symbol.kind {
-                SymbolKind::Include(source_id) | SymbolKind::Import(source_id) | SymbolKind::Module(source_id) => {
-                    source_ids.push(source_id);
-                }
-                _ => {}
+        for (symbol_id, symbol) in &self.symbols {
+            let source_id = match &symbol.kind {
+                SymbolKind::Include(source_id) => source_id,
+                SymbolKind::Import(source_id) if qualified => source_id,
+                SymbolKind::Module(source_id) if module.is_none() => source_id,
+                _ => continue,
+            };
+            if module.is_none_or(|module| self.is_inside(symbol_id, module)) {
+                source_ids.push(*source_id);
             }
         }
 
@@ -128,6 +172,7 @@ impl Hir {
         scope_id: ScopeId,
         ref_name: &SmolStr,
         ref_symbol_id: SymbolId,
+        module: Option<SymbolId>,
     ) -> Option<SymbolId> {
         let ref_start_line = self
             .symbols
@@ -148,6 +193,12 @@ impl Hir {
                     }
                     let symbol = self.symbols.get(symbol_id)?;
                     if symbol.scope != current_scope_id || !Self::is_resolvable_target(symbol) {
+                        return None;
+                    }
+                    // A module sees only its own names and builtins.
+                    if module.is_some_and(|module| {
+                        symbol.source.source_id != Some(self.builtin.source_id) && !self.is_inside(symbol_id, module)
+                    }) {
                         return None;
                     }
                     // `let` bindings must be declared before the use site; functions allow forward references.

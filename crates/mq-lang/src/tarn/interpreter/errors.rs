@@ -178,9 +178,9 @@ fn format_stack_trace(frames: &[StackTraceFrame], token_arena: crate::TokenArena
 /// Resolves `token_id` in `token_arena`, falling back to a placeholder token if out of range.
 fn resolve_token(token_arena: &crate::TokenArena, token_id: TokenId) -> crate::Token {
     #[cfg(not(feature = "sync"))]
-    let found = token_arena.borrow().get(token_id).cloned();
+    let found = token_arena.borrow().get_cloned(token_id);
     #[cfg(feature = "sync")]
-    let found = token_arena.read().unwrap().get(token_id).cloned();
+    let found = token_arena.read().unwrap().get_cloned(token_id);
 
     found.map_or_else(
         || crate::Token {

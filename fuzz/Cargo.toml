@@ -12,7 +12,8 @@ cargo-fuzz = true
 arbitrary = { workspace = true }
 itertools = { workspace = true }
 libfuzzer-sys = { workspace = true }
-mq-lang = { workspace = true }
+mq-lang = { workspace = true, features = ["mqc"] }
+sha2 = { workspace = true }
 
 [lib]
 path = "src/lib.rs"
@@ -22,4 +23,11 @@ bench = false
 doc = false
 name = "interpreter"
 path = "fuzz_targets/interpreter.rs"
+test = false
+
+[[bin]]
+bench = false
+doc = false
+name = "mqc"
+path = "fuzz_targets/mqc.rs"
 test = false

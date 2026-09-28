@@ -1746,6 +1746,7 @@ fn selector_does_not_match_non_markdown_input() {
     );
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 fn text_node(value: &str) -> mq_markdown::Node {
     mq_markdown::Node::Text(mq_markdown::Text {
         value: value.to_string(),
@@ -1762,6 +1763,30 @@ fn vm_engine_eval_many(code: &str, inputs: Vec<RuntimeValue>) -> Vec<RuntimeValu
         .unwrap()
         .values()
         .clone()
+}
+
+/// Compiles and runs `program` through the same split pipeline as `Engine::eval`.
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
+fn run_split<I, R: ModuleResolver>(
+    program: &Program,
+    inputs: I,
+    mut context: EngineRunContext<'_, R>,
+) -> Result<Vec<RuntimeValue>, Error>
+where
+    I: Iterator<Item = RuntimeValue>,
+{
+    let split = split_program::SplitProgram::compile(program, &mut context, None)?;
+    split.run_reusing(
+        inputs,
+        &context,
+        None,
+        #[cfg(not(feature = "debugger"))]
+        VmEnvCacheKey {
+            source: 0,
+            names_revision: 0,
+            revision: 0,
+        },
+    )
 }
 
 fn assert_vm_executes(code: &str, inputs: Vec<RuntimeValue>) {
@@ -1834,13 +1859,14 @@ fn bare_soft_builtin_reference_inside_an_imported_module_becomes_reachable() {
     assert_vm_executes(code, vec![RuntimeValue::None]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_capture_uses_the_latest_slot_for_a_name_rebound_by_repeated_destructuring() {
     let code = "let [x] = [1] | let [x] = [2] | nodes | x";
     let inputs = vec![RuntimeValue::Number(1.0.into())];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -1873,7 +1899,7 @@ fn cached_nodes_capture_reuses_precomputed_slots() {
         .unwrap();
 
     assert_eq!(results.values(), &[RuntimeValue::Number(2.0.into())]);
-    assert!(compiled.cached_vm_program().flatten().is_some());
+    assert!(compiled.vm_cache().and_then(|cache| cache.get()).is_some());
 }
 
 #[rstest]
@@ -1900,6 +1926,7 @@ fn break_with_value_before_any_completed_iteration_returns_its_value(#[case] cod
     );
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_aggregates_per_input_results_into_one_run() {
     // `nodes` (see `split_at_nodes`/`run_nodes_aggregate`) collects every input's
@@ -1914,7 +1941,7 @@ fn nodes_aggregates_per_input_results_into_one_run() {
     ];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -1975,13 +2002,14 @@ fn nodes_split_also_works_through_the_debugger_hooked_entry_point() {
     assert_eq!(results, vec![RuntimeValue::Number(3.0.into())]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
     let code = ". * 10 | nodes | len()";
     let inputs = vec![RuntimeValue::Number(1.0.into()), RuntimeValue::Number(2.0.into())];
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         inputs.clone().into_iter(),
         EngineRunContext {
@@ -2000,6 +2028,7 @@ fn nodes_runs_the_pre_nodes_portion_once_per_input_first() {
     assert_eq!(results, vec![RuntimeValue::Number(2.0.into())]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     let fragment = mq_markdown::Node::Fragment(mq_markdown::Fragment {
@@ -2008,7 +2037,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     let code = r#"s"[${to_string(.)}]""#;
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(RuntimeValue::new_markdown(fragment.clone())),
         EngineRunContext {
@@ -2028,6 +2057,7 @@ fn markdown_fragment_input_that_matches_at_the_top_runs_only_once() {
     assert_eq!(results[0].to_string(), "[a\nb]");
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_below() {
     let matching_child = mq_markdown::Node::Heading(mq_markdown::Heading {
@@ -2043,7 +2073,7 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
     let code = ".h1";
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(RuntimeValue::new_markdown(outer.clone())),
         EngineRunContext {
@@ -2062,11 +2092,12 @@ fn markdown_selector_recurses_into_a_non_matching_container_to_find_matches_belo
     assert_eq!(results, vec![RuntimeValue::new_markdown(matching_child)]);
 }
 
+#[cfg(any(feature = "mqc", not(feature = "debugger")))]
 #[test]
 fn non_fragment_markdown_input_still_runs_the_query_once() {
     let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
     let program = crate::parse(".h1", Shared::clone(&token_arena)).unwrap();
-    let results = compile_and_run_many(
+    let results = run_split(
         &program,
         std::iter::once(heading(1)),
         EngineRunContext {
@@ -2848,8 +2879,8 @@ fn cached_program_restores_execution_pools_after_each_run() {
         );
         assert!(
             compiled
-                .cached_vm_program()
-                .flatten()
+                .vm_cache()
+                .and_then(|cache| cache.get())
                 .is_some_and(|cached| cached.has_available_execution_pools())
         );
     }
@@ -2913,7 +2944,7 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
             .values(),
         &[RuntimeValue::String(Shared::new("first.md".into()))]
     );
-    let first = compiled.cached_vm_program().flatten().unwrap();
+    let first = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
 
     engine.define_string_value("__FILE__", "second.md");
     assert_eq!(
@@ -2923,24 +2954,22 @@ fn cached_program_reuses_bytecode_when_only_global_values_change() {
             .values(),
         &[RuntimeValue::String(Shared::new("second.md".into()))]
     );
-    let second = compiled.cached_vm_program().flatten().unwrap();
+    let second = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
     assert!(Shared::ptr_eq(&first, &second), "value updates should reuse bytecode");
 
     engine.define_string_value("other", "new binding");
     engine
         .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
         .unwrap();
-    let third = compiled.cached_vm_program().flatten().unwrap();
+    let third = compiled.vm_cache().and_then(|cache| cache.get()).unwrap();
     assert!(!Shared::ptr_eq(&second, &third), "new names must recompile bytecode");
 }
 
 #[cfg(not(feature = "debugger"))]
 #[rstest]
 #[case::standard_module(r#"include "json" | s"${__FILE__}:${len(json_parse("[1]"))}""#, true)]
-// Conservative: module functions are scanned too.
-#[case::module_function_reads_global(r#"module m: let n = 1 | def f(): s"${__FILE__}:${n}"; end | m::f()"#, false)]
-#[case::module_let_reads_global(r#"module m: let v = s"${__FILE__}:1" end | m::v"#, false)]
-#[case::enclosing_let_reads_global(r#"let p = __FILE__ | module m: let v = s"${p}:1" end | m::v"#, false)]
+// A module can't read globals, so its lets never depend on them.
+#[case::inline_module(r#"module m: let n = 1 end | s"${__FILE__}:${m::n}""#, true)]
 fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[case] query: &str, #[case] reused: bool) {
     let mut engine = crate::DefaultEngine::default();
     engine.load_builtin_module();
@@ -2954,46 +2983,12 @@ fn cached_program_with_modules_reuses_bytecode_unless_modules_read_globals(#[cas
             values.values(),
             &[RuntimeValue::String(Shared::new(format!("{file}:1")))]
         );
-        compiled.cached_vm_program().flatten().unwrap()
+        compiled.vm_cache().and_then(|cache| cache.get()).unwrap()
     };
 
     let first = run("first.md");
     let second = run("second.md");
     assert_eq!(Shared::ptr_eq(&first, &second), reused);
-}
-
-#[cfg(not(feature = "debugger"))]
-#[test]
-fn cached_program_reflects_updated_global_in_module_var_initializer() {
-    let mut engine = crate::DefaultEngine::default();
-    engine.define_value("g", RuntimeValue::Number(1.into())).unwrap();
-    let compiled = engine.compile("module m: let x = g end | m::x").unwrap();
-
-    assert_eq!(
-        engine
-            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
-            .unwrap()
-            .values(),
-        &[RuntimeValue::Number(1.into())]
-    );
-    let first = compiled.cached_vm_program().flatten().unwrap();
-
-    // `x` was baked into the cached bytecode from `g`'s value at compile time; changing `g`
-    // must invalidate that cache, not just the plain-global lookup environment.
-    engine.define_value("g", RuntimeValue::Number(2.into())).unwrap();
-
-    assert_eq!(
-        engine
-            .eval_compiled(&compiled, std::iter::once(RuntimeValue::None))
-            .unwrap()
-            .values(),
-        &[RuntimeValue::Number(2.into())]
-    );
-    let second = compiled.cached_vm_program().flatten().unwrap();
-    assert!(
-        !Shared::ptr_eq(&first, &second),
-        "module initializers require recompilation"
-    );
 }
 
 proptest! {
@@ -3518,6 +3513,32 @@ fn drive_n_times(n: u32) -> bytecode::Chunk {
     }
     code.push(OpCode::Return);
     chunk(code, Vec::new(), 2)
+}
+
+#[rstest]
+#[case::in_the_entry_chunk(vec![chunk(
+    vec![bytecode::OpCode::PushNone, bytecode::OpCode::Yield, bytecode::OpCode::Return],
+    Vec::new(),
+    1,
+)])]
+#[case::in_a_called_chunk(vec![
+    chunk(
+        vec![bytecode::OpCode::CallStatic(1, 0), bytecode::OpCode::Return],
+        Vec::new(),
+        1,
+    ),
+    chunk(
+        vec![bytecode::OpCode::PushNone, bytecode::OpCode::Yield, bytecode::OpCode::Return],
+        Vec::new(),
+        1,
+    ),
+])]
+fn yield_outside_a_generator_is_a_corrupt_bytecode_error(#[case] chunks: Vec<bytecode::Chunk>) {
+    let error = run_generator_program(&generator_program(chunks)).unwrap_err();
+    assert!(
+        matches!(error, interpreter::VmError::Corrupt(_)),
+        "expected Corrupt, got {error}"
+    );
 }
 
 #[test]
@@ -4259,4 +4280,124 @@ fn closing_a_running_coroutine_errors() {
     };
     let message = close_error_message(vm_err).unwrap_or_else(|| panic!("expected a close error, got {err:?}"));
     assert!(message.contains("cannot close a running coroutine"));
+}
+
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone)]
+enum GeneratedDefBody {
+    AddConst(i8),
+    CallEarlier(usize, i8),
+    MapEarlier(usize),
+    ClosureOverEarlier(usize),
+    Recursive,
+    NestedDef { used: bool },
+}
+
+#[cfg(not(feature = "debugger"))]
+#[derive(Debug, Clone)]
+enum GeneratedUse {
+    Call(usize),
+    Value(usize),
+    Input,
+}
+
+#[cfg(not(feature = "debugger"))]
+fn generated_def_program(bodies: &[GeneratedDefBody], uses: &[GeneratedUse], let_first: bool) -> String {
+    let earlier = |index: usize, def: usize| if def == 0 { None } else { Some(index % def) };
+    let mut parts = Vec::new();
+    if let_first {
+        parts.push("let base = 10".to_string());
+    }
+    for (def, body) in bodies.iter().enumerate() {
+        let body = match body {
+            GeneratedDefBody::AddConst(k) => format!("x + {k}"),
+            GeneratedDefBody::CallEarlier(index, k) => match earlier(*index, def) {
+                Some(j) => format!("f{j}(x) + {k}"),
+                None => format!("x - {k}"),
+            },
+            GeneratedDefBody::MapEarlier(index) => match earlier(*index, def) {
+                Some(j) => format!("len(map([x, 1], f{j}))"),
+                None => "x".to_string(),
+            },
+            GeneratedDefBody::ClosureOverEarlier(index) => match earlier(*index, def) {
+                Some(j) => format!("let g = fn(y): f{j}(y); | g(x)"),
+                None => "let g = fn(y): y; | g(x)".to_string(),
+            },
+            GeneratedDefBody::Recursive => format!("if (x <= 0): 0 else: f{def}(x - 1) + 1"),
+            GeneratedDefBody::NestedDef { used: true } => "def h(y): y * 2; | h(x)".to_string(),
+            GeneratedDefBody::NestedDef { used: false } => "def h(y): y * 2; | x".to_string(),
+        };
+        parts.push(format!("def f{def}(x): {body};"));
+    }
+    let uses = uses
+        .iter()
+        .map(|used| match used {
+            GeneratedUse::Call(index) if !bodies.is_empty() => format!("f{}(.)", index % bodies.len()),
+            GeneratedUse::Value(index) if !bodies.is_empty() => format!("map([.], f{})", index % bodies.len()),
+            _ => ".".to_string(),
+        })
+        .collect::<Vec<_>>();
+    let base = if let_first { " + base" } else { "" };
+    parts.push(format!("[{}]{base}", uses.join(", ")));
+    parts.join(" | ")
+}
+
+#[cfg(not(feature = "debugger"))]
+fn run_with_and_without_def_dropping(code: &str) -> (Result<RuntimeValue, String>, Result<RuntimeValue, String>) {
+    let run = |uninstrumented: bool| {
+        let token_arena = Shared::new(SharedCell::new(Arena::new(1024)));
+        let program = crate::parse(code, Shared::clone(&token_arena)).map_err(|error| format!("{error:?}"))?;
+        let loader = ModuleLoader::new(StdModuleResolver);
+        let resolved = compiler::ResolvedModuleVars::default();
+        let compiled = if uninstrumented {
+            compiler::compile_uninstrumented_program_for_engine(&program, token_arena, loader, &[], &[], &[], &resolved)
+        } else {
+            compiler::compile_program_for_engine_with_bindings(&program, token_arena, loader, &[], &[], &[], &resolved)
+        }
+        .map_err(|error| format!("{error:?}"))?;
+        interpreter::run_with_globals(
+            &compiled,
+            RuntimeValue::Number(3.into()),
+            &HostFunctions::default(),
+            None,
+            Options::default().max_call_stack_depth,
+            &[],
+        )
+        .map_err(|error| format!("{error:?}"))
+    };
+    (run(true), run(false))
+}
+
+#[cfg(not(feature = "debugger"))]
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn dropping_unread_def_closures_preserves_results(
+        bodies in proptest::collection::vec(
+            prop_oneof![
+                any::<i8>().prop_map(GeneratedDefBody::AddConst),
+                (any::<usize>(), any::<i8>()).prop_map(|(index, k)| GeneratedDefBody::CallEarlier(index, k)),
+                any::<usize>().prop_map(GeneratedDefBody::MapEarlier),
+                any::<usize>().prop_map(GeneratedDefBody::ClosureOverEarlier),
+                Just(GeneratedDefBody::Recursive),
+                any::<bool>().prop_map(|used| GeneratedDefBody::NestedDef { used }),
+            ],
+            0..8,
+        ),
+        uses in proptest::collection::vec(
+            prop_oneof![
+                any::<usize>().prop_map(GeneratedUse::Call),
+                any::<usize>().prop_map(GeneratedUse::Value),
+                Just(GeneratedUse::Input),
+            ],
+            1..4,
+        ),
+        let_first in any::<bool>(),
+    ) {
+        let code = generated_def_program(&bodies, &uses, let_first);
+        let (dropped, kept) = run_with_and_without_def_dropping(&code);
+        prop_assert!(kept.is_ok(), "{code}: {kept:?}");
+        prop_assert_eq!(dropped, kept, "{}", code);
+    }
 }

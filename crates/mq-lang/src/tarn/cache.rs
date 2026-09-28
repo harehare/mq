@@ -1,15 +1,10 @@
 //! Caches compiled bytecode across repeated evaluations of the same program (non-debugger builds).
-use super::nodes_split::{
-    immutable_let_names_before_nodes, is_declaration, let_names_before_nodes, program_after_nodes, split_at_nodes,
-};
-use super::{
-    EngineRunContext, Error, compiler, engine, interpreter, map_input_values, remaining_timeout,
-    resolve_module_prelude_globals,
-};
+use super::split_program::SplitProgram;
+use super::{EngineRunContext, Error, engine};
+use crate::ModuleResolver;
 use crate::ast::Program;
 use crate::runtime::runtime_value::RuntimeValue;
-use crate::tarn::{VmEnv, VmEnvCacheKey, VmModuleCacheKey};
-use crate::{ModuleResolver, Shared, SharedCell};
+use crate::tarn::{VmEnvCacheKey, VmModuleCacheKey};
 use std::fmt;
 #[cfg(not(all(target_arch = "wasm32", feature = "wasm")))]
 use std::time::Instant;
@@ -18,39 +13,18 @@ use web_time::Instant;
 
 /// Bytecode retained for repeated VM evaluation.
 pub(crate) struct CachedProgram {
-    program: compiler::CompiledProgram,
-    after: Option<compiler::CompiledProgram>,
-    let_names: Vec<crate::Ident>,
-    /// Final slots for `let_names` in `program`, resolved once for all cached inputs.
-    let_slots: Vec<interpreter::CaptureSlot>,
+    split: SplitProgram,
     configuration: Vec<engine::VmModulePrelude>,
-    /// Global snapshot used to bake module `let` initializers into constants; must still match
-    /// for the cache to stay valid, since a global's value can change under the same name.
-    baked_globals_key: VmEnvCacheKey,
-    /// Baked module `let`s read engine globals.
-    bakes_globals: bool,
+    /// Globals the bytecode was compiled against; a new global name changes how names resolve.
+    globals_key: VmEnvCacheKey,
     /// Cached bytecode includes module definitions, which are frozen per Engine.
     module_cache_key: VmModuleCacheKey,
-    /// Frame storage retained between non-overlapping `eval_compiled` calls.
-    ///
-    /// References to a cached program share this slot. A concurrent caller that finds it empty
-    /// simply allocates an independent pool, so bytecode remains safely reusable.
-    execution_pools: Shared<SharedCell<Option<interpreter::ExecutionPools>>>,
-    /// Lookup table for the most recently used engine-global snapshot. This is independent of
-    /// frame pools: concurrent callers can safely retain different environments.
-    environment: Shared<SharedCell<Option<CachedEnvironment>>>,
-}
-
-struct CachedEnvironment {
-    key: VmEnvCacheKey,
-    env: Shared<VmEnv>,
 }
 
 impl fmt::Debug for CachedProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CachedProgram")
-            .field("program", &self.program)
-            .field("after", &self.after)
+            .field("split", &self.split)
             .field("configuration", &self.configuration)
             .finish_non_exhaustive()
     }
@@ -61,21 +35,14 @@ impl CachedProgram {
     /// Whether the program run once per input instantiates any closure at top level.
     pub(crate) fn per_input_program_makes_closures(&self) -> bool {
         use super::bytecode::OpCode;
-        self.program.chunks[0]
+        self.split.program.chunks[0]
             .code
             .iter()
             .any(|op| matches!(op, OpCode::MakeClosure(_) | OpCode::MakeStaticClosure(_)))
     }
 
     pub(crate) fn has_available_execution_pools(&self) -> bool {
-        #[cfg(not(feature = "sync"))]
-        {
-            self.execution_pools.borrow().is_some()
-        }
-        #[cfg(feature = "sync")]
-        {
-            self.execution_pools.read().unwrap().is_some()
-        }
+        self.split.has_available_execution_pools()
     }
 }
 
@@ -88,143 +55,15 @@ pub(super) fn compile_cached_program<R: ModuleResolver>(
     context: &mut EngineRunContext<'_, R>,
     configuration: Vec<engine::VmModulePrelude>,
     deadline: Option<Instant>,
-    baked_globals_key: VmEnvCacheKey,
+    globals_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> Result<CachedProgram, Error> {
-    let token_arena = Shared::clone(&context.token_arena);
-    let global_bindings = context.global_bindings;
-    let mut global_names: Vec<crate::Ident> = global_bindings.iter().map(|(name, _)| *name).collect();
-    global_names.sort_unstable();
-    // Resolve on `context.module_loader` itself so the clone below inherits already-loaded
-    // (and AST-cached) modules instead of the real compile loading them again.
-    let preresolved_module_vars = resolve_module_prelude_globals(program, context, deadline)?;
-    let module_loader = context.module_loader.clone();
-    let (program, after, let_names) = if let Some((before, after)) = split_at_nodes(program) {
-        let let_names = let_names_before_nodes(before);
-        let immutable_let_names = immutable_let_names_before_nodes(before);
-        // Declarations pass each input through unchanged, and `after` re-declares them once.
-        // Compiling them here would re-instantiate every module `def` for each input.
-        let per_input = if before.iter().all(|node| is_declaration(node)) {
-            Program::new()
-        } else {
-            before.to_vec()
-        };
-        (
-            compiler::compile_program_for_engine(
-                &per_input,
-                Shared::clone(&token_arena),
-                module_loader.clone(),
-                &global_names,
-                &preresolved_module_vars,
-            )?,
-            Some(compiler::compile_program_for_engine_with_bindings(
-                &program_after_nodes(before, after),
-                token_arena,
-                module_loader,
-                &let_names,
-                &immutable_let_names,
-                &global_names,
-                &preresolved_module_vars,
-            )?),
-            let_names,
-        )
-    } else {
-        (
-            compiler::compile_program_for_engine(
-                program,
-                token_arena,
-                module_loader,
-                &global_names,
-                &preresolved_module_vars,
-            )?,
-            None,
-            Vec::new(),
-        )
-    };
-    let let_slots = interpreter::capture_slots(&program.chunks[0], &let_names);
     Ok(CachedProgram {
-        program,
-        after,
-        let_names,
-        let_slots,
+        split: SplitProgram::compile(program, context, deadline)?,
         configuration,
-        baked_globals_key,
-        bakes_globals: preresolved_module_vars.reads_globals,
+        globals_key,
         module_cache_key,
-        execution_pools: Shared::new(SharedCell::new(Some(interpreter::ExecutionPools::default()))),
-        environment: Shared::new(SharedCell::new(None)),
     })
-}
-
-fn cached_environment(
-    compiled: &CachedProgram,
-    key: VmEnvCacheKey,
-    global_bindings: &[(crate::Ident, RuntimeValue)],
-) -> Shared<VmEnv> {
-    #[cfg(not(feature = "sync"))]
-    {
-        let mut slot = compiled.environment.borrow_mut();
-        if let Some(environment) = slot.as_ref()
-            && environment.key == key
-        {
-            return Shared::clone(&environment.env);
-        }
-        let env = Shared::new(VmEnv::from_bindings(
-            global_bindings,
-            Shared::clone(&compiled.program.token_arena),
-        ));
-        *slot = Some(CachedEnvironment {
-            key,
-            env: Shared::clone(&env),
-        });
-        env
-    }
-    #[cfg(feature = "sync")]
-    {
-        let mut slot = compiled.environment.write().unwrap();
-        if let Some(environment) = slot.as_ref()
-            && environment.key == key
-        {
-            return Shared::clone(&environment.env);
-        }
-        let env = Shared::new(VmEnv::from_bindings(
-            global_bindings,
-            Shared::clone(&compiled.program.token_arena),
-        ));
-        *slot = Some(CachedEnvironment {
-            key,
-            env: Shared::clone(&env),
-        });
-        env
-    }
-}
-
-fn take_execution_pools(compiled: &CachedProgram) -> interpreter::ExecutionPools {
-    #[cfg(not(feature = "sync"))]
-    {
-        compiled.execution_pools.borrow_mut().take().unwrap_or_default()
-    }
-    #[cfg(feature = "sync")]
-    {
-        compiled.execution_pools.write().unwrap().take().unwrap_or_default()
-    }
-}
-
-fn restore_execution_pools(compiled: &CachedProgram, pools: interpreter::ExecutionPools) {
-    #[cfg(not(feature = "sync"))]
-    {
-        let mut slot = compiled.execution_pools.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(pools);
-        }
-    }
-    #[cfg(feature = "sync")]
-    {
-        let mut slot = compiled.execution_pools.write().unwrap();
-        if slot.is_none() {
-            *slot = Some(pools);
-        }
-    }
 }
 
 /// Returns whether bytecode was compiled with the same Engine configuration and frozen modules.
@@ -234,11 +73,10 @@ pub(super) fn cached_program_is_current(
     environment_key: VmEnvCacheKey,
     module_cache_key: VmModuleCacheKey,
 ) -> bool {
-    // Global values matter only when baked into module `let`s.
+    // Global values are read at run time; only their names matter here.
     if compiled.configuration != configuration
-        || compiled.baked_globals_key.source != environment_key.source
-        || compiled.baked_globals_key.names_revision != environment_key.names_revision
-        || (compiled.bakes_globals && compiled.baked_globals_key.revision != environment_key.revision)
+        || compiled.globals_key.source != environment_key.source
+        || compiled.globals_key.names_revision != environment_key.names_revision
         || compiled.module_cache_key != module_cache_key
     {
         return false;
@@ -261,83 +99,5 @@ pub(super) fn run_cached<I>(
 where
     I: Iterator<Item = RuntimeValue>,
 {
-    // Pools contain mutable frame storage, so a caller takes exclusive ownership for the
-    // duration of its evaluation and restores it on every exit path.
-    let mut pools = take_execution_pools(compiled);
-    let result = (|| {
-        // Reuse the map until this engine changes its globals. This also covers line-oriented
-        // callers, which invoke `eval_compiled` once per row.
-        let env = cached_environment(compiled, environment_key, context.global_bindings);
-        let mut values = Vec::new();
-        let mut let_bindings: Vec<(crate::Ident, RuntimeValue)> = Vec::new();
-        for input in inputs {
-            let result = map_input_values(input, |value| {
-                let execution_pools = std::mem::take(&mut pools);
-                if compiled.let_names.is_empty() {
-                    let (result, next_pools) = interpreter::run_with_env_and_pools(
-                        &compiled.program,
-                        value,
-                        context.run_options(remaining_timeout(deadline)),
-                        &env,
-                        execution_pools,
-                    );
-                    pools = next_pools;
-                    result
-                } else {
-                    let (result, captured, next_pools) = interpreter::run_with_env_capturing_slots(
-                        &compiled.program,
-                        value,
-                        &[],
-                        context.run_options(remaining_timeout(deadline)),
-                        &env,
-                        &compiled.let_slots,
-                        execution_pools,
-                    );
-                    pools = next_pools;
-                    if result.is_ok() {
-                        let_bindings = captured;
-                    }
-                    result
-                }
-            });
-            match result {
-                Ok(value) => values.push(value),
-                Err(error) => return Err(Error::from(error)),
-            }
-        }
-        let Some(after) = &compiled.after else {
-            return Ok(values);
-        };
-        let input = RuntimeValue::Array(Shared::new(values));
-        let result = if compiled.let_names.is_empty() {
-            let (result, next_pools) = interpreter::run_with_env_and_pools(
-                after,
-                input,
-                context.run_options(remaining_timeout(deadline)),
-                &env,
-                std::mem::take(&mut pools),
-            );
-            pools = next_pools;
-            result
-        } else {
-            let let_values: Vec<RuntimeValue> = let_bindings.into_iter().map(|(_, value)| value).collect();
-            let (result, _, next_pools) = interpreter::run_with_env_capturing_locals(
-                after,
-                input,
-                &let_values,
-                context.run_options(remaining_timeout(deadline)),
-                &env,
-                &[],
-                std::mem::take(&mut pools),
-            );
-            pools = next_pools;
-            result
-        };
-        match result? {
-            RuntimeValue::Array(values) => Ok(Shared::unwrap_or_clone(values)),
-            value => Ok(vec![value]),
-        }
-    })();
-    restore_execution_pools(compiled, pools);
-    result
+    compiled.split.run_reusing(inputs, context, deadline, environment_key)
 }

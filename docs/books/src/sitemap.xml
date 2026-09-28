@@ -73,6 +73,10 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://mqlang.org/book/start/compiled-programs</loc>
+    <priority>1.0</priority>
+  </url>
+  <url>
     <loc>https://mqlang.org/book/cookbook</loc>
     <priority>1.0</priority>
   </url>

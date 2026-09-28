@@ -34,7 +34,8 @@ impl Hir {
             .iter()
             .filter_map(|(symbol_id, symbol)| match symbol.kind {
                 SymbolKind::Call | SymbolKind::Ref => {
-                    if self.references.contains_key(&symbol_id) {
+                    // builtin.mq may call functions gated behind mq-lang features this build lacks.
+                    if self.references.contains_key(&symbol_id) || self.is_builtin_symbol(symbol) {
                         None
                     } else {
                         Some(HirError::UnresolvedSymbol {
@@ -362,6 +363,89 @@ mod tests {
                 .iter()
                 .all(|error| !matches!(error, HirError::YieldOutsideFunction { .. }))
         );
+    }
+
+    fn unresolved_names(hir: &Hir) -> Vec<String> {
+        hir.errors()
+            .iter()
+            .filter_map(|error| match error {
+                HirError::UnresolvedSymbol { symbol, .. } => symbol.value.as_ref().map(ToString::to_string),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[case::enclosing_let_from_def("let x = 1 | module m: def f(): x; end | m::f()", "x")]
+    #[case::enclosing_let_from_let("let x = 1 | module m: let y = x end | m::y", "x")]
+    #[case::enclosing_def("def g(): 1; | module m: let y = g() end | m::y", "g")]
+    #[case::nested_module_sees_outer_module("module a: def f(): 1; module b: def g(): f(); end end | a::b::g()", "f")]
+    #[case::enclosing_let_beside_nested_module(
+        "let x = 1 | module m: module n: def g(): 1; end | def f(): x; end | m::f()",
+        "x"
+    )]
+    fn test_module_cannot_see_outside(#[case] code: &str, #[case] name: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, code);
+
+        assert_eq!(unresolved_names(&hir), [name], "{code}");
+    }
+
+    #[rstest]
+    #[case::own_def_from_let("module m: def f(): 1; let y = f() end | m::y")]
+    #[case::own_let_from_def("module m: let y = 1 | def f(): y; end | m::f()")]
+    #[case::parameter("module m: def f(x): x + 1; end | m::f(1)")]
+    #[case::local_let_in_def("module m: def f(): let x = 1 | x; end | m::f()")]
+    #[case::outside_after_module("module m: def f(): 1; end | let x = 1 | x")]
+    fn test_module_sees_what_it_declares(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, code);
+
+        assert!(
+            unresolved_names(&hir).is_empty(),
+            "{code}: {:?}",
+            unresolved_names(&hir)
+        );
+    }
+
+    #[rstest]
+    #[case::bare_top_level("import \"csv\" | csv_parse(\"a\", true)", true)]
+    #[case::bare_in_module("module m: import \"csv\" | def f(): csv_parse(\"a\", true); end | m::f()", true)]
+    #[case::qualified_top_level("import \"csv\" | csv::csv_parse(\"a\", true)", false)]
+    #[case::qualified_in_module(
+        "module m: import \"csv\" | def f(): csv::csv_parse(\"a\", true); end | m::f()",
+        false
+    )]
+    fn test_imported_names_need_qualification(#[case] code: &str, #[case] unresolved: bool) {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, code);
+
+        assert_eq!(
+            unresolved_names(&hir).contains(&"csv_parse".to_string()),
+            unresolved,
+            "{code}"
+        );
+    }
+
+    #[test]
+    fn test_module_sees_builtins() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "module m: def f(): upcase(); end | m::f()");
+
+        assert!(!unresolved_names(&hir).contains(&"upcase".to_string()));
+    }
+
+    #[test]
+    fn test_errors_skip_the_builtin_module() {
+        let mut hir = Hir::default();
+        let _ = hir.add_code(None, "1");
+
+        assert!(hir.errors().iter().all(|error| match error {
+            HirError::UnresolvedSymbol { symbol, .. } => !hir.is_builtin_symbol(symbol),
+            _ => true,
+        }));
     }
 
     #[test]

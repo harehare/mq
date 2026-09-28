@@ -463,6 +463,156 @@ pub(crate) enum OpCode {
     Resume(u8),
 }
 
+impl OpCode {
+    /// Visits explicit local slot operands (not the implicit `self` slot).
+    pub(crate) fn for_each_local_slot_mut(&mut self, mut visit: impl FnMut(&mut u16)) {
+        match self {
+            Self::GetLocal(slot)
+            | Self::SetLocal(slot)
+            | Self::TeeLocal(slot)
+            | Self::ArrayNewWithCapacityLocal(slot)
+            | Self::ArrayLenLocal(slot)
+            | Self::ForeachCollect(slot)
+            | Self::ForeachCollectAndJump { slot, .. }
+            | Self::CallBuiltinLocal { local: slot, .. }
+            | Self::CallLocal(slot, _)
+            | Self::CallUpvalueLocal { local: slot, .. }
+            | Self::ReturnLocal(slot)
+            | Self::SetLocalConst { local: slot, .. }
+            | Self::BinaryLocalConst { local: slot, .. }
+            | Self::BinaryLocalNumberConst { local: slot, .. }
+            | Self::UpdateLocalConst { local: slot, .. }
+            | Self::UpdateLocalNumberConst { local: slot, .. }
+            | Self::JumpIfFalseLocalConst { local: slot, .. }
+            | Self::JumpIfFalseLocalNumberConst { local: slot, .. }
+            | Self::ReturnBinaryLocalConst { local: slot, .. }
+            | Self::ReturnBinaryLocalNumberConst { local: slot, .. } => visit(slot),
+            Self::SetLocalAndCopy { source, destination }
+            | Self::SetLocalAndCopyAndJump {
+                source, destination, ..
+            }
+            | Self::CopyLocal { source, destination } => {
+                visit(source);
+                visit(destination);
+            }
+            Self::BinaryLocalLocal { left, right, .. }
+            | Self::JumpIfFalseLocalLocal { left, right, .. }
+            | Self::ReturnBinaryLocalLocal { left, right, .. }
+            | Self::UpdateLocalLocal {
+                local: left,
+                value: right,
+                ..
+            }
+            | Self::ArrayGetLocalAt {
+                array_slot: left,
+                index_slot: right,
+            }
+            | Self::DictGetLocalOrFail {
+                subject_slot: left,
+                value_slot: right,
+                ..
+            }
+            | Self::ForeachBinaryLocalNumberConstAndJump {
+                local: left,
+                accumulator_slot: right,
+                ..
+            } => {
+                visit(left);
+                visit(right);
+            }
+            Self::ForeachNext {
+                array_slot,
+                index_slot,
+                value_slot,
+                ..
+            } => {
+                visit(array_slot);
+                visit(index_slot);
+                visit(value_slot);
+            }
+            Self::MakeClosure(payload) => {
+                for source in &mut payload.1 {
+                    if let UpvalueSource::Local(slot) = source {
+                        visit(slot);
+                    }
+                }
+            }
+            Self::TryCatch(info) => {
+                if let Some(slot) = &mut info.break_acc_slot {
+                    visit(slot);
+                }
+                if let Some(slot) = &mut info.break_completed_iteration_slot {
+                    visit(slot);
+                }
+            }
+            #[cfg(feature = "debugger")]
+            Self::StmtBoundary(_) | Self::SyncCallNode(_) | Self::Breakpoint(_) => {}
+            Self::Const(_)
+            | Self::PushNone
+            | Self::GetUpvalue(_)
+            | Self::SetUpvalue(_)
+            | Self::MakeStaticClosure(_)
+            | Self::Pop
+            | Self::Dup
+            | Self::Jump(_)
+            | Self::JumpIfFalse(_)
+            | Self::Add
+            | Self::Sub
+            | Self::Mul
+            | Self::Div
+            | Self::Mod
+            | Self::Eq
+            | Self::Ne
+            | Self::Lt
+            | Self::Le
+            | Self::Gt
+            | Self::Ge
+            | Self::Neg
+            | Self::Not
+            | Self::ArrayNew
+            | Self::ArrayPush
+            | Self::ArraySpread
+            | Self::DictNew
+            | Self::DictInsert
+            | Self::DictSpread
+            | Self::ToForeachIterable
+            | Self::ArrayLen
+            | Self::ArrayGetAt
+            | Self::ArraySliceFrom
+            | Self::TypeCheck(_)
+            | Self::GetEnvVar(_)
+            | Self::GetExternalGlobal(_)
+            | Self::InterpString(_)
+            | Self::SelectorMatch(_)
+            | Self::SelectorMatchKind(_)
+            | Self::SelectorMatchHeading(_)
+            | Self::SelectorMatchWithArgs(_)
+            | Self::CallBuiltin(..)
+            | Self::CallStatic(..)
+            | Self::CallStaticExact(..)
+            | Self::CallStaticExact0(_)
+            | Self::CallStaticExact1(_)
+            | Self::CallStaticExact2(_)
+            | Self::CallStaticImplicitSelf(..)
+            | Self::CallSelf(_)
+            | Self::CallSelfExact(_)
+            | Self::CallSelfExact0
+            | Self::CallSelfExact1
+            | Self::CallSelfExact2
+            | Self::CallSelfImplicitSelf(_)
+            | Self::CallUpvalue(..)
+            | Self::CallValue(_)
+            | Self::MaybeAutoCall
+            | Self::FlowBreak(_)
+            | Self::FlowContinue
+            | Self::RaiseDestructuringFailed
+            | Self::Return
+            | Self::Yield
+            | Self::Resume(_) => {}
+        }
+    }
+}
+
 #[cfg(feature = "vm-profile")]
 impl OpCode {
     /// Returns a stable opcode name for execution-count profiling.
@@ -778,6 +928,16 @@ pub(crate) enum BytecodeError {
         pc: usize,
         index: u16,
     },
+    EnvNameNotString {
+        chunk: usize,
+        pc: usize,
+        index: u16,
+    },
+    InvalidResumeArity {
+        chunk: usize,
+        pc: usize,
+        argc: u8,
+    },
     LocalOutOfBounds {
         chunk: usize,
         pc: usize,
@@ -821,6 +981,18 @@ pub(crate) enum BytecodeError {
         required: usize,
         available: usize,
     },
+    VerificationWorkLimit {
+        chunk: usize,
+    },
+    #[cfg(feature = "mqc")]
+    MissingSelfSlot(usize),
+    #[cfg(feature = "mqc")]
+    EntryChunkCaptures,
+    #[cfg(feature = "mqc")]
+    FixedParamSlotInvalid {
+        chunk: usize,
+        param: usize,
+    },
 }
 
 impl fmt::Display for BytecodeError {
@@ -846,6 +1018,15 @@ impl fmt::Display for BytecodeError {
             }
             Self::ConstantOutOfBounds { chunk, pc, index } => {
                 write!(f, "chunk {chunk} pc {pc} references constant {index} out of bounds")
+            }
+            Self::EnvNameNotString { chunk, pc, index } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} uses non-string constant {index} as an environment variable name"
+                )
+            }
+            Self::InvalidResumeArity { chunk, pc, argc } => {
+                write!(f, "chunk {chunk} pc {pc} resumes with invalid argument count {argc}")
             }
             Self::LocalOutOfBounds { chunk, pc, slot } => {
                 write!(f, "chunk {chunk} pc {pc} references local slot {slot} out of bounds")
@@ -891,6 +1072,17 @@ impl fmt::Display for BytecodeError {
                     "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
                 )
             }
+            Self::VerificationWorkLimit { chunk } => {
+                write!(f, "bytecode verification work limit exceeded in chunk {chunk}")
+            }
+            #[cfg(feature = "mqc")]
+            Self::MissingSelfSlot(chunk) => write!(f, "chunk {chunk} has no local slot for self"),
+            #[cfg(feature = "mqc")]
+            Self::EntryChunkCaptures => write!(f, "the entry chunk captures values, but nothing can supply them"),
+            #[cfg(feature = "mqc")]
+            Self::FixedParamSlotInvalid { chunk, param } => {
+                write!(f, "chunk {chunk} binds parameter {param} outside its fixed-arity slot")
+            }
         }
     }
 }
@@ -906,6 +1098,13 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
     if chunks.len() > usize::from(u16::MAX) + 1 {
         return Err(BytecodeError::TooManyChunks(chunks.len()));
     }
+    // A crafted control-flow graph can lower the inferred stack height at the same
+    // instruction many times. Bound the total work across all chunks before running
+    // untrusted bytecode. Normal compiler output visits each instruction only a few times.
+    let instruction_count = chunks
+        .iter()
+        .fold(0usize, |total, chunk| total.saturating_add(chunk.code.len()));
+    let mut remaining_work = instruction_count.saturating_mul(64).clamp(1_000_000, 16_000_000);
     for (chunk_index, chunk) in chunks.iter().enumerate() {
         if chunk.code.len() > u32::MAX as usize {
             return Err(BytecodeError::TooManyInstructions {
@@ -963,12 +1162,22 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                             index: *index,
                         });
                     }
+                    if matches!(op, OpCode::GetEnvVar(_))
+                        && !matches!(&chunk.constants[*index as usize], RuntimeValue::String(_))
+                    {
+                        return Err(BytecodeError::EnvNameNotString {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
                 }
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
                 | OpCode::TeeLocal(slot)
                 | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
+                | OpCode::CallBuiltinLocal { local: slot, .. }
                 | OpCode::ForeachCollect(slot)
                 | OpCode::ArrayLenLocal(slot)
                 | OpCode::ArrayNewWithCapacityLocal(slot) => {
@@ -1204,6 +1413,22 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         });
                     }
                 }
+                OpCode::CallUpvalueLocal { index, local } => {
+                    if *index as usize >= chunk.upvalue_names.len() {
+                        return Err(BytecodeError::UpvalueOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                    if *local >= chunk.local_count {
+                        return Err(BytecodeError::LocalOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            slot: *local,
+                        });
+                    }
+                }
                 OpCode::MakeClosure(payload) => {
                     let (target, sources) = payload.as_ref();
                     verify_chunk_target(chunks, chunk_index, pc, *target)?;
@@ -1379,6 +1604,13 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
                 }
+                OpCode::Resume(argc) if !matches!(*argc, 1 | 2) => {
+                    return Err(BytecodeError::InvalidResumeArity {
+                        chunk: chunk_index,
+                        pc,
+                        argc: *argc,
+                    });
+                }
                 // Neither carries a checkable index; listed explicitly so a real operand added
                 // later doesn't silently skip verification via the wildcard below.
                 OpCode::Yield | OpCode::Resume(_) => {}
@@ -1400,17 +1632,46 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 verify_closure_capture_count(chunks, chunk_index, pc, *default_chunk, sources.len())?;
             }
         }
-        verify_stack_effects(chunk, chunk_index)?;
+        verify_stack_effects(chunk, chunk_index, &mut remaining_work)?;
+        #[cfg(feature = "mqc")]
+        verify_frame_layout(chunk, chunk_index)?;
+    }
+    Ok(())
+}
+
+/// Calls write `self` to slot 0 and fixed-arity arguments to slots `1..=arity` directly.
+#[cfg(feature = "mqc")]
+fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
+    if usize::from(chunk.local_count) <= usize::from(SELF_SLOT) {
+        return Err(BytecodeError::MissingSelfSlot(chunk_index));
+    }
+    // The entry chunk runs without a closure, so it has no captured values.
+    if chunk_index == 0 && !chunk.upvalue_names.is_empty() {
+        return Err(BytecodeError::EntryChunkCaptures);
+    }
+    if chunk.param_shape.fixed_required_arity().is_some() {
+        for (param, binding) in chunk.param_shape.bindings.iter().enumerate() {
+            if !matches!(binding, ParamBinding::Required(slot) if usize::from(*slot) == usize::from(SELF_SLOT) + 1 + param)
+            {
+                return Err(BytecodeError::FixedParamSlotInvalid {
+                    chunk: chunk_index,
+                    param,
+                });
+            }
+        }
     }
     Ok(())
 }
 
 /// Verifies stack depth through a chunk's control-flow graph.
-fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
+fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut usize) -> Result<(), BytecodeError> {
     let mut heights = vec![None; chunk.code.len()];
     let mut pending = std::collections::VecDeque::from([(0usize, 0usize)]);
 
     while let Some((pc, height)) = pending.pop_front() {
+        *remaining_work = remaining_work
+            .checked_sub(1)
+            .ok_or(BytecodeError::VerificationWorkLimit { chunk: chunk_index })?;
         match heights[pc] {
             // Stack-polymorphic branches are safe when their minimum height is safe.
             Some(previous) if previous <= height => continue,
@@ -1481,6 +1742,9 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecod
                 }
             }
             _ => enqueue(pc + 1, next_height),
+        }
+        if pending.len() > 1_000_000 {
+            return Err(BytecodeError::VerificationWorkLimit { chunk: chunk_index });
         }
     }
     Ok(())
@@ -1569,8 +1833,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::CallLocal(_, count)
         | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
         OpCode::CallUpvalueLocal { .. } => (0, 1),
-        // The interpreter treats `argc == 2` as `send` (pops 2) and anything else as `next`
-        // (pops 1), regardless of the declared count; mirror that exactly here.
+        // The verifier permits only 1 (`next`) or 2 (`send`).
         OpCode::Resume(count) => (if *count == 2 { 2 } else { 1 }, 1),
         OpCode::CallStaticExact0(_) | OpCode::CallSelfExact0 => (0, 1),
         OpCode::CallStaticExact1(_) | OpCode::CallSelfExact1 => (1, 1),
@@ -1735,6 +1998,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn stack_verifier_stops_when_its_shared_work_budget_is_exhausted() {
+        let chunk = Chunk {
+            code: vec![OpCode::PushNone, OpCode::Return],
+            ..Default::default()
+        };
+        let mut remaining_work = 0;
+        assert_eq!(
+            verify_stack_effects(&chunk, 3, &mut remaining_work),
+            Err(BytecodeError::VerificationWorkLimit { chunk: 3 })
+        );
+
+        let mut remaining_work = 2;
+        assert_eq!(verify_stack_effects(&chunk, 3, &mut remaining_work), Ok(()));
+        assert_eq!(remaining_work, 0);
+    }
+
     #[rstest]
     #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0, 0)]
     #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1, 0)]
@@ -1747,8 +2027,6 @@ mod tests {
         0,
         1,
     )]
-    // The interpreter always pops one operand for `Resume`, even when `argc` is 0.
-    #[case::resume_zero_argc_still_pops_one(vec![OpCode::Resume(0), OpCode::Return], 0, 1, 0, 0)]
     fn verifier_rejects_stack_underflow(
         #[case] code: Vec<OpCode>,
         #[case] pc: usize,
@@ -1899,6 +2177,10 @@ mod tests {
         OpCode::ForeachNext { array_slot: 0, index_slot: 0, value_slot: 0, exit_offset: 1 },
         OpCode::Return,
     ])]
+    #[case::call_builtin_local(vec![
+        OpCode::CallBuiltinLocal { builtin: Ident::new("f"), local: 0 },
+        OpCode::Return,
+    ])]
     fn verifier_rejects_out_of_bounds_local_slots(#[case] code: Vec<OpCode>) {
         let chunk = Chunk {
             code,
@@ -1926,6 +2208,35 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[chunk]),
             Err(BytecodeError::LocalOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_rejects_non_string_environment_name() {
+        let chunk = Chunk {
+            code: vec![OpCode::GetEnvVar(0), OpCode::Return],
+            constants: vec![RuntimeValue::None],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::EnvNameNotString { index: 0, .. })
+        ));
+    }
+
+    #[rstest]
+    #[case::zero(0)]
+    #[case::three(3)]
+    fn verifier_rejects_invalid_resume_arity(#[case] argc: u8) {
+        let chunk = Chunk {
+            code: vec![OpCode::PushNone, OpCode::PushNone, OpCode::Resume(argc), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::InvalidResumeArity { argc: actual, .. }) if actual == argc
         ));
     }
 
@@ -2150,6 +2461,23 @@ mod tests {
             verify_chunks(&[caller, generator]),
             Err(BytecodeError::StaticCallTargetInvalid { .. })
         ));
+    }
+
+    #[rstest]
+    #[case::upvalue(0, 1, BytecodeError::UpvalueOutOfBounds { chunk: 0, pc: 0, index: 0 })]
+    #[case::local(1, 0, BytecodeError::LocalOutOfBounds { chunk: 0, pc: 0, slot: 0 })]
+    fn verifier_rejects_out_of_bounds_call_upvalue_local(
+        #[case] upvalue_count: usize,
+        #[case] local_count: u16,
+        #[case] expected: BytecodeError,
+    ) {
+        let chunk = Chunk {
+            code: vec![OpCode::CallUpvalueLocal { index: 0, local: 0 }, OpCode::Return],
+            upvalue_names: vec![Ident::new("f"); upvalue_count],
+            local_count,
+            ..Default::default()
+        };
+        assert_eq!(verify_chunks(&[chunk]), Err(expected));
     }
 
     #[test]

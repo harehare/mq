@@ -67,7 +67,11 @@ pub(crate) fn response(
             let symbols = if let Some(module_symbols) = module_completion {
                 module_symbols
             } else {
-                let scope_symbols = hir_guard.find_symbols_in_scope(scope_id);
+                let scope_symbols = hir_guard.find_visible_symbols_in_scope(
+                    scope_id,
+                    *source_id,
+                    mq_lang::Position::new(position.line + 1, (position.character + 1) as usize),
+                );
                 let builtin_scope_id = hir_guard.builtin.scope_id;
                 // Top-level only; builtin.mq calls/locals would shadow builtins.
                 let builtin_symbols = hir_guard
@@ -214,6 +218,35 @@ mod tests {
 
         if let Some(CompletionResponse::Array(items)) = result {
             assert!(items.iter().any(|item| item.label == "func1"));
+        }
+    }
+
+    #[test]
+    fn test_completion_inside_module_offers_only_its_own_names() {
+        let code = "let outer = 1\n| module m:\n  def f(): 1;\n  | let own = 2\nend\n| outer\n";
+        let cases: &[(Position, &[&str], &[&str])] = &[
+            (Position::new(2, 11), &["f", "own", "add"], &["outer"]),
+            (Position::new(5, 3), &["outer", "add"], &[]),
+        ];
+        for (position, expected, unexpected) in cases {
+            let mut hir = Hir::default();
+            let mut source_map = BiMap::new();
+            let url = Url::parse("file:///module.mq").unwrap();
+            let (source_id, _) = hir.add_code(Some(url.clone()), code);
+            source_map.insert(url.to_string(), source_id);
+
+            let Some(CompletionResponse::Array(items)) =
+                response(Arc::new(RwLock::new(hir)), url, *position, &source_map)
+            else {
+                panic!("expected completion items");
+            };
+            let labels = items.iter().map(|item| item.label.as_str()).collect::<Vec<_>>();
+            for name in *expected {
+                assert!(labels.contains(name), "{name} missing at {position:?}");
+            }
+            for name in *unexpected {
+                assert!(!labels.contains(name), "{name} offered at {position:?}");
+            }
         }
     }
 

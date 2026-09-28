@@ -9,6 +9,7 @@ use crate::{
         error::ModuleError,
         resolver::{DefaultModuleResolver, ModuleResolver},
     },
+    root_token_arena,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use smol_str::SmolStr;
@@ -28,6 +29,9 @@ thread_local! {
 pub type ModuleId = ArenaId<ModuleName>;
 
 type ModuleName = SmolStr;
+
+/// Marks module names registered from `.mqc` programs; never part of a real module name.
+const PRECOMPILED_NAME_PREFIX: char = '\0';
 type StandardModules = FxHashMap<SmolStr, fn() -> &'static str>;
 
 impl<T: ModuleResolver> Default for ModuleLoader<T> {
@@ -69,8 +73,14 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     #[cfg(feature = "debugger")]
     pub(crate) source_code: Option<String>,
     source_cache: FxHashMap<ModuleId, String>,
-    /// Parsed builtin AST tied to the token arena it was created in.
-    builtin_module_cache: Option<(TokenArena, Module)>,
+    /// Sources of modules registered from `.mqc` programs, keyed by the id their tokens carry.
+    #[cfg(feature = "mqc")]
+    precompiled_sources: FxHashMap<ModuleId, Shared<str>>,
+    /// The id registered for each `.mqc` module name and source.
+    #[cfg(feature = "mqc")]
+    precompiled_ids: FxHashMap<(SmolStr, Shared<str>), ModuleId>,
+    /// Parsed builtin AST tied to the token arena it was created in, shared by derived loaders.
+    builtin_module_cache: Option<(TokenArena, Shared<Module>)>,
     /// Parsed `Module`s, so `reload_cached` can reuse an AST already parsed by this loader
     /// instead of reparsing its cached source.
     module_ast_cache: FxHashMap<ModuleId, Module>,
@@ -78,6 +88,16 @@ pub struct ModuleLoader<T: ModuleResolver = DefaultModuleResolver> {
     /// Tracks sub-module loading depth; HTTP imports are blocked when this is greater than zero.
     #[cfg(feature = "http-import")]
     http_depth: usize,
+}
+
+/// A file module a [`ModuleLoader`] resolved.
+#[cfg(feature = "mqc")]
+pub(crate) struct ResolvedModule<'a> {
+    /// The display name, which is also the default import alias (e.g. `csv`).
+    pub(crate) name: String,
+    /// The path given to `import`/`include`, which identifies the module.
+    pub(crate) specifier: String,
+    pub(crate) source: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -147,6 +167,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
             #[cfg(feature = "debugger")]
             source_code: None,
             source_cache: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_sources: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_ids: FxHashMap::default(),
             builtin_module_cache: None,
             module_ast_cache: FxHashMap::default(),
             resolver,
@@ -156,10 +180,25 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub(crate) fn with_same_resolver(&self) -> Self {
-        let mut loader = Self::new(self.resolver.clone());
-        loader.module_names = Shared::clone(&self.module_names);
-        loader.builtin_module_cache = self.builtin_module_cache.clone();
-        loader
+        // Built directly: `new` would allocate a module-name arena only to replace it.
+        let mut loaded_modules = FxHashSet::default();
+        loaded_modules.insert(Module::TOP_LEVEL_MODULE_ID);
+        Self {
+            loaded_modules,
+            module_names: Shared::clone(&self.module_names),
+            #[cfg(feature = "debugger")]
+            source_code: None,
+            source_cache: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_sources: FxHashMap::default(),
+            #[cfg(feature = "mqc")]
+            precompiled_ids: FxHashMap::default(),
+            builtin_module_cache: self.builtin_module_cache.clone(),
+            module_ast_cache: FxHashMap::default(),
+            resolver: self.resolver.clone(),
+            #[cfg(feature = "http-import")]
+            http_depth: 0,
+        }
     }
 
     /// Returns the id of `name`, registering it first if it has none yet.
@@ -216,7 +255,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
                 names
                     .get(module_id)
-                    .map(|s| Cow::Owned(s.to_string()))
+                    .map(|s| Cow::Owned(s.strip_prefix(PRECOMPILED_NAME_PREFIX).unwrap_or(s).to_string()))
                     .unwrap_or_else(|| Cow::Borrowed("<unknown>"))
             }
         }
@@ -359,6 +398,50 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         self.load_keyed(module_path, &name, &program, token_arena)
     }
 
+    /// Returns every file module this loader resolved, sorted by specifier.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn resolved_modules(&self) -> Vec<ResolvedModule<'_>> {
+        let mut modules: Vec<_> = self
+            .source_cache
+            .iter()
+            .map(|(id, source)| {
+                let specifier = self.module_key(*id).into_owned();
+                ResolvedModule {
+                    name: self.resolver.canonical_name(&specifier).to_string(),
+                    specifier,
+                    source,
+                }
+            })
+            .collect();
+        modules.sort_unstable_by(|a, b| a.specifier.cmp(&b.specifier));
+        modules
+    }
+
+    /// Registers a module's source for diagnostics without loading it.
+    #[cfg(feature = "mqc")]
+    pub(crate) fn register_module_source(&mut self, name: &str, source: String) -> ModuleId {
+        match name {
+            Module::TOP_LEVEL_MODULE => Module::TOP_LEVEL_MODULE_ID,
+            Module::BUILTIN_MODULE => self.module_id_of(name),
+            _ => {
+                // Each distinct source gets its own id, so programs loaded earlier keep
+                // their own text. The prefix keeps name lookups from ever resolving to it.
+                let key = SmolStr::new(format!("{PRECOMPILED_NAME_PREFIX}{name}"));
+                let source: Shared<str> = Shared::from(source);
+                if let Some(id) = self.precompiled_ids.get(&(key.clone(), Shared::clone(&source))) {
+                    return *id;
+                }
+                #[cfg(not(feature = "sync"))]
+                let id = self.module_names.borrow_mut().alloc(key.clone());
+                #[cfg(feature = "sync")]
+                let id = self.module_names.write().unwrap().alloc(key.clone());
+                self.precompiled_sources.insert(id, Shared::clone(&source));
+                self.precompiled_ids.insert((key, source), id);
+                id
+            }
+        }
+    }
+
     pub fn resolve(&self, module_name: &str) -> Result<String, ModuleError> {
         #[cfg(feature = "http-import")]
         if self.http_depth > 0
@@ -384,6 +467,8 @@ impl<T: ModuleResolver> ModuleLoader<T> {
     }
 
     pub fn load_builtin(&mut self, token_arena: TokenArena) -> Result<Module, ModuleError> {
+        // The builtin module outlives any one query, so its tokens stay in the engine's arena.
+        let token_arena = root_token_arena(&token_arena);
         if self.is_loaded(Module::BUILTIN_MODULE) {
             return Err(ModuleError::AlreadyLoaded(Cow::Borrowed(Module::BUILTIN_MODULE)));
         }
@@ -393,7 +478,7 @@ impl<T: ModuleResolver> ModuleLoader<T> {
         {
             let module_id = self.module_id_of(Module::BUILTIN_MODULE);
             self.loaded_modules.insert(module_id);
-            return Ok(module.clone());
+            return Ok(Module::clone(module));
         }
 
         // Cache is only valid when both arenas are in their initial state (builtin
@@ -423,13 +508,13 @@ impl<T: ModuleResolver> ModuleLoader<T> {
                 }
                 let module_id = self.module_id_of(Module::BUILTIN_MODULE);
                 self.loaded_modules.insert(module_id);
-                self.builtin_module_cache = Some((token_arena, module.clone()));
+                self.builtin_module_cache = Some((token_arena, Shared::new(module.clone())));
                 return Ok(module);
             }
         }
 
         let module = self.load(Module::BUILTIN_MODULE, BUILTIN_FILE, Shared::clone(&token_arena))?;
-        self.builtin_module_cache = Some((Shared::clone(&token_arena), module.clone()));
+        self.builtin_module_cache = Some((Shared::clone(&token_arena), Shared::new(module.clone())));
 
         if pristine {
             let tokens = {
@@ -453,6 +538,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cfg(feature = "debugger")]
     pub fn get_source_code_for_debug(&self, module_id: ModuleId) -> Result<String, ModuleError> {
+        #[cfg(feature = "mqc")]
+        if let Some(source) = self.precompiled_sources.get(&module_id) {
+            return Ok(source.to_string());
+        }
         let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(self.source_code.clone().unwrap_or_default()),
@@ -468,6 +557,10 @@ impl<T: ModuleResolver> ModuleLoader<T> {
 
     #[cold]
     pub fn get_source_code(&self, module_id: ModuleId, source_code: String) -> Result<String, ModuleError> {
+        #[cfg(feature = "mqc")]
+        if let Some(source) = self.precompiled_sources.get(&module_id) {
+            return Ok(source.to_string());
+        }
         let name = self.module_key(module_id);
         match name.as_ref() {
             Module::TOP_LEVEL_MODULE => Ok(source_code),

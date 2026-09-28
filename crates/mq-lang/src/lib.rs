@@ -40,6 +40,8 @@ mod ident;
 mod io;
 mod lexer;
 mod module;
+#[cfg(feature = "mqc")]
+pub mod mqc;
 mod number;
 mod range;
 mod runtime;
@@ -71,7 +73,7 @@ pub use ast::parser::Parser as AstParser;
 #[cfg(feature = "ast-json")]
 pub use ast::{ast_from_json, ast_to_json};
 pub use diagnostic::Diagnostic;
-pub use engine::{CompiledProgram, DefineValueError, Engine};
+pub use engine::{CompiledProgram, DefineValueError, Engine, Session};
 pub use error::Error;
 pub use ident::Ident;
 #[cfg(feature = "mock-io")]
@@ -91,6 +93,8 @@ pub use module::{
     BUILTIN_FILE as BUILTIN_MODULE_FILE, Module, ModuleId, ModuleLoader, STANDARD_MODULES, error::ModuleError,
     resolver::DefaultModuleResolver, resolver::ModuleResolver,
 };
+#[cfg(feature = "mqc")]
+pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
 pub use runtime::builtin::{
     BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,
@@ -99,6 +103,8 @@ pub use runtime::builtin::{
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use runtime::runtime_value::{DictMap, FromValueError, RuntimeValue, RuntimeValues, from_value};
 pub use selector::{AttrKind, Selector};
+#[cfg(feature = "debug-trace")]
+pub use tarn::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 
 pub type DefaultEngine = Engine<DefaultModuleResolver>;
 pub type DefaultModuleLoader = ModuleLoader<DefaultModuleResolver>;
@@ -176,9 +182,17 @@ pub fn parse_recovery(code: &str) -> (Vec<Shared<CstNode>>, CstErrorReporter) {
 }
 
 pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::Error>> {
-    let tokens = Lexer::new(lexer::Options::default())
-        .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
-        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))?;
+    parse_in_module(code, token_arena, Module::TOP_LEVEL_MODULE_ID)
+        .map_err(|e| Box::new(error::Error::from_error(code, e, DefaultModuleLoader::default())))
+}
+
+/// Parses `code` as the source of `module_id`.
+pub(crate) fn parse_in_module(
+    code: &str,
+    token_arena: TokenArena,
+    module_id: ModuleId,
+) -> Result<Program, error::InnerError> {
+    let tokens = Lexer::new(lexer::Options::default()).tokenize(code, module_id)?;
     let mut token_arena = {
         #[cfg(not(feature = "sync"))]
         {
@@ -191,9 +205,7 @@ pub fn parse(code: &str, token_arena: TokenArena) -> Result<Program, Box<error::
         }
     };
 
-    AstParser::new(tokens.iter(), &mut token_arena, Module::TOP_LEVEL_MODULE_ID)
-        .parse()
-        .map_err(|e| Box::new(error::Error::from_error(code, e.into(), DefaultModuleLoader::default())))
+    Ok(AstParser::new(tokens.iter(), &mut token_arena, module_id).parse()?)
 }
 
 /// Parses an MDX string and returns an iterator over `Value` nodes.
@@ -228,6 +240,19 @@ pub fn parse_text_input(input: &str) -> miette::Result<Vec<RuntimeValue>> {
     Ok(input.lines().map(|line| line.to_string().into()).collect())
 }
 
+/// Returns whether `name` is a function implemented natively by mq (e.g. `len`, `upcase`).
+///
+/// Functions written in mq itself, such as those in the builtin module, are not included.
+///
+/// ```rust
+/// assert!(mq_lang::is_builtin_function("len"));
+/// assert!(!mq_lang::is_builtin_function("my_function"));
+/// ```
+pub fn is_builtin_function(name: &str) -> bool {
+    use ast::constants::builtins::{NEXT, SEND};
+    name == NEXT || name == SEND || runtime::builtin::get_builtin_functions(&Ident::new(name)).is_some()
+}
+
 /// Returns a vector containing a single `Value` representing an empty input.
 pub fn null_input() -> Vec<RuntimeValue> {
     vec!["".to_string().into()]
@@ -256,17 +281,37 @@ pub(crate) fn token_alloc(arena: &TokenArena, token: &Shared<Token>) -> TokenId 
     }
 }
 
+/// Resolves `token_id`, or returns an EOF token at the start of the top-level query when the
+/// token is gone, e.g. from an `eval` arena that was dropped.
 #[inline(always)]
 pub(crate) fn get_token(arena: TokenArena, token_id: TokenId) -> Shared<Token> {
     #[cfg(not(feature = "sync"))]
-    {
-        Shared::clone(&arena.borrow()[token_id])
-    }
-
+    let found = arena.borrow().get_cloned(token_id);
     #[cfg(feature = "sync")]
-    {
-        Shared::clone(&arena.read().unwrap()[token_id])
-    }
+    let found = arena.read().unwrap().get_cloned(token_id);
+
+    found.unwrap_or_else(|| {
+        Shared::new(Token {
+            range: Range::default(),
+            kind: TokenKind::Eof,
+            module_id: Module::TOP_LEVEL_MODULE_ID,
+        })
+    })
+}
+
+/// The arena `arena` is layered on, or `arena` itself.
+pub(crate) fn root_token_arena(arena: &TokenArena) -> TokenArena {
+    #[cfg(not(feature = "sync"))]
+    let parent = arena.borrow().parent().cloned();
+    #[cfg(feature = "sync")]
+    let parent = arena.read().unwrap().parent().cloned();
+
+    parent.unwrap_or_else(|| Shared::clone(arena))
+}
+
+/// A token arena layered on `parent`, freed with its last reference.
+pub(crate) fn layered_token_arena(parent: &TokenArena) -> TokenArena {
+    Shared::new(SharedCell::new(Arena::layered(Shared::clone(parent))))
 }
 
 #[cfg(test)]

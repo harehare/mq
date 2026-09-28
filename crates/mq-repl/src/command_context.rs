@@ -257,7 +257,7 @@ impl DocumentIndex {
 }
 
 pub struct CommandContext {
-    pub(crate) engine: mq_lang::DefaultEngine,
+    pub(crate) session: mq_lang::Session,
     pub(crate) input: Vec<mq_lang::RuntimeValue>,
     initial_input: Vec<mq_lang::RuntimeValue>,
     pub(crate) hir: mq_hir::Hir,
@@ -276,7 +276,7 @@ impl CommandContext {
         let document_index = DocumentIndex::new(&input);
 
         Self {
-            engine,
+            session: mq_lang::Session::new(engine),
             initial_input: input.clone(),
             input,
             hir,
@@ -415,11 +415,10 @@ impl CommandContext {
                 hir.add_builtin();
                 let mut engine = mq_lang::DefaultEngine::default();
                 engine.load_builtin_module();
-                engine.enable_query_session();
                 self.hir = hir;
                 self.source_id = source_id;
                 self.scope_id = scope_id;
-                self.engine = engine;
+                self.session = mq_lang::Session::new(engine);
                 self.input = self.initial_input.clone();
                 self.reindex_document();
                 Ok(CommandOutput::None)
@@ -486,7 +485,10 @@ impl CommandContext {
                 if code.is_empty() {
                     Ok(CommandOutput::None)
                 } else {
-                    let eval_result = self.engine.eval(code, self.input.clone().into_iter()).map_err(|e| *e)?;
+                    let eval_result = self
+                        .session
+                        .eval(code, self.input.clone().into_iter())
+                        .map_err(|e| *e)?;
 
                     self.hir.add_line_of_code(self.source_id, self.scope_id, code);
                     self.input = eval_result.values().clone();
@@ -607,7 +609,7 @@ impl CommandContext {
                     return Ok(CommandOutput::None);
                 }
 
-                let result = self.engine.eval(&code, self.input.clone().into_iter());
+                let result = self.session.eval(&code, self.input.clone().into_iter());
 
                 let output = result
                     .map(|result| {
