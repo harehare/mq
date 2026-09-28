@@ -1,12 +1,36 @@
 //! Bounds-checked primitives for `.mqc` payloads.
 use super::MqcError;
 
-#[derive(Default)]
+/// Bounds the number of decoded collection entries per section. Small wire values
+/// such as `None` can otherwise expand a 256 MiB file into gigabytes of VM values.
+const MAX_DECODED_ITEMS: usize = 1_000_000;
+
 pub(crate) struct Writer {
     bytes: Vec<u8>,
+    remaining_items: usize,
+}
+
+impl Default for Writer {
+    fn default() -> Self {
+        Self {
+            bytes: Vec::new(),
+            remaining_items: MAX_DECODED_ITEMS,
+        }
+    }
 }
 
 impl Writer {
+    pub(crate) fn with_remaining_items(remaining_items: usize) -> Self {
+        Self {
+            bytes: Vec::new(),
+            remaining_items,
+        }
+    }
+
+    pub(crate) fn remaining_items(&self) -> usize {
+        self.remaining_items
+    }
+
     pub(crate) fn into_bytes(self) -> Vec<u8> {
         self.bytes
     }
@@ -58,12 +82,18 @@ impl Writer {
 
     pub(crate) fn len(&mut self, len: usize) -> Result<(), MqcError> {
         let len = u32::try_from(len).map_err(|_| MqcError::Malformed("collection too large to encode".into()))?;
+        if len as usize > self.remaining_items {
+            return Err(MqcError::Malformed("too many collection entries to encode".into()));
+        }
+        self.remaining_items -= len as usize;
         self.var_u32(len);
         Ok(())
     }
 
     pub(crate) fn bytes(&mut self, value: &[u8]) -> Result<(), MqcError> {
-        self.len(value.len())?;
+        let len =
+            u32::try_from(value.len()).map_err(|_| MqcError::Malformed("byte string is too large to encode".into()))?;
+        self.var_u32(len);
         self.bytes.extend_from_slice(value);
         Ok(())
     }
@@ -80,11 +110,16 @@ impl Writer {
 pub(crate) struct Reader<'a> {
     bytes: &'a [u8],
     position: usize,
+    remaining_items: usize,
 }
 
 impl<'a> Reader<'a> {
     pub(crate) fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, position: 0 }
+        Self {
+            bytes,
+            position: 0,
+            remaining_items: MAX_DECODED_ITEMS,
+        }
     }
 
     pub(crate) fn remaining(&self) -> usize {
@@ -179,11 +214,16 @@ impl<'a> Reader<'a> {
                 "collection length exceeds the remaining data".into(),
             ));
         }
+        if len > self.remaining_items {
+            return Err(MqcError::Malformed("too many collection entries in a section".into()));
+        }
+        self.remaining_items -= len;
         Ok(len)
     }
 
     pub(crate) fn bytes(&mut self) -> Result<&'a [u8], MqcError> {
-        let len = self.len(1)?;
+        // Byte strings do not expand into one Rust value per byte.
+        let len = self.var_u32()? as usize;
         self.take(len)
     }
 
@@ -269,6 +309,29 @@ mod tests {
         writer.var_u32(1_000_000);
         let bytes = writer.into_bytes();
         assert!(matches!(Reader::new(&bytes).len(1), Err(MqcError::Malformed(_))));
+    }
+
+    #[test]
+    fn test_collection_budget_covers_nested_lengths() {
+        let mut reader = Reader::new(&[2, 0, 0, 1, 0]);
+        reader.remaining_items = 2;
+        assert_eq!(reader.len(1).unwrap(), 2);
+        reader.take(2).unwrap();
+        assert!(matches!(reader.len(1), Err(MqcError::Malformed(_))));
+
+        let mut writer = Writer::with_remaining_items(2);
+        writer.len(2).unwrap();
+        assert!(matches!(writer.len(1), Err(MqcError::Malformed(_))));
+    }
+
+    #[test]
+    fn test_byte_string_length_does_not_use_collection_budget() {
+        let mut writer = Writer::with_remaining_items(0);
+        writer.bytes(b"abc").unwrap();
+        let bytes = writer.into_bytes();
+        let mut reader = Reader::new(&bytes);
+        reader.remaining_items = 0;
+        assert_eq!(reader.bytes().unwrap(), b"abc");
     }
 
     #[test]

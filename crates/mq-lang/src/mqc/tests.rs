@@ -509,6 +509,23 @@ fn test_load_mqc_detects_truncation() {
 }
 
 #[test]
+fn test_decode_source_rejects_reversed_span() {
+    let files = [SourceFile {
+        name: crate::Module::TOP_LEVEL_MODULE.to_string(),
+        text: Some("query".to_string()),
+    }];
+    let spans = [Span {
+        file: 0,
+        range: Range {
+            start: Position::new(2, 1),
+            end: Position::new(1, 1),
+        },
+    }];
+    let bytes = encode_source(&files, &spans).unwrap();
+    assert!(matches!(decode_source(&bytes), Err(MqcError::Malformed(_))));
+}
+
+#[test]
 fn test_load_mqc_rejects_unknown_container_version() {
     let mut bytes = compile(".h1");
     bytes[4..6].copy_from_slice(&2u16.to_le_bytes());
@@ -518,6 +535,22 @@ fn test_load_mqc_rejects_unknown_container_version() {
     assert!(matches!(
         load(&mut engine(), &bytes),
         Err(MqcError::UnsupportedContainerVersion(2))
+    ));
+}
+
+#[test]
+fn test_load_mqc_rejects_extended_version_one_header() {
+    let mut bytes = compile(".h1");
+    bytes.splice(HEADER_LEN..HEADER_LEN, [0, 0, 0, 0]);
+    bytes[6..8].copy_from_slice(&((HEADER_LEN + 4) as u16).to_le_bytes());
+    let total_len = bytes.len() as u64;
+    bytes[8..16].copy_from_slice(&total_len.to_le_bytes());
+    let len = bytes.len() - CHECKSUM_LEN;
+    let checksum = Sha256::digest(&bytes[..len]);
+    bytes[len..].copy_from_slice(&checksum);
+    assert!(matches!(
+        load(&mut engine(), &bytes),
+        Err(MqcError::Malformed(message)) if message.contains("header length")
     ));
 }
 
@@ -551,6 +584,45 @@ fn test_load_mqc_rejects_unknown_required_section() {
     ));
 }
 
+#[rstest]
+#[case::known(META)]
+#[case::unknown(*b"XTRA")]
+fn test_load_mqc_rejects_unknown_section_flags(#[case] tag: [u8; 4]) {
+    let bytes = rewrite(&compile(".h1"), |sections| {
+        if tag == META {
+            sections
+                .iter_mut()
+                .find(|section| section.tag == META)
+                .unwrap()
+                .required = false;
+        } else {
+            sections.push(Section {
+                tag,
+                version: 1,
+                required: false,
+                payload: Cow::Owned(Vec::new()),
+            });
+        }
+    });
+    let mut bytes = bytes;
+    let mut offset = HEADER_LEN;
+    while offset < bytes.len() - CHECKSUM_LEN {
+        if bytes[offset..offset + 4] == tag {
+            bytes[offset + 6..offset + 8].copy_from_slice(&2u16.to_le_bytes());
+            break;
+        }
+        let len = u64::from_le_bytes(bytes[offset + 8..offset + 16].try_into().unwrap()) as usize;
+        offset += SECTION_HEADER_LEN + len;
+    }
+    let len = bytes.len() - CHECKSUM_LEN;
+    let checksum = Sha256::digest(&bytes[..len]);
+    bytes[len..].copy_from_slice(&checksum);
+    assert!(matches!(
+        load(&mut engine(), &bytes),
+        Err(MqcError::Malformed(message)) if message.contains("unsupported flags")
+    ));
+}
+
 #[test]
 fn test_load_mqc_rejects_duplicate_and_missing_sections() {
     let duplicated = rewrite(&compile(".h1"), |sections| {
@@ -574,10 +646,39 @@ fn test_load_mqc_rejects_duplicate_and_missing_sections() {
     ));
 }
 
-#[test]
-fn test_load_mqc_rejects_unknown_section_version() {
+#[rstest]
+#[case::code(CODE, "CODE")]
+#[case::source(SOURCE, "SOURCE")]
+fn test_mqc_try_from_requires_executable_sections(#[case] tag: [u8; 4], #[case] name: &'static str) {
     let bytes = rewrite(&compile(".h1"), |sections| {
-        sections.iter_mut().find(|section| section.tag == CODE).unwrap().version = 2;
+        sections.retain(|section| section.tag != tag);
+    });
+    assert!(matches!(
+        Mqc::try_from(bytes),
+        Err(MqcError::MissingSection(missing)) if missing == name
+    ));
+}
+
+#[test]
+fn test_mqc_try_from_rejects_core_section_marked_optional() {
+    let bytes = rewrite(&compile(".h1"), |sections| {
+        sections
+            .iter_mut()
+            .find(|section| section.tag == CODE)
+            .unwrap()
+            .required = false;
+    });
+    assert!(matches!(Mqc::try_from(bytes), Err(MqcError::Malformed(_))));
+}
+
+#[rstest]
+#[case::meta(META)]
+#[case::code(CODE)]
+#[case::deps(DEPS)]
+#[case::source(SOURCE)]
+fn test_load_mqc_rejects_unknown_section_version(#[case] tag: [u8; 4]) {
+    let bytes = rewrite(&compile(".h1"), |sections| {
+        sections.iter_mut().find(|section| section.tag == tag).unwrap().version = 2;
     });
     assert!(matches!(
         load(&mut engine(), &bytes),

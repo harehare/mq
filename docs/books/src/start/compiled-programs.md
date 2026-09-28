@@ -1,5 +1,7 @@
 # Compiled Programs
 
+**Experimental:** The `.mqc` format and its CLI may change. Keep the query source and recompile `.mqc` files after upgrading mq.
+
 `mq compile` saves a query as Tarn VM bytecode in a `.mqc` file. Pass the `.mqc` file in place of the query to run it. Modules, including HTTP imports, are resolved at compile time and stored in the file, so running it needs no module files or network access.
 
 ```sh
@@ -41,7 +43,7 @@ Module-level `let` values are computed once, when the program is compiled.
 
 A `.mqc` file runs only on the same mq version that compiled it. Recompile the source after upgrading mq. The file keeps the original query and the sources of your own modules, so runtime errors point at the original code. Standard modules such as `csv` are not stored; their sources come from mq itself.
 
-mq checks the file's structure and checksum and verifies its bytecode before running it. The checksum detects corruption. It does not show who created the file.
+mq checks the file's version, section versions and flags, structure, and checksum, then verifies its bytecode before running it. Files larger than 256 MiB, sections with more than one million collection entries, and bytecode that exceeds the verifier's work limit are rejected. The checksum detects corruption. It does not show who created the file.
 
 ## Embedding
 

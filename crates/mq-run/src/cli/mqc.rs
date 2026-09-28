@@ -3,6 +3,7 @@ use super::{Cli, InputArgs, InputFormat, ProgramArgs};
 use clap::ValueEnum;
 use miette::{IntoDiagnostic, WrapErr, miette};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// `.mqc` metadata keys recording how `mq compile` shaped the query.
@@ -112,7 +113,25 @@ impl Cli {
                 "-f does not accept .mqc files"
             ));
         }
-        let bytes = fs::read(path)
+        // Read at most one byte beyond the format limit. Reading an arbitrary-size
+        // file into memory before Mqc::try_from checks its size defeats that limit.
+        let file = fs::File::open(path)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
+        let size = file
+            .metadata()
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to read {}", path.display()))?
+            .len();
+        if size > mq_lang::mqc::MAX_FILE_SIZE {
+            return Err(miette::Report::new(mq_lang::MqcError::TooLarge {
+                size,
+                limit: mq_lang::mqc::MAX_FILE_SIZE,
+            }));
+        }
+        let mut bytes = Vec::new();
+        file.take(mq_lang::mqc::MAX_FILE_SIZE + 1)
+            .read_to_end(&mut bytes)
             .into_diagnostic()
             .wrap_err_with(|| format!("Failed to read {}", path.display()))?;
         let modules = &self.input.program;

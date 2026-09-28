@@ -1,4 +1,5 @@
 //! `.mqc` CODE section codec. Instructions use fixed wire IDs; decoded code is verified.
+mod tags;
 use super::MqcError;
 use super::wire::{Reader, Writer};
 use crate::ast::TokenId;
@@ -83,7 +84,8 @@ pub(crate) fn encode(program: &SplitProgram) -> Result<EncodedCode, MqcError> {
         encode_program(&mut body, &mut tables, after)?;
     }
 
-    let mut payload = Writer::default();
+    // Identifier entries and the body share one decode budget.
+    let mut payload = Writer::with_remaining_items(body.remaining_items());
     payload.len(tables.idents.len())?;
     for ident in &tables.idents {
         payload.str(&ident.as_str())?;
@@ -180,17 +182,17 @@ fn encode_param_shape(writer: &mut Writer, shape: &ParamShape) -> Result<(), Mqc
     for binding in &shape.bindings {
         match binding {
             ParamBinding::Required(slot) => {
-                writer.u8(0);
+                writer.u8(tags::parameter::REQUIRED);
                 writer.var_u16(*slot);
             }
             ParamBinding::Optional(slot, default_chunk, sources) => {
-                writer.u8(1);
+                writer.u8(tags::parameter::OPTIONAL);
                 writer.var_u16(*slot);
                 writer.var_u16(*default_chunk);
                 encode_upvalue_sources(writer, sources)?;
             }
             ParamBinding::Variadic(slot) => {
-                writer.u8(2);
+                writer.u8(tags::parameter::VARIADIC);
                 writer.var_u16(*slot);
             }
         }
@@ -203,11 +205,11 @@ fn encode_upvalue_sources(writer: &mut Writer, sources: &[UpvalueSource]) -> Res
     for source in sources {
         match source {
             UpvalueSource::Local(slot) => {
-                writer.u8(0);
+                writer.u8(tags::capture::LOCAL);
                 writer.var_u16(*slot);
             }
             UpvalueSource::Upvalue(index) => {
-                writer.u8(1);
+                writer.u8(tags::capture::UPVALUE);
                 writer.var_u16(*index);
             }
         }
@@ -227,36 +229,36 @@ fn encode_constant(
         )));
     }
     match value {
-        RuntimeValue::None => writer.u8(0),
+        RuntimeValue::None => writer.u8(tags::constant::NONE),
         RuntimeValue::Number(number) => {
-            writer.u8(1);
+            writer.u8(tags::constant::NUMBER);
             writer.f64(number.value());
         }
         RuntimeValue::Boolean(value) => {
-            writer.u8(2);
+            writer.u8(tags::constant::BOOLEAN);
             writer.bool(*value);
         }
         RuntimeValue::String(value) => {
-            writer.u8(3);
+            writer.u8(tags::constant::STRING);
             writer.str(value)?;
         }
         RuntimeValue::Symbol(ident) => {
-            writer.u8(4);
+            writer.u8(tags::constant::SYMBOL);
             tables.ident(writer, *ident);
         }
         RuntimeValue::Bytes(bytes) => {
-            writer.u8(5);
+            writer.u8(tags::constant::BYTES);
             writer.bytes(bytes)?;
         }
         RuntimeValue::Array(values) => {
-            writer.u8(6);
+            writer.u8(tags::constant::ARRAY);
             writer.len(values.len())?;
             for value in values.iter() {
                 encode_constant(writer, tables, value, depth + 1)?;
             }
         }
         RuntimeValue::Dict(map) => {
-            writer.u8(7);
+            writer.u8(tags::constant::DICT);
             writer.len(map.len())?;
             for (key, value) in map.iter() {
                 tables.ident(writer, *key);
@@ -264,15 +266,15 @@ fn encode_constant(
             }
         }
         RuntimeValue::NativeFunction(ident) => {
-            writer.u8(8);
+            writer.u8(tags::constant::NATIVE_FUNCTION);
             tables.note_builtin(*ident);
             tables.ident(writer, *ident);
         }
         RuntimeValue::CoroutineBuiltin(builtin) => {
-            writer.u8(9);
+            writer.u8(tags::constant::COROUTINE_BUILTIN);
             writer.u8(match builtin {
-                ResumeBuiltin::Next => 0,
-                ResumeBuiltin::Send => 1,
+                ResumeBuiltin::Next => tags::coroutine::NEXT,
+                ResumeBuiltin::Send => tags::coroutine::SEND,
             });
         }
         RuntimeValue::Markdown(..) => return Err(unsupported_constant("a Markdown node")),
@@ -294,90 +296,90 @@ fn unsupported_constant(what: &str) -> MqcError {
 
 fn binary_op_id(op: BinaryOp) -> u8 {
     match op {
-        BinaryOp::Add => 0,
-        BinaryOp::Sub => 1,
-        BinaryOp::Mul => 2,
-        BinaryOp::Div => 3,
-        BinaryOp::Mod => 4,
-        BinaryOp::Eq => 5,
-        BinaryOp::Ne => 6,
-        BinaryOp::Lt => 7,
-        BinaryOp::Le => 8,
-        BinaryOp::Gt => 9,
-        BinaryOp::Ge => 10,
+        BinaryOp::Add => tags::binary::ADD,
+        BinaryOp::Sub => tags::binary::SUB,
+        BinaryOp::Mul => tags::binary::MUL,
+        BinaryOp::Div => tags::binary::DIV,
+        BinaryOp::Mod => tags::binary::MOD,
+        BinaryOp::Eq => tags::binary::EQ,
+        BinaryOp::Ne => tags::binary::NE,
+        BinaryOp::Lt => tags::binary::LT,
+        BinaryOp::Le => tags::binary::LE,
+        BinaryOp::Gt => tags::binary::GT,
+        BinaryOp::Ge => tags::binary::GE,
     }
 }
 
 fn binary_op_from_id(id: u8) -> Result<BinaryOp, MqcError> {
     Ok(match id {
-        0 => BinaryOp::Add,
-        1 => BinaryOp::Sub,
-        2 => BinaryOp::Mul,
-        3 => BinaryOp::Div,
-        4 => BinaryOp::Mod,
-        5 => BinaryOp::Eq,
-        6 => BinaryOp::Ne,
-        7 => BinaryOp::Lt,
-        8 => BinaryOp::Le,
-        9 => BinaryOp::Gt,
-        10 => BinaryOp::Ge,
+        tags::binary::ADD => BinaryOp::Add,
+        tags::binary::SUB => BinaryOp::Sub,
+        tags::binary::MUL => BinaryOp::Mul,
+        tags::binary::DIV => BinaryOp::Div,
+        tags::binary::MOD => BinaryOp::Mod,
+        tags::binary::EQ => BinaryOp::Eq,
+        tags::binary::NE => BinaryOp::Ne,
+        tags::binary::LT => BinaryOp::Lt,
+        tags::binary::LE => BinaryOp::Le,
+        tags::binary::GT => BinaryOp::Gt,
+        tags::binary::GE => BinaryOp::Ge,
         other => return Err(invalid(format!("unknown binary operator {other}"))),
     })
 }
 
 fn attr_kind_id(kind: &AttrKind) -> u8 {
     match kind {
-        AttrKind::Value => 0,
-        AttrKind::Values => 1,
-        AttrKind::Children => 2,
-        AttrKind::Lang => 3,
-        AttrKind::Meta => 4,
-        AttrKind::Fence => 5,
-        AttrKind::Url => 6,
-        AttrKind::Alt => 7,
-        AttrKind::Title => 8,
-        AttrKind::Ident => 9,
-        AttrKind::Label => 10,
-        AttrKind::Depth => 11,
-        AttrKind::Level => 12,
-        AttrKind::Index => 13,
-        AttrKind::Ordered => 14,
-        AttrKind::Checked => 15,
-        AttrKind::Column => 16,
-        AttrKind::Row => 17,
-        AttrKind::Align => 18,
-        AttrKind::Name => 19,
-        AttrKind::Kind => 20,
-        AttrKind::Line => 21,
-        AttrKind::EndLine => 22,
+        AttrKind::Value => tags::attribute::VALUE,
+        AttrKind::Values => tags::attribute::VALUES,
+        AttrKind::Children => tags::attribute::CHILDREN,
+        AttrKind::Lang => tags::attribute::LANG,
+        AttrKind::Meta => tags::attribute::META,
+        AttrKind::Fence => tags::attribute::FENCE,
+        AttrKind::Url => tags::attribute::URL,
+        AttrKind::Alt => tags::attribute::ALT,
+        AttrKind::Title => tags::attribute::TITLE,
+        AttrKind::Ident => tags::attribute::IDENT,
+        AttrKind::Label => tags::attribute::LABEL,
+        AttrKind::Depth => tags::attribute::DEPTH,
+        AttrKind::Level => tags::attribute::LEVEL,
+        AttrKind::Index => tags::attribute::INDEX,
+        AttrKind::Ordered => tags::attribute::ORDERED,
+        AttrKind::Checked => tags::attribute::CHECKED,
+        AttrKind::Column => tags::attribute::COLUMN,
+        AttrKind::Row => tags::attribute::ROW,
+        AttrKind::Align => tags::attribute::ALIGN,
+        AttrKind::Name => tags::attribute::NAME,
+        AttrKind::Kind => tags::attribute::KIND,
+        AttrKind::Line => tags::attribute::LINE,
+        AttrKind::EndLine => tags::attribute::END_LINE,
     }
 }
 
 fn attr_kind_from_id(id: u8) -> Result<AttrKind, MqcError> {
     Ok(match id {
-        0 => AttrKind::Value,
-        1 => AttrKind::Values,
-        2 => AttrKind::Children,
-        3 => AttrKind::Lang,
-        4 => AttrKind::Meta,
-        5 => AttrKind::Fence,
-        6 => AttrKind::Url,
-        7 => AttrKind::Alt,
-        8 => AttrKind::Title,
-        9 => AttrKind::Ident,
-        10 => AttrKind::Label,
-        11 => AttrKind::Depth,
-        12 => AttrKind::Level,
-        13 => AttrKind::Index,
-        14 => AttrKind::Ordered,
-        15 => AttrKind::Checked,
-        16 => AttrKind::Column,
-        17 => AttrKind::Row,
-        18 => AttrKind::Align,
-        19 => AttrKind::Name,
-        20 => AttrKind::Kind,
-        21 => AttrKind::Line,
-        22 => AttrKind::EndLine,
+        tags::attribute::VALUE => AttrKind::Value,
+        tags::attribute::VALUES => AttrKind::Values,
+        tags::attribute::CHILDREN => AttrKind::Children,
+        tags::attribute::LANG => AttrKind::Lang,
+        tags::attribute::META => AttrKind::Meta,
+        tags::attribute::FENCE => AttrKind::Fence,
+        tags::attribute::URL => AttrKind::Url,
+        tags::attribute::ALT => AttrKind::Alt,
+        tags::attribute::TITLE => AttrKind::Title,
+        tags::attribute::IDENT => AttrKind::Ident,
+        tags::attribute::LABEL => AttrKind::Label,
+        tags::attribute::DEPTH => AttrKind::Depth,
+        tags::attribute::LEVEL => AttrKind::Level,
+        tags::attribute::INDEX => AttrKind::Index,
+        tags::attribute::ORDERED => AttrKind::Ordered,
+        tags::attribute::CHECKED => AttrKind::Checked,
+        tags::attribute::COLUMN => AttrKind::Column,
+        tags::attribute::ROW => AttrKind::Row,
+        tags::attribute::ALIGN => AttrKind::Align,
+        tags::attribute::NAME => AttrKind::Name,
+        tags::attribute::KIND => AttrKind::Kind,
+        tags::attribute::LINE => AttrKind::Line,
+        tags::attribute::END_LINE => AttrKind::EndLine,
         other => return Err(invalid(format!("unknown attribute selector {other}"))),
     })
 }
@@ -396,10 +398,10 @@ fn encode_optional_index(writer: &mut Writer, value: Option<usize>) -> Result<()
 
 fn encode_selector(writer: &mut Writer, tables: &mut Tables, selector: &Selector) -> Result<(), MqcError> {
     match selector {
-        Selector::Blockquote => writer.u8(0),
-        Selector::Footnote => writer.u8(1),
+        Selector::Blockquote => writer.u8(tags::selector::BLOCKQUOTE),
+        Selector::Footnote => writer.u8(tags::selector::FOOTNOTE),
         Selector::List(index, ordered) => {
-            writer.u8(2);
+            writer.u8(tags::selector::LIST);
             encode_optional_index(writer, *index)?;
             match ordered {
                 Some(ordered) => {
@@ -409,28 +411,28 @@ fn encode_selector(writer: &mut Writer, tables: &mut Tables, selector: &Selector
                 None => writer.bool(false),
             }
         }
-        Selector::Toml => writer.u8(3),
-        Selector::Yaml => writer.u8(4),
-        Selector::Break => writer.u8(5),
-        Selector::InlineCode => writer.u8(6),
-        Selector::InlineMath => writer.u8(7),
-        Selector::Delete => writer.u8(8),
-        Selector::Emphasis => writer.u8(9),
-        Selector::FootnoteRef => writer.u8(10),
-        Selector::Html => writer.u8(11),
-        Selector::Image => writer.u8(12),
-        Selector::ImageRef => writer.u8(13),
-        Selector::MdxJsxTextElement => writer.u8(14),
-        Selector::Link => writer.u8(15),
-        Selector::LinkRef => writer.u8(16),
-        Selector::WikiLink => writer.u8(17),
-        Selector::Callout => writer.u8(18),
-        Selector::Embed => writer.u8(19),
-        Selector::Strong => writer.u8(20),
-        Selector::Code => writer.u8(21),
-        Selector::Math => writer.u8(22),
+        Selector::Toml => writer.u8(tags::selector::TOML),
+        Selector::Yaml => writer.u8(tags::selector::YAML),
+        Selector::Break => writer.u8(tags::selector::BREAK),
+        Selector::InlineCode => writer.u8(tags::selector::INLINE_CODE),
+        Selector::InlineMath => writer.u8(tags::selector::INLINE_MATH),
+        Selector::Delete => writer.u8(tags::selector::DELETE),
+        Selector::Emphasis => writer.u8(tags::selector::EMPHASIS),
+        Selector::FootnoteRef => writer.u8(tags::selector::FOOTNOTE_REF),
+        Selector::Html => writer.u8(tags::selector::HTML),
+        Selector::Image => writer.u8(tags::selector::IMAGE),
+        Selector::ImageRef => writer.u8(tags::selector::IMAGE_REF),
+        Selector::MdxJsxTextElement => writer.u8(tags::selector::MDX_JSX_TEXT_ELEMENT),
+        Selector::Link => writer.u8(tags::selector::LINK),
+        Selector::LinkRef => writer.u8(tags::selector::LINK_REF),
+        Selector::WikiLink => writer.u8(tags::selector::WIKI_LINK),
+        Selector::Callout => writer.u8(tags::selector::CALLOUT),
+        Selector::Embed => writer.u8(tags::selector::EMBED),
+        Selector::Strong => writer.u8(tags::selector::STRONG),
+        Selector::Code => writer.u8(tags::selector::CODE),
+        Selector::Math => writer.u8(tags::selector::MATH),
         Selector::Heading(level) => {
-            writer.u8(23);
+            writer.u8(tags::selector::HEADING);
             match level {
                 Some(level) => {
                     writer.bool(true);
@@ -440,28 +442,28 @@ fn encode_selector(writer: &mut Writer, tables: &mut Tables, selector: &Selector
             }
         }
         Selector::Table(row, column) => {
-            writer.u8(24);
+            writer.u8(tags::selector::TABLE);
             encode_optional_index(writer, *row)?;
             encode_optional_index(writer, *column)?;
         }
-        Selector::TableAlign => writer.u8(25),
-        Selector::Text => writer.u8(26),
-        Selector::HorizontalRule => writer.u8(27),
-        Selector::Definition => writer.u8(28),
-        Selector::MdxFlowExpression => writer.u8(29),
-        Selector::MdxTextExpression => writer.u8(30),
-        Selector::MdxJsEsm => writer.u8(31),
-        Selector::MdxJsxFlowElement => writer.u8(32),
-        Selector::Recursive => writer.u8(33),
-        Selector::Task => writer.u8(34),
-        Selector::Todo => writer.u8(35),
-        Selector::Done => writer.u8(36),
+        Selector::TableAlign => writer.u8(tags::selector::TABLE_ALIGN),
+        Selector::Text => writer.u8(tags::selector::TEXT),
+        Selector::HorizontalRule => writer.u8(tags::selector::HORIZONTAL_RULE),
+        Selector::Definition => writer.u8(tags::selector::DEFINITION),
+        Selector::MdxFlowExpression => writer.u8(tags::selector::MDX_FLOW_EXPRESSION),
+        Selector::MdxTextExpression => writer.u8(tags::selector::MDX_TEXT_EXPRESSION),
+        Selector::MdxJsEsm => writer.u8(tags::selector::MDX_JS_ESM),
+        Selector::MdxJsxFlowElement => writer.u8(tags::selector::MDX_JSX_FLOW_ELEMENT),
+        Selector::Recursive => writer.u8(tags::selector::RECURSIVE),
+        Selector::Task => writer.u8(tags::selector::TASK),
+        Selector::Todo => writer.u8(tags::selector::TODO),
+        Selector::Done => writer.u8(tags::selector::DONE),
         Selector::Attr(kind) => {
-            writer.u8(37);
+            writer.u8(tags::selector::ATTR);
             writer.u8(attr_kind_id(kind));
         }
         Selector::Property(ident) => {
-            writer.u8(38);
+            writer.u8(tags::selector::PROPERTY);
             tables.ident(writer, *ident);
         }
     }
@@ -477,20 +479,20 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             ));
         }
         OpCode::Const(index) => {
-            writer.u8(1);
+            writer.u8(tags::opcode::CONST);
             writer.var_u16(*index);
         }
-        OpCode::PushNone => writer.u8(2),
+        OpCode::PushNone => writer.u8(tags::opcode::PUSH_NONE),
         OpCode::GetLocal(slot) => {
-            writer.u8(3);
+            writer.u8(tags::opcode::GET_LOCAL);
             writer.var_u16(*slot);
         }
         OpCode::SetLocal(slot) => {
-            writer.u8(4);
+            writer.u8(tags::opcode::SET_LOCAL);
             writer.var_u16(*slot);
         }
         OpCode::SetLocalAndCopy { source, destination } => {
-            writer.u8(5);
+            writer.u8(tags::opcode::SET_LOCAL_AND_COPY);
             writer.var_u16(*source);
             writer.var_u16(*destination);
         }
@@ -499,95 +501,95 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             destination,
             offset,
         } => {
-            writer.u8(6);
+            writer.u8(tags::opcode::SET_LOCAL_AND_COPY_AND_JUMP);
             writer.var_u16(*source);
             writer.var_u16(*destination);
             writer.var_i32(*offset);
         }
         OpCode::SetLocalConst { local, constant } => {
-            writer.u8(7);
+            writer.u8(tags::opcode::SET_LOCAL_CONST);
             writer.var_u16(*local);
             writer.var_u16(*constant);
         }
         OpCode::TeeLocal(slot) => {
-            writer.u8(8);
+            writer.u8(tags::opcode::TEE_LOCAL);
             writer.var_u16(*slot);
         }
         OpCode::CopyLocal { source, destination } => {
-            writer.u8(9);
+            writer.u8(tags::opcode::COPY_LOCAL);
             writer.var_u16(*source);
             writer.var_u16(*destination);
         }
         OpCode::GetUpvalue(index) => {
-            writer.u8(10);
+            writer.u8(tags::opcode::GET_UPVALUE);
             writer.var_u16(*index);
         }
         OpCode::SetUpvalue(index) => {
-            writer.u8(11);
+            writer.u8(tags::opcode::SET_UPVALUE);
             writer.var_u16(*index);
         }
         OpCode::MakeClosure(payload) => {
-            writer.u8(12);
+            writer.u8(tags::opcode::MAKE_CLOSURE);
             writer.var_u16(payload.0);
             encode_upvalue_sources(writer, &payload.1)?;
         }
         OpCode::MakeStaticClosure(index) => {
-            writer.u8(13);
+            writer.u8(tags::opcode::MAKE_STATIC_CLOSURE);
             writer.var_u16(*index);
         }
-        OpCode::Pop => writer.u8(14),
-        OpCode::Dup => writer.u8(15),
+        OpCode::Pop => writer.u8(tags::opcode::POP),
+        OpCode::Dup => writer.u8(tags::opcode::DUP),
         OpCode::Jump(offset) => {
-            writer.u8(16);
+            writer.u8(tags::opcode::JUMP);
             writer.var_i32(*offset);
         }
         OpCode::JumpIfFalse(offset) => {
-            writer.u8(17);
+            writer.u8(tags::opcode::JUMP_IF_FALSE);
             writer.var_i32(*offset);
         }
-        OpCode::Add => writer.u8(18),
-        OpCode::Sub => writer.u8(19),
-        OpCode::Mul => writer.u8(20),
-        OpCode::Div => writer.u8(21),
-        OpCode::Mod => writer.u8(22),
-        OpCode::Eq => writer.u8(23),
-        OpCode::Ne => writer.u8(24),
-        OpCode::Lt => writer.u8(25),
-        OpCode::Le => writer.u8(26),
-        OpCode::Gt => writer.u8(27),
-        OpCode::Ge => writer.u8(28),
+        OpCode::Add => writer.u8(tags::opcode::ADD),
+        OpCode::Sub => writer.u8(tags::opcode::SUB),
+        OpCode::Mul => writer.u8(tags::opcode::MUL),
+        OpCode::Div => writer.u8(tags::opcode::DIV),
+        OpCode::Mod => writer.u8(tags::opcode::MOD),
+        OpCode::Eq => writer.u8(tags::opcode::EQ),
+        OpCode::Ne => writer.u8(tags::opcode::NE),
+        OpCode::Lt => writer.u8(tags::opcode::LT),
+        OpCode::Le => writer.u8(tags::opcode::LE),
+        OpCode::Gt => writer.u8(tags::opcode::GT),
+        OpCode::Ge => writer.u8(tags::opcode::GE),
         OpCode::BinaryLocalLocal { op, left, right } => {
-            writer.u8(29);
+            writer.u8(tags::opcode::BINARY_LOCAL_LOCAL);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*left);
             writer.var_u16(*right);
         }
         OpCode::BinaryLocalConst { op, local, constant } => {
-            writer.u8(30);
+            writer.u8(tags::opcode::BINARY_LOCAL_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_u16(*constant);
         }
         OpCode::BinaryLocalNumberConst { op, local, constant } => {
-            writer.u8(31);
+            writer.u8(tags::opcode::BINARY_LOCAL_NUMBER_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_i32(*constant);
         }
         OpCode::UpdateLocalConst { op, local, constant } => {
-            writer.u8(32);
+            writer.u8(tags::opcode::UPDATE_LOCAL_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_u16(*constant);
         }
         OpCode::UpdateLocalNumberConst { op, local, constant } => {
-            writer.u8(33);
+            writer.u8(tags::opcode::UPDATE_LOCAL_NUMBER_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_i32(*constant);
         }
         OpCode::UpdateLocalLocal { op, local, value } => {
-            writer.u8(34);
+            writer.u8(tags::opcode::UPDATE_LOCAL_LOCAL);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_u16(*value);
@@ -598,7 +600,7 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             right,
             offset,
         } => {
-            writer.u8(35);
+            writer.u8(tags::opcode::JUMP_IF_FALSE_LOCAL_LOCAL);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*left);
             writer.var_u16(*right);
@@ -610,7 +612,7 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             constant,
             offset,
         } => {
-            writer.u8(36);
+            writer.u8(tags::opcode::JUMP_IF_FALSE_LOCAL_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_u16(*constant);
@@ -622,33 +624,33 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             constant,
             offset,
         } => {
-            writer.u8(37);
+            writer.u8(tags::opcode::JUMP_IF_FALSE_LOCAL_NUMBER_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_i32(*constant);
             writer.var_i32(*offset);
         }
-        OpCode::Neg => writer.u8(38),
-        OpCode::Not => writer.u8(39),
-        OpCode::ArrayNew => writer.u8(40),
+        OpCode::Neg => writer.u8(tags::opcode::NEG),
+        OpCode::Not => writer.u8(tags::opcode::NOT),
+        OpCode::ArrayNew => writer.u8(tags::opcode::ARRAY_NEW),
         OpCode::ArrayNewWithCapacityLocal(slot) => {
-            writer.u8(41);
+            writer.u8(tags::opcode::ARRAY_NEW_WITH_CAPACITY_LOCAL);
             writer.var_u16(*slot);
         }
-        OpCode::ArrayPush => writer.u8(42),
-        OpCode::ArraySpread => writer.u8(43),
-        OpCode::DictNew => writer.u8(44),
-        OpCode::DictInsert => writer.u8(45),
-        OpCode::DictSpread => writer.u8(46),
-        OpCode::ToForeachIterable => writer.u8(47),
-        OpCode::ArrayLen => writer.u8(48),
-        OpCode::ArrayGetAt => writer.u8(49),
+        OpCode::ArrayPush => writer.u8(tags::opcode::ARRAY_PUSH),
+        OpCode::ArraySpread => writer.u8(tags::opcode::ARRAY_SPREAD),
+        OpCode::DictNew => writer.u8(tags::opcode::DICT_NEW),
+        OpCode::DictInsert => writer.u8(tags::opcode::DICT_INSERT),
+        OpCode::DictSpread => writer.u8(tags::opcode::DICT_SPREAD),
+        OpCode::ToForeachIterable => writer.u8(tags::opcode::TO_FOREACH_ITERABLE),
+        OpCode::ArrayLen => writer.u8(tags::opcode::ARRAY_LEN),
+        OpCode::ArrayGetAt => writer.u8(tags::opcode::ARRAY_GET_AT),
         OpCode::ArrayLenLocal(slot) => {
-            writer.u8(50);
+            writer.u8(tags::opcode::ARRAY_LEN_LOCAL);
             writer.var_u16(*slot);
         }
         OpCode::ArrayGetLocalAt { array_slot, index_slot } => {
-            writer.u8(51);
+            writer.u8(tags::opcode::ARRAY_GET_LOCAL_AT);
             writer.var_u16(*array_slot);
             writer.var_u16(*index_slot);
         }
@@ -658,18 +660,18 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             value_slot,
             exit_offset,
         } => {
-            writer.u8(52);
+            writer.u8(tags::opcode::FOREACH_NEXT);
             writer.var_u16(*array_slot);
             writer.var_u16(*index_slot);
             writer.var_u16(*value_slot);
             writer.var_i32(*exit_offset);
         }
         OpCode::ForeachCollect(slot) => {
-            writer.u8(53);
+            writer.u8(tags::opcode::FOREACH_COLLECT);
             writer.var_u16(*slot);
         }
         OpCode::ForeachCollectAndJump { slot, offset } => {
-            writer.u8(54);
+            writer.u8(tags::opcode::FOREACH_COLLECT_AND_JUMP);
             writer.var_u16(*slot);
             writer.var_i32(*offset);
         }
@@ -680,134 +682,134 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             accumulator_slot,
             offset,
         } => {
-            writer.u8(55);
+            writer.u8(tags::opcode::FOREACH_BINARY_LOCAL_NUMBER_CONST_AND_JUMP);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_i32(*constant);
             writer.var_u16(*accumulator_slot);
             writer.var_i32(*offset);
         }
-        OpCode::ArraySliceFrom => writer.u8(56),
+        OpCode::ArraySliceFrom => writer.u8(tags::opcode::ARRAY_SLICE_FROM),
         OpCode::DictGetLocalOrFail {
             subject_slot,
             key,
             value_slot,
         } => {
-            writer.u8(57);
+            writer.u8(tags::opcode::DICT_GET_LOCAL_OR_FAIL);
             writer.var_u16(*subject_slot);
             tables.ident(writer, *key);
             writer.var_u16(*value_slot);
         }
         OpCode::TypeCheck(ident) => {
-            writer.u8(58);
+            writer.u8(tags::opcode::TYPE_CHECK);
             tables.ident(writer, *ident);
         }
         OpCode::GetEnvVar(index) => {
-            writer.u8(59);
+            writer.u8(tags::opcode::GET_ENV_VAR);
             writer.var_u16(*index);
         }
         OpCode::GetExternalGlobal(ident) => {
-            writer.u8(60);
+            writer.u8(tags::opcode::GET_EXTERNAL_GLOBAL);
             tables.note_external_global(*ident);
             tables.ident(writer, *ident);
         }
         OpCode::InterpString(count) => {
-            writer.u8(61);
+            writer.u8(tags::opcode::INTERP_STRING);
             writer.var_u16(*count);
         }
         OpCode::SelectorMatch(selector) => {
-            writer.u8(62);
+            writer.u8(tags::opcode::SELECTOR_MATCH);
             encode_selector(writer, tables, selector)?;
         }
         OpCode::SelectorMatchKind(kind) => {
-            writer.u8(63);
+            writer.u8(tags::opcode::SELECTOR_MATCH_KIND);
             encode_selector(writer, tables, &kind.as_selector())?;
         }
         OpCode::SelectorMatchHeading(level) => {
-            writer.u8(64);
+            writer.u8(tags::opcode::SELECTOR_MATCH_HEADING);
             writer.u8(*level);
         }
         OpCode::SelectorMatchWithArgs(payload) => {
-            writer.u8(65);
+            writer.u8(tags::opcode::SELECTOR_MATCH_WITH_ARGS);
             encode_selector(writer, tables, &payload.0)?;
             writer.var_u16(payload.1);
         }
         OpCode::CallBuiltinLocal { builtin, local } => {
-            writer.u8(66);
+            writer.u8(tags::opcode::CALL_BUILTIN_LOCAL);
             tables.note_builtin(*builtin);
             tables.ident(writer, *builtin);
             writer.var_u16(*local);
         }
         OpCode::CallBuiltin(ident, argc) => {
-            writer.u8(67);
+            writer.u8(tags::opcode::CALL_BUILTIN);
             tables.note_builtin(*ident);
             tables.ident(writer, *ident);
             writer.var_u16(*argc);
         }
         OpCode::CallStatic(target, argc) => {
-            writer.u8(68);
+            writer.u8(tags::opcode::CALL_STATIC);
             writer.var_u16(*target);
             writer.var_u16(*argc);
         }
         OpCode::CallStaticExact(target, argc) => {
-            writer.u8(69);
+            writer.u8(tags::opcode::CALL_STATIC_EXACT);
             writer.var_u16(*target);
             writer.var_u16(*argc);
         }
         OpCode::CallStaticExact0(target) => {
-            writer.u8(70);
+            writer.u8(tags::opcode::CALL_STATIC_EXACT0);
             encode_static_target(writer, target);
         }
         OpCode::CallStaticExact1(target) => {
-            writer.u8(71);
+            writer.u8(tags::opcode::CALL_STATIC_EXACT1);
             encode_static_target(writer, target);
         }
         OpCode::CallStaticExact2(target) => {
-            writer.u8(72);
+            writer.u8(tags::opcode::CALL_STATIC_EXACT2);
             encode_static_target(writer, target);
         }
         OpCode::CallStaticImplicitSelf(target, argc) => {
-            writer.u8(73);
+            writer.u8(tags::opcode::CALL_STATIC_IMPLICIT_SELF);
             writer.var_u16(*target);
             writer.var_u16(*argc);
         }
         OpCode::CallSelf(argc) => {
-            writer.u8(74);
+            writer.u8(tags::opcode::CALL_SELF);
             writer.var_u16(*argc);
         }
         OpCode::CallSelfExact(argc) => {
-            writer.u8(75);
+            writer.u8(tags::opcode::CALL_SELF_EXACT);
             writer.var_u16(*argc);
         }
-        OpCode::CallSelfExact0 => writer.u8(76),
-        OpCode::CallSelfExact1 => writer.u8(77),
-        OpCode::CallSelfExact2 => writer.u8(78),
+        OpCode::CallSelfExact0 => writer.u8(tags::opcode::CALL_SELF_EXACT0),
+        OpCode::CallSelfExact1 => writer.u8(tags::opcode::CALL_SELF_EXACT1),
+        OpCode::CallSelfExact2 => writer.u8(tags::opcode::CALL_SELF_EXACT2),
         OpCode::CallSelfImplicitSelf(argc) => {
-            writer.u8(79);
+            writer.u8(tags::opcode::CALL_SELF_IMPLICIT_SELF);
             writer.var_u16(*argc);
         }
         OpCode::CallLocal(slot, argc) => {
-            writer.u8(80);
+            writer.u8(tags::opcode::CALL_LOCAL);
             writer.var_u16(*slot);
             writer.var_u16(*argc);
         }
         OpCode::CallUpvalue(index, argc) => {
-            writer.u8(81);
+            writer.u8(tags::opcode::CALL_UPVALUE);
             writer.var_u16(*index);
             writer.var_u16(*argc);
         }
         OpCode::CallUpvalueLocal { index, local } => {
-            writer.u8(82);
+            writer.u8(tags::opcode::CALL_UPVALUE_LOCAL);
             writer.var_u16(*index);
             writer.var_u16(*local);
         }
         OpCode::CallValue(argc) => {
-            writer.u8(83);
+            writer.u8(tags::opcode::CALL_VALUE);
             writer.var_u16(*argc);
         }
-        OpCode::MaybeAutoCall => writer.u8(84),
+        OpCode::MaybeAutoCall => writer.u8(tags::opcode::MAYBE_AUTO_CALL),
         OpCode::TryCatch(info) => {
-            writer.u8(85);
+            writer.u8(tags::opcode::TRY_CATCH);
             writer.bool(info.has_binder);
             encode_optional_u16(writer, info.break_acc_slot);
             encode_optional_u16(writer, info.break_completed_iteration_slot);
@@ -815,37 +817,37 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             encode_optional_i32(writer, info.continue_offset);
         }
         OpCode::FlowBreak(has_value) => {
-            writer.u8(86);
+            writer.u8(tags::opcode::FLOW_BREAK);
             writer.bool(*has_value);
         }
-        OpCode::FlowContinue => writer.u8(87),
-        OpCode::RaiseDestructuringFailed => writer.u8(88),
+        OpCode::FlowContinue => writer.u8(tags::opcode::FLOW_CONTINUE),
+        OpCode::RaiseDestructuringFailed => writer.u8(tags::opcode::RAISE_DESTRUCTURING_FAILED),
         OpCode::ReturnLocal(slot) => {
-            writer.u8(89);
+            writer.u8(tags::opcode::RETURN_LOCAL);
             writer.var_u16(*slot);
         }
         OpCode::ReturnBinaryLocalLocal { op, left, right } => {
-            writer.u8(90);
+            writer.u8(tags::opcode::RETURN_BINARY_LOCAL_LOCAL);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*left);
             writer.var_u16(*right);
         }
         OpCode::ReturnBinaryLocalConst { op, local, constant } => {
-            writer.u8(91);
+            writer.u8(tags::opcode::RETURN_BINARY_LOCAL_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_u16(*constant);
         }
         OpCode::ReturnBinaryLocalNumberConst { op, local, constant } => {
-            writer.u8(92);
+            writer.u8(tags::opcode::RETURN_BINARY_LOCAL_NUMBER_CONST);
             writer.u8(binary_op_id(*op));
             writer.var_u16(*local);
             writer.var_i32(*constant);
         }
-        OpCode::Return => writer.u8(93),
-        OpCode::Yield => writer.u8(94),
+        OpCode::Return => writer.u8(tags::opcode::RETURN),
+        OpCode::Yield => writer.u8(tags::opcode::YIELD),
         OpCode::Resume(argc) => {
-            writer.u8(95);
+            writer.u8(tags::opcode::RESUME);
             writer.u8(*argc);
         }
     }
@@ -881,6 +883,13 @@ fn invalid(message: String) -> MqcError {
     MqcError::InvalidBytecode(message)
 }
 
+fn ensure_vm_indexed_count(count: usize, what: &str) -> Result<(), MqcError> {
+    if count > usize::from(u16::MAX) + 1 {
+        return Err(invalid(format!("{count} {what} exceed the VM index limit")));
+    }
+    Ok(())
+}
+
 struct Decoder<'a> {
     reader: Reader<'a>,
     idents: Vec<Ident>,
@@ -909,6 +918,7 @@ impl Decoder<'_> {
         if chunk_count == 0 {
             return Err(invalid("a program has no chunks".to_string()));
         }
+        ensure_vm_indexed_count(chunk_count, "chunks")?;
         let mut chunks = (0..chunk_count).map(|_| self.chunk()).collect::<Result<Vec<_>, _>>()?;
         for chunk in &mut chunks {
             chunk.refresh_captured_local_slots();
@@ -936,6 +946,7 @@ impl Decoder<'_> {
             local_mutable.push(self.reader.bool()?);
         }
         let upvalue_count = self.reader.len(1)?;
+        ensure_vm_indexed_count(upvalue_count, "upvalues")?;
         let upvalue_names = (0..upvalue_count)
             .map(|_| self.ident())
             .collect::<Result<Vec<_>, _>>()?;
@@ -943,10 +954,12 @@ impl Decoder<'_> {
         let param_shape = self.param_shape()?;
 
         let constant_count = self.reader.len(1)?;
+        ensure_vm_indexed_count(constant_count, "constants")?;
         let constants = (0..constant_count)
             .map(|_| self.constant(0))
             .collect::<Result<Vec<_>, _>>()?;
         let static_closure_count = self.reader.len(1)?;
+        ensure_vm_indexed_count(static_closure_count, "static closures")?;
         let mut chunk = Chunk::default();
         for _ in 0..static_closure_count {
             let target = self.reader.var_u16()?;
@@ -956,6 +969,9 @@ impl Decoder<'_> {
         let op_count = self.reader.len(1)?;
         let code = (0..op_count).map(|_| self.op()).collect::<Result<Vec<_>, _>>()?;
         let line_count = self.reader.len(2)?;
+        if line_count > code.len() {
+            return Err(invalid("more source positions than instructions".to_string()));
+        }
         let mut lines = Vec::with_capacity(line_count.min(MAX_PREALLOCATED));
         let mut previous_pc = 0usize;
         for _ in 0..line_count {
@@ -998,19 +1014,19 @@ impl Decoder<'_> {
                 return Err(invalid("a parameter follows a variadic parameter".to_string()));
             }
             let binding = match self.reader.u8()? {
-                0 => {
+                tags::parameter::REQUIRED => {
                     if bindings.len() != required {
                         return Err(invalid("a required parameter follows an optional one".to_string()));
                     }
                     required += 1;
                     ParamBinding::Required(self.reader.var_u16()?)
                 }
-                1 => {
+                tags::parameter::OPTIONAL => {
                     let slot = self.reader.var_u16()?;
                     let default_chunk = self.reader.var_u16()?;
                     ParamBinding::Optional(slot, default_chunk, self.upvalue_sources()?)
                 }
-                2 => {
+                tags::parameter::VARIADIC => {
                     has_variadic = true;
                     ParamBinding::Variadic(self.reader.var_u16()?)
                 }
@@ -1029,8 +1045,8 @@ impl Decoder<'_> {
         let count = self.reader.len(2)?;
         (0..count)
             .map(|_| match self.reader.u8()? {
-                0 => Ok(UpvalueSource::Local(self.reader.var_u16()?)),
-                1 => Ok(UpvalueSource::Upvalue(self.reader.var_u16()?)),
+                tags::capture::LOCAL => Ok(UpvalueSource::Local(self.reader.var_u16()?)),
+                tags::capture::UPVALUE => Ok(UpvalueSource::Upvalue(self.reader.var_u16()?)),
                 other => Err(invalid(format!("unknown capture kind {other}"))),
             })
             .collect()
@@ -1043,20 +1059,20 @@ impl Decoder<'_> {
             )));
         }
         Ok(match self.reader.u8()? {
-            0 => RuntimeValue::None,
-            1 => RuntimeValue::Number(self.reader.f64()?.into()),
-            2 => RuntimeValue::Boolean(self.reader.bool()?),
-            3 => RuntimeValue::String(Shared::new(self.reader.string()?)),
-            4 => RuntimeValue::Symbol(self.ident()?),
-            5 => RuntimeValue::Bytes(Shared::new(self.reader.bytes()?.to_vec())),
-            6 => {
+            tags::constant::NONE => RuntimeValue::None,
+            tags::constant::NUMBER => RuntimeValue::Number(self.reader.f64()?.into()),
+            tags::constant::BOOLEAN => RuntimeValue::Boolean(self.reader.bool()?),
+            tags::constant::STRING => RuntimeValue::String(Shared::new(self.reader.string()?)),
+            tags::constant::SYMBOL => RuntimeValue::Symbol(self.ident()?),
+            tags::constant::BYTES => RuntimeValue::Bytes(Shared::new(self.reader.bytes()?.to_vec())),
+            tags::constant::ARRAY => {
                 let count = self.reader.len(1)?;
                 let values = (0..count)
                     .map(|_| self.constant(depth + 1))
                     .collect::<Result<Vec<_>, _>>()?;
                 RuntimeValue::Array(Shared::new(values))
             }
-            7 => {
+            tags::constant::DICT => {
                 let count = self.reader.len(2)?;
                 let mut map = DictMap::default();
                 for _ in 0..count {
@@ -1066,10 +1082,10 @@ impl Decoder<'_> {
                 }
                 RuntimeValue::Dict(Shared::new(map))
             }
-            8 => RuntimeValue::NativeFunction(self.ident()?),
-            9 => RuntimeValue::CoroutineBuiltin(match self.reader.u8()? {
-                0 => ResumeBuiltin::Next,
-                1 => ResumeBuiltin::Send,
+            tags::constant::NATIVE_FUNCTION => RuntimeValue::NativeFunction(self.ident()?),
+            tags::constant::COROUTINE_BUILTIN => RuntimeValue::CoroutineBuiltin(match self.reader.u8()? {
+                tags::coroutine::NEXT => ResumeBuiltin::Next,
+                tags::coroutine::SEND => ResumeBuiltin::Send,
                 other => return Err(invalid(format!("unknown coroutine builtin {other}"))),
             }),
             other => return Err(invalid(format!("unknown constant tag {other}"))),
@@ -1088,9 +1104,9 @@ impl Decoder<'_> {
 
     fn selector(&mut self) -> Result<Selector, MqcError> {
         Ok(match self.reader.u8()? {
-            0 => Selector::Blockquote,
-            1 => Selector::Footnote,
-            2 => {
+            tags::selector::BLOCKQUOTE => Selector::Blockquote,
+            tags::selector::FOOTNOTE => Selector::Footnote,
+            tags::selector::LIST => {
                 let index = self.optional_index()?;
                 let ordered = if self.reader.bool()? {
                     Some(self.reader.bool()?)
@@ -1099,50 +1115,50 @@ impl Decoder<'_> {
                 };
                 Selector::List(index, ordered)
             }
-            3 => Selector::Toml,
-            4 => Selector::Yaml,
-            5 => Selector::Break,
-            6 => Selector::InlineCode,
-            7 => Selector::InlineMath,
-            8 => Selector::Delete,
-            9 => Selector::Emphasis,
-            10 => Selector::FootnoteRef,
-            11 => Selector::Html,
-            12 => Selector::Image,
-            13 => Selector::ImageRef,
-            14 => Selector::MdxJsxTextElement,
-            15 => Selector::Link,
-            16 => Selector::LinkRef,
-            17 => Selector::WikiLink,
-            18 => Selector::Callout,
-            19 => Selector::Embed,
-            20 => Selector::Strong,
-            21 => Selector::Code,
-            22 => Selector::Math,
-            23 => Selector::Heading(if self.reader.bool()? {
+            tags::selector::TOML => Selector::Toml,
+            tags::selector::YAML => Selector::Yaml,
+            tags::selector::BREAK => Selector::Break,
+            tags::selector::INLINE_CODE => Selector::InlineCode,
+            tags::selector::INLINE_MATH => Selector::InlineMath,
+            tags::selector::DELETE => Selector::Delete,
+            tags::selector::EMPHASIS => Selector::Emphasis,
+            tags::selector::FOOTNOTE_REF => Selector::FootnoteRef,
+            tags::selector::HTML => Selector::Html,
+            tags::selector::IMAGE => Selector::Image,
+            tags::selector::IMAGE_REF => Selector::ImageRef,
+            tags::selector::MDX_JSX_TEXT_ELEMENT => Selector::MdxJsxTextElement,
+            tags::selector::LINK => Selector::Link,
+            tags::selector::LINK_REF => Selector::LinkRef,
+            tags::selector::WIKI_LINK => Selector::WikiLink,
+            tags::selector::CALLOUT => Selector::Callout,
+            tags::selector::EMBED => Selector::Embed,
+            tags::selector::STRONG => Selector::Strong,
+            tags::selector::CODE => Selector::Code,
+            tags::selector::MATH => Selector::Math,
+            tags::selector::HEADING => Selector::Heading(if self.reader.bool()? {
                 Some(self.reader.u8()?)
             } else {
                 None
             }),
-            24 => {
+            tags::selector::TABLE => {
                 let row = self.optional_index()?;
                 let column = self.optional_index()?;
                 Selector::Table(row, column)
             }
-            25 => Selector::TableAlign,
-            26 => Selector::Text,
-            27 => Selector::HorizontalRule,
-            28 => Selector::Definition,
-            29 => Selector::MdxFlowExpression,
-            30 => Selector::MdxTextExpression,
-            31 => Selector::MdxJsEsm,
-            32 => Selector::MdxJsxFlowElement,
-            33 => Selector::Recursive,
-            34 => Selector::Task,
-            35 => Selector::Todo,
-            36 => Selector::Done,
-            37 => Selector::Attr(attr_kind_from_id(self.reader.u8()?)?),
-            38 => Selector::Property(self.ident()?),
+            tags::selector::TABLE_ALIGN => Selector::TableAlign,
+            tags::selector::TEXT => Selector::Text,
+            tags::selector::HORIZONTAL_RULE => Selector::HorizontalRule,
+            tags::selector::DEFINITION => Selector::Definition,
+            tags::selector::MDX_FLOW_EXPRESSION => Selector::MdxFlowExpression,
+            tags::selector::MDX_TEXT_EXPRESSION => Selector::MdxTextExpression,
+            tags::selector::MDX_JS_ESM => Selector::MdxJsEsm,
+            tags::selector::MDX_JSX_FLOW_ELEMENT => Selector::MdxJsxFlowElement,
+            tags::selector::RECURSIVE => Selector::Recursive,
+            tags::selector::TASK => Selector::Task,
+            tags::selector::TODO => Selector::Todo,
+            tags::selector::DONE => Selector::Done,
+            tags::selector::ATTR => Selector::Attr(attr_kind_from_id(self.reader.u8()?)?),
+            tags::selector::PROPERTY => Selector::Property(self.ident()?),
             other => return Err(invalid(format!("unknown selector {other}"))),
         })
     }
@@ -1177,182 +1193,182 @@ impl Decoder<'_> {
     fn op(&mut self) -> Result<OpCode, MqcError> {
         let r = &mut self.reader;
         Ok(match r.u8()? {
-            1 => OpCode::Const(r.var_u16()?),
-            2 => OpCode::PushNone,
-            3 => OpCode::GetLocal(r.var_u16()?),
-            4 => OpCode::SetLocal(r.var_u16()?),
-            5 => OpCode::SetLocalAndCopy {
+            tags::opcode::CONST => OpCode::Const(r.var_u16()?),
+            tags::opcode::PUSH_NONE => OpCode::PushNone,
+            tags::opcode::GET_LOCAL => OpCode::GetLocal(r.var_u16()?),
+            tags::opcode::SET_LOCAL => OpCode::SetLocal(r.var_u16()?),
+            tags::opcode::SET_LOCAL_AND_COPY => OpCode::SetLocalAndCopy {
                 source: r.var_u16()?,
                 destination: r.var_u16()?,
             },
-            6 => OpCode::SetLocalAndCopyAndJump {
+            tags::opcode::SET_LOCAL_AND_COPY_AND_JUMP => OpCode::SetLocalAndCopyAndJump {
                 source: r.var_u16()?,
                 destination: r.var_u16()?,
                 offset: r.var_i32()?,
             },
-            7 => OpCode::SetLocalConst {
+            tags::opcode::SET_LOCAL_CONST => OpCode::SetLocalConst {
                 local: r.var_u16()?,
                 constant: r.var_u16()?,
             },
-            8 => OpCode::TeeLocal(r.var_u16()?),
-            9 => OpCode::CopyLocal {
+            tags::opcode::TEE_LOCAL => OpCode::TeeLocal(r.var_u16()?),
+            tags::opcode::COPY_LOCAL => OpCode::CopyLocal {
                 source: r.var_u16()?,
                 destination: r.var_u16()?,
             },
-            10 => OpCode::GetUpvalue(r.var_u16()?),
-            11 => OpCode::SetUpvalue(r.var_u16()?),
-            12 => {
+            tags::opcode::GET_UPVALUE => OpCode::GetUpvalue(r.var_u16()?),
+            tags::opcode::SET_UPVALUE => OpCode::SetUpvalue(r.var_u16()?),
+            tags::opcode::MAKE_CLOSURE => {
                 let target = r.var_u16()?;
                 OpCode::MakeClosure(Box::new((target, self.upvalue_sources()?)))
             }
-            13 => OpCode::MakeStaticClosure(r.var_u16()?),
-            14 => OpCode::Pop,
-            15 => OpCode::Dup,
-            16 => OpCode::Jump(r.var_i32()?),
-            17 => OpCode::JumpIfFalse(r.var_i32()?),
-            18 => OpCode::Add,
-            19 => OpCode::Sub,
-            20 => OpCode::Mul,
-            21 => OpCode::Div,
-            22 => OpCode::Mod,
-            23 => OpCode::Eq,
-            24 => OpCode::Ne,
-            25 => OpCode::Lt,
-            26 => OpCode::Le,
-            27 => OpCode::Gt,
-            28 => OpCode::Ge,
-            29 => OpCode::BinaryLocalLocal {
+            tags::opcode::MAKE_STATIC_CLOSURE => OpCode::MakeStaticClosure(r.var_u16()?),
+            tags::opcode::POP => OpCode::Pop,
+            tags::opcode::DUP => OpCode::Dup,
+            tags::opcode::JUMP => OpCode::Jump(r.var_i32()?),
+            tags::opcode::JUMP_IF_FALSE => OpCode::JumpIfFalse(r.var_i32()?),
+            tags::opcode::ADD => OpCode::Add,
+            tags::opcode::SUB => OpCode::Sub,
+            tags::opcode::MUL => OpCode::Mul,
+            tags::opcode::DIV => OpCode::Div,
+            tags::opcode::MOD => OpCode::Mod,
+            tags::opcode::EQ => OpCode::Eq,
+            tags::opcode::NE => OpCode::Ne,
+            tags::opcode::LT => OpCode::Lt,
+            tags::opcode::LE => OpCode::Le,
+            tags::opcode::GT => OpCode::Gt,
+            tags::opcode::GE => OpCode::Ge,
+            tags::opcode::BINARY_LOCAL_LOCAL => OpCode::BinaryLocalLocal {
                 op: self.binary_op()?,
                 left: self.reader.var_u16()?,
                 right: self.reader.var_u16()?,
             },
-            30 => OpCode::BinaryLocalConst {
+            tags::opcode::BINARY_LOCAL_CONST => OpCode::BinaryLocalConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_u16()?,
             },
-            31 => OpCode::BinaryLocalNumberConst {
+            tags::opcode::BINARY_LOCAL_NUMBER_CONST => OpCode::BinaryLocalNumberConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_i32()?,
             },
-            32 => OpCode::UpdateLocalConst {
+            tags::opcode::UPDATE_LOCAL_CONST => OpCode::UpdateLocalConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_u16()?,
             },
-            33 => OpCode::UpdateLocalNumberConst {
+            tags::opcode::UPDATE_LOCAL_NUMBER_CONST => OpCode::UpdateLocalNumberConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_i32()?,
             },
-            34 => OpCode::UpdateLocalLocal {
+            tags::opcode::UPDATE_LOCAL_LOCAL => OpCode::UpdateLocalLocal {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 value: self.reader.var_u16()?,
             },
-            35 => OpCode::JumpIfFalseLocalLocal {
+            tags::opcode::JUMP_IF_FALSE_LOCAL_LOCAL => OpCode::JumpIfFalseLocalLocal {
                 op: self.binary_op()?,
                 left: self.reader.var_u16()?,
                 right: self.reader.var_u16()?,
                 offset: self.reader.var_i32()?,
             },
-            36 => OpCode::JumpIfFalseLocalConst {
+            tags::opcode::JUMP_IF_FALSE_LOCAL_CONST => OpCode::JumpIfFalseLocalConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_u16()?,
                 offset: self.reader.var_i32()?,
             },
-            37 => OpCode::JumpIfFalseLocalNumberConst {
+            tags::opcode::JUMP_IF_FALSE_LOCAL_NUMBER_CONST => OpCode::JumpIfFalseLocalNumberConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_i32()?,
                 offset: self.reader.var_i32()?,
             },
-            38 => OpCode::Neg,
-            39 => OpCode::Not,
-            40 => OpCode::ArrayNew,
-            41 => OpCode::ArrayNewWithCapacityLocal(r.var_u16()?),
-            42 => OpCode::ArrayPush,
-            43 => OpCode::ArraySpread,
-            44 => OpCode::DictNew,
-            45 => OpCode::DictInsert,
-            46 => OpCode::DictSpread,
-            47 => OpCode::ToForeachIterable,
-            48 => OpCode::ArrayLen,
-            49 => OpCode::ArrayGetAt,
-            50 => OpCode::ArrayLenLocal(r.var_u16()?),
-            51 => OpCode::ArrayGetLocalAt {
+            tags::opcode::NEG => OpCode::Neg,
+            tags::opcode::NOT => OpCode::Not,
+            tags::opcode::ARRAY_NEW => OpCode::ArrayNew,
+            tags::opcode::ARRAY_NEW_WITH_CAPACITY_LOCAL => OpCode::ArrayNewWithCapacityLocal(r.var_u16()?),
+            tags::opcode::ARRAY_PUSH => OpCode::ArrayPush,
+            tags::opcode::ARRAY_SPREAD => OpCode::ArraySpread,
+            tags::opcode::DICT_NEW => OpCode::DictNew,
+            tags::opcode::DICT_INSERT => OpCode::DictInsert,
+            tags::opcode::DICT_SPREAD => OpCode::DictSpread,
+            tags::opcode::TO_FOREACH_ITERABLE => OpCode::ToForeachIterable,
+            tags::opcode::ARRAY_LEN => OpCode::ArrayLen,
+            tags::opcode::ARRAY_GET_AT => OpCode::ArrayGetAt,
+            tags::opcode::ARRAY_LEN_LOCAL => OpCode::ArrayLenLocal(r.var_u16()?),
+            tags::opcode::ARRAY_GET_LOCAL_AT => OpCode::ArrayGetLocalAt {
                 array_slot: r.var_u16()?,
                 index_slot: r.var_u16()?,
             },
-            52 => OpCode::ForeachNext {
+            tags::opcode::FOREACH_NEXT => OpCode::ForeachNext {
                 array_slot: r.var_u16()?,
                 index_slot: r.var_u16()?,
                 value_slot: r.var_u16()?,
                 exit_offset: r.var_i32()?,
             },
-            53 => OpCode::ForeachCollect(r.var_u16()?),
-            54 => OpCode::ForeachCollectAndJump {
+            tags::opcode::FOREACH_COLLECT => OpCode::ForeachCollect(r.var_u16()?),
+            tags::opcode::FOREACH_COLLECT_AND_JUMP => OpCode::ForeachCollectAndJump {
                 slot: r.var_u16()?,
                 offset: r.var_i32()?,
             },
-            55 => OpCode::ForeachBinaryLocalNumberConstAndJump {
+            tags::opcode::FOREACH_BINARY_LOCAL_NUMBER_CONST_AND_JUMP => OpCode::ForeachBinaryLocalNumberConstAndJump {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_i32()?,
                 accumulator_slot: self.reader.var_u16()?,
                 offset: self.reader.var_i32()?,
             },
-            56 => OpCode::ArraySliceFrom,
-            57 => OpCode::DictGetLocalOrFail {
+            tags::opcode::ARRAY_SLICE_FROM => OpCode::ArraySliceFrom,
+            tags::opcode::DICT_GET_LOCAL_OR_FAIL => OpCode::DictGetLocalOrFail {
                 subject_slot: r.var_u16()?,
                 key: self.ident()?,
                 value_slot: self.reader.var_u16()?,
             },
-            58 => OpCode::TypeCheck(self.ident()?),
-            59 => OpCode::GetEnvVar(r.var_u16()?),
-            60 => OpCode::GetExternalGlobal(self.ident()?),
-            61 => OpCode::InterpString(r.var_u16()?),
-            62 => OpCode::SelectorMatch(Box::new(self.selector()?)),
-            63 => {
+            tags::opcode::TYPE_CHECK => OpCode::TypeCheck(self.ident()?),
+            tags::opcode::GET_ENV_VAR => OpCode::GetEnvVar(r.var_u16()?),
+            tags::opcode::GET_EXTERNAL_GLOBAL => OpCode::GetExternalGlobal(self.ident()?),
+            tags::opcode::INTERP_STRING => OpCode::InterpString(r.var_u16()?),
+            tags::opcode::SELECTOR_MATCH => OpCode::SelectorMatch(Box::new(self.selector()?)),
+            tags::opcode::SELECTOR_MATCH_KIND => {
                 let selector = self.selector()?;
                 OpCode::SelectorMatchKind(
                     NodeSelectorKind::from_selector(&selector)
                         .ok_or_else(|| invalid(format!("`{selector}` has no compact selector form")))?,
                 )
             }
-            64 => OpCode::SelectorMatchHeading(r.u8()?),
-            65 => {
+            tags::opcode::SELECTOR_MATCH_HEADING => OpCode::SelectorMatchHeading(r.u8()?),
+            tags::opcode::SELECTOR_MATCH_WITH_ARGS => {
                 let selector = self.selector()?;
                 OpCode::SelectorMatchWithArgs(Box::new((selector, self.reader.var_u16()?)))
             }
-            66 => OpCode::CallBuiltinLocal {
+            tags::opcode::CALL_BUILTIN_LOCAL => OpCode::CallBuiltinLocal {
                 builtin: self.ident()?,
                 local: self.reader.var_u16()?,
             },
-            67 => OpCode::CallBuiltin(self.ident()?, self.reader.var_u16()?),
-            68 => OpCode::CallStatic(r.var_u16()?, r.var_u16()?),
-            69 => OpCode::CallStaticExact(r.var_u16()?, r.var_u16()?),
-            70 => OpCode::CallStaticExact0(self.static_target()?),
-            71 => OpCode::CallStaticExact1(self.static_target()?),
-            72 => OpCode::CallStaticExact2(self.static_target()?),
-            73 => OpCode::CallStaticImplicitSelf(r.var_u16()?, r.var_u16()?),
-            74 => OpCode::CallSelf(r.var_u16()?),
-            75 => OpCode::CallSelfExact(r.var_u16()?),
-            76 => OpCode::CallSelfExact0,
-            77 => OpCode::CallSelfExact1,
-            78 => OpCode::CallSelfExact2,
-            79 => OpCode::CallSelfImplicitSelf(r.var_u16()?),
-            80 => OpCode::CallLocal(r.var_u16()?, r.var_u16()?),
-            81 => OpCode::CallUpvalue(r.var_u16()?, r.var_u16()?),
-            82 => OpCode::CallUpvalueLocal {
+            tags::opcode::CALL_BUILTIN => OpCode::CallBuiltin(self.ident()?, self.reader.var_u16()?),
+            tags::opcode::CALL_STATIC => OpCode::CallStatic(r.var_u16()?, r.var_u16()?),
+            tags::opcode::CALL_STATIC_EXACT => OpCode::CallStaticExact(r.var_u16()?, r.var_u16()?),
+            tags::opcode::CALL_STATIC_EXACT0 => OpCode::CallStaticExact0(self.static_target()?),
+            tags::opcode::CALL_STATIC_EXACT1 => OpCode::CallStaticExact1(self.static_target()?),
+            tags::opcode::CALL_STATIC_EXACT2 => OpCode::CallStaticExact2(self.static_target()?),
+            tags::opcode::CALL_STATIC_IMPLICIT_SELF => OpCode::CallStaticImplicitSelf(r.var_u16()?, r.var_u16()?),
+            tags::opcode::CALL_SELF => OpCode::CallSelf(r.var_u16()?),
+            tags::opcode::CALL_SELF_EXACT => OpCode::CallSelfExact(r.var_u16()?),
+            tags::opcode::CALL_SELF_EXACT0 => OpCode::CallSelfExact0,
+            tags::opcode::CALL_SELF_EXACT1 => OpCode::CallSelfExact1,
+            tags::opcode::CALL_SELF_EXACT2 => OpCode::CallSelfExact2,
+            tags::opcode::CALL_SELF_IMPLICIT_SELF => OpCode::CallSelfImplicitSelf(r.var_u16()?),
+            tags::opcode::CALL_LOCAL => OpCode::CallLocal(r.var_u16()?, r.var_u16()?),
+            tags::opcode::CALL_UPVALUE => OpCode::CallUpvalue(r.var_u16()?, r.var_u16()?),
+            tags::opcode::CALL_UPVALUE_LOCAL => OpCode::CallUpvalueLocal {
                 index: r.var_u16()?,
                 local: r.var_u16()?,
             },
-            83 => OpCode::CallValue(r.var_u16()?),
-            84 => OpCode::MaybeAutoCall,
-            85 => {
+            tags::opcode::CALL_VALUE => OpCode::CallValue(r.var_u16()?),
+            tags::opcode::MAYBE_AUTO_CALL => OpCode::MaybeAutoCall,
+            tags::opcode::TRY_CATCH => {
                 let has_binder = r.bool()?;
                 OpCode::TryCatch(Box::new(TryCatchInfo {
                     has_binder,
@@ -1362,28 +1378,28 @@ impl Decoder<'_> {
                     continue_offset: self.optional_i32()?,
                 }))
             }
-            86 => OpCode::FlowBreak(r.bool()?),
-            87 => OpCode::FlowContinue,
-            88 => OpCode::RaiseDestructuringFailed,
-            89 => OpCode::ReturnLocal(r.var_u16()?),
-            90 => OpCode::ReturnBinaryLocalLocal {
+            tags::opcode::FLOW_BREAK => OpCode::FlowBreak(r.bool()?),
+            tags::opcode::FLOW_CONTINUE => OpCode::FlowContinue,
+            tags::opcode::RAISE_DESTRUCTURING_FAILED => OpCode::RaiseDestructuringFailed,
+            tags::opcode::RETURN_LOCAL => OpCode::ReturnLocal(r.var_u16()?),
+            tags::opcode::RETURN_BINARY_LOCAL_LOCAL => OpCode::ReturnBinaryLocalLocal {
                 op: self.binary_op()?,
                 left: self.reader.var_u16()?,
                 right: self.reader.var_u16()?,
             },
-            91 => OpCode::ReturnBinaryLocalConst {
+            tags::opcode::RETURN_BINARY_LOCAL_CONST => OpCode::ReturnBinaryLocalConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_u16()?,
             },
-            92 => OpCode::ReturnBinaryLocalNumberConst {
+            tags::opcode::RETURN_BINARY_LOCAL_NUMBER_CONST => OpCode::ReturnBinaryLocalNumberConst {
                 op: self.binary_op()?,
                 local: self.reader.var_u16()?,
                 constant: self.reader.var_i32()?,
             },
-            93 => OpCode::Return,
-            94 => OpCode::Yield,
-            95 => OpCode::Resume(r.u8()?),
+            tags::opcode::RETURN => OpCode::Return,
+            tags::opcode::YIELD => OpCode::Yield,
+            tags::opcode::RESUME => OpCode::Resume(r.u8()?),
             other => return Err(invalid(format!("unknown instruction {other}"))),
         })
     }

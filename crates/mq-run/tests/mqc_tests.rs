@@ -258,6 +258,17 @@ fn test_run_rejects_corrupted_program() {
 }
 
 #[test]
+fn test_run_rejects_oversized_program_before_reading_it() {
+    let dir = TempDir::new().unwrap();
+    fs::File::create(dir.path().join("oversized.mqc"))
+        .unwrap()
+        .set_len(mq_lang::mqc::MAX_FILE_SIZE + 1)
+        .unwrap();
+    let error = stderr(mq(dir.path()).args(["oversized.mqc"]).assert());
+    assert!(error.contains("the limit is"), "{error}");
+}
+
+#[test]
 fn test_run_reports_missing_program() {
     let dir = TempDir::new().unwrap();
     let error = stderr(mq(dir.path()).args(["missing.mqc"]).write_stdin("# a\n").assert());

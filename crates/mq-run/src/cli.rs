@@ -69,6 +69,7 @@ fn parse_timeout(value: &str) -> Result<Duration, String> {
     mq 'query' file.md\n\n\
     mq compile -f query.mq\n\
     mq query.mqc file.md\n\n\
+    Compiled .mqc programs are experimental. Recompile them after upgrading mq.\n\n\
     Run `mq help examples` for more usage examples, or `mq help <name>` for\n\
     function/selector/module docs.\n")]
 #[command(
@@ -856,7 +857,10 @@ enum Commands {
         #[arg(long)]
         markdown: bool,
     },
-    /// Compile a query to `.mqc` bytecode. Run it with `mq PROGRAM.mqc [FILES]...`
+    /// Compile a query to experimental `.mqc` bytecode.
+    #[command(
+        long_about = "Compile a query to a .mqc program. Run it with `mq PROGRAM.mqc [FILES]...`.\n\nThe .mqc format and CLI are experimental and may change. Recompile programs after upgrading mq."
+    )]
     Compile {
         /// Query to compile, or a query file with -f
         #[arg(value_name = "QUERY OR FILE")]
@@ -1045,7 +1049,10 @@ impl Cli {
                 "  {} - Generate a shell completion script and print it to stdout",
                 "completion".green()
             ),
-            format!("  {} - Compile a query to .mqc bytecode", "compile".green()),
+            format!(
+                "  {} - Compile a query to .mqc bytecode (experimental)",
+                "compile".green()
+            ),
         ];
 
         #[cfg(feature = "debugger")]

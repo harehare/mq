@@ -928,6 +928,16 @@ pub(crate) enum BytecodeError {
         pc: usize,
         index: u16,
     },
+    EnvNameNotString {
+        chunk: usize,
+        pc: usize,
+        index: u16,
+    },
+    InvalidResumeArity {
+        chunk: usize,
+        pc: usize,
+        argc: u8,
+    },
     LocalOutOfBounds {
         chunk: usize,
         pc: usize,
@@ -971,6 +981,9 @@ pub(crate) enum BytecodeError {
         required: usize,
         available: usize,
     },
+    VerificationWorkLimit {
+        chunk: usize,
+    },
     #[cfg(feature = "mqc")]
     MissingSelfSlot(usize),
     #[cfg(feature = "mqc")]
@@ -1005,6 +1018,15 @@ impl fmt::Display for BytecodeError {
             }
             Self::ConstantOutOfBounds { chunk, pc, index } => {
                 write!(f, "chunk {chunk} pc {pc} references constant {index} out of bounds")
+            }
+            Self::EnvNameNotString { chunk, pc, index } => {
+                write!(
+                    f,
+                    "chunk {chunk} pc {pc} uses non-string constant {index} as an environment variable name"
+                )
+            }
+            Self::InvalidResumeArity { chunk, pc, argc } => {
+                write!(f, "chunk {chunk} pc {pc} resumes with invalid argument count {argc}")
             }
             Self::LocalOutOfBounds { chunk, pc, slot } => {
                 write!(f, "chunk {chunk} pc {pc} references local slot {slot} out of bounds")
@@ -1050,6 +1072,9 @@ impl fmt::Display for BytecodeError {
                     "chunk {chunk} pc {pc} needs {required} stack value(s), but only {available} are available"
                 )
             }
+            Self::VerificationWorkLimit { chunk } => {
+                write!(f, "bytecode verification work limit exceeded in chunk {chunk}")
+            }
             #[cfg(feature = "mqc")]
             Self::MissingSelfSlot(chunk) => write!(f, "chunk {chunk} has no local slot for self"),
             #[cfg(feature = "mqc")]
@@ -1073,6 +1098,13 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
     if chunks.len() > usize::from(u16::MAX) + 1 {
         return Err(BytecodeError::TooManyChunks(chunks.len()));
     }
+    // A crafted control-flow graph can lower the inferred stack height at the same
+    // instruction many times. Bound the total work across all chunks before running
+    // untrusted bytecode. Normal compiler output visits each instruction only a few times.
+    let instruction_count = chunks
+        .iter()
+        .fold(0usize, |total, chunk| total.saturating_add(chunk.code.len()));
+    let mut remaining_work = instruction_count.saturating_mul(64).clamp(1_000_000, 16_000_000);
     for (chunk_index, chunk) in chunks.iter().enumerate() {
         if chunk.code.len() > u32::MAX as usize {
             return Err(BytecodeError::TooManyInstructions {
@@ -1125,6 +1157,15 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 OpCode::Const(index) | OpCode::GetEnvVar(index) => {
                     if *index as usize >= chunk.constants.len() {
                         return Err(BytecodeError::ConstantOutOfBounds {
+                            chunk: chunk_index,
+                            pc,
+                            index: *index,
+                        });
+                    }
+                    if matches!(op, OpCode::GetEnvVar(_))
+                        && !matches!(&chunk.constants[*index as usize], RuntimeValue::String(_))
+                    {
+                        return Err(BytecodeError::EnvNameNotString {
                             chunk: chunk_index,
                             pc,
                             index: *index,
@@ -1563,6 +1604,13 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         verify_jump_target(chunk, chunk_index, pc, offset)?;
                     }
                 }
+                OpCode::Resume(argc) if !matches!(*argc, 1 | 2) => {
+                    return Err(BytecodeError::InvalidResumeArity {
+                        chunk: chunk_index,
+                        pc,
+                        argc: *argc,
+                    });
+                }
                 // Neither carries a checkable index; listed explicitly so a real operand added
                 // later doesn't silently skip verification via the wildcard below.
                 OpCode::Yield | OpCode::Resume(_) => {}
@@ -1584,7 +1632,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 verify_closure_capture_count(chunks, chunk_index, pc, *default_chunk, sources.len())?;
             }
         }
-        verify_stack_effects(chunk, chunk_index)?;
+        verify_stack_effects(chunk, chunk_index, &mut remaining_work)?;
         #[cfg(feature = "mqc")]
         verify_frame_layout(chunk, chunk_index)?;
     }
@@ -1616,11 +1664,14 @@ fn verify_frame_layout(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecode
 }
 
 /// Verifies stack depth through a chunk's control-flow graph.
-fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), BytecodeError> {
+fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut usize) -> Result<(), BytecodeError> {
     let mut heights = vec![None; chunk.code.len()];
     let mut pending = std::collections::VecDeque::from([(0usize, 0usize)]);
 
     while let Some((pc, height)) = pending.pop_front() {
+        *remaining_work = remaining_work
+            .checked_sub(1)
+            .ok_or(BytecodeError::VerificationWorkLimit { chunk: chunk_index })?;
         match heights[pc] {
             // Stack-polymorphic branches are safe when their minimum height is safe.
             Some(previous) if previous <= height => continue,
@@ -1691,6 +1742,9 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize) -> Result<(), Bytecod
                 }
             }
             _ => enqueue(pc + 1, next_height),
+        }
+        if pending.len() > 1_000_000 {
+            return Err(BytecodeError::VerificationWorkLimit { chunk: chunk_index });
         }
     }
     Ok(())
@@ -1779,8 +1833,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::CallLocal(_, count)
         | OpCode::CallUpvalue(_, count) => (*count as usize, 1),
         OpCode::CallUpvalueLocal { .. } => (0, 1),
-        // The interpreter treats `argc == 2` as `send` (pops 2) and anything else as `next`
-        // (pops 1), regardless of the declared count; mirror that exactly here.
+        // The verifier permits only 1 (`next`) or 2 (`send`).
         OpCode::Resume(count) => (if *count == 2 { 2 } else { 1 }, 1),
         OpCode::CallStaticExact0(_) | OpCode::CallSelfExact0 => (0, 1),
         OpCode::CallStaticExact1(_) | OpCode::CallSelfExact1 => (1, 1),
@@ -1945,6 +1998,23 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn stack_verifier_stops_when_its_shared_work_budget_is_exhausted() {
+        let chunk = Chunk {
+            code: vec![OpCode::PushNone, OpCode::Return],
+            ..Default::default()
+        };
+        let mut remaining_work = 0;
+        assert_eq!(
+            verify_stack_effects(&chunk, 3, &mut remaining_work),
+            Err(BytecodeError::VerificationWorkLimit { chunk: 3 })
+        );
+
+        let mut remaining_work = 2;
+        assert_eq!(verify_stack_effects(&chunk, 3, &mut remaining_work), Ok(()));
+        assert_eq!(remaining_work, 0);
+    }
+
     #[rstest]
     #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0, 0)]
     #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1, 0)]
@@ -1957,8 +2027,6 @@ mod tests {
         0,
         1,
     )]
-    // The interpreter always pops one operand for `Resume`, even when `argc` is 0.
-    #[case::resume_zero_argc_still_pops_one(vec![OpCode::Resume(0), OpCode::Return], 0, 1, 0, 0)]
     fn verifier_rejects_stack_underflow(
         #[case] code: Vec<OpCode>,
         #[case] pc: usize,
@@ -2140,6 +2208,35 @@ mod tests {
         assert!(matches!(
             verify_chunks(&[chunk]),
             Err(BytecodeError::LocalOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn verifier_rejects_non_string_environment_name() {
+        let chunk = Chunk {
+            code: vec![OpCode::GetEnvVar(0), OpCode::Return],
+            constants: vec![RuntimeValue::None],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::EnvNameNotString { index: 0, .. })
+        ));
+    }
+
+    #[rstest]
+    #[case::zero(0)]
+    #[case::three(3)]
+    fn verifier_rejects_invalid_resume_arity(#[case] argc: u8) {
+        let chunk = Chunk {
+            code: vec![OpCode::PushNone, OpCode::PushNone, OpCode::Resume(argc), OpCode::Return],
+            local_count: 1,
+            ..Default::default()
+        };
+        assert!(matches!(
+            verify_chunks(&[chunk]),
+            Err(BytecodeError::InvalidResumeArity { argc: actual, .. }) if actual == argc
         ));
     }
 

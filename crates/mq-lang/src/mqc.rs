@@ -1,5 +1,7 @@
 //! `.mqc` files: saved Tarn bytecode that runs without module lookups.
 //!
+//! This format is experimental. Keep the query source and recompile after upgrading mq.
+//!
 //! ```rust
 //! let mut engine = mq_lang::DefaultEngine::default();
 //! engine.load_builtin_module();
@@ -34,10 +36,12 @@ use wire::{Reader, Writer};
 
 const MAGIC: &[u8; 4] = b"MQC\0";
 const CONTAINER_VERSION: u16 = 1;
+const SECTION_VERSION: u16 = 1;
 const HEADER_LEN: usize = 16;
 const SECTION_HEADER_LEN: usize = 16;
 pub(crate) const CHECKSUM_LEN: usize = 32;
-const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
+/// Maximum size of an encoded `.mqc` file, including its checksum.
+pub const MAX_FILE_SIZE: u64 = 256 * 1024 * 1024;
 const REQUIRED_FLAG: u16 = 1;
 
 /// Bumped whenever saved bytecode stops being valid for the VM.
@@ -150,7 +154,9 @@ impl TryFrom<Vec<u8>> for Mqc {
     fn try_from(bytes: Vec<u8>) -> Result<Self, MqcError> {
         let sections = read_container(&bytes)?;
         let meta = read_compatible_meta(&sections)?;
+        section_payload(&sections, CODE, "CODE")?;
         let dependencies = decode_deps(section_payload(&sections, DEPS, "DEPS")?)?;
+        section_payload(&sections, SOURCE, "SOURCE")?;
         Ok(Self {
             bytes,
             meta,
@@ -327,7 +333,7 @@ impl<T: ModuleResolver, IO: Io> Engine<T, IO> {
     /// Loads a `.mqc` file produced by [`Engine::precompile`].
     ///
     /// The program needs no module resolution or network access. Its bytecode is verified
-    /// before anything runs. It can't run with [`Engine::enable_query_session`] on.
+    /// before anything runs.
     pub fn load(&mut self, mqc: &Mqc) -> Result<CompiledProgram, MqcError> {
         let checksum = mqc.checksum();
         if let Some(program) = self.mqc_programs.get(&checksum) {
@@ -485,7 +491,7 @@ fn hex(bytes: &[u8]) -> String {
 fn section(tag: [u8; 4], payload: Vec<u8>) -> Section<'static> {
     Section {
         tag,
-        version: 1,
+        version: SECTION_VERSION,
         required: true,
         payload: Cow::Owned(payload),
     }
@@ -559,7 +565,9 @@ fn read_sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
     if version != CONTAINER_VERSION {
         return Err(MqcError::UnsupportedContainerVersion(version));
     }
-    if header_len < HEADER_LEN || header_len > content.len() {
+    // Version 1 has no header extensions. Silently skipping bytes here could make a
+    // future header change look like a valid version 1 program.
+    if header_len != HEADER_LEN {
         return Err(MqcError::Malformed("invalid header length".into()));
     }
 
@@ -569,6 +577,11 @@ fn read_sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
         let tag: [u8; 4] = reader.take(4)?.try_into().expect("four bytes");
         let version = reader.u16()?;
         let flags = reader.u16()?;
+        if flags & !REQUIRED_FLAG != 0 {
+            return Err(MqcError::Malformed(
+                format!("unsupported flags in section {}", tag_name(&tag)).into(),
+            ));
+        }
         let len = usize::try_from(reader.u64()?).map_err(|_| MqcError::Malformed("section is too large".into()))?;
         let payload = reader.take(len)?;
         if sections.iter().any(|section| section.tag == tag) {
@@ -581,7 +594,12 @@ fn read_sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, MqcError> {
             }
             continue;
         }
-        if version != 1 {
+        if !required {
+            return Err(MqcError::Malformed(
+                format!("required section {} is marked optional", tag_name(&tag)).into(),
+            ));
+        }
+        if version != SECTION_VERSION {
             return Err(MqcError::UnsupportedSectionVersion {
                 tag: tag_name(&tag),
                 version,
@@ -717,6 +735,9 @@ fn decode_source(payload: &[u8]) -> Result<(Vec<SourceFile>, Vec<Span>), MqcErro
         };
         let start = position()?;
         let end = position()?;
+        if start > end {
+            return Err(MqcError::Malformed("source span ends before it starts".into()));
+        }
         spans.push(Span {
             file,
             range: Range { start, end },
