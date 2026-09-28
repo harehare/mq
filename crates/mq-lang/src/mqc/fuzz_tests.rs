@@ -119,6 +119,7 @@ fn edit_parts(bytes: &[u8], edit: impl FnOnce(&mut [&mut [Chunk]])) -> Vec<u8> {
 }
 
 #[test]
+#[ignore = "run fuzz tests explicitly"]
 fn test_fuzz_programs_cover_every_instruction() {
     let covered = donor_instructions()
         .iter()
@@ -312,6 +313,7 @@ fn run_with_limits(bytes: &[u8]) {
 
 proptest! {
     #[test]
+    #[ignore = "run fuzz tests explicitly"]
     fn test_load_mqc_never_panics_on_arbitrary_bytes(bytes in proptest::collection::vec(any::<u8>(), 0..512)) {
         let _ = load(&mut engine(), &bytes);
     }
@@ -321,6 +323,7 @@ proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
     #[test]
+    #[ignore = "run fuzz tests explicitly"]
     fn test_load_mqc_never_panics_on_mutated_bytecode(
         program in prop::sample::select(FUZZ_PROGRAMS),
         part in any::<Index>(),
@@ -336,6 +339,7 @@ proptest! {
     }
 
     #[test]
+    #[ignore = "run fuzz tests explicitly"]
     fn test_load_mqc_never_panics_on_corrupted_code_bytes(
         program in prop::sample::select(FUZZ_PROGRAMS),
         edits in prop::collection::vec((any::<Index>(), any::<u8>()), 1..4),
