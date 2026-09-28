@@ -30,10 +30,45 @@ export const EXAMPLE_CATEGORIES: readonly ExampleCategory[] = [
     examples: [
       { name: "Links", code: ".link" },
       { name: "Link URLs", code: ".link.url" },
+      {
+        name: "External links",
+        code: `.link.url | select(starts_with("http"))`,
+      },
+      {
+        name: "Relative links",
+        code: `.link.url | select(!starts_with("http") && !starts_with("#"))`,
+      },
+      {
+        name: "Unique link URLs",
+        code: "nodes | pluck(.link.url) | uniq",
+      },
+      { name: "Links as Markdown list", code: ".link | to_md_list(1)" },
       { name: "Images", code: ".image" },
+      { name: "Image URLs", code: ".image.url" },
       {
         name: "Images missing alt text",
         code: `select(.image.alt == "")`,
+      },
+    ],
+  },
+  {
+    name: "Tables",
+    examples: [
+      {
+        name: "First table as CSV",
+        code: `nodes
+| import "table"
+| table::tables
+| first
+| table::to_csv`,
+      },
+      {
+        name: "First table as records",
+        code: `nodes
+| import "table"
+| table::tables
+| first
+| table::to_array`,
       },
     ],
   },
@@ -42,6 +77,16 @@ export const EXAMPLE_CATEGORIES: readonly ExampleCategory[] = [
     examples: [
       { name: "Code blocks", code: ".code" },
       { name: "Code languages", code: ".code.lang" },
+      {
+        name: "Unique code languages",
+        code: "nodes | pluck(.code.lang) | uniq",
+      },
+      {
+        name: "Shell commands",
+        code: `select(.code.lang == "bash" || .code.lang == "sh" || .code.lang == "shell")
+| to_text()`,
+      },
+      { name: "Inline code", code: ".code_inline" },
       { name: "Exclude code blocks", code: "select(!.code)" },
     ],
   },
@@ -57,9 +102,51 @@ export const EXAMPLE_CATEGORIES: readonly ExampleCategory[] = [
 | let anchor = downcase(replace(text, " ", "-"))
 | let link = to_link("#" + anchor, text, "")
 | let level = .h.depth
-| if (!is_none(level)): to_md_list(link, level - 1)`,
+| if (!is_none(level)): to_md_list(link, level - 1)
+| to_string()`,
+      },
+      {
+        name: "Outline",
+        code: `.h
+| let level = .h.depth
+| if (!is_none(level)): to_md_list(to_text(), level - 1)
+| to_string()`,
+      },
+      {
+        name: "Question headings",
+        code: `.h | select(ends_with(to_text(), "?"))`,
       },
       { name: "Uppercase headings", code: ".h | upcase()" },
+    ],
+  },
+  {
+    name: "Sections",
+    examples: [
+      {
+        name: "Section by title",
+        code: `# Change "Installation" to a heading on the page.
+nodes
+| import "section"
+| section::section("Installation")
+| section::collect()`,
+      },
+      {
+        name: "Code in section",
+        code: `# Change "Installation" to a heading on the page.
+nodes
+| import "section"
+| section::section("Installation")
+| .code
+| section::collect()`,
+      },
+      {
+        name: "H2 section titles",
+        code: `nodes
+| import "section"
+| section::sections()
+| section::by_level(2)
+| section::titles()`,
+      },
     ],
   },
   {
@@ -70,6 +157,14 @@ export const EXAMPLE_CATEGORIES: readonly ExampleCategory[] = [
         code: `nodes
 | map(fn(n): to_text(n) | split(" ") | len;)
 | fold(0, fn(acc, x): acc + x;)`,
+      },
+      {
+        name: "Reading time",
+        code: `nodes
+| map(fn(n): to_text(n) | split(" ") | len;)
+| fold(0, fn(acc, x): acc + x;)
+| let words = self
+| s"\${words} words, \${ceil(words / 200)} min read"`,
       },
       {
         name: "Document statistics",
