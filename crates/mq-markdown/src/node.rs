@@ -3119,7 +3119,7 @@ impl Node {
                                         vec![Self::TableCell(TableCell {
                                             row,
                                             column,
-                                            values: Self::mdast_children_to_node(node),
+                                            values: Self::mdast_children_to_node(node.clone()),
                                             position: node.position().map(|p| p.clone().into()),
                                         })]
                                     } else {
@@ -3184,7 +3184,7 @@ impl Node {
             },
             mdast::Node::Blockquote(mdast::Blockquote { ref position, .. }) => {
                 let pos = position.clone().map(|p| p.into());
-                let values = Self::mdast_children_to_node(&node);
+                let values = Self::mdast_children_to_node(node);
                 #[cfg(feature = "callout")]
                 {
                     vec![Self::try_parse_callout(values, pos)]
@@ -3215,7 +3215,7 @@ impl Node {
             }) => {
                 let position = position.clone().map(|p| p.into());
                 vec![Self::Heading(Heading {
-                    values: Self::mdast_children_to_node(&node),
+                    values: Self::mdast_children_to_node(node),
                     depth,
                     position,
                 })]
@@ -3228,21 +3228,21 @@ impl Node {
             mdast::Node::Delete(mdast::Delete { ref position, .. }) => {
                 let position = position.clone().map(|p| p.into());
                 vec![Self::Delete(Delete {
-                    values: Self::mdast_children_to_node(&node),
+                    values: Self::mdast_children_to_node(node),
                     position,
                 })]
             }
             mdast::Node::Emphasis(mdast::Emphasis { ref position, .. }) => {
                 let position = position.clone().map(|p| p.into());
                 vec![Self::Emphasis(Emphasis {
-                    values: Self::mdast_children_to_node(&node),
+                    values: Self::mdast_children_to_node(node),
                     position,
                 })]
             }
             mdast::Node::Strong(mdast::Strong { ref position, .. }) => {
                 let position = position.clone().map(|p| p.into());
                 vec![Self::Strong(Strong {
-                    values: Self::mdast_children_to_node(&node),
+                    values: Self::mdast_children_to_node(node),
                     position,
                 })]
             }
@@ -3482,15 +3482,15 @@ impl Node {
         }
     }
 
-    fn mdast_children_to_node(node: &mdast::Node) -> Vec<Node> {
-        node.children()
-            .map(|children| {
-                children
-                    .iter()
-                    .flat_map(|v| Self::from_mdast_node(v.clone()))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| vec![EMPTY_NODE])
+    /// Converts the children of `node`, moving them out to avoid deep-cloning the subtree at every level.
+    fn mdast_children_to_node(mut node: mdast::Node) -> Vec<Node> {
+        match node.children_mut() {
+            Some(children) => std::mem::take(children)
+                .into_iter()
+                .flat_map(Self::from_mdast_node)
+                .collect::<Vec<_>>(),
+            None => vec![EMPTY_NODE],
+        }
     }
 
     fn mdast_list_items(list: &mdast::List, level: Level) -> Vec<Node> {
