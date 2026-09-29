@@ -1,6 +1,7 @@
 use clap::{CommandFactory, Parser, Subcommand};
 use colored::Colorize;
 use miette::IntoDiagnostic;
+use miette::WrapErr;
 use miette::miette;
 use mq_lang::DefaultEngine;
 use mq_lang::DictMap;
@@ -1997,7 +1998,9 @@ impl Cli {
         let query = match self.query.as_ref() {
             Some(q) if self.input.from_file => {
                 let path = PathBuf::from_str(q).into_diagnostic()?;
-                fs::read_to_string(path).into_diagnostic()?
+                fs::read_to_string(&path)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("failed to read `{}`", path.display()))?
             }
             Some(q) => q.clone(),
             None => return Err(miette!("Query is required")),
@@ -2710,7 +2713,9 @@ impl Cli {
         // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
-                let file_handle = fs::File::open(file).into_diagnostic()?;
+                let file_handle = fs::File::open(file)
+                    .into_diagnostic()
+                    .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
                 let reader = io::BufReader::new(file_handle);
                 for line_result in reader.lines() {
                     let line = line_result.into_diagnostic()?;
@@ -2783,10 +2788,14 @@ impl Cli {
             .map(|file| {
                 let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
-                } else if self.needs_binary_read_for_file(file) {
-                    fs::read(file).map(Into::into).into_diagnostic()?
                 } else {
-                    fs::read_to_string(file).map(Into::into).into_diagnostic()?
+                    let read = if self.needs_binary_read_for_file(file) {
+                        fs::read(file).map(ContentData::from)
+                    } else {
+                        fs::read_to_string(file).map(ContentData::from)
+                    };
+                    read.into_diagnostic()
+                        .wrap_err_with(|| format!("failed to read `{}`", file.display()))?
                 };
                 Ok((Some(file.clone()), content))
             })
@@ -2794,7 +2803,9 @@ impl Cli {
     }
 
     fn read_gzip_file(&self, file: &Path) -> miette::Result<ContentData> {
-        let raw = fs::read(file).into_diagnostic()?;
+        let raw = fs::read(file)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
         let mut decompressed = Vec::new();
         flate2::read::GzDecoder::new(&raw[..])
             .read_to_end(&mut decompressed)
@@ -6626,6 +6637,22 @@ mod tests {
         assert!(
             cli.run().is_err(),
             "--slurpfile with a missing file should return an error"
+        );
+    }
+
+    #[test]
+    fn test_missing_input_file_error_contains_path() {
+        let cli = Cli {
+            input: InputArgs::default(),
+            query: Some(".h".to_string()),
+            files: Some(vec![PathBuf::from("no_such_dir/missing_input.md")]),
+            ..Cli::default()
+        };
+
+        let err = cli.run().expect_err("missing input file should return an error");
+        assert!(
+            err.to_string().contains("no_such_dir/missing_input.md"),
+            "error should contain the file path, got: {err}"
         );
     }
 
