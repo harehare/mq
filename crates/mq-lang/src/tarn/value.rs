@@ -25,7 +25,7 @@ pub(crate) enum StackValue {
     WeakCoroutine(CoroutineWeakHandle),
     /// Like `WeakCoroutine`, but for a self-reference nested inside a captured array/dict: the
     /// container, with `RuntimeValue::WeakCoroutine` markers standing in for cleared entries.
-    NestedWeakCoroutine(RuntimeValue),
+    NestedWeakCoroutine(Box<RuntimeValue>),
 }
 
 impl StackValue {
@@ -47,7 +47,7 @@ impl StackValue {
             StackValue::Value(value) if value_contains_self_reference(value, handle) => {
                 let mut value = std::mem::take(value);
                 clear_self_reference(&mut value, handle);
-                *self = StackValue::NestedWeakCoroutine(value);
+                *self = StackValue::NestedWeakCoroutine(Box::new(value));
             }
             _ => {}
         }
@@ -182,7 +182,7 @@ pub(crate) fn sanitize_nested_self_reference(cell: &Cell, handle: &CoroutineHand
         return None;
     }
     clear_self_reference(&mut value, handle);
-    Some(new_cell(StackValue::NestedWeakCoroutine(value)))
+    Some(new_cell(StackValue::NestedWeakCoroutine(Box::new(value))))
 }
 
 /// A closure on the VM operand stack.
@@ -789,5 +789,17 @@ mod tests {
                 panic!("test locals only contain runtime values")
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod stack_value_size_tests {
+    #[test]
+    fn stack_value_is_no_larger_than_runtime_value_plus_tag() {
+        assert!(
+            std::mem::size_of::<super::StackValue>() <= 16,
+            "StackValue grew to {} bytes; box rare variants instead of widening it",
+            std::mem::size_of::<super::StackValue>()
+        );
     }
 }
