@@ -68,6 +68,7 @@ Downloads the latest mq binary for your platform, installs it to `~/.local/bin/`
 | Method                 | Command                                      |
 | ---------------------- | -------------------------------------------- |
 | Homebrew (macOS/Linux) | `brew install mq`                            |
+| MacPorts (macOS)       | `sudo port install mq`                       |
 | Arch (yay)             | `yay -S mq-bin`                              |
 | Cargo (crates.io)      | `cargo install mq-run`                       |
 | Docker                 | `docker run --rm ghcr.io/harehare/mq:latest` |

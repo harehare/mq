@@ -50,6 +50,15 @@ Invoke-WebRequest -Uri https://github.com/harehare/mq/releases/download/v0.9.2/m
 $ brew install mq
 ```
 
+## MacPorts
+
+```sh
+# Using MacPorts (macOS)
+$ sudo port install mq
+```
+
+The MacPorts port is maintained by the community.
+
 ## Docker
 
 ```sh

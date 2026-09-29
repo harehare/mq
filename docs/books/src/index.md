@@ -18,6 +18,12 @@ On macOS and Linux, you can also use Homebrew:
 brew install mq
 ```
 
+On macOS, MacPorts is also available:
+
+```bash
+sudo port install mq
+```
+
 For other installation methods including Cargo, pre-built binaries, Docker, and more, see the [Install](start/install.md) page.
 
 ## Your First Query
