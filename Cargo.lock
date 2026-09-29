@@ -2911,6 +2911,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "mq-repl",
+ "nix",
  "notify",
  "quick-xml",
  "rayon",

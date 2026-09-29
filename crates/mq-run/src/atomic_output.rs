@@ -375,18 +375,24 @@ mod tests {
         assert_eq!(mode, 0o640);
     }
 
+    /// A FIFO stands in for any special file. Unlike a Unix socket, its path is not
+    /// limited by `sun_path`, so the tests don't depend on the length of `TMPDIR`.
+    #[cfg(unix)]
+    fn make_fifo(path: &Path) {
+        nix::unistd::mkfifo(path, nix::sys::stat::Mode::S_IRWXU).expect("failed to create fifo");
+    }
+
     #[cfg(unix)]
     #[test]
-    fn test_auto_mode_falls_back_to_direct_write_for_socket() {
+    fn test_auto_mode_falls_back_to_direct_write_for_special_file() {
         use std::os::unix::fs::FileTypeExt;
-        use std::os::unix::net::UnixListener;
 
-        let dir = temp_dir("socket");
+        let dir = temp_dir("fifo");
         defer! { let _ = fs::remove_dir_all(&dir); }
-        let target = dir.join("out.sock");
+        let target = dir.join("out.fifo");
 
-        let _listener = UnixListener::bind(&target).expect("failed to bind unix socket");
-        assert!(fs::symlink_metadata(&target).unwrap().file_type().is_socket());
+        make_fifo(&target);
+        assert!(fs::symlink_metadata(&target).unwrap().file_type().is_fifo());
         assert!(!OutputSink::target_supports_atomic(&target).unwrap());
     }
 
@@ -394,19 +400,18 @@ mod tests {
     #[test]
     fn test_always_mode_skips_special_file_check() {
         use std::os::unix::fs::FileTypeExt;
-        use std::os::unix::net::UnixListener;
 
-        let dir = temp_dir("socket-always");
+        let dir = temp_dir("fifo-always");
         defer! { let _ = fs::remove_dir_all(&dir); }
-        let target = dir.join("out.sock");
-        let _listener = UnixListener::bind(&target).expect("failed to bind unix socket");
+        let target = dir.join("out.fifo");
+        make_fifo(&target);
 
         // `always` skips the special-file check.
         let mut sink = open_overwrite(&Some(target.clone()), AtomicOutput::Always, false).unwrap();
         sink.write_all(b"data").unwrap();
         sink.finish().unwrap();
 
-        assert!(!fs::symlink_metadata(&target).unwrap().file_type().is_socket());
+        assert!(!fs::symlink_metadata(&target).unwrap().file_type().is_fifo());
         assert_eq!(fs::read_to_string(&target).unwrap(), "data");
     }
 
