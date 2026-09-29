@@ -2327,7 +2327,7 @@ impl Cli {
     fn watch_targets(&self) -> miette::Result<Vec<PathBuf>> {
         let mut targets = self.resolved_files()?.unwrap_or_default();
 
-        if targets.is_empty() {
+        if targets.is_empty() || targets.iter().any(|t| Self::is_stdin_path(t)) {
             return Err(miette!(
                 "--watch requires at least one input file; stdin cannot be watched"
             ));
@@ -2713,6 +2713,12 @@ impl Cli {
         // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
+                if Self::is_stdin_path(file) {
+                    for line_result in io::BufReader::new(io::stdin().lock()).lines() {
+                        process(None, line_result.into_diagnostic()?)?;
+                    }
+                    continue;
+                }
                 let file_handle = fs::File::open(file)
                     .into_diagnostic()
                     .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
@@ -2779,13 +2785,40 @@ impl Cli {
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
-        self.files.as_deref().map(Self::expand_glob_patterns).transpose()
+        let files = self.files.as_deref().map(Self::expand_glob_patterns).transpose()?;
+        if files
+            .as_ref()
+            .is_some_and(|f| f.iter().filter(|p| Self::is_stdin_path(p)).count() > 1)
+        {
+            return Err(miette!("`-` (stdin) can be specified only once"));
+        }
+        Ok(files)
+    }
+
+    /// Returns `true` if `path` is `-`, which refers to stdin.
+    fn is_stdin_path(path: &Path) -> bool {
+        path == Path::new("-")
+    }
+
+    fn read_stdin(&self) -> miette::Result<ContentData> {
+        if self.is_binary_format() {
+            let mut buf = Vec::new();
+            io::stdin().read_to_end(&mut buf).into_diagnostic()?;
+            Ok(buf.into())
+        } else {
+            let mut input = String::new();
+            io::stdin().read_to_string(&mut input).into_diagnostic()?;
+            Ok(input.into())
+        }
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         files
             .iter()
             .map(|file| {
+                if Self::is_stdin_path(file) {
+                    return Ok((None, self.read_stdin()?));
+                }
                 let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
                 } else {
@@ -2839,15 +2872,7 @@ impl Cli {
                     return Ok(vec![(None, ContentData::empty())]);
                 }
 
-                if self.is_binary_format() {
-                    let mut buf = Vec::new();
-                    io::stdin().read_to_end(&mut buf).into_diagnostic()?;
-                    Ok(vec![(None, buf.into())])
-                } else {
-                    let mut input = String::new();
-                    io::stdin().read_to_string(&mut input).into_diagnostic()?;
-                    Ok(vec![(None, input.into())])
-                }
+                Ok(vec![(None, self.read_stdin()?)])
             })
     }
 
@@ -6654,6 +6679,18 @@ mod tests {
             err.to_string().contains("no_such_dir/missing_input.md"),
             "error should contain the file path, got: {err}"
         );
+    }
+
+    #[test]
+    fn test_duplicate_stdin_argument_errors() {
+        let cli = Cli {
+            query: Some(".h".to_string()),
+            files: Some(vec![PathBuf::from("-"), PathBuf::from("-")]),
+            ..Cli::default()
+        };
+
+        let err = cli.run().expect_err("`-` specified twice should return an error");
+        assert!(err.to_string().contains("only once"), "unexpected error: {err}");
     }
 
     #[test]
