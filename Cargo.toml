@@ -89,7 +89,7 @@ notify = "8.2.0"
 opentelemetry = "0.33"
 opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic"]}
 opentelemetry_sdk = {version = "0.33", features = ["rt-tokio"]}
-opfs = "0.2.0"
+opfs = "0.3.1"
 percent-encoding = "2.3.2"
 proptest = "1.11"
 quick-xml = "0.42.0"
@@ -132,8 +132,8 @@ unicode-segmentation = "1.13.3"
 unicode-width = "0.2.2"
 ureq = {version = "3"}
 url = "2.5.8"
-utoipa = "5.5"
-utoipa-swagger-ui = {version = "9", features = ["axum", "vendored"]}
+utoipa = "6.0"
+utoipa-swagger-ui = {version = "10", features = ["axum", "vendored"]}
 uuid = "1.23.4"
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.55"
