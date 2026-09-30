@@ -260,8 +260,9 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
             yaml_rust2::Yaml::Null | yaml_rust2::Yaml::BadValue => RuntimeValue::NONE,
             yaml_rust2::Yaml::Boolean(b) => RuntimeValue::Boolean(b),
             yaml_rust2::Yaml::Integer(i) => RuntimeValue::Number((i as f64).into()),
-            yaml_rust2::Yaml::Real(s) => s
-                .parse::<f64>()
+            // `as_f64` also understands the YAML core schema `.inf` / `-.inf` / `.nan`.
+            real @ yaml_rust2::Yaml::Real(_) => real
+                .as_f64()
                 .map(|f| RuntimeValue::Number(f.into()))
                 .unwrap_or(RuntimeValue::NONE),
             yaml_rust2::Yaml::String(s) => RuntimeValue::String(Shared::new(s)),
@@ -272,7 +273,10 @@ impl From<yaml_rust2::Yaml> for RuntimeValue {
                 let mut btree = DictMap::default();
                 for (k, v) in map {
                     let key = match k {
-                        yaml_rust2::Yaml::String(s) => s,
+                        yaml_rust2::Yaml::String(s) | yaml_rust2::Yaml::Real(s) => s,
+                        yaml_rust2::Yaml::Integer(i) => i.to_string(),
+                        yaml_rust2::Yaml::Boolean(b) => b.to_string(),
+                        yaml_rust2::Yaml::Null => "null".to_string(),
                         other => format!("{other:?}"),
                     };
                     btree.insert(Ident::new(&key), RuntimeValue::from(v));

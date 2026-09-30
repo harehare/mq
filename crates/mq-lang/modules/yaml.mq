@@ -36,6 +36,26 @@ def _yaml_scalar(str):
     str
 end
 
+# True for a non-empty array or dict, which is written as an indented block.
+def _yaml_is_block(value):
+  if (is_array(value)):
+    !is_empty(value)
+  elif (is_dict(value)):
+    !is_empty(keys(value))
+  else:
+    false
+end
+
+# Joins an entry head (`key:` or `-`) and its rendered value without a trailing space before a block.
+def _yaml_entry(head, value, rendered):
+  if (_yaml_is_block(value)): head + rendered else: head + " " + rendered
+end
+
+# Renders a value as a Markdown table cell, escaping `|` and newlines.
+def _yaml_table_cell(value):
+  if (is_none(value)): "" else: replace(replace(to_string(value), "\n", "\\n"), "|", "\\|")
+end
+
 def _yaml_stringify_value(value, indent_level):
   let indent = repeat(" ", indent_level * 2)
   | if (is_string(value)):
@@ -50,12 +70,12 @@ def _yaml_stringify_value(value, indent_level):
       if (is_empty(value)):
         "[]"
       else:
-        join(map(value, fn(item): "\n" + indent + "- " + _yaml_stringify_value(item, indent_level + 1);), "")
+        join(map(value, fn(item): "\n" + indent + _yaml_entry("-", item, _yaml_stringify_value(item, indent_level + 1));), "")
     elif (is_dict(value)):
       if (is_empty(keys(value))):
         "{}"
       else:
-        join(map(sort(keys(value)), fn(k): "\n" + indent + _yaml_scalar(k) + ": " + _yaml_stringify_value(value[k], indent_level + 1);), "")
+        join(map(keys(value), fn(k): "\n" + indent + _yaml_entry(_yaml_scalar(k) + ":", value[k], _yaml_stringify_value(value[k], indent_level + 1));), "")
     else:
       to_string(value)
 end
@@ -108,17 +128,19 @@ def yaml_stringify(data):
     if (is_empty(data)):
       "[]"
     else:
-      join(map(data, fn(item): "- " + _yaml_stringify_value(item, 1);), "\n")
+      join(map(data, fn(item): _yaml_entry("-", item, _yaml_stringify_value(item, 1));), "\n")
   elif (is_dict(data)):
     if (is_empty(keys(data))):
       "{}"
     else:
-      join(map(sort(keys(data)), fn(k): _yaml_scalar(k) + ": " + _yaml_stringify_value(data[k], 1);), "\n")
+      join(map(keys(data), fn(k): _yaml_entry(_yaml_scalar(k) + ":", data[k], _yaml_stringify_value(data[k], 1));), "\n")
   else:
     _yaml_stringify_value(data, 0)
 end
 
 # Converts a YAML data structure to a Markdown table.
+# The columns are the union of the keys of all rows, in first-seen order.
+# `|` and newlines in cells are escaped, and an empty array gives an empty string.
 #
 # Example:
 # ```
@@ -130,13 +152,15 @@ end
 #
 # Returns: string
 def yaml_to_markdown_table(data):
-  if (is_array(data)):
+  if (is_array(data) && is_empty(data)):
+    ""
+  elif (is_array(data)):
     do
-      let headers = keys(first(data))
-      | let header_row = "| " + join(headers, " | ") + " |"
+      let headers = uniq(flatten(map(data, fn(row): keys(row);)))
+      | let header_row = "| " + join(map(headers, _yaml_table_cell), " | ") + " |"
       | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
       | let data_rows = map(data, fn(row):
-          "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
+          "| " + join(map(headers, fn(header): _yaml_table_cell(row[header]);), " | ") + " |"
         end)
       | [header_row, separator_row] + data_rows
       | join("\n")
@@ -147,13 +171,13 @@ def yaml_to_markdown_table(data):
       | let header_row = "| " + join(headers, " | ") + " |"
       | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
       | let data_rows = map(keys(data), fn(key):
-          "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
+          "| " + _yaml_table_cell(key) + " | " + _yaml_table_cell(data[key]) + " |"
         end)
       | [header_row, separator_row] + data_rows
       | join("\n")
     end
   else:
-    "| Value |\n| --- |\n| " + to_string(data) + " |"
+    "| Value |\n| --- |\n| " + _yaml_table_cell(data) + " |"
 end
 
 # Converts a data structure to a JSON string representation.
@@ -167,7 +191,7 @@ end
 # Returns: string
 def yaml_to_json(data):
   if (is_dict(data)):
-    "{" + join(map(keys(data), fn(k): "\"" + k + "\": " + yaml_to_json(data[k]);), ", ") + "}"
+    "{" + join(map(keys(data), fn(k): "\"" + _escape_string(k) + "\": " + yaml_to_json(data[k]);), ", ") + "}"
   elif (is_array(data)):
     "[" + join(map(data, yaml_to_json), ", ") + "]"
   elif (is_string(data)):
