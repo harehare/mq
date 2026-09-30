@@ -61,6 +61,7 @@ pub struct BenchRunner {
     format: OutputFormat,
     output: Option<PathBuf>,
     baseline: Option<PathBuf>,
+    module_directories: Vec<PathBuf>,
 }
 
 impl BenchRunner {
@@ -75,7 +76,15 @@ impl BenchRunner {
             format: OutputFormat::default(),
             output: None,
             baseline: None,
+            module_directories: Vec::new(),
         }
+    }
+
+    /// Adds extra module search directories, tried after the bench file's own directory.
+    /// When empty, the current working directory is searched instead.
+    pub fn with_module_directories(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.module_directories = dirs;
+        self
     }
 
     /// Sets the number of timed iterations run per bench (minimum 1).
@@ -198,11 +207,18 @@ impl BenchRunner {
         );
         engine.load_builtin_module();
 
+        let mut search_paths = Vec::new();
         if let Some(parent) = file.parent()
             && parent != Path::new("")
         {
-            engine.set_search_paths(vec![parent.to_path_buf()]);
+            search_paths.push(parent.to_path_buf());
         }
+        if self.module_directories.is_empty() {
+            search_paths.push(PathBuf::from("."));
+        } else {
+            search_paths.extend(self.module_directories.iter().cloned());
+        }
+        engine.set_search_paths(search_paths);
 
         let compiled = engine.compile(&query)?;
 
@@ -519,6 +535,32 @@ mod tests {
 
         // Skipped, not failed — nothing errored, so the run still reports success.
         let passed = BenchRunner::new(vec![bench_file]).run().unwrap();
+        assert!(passed);
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_run_resolves_modules_from_module_directories() {
+        let dir = std::env::temp_dir().join(format!("mq_bench_modules_{}", std::process::id()));
+        let lib_dir = dir.join("lib");
+        let bench_dir = dir.join("bench");
+        fs::create_dir_all(&lib_dir).unwrap();
+        fs::create_dir_all(&bench_dir).unwrap();
+        fs::write(lib_dir.join("helper.mq"), "def helper():\n  1\nend\n").unwrap();
+        let bench_file = bench_dir.join("bench.mq");
+        fs::write(
+            &bench_file,
+            "import \"helper\"\n| def bench_helper():\n  helper::helper()\nend\n",
+        )
+        .unwrap();
+
+        let passed = BenchRunner::new(vec![bench_file])
+            .with_iterations(2)
+            .with_warmup(0)
+            .with_module_directories(vec![lib_dir])
+            .run()
+            .unwrap();
         assert!(passed);
 
         fs::remove_dir_all(&dir).ok();
