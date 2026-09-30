@@ -28,6 +28,12 @@ struct Cli {
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
 
+    /// Additional directory to search for imported modules. Repeatable.
+    /// The bench file's own directory is always searched first; when omitted,
+    /// the current directory is searched as well.
+    #[arg(short = 'L', long = "directory")]
+    module_directories: Option<Vec<PathBuf>>,
+
     /// Number of timed iterations run per bench.
     #[arg(short = 'n', long, default_value_t = 100)]
     iterations: usize,
@@ -57,6 +63,7 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match BenchRunner::new(cli.files)
+        .with_module_directories(cli.module_directories.unwrap_or_default())
         .with_iterations(cli.iterations)
         .with_warmup(cli.warmup)
         .with_filter(cli.filter)
