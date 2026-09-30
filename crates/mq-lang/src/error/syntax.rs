@@ -117,7 +117,7 @@ mod tests {
     #[case(SyntaxError::MultipleVariadicParameters(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFAfterToken(eof_token()), true)]
     #[case(SyntaxError::UnmatchedEnd(eof_token()), true)]
-    #[case(SyntaxError::TooDeeplyNested(eof_token(), 256), true)]
+    #[case(SyntaxError::TooDeeplyNested(eof_token(), 512), true)]
     fn test_token_presence(#[case] err: SyntaxError, #[case] has_token: bool) {
         assert_eq!(err.token().is_some(), has_token);
     }
