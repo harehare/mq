@@ -275,3 +275,17 @@ def test_merge3_ours_edits_alone_apply_cleanly(xs, ys):
   | let result = json::merge3(base, ours, base)
   | assert_eq(result, {"value": ours, "conflicts": []})
 end
+
+# JSON has no inf/NaN, so they are written as null.
+def test_json_stringify_non_finite_numbers_are_null():
+  assert_eq(json::json_stringify([to_number("inf"), to_number("-inf"), 1]), "[null, null, 1]")
+end
+
+# @parametrize([
+#   [[{"a": "x|y"}, {"b": 0}], "| a | b |\n| --- | --- |\n| x\\|y |  |\n|  | 0 |"],
+#   [{"a": 0, "b": None}, "| Key | Value |\n| --- | --- |\n| a | 0 |\n| b |  |"],
+#   [[], ""],
+# ])
+def test_json_to_markdown_table_edge_cases(input, expected):
+  assert_eq(json::json_to_markdown_table(input), expected)
+end
