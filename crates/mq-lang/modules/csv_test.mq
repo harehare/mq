@@ -196,3 +196,31 @@ def test_fill_parse_stringify_round_trip():
   | assert_eq(csv::csv_stringify(csv::forward_fill(csv::csv_parse(input, true), ["region"]), ","), expected)
   | assert_eq(csv::csv_stringify(csv::forward_fill(csv::csv_parse(input, false), ["region"]), ","), expected)
 end
+
+# 0 and false are real values, only None is an empty field.
+def test_csv_stringify_keeps_zero_and_false():
+  assert_eq(csv::csv_stringify([{"a": 0, "b": false, "c": None, "d": ""}], ","), "a,b,c,d\n0,false,,")
+end
+
+# Dict rows use the union of all keys, not only the first row's.
+def test_csv_stringify_unions_dict_keys():
+  assert_eq(csv::csv_stringify([{"a": 1}, {"a": 2, "b": 3}], ","), "a,b\n1,\n2,3")
+end
+
+def test_csv_stringify_empty():
+  assert_eq(csv::csv_stringify([], ","), "")
+end
+
+# @parametrize([
+#   [[{"a": 0, "b": "x|y", "c": false}], "| a | b | c |\n| --- | --- | --- |\n| 0 | x\\|y | false |"],
+#   [[["a", "b"], [1, None]], "| a | b |\n| --- | --- |\n| 1 |  |"],
+#   [[], ""],
+# ])
+def test_csv_to_markdown_table_edge_cases(input, expected):
+  assert_eq(csv::csv_to_markdown_table(input), expected)
+end
+
+def test_csv_to_json_escapes_control_characters():
+  let result = csv::csv_to_json([{"a": "x\ry\u0001"}])
+  | assert_eq(json::json_parse(result), [{"a": "x\ry\u0001"}])
+end
