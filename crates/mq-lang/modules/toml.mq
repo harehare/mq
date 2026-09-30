@@ -28,7 +28,7 @@ end
 # TOML has no null, so None-valued entries are omitted.
 def _toml_keys(d): filter(keys(d), fn(k): !is_none(d[k]););
 
-def _is_toml_table(value): is_dict(value) || (is_array(value) && !is_empty(value) && is_dict(first(value)));
+def _is_toml_table(value): is_dict(value) || (is_array(value) && !is_empty(value) && is_empty(filter(value, fn(v): !is_dict(v);)));
 
 # Scalars and inline arrays must precede tables: a key after a `[table]` header belongs to that table.
 def _toml_ordered_keys(data):
@@ -36,27 +36,28 @@ def _toml_ordered_keys(data):
   | groups[1] + groups[0]
 end
 
-def _add_toml_lines(lines, key, value):
-  if (is_none(value)):
-    lines
-  elif (is_dict(value)):
-    do
-      let body_lines = map(_toml_keys(value), fn(k): _toml_key(k) + " = " + _toml_stringify_value(value[k]);)
-      | lines + ["[" + _toml_key(key) + "]"] + body_lines + (if (is_empty(body_lines)): [] else: [""])
-    end
-  elif (is_array(value)):
-    if (is_empty(value) || !is_dict(first(value))):
-      lines + [_toml_key(key) + " = " + _toml_stringify_value(value)]
+# `path` holds the already-quoted keys of the enclosing table, used to build dotted headers.
+def _toml_table_lines(path, data):
+  flat_map(_toml_ordered_keys(data), fn(k): _toml_entry_lines(path, k, data[k]);)
+end
+
+def _toml_entry_lines(path, key, value):
+  let full = path + [_toml_key(key)]
+  | let name = join(full, ".")
+  | if (is_dict(value)):
+      ["", "[" + name + "]"] + _toml_table_lines(full, value)
+    elif (_is_toml_table(value)):
+      flat_map(value, fn(entry): ["", "[[" + name + "]]"] + _toml_table_lines(full, entry);)
     else:
-      lines + flat_map(value, fn(entry): ["[[" + _toml_key(key) + "]]"] + map(_toml_keys(entry), fn(k): _toml_key(k) + " = " + _toml_stringify_value(entry[k]););)
-  else: lines + [_toml_key(key) + " = " + _toml_stringify_value(value)]
+      [_toml_key(key) + " = " + _toml_stringify_value(value)]
 end
 
 def _toml_stringify_value(value):
   if (is_string(value)):
     "\"" + _escape_string(value) + "\""
   elif (is_number(value)):
-    to_string(value)
+    # TOML spells NaN in lowercase.
+    if (to_string(value) == "NaN"): "nan" else: to_string(value)
   elif (is_bool(value)):
     if (value): "true" else: "false"
   elif (is_array(value)):
@@ -111,17 +112,8 @@ end
 #
 # Returns: string
 def toml_stringify(data):
-  let lines = []
-  | let result = _toml_ordered_keys(data)
-  | var i = 0
-  | let final_lines = while (i < len(result)):
-      let key = result[i]
-      | let value = data[key]
-      | let lines = _add_toml_lines(lines, key, value)
-      | i += 1
-      | lines
-    end
-  | join(final_lines, "\n")
+  let lines = _toml_table_lines([], data)
+  | join(if (!is_empty(lines) && first(lines) == ""): slice(lines, 1, len(lines)) else: lines, "\n")
 end
 
 # Converts a data structure to a JSON string representation.

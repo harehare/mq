@@ -85,6 +85,29 @@ def test_toml_stringify_keeps_scalars_out_of_tables(input):
   assert_eq(toml::toml_parse(toml::toml_stringify(input)), input)
 end
 
+# Nested tables are emitted as dotted `[a.b]` headers, not inline tables.
+# @parametrize([
+#   [{"t": {"u": {"v": 1}}, "z": 3}, "z = 3\n\n[t]\n\n[t.u]\nv = 1"],
+#   [{"a": 1, "t": {"x": 2}}, "a = 1\n\n[t]\nx = 2"],
+#   [{"m": [{"a": {"b": 1}, "c": 2}]}, "[[m]]\nc = 2\n\n[m.a]\nb = 1"],
+#   [{"m": [{"a": [{"b": 1}]}]}, "[[m]]\n\n[[m.a]]\nb = 1"],
+# ])
+def test_toml_stringify_nested_tables(input, expected):
+  assert_eq(toml::toml_stringify(input), expected)
+  | assert_eq(toml::toml_parse(expected), input)
+end
+
+# Datetimes have no mq equivalent and parse to their string form; inf/nan must survive a round trip.
+def test_toml_parse_datetime_is_string():
+  assert_eq(toml::toml_parse("d = 1979-05-27T07:32:00Z"), {"d": "1979-05-27T07:32:00Z"})
+end
+
+def test_toml_parse_inf_nan():
+  let result = toml::toml_parse("a = inf\nb = -inf\nc = nan")
+  | assert_eq(result["a"], toml::toml_parse(toml::toml_stringify(result))["a"])
+  | assert_eq(toml::toml_stringify(result), "a = inf\nb = -inf\nc = nan")
+end
+
 # TOML has no null: None-valued keys are omitted, and a null inside an array is an error.
 # @parametrize([
 #   [{"a": 1, "k": None}, {"a": 1}],
