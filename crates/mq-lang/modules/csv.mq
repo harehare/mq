@@ -17,6 +17,30 @@ def csv_needs_quote(field, delimiter):
   | contains(s, "\"") || contains(s, "\n") || contains(s, "\r") || contains(s, delimiter) || starts_with(s, " ") || ends_with(s, " ")
 end
 
+# Quotes a field when needed. None becomes an empty field; 0 and false are kept.
+def _csv_field(field, delimiter):
+  if (is_none(field)):
+    ""
+  else:
+    let s = to_string(field)
+    | if (csv_needs_quote(field, delimiter)): "\"" + replace(s, "\"", "\"\"") + "\"" else: s
+end
+
+# Dict rows use the union of all keys, in first-seen order. Array rows use the first row.
+def _csv_headers(data):
+  if (is_empty(data)):
+    []
+  elif (is_dict(first(data))):
+    uniq(flat_map(data, fn(row): keys(row);))
+  else:
+    first(data)
+end
+
+# Escapes `|` and newlines so a value stays inside its Markdown table cell.
+def _csv_md_cell(value):
+  if (is_none(value)): "" else: replace(replace(to_string(value), "|", "\\|"), "\n", "\\n")
+end
+
 # Parses CSV content with a specified delimiter and optional header row.
 #
 # Example:
@@ -72,35 +96,13 @@ def psv_parse(input, has_header): _csv_parse(input, "|", has_header);
 #
 # Returns: string
 def csv_stringify(data, delimiter):
-  let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
-    keys(first(data))
-  else: first(data)
-  | let header_line = join(map(headers, fn(header):
-      let s = to_string(header)
-      | if (csv_needs_quote(header, delimiter)):
-          "\"" + replace(s, "\"", "\"\"") + "\""
-        else: s;), delimiter)
-  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
-  | let process_row = fn(row):
-      if (is_dict(row)):
-        join(map(headers, fn(header):
-          if (row[header]):
-            if (csv_needs_quote(row[header], delimiter)):
-              "\"" + replace(to_string(row[header]), "\"", "\"\"") + "\""
-            else:
-              to_string(row[header])
-          else:
-            "";), delimiter)
-      else:
-        join(map(row, fn(field):
-          let s = to_string(field)
-          | if (csv_needs_quote(field, delimiter)):
-              "\"" + replace(s, "\"", "\"\"") + "\""
-            else: s;), delimiter)
-    end
-  | let data_lines = map(data, process_row)
-  | [header_line] + data_lines
-  | join("\n")
+  let headers = _csv_headers(data)
+  | let rows = if (!is_empty(data) && is_dict(first(data))): data else: skip(data, 1)
+  | let to_line = fn(row): join(map(if (is_dict(row)): map(headers, fn(h): row[h];) else: row, fn(f): _csv_field(f, delimiter);), delimiter);
+  | if (is_empty(data)):
+      ""
+    else:
+      join([to_line(headers)] + map(rows, to_line), "\n")
 end
 
 # Converts CSV data to a Markdown table format.
@@ -115,20 +117,16 @@ end
 #
 # Returns: string
 def csv_to_markdown_table(data):
-  let headers = if (is_array(data) && len(data) > 0 && is_dict(first(data))):
-    keys(first(data))
-  else: first(data)
-  | let header_row = "| " + join(headers, " | ") + " |"
-  | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-  | let data = if (is_dict(first(data))): data else: data[1:len(data)]
-  | let data_rows = map(data, fn(row):
-      if (is_dict(row)):
-        "| " + join(map(headers, fn(header): if (row[header]): to_string(row[header]) else: "";), " | ") + " |"
-      else:
-        "| " + join(map(row, to_string), " | ") + " |"
-    end)
-  | [header_row, separator_row] + data_rows
-  | join("\n")
+  if (is_empty(data)):
+    ""
+  else:
+    do
+      let headers = _csv_headers(data)
+      | let rows = if (is_dict(first(data))): data else: skip(data, 1)
+      | let to_row = fn(cells): "| " + join(map(cells, _csv_md_cell), " | ") + " |";
+      | let data_rows = map(rows, fn(row): to_row(if (is_dict(row)): map(headers, fn(h): row[h];) else: row);)
+      | join([to_row(headers), "| " + join(map(headers, fn(_): "---";), " | ") + " |"] + data_rows, "\n")
+    end
 end
 
 # Converts CSV data to a JSON string.
@@ -146,8 +144,16 @@ end
 #
 # Returns: string
 def csv_to_json(data):
+  def _escape_control_char(code):
+    if (code < 32):
+      "\\u00" + slice("0123456789abcdef", code / 16, code / 16 + 1) + slice("0123456789abcdef", code % 16, code % 16 + 1)
+    else:
+      implode([code])
+  end
+
   def _escape_json_string(str):
-    replace(replace(replace(replace(str, "\\", "\\\\"), "\"", "\\\""), "\n", "\\n"), "\t", "\\t")
+    let escaped = replace(replace(replace(replace(replace(str, "\\", "\\\\"), "\"", "\\\""), "\n", "\\n"), "\t", "\\t"), "\r", "\\r")
+    | if (test(escaped, "[\\x00-\\x1f]")): join(map(explode(escaped), _escape_control_char), "") else: escaped
   end
 
   def _to_json(value):
