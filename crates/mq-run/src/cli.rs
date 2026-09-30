@@ -48,6 +48,8 @@ struct ProgramCache {
     /// One program per [`ProgramKey`]; a run usually has one or two.
     programs: Vec<(ProgramKey, mq_lang::CompiledProgram)>,
     separator: Option<mq_lang::CompiledProgram>,
+    /// Whether a file's `__FILE__` globals are installed and need resetting for stdin.
+    file_vars_set: bool,
 }
 
 fn parse_timeout(value: &str) -> Result<Duration, String> {
@@ -1840,6 +1842,8 @@ impl Cli {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
+        // Empty defaults for stdin; `--args` etc. below may override them.
+        Self::define_file_vars(&engine, None);
 
         if self.input.program.aggregate {
             engine.import_module("section").map_err(|e| *e)?;
@@ -2082,8 +2086,17 @@ impl Cli {
         }
     }
 
-    /// Sets the `__FILE__` globals; `None` (stdin) resets them so a preceding file's values don't leak.
-    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: Option<&Path>) {
+    /// Sets the `__FILE__` globals; `None` (stdin) resets them only after a file set them,
+    /// so a preceding file's values don't leak and user-defined globals survive.
+    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, cache: &mut ProgramCache, file: Option<&Path>) {
+        if file.is_none() && !cache.file_vars_set {
+            return;
+        }
+        cache.file_vars_set = file.is_some();
+        Self::define_file_vars(engine, file);
+    }
+
+    fn define_file_vars(engine: &mq_lang::DefaultEngine, file: Option<&Path>) {
         let file = file.unwrap_or_else(|| Path::new(""));
         let path = file.to_string_lossy();
         let name = file.file_name().unwrap_or_default().to_string_lossy();
@@ -2199,7 +2212,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
-        self.set_file_vars(engine, file.as_deref());
+        self.set_file_vars(engine, cache, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         if cache.separator.is_none()
             && let Some(separator) = &self.output.separator
@@ -2283,7 +2296,7 @@ impl Cli {
         let mut engine = self.create_engine()?;
         let mut cache = ProgramCache::default();
         for file in &files {
-            self.set_file_vars(&mut engine, file.as_deref());
+            self.set_file_vars(&mut engine, &mut cache, file.as_deref());
             self.program_index(&mut engine, &mut cache, &query, file)?;
         }
         Ok(())
@@ -2593,7 +2606,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<usize> {
-        self.set_file_vars(engine, file.as_deref());
+        self.set_file_vars(engine, cache, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
@@ -2686,7 +2699,7 @@ impl Cli {
                 let current_file = active_file
                     .as_ref()
                     .ok_or_else(|| miette!("streaming input did not retain its active file"))?;
-                self.set_file_vars(&mut engine, current_file.as_deref());
+                self.set_file_vars(&mut engine, &mut cache, current_file.as_deref());
 
                 program_index = self.program_index(&mut engine, &mut cache, &query, current_file)?;
             }
@@ -6703,17 +6716,47 @@ mod tests {
         assert!(err.to_string().contains("repl"), "unexpected error: {err}");
     }
 
+    fn eval_file_vars(engine: &mut mq_lang::DefaultEngine) -> String {
+        let compiled = engine.compile("__FILE__").unwrap();
+        let result = engine
+            .eval_compiled(&compiled, mq_lang::null_input().into_iter())
+            .unwrap();
+        result[0].to_string()
+    }
+
     #[test]
     fn test_set_file_vars_resets_for_stdin() {
         let cli = Cli::default();
         let mut engine = cli.create_engine().unwrap();
-        cli.set_file_vars(&mut engine, Some(Path::new("dir/a.md")));
-        cli.set_file_vars(&mut engine, None);
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, Some(Path::new("dir/a.md")));
+        assert_eq!(eval_file_vars(&mut engine), "dir/a.md");
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "");
+    }
 
-        let compiled = engine.compile("__FILE__ + __FILE_NAME__ + __FILE_STEM__").unwrap();
-        let result = engine.eval_compiled(&compiled, mq_lang::null_input().into_iter()).unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].to_string(), "");
+    #[test]
+    fn test_file_vars_default_to_empty_for_stdin() {
+        let cli = Cli::default();
+        let mut engine = cli.create_engine().unwrap();
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "");
+    }
+
+    #[test]
+    fn test_set_file_vars_keeps_user_global_for_stdin() {
+        let cli = Cli {
+            input: InputArgs {
+                args: Some(vec!["__FILE__".to_string(), "custom".to_string()]),
+                ..Default::default()
+            },
+            ..Cli::default()
+        };
+        let mut engine = cli.create_engine().unwrap();
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "custom");
     }
 
     #[test]
