@@ -18,6 +18,9 @@ use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
 
+/// Maximum expression nesting depth accepted by the parser.
+pub(crate) const MAX_PARSE_DEPTH: usize = 512;
+
 static GET_IDENT: LazyLock<Ident> = LazyLock::new(|| Ident::from(constants::builtins::GET));
 
 pub struct Parser<'a, 'alloc> {
@@ -26,6 +29,7 @@ pub struct Parser<'a, 'alloc> {
     token_cache: Vec<Option<Shared<Token>>>,
     token_arena: &'alloc mut Arena<Shared<Token>>,
     module_id: ModuleId,
+    depth: usize,
 }
 
 impl<'a, 'alloc> Parser<'a, 'alloc> {
@@ -41,6 +45,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             token_cache: vec![None; token_slice.len()],
             token_arena,
             module_id,
+            depth: 0,
         }
     }
 
@@ -432,7 +437,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    /// Every recursive path in the grammar goes through here, so the depth limit is enforced once.
     fn parse_primary_expr(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        if self.depth >= MAX_PARSE_DEPTH {
+            return Err(SyntaxError::TooDeeplyNested(token.clone(), MAX_PARSE_DEPTH));
+        }
+        self.depth += 1;
+        let result = self.parse_primary_expr_inner(token);
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_primary_expr_inner(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Selector(_) | TokenKind::DoubleDot => self.parse_selector(token),
             TokenKind::Let => self.parse_let(token),
@@ -474,6 +490,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_module(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Module => match self.tokens.peek() {
@@ -519,6 +536,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_symbol(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Colon => {
@@ -542,6 +560,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_paren(&mut self, lparen_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = lparen_token.clone();
         let token_id = self.alloc_token(lparen_token);
@@ -588,6 +607,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_postfix_ops(paren_node, lparen_token)
     }
 
+    #[inline(never)]
     fn parse_not(&mut self, not_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(not_token);
 
@@ -634,6 +654,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_negate(&mut self, minus_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(minus_token);
 
@@ -705,6 +726,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_dict(&mut self, lbrace_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = lbrace_token.clone();
         let token_id = self.alloc_token(lbrace_token);
@@ -797,6 +819,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_env(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match &token.kind {
             TokenKind::Env(s) => Ok(Shared::new(Node {
@@ -865,6 +888,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_self(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(token);
         let self_node = Shared::new(Node {
@@ -879,6 +903,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_break(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(token);
 
@@ -900,6 +925,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_yield(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(token);
 
@@ -921,6 +947,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_continue(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         Ok(Shared::new(Node {
             token_id: self.alloc_token(token),
@@ -947,6 +974,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_array(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let opening = token.clone();
         let token_id = self.alloc_token(token);
@@ -1087,6 +1115,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         )
     }
 
+    #[inline(never)]
     fn parse_literal(&mut self, literal_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let literal_node = match &literal_token.kind {
             TokenKind::BoolLiteral(b) => Ok(Shared::new(Node {
@@ -1122,6 +1151,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_ident(&mut self, ident: &str, ident_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         match self.tokens.peek().map(|t| &t.kind) {
             Some(TokenKind::Selector(selector)) if selector.len() > 1 => {
@@ -1285,7 +1315,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     }
 
     // Parses bracket access operations recursively to handle nested access like arr[0][1][2]
+    /// Chained accesses (`a[0][1]...`) recurse here, so each link counts toward the depth limit.
     fn parse_bracket_access(
+        &mut self,
+        target_node: Shared<Node>,
+        original_token: &Token,
+    ) -> Result<Shared<Node>, SyntaxError> {
+        if self.depth >= MAX_PARSE_DEPTH {
+            return Err(SyntaxError::TooDeeplyNested(original_token.clone(), MAX_PARSE_DEPTH));
+        }
+        self.depth += 1;
+        let result = self.parse_bracket_access_inner(target_node, original_token);
+        self.depth -= 1;
+        result
+    }
+
+    fn parse_bracket_access_inner(
         &mut self,
         target_node: Shared<Node>,
         original_token: &Token,
@@ -1528,6 +1573,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(current)
     }
 
+    #[inline(never)]
     fn parse_def(&mut self, def_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let ident_token = self.tokens.next();
         let ident = match &ident_token {
@@ -1558,6 +1604,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_block(&mut self, do_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let do_token_id = self.alloc_token(do_token);
         let program = self.parse_program(false)?;
@@ -1571,6 +1618,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
         let params = self.parse_params()?;
@@ -1588,6 +1636,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_postfix_ops(fn_node, fn_token)
     }
 
+    #[inline(never)]
     fn parse_while(&mut self, while_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(while_token);
         let args = self.parse_args()?;
@@ -1612,6 +1661,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_loop(&mut self, loop_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(loop_token);
 
@@ -1630,6 +1680,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_until(&mut self, until_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(until_token);
         let args = self.parse_args()?;
@@ -1654,6 +1705,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_unless(&mut self, unless_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(unless_token);
         let args = self.parse_args()?;
@@ -1676,6 +1728,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_try(&mut self, try_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(try_token);
 
@@ -1736,6 +1789,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_foreach(&mut self, foreach_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let args = self.parse_args()?;
 
@@ -1771,6 +1825,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_if(&mut self, if_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(if_token);
         let args = self.parse_args()?;
@@ -1807,6 +1862,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_match(&mut self, match_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let token_id = self.alloc_token(match_token);
 
@@ -1883,12 +1939,22 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         Ok(Pattern::Or(patterns))
     }
 
+    /// All nested patterns recurse through here, so the depth limit is enforced once.
     fn parse_single_pattern(&mut self) -> Result<Pattern, SyntaxError> {
         let token = match self.tokens.next() {
             Some(t) => t,
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
+        if self.depth >= MAX_PARSE_DEPTH {
+            return Err(SyntaxError::TooDeeplyNested(token.clone(), MAX_PARSE_DEPTH));
+        }
+        self.depth += 1;
+        let result = self.parse_single_pattern_inner(token);
+        self.depth -= 1;
+        result
+    }
 
+    fn parse_single_pattern_inner(&mut self, token: &Token) -> Result<Pattern, SyntaxError> {
         match &token.kind {
             // Wildcard pattern: _
             TokenKind::Ident(name) if name == constants::identifiers::PATTERN_MATCH_WILDCARD => Ok(Pattern::Wildcard),
@@ -2100,6 +2166,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_let(&mut self, let_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let let_token_id = self.alloc_token(let_token);
         let pattern = self.parse_let_or_var_pattern()?;
@@ -2131,6 +2198,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
+    #[inline(never)]
     fn parse_var(&mut self, var_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let var_token_id = self.alloc_token(var_token);
         let pattern = self.parse_let_or_var_pattern()?;
@@ -2219,6 +2287,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_interpolated_string(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         if let TokenKind::InterpolatedString(segments) = &token.kind {
             let mut parsed_segments = Vec::new();
@@ -2250,12 +2319,18 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             })?;
 
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
-                            let expr_node = parser.parse_expr_from_tokens().map_err(|_| {
-                                SyntaxError::UnexpectedToken(Token {
+                            parser.depth = self.depth;
+                            let expr_node = parser.parse_expr_from_tokens().map_err(|e| match e {
+                                // The token range is local to the extracted expression, so use the segment range.
+                                SyntaxError::TooDeeplyNested(mut nested, limit) => {
+                                    nested.range = *range;
+                                    SyntaxError::TooDeeplyNested(nested, limit)
+                                }
+                                _ => SyntaxError::UnexpectedToken(Token {
                                     range: *range,
                                     kind: TokenKind::InterpolatedString(vec![]),
                                     module_id: token.module_id,
-                                })
+                                }),
                             })?;
 
                             parsed_segments.push(super::node::StringSegment::Expr(expr_node));
@@ -2729,6 +2804,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }
     }
 
+    #[inline(never)]
     fn parse_selector(&mut self, token: &Token) -> Result<Shared<Node>, SyntaxError> {
         // Handle chained property access: .a.b.c → Block([Selector(Property("a")), ...])
         if let TokenKind::Selector(_) = &token.kind
@@ -9910,5 +9986,154 @@ mod tests {
             }
             Err(err) => panic!("Parse error: {:?}", err),
         }
+    }
+
+    const STACK_KIB: usize = 2048;
+
+    fn parse_source(source: &str) -> Result<Program, SyntaxError> {
+        let tokens = Lexer::new(lexer::Options::default())
+            .tokenize(source, Module::TOP_LEVEL_MODULE_ID)
+            .expect("source should tokenize");
+        let mut arena = Arena::new(16);
+        Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()
+    }
+
+    /// Runs `f` on a 2 MiB stack (the default for spawned and tokio worker threads) in release
+    /// builds. Debug frames are much larger, so debug builds get more room.
+    fn on_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+        let stack_size = if cfg!(debug_assertions) { 64 * 1024 } else { STACK_KIB } * 1024;
+        std::thread::Builder::new()
+            .stack_size(stack_size)
+            .spawn(f)
+            .unwrap()
+            .join()
+            .expect("parser must not overflow the stack")
+    }
+
+    #[rstest]
+    #[case::paren("(", "1", ")")]
+    #[case::array("[", "1", "]")]
+    #[case::dict("{\"a\": ", "1", "}")]
+    #[case::not("!", "true", "")]
+    #[case::block("do ", "1", " end")]
+    #[case::if_else("if (true): ", "1", " else: 2")]
+    #[case::fn_body("fn(): ", "1", "; ")]
+    #[case::call("f(", "1", ")")]
+    fn test_nesting_within_limit_is_accepted(#[case] open: &str, #[case] core: &str, #[case] close: &str) {
+        let source = format!(
+            "{}{}{}",
+            open.repeat(MAX_PARSE_DEPTH - 1),
+            core,
+            close.repeat(MAX_PARSE_DEPTH - 1)
+        );
+        let result = on_small_stack(move || parse_source(&source).map(|_| ()));
+        assert!(
+            !matches!(result, Err(SyntaxError::TooDeeplyNested(..))),
+            "nesting of {} should be accepted, got {:?}",
+            MAX_PARSE_DEPTH - 1,
+            result
+        );
+    }
+
+    #[rstest]
+    #[case::paren("(", "1", ")")]
+    #[case::array("[", "1", "]")]
+    #[case::dict("{\"a\": ", "1", "}")]
+    #[case::not("!", "true", "")]
+    #[case::block("do ", "1", " end")]
+    #[case::if_else("if (true): ", "1", " else: 2")]
+    #[case::fn_body("fn(): ", "1", "; ")]
+    #[case::call("f(", "1", ")")]
+    fn test_nesting_beyond_limit_returns_error(#[case] open: &str, #[case] core: &str, #[case] close: &str) {
+        let n = MAX_PARSE_DEPTH * 2;
+        let source = format!("{}{}{}", open.repeat(n), core, close.repeat(n));
+        let result = on_small_stack(move || parse_source(&source).map(|_| ()));
+        assert!(
+            matches!(result, Err(SyntaxError::TooDeeplyNested(_, MAX_PARSE_DEPTH))),
+            "expected TooDeeplyNested, got {:?}",
+            result
+        );
+    }
+
+    #[rstest]
+    #[case::let_array("let ", "[", "x", "]", " = 1")]
+    #[case::let_dict("let ", "{a: ", "x", "}", " = 1")]
+    #[case::match_array("match (1): | ", "[", "x", "]", ": 1 end")]
+    fn test_pattern_nesting_beyond_limit_returns_error(
+        #[case] prefix: &str,
+        #[case] open: &str,
+        #[case] core: &str,
+        #[case] close: &str,
+        #[case] suffix: &str,
+    ) {
+        let n = MAX_PARSE_DEPTH * 2;
+        let source = format!("{prefix}{}{core}{}{suffix}", open.repeat(n), close.repeat(n));
+        let result = on_small_stack(move || parse_source(&source).map(|_| ()));
+        assert!(
+            matches!(result, Err(SyntaxError::TooDeeplyNested(_, MAX_PARSE_DEPTH))),
+            "expected TooDeeplyNested, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_long_index_chain_returns_error() {
+        let source = format!("a{}", "[0]".repeat(MAX_PARSE_DEPTH * 2));
+        let result = on_small_stack(move || parse_source(&source).map(|_| ()));
+        assert!(
+            matches!(result, Err(SyntaxError::TooDeeplyNested(_, MAX_PARSE_DEPTH))),
+            "expected TooDeeplyNested, got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_interpolated_expr_nesting_reports_nesting_error() {
+        let n = MAX_PARSE_DEPTH * 2;
+        let source = format!("s\"${{{}1{}}}\"", "(".repeat(n), ")".repeat(n));
+        let prefix_len = "s\"".len();
+        let result = on_small_stack(move || parse_source(&source).map(|_| ()));
+        match result {
+            Err(SyntaxError::TooDeeplyNested(token, _)) => {
+                assert!(
+                    token.range.start.column >= prefix_len,
+                    "range should point into the original source, got {:?}",
+                    token.range
+                );
+            }
+            other => panic!("expected TooDeeplyNested, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_nesting_limit_boundary() {
+        let at_limit = format!(
+            "{}1{}",
+            "(".repeat(MAX_PARSE_DEPTH - 1),
+            ")".repeat(MAX_PARSE_DEPTH - 1)
+        );
+        let over_limit = format!("{}1{}", "(".repeat(MAX_PARSE_DEPTH), ")".repeat(MAX_PARSE_DEPTH));
+        let (at_limit_ok, over_limit_err) = on_small_stack(move || {
+            (
+                parse_source(&at_limit).is_ok(),
+                matches!(
+                    parse_source(&over_limit),
+                    Err(SyntaxError::TooDeeplyNested(_, MAX_PARSE_DEPTH))
+                ),
+            )
+        });
+        assert!(at_limit_ok);
+        assert!(over_limit_err);
+    }
+
+    #[test]
+    fn test_depth_is_restored_after_each_expression() {
+        let nested = format!(
+            "{}1{}",
+            "(".repeat(MAX_PARSE_DEPTH - 1),
+            ")".repeat(MAX_PARSE_DEPTH - 1)
+        );
+        let source = format!("{nested} | {nested} | {nested}");
+        assert!(on_small_stack(move || parse_source(&source).is_ok()));
     }
 }

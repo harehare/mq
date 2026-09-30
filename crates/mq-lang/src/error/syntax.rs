@@ -57,6 +57,9 @@ pub enum SyntaxError {
     /// An `end` keyword was encountered without a matching block opener.
     #[error("Unexpected `end` keyword — no open block to close")]
     UnmatchedEnd(Token),
+    /// Expression nesting exceeds the parser's maximum depth.
+    #[error("Expression nesting is too deep (maximum depth is {1})")]
+    TooDeeplyNested(Token, usize),
 }
 
 impl SyntaxError {
@@ -79,6 +82,7 @@ impl SyntaxError {
             SyntaxError::MultipleVariadicParameters(token) => Some(token),
             SyntaxError::UnexpectedEOFAfterToken(token) => Some(token),
             SyntaxError::UnmatchedEnd(token) => Some(token),
+            SyntaxError::TooDeeplyNested(token, _) => Some(token),
         }
     }
 }
@@ -113,6 +117,7 @@ mod tests {
     #[case(SyntaxError::MultipleVariadicParameters(eof_token()), true)]
     #[case(SyntaxError::UnexpectedEOFAfterToken(eof_token()), true)]
     #[case(SyntaxError::UnmatchedEnd(eof_token()), true)]
+    #[case(SyntaxError::TooDeeplyNested(eof_token(), 512), true)]
     fn test_token_presence(#[case] err: SyntaxError, #[case] has_token: bool) {
         assert_eq!(err.token().is_some(), has_token);
     }
