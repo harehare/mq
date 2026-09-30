@@ -2321,7 +2321,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             parser.depth = self.depth;
                             let expr_node = parser.parse_expr_from_tokens().map_err(|e| match e {
-                                SyntaxError::TooDeeplyNested(..) => e,
+                                // The token range is local to the extracted expression, so use the segment range.
+                                SyntaxError::TooDeeplyNested(mut nested, limit) => {
+                                    nested.range = *range;
+                                    SyntaxError::TooDeeplyNested(nested, limit)
+                                }
                                 _ => SyntaxError::UnexpectedToken(Token {
                                     range: *range,
                                     kind: TokenKind::InterpolatedString(vec![]),
@@ -10087,12 +10091,18 @@ mod tests {
     fn test_interpolated_expr_nesting_reports_nesting_error() {
         let n = MAX_PARSE_DEPTH * 2;
         let source = format!("s\"${{{}1{}}}\"", "(".repeat(n), ")".repeat(n));
+        let prefix_len = "s\"".len();
         let result = on_small_stack(move || parse_source(&source).map(|_| ()));
-        assert!(
-            matches!(result, Err(SyntaxError::TooDeeplyNested(..))),
-            "expected TooDeeplyNested, got {:?}",
-            result
-        );
+        match result {
+            Err(SyntaxError::TooDeeplyNested(token, _)) => {
+                assert!(
+                    token.range.start.column >= prefix_len,
+                    "range should point into the original source, got {:?}",
+                    token.range
+                );
+            }
+            other => panic!("expected TooDeeplyNested, got {:?}", other),
+        }
     }
 
     #[test]
