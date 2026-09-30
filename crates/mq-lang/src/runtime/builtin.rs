@@ -12362,6 +12362,27 @@ mod tests {
             ])))
         }
     )]
+    #[case::infinity(
+        "up: .inf\ndown: -.inf\nplus: +.Inf",
+        {
+            let mut map = DictMap::default();
+            map.insert(Ident::new("up"), RuntimeValue::Number(f64::INFINITY.into()));
+            map.insert(Ident::new("down"), RuntimeValue::Number(f64::NEG_INFINITY.into()));
+            map.insert(Ident::new("plus"), RuntimeValue::Number(f64::INFINITY.into()));
+            Ok(RuntimeValue::Dict(Shared::new(map)))
+        }
+    )]
+    #[case::non_string_keys(
+        "1: a\ntrue: b\n1.5: c\nnull: d",
+        {
+            let mut map = DictMap::default();
+            map.insert(Ident::new("1"), RuntimeValue::String(Shared::new("a".to_string())));
+            map.insert(Ident::new("true"), RuntimeValue::String(Shared::new("b".to_string())));
+            map.insert(Ident::new("1.5"), RuntimeValue::String(Shared::new("c".to_string())));
+            map.insert(Ident::new("null"), RuntimeValue::String(Shared::new("d".to_string())));
+            Ok(RuntimeValue::Dict(Shared::new(map)))
+        }
+    )]
     fn test_yaml_parse(#[case] yaml: &str, #[case] expected: Result<RuntimeValue, Error>) {
         let ident = Ident::new("_yaml_parse");
         let result = eval_builtin(

@@ -43,7 +43,56 @@ end
 def test_to_frontmatter():
   let input = {title: "title", date: "2024-06-01", tags: ["test", "yaml"], draft: false}
   | let result = yaml::to_frontmatter(input)
-  | assert_eq(result, "---\ndate: 2024-06-01\ndraft: false\ntags: \n  - test\n  - yaml\ntitle: title\n---")
+  | assert_eq(result, "---\ntitle: title\ndate: 2024-06-01\ntags:\n  - test\n  - yaml\ndraft: false\n---")
+end
+
+def test_yaml_stringify_no_trailing_space():
+  let data = {"a": {"b": [1, {"c": 2}]}, "d": [[1], []], "e": {}}
+  | let result = yaml::yaml_stringify(data)
+  | assert_eq(result, "a:\n  b:\n    - 1\n    -\n      c: 2\nd:\n  -\n    - 1\n  - []\ne: {}")
+  | assert_eq(yaml::yaml_parse(result), data)
+end
+
+def test_yaml_stringify_keeps_key_order():
+  assert_eq(yaml::yaml_stringify({"b": 1, "a": 2, "c": {"z": 1, "y": 2}}), "b: 1\na: 2\nc:\n  z: 1\n  y: 2")
+end
+
+def test_yaml_parse_infinity():
+  let result = yaml::yaml_parse("up: .inf\ndown: -.inf")
+  | assert_eq(result["up"] > 1000000, true)
+  | assert_eq(result["down"] < -1000000, true)
+end
+
+def test_yaml_parse_non_string_keys():
+  assert_eq(yaml::yaml_parse("1: a\ntrue: b\n1.5: c"), {"1": "a", "true": "b", "1.5": "c"})
+end
+
+def test_yaml_to_json_escapes_keys():
+  let result = yaml::yaml_to_json({"a\"b": 1, "c\nd": 2})
+  | assert_eq(result, "{\"a\\\"b\": 1, \"c\\nd\": 2}")
+  | assert_eq(yaml::yaml_parse(result), {"a\"b": 1, "c\nd": 2})
+end
+
+def test_yaml_to_markdown_table_union_of_keys():
+  assert_eq(
+    yaml::yaml_to_markdown_table([{"a": 1}, {"a": 2, "b": 3}]),
+    "| a | b |\n| --- | --- |\n| 1 |  |\n| 2 | 3 |"
+  )
+end
+
+def test_yaml_to_markdown_table_escapes_pipe():
+  assert_eq(
+    yaml::yaml_to_markdown_table([{"k|1": "x|y"}]),
+    "| k\\|1 |\n| --- |\n| x\\|y |"
+  )
+  | assert_eq(
+    yaml::yaml_to_markdown_table({"k|1": "v|2"}),
+    "| Key | Value |\n| --- | --- |\n| k\\|1 | v\\|2 |"
+  )
+end
+
+def test_yaml_to_markdown_table_empty_array():
+  assert_eq(yaml::yaml_to_markdown_table([]), "")
 end
 
 # @property(50, [gen::string("abc XYZ012:#-\"'\\\n\t", 8), gen::int(-1000000, 1000000), gen::bool(), gen::array(gen::int(-100, 100), 4)])
