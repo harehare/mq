@@ -3,6 +3,7 @@ use crate::node::attr_value::{
     attr_keys::{self, CHILDREN},
 };
 use itertools::Itertools;
+#[cfg(any(not(feature = "native-parser"), test))]
 use markdown::mdast::{self};
 use smol_str::SmolStr;
 use std::{
@@ -145,8 +146,9 @@ impl ColorTheme<'_> {
     }
 }
 
-type Level = u8;
+pub(crate) type Level = u8;
 
+#[cfg(any(not(feature = "native-parser"), test))]
 pub const EMPTY_NODE: Node = Node::Text(Text {
     value: String::new(),
     position: None,
@@ -183,7 +185,7 @@ impl Display for ListStyle {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct Url(String);
+pub struct Url(pub(crate) String);
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum UrlSurroundStyle {
@@ -220,7 +222,7 @@ pub enum TitleSurroundStyle {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct Title(String);
+pub struct Title(pub(crate) String);
 
 impl Display for Title {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -255,6 +257,7 @@ pub enum TableAlignKind {
     None,
 }
 
+#[cfg(any(not(feature = "native-parser"), test))]
 impl From<mdast::AlignKind> for TableAlignKind {
     fn from(value: mdast::AlignKind) -> Self {
         match value {
@@ -880,6 +883,7 @@ pub struct Point {
     pub column: usize,
 }
 
+#[cfg(any(not(feature = "native-parser"), test))]
 impl From<markdown::unist::Position> for Position {
     fn from(value: markdown::unist::Position) -> Self {
         Self {
@@ -2689,6 +2693,18 @@ impl Node {
         }
     }
 
+    /// Builds a blockquote node, or a callout node when the `callout` feature is enabled and the content is one.
+    pub(crate) fn from_blockquote(values: Vec<Node>, position: Option<Position>) -> Node {
+        #[cfg(feature = "callout")]
+        {
+            Self::try_parse_callout(values, position)
+        }
+        #[cfg(not(feature = "callout"))]
+        {
+            Self::Blockquote(Blockquote { values, position })
+        }
+    }
+
     /// Tries to parse a `Blockquote`'s converted nodes as an Obsidian callout.
     ///
     /// Returns a `Callout` node when the first text starts with `[!TYPE]`, otherwise
@@ -3090,6 +3106,7 @@ impl Node {
         }
     }
 
+    #[cfg(any(not(feature = "native-parser"), test))]
     pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
         match node {
             mdast::Node::Root(root) => root
@@ -3184,15 +3201,7 @@ impl Node {
             },
             mdast::Node::Blockquote(mdast::Blockquote { ref position, .. }) => {
                 let pos = position.clone().map(|p| p.into());
-                let values = Self::mdast_children_to_node(node);
-                #[cfg(feature = "callout")]
-                {
-                    vec![Self::try_parse_callout(values, pos)]
-                }
-                #[cfg(not(feature = "callout"))]
-                {
-                    vec![Self::Blockquote(Blockquote { values, position: pos })]
-                }
+                vec![Self::from_blockquote(Self::mdast_children_to_node(node), pos)]
             }
             mdast::Node::Definition(mdast::Definition {
                 url,
@@ -3483,6 +3492,7 @@ impl Node {
     }
 
     /// Converts the children of `node`, moving them out to avoid deep-cloning the subtree at every level.
+    #[cfg(any(not(feature = "native-parser"), test))]
     fn mdast_children_to_node(mut node: mdast::Node) -> Vec<Node> {
         match node.children_mut() {
             Some(children) => std::mem::take(children)
@@ -3493,6 +3503,7 @@ impl Node {
         }
     }
 
+    #[cfg(any(not(feature = "native-parser"), test))]
     fn mdast_list_items(list: &mdast::List, level: Level) -> Vec<Node> {
         let mut result = Vec::new();
         for node in &list.children {
@@ -3537,6 +3548,7 @@ impl Node {
     ///
     /// The enclosing [`Self::mdast_list_items`] call emits those children at their own level,
     /// so skipping them here prevents constructing and discarding the same subtree first.
+    #[cfg(any(not(feature = "native-parser"), test))]
     fn mdast_list_item_node(list_item: &mdast::ListItem, list: &mdast::List, level: Level) -> Node {
         let values = list_item
             .children

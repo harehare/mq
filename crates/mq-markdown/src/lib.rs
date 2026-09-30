@@ -11,6 +11,10 @@
 //! - **MDX Support**: Parse and manipulate MDX (Markdown + JSX) content
 //! - **JSON Export**: Serialize markdown AST to JSON (with `json` feature)
 //! - **Configurable Rendering**: Customize output formatting and styles
+//! - **Built-in parser**: The `native-parser` feature, on by default, parses CommonMark, GFM (tables,
+//!   strikethrough, autolink literals, task lists, footnotes), frontmatter, math and MDX with a parser
+//!   of this crate. Without it, `markdown-rs` does the parsing, with the same results for all but a few
+//!   rare inputs. `Markdown::to_html` always uses `markdown-rs`.
 //!
 //! ## Quick Start
 //!
@@ -81,6 +85,8 @@
 mod html_to_markdown;
 mod markdown;
 mod node;
+#[cfg(any(feature = "native-parser", test))]
+mod parser;
 pub use markdown::{Markdown, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
