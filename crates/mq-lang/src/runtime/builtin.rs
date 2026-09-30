@@ -4233,13 +4233,35 @@ fn _toon_stringify_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedE
     }
 }
 
+/// Converts via `toml::Value` rather than `serde_json::Value`, which would turn
+/// `inf`/`nan` into null and leak the private datetime wrapper. Datetimes become strings.
+fn toml_value_to_runtime_value(value: toml::Value) -> RuntimeValue {
+    match value {
+        toml::Value::String(s) => RuntimeValue::String(Shared::new(s)),
+        toml::Value::Integer(i) => RuntimeValue::Number((i as f64).into()),
+        toml::Value::Float(f) => RuntimeValue::Number(f.into()),
+        toml::Value::Boolean(b) => RuntimeValue::Boolean(b),
+        toml::Value::Datetime(d) => RuntimeValue::String(Shared::new(d.to_string())),
+        toml::Value::Array(arr) => {
+            RuntimeValue::Array(Shared::new(arr.into_iter().map(toml_value_to_runtime_value).collect()))
+        }
+        toml::Value::Table(table) => {
+            let mut map = DictMap::default();
+            for (k, v) in table {
+                map.insert(Ident::new(&k), toml_value_to_runtime_value(v));
+            }
+            RuntimeValue::Dict(Shared::new(map))
+        }
+    }
+}
+
 #[mq_macros::mq_fn(name = "_toml_parse", params = Fixed(1))]
 fn _toml_parse_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
         [RuntimeValue::String(s)] => {
-            let value: serde_json::Value =
+            let value: toml::Value =
                 toml::from_str(s).map_err(|e| Error::Runtime(format!("Failed to parse TOML: {}", e)))?;
-            Ok(value.into())
+            Ok(toml_value_to_runtime_value(value))
         }
         [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
         _ => unreachable!("_toml_parse should always receive exactly one argument"),
@@ -5249,9 +5271,9 @@ fn collection_record(path: String, raw: &str) -> Result<RuntimeValue, Error> {
             (frontmatter, &nodes[1..])
         }
         Some(mq_markdown::Node::Toml(toml_node)) => {
-            let value: serde_json::Value = toml::from_str(&toml_node.value)
+            let value: toml::Value = toml::from_str(&toml_node.value)
                 .map_err(|e| Error::Runtime(format!("Failed to parse TOML frontmatter in {}: {}", path, e)))?;
-            (value.into(), &nodes[1..])
+            (toml_value_to_runtime_value(value), &nodes[1..])
         }
         _ => (RuntimeValue::NONE, &nodes[..]),
     };
@@ -12616,6 +12638,22 @@ mod tests {
                 RuntimeValue::String(Shared::new("rust".to_string())),
                 RuntimeValue::String(Shared::new("toml".to_string())),
             ])));
+            Ok(RuntimeValue::Dict(Shared::new(map)))
+        }
+    )]
+    #[case::datetime(
+        "d = 1979-05-27T07:32:00Z",
+        {
+            let mut map = DictMap::default();
+            map.insert(Ident::new("d"), RuntimeValue::String(Shared::new("1979-05-27T07:32:00Z".to_string())));
+            Ok(RuntimeValue::Dict(Shared::new(map)))
+        }
+    )]
+    #[case::inf(
+        "f = inf",
+        {
+            let mut map = DictMap::default();
+            map.insert(Ident::new("f"), RuntimeValue::Number(f64::INFINITY.into()));
             Ok(RuntimeValue::Dict(Shared::new(map)))
         }
     )]
