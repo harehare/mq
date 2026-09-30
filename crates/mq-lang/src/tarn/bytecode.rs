@@ -802,22 +802,7 @@ pub(crate) enum ConstantKey {
     None,
 }
 
-/// Scan small pools before allocating a lookup table.
-const LINEAR_CONSTANT_LIMIT: usize = 8;
-
 impl ConstantKey {
-    fn supports(value: &RuntimeValue) -> bool {
-        matches!(
-            value,
-            RuntimeValue::Number(_)
-                | RuntimeValue::Boolean(_)
-                | RuntimeValue::String(_)
-                | RuntimeValue::Symbol(_)
-                | RuntimeValue::Bytes(_)
-                | RuntimeValue::None
-        )
-    }
-
     fn from_value(value: &RuntimeValue) -> Option<Self> {
         Some(match value {
             RuntimeValue::Number(number) => Self::Number(number.value().to_bits()),
@@ -828,18 +813,6 @@ impl ConstantKey {
             RuntimeValue::None => Self::None,
             _ => return None,
         })
-    }
-}
-
-fn same_constant(left: &RuntimeValue, right: &RuntimeValue) -> bool {
-    match (left, right) {
-        (RuntimeValue::Number(left), RuntimeValue::Number(right)) => left.value().to_bits() == right.value().to_bits(),
-        (RuntimeValue::Boolean(left), RuntimeValue::Boolean(right)) => left == right,
-        (RuntimeValue::String(left), RuntimeValue::String(right)) => left == right,
-        (RuntimeValue::Symbol(left), RuntimeValue::Symbol(right)) => left == right,
-        (RuntimeValue::Bytes(left), RuntimeValue::Bytes(right)) => left == right,
-        (RuntimeValue::None, RuntimeValue::None) => true,
-        _ => false,
     }
 }
 
@@ -897,39 +870,15 @@ impl Chunk {
 
     /// Adds a constant and returns its index, reusing safe scalar constants within this chunk.
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
-        let supported = ConstantKey::supports(&value);
-        let key = if let Some(indexes) = &self.constant_indexes {
-            let key = ConstantKey::from_value(&value);
-            if let Some(index) = key.as_ref().and_then(|key| indexes.get(key)) {
-                return *index;
-            }
-            key
-        } else {
-            if supported
-                && let Some(index) = self
-                    .constants
-                    .iter()
-                    .position(|existing| same_constant(existing, &value))
-            {
-                return index as u16;
-            }
-            None
-        };
+        let key = ConstantKey::from_value(&value);
+        if let Some(index) = key.as_ref().and_then(|key| self.constant_indexes.as_ref()?.get(key)) {
+            return *index;
+        }
 
         self.constants.push(value);
         let index = (self.constants.len() - 1) as u16;
-        if let Some(indexes) = &mut self.constant_indexes {
-            if let Some(key) = key {
-                indexes.insert(key, index);
-            }
-        } else if supported && self.constants.len() >= LINEAR_CONSTANT_LIMIT {
-            let mut indexes = FxHashMap::default();
-            for (index, value) in self.constants.iter().enumerate() {
-                if let Some(key) = ConstantKey::from_value(value) {
-                    indexes.insert(key, index as u16);
-                }
-            }
-            self.constant_indexes = Some(Box::new(indexes));
+        if let Some(key) = key {
+            self.constant_indexes.get_or_insert_default().insert(key, index);
         }
         index
     }
@@ -2042,25 +1991,16 @@ mod tests {
             assert_eq!(first.push_const(value.clone()), expected as u16);
         }
         assert_eq!(first.constants.len(), values.len());
-        assert!(first.constant_indexes.is_none());
 
         let mut second = Chunk::default();
         assert_eq!(second.push_const(values[0].clone()), 0);
     }
 
     #[test]
-    fn push_const_uses_an_index_for_larger_pools_and_discards_it_after_compilation() {
+    fn finish_constants_discards_the_lookup_table() {
         let mut chunk = Chunk::default();
-        for number in 0..LINEAR_CONSTANT_LIMIT {
-            assert_eq!(
-                chunk.push_const(RuntimeValue::Number((number as f64).into())),
-                number as u16
-            );
-        }
+        chunk.push_const(RuntimeValue::Number(1.0.into()));
         assert!(chunk.constant_indexes.is_some());
-        assert_eq!(chunk.push_const(RuntimeValue::Number(0.0.into())), 0);
-        assert_eq!(chunk.push_const(RuntimeValue::Number(7.0.into())), 7);
-        assert_eq!(chunk.constants.len(), LINEAR_CONSTANT_LIMIT);
 
         chunk.finish_constants();
         assert!(chunk.constant_indexes.is_none());
