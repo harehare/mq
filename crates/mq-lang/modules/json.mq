@@ -80,7 +80,8 @@ def json_stringify(data):
   | if (is_string(data)):
       _format_json_stringify(data)
     elif (is_number(data)):
-      to_string(data)
+      # JSON has no inf/NaN; emit null like JSON.stringify does.
+      if (in(["inf", "-inf", "NaN"], to_string(data))): "null" else: to_string(data)
     elif (is_bool(data)):
       to_string(data)
     elif (is_none(data)):
@@ -495,34 +496,31 @@ end
 #
 # Returns: string
 def json_to_markdown_table(data):
+  def _cell(value):
+    if (is_none(value)): "" else: replace(replace(to_string(value), "|", "\\|"), "\n", "\\n")
+  end
+
+  def _row(cells):
+    "| " + join(map(cells, _cell), " | ") + " |"
+  end
+
   def _create_array_markdown_table(data):
-    let headers = keys(first(data))
-    | let header_row = "| " + join(headers, " | ") + " |"
-    | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-    | let data_rows = map(data, fn(row):
-        "| " + join(map(headers, fn(header): if (is_none(row[header])): "" else: replace(to_string(row[header]), "\n", "\\n");), " | ") + " |"
-      end)
-    | [header_row, separator_row] + data_rows
+    let headers = uniq(flat_map(data, fn(row): keys(row);))
+    | [_row(headers), "| " + join(map(headers, fn(_): "---";), " | ") + " |"] + map(data, fn(row): _row(map(headers, fn(h): row[h];));)
     | join("\n")
   end
 
   def _create_dict_markdown_table(data):
-    let headers = ["Key", "Value"]
-    | let header_row = "| " + join(headers, " | ") + " |"
-    | let separator_row = "| " + join(map(headers, fn(_): "---";), " | ") + " |"
-    | let data_rows = map(keys(data), fn(key):
-        "| " + key + " | " + (if (is_none(data[key])): "" else: replace(to_string(data[key]), "\n", "\\n")) + " |"
-      end)
-    | [header_row, separator_row] + data_rows
+    [_row(["Key", "Value"]), "| --- | --- |"] + map(keys(data), fn(key): _row([key, data[key]]);)
     | join("\n")
   end
 
   def _create_simple_markdown_table(data):
-    "| Value |\n| --- |\n| " + to_string(data) + " |"
+    "| Value |\n| --- |\n| " + _cell(data) + " |"
   end
 
   | if (is_array(data)):
-      _create_array_markdown_table(data)
+      if (is_empty(data)): "" else: _create_array_markdown_table(data)
     elif (is_dict(data)):
       _create_dict_markdown_table(data)
     else:
