@@ -1784,6 +1784,9 @@ impl Cli {
                 let input = match files {
                     Some(files) if !files.is_empty() => {
                         let files = Self::expand_glob_patterns(files)?;
+                        if files.iter().any(|f| Self::is_stdin_path(f)) {
+                            return Err(miette!("`-` (stdin) is not supported by the repl command"));
+                        }
                         let contents = self.read_files_content(&files)?;
                         let mut combined = Vec::new();
                         for (file, content) in &contents {
@@ -2079,7 +2082,9 @@ impl Cli {
         }
     }
 
-    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: &Path) {
+    /// Sets the `__FILE__` globals; `None` (stdin) resets them so a preceding file's values don't leak.
+    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: Option<&Path>) {
+        let file = file.unwrap_or_else(|| Path::new(""));
         let path = file.to_string_lossy();
         let name = file.file_name().unwrap_or_default().to_string_lossy();
         let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -2096,7 +2101,7 @@ impl Cli {
             match self.explicit_input_format().unwrap_or_else(|| {
                 if let Some(file) = file {
                     InputFormat::from_path(file)
-                } else if io::stdin().is_terminal() {
+                } else if text.is_empty() && io::stdin().is_terminal() {
                     InputFormat::Null
                 } else {
                     InputFormat::Markdown
@@ -2194,9 +2199,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
+        self.set_file_vars(engine, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         if cache.separator.is_none()
             && let Some(separator) = &self.output.separator
@@ -2280,9 +2283,7 @@ impl Cli {
         let mut engine = self.create_engine()?;
         let mut cache = ProgramCache::default();
         for file in &files {
-            if let Some(f) = file {
-                self.set_file_vars(&mut engine, f);
-            }
+            self.set_file_vars(&mut engine, file.as_deref());
             self.program_index(&mut engine, &mut cache, &query, file)?;
         }
         Ok(())
@@ -2592,9 +2593,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<usize> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
+        self.set_file_vars(engine, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
@@ -2687,9 +2686,7 @@ impl Cli {
                 let current_file = active_file
                     .as_ref()
                     .ok_or_else(|| miette!("streaming input did not retain its active file"))?;
-                if let Some(file) = current_file {
-                    self.set_file_vars(&mut engine, file);
-                }
+                self.set_file_vars(&mut engine, current_file.as_deref());
 
                 program_index = self.program_index(&mut engine, &mut cache, &query, current_file)?;
             }
@@ -6691,6 +6688,32 @@ mod tests {
 
         let err = cli.run().expect_err("`-` specified twice should return an error");
         assert!(err.to_string().contains("only once"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_repl_rejects_stdin_argument() {
+        let cli = Cli {
+            commands: Some(Commands::Repl {
+                files: Some(vec![PathBuf::from("-")]),
+            }),
+            ..Cli::default()
+        };
+
+        let err = cli.run().expect_err("repl with `-` should return an error");
+        assert!(err.to_string().contains("repl"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_set_file_vars_resets_for_stdin() {
+        let cli = Cli::default();
+        let mut engine = cli.create_engine().unwrap();
+        cli.set_file_vars(&mut engine, Some(Path::new("dir/a.md")));
+        cli.set_file_vars(&mut engine, None);
+
+        let compiled = engine.compile("__FILE__ + __FILE_NAME__ + __FILE_STEM__").unwrap();
+        let result = engine.eval_compiled(&compiled, mq_lang::null_input().into_iter()).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].to_string(), "");
     }
 
     #[test]
