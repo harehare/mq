@@ -207,7 +207,7 @@ fn test_usage_errors(#[case] args: &[&str], #[case] message: &str) {
     write(dir.path(), "source.mqc", ".h");
     fs::create_dir(dir.path().join("sub")).unwrap();
     let error = stderr(mq(dir.path()).args(args).assert());
-    assert!(error.contains(message), "{error}");
+    assert!(self::message(&error).contains(message), "{error}");
     assert_eq!(fs::read_to_string(dir.path().join("query.mq")).unwrap(), ".h");
 }
 
