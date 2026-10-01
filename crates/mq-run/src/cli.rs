@@ -48,6 +48,8 @@ struct ProgramCache {
     /// One program per [`ProgramKey`]; a run usually has one or two.
     programs: Vec<(ProgramKey, mq_lang::CompiledProgram)>,
     separator: Option<mq_lang::CompiledProgram>,
+    /// Whether a file's `__FILE__` globals are installed and need resetting for stdin.
+    file_vars_set: bool,
 }
 
 fn parse_timeout(value: &str) -> Result<Duration, String> {
@@ -1789,6 +1791,9 @@ impl Cli {
                 let input = match files {
                     Some(files) if !files.is_empty() => {
                         let files = Self::expand_glob_patterns(files)?;
+                        if files.iter().any(|f| Self::is_stdin_path(f)) {
+                            return Err(miette!("`-` (stdin) is not supported by the repl command"));
+                        }
                         let contents = self.read_files_content(&files)?;
                         let mut combined = Vec::new();
                         for (file, content) in &contents {
@@ -1842,6 +1847,8 @@ impl Cli {
         let mut engine = mq_lang::DefaultEngine::default();
         engine.set_io(Shared::new(sandboxed_io));
         engine.load_builtin_module();
+        // Empty defaults for stdin; `--args` etc. below may override them.
+        Self::define_file_vars(&engine, None);
 
         if self.input.program.aggregate {
             engine.import_module("section").map_err(|e| *e)?;
@@ -2097,7 +2104,18 @@ impl Cli {
         }
     }
 
-    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, file: &Path) {
+    /// Sets the `__FILE__` globals; `None` (stdin) resets them only after a file set them,
+    /// so a preceding file's values don't leak and user-defined globals survive.
+    fn set_file_vars(&self, engine: &mut mq_lang::DefaultEngine, cache: &mut ProgramCache, file: Option<&Path>) {
+        if file.is_none() && !cache.file_vars_set {
+            return;
+        }
+        cache.file_vars_set = file.is_some();
+        Self::define_file_vars(engine, file);
+    }
+
+    fn define_file_vars(engine: &mq_lang::DefaultEngine, file: Option<&Path>) {
+        let file = file.unwrap_or_else(|| Path::new(""));
         let path = file.to_string_lossy();
         let name = file.file_name().unwrap_or_default().to_string_lossy();
         let stem = file.file_stem().unwrap_or_default().to_string_lossy();
@@ -2114,7 +2132,7 @@ impl Cli {
             match self.explicit_input_format().unwrap_or_else(|| {
                 if let Some(file) = file {
                     InputFormat::from_path(file)
-                } else if io::stdin().is_terminal() {
+                } else if text.is_empty() && io::stdin().is_terminal() {
                     InputFormat::Null
                 } else {
                     InputFormat::Markdown
@@ -2212,9 +2230,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<()> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
+        self.set_file_vars(engine, cache, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         if cache.separator.is_none()
             && let Some(separator) = &self.output.separator
@@ -2298,9 +2314,7 @@ impl Cli {
         let mut engine = self.create_engine()?;
         let mut cache = ProgramCache::default();
         for file in &files {
-            if let Some(f) = file {
-                self.set_file_vars(&mut engine, f);
-            }
+            self.set_file_vars(&mut engine, &mut cache, file.as_deref());
             self.program_index(&mut engine, &mut cache, &query, file)?;
         }
         Ok(())
@@ -2345,7 +2359,7 @@ impl Cli {
     fn watch_targets(&self) -> miette::Result<Vec<PathBuf>> {
         let mut targets = self.resolved_files()?.unwrap_or_default();
 
-        if targets.is_empty() {
+        if targets.is_empty() || targets.iter().any(|t| Self::is_stdin_path(t)) {
             return Err(miette!(
                 "--watch requires at least one input file; stdin cannot be watched"
             ));
@@ -2610,9 +2624,7 @@ impl Cli {
         file: &Option<PathBuf>,
         content: &ContentData,
     ) -> miette::Result<usize> {
-        if let Some(f) = file {
-            self.set_file_vars(engine, f);
-        }
+        self.set_file_vars(engine, cache, file.as_deref());
         let index = self.program_index(engine, cache, query, file)?;
         #[cfg(feature = "vm-profile")]
         let vm_profile = self.vm_profile.then(mq_lang::vm_profile::VmProfileScope::start);
@@ -2705,9 +2717,7 @@ impl Cli {
                 let current_file = active_file
                     .as_ref()
                     .ok_or_else(|| miette!("streaming input did not retain its active file"))?;
-                if let Some(file) = current_file {
-                    self.set_file_vars(&mut engine, file);
-                }
+                self.set_file_vars(&mut engine, &mut cache, current_file.as_deref());
 
                 program_index = self.program_index(&mut engine, &mut cache, &query, current_file)?;
             }
@@ -2731,6 +2741,12 @@ impl Cli {
         // If files are specified, process each file line by line
         if let Some(files) = self.resolved_files()? {
             for file in &files {
+                if Self::is_stdin_path(file) {
+                    for line_result in io::BufReader::new(io::stdin().lock()).lines() {
+                        process(None, line_result.into_diagnostic()?)?;
+                    }
+                    continue;
+                }
                 let file_handle = fs::File::open(file)
                     .into_diagnostic()
                     .wrap_err_with(|| format!("failed to read `{}`", file.display()))?;
@@ -2797,13 +2813,40 @@ impl Cli {
     }
 
     fn resolved_files(&self) -> miette::Result<Option<Vec<PathBuf>>> {
-        self.files.as_deref().map(Self::expand_glob_patterns).transpose()
+        let files = self.files.as_deref().map(Self::expand_glob_patterns).transpose()?;
+        if files
+            .as_ref()
+            .is_some_and(|f| f.iter().filter(|p| Self::is_stdin_path(p)).count() > 1)
+        {
+            return Err(miette!("`-` (stdin) can be specified only once"));
+        }
+        Ok(files)
+    }
+
+    /// Returns `true` if `path` is `-`, which refers to stdin.
+    fn is_stdin_path(path: &Path) -> bool {
+        path == Path::new("-")
+    }
+
+    fn read_stdin(&self) -> miette::Result<ContentData> {
+        if self.is_binary_format() {
+            let mut buf = Vec::new();
+            io::stdin().read_to_end(&mut buf).into_diagnostic()?;
+            Ok(buf.into())
+        } else {
+            let mut input = String::new();
+            io::stdin().read_to_string(&mut input).into_diagnostic()?;
+            Ok(input.into())
+        }
     }
 
     fn read_files_content(&self, files: &[PathBuf]) -> miette::Result<Vec<(Option<PathBuf>, ContentData)>> {
         files
             .iter()
             .map(|file| {
+                if Self::is_stdin_path(file) {
+                    return Ok((None, self.read_stdin()?));
+                }
                 let content = if InputFormat::is_gzip_path(file) {
                     self.read_gzip_file(file)?
                 } else {
@@ -2857,15 +2900,7 @@ impl Cli {
                     return Ok(vec![(None, ContentData::empty())]);
                 }
 
-                if self.is_binary_format() {
-                    let mut buf = Vec::new();
-                    io::stdin().read_to_end(&mut buf).into_diagnostic()?;
-                    Ok(vec![(None, buf.into())])
-                } else {
-                    let mut input = String::new();
-                    io::stdin().read_to_string(&mut input).into_diagnostic()?;
-                    Ok(vec![(None, input.into())])
-                }
+                Ok(vec![(None, self.read_stdin()?)])
             })
     }
 
@@ -6693,6 +6728,74 @@ mod tests {
             err.to_string().contains("no_such_dir/missing_input.md"),
             "error should contain the file path, got: {err}"
         );
+    }
+
+    #[test]
+    fn test_duplicate_stdin_argument_errors() {
+        let cli = Cli {
+            query: Some(".h".to_string()),
+            files: Some(vec![PathBuf::from("-"), PathBuf::from("-")]),
+            ..Cli::default()
+        };
+
+        let err = cli.run().expect_err("`-` specified twice should return an error");
+        assert!(err.to_string().contains("only once"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn test_repl_rejects_stdin_argument() {
+        let cli = Cli {
+            commands: Some(Commands::Repl {
+                files: Some(vec![PathBuf::from("-")]),
+            }),
+            ..Cli::default()
+        };
+
+        let err = cli.run().expect_err("repl with `-` should return an error");
+        assert!(err.to_string().contains("repl"), "unexpected error: {err}");
+    }
+
+    fn eval_file_vars(engine: &mut mq_lang::DefaultEngine) -> String {
+        let compiled = engine.compile("__FILE__").unwrap();
+        let result = engine
+            .eval_compiled(&compiled, mq_lang::null_input().into_iter())
+            .unwrap();
+        result[0].to_string()
+    }
+
+    #[test]
+    fn test_set_file_vars_resets_for_stdin() {
+        let cli = Cli::default();
+        let mut engine = cli.create_engine().unwrap();
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, Some(Path::new("dir/a.md")));
+        assert_eq!(eval_file_vars(&mut engine), "dir/a.md");
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "");
+    }
+
+    #[test]
+    fn test_file_vars_default_to_empty_for_stdin() {
+        let cli = Cli::default();
+        let mut engine = cli.create_engine().unwrap();
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "");
+    }
+
+    #[test]
+    fn test_set_file_vars_keeps_user_global_for_stdin() {
+        let cli = Cli {
+            input: InputArgs {
+                args: Some(vec!["__FILE__".to_string(), "custom".to_string()]),
+                ..Default::default()
+            },
+            ..Cli::default()
+        };
+        let mut engine = cli.create_engine().unwrap();
+        let mut cache = ProgramCache::default();
+        cli.set_file_vars(&mut engine, &mut cache, None);
+        assert_eq!(eval_file_vars(&mut engine), "custom");
     }
 
     #[test]
