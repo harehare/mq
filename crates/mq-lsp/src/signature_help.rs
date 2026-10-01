@@ -232,4 +232,24 @@ mod tests {
         assert_eq!(help.signatures[0].label, "foo(*rest)");
         assert_eq!(help.active_parameter, Some(0));
     }
+
+    #[test]
+    fn test_signature_help_unclosed_call() {
+        let cases = [
+            ("def foo(a, b): a + b;\n| foo(1,", Position::new(1, 8), 1),
+            ("def foo(a, b): a + b;\n| foo(1,", Position::new(1, 7), 0),
+            ("def foo(a, b): a + b;\n| foo(1,\n  ", Position::new(2, 2), 1),
+        ];
+
+        for (code, cursor, active) in cases {
+            let mut hir = Hir::default();
+            let url = Url::parse("file:///test.mq").unwrap();
+            hir.add_code(Some(url.clone()), code);
+
+            let help = response(Arc::new(RwLock::new(hir)), url, cursor, Some(code)).expect(code);
+
+            assert_eq!(help.signatures[0].label, "foo(a, b)", "{code:?}");
+            assert_eq!(help.active_parameter, Some(active), "{code:?} at {cursor:?}");
+        }
+    }
 }

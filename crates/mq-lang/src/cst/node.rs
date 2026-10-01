@@ -4,7 +4,7 @@ use std::fmt::{self, Display};
 use smallvec::{SmallVec, smallvec};
 use smol_str::SmolStr;
 
-use crate::{Module, Range, Token};
+use crate::{Module, Position, Range, Token};
 use crate::{Shared, TokenKind};
 
 type Comment = (Range, String);
@@ -213,6 +213,8 @@ pub enum NodeKind {
     /// (e.g. the `)` of an unclosed call). `expected` describes the token.
     Missing {
         expected: &'static str,
+        /// Where the token would have been, so the node has a zero-width range.
+        position: Position,
     },
     Match {
         args: ArgList,
@@ -402,11 +404,20 @@ impl Node {
     }
 
     pub fn range(&self) -> Range {
+        if let NodeKind::Missing { position, .. } = self.kind {
+            return Range {
+                start: position,
+                end: position,
+            };
+        }
         self.token.as_ref().map(|token| token.range).unwrap_or_default()
     }
 
     /// Returns the source range covering this node and its nested children.
     pub fn node_range(&self) -> Range {
+        if matches!(self.kind, NodeKind::Missing { .. }) {
+            return self.range();
+        }
         let mut children = self.children();
         let first = children.next().map(|child| child.node_range());
         let last = children.next_back().map(|child| child.node_range()).or(first);

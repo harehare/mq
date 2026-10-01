@@ -2183,7 +2183,20 @@ impl<'a> Parser<'a> {
                     })
                 }
             };
-            nodes.extend(item_node);
+            match item_node {
+                Some(node) => nodes.push(node),
+                // Nothing was consumed: the item is absent before the separator.
+                None if self
+                    .peek_non_trivia()
+                    .is_some_and(|t| matches!(t.kind, TokenKind::Comma)) =>
+                {
+                    let leading_trivia = self.parse_leading_trivia();
+                    let missing = self.missing_node("an item", TriviaList::new());
+                    self.pos -= leading_trivia.len();
+                    nodes.push(missing);
+                }
+                None => {}
+            }
 
             loop {
                 let leading_trivia = self.parse_leading_trivia();
@@ -2459,8 +2472,10 @@ impl<'a> Parser<'a> {
             None => self.errors.report(ParseError::UnexpectedEOFDetected),
         }
 
+        let position = self.peek().map(|token| token.range.start).unwrap_or_default();
+
         Shared::new(Node {
-            kind: NodeKind::Missing { expected },
+            kind: NodeKind::Missing { expected, position },
             token: None,
             leading_trivia,
             trailing_trivia: TriviaList::new(),
@@ -2577,7 +2592,10 @@ mod tests {
 
     fn missing_node(expected: &'static str) -> Shared<Node> {
         Shared::new(Node {
-            kind: NodeKind::Missing { expected },
+            kind: NodeKind::Missing {
+                expected,
+                position: Default::default(),
+            },
             token: None,
             leading_trivia: TriviaList::new(),
             trailing_trivia: TriviaList::new(),
@@ -10632,13 +10650,46 @@ Shared::new(Node {
             "{code}: {nodes:?}"
         );
         fn has_missing(node: &Shared<Node>, expected: &str) -> bool {
-            matches!(&node.kind, NodeKind::Missing { expected: e } if *e == expected)
+            matches!(&node.kind, NodeKind::Missing { expected: e, .. } if *e == expected)
                 || node.children().any(|child| has_missing(child, expected))
         }
         assert!(
             nodes.iter().any(|node| has_missing(node, expected)),
             "{code}: {nodes:?}"
         );
+    }
+
+    #[rstest]
+    #[case::leading("foo(, 1)")]
+    #[case::consecutive("foo(1,, 2)")]
+    #[case::trailing_pair("foo(1, ,)")]
+    #[case::only_comma("foo(,)")]
+    #[case::array_leading("[, 1]")]
+    fn test_absent_item_before_separator_has_error(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+
+        assert!(errors.has_errors(), "{code}");
+        assert!(nodes.iter().any(|node| node.has_error()), "{code}: {nodes:?}");
+        let commas: usize = nodes
+            .iter()
+            .flat_map(|node| node.children())
+            .filter(|child| matches!(child.token.as_ref().map(|t| &t.kind), Some(TokenKind::Comma)))
+            .count();
+        assert_eq!(commas, code.matches(',').count(), "{code}: separators must be kept");
+    }
+
+    #[rstest]
+    #[case::unclosed_call("foo(1,", Position { line: 1, column: 7 })]
+    #[case::unclosed_call_next_line("foo(1,\n", Position { line: 1, column: 7 })]
+    #[case::cursor_on_next_line("foo(1,\n  ", Position { line: 2, column: 2 })]
+    fn test_unclosed_call_range_covers_cursor(#[case] code: &str, #[case] cursor: Position) {
+        let (nodes, _) = crate::parse_recovery(code);
+        let call = nodes
+            .iter()
+            .find(|node| matches!(node.kind, NodeKind::Call { .. }))
+            .unwrap_or_else(|| panic!("{code}: {nodes:?}"));
+
+        assert!(call.node_range().contains(&cursor), "{code}: {:?}", call.node_range());
     }
 
     #[rstest]

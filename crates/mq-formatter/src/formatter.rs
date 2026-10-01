@@ -510,7 +510,10 @@ impl Formatter {
             self.output.pop();
         }
 
-        self.format_node(last, indent_level);
+        // A `Missing` closer has no text, and its comments were already written above.
+        if !matches!(last.kind, mq_lang::CstNodeKind::Missing { .. }) {
+            self.format_node(last, indent_level);
+        }
     }
 
     fn format_binary_op(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, block_indent_level: usize) {
@@ -3438,6 +3441,23 @@ def func_a(): test;
         let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
 
         assert_eq!(result, expected);
+    }
+
+    /// A comment before an absent closer at EOF is kept exactly once.
+    #[rstest::rstest]
+    #[case::call("foo(1 # note\n")]
+    #[case::array("[1 # note\n")]
+    #[case::dict("{\"a\": 1 # note\n")]
+    #[case::call_own_line("foo(1,\n  # note\n")]
+    #[case::array_own_line("[1,\n  # note\n")]
+    #[case::dict_own_line("{\"a\": 1,\n  # note\n")]
+    fn test_format_with_cst_keeps_comment_before_missing_closer(#[case] code: &str) {
+        let (mut nodes, errors) = mq_lang::parse_recovery(code);
+        assert!(errors.has_errors());
+
+        let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
+
+        assert_eq!(result.matches("# note").count(), 1, "{code:?} -> {result:?}");
     }
 
     #[test]
