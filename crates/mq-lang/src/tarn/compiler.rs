@@ -1,5 +1,5 @@
 use super::bytecode::{
-    self, BinaryOp, Chunk, OpCode, ParamBinding, ParamShape, SELF_SLOT, TryCatchInfo, UpvalueSource,
+    self, BinaryOp, Chunk, ConstantIndex, OpCode, ParamBinding, ParamShape, SELF_SLOT, TryCatchInfo, UpvalueSource,
 };
 use super::resolver::FunctionScope;
 use crate::Shared;
@@ -129,6 +129,8 @@ struct PatternState {
 
 struct Compiler<R: ModuleResolver> {
     chunks: Vec<Chunk>,
+    /// Constant dedup tables parallel to `chunks`; dropped with the compiler.
+    constant_indexes: Vec<ConstantIndex>,
     scopes: Vec<FunctionScope>,
     /// The directly enclosing named function, its fixed arity if any, and whether it's a generator.
     function_names: Vec<Option<(Ident, Option<usize>, bool)>>,
@@ -833,6 +835,7 @@ fn compile_program_impl<R: ModuleResolver>(
     }
     let mut compiler = Compiler {
         chunks: vec![Chunk::default()],
+        constant_indexes: vec![ConstantIndex::default()],
         scopes: vec![scope],
         function_names: vec![None],
         current: 0,
@@ -885,7 +888,6 @@ fn compile_program_impl<R: ModuleResolver>(
     }
     for chunk in &mut compiler.chunks {
         chunk.refresh_captured_local_slots();
-        chunk.finish_constants();
     }
     super::peephole::specialize_static_exact_calls(&mut compiler.chunks);
     bytecode::verify_chunks(&compiler.chunks).map_err(|error| CompileError::InvalidBytecode(error.to_string()))?;
@@ -1108,6 +1110,11 @@ impl<R: ModuleResolver> Compiler<R> {
         &mut self.chunks[self.current]
     }
 
+    /// Adds a constant to the current chunk, sharing equal scalar constants.
+    fn push_const(&mut self, value: RuntimeValue) -> u16 {
+        self.constant_indexes[self.current].push(&mut self.chunks[self.current], value)
+    }
+
     fn scope_mut(&mut self) -> &mut FunctionScope {
         self.scopes.last_mut().expect("at least one scope")
     }
@@ -1221,6 +1228,7 @@ impl<R: ModuleResolver> Compiler<R> {
             ));
         }
         self.chunks.push(Chunk::default());
+        self.constant_indexes.push(ConstantIndex::default());
         let new_index = (self.chunks.len() - 1) as u16;
         self.chunks[new_index as usize].function_name = name_for_shadow;
         self.current = new_index as usize;
@@ -1465,7 +1473,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Pattern::Literal(lit) => {
                 self.emit(OpCode::GetLocal(subject_slot));
                 let value = literal_to_runtime_value(lit);
-                let idx = self.chunk_mut().push_const(value);
+                let idx = self.push_const(value);
                 self.emit(OpCode::Const(idx));
                 self.emit(OpCode::Eq);
                 fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
@@ -1488,9 +1496,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 }
                 let rest_slot = self.declare_or_take_or_slot(rest_ident.name);
                 self.emit(OpCode::GetLocal(subject_slot));
-                let offset = self
-                    .chunk_mut()
-                    .push_const(RuntimeValue::Number((elems.len() as f64).into()));
+                let offset = self.push_const(RuntimeValue::Number((elems.len() as f64).into()));
                 self.emit(OpCode::Const(offset));
                 self.emit(OpCode::ArraySliceFrom);
                 self.emit(OpCode::SetLocal(rest_slot));
@@ -1581,9 +1587,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
         self.emit(OpCode::GetLocal(subject_slot));
         self.emit(OpCode::ArrayLen);
-        let len_idx = self
-            .chunk_mut()
-            .push_const(RuntimeValue::Number((min_len as f64).into()));
+        let len_idx = self.push_const(RuntimeValue::Number((min_len as f64).into()));
         self.emit(OpCode::Const(len_idx));
         self.emit(cmp);
         fail_jumps.push(self.emit(OpCode::JumpIfFalse(0)));
@@ -1598,7 +1602,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<()> {
         let elem_slot = self.scope_mut().declare_synthetic();
         self.emit(OpCode::GetLocal(subject_slot));
-        let idx_const = self.chunk_mut().push_const(RuntimeValue::Number((index as f64).into()));
+        let idx_const = self.push_const(RuntimeValue::Number((index as f64).into()));
         self.emit(OpCode::Const(idx_const));
         self.emit(OpCode::ArrayGetAt);
         self.emit(OpCode::SetLocal(elem_slot));
@@ -1609,16 +1613,12 @@ impl<R: ModuleResolver> Compiler<R> {
         for segment in segments {
             match segment {
                 StringSegment::Text(s) => {
-                    let idx = self
-                        .chunk_mut()
-                        .push_const(RuntimeValue::String(Shared::new(s.clone())));
+                    let idx = self.push_const(RuntimeValue::String(Shared::new(s.clone())));
                     self.emit(OpCode::Const(idx));
                 }
                 StringSegment::Expr(node) => self.compile_expr(node)?,
                 StringSegment::Env(name) => {
-                    let idx = self
-                        .chunk_mut()
-                        .push_const(RuntimeValue::String(Shared::new(name.to_string())));
+                    let idx = self.push_const(RuntimeValue::String(Shared::new(name.to_string())));
                     self.emit(OpCode::GetEnvVar(idx));
                 }
                 StringSegment::Self_ => {
@@ -1762,7 +1762,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     let Pattern::Ident(ident) = pattern else {
                         unreachable!("guarded above");
                     };
-                    let idx = self.chunk_mut().push_const(value);
+                    let idx = self.push_const(value);
                     self.emit(OpCode::Const(idx));
                     let slot = self.scope_mut().declare_or_reuse(ident.name);
                     self.scope_mut().mark_immutable(slot);
@@ -2156,7 +2156,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     if let Pattern::Ident(ident) = pattern {
                         match self.preresolved_module_vars.by_token.get(&node.token_id).cloned() {
                             Some(known) if !mutable && !matches!(known, RuntimeValue::Closure(_)) => {
-                                let idx = self.chunk_mut().push_const(known);
+                                let idx = self.push_const(known);
                                 self.emit(OpCode::Const(idx));
                             }
                             _ => self.compile_expr(value)?,
@@ -2336,7 +2336,7 @@ impl<R: ModuleResolver> Compiler<R> {
         match &node.expr {
             Expr::Literal(lit) => {
                 let value = literal_to_runtime_value(lit);
-                let idx = self.chunk_mut().push_const(value);
+                let idx = self.push_const(value);
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
@@ -2437,7 +2437,7 @@ impl<R: ModuleResolver> Compiler<R> {
                     self.compile_expr(v)?;
                     self.emit(OpCode::SetLocal(acc_slot));
                     if let Some(slot) = completed_iteration_slot {
-                        let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+                        let true_idx = self.push_const(RuntimeValue::Boolean(true));
                         self.emit(OpCode::Const(true_idx));
                         self.emit(OpCode::SetLocal(slot));
                     }
@@ -2535,21 +2535,17 @@ impl<R: ModuleResolver> Compiler<R> {
             // first-class builtins when referenced as values. Local/upvalue resolution above
             // deliberately takes precedence, preserving shadowing.
             None if name == builtins::NEXT.into() => {
-                let idx = self
-                    .chunk_mut()
-                    .push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next));
+                let idx = self.push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Next));
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
             None if name == builtins::SEND.into() => {
-                let idx = self
-                    .chunk_mut()
-                    .push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Send));
+                let idx = self.push_const(RuntimeValue::CoroutineBuiltin(ResumeBuiltin::Send));
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
             None if builtin::get_builtin_functions(&name).is_some() => {
-                let idx = self.chunk_mut().push_const(RuntimeValue::NativeFunction(name));
+                let idx = self.push_const(RuntimeValue::NativeFunction(name));
                 self.emit(OpCode::Const(idx));
                 Ok(())
             }
@@ -2774,7 +2770,7 @@ impl<R: ModuleResolver> Compiler<R> {
         args: &ast::Args,
         call_token_id: TokenId,
     ) -> CompileResult<()> {
-        let idx = self.chunk_mut().push_const(RuntimeValue::CoroutineBuiltin(builtin));
+        let idx = self.push_const(RuntimeValue::CoroutineBuiltin(builtin));
         self.emit(OpCode::Const(idx));
         for arg in args {
             self.compile_expr(arg)?;
@@ -2824,7 +2820,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 true
             }
             Expr::Literal(literal) => {
-                let constant = self.chunk_mut().push_const(literal_to_runtime_value(literal));
+                let constant = self.push_const(literal_to_runtime_value(literal));
                 self.emit(OpCode::BinaryLocalConst {
                     op,
                     local: left_slot,
@@ -2932,7 +2928,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_and(&mut self, operands: &[Shared<Node>]) -> CompileResult<()> {
         if operands.is_empty() {
-            let idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+            let idx = self.push_const(RuntimeValue::Boolean(true));
             self.emit(OpCode::Const(idx));
             return Ok(());
         }
@@ -2953,7 +2949,7 @@ impl<R: ModuleResolver> Compiler<R> {
             self.chunk_mut().patch_jump(jump);
         }
         self.emit(OpCode::Pop);
-        let idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
+        let idx = self.push_const(RuntimeValue::Boolean(false));
         self.emit(OpCode::Const(idx));
 
         self.chunk_mut().patch_jump(success_jump);
@@ -2962,7 +2958,7 @@ impl<R: ModuleResolver> Compiler<R> {
 
     fn compile_or(&mut self, operands: &[Shared<Node>]) -> CompileResult<()> {
         if operands.is_empty() {
-            let idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
+            let idx = self.push_const(RuntimeValue::Boolean(false));
             self.emit(OpCode::Const(idx));
             return Ok(());
         }
@@ -2976,7 +2972,7 @@ impl<R: ModuleResolver> Compiler<R> {
             self.chunk_mut().patch_jump(false_jump);
             self.emit(OpCode::Pop);
         }
-        let idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
+        let idx = self.push_const(RuntimeValue::Boolean(false));
         self.emit(OpCode::Const(idx));
 
         for jump in true_jumps {
@@ -3063,7 +3059,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.scope_mut().pop_scope();
         body_result?;
         if let Some(slot) = completed_iteration_slot {
-            let true_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(true));
+            let true_idx = self.push_const(RuntimeValue::Boolean(true));
             self.emit(OpCode::Const(true_idx));
             self.emit(OpCode::SetLocal(slot));
         }
@@ -3091,7 +3087,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::SetLocal(acc_slot));
 
         let index_slot = self.scope_mut().declare_synthetic();
-        let zero = self.chunk_mut().push_const(RuntimeValue::Number(0.0.into()));
+        let zero = self.push_const(RuntimeValue::Number(0.0.into()));
         self.emit(OpCode::Const(zero));
         self.emit(OpCode::SetLocal(index_slot));
 
@@ -3156,7 +3152,7 @@ impl<R: ModuleResolver> Compiler<R> {
         // twice. A separate flag records completed iterations, so a loop that never runs, or
         // exits via a bare `break` before its first body completes, evaluates to `None`.
         let completed_iteration_slot = self.scope_mut().declare_synthetic();
-        let false_idx = self.chunk_mut().push_const(RuntimeValue::Boolean(false));
+        let false_idx = self.push_const(RuntimeValue::Boolean(false));
         self.emit(OpCode::Const(false_idx));
         self.emit(OpCode::SetLocal(completed_iteration_slot));
         let loop_start = self.chunk_mut().code.len();

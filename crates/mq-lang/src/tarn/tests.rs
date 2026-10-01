@@ -58,7 +58,6 @@ fn compiler_reuses_repeated_literal_in_one_chunk() {
     let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
 
     assert_eq!(compiled.chunks[0].constants, [RuntimeValue::from("same")]);
-    assert!(compiled.chunks[0].constant_indexes.is_none());
     assert_eq!(
         run(r#"["same", "same"]"#),
         RuntimeValue::from(vec![RuntimeValue::from("same"); 2])
