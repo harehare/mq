@@ -8,8 +8,9 @@ use crate::ast::TokenId;
 use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// The implicit pipeline value (`.` / `self`) slot.
 pub(crate) const SELF_SLOT: u16 = 0;
@@ -766,7 +767,7 @@ pub(crate) struct LineEntry {
 pub(crate) struct Chunk {
     pub(crate) code: Vec<OpCode>,
     pub(crate) constants: Vec<RuntimeValue>,
-    pub(crate) constant_indexes: Option<Box<FxHashMap<ConstantKey, u16>>>,
+    pub(crate) constant_indexes: Option<Box<FxHashMap<u64, u16>>>,
     pub(crate) static_closures: Vec<Shared<Closure>>,
     pub(crate) local_count: u16,
     pub(crate) local_names: Vec<Ident>,
@@ -788,31 +789,35 @@ pub(crate) struct Chunk {
     pub(crate) is_generator: bool,
 }
 
-/// Values that can safely share one constant-pool entry.
+/// Hashes values that can safely share one constant-pool entry.
 ///
 /// Runtime objects such as arrays, nodes, and closures are deliberately excluded. Numbers use
 /// their bit pattern so signed zero and distinct NaN representations are preserved.
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub(crate) enum ConstantKey {
-    Number(u64),
-    Boolean(bool),
-    String(Shared<String>),
-    Symbol(Ident),
-    Bytes(Shared<Vec<u8>>),
-    None,
+fn constant_hash(value: &RuntimeValue) -> Option<u64> {
+    let mut hasher = FxHasher::default();
+    std::mem::discriminant(value).hash(&mut hasher);
+    match value {
+        RuntimeValue::Number(number) => number.value().to_bits().hash(&mut hasher),
+        RuntimeValue::Boolean(value) => value.hash(&mut hasher),
+        RuntimeValue::String(value) => value.hash(&mut hasher),
+        RuntimeValue::Symbol(value) => value.hash(&mut hasher),
+        RuntimeValue::Bytes(value) => value.hash(&mut hasher),
+        RuntimeValue::None => {}
+        _ => return None,
+    }
+    Some(hasher.finish())
 }
 
-impl ConstantKey {
-    fn from_value(value: &RuntimeValue) -> Option<Self> {
-        Some(match value {
-            RuntimeValue::Number(number) => Self::Number(number.value().to_bits()),
-            RuntimeValue::Boolean(value) => Self::Boolean(*value),
-            RuntimeValue::String(value) => Self::String(Shared::clone(value)),
-            RuntimeValue::Symbol(value) => Self::Symbol(*value),
-            RuntimeValue::Bytes(value) => Self::Bytes(Shared::clone(value)),
-            RuntimeValue::None => Self::None,
-            _ => return None,
-        })
+/// Compares two constants with the same equality used by [`constant_hash`].
+fn same_constant(left: &RuntimeValue, right: &RuntimeValue) -> bool {
+    match (left, right) {
+        (RuntimeValue::Number(left), RuntimeValue::Number(right)) => left.value().to_bits() == right.value().to_bits(),
+        (RuntimeValue::Boolean(left), RuntimeValue::Boolean(right)) => left == right,
+        (RuntimeValue::String(left), RuntimeValue::String(right)) => left == right,
+        (RuntimeValue::Symbol(left), RuntimeValue::Symbol(right)) => left == right,
+        (RuntimeValue::Bytes(left), RuntimeValue::Bytes(right)) => left == right,
+        (RuntimeValue::None, RuntimeValue::None) => true,
+        _ => false,
     }
 }
 
@@ -870,15 +875,22 @@ impl Chunk {
 
     /// Adds a constant and returns its index, reusing safe scalar constants within this chunk.
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
-        let key = ConstantKey::from_value(&value);
-        if let Some(index) = key.as_ref().and_then(|key| self.constant_indexes.as_ref()?.get(key)) {
-            return *index;
+        let hash = constant_hash(&value);
+        if let Some(hash) = hash
+            && let Some(&index) = self.constant_indexes.as_ref().and_then(|indexes| indexes.get(&hash))
+            && same_constant(&self.constants[index as usize], &value)
+        {
+            return index;
         }
 
         self.constants.push(value);
         let index = (self.constants.len() - 1) as u16;
-        if let Some(key) = key {
-            self.constant_indexes.get_or_insert_default().insert(key, index);
+        if let Some(hash) = hash {
+            // On a hash collision the first entry keeps the slot; the new value is simply not deduplicated.
+            self.constant_indexes
+                .get_or_insert_default()
+                .entry(hash)
+                .or_insert(index);
         }
         index
     }
