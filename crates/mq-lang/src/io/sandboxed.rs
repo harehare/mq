@@ -123,6 +123,18 @@ impl<Inner: Io> SandboxedIo<Inner> {
         !self.allow_env.is_denied()
     }
 
+    /// Checks that writing to `path` is permitted, without performing the write. For callers
+    /// that write through their own channel (e.g. the CLI's `-o`/`--output`).
+    pub fn check_write(&self, path: &Path) -> Result<(), IoError> {
+        if self.allow_write.is_denied() {
+            return Err(denied("filesystem writes are disabled"));
+        }
+        if !self.permits_real(&self.allow_write, path) {
+            return Err(denied_path("write", path));
+        }
+        Ok(())
+    }
+
     /// Resolves `path`'s real, symlink-free location. Falls back to canonicalizing the parent
     /// when `path` itself doesn't exist yet (e.g. a write target).
     fn real_path(&self, path: &Path) -> PathBuf {
@@ -218,12 +230,7 @@ impl<Inner: Io> Io for SandboxedIo<Inner> {
     }
 
     fn write(&self, path: &Path, content: &[u8]) -> Result<(), IoError> {
-        if self.allow_write.is_denied() {
-            return Err(denied("filesystem writes are disabled"));
-        }
-        if !self.permits_real(&self.allow_write, path) {
-            return Err(denied_path("write", path));
-        }
+        self.check_write(path)?;
         self.inner.write(path, content)
     }
 

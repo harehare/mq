@@ -541,7 +541,9 @@ struct ProgramArgs {
     allow_read: Option<Vec<PathBuf>>,
 
     /// Allow the `write_file`/`extract_images` functions to write to the filesystem.
-    /// Disabled by default. Pass with no value to allow writing anywhere, or
+    /// Under `--sandbox`, this also gates `-o`/`--output` (and `--append`, `--no-clobber`,
+    /// `--atomic-output`), which are rejected unless the target is allowed. Without
+    /// `--sandbox`, `-o` is not restricted. Disabled by default. Pass with no value to allow writing anywhere, or
     /// `--allow-write=PATH` (files or directories; repeat the flag, or comma-separate, to
     /// add more) to restrict writes to just those paths and their descendants. The `=` is
     /// required so a bare path after the flag isn't swallowed as a query/file positional
@@ -577,11 +579,13 @@ struct ProgramArgs {
     )]
     allow_all: bool,
 
-    /// Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags.
+    /// Named preset of sandboxed capabilities. Cannot be combined with --allow-* flags,
+    /// except --allow-write, which adds write access (including `-o`/`--output`) on top of
+    /// the preset. Under a preset, `-o`/`--output` is denied unless write access is granted.
     #[arg(
         long = "sandbox",
         value_enum,
-        conflicts_with_all = ["allow_net", "allow_read", "allow_write", "allow_run", "allow_env", "allow_http_import", "allow_all"]
+        conflicts_with_all = ["allow_net", "allow_read", "allow_run", "allow_env", "allow_http_import", "allow_all"]
     )]
     sandbox: Option<SandboxProfile>,
 }
@@ -641,9 +645,9 @@ impl ProgramArgs {
     fn build_sandboxed_io(&self) -> mq_lang::SandboxedIo {
         let sandboxed_io = mq_lang::SandboxedIo::new(mq_lang::NativeIo::default());
         match &self.sandbox {
-            Some(SandboxProfile::Strict) => sandboxed_io,
-            Some(SandboxProfile::ReadOnly) => sandboxed_io.allow_read(true),
-            Some(SandboxProfile::Networked) => sandboxed_io.allow_net(true),
+            Some(SandboxProfile::Strict) => sandboxed_io.allow_write(self.allow_write.clone()),
+            Some(SandboxProfile::ReadOnly) => sandboxed_io.allow_read(true).allow_write(self.allow_write.clone()),
+            Some(SandboxProfile::Networked) => sandboxed_io.allow_net(true).allow_write(self.allow_write.clone()),
             Some(SandboxProfile::Unsafe) => sandboxed_io.allow_all(),
             None if self.allow_all => sandboxed_io.allow_all(),
             None => sandboxed_io
@@ -1777,6 +1781,7 @@ impl Cli {
         }
 
         self.validate_csv_options()?;
+        self.check_output_permitted()?;
 
         match &self.commands {
             Some(Commands::Repl { files }) => {
@@ -2041,6 +2046,19 @@ impl Cli {
                     .map(OutputFormat::from_path)
                     .unwrap_or_default()
             })
+    }
+
+    /// Under `--sandbox`, rejects `-o`/`--output` (and so `--append`/`--no-clobber`) unless
+    /// `--allow-write` permits the target. Without `--sandbox`, output is unrestricted.
+    fn check_output_permitted(&self) -> miette::Result<()> {
+        let (Some(_), Some(path)) = (&self.input.program.sandbox, &self.output.output_file) else {
+            return Ok(());
+        };
+        self.input
+            .program
+            .build_sandboxed_io()
+            .check_write(path)
+            .map_err(|e| miette!("cannot write output file: {e} (use --allow-write to permit it)"))
     }
 
     fn clobber_mode(&self) -> ClobberMode {
@@ -3635,7 +3653,6 @@ mod tests {
 
     #[rstest]
     #[case(&["mq", "--sandbox=strict", "--allow-read=/tmp", "self"])]
-    #[case(&["mq", "--sandbox=read-only", "--allow-write=/tmp", "self"])]
     #[case(&["mq", "--sandbox=networked", "--allow-net=example.com", "self"])]
     #[case(&["mq", "--sandbox=unsafe", "--allow-run", "self"])]
     #[case(&["mq", "--sandbox=unsafe", "--allow-env", "self"])]
@@ -3646,6 +3663,28 @@ mod tests {
             Cli::try_parse_from(args).is_err(),
             "--sandbox should conflict with --allow-* flags (including --allow-all)"
         );
+    }
+
+    #[rstest]
+    #[case(Some(SandboxProfile::Strict), None, "out.md", false)]
+    #[case(Some(SandboxProfile::ReadOnly), None, "out.md", false)]
+    #[case(Some(SandboxProfile::Networked), None, "out.md", false)]
+    #[case(Some(SandboxProfile::Strict), Some(vec![]), "out.md", true)]
+    #[case(Some(SandboxProfile::ReadOnly), Some(vec![PathBuf::from("/allowed")]), "/allowed/out.md", true)]
+    #[case(Some(SandboxProfile::ReadOnly), Some(vec![PathBuf::from("/allowed")]), "/other/out.md", false)]
+    #[case(Some(SandboxProfile::Unsafe), None, "out.md", true)]
+    #[case(None, None, "out.md", true)]
+    fn test_output_file_gated_by_allow_write_under_sandbox(
+        #[case] sandbox: Option<SandboxProfile>,
+        #[case] allow_write: Option<Vec<PathBuf>>,
+        #[case] output: &str,
+        #[case] expected_ok: bool,
+    ) {
+        let mut cli = Cli::default();
+        cli.input.program.sandbox = sandbox;
+        cli.input.program.allow_write = allow_write;
+        cli.output.output_file = Some(PathBuf::from(output));
+        assert_eq!(cli.check_output_permitted().is_ok(), expected_ok);
     }
 
     #[test]
