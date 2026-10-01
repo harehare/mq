@@ -3012,7 +3012,7 @@ fn set_children_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv)
 #[mq_macros::mq_fn(name = "to_code", params = Fixed(2))]
 fn to_code_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [a, RuntimeValue::String(lang)] => Ok(mq_markdown::Node::Code(mq_markdown::Code {
+        [a, RuntimeValue::String(lang)] if !a.is_none() => Ok(mq_markdown::Node::Code(mq_markdown::Code {
             value: a.to_string(),
             lang: Some(lang.to_string()),
             position: None,
@@ -3055,7 +3055,7 @@ fn to_h_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
             })
             .into())
         }
-        [a, RuntimeValue::Number(depth)] => Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
+        [a, RuntimeValue::Number(depth)] if !a.is_none() => Ok(mq_markdown::Node::Heading(mq_markdown::Heading {
             depth: (*depth).value() as u8,
             values: vec![a.to_string().into()],
             position: None,
@@ -3113,7 +3113,7 @@ fn to_image_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Resu
 #[mq_macros::mq_fn(name = "to_math", params = Fixed(1))]
 fn to_math_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [a] => Ok(mq_markdown::Node::Math(mq_markdown::Math {
+        [a] if !a.is_none() => Ok(mq_markdown::Node::Math(mq_markdown::Math {
             value: a.to_string(),
             position: None,
         })
@@ -3125,7 +3125,7 @@ fn to_math_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Resul
 #[mq_macros::mq_fn(name = "to_math_inline", params = Fixed(1))]
 fn to_math_inline_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_slice() {
-        [a] => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
+        [a] if !a.is_none() => Ok(mq_markdown::Node::MathInline(mq_markdown::MathInline {
             value: a.to_string().into(),
             position: None,
         })

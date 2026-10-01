@@ -2483,3 +2483,35 @@ fn test_watch_reruns_on_file_change() -> Result<(), Box<dyn std::error::Error>> 
 
     Ok(())
 }
+
+#[test]
+fn test_update_mode_to_h_preserves_non_matching_nodes() -> Result<(), Box<dyn std::error::Error>> {
+    use assert_cmd::prelude::*;
+    use std::process::Command;
+
+    let input = "# Title\n\nSome text.\n\n## Sub\n\n```py\nprint(1)\n```\n";
+    let temp_dir = tempfile::tempdir()?;
+    let file_path = temp_dir.path().join("doc.md");
+    std::fs::write(&file_path, input)?;
+
+    let mut cmd = Command::cargo_bin("mq")?;
+    cmd.arg("-U").arg(".h2 | to_h(3)").arg(&file_path);
+    let assert = cmd.assert().success();
+
+    let output = String::from_utf8(assert.get_output().stdout.clone())?;
+    assert!(output.contains("# Title"), "expected # Title to be preserved: {output}");
+    assert!(
+        output.contains("Some text."),
+        "expected paragraph to be preserved: {output}"
+    );
+    assert!(
+        output.contains("### Sub"),
+        "expected ## Sub to be updated to ### Sub: {output}"
+    );
+    assert!(
+        output.contains("```py\nprint(1)\n```"),
+        "expected code block to be preserved: {output}"
+    );
+
+    Ok(())
+}
