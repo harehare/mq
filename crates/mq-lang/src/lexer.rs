@@ -7,7 +7,7 @@ use nom::combinator::{cut, opt};
 use nom::{
     IResult,
     branch::alt,
-    bytes::complete::{escaped_transform, tag, take_while_m_n},
+    bytes::complete::{escaped_transform, tag, take_while, take_while_m_n},
     character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of, satisfy},
     combinator::{map, map_opt, map_res, recognize, value},
     multi::{fold_many0, many0, many1},
@@ -896,15 +896,41 @@ fn token_include_spaces(input: Span) -> IResult<Span, Token> {
     }
 }
 
+/// Consumes up to the next whitespace or delimiter as a single `Unknown` token so lexing can resume.
+fn unknown(input: Span) -> IResult<Span, Token> {
+    map(
+        recognize(pair(
+            anychar,
+            take_while(|c: char| !c.is_whitespace() && !",()[]{}|;".contains(c)),
+        )),
+        |span: Span| Token {
+            range: span.into(),
+            kind: TokenKind::Unknown(span.fragment().to_string()),
+            module_id: span.extra,
+        },
+    )
+    .parse(input)
+}
+
 fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
     let estimated_capacity = input.fragment().len() / 5;
     let mut tokens = Vec::with_capacity(estimated_capacity.max(16));
     let mut current = input;
 
     if options.include_spaces {
-        while let Ok((remaining, token)) = token_include_spaces(current) {
-            tokens.push(token);
-            current = remaining;
+        loop {
+            match token_include_spaces(current) {
+                Ok((remaining, token)) => {
+                    tokens.push(token);
+                    current = remaining;
+                }
+                Err(_) if options.ignore_errors && !current.fragment().is_empty() => {
+                    let (remaining, token) = unknown(current)?;
+                    tokens.push(token);
+                    current = remaining;
+                }
+                Err(_) => break,
+            }
         }
     } else {
         loop {
@@ -1845,5 +1871,19 @@ mod tests {
         fn dispatch_matches_exhaustive_alt_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
             assert_dispatch_matches_exhaustive_alt(&s);
         }
+    }
+
+    #[rstest]
+    #[case::unterminated_string("foo(\"abc", vec![TokenKind::Ident("foo".into()), TokenKind::LParen, TokenKind::Unknown("\"abc".into()), TokenKind::Eof])]
+    #[case::stops_at_delimiter("a § , b", vec![TokenKind::Ident("a".into()), TokenKind::Whitespace(1), TokenKind::Unknown("§".into()), TokenKind::Whitespace(1), TokenKind::Comma, TokenKind::Whitespace(1), TokenKind::Ident("b".into()), TokenKind::Eof])]
+    fn test_ignore_errors_emits_unknown_token(#[case] input: &str, #[case] expected: Vec<TokenKind>) {
+        let tokens = Lexer::new(Options {
+            ignore_errors: true,
+            include_spaces: true,
+        })
+        .tokenize(input, 1.into())
+        .unwrap();
+
+        assert_eq!(tokens.into_iter().map(|t| t.kind).collect::<Vec<_>>(), expected);
     }
 }

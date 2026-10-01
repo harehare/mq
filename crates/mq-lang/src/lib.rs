@@ -152,6 +152,9 @@ pub(crate) type TokenArena = Shared<SharedCell<Arena<Shared<Token>>>>;
 
 /// Parses `code` into CST nodes, collecting errors instead of stopping at the first one.
 ///
+/// Broken input still yields a lossless tree: unparsable tokens are kept in `Error` nodes
+/// and absent required tokens appear as zero-width `Missing` nodes.
+///
 /// ```rust
 /// let (cst_nodes, errors) = mq_lang::parse_recovery("1 + 2");
 /// assert!(!errors.has_errors());
@@ -382,7 +385,7 @@ mod tests {
         let (cst_nodes, errors) = parse_recovery(code);
 
         assert!(errors.has_errors());
-        assert!(cst_nodes.is_empty());
+        assert!(cst_nodes[0].has_error());
     }
 
     #[cfg(feature = "cst")]
@@ -400,14 +403,14 @@ mod tests {
         let (cst_nodes, errors) = parse_recovery(code);
 
         assert!(errors.has_errors());
-        assert!(cst_nodes.is_empty());
+        assert!(cst_nodes[0].has_error());
     }
 
     #[test]
     #[cfg(feature = "cst")]
     fn test_parse_recovery_with_invalid_unicode_escape() {
         let (nodes, errors) = parse_recovery("\"\\u{ZZZZ}\"");
-        assert!(nodes.is_empty());
+        assert!(nodes.iter().any(|node| node.has_error()));
         assert!(errors.has_errors());
     }
 

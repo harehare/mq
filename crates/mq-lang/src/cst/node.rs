@@ -153,6 +153,11 @@ pub enum NodeKind {
     Env,
     #[default]
     Eof,
+    /// Source the parser could not make sense of. `children` holds, in source order, the
+    /// tokens (and any nodes) consumed during recovery, so the text round-trips losslessly.
+    Error {
+        children: ArgList,
+    },
     Fn {
         params: ArgList,
         colon_or_do: Option<Shared<Node>>,
@@ -204,6 +209,11 @@ pub enum NodeKind {
         rhs: Shared<Node>,
     },
     Literal,
+    /// A zero-width placeholder for a required token that is absent
+    /// (e.g. the `)` of an unclosed call). `expected` describes the token.
+    Missing {
+        expected: &'static str,
+    },
     Match {
         args: ArgList,
         colon_or_do: Option<Shared<Node>>,
@@ -504,7 +514,7 @@ impl Node {
             NodeKind::Let { lhs, eq_token, rhs } | NodeKind::Var { lhs, eq_token, rhs } => {
                 [one(lhs), one(eq_token), one(rhs), E, E, E]
             }
-            NodeKind::Array { items } => [items, E, E, E, E, E],
+            NodeKind::Array { items } | NodeKind::Error { children: items } => [items, E, E, E, E, E],
             NodeKind::Dict { entries } => [entries, E, E, E, E, E],
             NodeKind::DictEntry { key, colon, value } => [one(key), one(colon), one(value), E, E, E],
             NodeKind::Match {
@@ -588,6 +598,16 @@ impl Node {
 
     pub fn is_eof(&self) -> bool {
         matches!(self.kind, NodeKind::Eof)
+    }
+
+    /// Whether this node is an [`NodeKind::Error`] node or a [`NodeKind::Missing`] placeholder.
+    pub fn is_error(&self) -> bool {
+        matches!(self.kind, NodeKind::Error { .. } | NodeKind::Missing { .. })
+    }
+
+    /// Whether this node or any descendant is an error or missing node.
+    pub fn has_error(&self) -> bool {
+        self.is_error() || self.children().any(|child| child.has_error())
     }
 
     pub fn is_fn(&self) -> bool {

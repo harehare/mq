@@ -2786,7 +2786,7 @@ mod tests {
     #[case::bytes_add(r#"to_bytes("ab") | add(to_bytes("cd"))"#, true)]
     #[case::bytes_add_op(r#"to_bytes("ab") + to_bytes("cd")"#, true)]
     // slice on bytes
-    #[case::bytes_slice(r#"to_bytes("hello") | slice(1; 3)"#, true)]
+    #[case::bytes_slice(r#"to_bytes("hello") | slice(1, 3)"#, true)]
     // reverse on bytes
     #[case::bytes_reverse(r#"to_bytes("hello") | reverse"#, true)]
     // len on bytes
@@ -2808,14 +2808,14 @@ mod tests {
     // sha512: bytes -> string
     #[case::sha512_bytes(r#"to_bytes("hello") | sha512"#, true)]
     // bytes comparisons
-    #[case::bytes_gt(r#"gt(to_bytes("b"); to_bytes("a"))"#, true)]
-    #[case::bytes_gte(r#"gte(to_bytes("a"); to_bytes("a"))"#, true)]
-    #[case::bytes_lt(r#"lt(to_bytes("a"); to_bytes("b"))"#, true)]
-    #[case::bytes_lte(r#"lte(to_bytes("a"); to_bytes("a"))"#, true)]
+    #[case::bytes_gt(r#"gt(to_bytes("b"), to_bytes("a"))"#, true)]
+    #[case::bytes_gte(r#"gte(to_bytes("a"), to_bytes("a"))"#, true)]
+    #[case::bytes_lt(r#"lt(to_bytes("a"), to_bytes("b"))"#, true)]
+    #[case::bytes_lte(r#"lte(to_bytes("a"), to_bytes("a"))"#, true)]
     // is_bytes: (a) -> bool
     #[case::is_bytes(r#"to_bytes("hello") | is_bytes"#, true)]
     // base64d_bytes: string -> bytes, usable where bytes are expected
-    #[case::base64d_bytes_xor(r#"xor(base64d_bytes("aGVsbG8="); to_bytes("world"))"#, true)]
+    #[case::base64d_bytes_xor(r#"xor(base64d_bytes("aGVsbG8="), to_bytes("world"))"#, true)]
     #[case::base64urld_bytes_is_bytes(r#"base64urld_bytes("aGVsbG8") | is_bytes"#, true)]
     fn test_bytes_builtin_signatures(#[case] code: &str, #[case] should_succeed: bool) {
         let result = check_types(code);
