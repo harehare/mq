@@ -4,6 +4,8 @@
 
 `mq compile` saves a query as Tarn VM bytecode in a `.mqc` file. Pass the `.mqc` file in place of the query to run it. Modules, including HTTP imports, are resolved at compile time and stored in the file, so running it needs no module files or network access.
 
+Repeated simple literal values within the same bytecode chunk share one entry, which can make `.mqc` files smaller when a query repeats those values.
+
 ```sh
 mq compile -f query.mq            # writes query.mqc
 mq compile '.h | to_text()' -o h.mqc

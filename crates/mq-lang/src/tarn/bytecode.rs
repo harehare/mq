@@ -8,7 +8,9 @@ use crate::ast::TokenId;
 use crate::ast::node::Node;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
+use rustc_hash::{FxHashMap, FxHasher};
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 /// The implicit pipeline value (`.` / `self`) slot.
 pub(crate) const SELF_SLOT: u16 = 0;
@@ -786,6 +788,62 @@ pub(crate) struct Chunk {
     pub(crate) is_generator: bool,
 }
 
+/// Hashes values that can safely share one constant-pool entry.
+///
+/// Runtime objects such as arrays, nodes, and closures are deliberately excluded. Numbers use
+/// their bit pattern so signed zero and distinct NaN representations are preserved.
+fn constant_hash(value: &RuntimeValue) -> Option<u64> {
+    let mut hasher = FxHasher::default();
+    std::mem::discriminant(value).hash(&mut hasher);
+    match value {
+        RuntimeValue::Number(number) => number.value().to_bits().hash(&mut hasher),
+        RuntimeValue::Boolean(value) => value.hash(&mut hasher),
+        RuntimeValue::String(value) => value.hash(&mut hasher),
+        RuntimeValue::Symbol(value) => value.hash(&mut hasher),
+        RuntimeValue::Bytes(value) => value.hash(&mut hasher),
+        RuntimeValue::None => {}
+        _ => return None,
+    }
+    Some(hasher.finish())
+}
+
+/// Compares two constants with the same equality used by [`constant_hash`].
+fn same_constant(left: &RuntimeValue, right: &RuntimeValue) -> bool {
+    match (left, right) {
+        (RuntimeValue::Number(left), RuntimeValue::Number(right)) => left.value().to_bits() == right.value().to_bits(),
+        (RuntimeValue::Boolean(left), RuntimeValue::Boolean(right)) => left == right,
+        (RuntimeValue::String(left), RuntimeValue::String(right)) => left == right,
+        (RuntimeValue::Symbol(left), RuntimeValue::Symbol(right)) => left == right,
+        (RuntimeValue::Bytes(left), RuntimeValue::Bytes(right)) => left == right,
+        (RuntimeValue::None, RuntimeValue::None) => true,
+        _ => false,
+    }
+}
+
+/// Compile-time lookup that lets one chunk share equal scalar constants.
+///
+/// It lives in the compiler rather than in [`Chunk`], so nothing is retained at run time.
+#[derive(Default)]
+pub(crate) struct ConstantIndex(FxHashMap<u64, u16>);
+
+impl ConstantIndex {
+    /// Adds `value` to `chunk` and returns its index, reusing an equal scalar constant if present.
+    pub(crate) fn push(&mut self, chunk: &mut Chunk, value: RuntimeValue) -> u16 {
+        let Some(hash) = constant_hash(&value) else {
+            return chunk.push_const(value);
+        };
+        if let Some(&index) = self.0.get(&hash)
+            && same_constant(&chunk.constants[index as usize], &value)
+        {
+            return index;
+        }
+        let index = chunk.push_const(value);
+        // On a hash collision the first entry keeps the slot; the new value is simply not deduplicated.
+        self.0.entry(hash).or_insert(index);
+        index
+    }
+}
+
 impl Chunk {
     /// Adds a reusable non-capturing closure.
     pub(crate) fn push_static_closure(&mut self, target_chunk: u16) -> u16 {
@@ -838,7 +896,7 @@ impl Chunk {
         &self.captured_local_slots
     }
 
-    /// Adds a constant and returns its index.
+    /// Adds a constant and returns its index without deduplication.
     pub(crate) fn push_const(&mut self, value: RuntimeValue) -> u16 {
         self.constants.push(value);
         (self.constants.len() - 1) as u16
@@ -1930,6 +1988,55 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[test]
+    fn push_const_reuses_safe_values_within_each_chunk() {
+        let values = [
+            RuntimeValue::Number(3.0.into()),
+            RuntimeValue::Boolean(true),
+            RuntimeValue::from("repeated"),
+            RuntimeValue::Symbol(Ident::new("repeated")),
+            RuntimeValue::from(vec![1_u8, 2_u8]),
+            RuntimeValue::None,
+        ];
+        let (mut first, mut first_index) = (Chunk::default(), ConstantIndex::default());
+        for (expected, value) in values.iter().enumerate() {
+            assert_eq!(first_index.push(&mut first, value.clone()), expected as u16);
+            assert_eq!(first_index.push(&mut first, value.clone()), expected as u16);
+        }
+        assert_eq!(first.constants.len(), values.len());
+
+        let (mut second, mut second_index) = (Chunk::default(), ConstantIndex::default());
+        assert_eq!(second_index.push(&mut second, values[0].clone()), 0);
+    }
+
+    #[test]
+    fn push_const_keeps_signed_zero_and_runtime_objects_distinct() {
+        let (mut chunk, mut index) = (Chunk::default(), ConstantIndex::default());
+        assert_eq!(index.push(&mut chunk, RuntimeValue::Number(0.0.into())), 0);
+        assert_eq!(index.push(&mut chunk, RuntimeValue::Number((-0.0).into())), 1);
+        assert_eq!(index.push(&mut chunk, RuntimeValue::Number(0.0.into())), 0);
+
+        let array = RuntimeValue::empty_array();
+        assert_eq!(index.push(&mut chunk, array.clone()), 2);
+        assert_eq!(index.push(&mut chunk, array), 3);
+
+        let function = RuntimeValue::NativeFunction(Ident::new("len"));
+        assert_eq!(index.push(&mut chunk, function.clone()), 4);
+        assert_eq!(index.push(&mut chunk, function), 5);
+    }
+
+    #[test]
+    fn shared_string_constant_is_not_changed_by_mutating_a_loaded_copy() {
+        let (mut chunk, mut constants) = (Chunk::default(), ConstantIndex::default());
+        let index = constants.push(&mut chunk, RuntimeValue::from("original"));
+        assert_eq!(constants.push(&mut chunk, RuntimeValue::from("original")), index);
+        let RuntimeValue::String(mut loaded) = chunk.constants[index as usize].clone() else {
+            panic!("expected a string constant");
+        };
+        crate::runtime::runtime_value::string_mut(&mut loaded).push_str(" changed");
+        assert_eq!(chunk.constants[index as usize], RuntimeValue::from("original"));
+    }
 
     #[test]
     fn opcode_stays_compact() {

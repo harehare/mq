@@ -51,6 +51,19 @@ fn default_call_stack_depth_matches_the_build_profile() {
     );
 }
 
+#[test]
+fn compiler_reuses_repeated_literal_in_one_chunk() {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(r#"["same", "same"]"#, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert_eq!(compiled.chunks[0].constants, [RuntimeValue::from("same")]);
+    assert_eq!(
+        run(r#"["same", "same"]"#),
+        RuntimeValue::from(vec![RuntimeValue::from("same"); 2])
+    );
+}
+
 #[rstest]
 #[case::selector_chain(".h1 | .text")]
 #[case::builtin_calls("upcase(.) | trim(.)")]
