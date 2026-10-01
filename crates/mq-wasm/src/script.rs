@@ -382,7 +382,7 @@ impl WasmModuleResolver {
     /// will operate as a NoOp resolver (only using manually added modules via `add_module`).
     pub async fn initialize(&self) {
         #[cfg(feature = "opfs")]
-        match opfs_root().await {
+        match opfs::persistent::app_specific_dir().await {
             Ok(root) => {
                 *self.root_dir.borrow_mut() = Some(root);
                 *self.is_available.borrow_mut() = true;
@@ -589,7 +589,7 @@ pub async fn clear_http_cache() -> Result<(), JsValue> {
     {
         use opfs::DirectoryHandle as _;
 
-        let root = opfs_root()
+        let root = opfs::persistent::app_specific_dir()
             .await
             .map_err(|e| JsValue::from_str(&format!("OPFS unavailable: {:?}", e)))?;
 
@@ -618,7 +618,7 @@ pub async fn clear_all_http_cache() -> Result<(), JsValue> {
     {
         use opfs::DirectoryHandle as _;
 
-        let mut root = opfs_root()
+        let mut root = opfs::persistent::app_specific_dir()
             .await
             .map_err(|e| JsValue::from_str(&format!("OPFS unavailable: {:?}", e)))?;
 
@@ -1241,32 +1241,6 @@ fn extract_http_import_urls(code: &str) -> Vec<String> {
         .collect()
 }
 
-/// Returns the OPFS root directory.
-///
-/// `opfs::persistent::app_specific_dir` goes through `web_sys::window()`, which is `None` in
-/// Web Workers, so the root is resolved from the global scope's `navigator.storage` instead.
-#[cfg(all(feature = "opfs", target_arch = "wasm32"))]
-async fn opfs_root() -> Result<opfs::persistent::DirectoryHandle, JsValue> {
-    let get = |target: &JsValue, key: &str| js_sys::Reflect::get(target, &JsValue::from_str(key));
-
-    let navigator = get(&js_sys::global(), "navigator")?;
-    let storage = get(&navigator, "storage")?;
-    if storage.is_undefined() {
-        return Err(JsValue::from_str("navigator.storage is not available"));
-    }
-
-    let get_directory: js_sys::Function = get(&storage, "getDirectory")?.dyn_into()?;
-    let promise: js_sys::Promise = get_directory.call0(&storage)?.dyn_into()?;
-    let handle: web_sys::FileSystemDirectoryHandle = wasm_bindgen_futures::JsFuture::from(promise).await?.dyn_into()?;
-    Ok(handle.into())
-}
-
-/// Returns the app-specific data directory on non-wasm targets, where there is no OPFS.
-#[cfg(all(feature = "opfs", not(target_arch = "wasm32")))]
-async fn opfs_root() -> opfs::persistent::Result<opfs::persistent::DirectoryHandle> {
-    opfs::persistent::app_specific_dir().await
-}
-
 /// Fetches the text content of a HTTPS URL.
 ///
 /// Uses the global `fetch` function, which is available in browsers (`window.fetch`),
@@ -1611,7 +1585,9 @@ mod tests {
         }
 
         // Get root directory handle
-        let root = opfs_root().await.expect("Failed to get OPFS root directory");
+        let root = opfs::persistent::app_specific_dir()
+            .await
+            .expect("Failed to get OPFS root directory");
 
         // Create a test module file in OPFS
         let module_content = r#"def upcase_exclaim(x): x | upcase() | s"${self}!";"#;
@@ -1682,7 +1658,9 @@ mod tests {
             return;
         }
 
-        let root = opfs_root().await.expect("Failed to get OPFS root directory");
+        let root = opfs::persistent::app_specific_dir()
+            .await
+            .expect("Failed to get OPFS root directory");
 
         // Create multiple test module files
         let modules = vec![
@@ -1964,7 +1942,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         write_opfs_file(&root, "pll_single.mq", "def hello(): \"hello\";").await;
 
         resolver.preload_modules(r#"import "pll_single""#).await;
@@ -1982,7 +1960,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         write_opfs_file(&root, "pll_wanted.mq", "def wanted(): 1;").await;
         write_opfs_file(&root, "pll_unwanted.mq", "def unwanted(): 2;").await;
 
@@ -2002,7 +1980,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         write_opfs_file(&root, "pll_multi_a.mq", "def fa(x): x;").await;
         write_opfs_file(&root, "pll_multi_b.mq", "def fb(x): x;").await;
 
@@ -2022,7 +2000,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         // pll_trans_a imports pll_trans_b
         write_opfs_file(&root, "pll_trans_a.mq", "import \"pll_trans_b\"\ndef fa(x): x;").await;
         write_opfs_file(&root, "pll_trans_b.mq", "def fb(x): x;").await;
@@ -2044,7 +2022,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         // pll_circ_a → pll_circ_b → pll_circ_a (cycle)
         write_opfs_file(&root, "pll_circ_a.mq", "import \"pll_circ_b\"\ndef fca(x): x;").await;
         write_opfs_file(&root, "pll_circ_b.mq", "import \"pll_circ_a\"\ndef fcb(x): x;").await;
@@ -2080,7 +2058,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         write_opfs_file(&root, "pll_dup.mq", "def fdup(x): x;").await;
 
         // same module listed twice in imports
@@ -2101,7 +2079,7 @@ mod tests {
         if !*resolver.is_available.borrow() {
             return;
         }
-        let root = opfs_root().await.unwrap();
+        let root = opfs::persistent::app_specific_dir().await.unwrap();
         // write one version to OPFS
         write_opfs_file(&root, "pll_override.mq", "def opfs_version(): 2;").await;
         // pre-populate cache with a different version
@@ -2450,7 +2428,7 @@ mod tests {
     async fn test_clear_http_cache_removes_mutable_subdir() {
         use opfs::{DirectoryHandle as _, FileHandle as _, WritableFileStream as _};
 
-        let root = match opfs_root().await {
+        let root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return, // OPFS unavailable in this environment
         };
@@ -2483,7 +2461,7 @@ mod tests {
     async fn test_clear_all_http_cache_removes_entire_cache_dir() {
         use opfs::DirectoryHandle as _;
 
-        let mut root = match opfs_root().await {
+        let mut root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -2510,7 +2488,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_read_opfs_lock_missing_file_returns_empty() {
-        let root = match opfs_root().await {
+        let root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -2523,7 +2501,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_write_then_read_opfs_lock_roundtrip() {
-        let root = match opfs_root().await {
+        let root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -2543,7 +2521,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_clear_http_cache_strips_only_mutable_lock_entries() {
-        let root = match opfs_root().await {
+        let root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return,
         };
@@ -2572,7 +2550,7 @@ mod tests {
     #[allow(unused)]
     #[wasm_bindgen_test]
     async fn test_clear_all_http_cache_deletes_lockfile() {
-        let root = match opfs_root().await {
+        let root = match opfs::persistent::app_specific_dir().await {
             Ok(r) => r,
             Err(_) => return,
         };
