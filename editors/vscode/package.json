@@ -234,7 +234,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.1",
+    "vscode-languageclient": "^10.1.2",
     "which": "^7.0.0"
   },
   "overrides": {
