@@ -40,6 +40,8 @@ pub(super) struct Delim {
     /// Offset of the first remaining character.
     pub(super) start: usize,
     pub(super) count: usize,
+    /// Length of the whole run, which `count` shrinks from as the run is used.
+    pub(super) original: usize,
     pub(super) can_open: bool,
     pub(super) can_close: bool,
 }
@@ -280,6 +282,18 @@ struct Scanner<'a> {
     run: usize,
 }
 
+/// Bytes where `Scanner::scan` may start a construct. Every other byte is plain text.
+static SPECIAL: [bool; 256] = {
+    let mut table = [false; 256];
+    let special = b"\\&`$*_~[!]<{\n\rhHwW";
+    let mut index = 0;
+    while index < special.len() {
+        table[special[index] as usize] = true;
+        index += 1;
+    }
+    table
+};
+
 impl Scanner<'_> {
     fn src(&self) -> &str {
         self.context.src()
@@ -289,7 +303,25 @@ impl Scanner<'_> {
         let len = self.src().len();
         while self.pos < len {
             let bytes = self.src().as_bytes();
-            match bytes[self.pos] {
+            let skip = bytes[self.pos..].iter().take_while(|&&b| !SPECIAL[b as usize]).count();
+            let pos = self.pos + skip;
+            if pos == len {
+                self.pos = len;
+                break;
+            }
+            let (byte, image) = (bytes[pos], bytes.get(pos + 1) == Some(&b'['));
+            self.pos = pos;
+            let link = if matches!(byte, b'[' | b'!') {
+                self.obsidian_link()
+            } else {
+                None
+            };
+            match byte {
+                _ if link.is_some() => {
+                    if let Some((node, end)) = link {
+                        self.push_node(node, end);
+                    }
+                }
                 b'\\' => self.escape(),
                 b'&' => self.entity(),
                 b'`' => self.span(b'`'),
@@ -297,7 +329,7 @@ impl Scanner<'_> {
                 b'*' | b'_' => self.delimiter(),
                 b'~' if !self.context.references.mdx => self.delimiter(),
                 b'[' => self.open(false),
-                b'!' if bytes.get(self.pos + 1) == Some(&b'[') => self.open(true),
+                b'!' if image => self.open(true),
                 b']' => self.close(),
                 b'<' if !self.context.references.mdx => self.angle(),
                 b'<' => self.jsx(),
@@ -307,6 +339,67 @@ impl Scanner<'_> {
                 _ => self.pos += 1,
             }
         }
+    }
+
+    /// The wikilink `[[target|text]]` or the embed `![[target|display]]` at the current position, and the
+    /// offset where it ends. The target is not empty, and neither part holds a bracket or a line ending.
+    #[cfg(any(feature = "wikilink", feature = "embed"))]
+    fn obsidian_link(&self) -> Option<(Node, usize)> {
+        if self.context.references.mdx {
+            return None;
+        }
+        let src = self.src();
+        let start = self.pos;
+        let rest = &src[start..];
+        let (embed, open) = match rest.as_bytes() {
+            [b'!', b'[', b'[', ..] if cfg!(feature = "embed") => (true, start + 3),
+            [b'[', b'[', ..] if cfg!(feature = "wikilink") => (false, start + 2),
+            _ => return None,
+        };
+        let close = open + src[open..].find("]]")?;
+        let content = &src[open..close];
+        if content.contains(['[', ']', '\n', '\r']) {
+            return None;
+        }
+        let (target, label) = match content.split_once('|') {
+            Some((target, label)) => (target.trim(), Some(label.trim().to_string())),
+            None => (content.trim(), None),
+        };
+        if target.is_empty() {
+            return None;
+        }
+        let end = close + 2;
+        let position = Some(self.context.position(start, end));
+        let target = target.to_string();
+        let node = if embed {
+            #[cfg(feature = "embed")]
+            {
+                Node::Embed(crate::node::Embed {
+                    target,
+                    display: label,
+                    position,
+                })
+            }
+            #[cfg(not(feature = "embed"))]
+            unreachable!("embeds are off")
+        } else {
+            #[cfg(feature = "wikilink")]
+            {
+                Node::WikiLink(crate::node::WikiLink {
+                    target,
+                    text: label,
+                    position,
+                })
+            }
+            #[cfg(not(feature = "wikilink"))]
+            unreachable!("wikilinks are off")
+        };
+        Some((node, end))
+    }
+
+    #[cfg(not(any(feature = "wikilink", feature = "embed")))]
+    fn obsidian_link(&self) -> Option<(Node, usize)> {
+        None
     }
 
     /// Pushes the pending plain text up to the current position as an item.
@@ -443,6 +536,13 @@ impl Scanner<'_> {
         let end = close + size;
         // In a table cell, `\|` stands for `|` inside code as well.
         let content = &src[start + size..close];
+        // The lines of a paragraph lose their leading whitespace before the inline content is read.
+        let content = if self.context.references.mdx {
+            Cow::Borrowed(content)
+        } else {
+            remove_line_indent(content)
+        };
+        let content = content.as_ref();
         let value = if self.context.source.table && content.contains("\\|") {
             span_value(&content.replace("\\|", "|"))
         } else {
@@ -473,7 +573,7 @@ impl Scanner<'_> {
 
         let before = src[..start].chars().next_back();
         let after = src[end..].chars().next();
-        let (can_open, can_close) = emphasis::flanking(ch, before, after, !self.context.references.mdx);
+        let (can_open, can_close) = emphasis::flanking(ch, before, after);
         if !can_open && !can_close {
             self.pos = end;
             return;
@@ -483,6 +583,7 @@ impl Scanner<'_> {
             ch,
             start,
             count: size,
+            original: size,
             can_open,
             can_close,
         };

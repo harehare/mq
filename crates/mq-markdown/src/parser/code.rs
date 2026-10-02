@@ -114,13 +114,11 @@ fn reaches_line_end(last: &Line<'_>, empty: bool, own_end: bool) -> bool {
     }
 }
 
-pub(super) fn indented_code(lines: &[Line<'_>], start: usize, after_container: bool, blocks: &mut Vec<Block>) -> usize {
-    // markdown-rs makes the first line a chunk of its own in these two cases.
-    let own_chunk = lines[start].own_chunk || after_container;
+pub(super) fn indented_code(lines: &[Line<'_>], start: usize, blocks: &mut Vec<Block>) -> usize {
     let mut last_code = start;
     let mut index = start;
 
-    while let Some(line) = lines.get(index).filter(|_| !(own_chunk && index > start)) {
+    while let Some(line) = lines.get(index) {
         // Whitespace-only lines are code when indented enough, otherwise they may just separate chunks.
         if line.indent().0 >= CODE_INDENT {
             last_code = index;
@@ -132,13 +130,24 @@ pub(super) fn indented_code(lines: &[Line<'_>], start: usize, after_container: b
 
     let mut parts = lines[start..=last_code]
         .iter()
-        .map(|line| (line.skip_columns(CODE_INDENT).text, line.eol))
+        .map(|line| {
+            let content = line.skip_columns(CODE_INDENT);
+            (content.pad, content.text, line.eol)
+        })
         .collect::<Vec<_>>();
     // Lines that are empty once the indent is removed only extend the position, not the value.
-    while parts.len() > 1 && parts.last().is_some_and(|(text, _)| text.is_empty()) {
+    while parts.len() > 1 && parts.last().is_some_and(|(pad, text, _)| *pad == 0 && text.is_empty()) {
         parts.pop();
     }
-    let value = join_lines(&parts);
+    // What is left of a tab that the indent consumes in part is code, as spaces.
+    let mut value = String::with_capacity(parts.iter().map(|(pad, text, eol)| pad + text.len() + eol.len()).sum());
+    for (index, (pad, text, eol)) in parts.iter().enumerate() {
+        value.extend(std::iter::repeat_n(' ', *pad));
+        value.push_str(text);
+        if index + 1 < parts.len() {
+            value.push_str(eol);
+        }
+    }
 
     let position = Position {
         start: lines[start].point(0),

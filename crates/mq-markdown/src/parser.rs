@@ -1,32 +1,11 @@
-//! Native Markdown parser that builds [`Node`] values directly, without going through `mdast`.
+//! Markdown parser that builds [`Node`] values directly.
 //!
 //! Parsing runs in phases: [`block`] resolves the block structure line by line into a tree,
 //! [`resolve`] collects the definitions and turns the tree into nodes, and [`inline`] parses the raw
 //! text of paragraphs, headings and table cells along the way.
 //!
-//! The output, positions included, is the one that `markdown-rs`, which this parser replaced, gave for
-//! CommonMark, GFM, frontmatter, math and MDX (without a JavaScript parser, so expressions only need
-//! balanced braces). HTML is rendered by [`render_html`] in the way `markdown-rs` did. Where the two
-//! differ, this parser follows the specifications:
-//!
-//! - a byte order mark at the start is not content
-//! - a table has no body rows that end it for starting with `*`, `#` or a backtick, a table of one
-//!   column needs no pipe, and its last cell takes the whitespace that follows it
-//! - an info string loses its trailing whitespace, and a list is not loose for blank lines after it
-//! - a tab that a container only partly consumes is not kept in text, the text starts where the tab ends
-//! - `![^a](b)` is an image
-//! - the end of text that has a tab before its line ending, which `markdown-rs` places beyond the text
-//!
-//! What `markdown-rs` did and this parser does not do:
-//!
-//! - lazy continuation lines after definitions, footnotes or thematic breaks in containers, in containers
-//!   nested more than two deep, or with several container markers on a line, and unclosed fences in
-//!   containers whose end depends on the line that follows
-//! - documents that start with a `---` or `+++` line that never closes
-//! - character references in an image destination that contains an email address
-//! - MDX text expressions and tags that span lines interrupted by container markers, and tabs in them
-//! - an image in the alt text of an image, and the tabs that a container consumes in part inside of
-//!   code, in HTML
+//! It reads `CommonMark`, GFM, frontmatter, math and MDX (without a JavaScript parser, so expressions
+//! only need balanced braces). HTML is rendered by [`render_html`].
 mod block;
 mod code;
 mod definition;
@@ -135,7 +114,7 @@ mod tests {
         ("no_gfm", "| a |\n|-|\n\n~a~ www.a.b [^a]\n\n- [ ] a\n"),
         ("no_math", "$a$\n\n$$\na\n$$\n"),
         ("no_frontmatter", "---\na\n---\n"),
-        ("esm_is_text", "import a from 'b'\n\nexport const c = 1\n"),
+        ("esm", "import a from 'b'\n\nexport const c = 1\n"),
         ("definition", "[a]: /u\n\n[a]\n"),
         ("list_deep_indent", "-      a\n"),
         ("fence", "```rust\ncode\n```\n"),
@@ -1107,6 +1086,10 @@ mod tests {
     const SPEC_URL: &str =
         "https://raw.githubusercontent.com/github/cmark-gfm/828322d1ee4facdab56f0d3edccb13e9af90dcd2/test/spec.txt";
 
+    const EXTENSIONS_SPEC_URL: &str = "https://raw.githubusercontent.com/github/cmark-gfm/828322d1ee4facdab56f0d3edccb13e9af90dcd2/test/extensions.txt";
+
+    const COMMONMARK_SPEC_URL: &str = "https://raw.githubusercontent.com/commonmark/commonmark-spec/0.31.2/spec.txt";
+
     /// The markdown and the HTML of each example of the `CommonMark` and GFM `spec.txt`, with its number.
     fn spec_examples(text: &str) -> Vec<(usize, String, String)> {
         let fence = "`".repeat(32);
@@ -1129,44 +1112,107 @@ mod tests {
         examples
     }
 
-    /// Examples of the spec that are not rendered as in the spec, by number. The parser has kept the
-    /// behavior of `markdown-rs` here:
+    /// Examples of the GFM spec, which is based on `CommonMark` 0.29, that are not rendered as in the
+    /// spec, by number:
     ///
-    /// - code with a tab that a container consumes in part, which keeps the rest of the tab as spaces in
-    ///   the spec, and an image in the alt text of an image (5, 6, 7, 570)
     /// - a document that starts with `---` has frontmatter (66, 68)
-    /// - emphasis next to other runs of `*` and `_` follows the algorithm of `markdown-rs` (388, 416,
-    ///   424, 425, 426, 463, 464, 465, 467)
-    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href` (496,
-    ///   594, 595, 597)
+    /// - nested `strong` of runs of `*` and `_`, which `CommonMark` 0.30 and later render as nested
+    ///   elements where 0.29 merged them (388, 416, 424, 425, 426, 463, 464, 465, 467)
+    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href`, as
+    ///   `markdown-rs` does it by default (496, 594, 595, 597)
     /// - GFM autolink literals, which the spec does not have (598, 604, 607, 608)
+    /// - the GFM tag filter, which writes the tags `script`, `style` and `textarea` as text (140, 141,
+    ///   142, 145, 147)
     const KNOWN_DIFFERENCES: &[usize] = &[
-        5, 6, 7, 66, 68, 388, 416, 424, 425, 426, 463, 464, 465, 467, 496, 570, 594, 595, 597, 598, 604, 607, 608,
+        66, 68, 140, 141, 142, 145, 147, 388, 416, 424, 425, 426, 463, 464, 465, 467, 496, 594, 595, 597, 598, 604,
+        607, 608,
     ];
+
+    /// Examples of the `CommonMark` 0.31.2 spec that are not rendered as in the spec, by number:
+    ///
+    /// - a document that starts with `---` has frontmatter (96, 98)
+    /// - links with a protocol other than http, https, irc, ircs, mailto and xmpp have no `href` (500,
+    ///   598, 599, 601)
+    /// - GFM autolink literals (602, 608, 611, 612)
+    /// - the GFM tag filter, which writes the tags `script`, `style` and `textarea` as text (170, 171, 172,
+    ///   173, 176, 178)
+    const COMMONMARK_KNOWN_DIFFERENCES: &[usize] = &[
+        96, 98, 170, 171, 172, 173, 176, 178, 500, 598, 599, 601, 602, 608, 611, 612,
+    ];
+
+    /// Examples of the GFM extensions spec that are not rendered as in the spec, by number:
+    ///
+    /// - input that must only not crash, whose output the spec leaves out (20)
+    /// - the HTML of footnotes, which is the one of the current micromark and GitHub (23, 24, 25)
+    const EXTENSIONS_KNOWN_DIFFERENCES: &[usize] = &[20, 23, 24, 25];
+
+    /// Fetches `url`, or reads the file in the environment variable `var`.
+    fn spec_text(var: &str, url: &str) -> String {
+        match std::env::var(var) {
+            Ok(path) => std::fs::read_to_string(path).unwrap(),
+            Err(_) => ureq::get(url).call().unwrap().into_body().read_to_string().unwrap(),
+        }
+    }
+
+    /// The HTML in the form of the spec, which gives the language of code as a class and not as `lang`.
+    fn spec_html(html: &str) -> String {
+        let mut result = String::with_capacity(html.len());
+        let mut rest = html;
+        while let Some(start) = rest.find("<pre lang=\"") {
+            let (before, tag) = rest.split_at(start);
+            let value_start = "<pre lang=\"".len();
+            let end = tag[value_start..].find("\"><code>").map(|end| value_start + end);
+            let Some(end) = end else { break };
+            result.push_str(before);
+            result.push_str(&format!("<pre><code class=\"language-{}\">", &tag[value_start..end]));
+            rest = &tag[end + "\"><code>".len()..];
+        }
+        result.push_str(rest);
+        result
+    }
+
+    /// The numbers of the examples of `text` that are not rendered as in the spec.
+    fn differing_examples(text: &str, minimum: usize) -> Vec<usize> {
+        let examples = spec_examples(text);
+        assert!(examples.len() > minimum, "only {} examples were found", examples.len());
+        examples
+            .iter()
+            .filter(|(_, markdown, html)| spec_html(&to_html(markdown)) != *html)
+            .map(|(number, ..)| *number)
+            .collect()
+    }
 
     /// Renders every example of the spec to HTML, from `SPEC_FILE` or fetched over the network.
     #[test]
     #[ignore = "fetches spec.txt over the network; set SPEC_FILE to use a local copy"]
     fn spec_examples_render_as_in_the_spec() {
-        let text = match std::env::var("SPEC_FILE") {
-            Ok(path) => std::fs::read_to_string(path).unwrap(),
-            Err(_) => ureq::get(SPEC_URL)
-                .call()
-                .unwrap()
-                .into_body()
-                .read_to_string()
-                .unwrap(),
-        };
-        let examples = spec_examples(&text);
-        assert!(examples.len() > 600, "only {} examples were found", examples.len());
-
-        let differing = examples
-            .iter()
-            .filter(|(_, markdown, html)| to_html(markdown) != *html)
-            .map(|(number, ..)| *number)
-            .collect::<Vec<_>>();
         assert_eq!(
-            differing, KNOWN_DIFFERENCES,
+            differing_examples(&spec_text("SPEC_FILE", SPEC_URL), 600),
+            KNOWN_DIFFERENCES,
+            "examples that are not rendered as in the spec"
+        );
+    }
+
+    /// Renders every example of the `CommonMark` 0.31.2 spec to HTML, from `COMMONMARK_SPEC_FILE` or
+    /// fetched over the network.
+    #[test]
+    #[ignore = "fetches spec.txt over the network; set COMMONMARK_SPEC_FILE to use a local copy"]
+    fn commonmark_spec_examples_render_as_in_the_spec() {
+        assert_eq!(
+            differing_examples(&spec_text("COMMONMARK_SPEC_FILE", COMMONMARK_SPEC_URL), 600),
+            COMMONMARK_KNOWN_DIFFERENCES,
+            "examples that are not rendered as in the spec"
+        );
+    }
+
+    /// Renders every example of the GFM extensions spec to HTML, from `EXTENSIONS_SPEC_FILE` or fetched
+    /// over the network.
+    #[test]
+    #[ignore = "fetches extensions.txt over the network; set EXTENSIONS_SPEC_FILE to use a local copy"]
+    fn extensions_spec_examples_render_as_in_the_spec() {
+        assert_eq!(
+            differing_examples(&spec_text("EXTENSIONS_SPEC_FILE", EXTENSIONS_SPEC_URL), 20),
+            EXTENSIONS_KNOWN_DIFFERENCES,
             "examples that are not rendered as in the spec"
         );
     }

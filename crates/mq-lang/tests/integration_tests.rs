@@ -289,7 +289,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None, spread: false,
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { marker: None, start: None, spread: false,
           values: vec![],
           index: 0,
           level: 1,
@@ -308,7 +308,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None, spread: false,
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { marker: None, start: None, spread: false,
           values: vec![],
           index: 0,
           level: 1,
@@ -365,7 +365,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
       | _: \"other\"
     end
     ",
-      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None, spread: false,
+      vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { marker: None, start: None, spread: false,
           values: vec![],
           index: 0,
           level: 1,
@@ -1475,7 +1475,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
             position: None,
           }))].into()))]
 #[case::is_list_true("is_list()",
-            vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None, spread: false,
+            vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { marker: None, start: None, spread: false,
               values: vec![],
               position: None,
               ordered: false,
@@ -2375,7 +2375,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     }))].into()))]
 #[case::convert_string_to_list_item_operator("\"Hello\" @ \"-\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { start: None, spread: false,
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List { marker: None, start: None, spread: false,
         values: vec!["Hello".to_string().into()],
         index: 0,
         ordered: false,
@@ -2397,7 +2397,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     }))].into()))]
 #[case::convert_string_to_horizontal_rule_operator("\"Hello\" @ \"--\"",
     vec![RuntimeValue::None],
-    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+    Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None,
         position: None,
     }))].into()))]
 #[case::skip_while_basic("skip_while([1,2,3,4,5], fn(x): x < 3;)",
@@ -2661,7 +2661,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::to_code_none(r#"to_code(None, "rust")"#, vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::to_math_none("to_math(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
 #[case::to_math_inline_none("to_math_inline(None)", vec![RuntimeValue::None], Ok(vec![RuntimeValue::None].into()))]
-#[case::to_hr_simple("to_hr()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{position: None}))].into()))]
+#[case::to_hr_simple("to_hr()", vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule{ marker: None,position: None}))].into()))]
 #[case::to_strong_simple(r##"to_strong("bold")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Strong(mq_markdown::Strong{values: vec!["bold".to_string().into()], position: None}))].into()))]
 #[case::to_em_simple(r##"to_em("italic")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Emphasis(mq_markdown::Emphasis{values: vec!["italic".to_string().into()], position: None}))].into()))]
 #[case::to_code_inline_simple(r##"to_code_inline("code")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::CodeInline(mq_markdown::CodeInline{value: "code".to_string().into(), position: None}))].into()))]
@@ -2688,7 +2688,7 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
 #[case::to_link_simple(r##"to_link("url", "text", "title")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Link(mq_markdown::Link{url: mq_markdown::Url::new("url".to_string()), title: Some(mq_markdown::Title::new("title".to_string())), values: vec!["text".to_string().into()], position: None}))].into()))]
 #[case::to_math_simple(r##"to_math("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::Math(mq_markdown::Math{value: "E=mc^2".to_string(), position: None}))].into()))]
 #[case::to_math_inline_simple(r##"to_math_inline("E=mc^2")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::MathInline(mq_markdown::MathInline{value: "E=mc^2".to_string().into(), position: None}))].into()))]
-#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{ start: None, spread: false,values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}))].into()))]
+#[case::to_md_list_simple(r##"to_md_list("item", 1)"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::List(mq_markdown::List{ marker: None, start: None, spread: false,values: vec!["item".to_string().into()], index: 0, ordered: false, level: 1, checked: None, position: None}))].into()))]
 #[case::to_md_table_row_simple(r##"to_md_table_row("a", "b")"##, vec![RuntimeValue::None], Ok(vec![RuntimeValue::new_markdown(mq_markdown::Node::TableRow(mq_markdown::TableRow{values: vec![
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 0, values: vec!["a".to_string().into()], position: None}),
     mq_markdown::Node::TableCell(mq_markdown::TableCell{row: 0, column: 1, values: vec!["b".to_string().into()], position: None}),
