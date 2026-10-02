@@ -3,6 +3,7 @@ fn main() {
 }
 
 // Build 100-paragraph document with wikilinks in each paragraph.
+#[cfg(feature = "wikilink")]
 fn wikilink_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nText with [[target{i}]] and [[another{i}|Display {i}]].\n\n"))
@@ -10,6 +11,7 @@ fn wikilink_doc() -> String {
 }
 
 // Same shape but no [[...]] patterns.
+#[cfg(feature = "wikilink")]
 fn plain_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nText without any wikilink patterns here.\n\n"))
@@ -17,6 +19,7 @@ fn plain_doc() -> String {
 }
 
 // 100 callouts of various kinds.
+#[cfg(feature = "callout")]
 fn callout_doc() -> String {
     (0..100)
         .map(|i| {
@@ -27,6 +30,7 @@ fn callout_doc() -> String {
 }
 
 // 100 plain blockquotes (no callout header).
+#[cfg(feature = "callout")]
 fn plain_blockquote_doc() -> String {
     (0..100)
         .map(|i| format!("> Plain blockquote {i} without any callout header.\n\n"))
@@ -34,6 +38,7 @@ fn plain_blockquote_doc() -> String {
 }
 
 // 100 embeds spread through paragraphs.
+#[cfg(feature = "embed")]
 fn embed_doc() -> String {
     (0..100)
         .map(|i| format!("# Heading {i}\n\nSee ![[note{i}.md]] for details.\n\n"))
