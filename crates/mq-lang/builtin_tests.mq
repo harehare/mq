@@ -1950,3 +1950,126 @@ end
 def test_replace_prose_no_match_is_unchanged():
   assert_eq(replace_prose("no match here", "foo", "baz"), "no match here")
 end
+
+# @parametrize([[[1, 2, 3, 4], 24], [[], 1], [[5], 5]])
+def test_product(arr, expected):
+  assert_eq(product(arr), expected)
+end
+
+# @parametrize([[[1, 2, 3], 0, [1, 0, 2, 0, 3]], [[1], 0, [1]], [[], 0, []]])
+def test_interpose(arr, sep, expected):
+  assert_eq(interpose(arr, sep), expected)
+end
+
+# @parametrize([[[1, 2, 3], ["a", "b", "c"], [1, "a", 2, "b", 3, "c"]], [[1, 2, 3], ["a"], [1, "a"]], [[], [1], []]])
+def test_interleave(a, b, expected):
+  assert_eq(interleave(a, b), expected)
+end
+
+# @parametrize([[[1, 2, 3], 0, [1, 3, 6]], [[], 0, []], [[2, 3], 1, [3, 6]]])
+def test_accumulate(arr, init, expected):
+  assert_eq(accumulate(arr, init, fn(acc, x): acc + x;), expected)
+end
+
+# @parametrize([[1, true], [1.5, false], [-2, true], ["a", false], [None, false]])
+def test_is_integer(n, expected):
+  assert_eq(is_integer(n), expected)
+end
+
+# @parametrize([[12, 18, 6], [7, 13, 1], [0, 5, 5], [-4, 6, 2]])
+def test_gcd(a, b, expected):
+  assert_eq(gcd(a, b), expected)
+end
+
+# @parametrize([[4, 6, 12], [0, 5, 0], [3, 7, 21]])
+def test_lcm(a, b, expected):
+  assert_eq(lcm(a, b), expected)
+end
+
+# @parametrize([[{"a": 1, "b": 2}, {"a": 10, "b": 20}], [dict(), dict()]])
+def test_map_values(d, expected):
+  assert_eq(map_values(d, fn(v): v * 10;), expected)
+end
+
+def test_update_path():
+  assert_eq(update_path({"a": {"b": 1}}, ["a", "b"], fn(x): x + 1;), {"a": {"b": 2}})
+end
+
+# @parametrize([["abc", ["a", "b", "c"]], ["héy", ["h", "é", "y"]], ["", []]])
+def test_chars(s, expected):
+  assert_eq(chars(s), expected)
+end
+
+# @parametrize([["fooBar_baz-QUX", ["foo", "Bar", "baz", "QUX"]], ["HTTPServer", ["HTTP", "Server"]], ["", []]])
+def test_words(s, expected):
+  assert_eq(words(s), expected)
+end
+
+# @parametrize([["ab", 6, "*", "**ab**"], ["ab", 5, "*", "*ab**"], ["abc", 2, "*", "abc"]])
+def test_center(s, width, pad, expected):
+  assert_eq(center(s, width, pad), expected)
+end
+
+# @parametrize([[42, 5, "00042"], [-42, 5, "-0042"], ["+7", 4, "+007"], [12345, 3, "12345"]])
+def test_zfill(s, width, expected):
+  assert_eq(zfill(s, width), expected)
+end
+
+# @parametrize([["banana", "an", 2], ["aaaa", "aa", 2], ["abc", "x", 0], ["a.b.c", ".", 2], ["abc", "", 0]])
+def test_count_substr(s, sub, expected):
+  assert_eq(count_substr(s, sub), expected)
+end
+
+# @parametrize([["k=a=b", "=", ["k", "a=b"]], ["abc", "=", ["abc", None]]])
+def test_split_once(s, sep, expected):
+  assert_eq(split_once(s, sep), expected)
+end
+
+# @parametrize([["a.b.c", ".", ["a.b", "c"]], ["abc", ".", ["abc", None]]])
+def test_rsplit_once(s, sep, expected):
+  assert_eq(rsplit_once(s, sep), expected)
+end
+
+# @parametrize([["line\n", "line"], ["line\r\n", "line"], ["line", "line"], ["a\n\n", "a\n"]])
+def test_chomp(s, expected):
+  assert_eq(chomp(s), expected)
+end
+
+# @parametrize([["hello", "el", "ip", "hippo"], ["abc", "", "", "abc"]])
+def test_translate(s, from, to, expected):
+  assert_eq(translate(s, from, to), expected)
+end
+
+# @parametrize([["hello world", "lo", "he wrd"], ["abc", "", "abc"]])
+def test_remove_chars(s, set, expected):
+  assert_eq(remove_chars(s, set), expected)
+end
+
+# @parametrize([["héllo", true, false, true, false], ["a1", false, false, true, false], ["123", false, true, true, false], ["  ", false, false, false, true], ["", false, false, false, false], [None, false, false, false, false]])
+def test_char_class_predicates(s, alpha, digit, alnum, space):
+  assert_eq(is_alpha(s), alpha)
+  | assert_eq(is_digit(s), digit)
+  | assert_eq(is_alnum(s), alnum)
+  | assert_eq(is_space(s), space)
+end
+
+# @parametrize([["AB1", true, false], ["ab1", false, true], ["Ab", false, false], ["123", false, false], [None, false, false]])
+def test_is_upper_lower(s, upper, lower):
+  assert_eq(is_upper(s), upper)
+  | assert_eq(is_lower(s), lower)
+end
+
+# @parametrize([["abc", true], ["é", false], ["", true], [1, false]])
+def test_is_ascii(s, expected):
+  assert_eq(is_ascii(s), expected)
+end
+
+# @parametrize([[[1, 2, 3, 4], [10, 20]], [[], []], [[5, 6], []]])
+def test_map_while(arr, expected):
+  assert_eq(map_while(arr, fn(x): if (x < 3): x * 10 else: None;), expected)
+end
+
+# @parametrize([[[1, 2, 3, 4], 6], [[], 0], [[1, 1], 2]])
+def test_fold_while(arr, expected):
+  assert_eq(fold_while(arr, 0, fn(acc, x): [acc + x < 5, acc + x];), expected)
+end

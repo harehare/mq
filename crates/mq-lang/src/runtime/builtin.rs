@@ -2042,6 +2042,106 @@ fn tan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+#[mq_macros::mq_fn(name = "asin", params = Fixed(1))]
+fn asin_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().asin().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("asin should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "acos", params = Fixed(1))]
+fn acos_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().acos().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("acos should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "atan", params = Fixed(1))]
+fn atan_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().atan().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("atan should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "sinh", params = Fixed(1))]
+fn sinh_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().sinh().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("sinh should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "cosh", params = Fixed(1))]
+fn cosh_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().cosh().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("cosh should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "tanh", params = Fixed(1))]
+fn tanh_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().tanh().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("tanh should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "log2", params = Fixed(1))]
+fn log2_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().log2().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("log2 should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "cbrt", params = Fixed(1))]
+fn cbrt_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(n)] => Ok(RuntimeValue::Number(n.value().cbrt().into())),
+        [a] => Err(Error::InvalidTypes(ident.to_string(), vec![std::mem::take(a)])),
+        _ => unreachable!("cbrt should always receive exactly one argument"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "atan2", params = Fixed(2))]
+fn atan2_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => {
+            Ok(RuntimeValue::Number(a.value().atan2(b.value()).into()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("atan2 should always receive exactly two arguments"),
+    }
+}
+
+#[mq_macros::mq_fn(name = "hypot", params = Fixed(2))]
+fn hypot_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
+    match args.as_mut_slice() {
+        [RuntimeValue::Number(a), RuntimeValue::Number(b)] => {
+            Ok(RuntimeValue::Number(a.value().hypot(b.value()).into()))
+        }
+        [a, b] => Err(Error::InvalidTypes(
+            ident.to_string(),
+            vec![std::mem::take(a), std::mem::take(b)],
+        )),
+        _ => unreachable!("hypot should always receive exactly two arguments"),
+    }
+}
+
 #[mq_macros::mq_fn(name = "index", params = Fixed(2))]
 fn index_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -5699,6 +5799,16 @@ mq_macros::builtin_dispatch! {
     SIN,
     COS,
     TAN,
+    ASIN,
+    ACOS,
+    ATAN,
+    SINH,
+    COSH,
+    TANH,
+    LOG2,
+    CBRT,
+    ATAN2,
+    HYPOT,
     INDEX,
     INDICES,
     LEN,
@@ -6993,6 +7103,146 @@ pub static BUILTIN_FUNCTION_DOC: LazyLock<FxHashMap<SmolStr, BuiltinFunctionDoc>
             examples: &[BuiltinExample {
                 code: r#"tan(0)"#,
                 expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("asin"),
+        BuiltinFunctionDoc {
+            description: "Returns the arc sine of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"asin(0)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("acos"),
+        BuiltinFunctionDoc {
+            description: "Returns the arc cosine of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"acos(1)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("atan"),
+        BuiltinFunctionDoc {
+            description: "Returns the arc tangent of the given number (in radians).",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"atan(0)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("sinh"),
+        BuiltinFunctionDoc {
+            description: "Returns the hyperbolic sine of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"sinh(0)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("cosh"),
+        BuiltinFunctionDoc {
+            description: "Returns the hyperbolic cosine of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"cosh(0)"#,
+                expected: r#"1"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("tanh"),
+        BuiltinFunctionDoc {
+            description: "Returns the hyperbolic tangent of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"tanh(0)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("log2"),
+        BuiltinFunctionDoc {
+            description: "Returns the base-2 logarithm of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"log2(8)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("cbrt"),
+        BuiltinFunctionDoc {
+            description: "Returns the cube root of the given number.",
+            params: &["number"],
+            param_types: &["number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"cbrt(27)"#,
+                expected: r#"3"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("atan2"),
+        BuiltinFunctionDoc {
+            description: "Returns the arc tangent of y/x (in radians), using the signs of both to determine the quadrant.",
+            params: &["y", "x"],
+            param_types: &["number", "number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"atan2(0, 1)"#,
+                expected: r#"0"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("hypot"),
+        BuiltinFunctionDoc {
+            description: "Returns the length of the hypotenuse, sqrt(x^2 + y^2).",
+            params: &["x", "y"],
+            param_types: &["number", "number"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"hypot(3, 4)"#,
+                expected: r#"5"#,
             }],
             capability: None,
         },
@@ -10428,6 +10678,16 @@ mod tests {
     #[case("cos", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(1.0.into())))]
     #[case("tan", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
     #[case("log", vec![RuntimeValue::Number(1.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("asin", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("acos", vec![RuntimeValue::Number(1.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("atan", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("sinh", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("cosh", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(1.0.into())))]
+    #[case("tanh", vec![RuntimeValue::Number(0.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("log2", vec![RuntimeValue::Number(8.0.into())].into(), Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("cbrt", vec![RuntimeValue::Number(27.0.into())].into(), Ok(RuntimeValue::Number(3.0.into())))]
+    #[case("atan2", vec![RuntimeValue::Number(0.0.into()), RuntimeValue::Number(1.0.into())].into(), Ok(RuntimeValue::Number(0.0.into())))]
+    #[case("hypot", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(4.0.into())].into(), Ok(RuntimeValue::Number(5.0.into())))]
     #[case("add", vec![RuntimeValue::Number(3.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(5.0.into())))]
     #[case("sub", vec![RuntimeValue::Number(5.0.into()), RuntimeValue::Number(3.0.into())].into(), Ok(RuntimeValue::Number(2.0.into())))]
     #[case("mul", vec![RuntimeValue::Number(4.0.into()), RuntimeValue::Number(2.0.into())].into(), Ok(RuntimeValue::Number(8.0.into())))]

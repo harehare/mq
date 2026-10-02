@@ -3411,3 +3411,356 @@ def human_size(n):
   | let rounded = round(value * 10) / 10
   | sign + to_string(rounded) + units[exponent]
 end
+
+# Returns the product of the numbers in an array.
+#
+# Example:
+# ```
+# product([1, 2, 3, 4])
+# #=> 24
+# ```
+#
+# Returns: number
+def product(arr): fold(arr, 1, fn(acc, x): acc * x;);
+
+# Inserts a separator between the elements of an array.
+#
+# Example:
+# ```
+# interpose([1, 2, 3], 0)
+# #=> [1, 0, 2, 0, 3]
+# ```
+#
+# Returns: array
+def interpose(arr, sep):
+  if (not(is_array(arr))):
+    error("interpose: first argument must be an array")
+  elif (is_empty(arr)):
+    []
+  else:
+    fold(slice(arr, 1, len(arr)), [first(arr)], fn(acc, x): acc + [sep, x];)
+end
+
+# Interleaves two arrays, stopping at the shorter one.
+#
+# Example:
+# ```
+# interleave([1, 2, 3], ["a", "b", "c"])
+# #=> [1, "a", 2, "b", 3, "c"]
+# ```
+#
+# Returns: array
+def interleave(arr1, arr2): flat_map(zip(arr1, arr2), identity);
+
+# Like `fold`, but returns every intermediate accumulator value (excluding `init`).
+#
+# Example:
+# ```
+# accumulate([1, 2, 3], 0, fn(acc, x): acc + x;)
+# #=> [1, 3, 6]
+# ```
+#
+# Returns: array
+def accumulate(arr, init, f):
+  fold(arr, [], fn(out, x):
+    out + [f(if (is_empty(out)): init else: last(out), x)];
+  )
+end
+
+# Returns true if the number is an integer.
+#
+# Returns: bool
+def is_integer(n): is_number(n) && !is_nan(n) && n == floor(n);
+
+# Returns the greatest common divisor of two integers.
+#
+# Example:
+# ```
+# gcd(12, 18)
+# #=> 6
+# ```
+#
+# Returns: number
+def gcd(a, b):
+  do
+    var m = abs(a)
+    | var n = abs(b)
+    | while (n != 0):
+        let t = n
+        | n = m % n
+        | m = t
+      end
+    | m
+  end
+end
+
+# Returns the least common multiple of two integers.
+#
+# Example:
+# ```
+# lcm(4, 6)
+# #=> 12
+# ```
+#
+# Returns: number
+def lcm(a, b): if (a == 0 || b == 0): 0 else: abs(a * b) / gcd(a, b);
+
+# Applies a function to each value of a dict, keeping the keys.
+#
+# Example:
+# ```
+# map_values({"a": 1, "b": 2}, fn(v): v * 10;)
+# #=> {"a": 10, "b": 20}
+# ```
+#
+# Returns: dict
+def map_values(d, f): with_entries(d, fn(e): [e[0], f(e[1])];);
+
+# Updates the value at a nested path using a function.
+#
+# Example:
+# ```
+# update_path({"a": {"b": 1}}, ["a", "b"], fn(x): x + 1;)
+# #=> {"a": {"b": 2}}
+# ```
+#
+# Returns: dynamic
+def update_path(value, path, f): set_path(value, path, f(get_path(value, path)));
+
+# Splits a string into an array of characters (Unicode code points).
+#
+# Example:
+# ```
+# chars("abc")
+# #=> ["a", "b", "c"]
+# ```
+#
+# Returns: array
+def chars(s): explode(s) | map(fn(c): implode([c]););
+
+# Splits a string into words, breaking on non-alphanumeric characters and on camelCase boundaries.
+# Boundary detection uses ASCII letters.
+#
+# Example:
+# ```
+# words("fooBar_baz-QUX")
+# #=> ["foo", "Bar", "baz", "QUX"]
+# ```
+#
+# Returns: array
+def words(s):
+  s
+  | gsub("([a-z0-9])([A-Z])", "${1} ${2}")
+  | gsub("([A-Z]+)([A-Z][a-z])", "${1} ${2}")
+  | scan("[^\\W_]+")
+end
+
+# Centers a string within a given width using a padding string.
+#
+# Example:
+# ```
+# center("ab", 6, "*")
+# #=> **ab**
+# ```
+#
+# Returns: string
+def center(s, width, pad_str = " "):
+  let left = floor(max(width - len(s), 0) / 2)
+  | rpad(lpad(s, len(s) + left, pad_str), width, pad_str)
+end
+
+# Left-pads a number or string with zeros to a given width, keeping a leading sign in front.
+#
+# Example:
+# ```
+# zfill(-42, 5)
+# #=> -0042
+# ```
+#
+# Returns: string
+def zfill(s, width):
+  let t = to_string(s)
+  | if (starts_with(t, "-") || starts_with(t, "+")):
+      slice(t, 0, 1) + lpad(slice(t, 1, len(t)), width - 1, "0")
+    else:
+      lpad(t, width, "0")
+end
+
+# Returns the number of non-overlapping occurrences of a substring.
+#
+# Example:
+# ```
+# count_substr("banana", "an")
+# #=> 2
+# ```
+#
+# Returns: number
+def count_substr(s, sub): if (sub == ""): 0 else: len(split(s, regex_escape(sub))) - 1;
+
+# Splits a string at the first occurrence of a separator. Returns `[s, None]` if not found.
+#
+# Example:
+# ```
+# split_once("key=a=b", "=")
+# #=> ["key", "a=b"]
+# ```
+#
+# Returns: array
+def split_once(s, sep):
+  let parts = split(s, regex_escape(sep))
+  | if (len(parts) < 2):
+      [s, None]
+    else:
+      [first(parts), join(skip(parts, 1), sep)]
+end
+
+# Splits a string at the last occurrence of a separator. Returns `[s, None]` if not found.
+#
+# Example:
+# ```
+# rsplit_once("a.b.c", ".")
+# #=> ["a.b", "c"]
+# ```
+#
+# Returns: array
+def rsplit_once(s, sep):
+  let parts = split(s, regex_escape(sep))
+  | if (len(parts) < 2):
+      [s, None]
+    else:
+      [join(slice(parts, 0, len(parts) - 1), sep), last(parts)]
+end
+
+# Removes one trailing newline (`\n` or `\r\n`) from a string.
+#
+# Example:
+# ```
+# chomp("line\n")
+# #=> line
+# ```
+#
+# Returns: string
+def chomp(s): gsub(s, "\r?\n$", "");
+
+# Replaces each character of `from` with the character at the same position in `to` (like `tr`).
+#
+# Example:
+# ```
+# translate("hello", "el", "ip")
+# #=> hippo
+# ```
+#
+# Returns: string
+def translate(s, from, to):
+  let f = chars(from)
+  | let t = chars(to)
+  | if (len(f) != len(t)):
+      error("translate: `from` and `to` must have the same length")
+    else:
+      do
+        let m = from_entries(zip(f, t))
+        | chars(s) | map(fn(c): get_or(m, c, c);) | join("")
+      end
+end
+
+# Removes every character that appears in the given set.
+#
+# Example:
+# ```
+# remove_chars("hello world", "lo")
+# #=> he wrd
+# ```
+#
+# Returns: string
+def remove_chars(s, set):
+  let cs = chars(set)
+  | chars(s) | reject(fn(c): contains(cs, c);) | join("")
+end
+
+# Returns true if the string is non-empty and consists only of letters.
+#
+# Returns: bool
+def is_alpha(s): is_string(s) && test(s, "^[^\\W\\d_]+$");
+
+# Returns true if the string is non-empty and consists only of ASCII digits.
+#
+# Returns: bool
+def is_digit(s): is_string(s) && test(s, "^[0-9]+$");
+
+# Returns true if the string is non-empty and consists only of letters and digits.
+#
+# Returns: bool
+def is_alnum(s): is_string(s) && test(s, "^[^\\W_]+$");
+
+# Returns true if the string is non-empty and consists only of whitespace.
+#
+# Returns: bool
+def is_space(s): is_string(s) && test(s, "^\\s+$");
+
+# Returns true if the string contains only ASCII characters.
+#
+# Returns: bool
+def is_ascii(s): is_string(s) && test(s, "^[\\x00-\\x7F]*$");
+
+# Returns true if the string has cased letters and all of them are uppercase.
+#
+# Returns: bool
+def is_upper(s): is_string(s) && s == upcase(s) && s != downcase(s);
+
+# Returns true if the string has cased letters and all of them are lowercase.
+#
+# Returns: bool
+def is_lower(s): is_string(s) && s == downcase(s) && s != upcase(s);
+
+# Maps elements with a function until it returns `None`, collecting the results before that point.
+#
+# Example:
+# ```
+# map_while([1, 2, 3, 4], fn(x): if (x < 3): x * 10 else: None;)
+# #=> [10, 20]
+# ```
+#
+# Returns: array
+def map_while(arr, f):
+  if (not(is_array(arr))):
+    error("map_while: first argument must be an array")
+  else:
+    do
+      var out = []
+      | var i = 0
+      | var stop = false
+      | while (!stop && i < len(arr)):
+          let v = f(get(arr, i))
+          | if (is_none(v)): stop = true else: do out += [v] | i += 1 end
+        end
+      | out
+    end
+end
+
+# Folds an array until the function signals to stop.
+# The function returns `[continue, acc]`; the fold ends after the first `[false, acc]` and returns that `acc`.
+#
+# Example:
+# ```
+# fold_while([1, 2, 3, 4], 0, fn(acc, x): [acc + x < 5, acc + x];)
+# #=> 6
+# ```
+#
+# Returns: dynamic
+def fold_while(arr, init, f):
+  if (not(is_array(arr))):
+    error("fold_while: first argument must be an array")
+  else:
+    do
+      var acc = init
+      | var i = 0
+      | var stop = false
+      | while (!stop && i < len(arr)):
+          let r = f(acc, get(arr, i))
+          | acc = get(r, 1)
+          | stop = !get(r, 0)
+          | i += 1
+        end
+      | acc
+    end
+end

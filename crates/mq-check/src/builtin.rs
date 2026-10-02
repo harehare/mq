@@ -140,7 +140,7 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     register_many(ctx, &["/", "%", "^"], vec![Type::Number, Type::Number], Type::Number);
     register_many(
         ctx,
-        &["div", "mod", "pow"],
+        &["div", "mod", "pow", "atan2", "hypot"],
         vec![Type::Number, Type::Number],
         Type::Number,
     );
@@ -265,7 +265,8 @@ fn register_math(ctx: &mut InferenceContext) {
     register_many(
         ctx,
         &[
-            "abs", "ceil", "floor", "round", "trunc", "ln", "log10", "log", "sqrt", "exp", "sin", "cos", "tan",
+            "abs", "ceil", "floor", "round", "trunc", "ln", "log10", "log", "sqrt", "exp", "sin", "cos", "tan", "asin",
+            "acos", "atan", "sinh", "cosh", "tanh", "log2", "cbrt",
         ],
         vec![Type::Number],
         Type::Number,
