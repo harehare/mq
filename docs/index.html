@@ -8,7 +8,7 @@
     <title>mq – jq-like tool for Markdown processing</title>
     <meta
       name="description"
-      content="mq is a command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform Markdown with ease."
+      content="mq is a command-line tool that processes Markdown using a syntax similar to jq. Written in Rust. Slice, filter, map, and transform Markdown with ease."
     />
     <link rel="canonical" href="https://mqlang.org/" />
     <meta property="og:type" content="website" />
@@ -20,14 +20,14 @@
     />
     <meta
       property="og:description"
-      content="A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform with ease."
+      content="A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust. Slice, filter, map, and transform with ease."
     />
     <meta property="og:image" content="https://mqlang.org/logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://cdn.tailwindcss.com" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Sora:wght@700;800&family=Space+Grotesk:wght@500;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@700&display=swap"
       rel="stylesheet"
     />
     <link
@@ -72,7 +72,7 @@
               headline: ["Space Grotesk"],
               body: ["Inter"],
               label: ["Inter"],
-              logo: ["Sora", "sans-serif"],
+              logo: ["Inter", "sans-serif"],
             },
             borderRadius: {
               DEFAULT: "0.125rem",
@@ -131,7 +131,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "mq",
-        "description": "A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust — slice, filter, map, and transform with ease.",
+        "description": "A command-line tool that processes Markdown using a syntax similar to jq. Written in Rust. Slice, filter, map, and transform with ease.",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Linux, macOS, Windows",
         "codeRepository": "https://github.com/harehare/mq",
@@ -154,33 +154,33 @@
           <a href="#" class="flex items-center gap-2 group">
             <img src="./assets/logo.svg" alt="mq logo" class="h-8 w-8 block" />
             <span
-              class="text-xl font-extrabold tracking-[0.02em] text-[#85d4ff] font-logo leading-none"
+              class="text-base font-medium tracking-tight text-[#85d4ff] font-body leading-none"
               >mq</span
             >
           </a>
           <div class="hidden md:flex items-center gap-6">
             <a
-              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              class="text-sm text-slate-400 hover:text-slate-200 transition-colors font-body tracking-tight font-normal"
               href="#about"
               >Overview</a
             >
             <a
-              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              class="text-sm text-slate-400 hover:text-slate-200 transition-colors font-body tracking-tight font-normal"
               href="#playground"
               >Playground</a
             >
             <a
-              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              class="text-sm text-slate-400 hover:text-slate-200 transition-colors font-body tracking-tight font-normal"
               href="#why-mq"
               >Why mq?</a
             >
             <a
-              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              class="text-sm text-slate-400 hover:text-slate-200 transition-colors font-body tracking-tight font-normal"
               href="#features"
               >Features</a
             >
             <a
-              class="text-slate-400 hover:text-slate-200 transition-colors font-headline tracking-tight font-medium"
+              class="text-sm text-slate-400 hover:text-slate-200 transition-colors font-body tracking-tight font-normal"
               href="#subcommands"
               >Subcommands</a
             >
@@ -196,7 +196,7 @@
               >code</span
             >
             <span
-              class="hidden md:inline text-sm font-semibold font-logo tracking-tight"
+              class="hidden md:inline text-sm font-normal font-body tracking-tight"
               >GitHub</span
             >
           </a>
@@ -209,7 +209,7 @@
               >menu_book</span
             >
             <span
-              class="hidden md:inline text-sm font-semibold font-logo tracking-tight"
+              class="hidden md:inline text-sm font-normal font-body tracking-tight"
               >Documentation</span
             >
           </a>
@@ -240,14 +240,14 @@
               class="text-xl text-on-surface-variant max-w-xl mb-10 leading-relaxed animate-slide-up"
             >
               A command-line tool that processes Markdown using a syntax similar
-              to jq. Written in Rust — slice, filter, map, and transform with
+              to jq. Written in Rust. Slice, filter, map, and transform with
               ease.
             </p>
             <div class="flex flex-wrap gap-4">
               <a
                 href="https://github.com/harehare/mq"
                 target="_blank"
-                class="flex items-center justify-center gap-2 w-full sm:w-[240px] px-8 py-4 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-md scale-98-on-click transition-all shadow-xl shadow-primary/10 font-headline"
+                class="flex items-center justify-center gap-2 w-full sm:w-[240px] px-8 py-3 bg-gradient-to-r from-primary to-primary-container text-on-primary text-sm font-medium rounded-md scale-98-on-click transition-all shadow-xl shadow-primary/10 font-body"
               >
                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                   <path
@@ -259,7 +259,7 @@
               <a
                 href="https://mqlang.org/playground"
                 target="_blank"
-                class="flex items-center justify-center w-full sm:w-[240px] px-8 py-4 bg-surface-container-highest text-on-surface font-bold rounded-md hover:bg-surface-bright transition-all scale-98-on-click font-headline"
+                class="flex items-center justify-center w-full sm:w-[240px] px-8 py-3 bg-surface-container-highest text-on-surface text-sm font-medium rounded-md hover:bg-surface-bright transition-all scale-98-on-click font-body"
                 >Try Playground</a
               >
             </div>
@@ -294,7 +294,7 @@
       <section id="about" class="py-12">
         <div class="max-w-7xl mx-auto px-8">
           <div class="text-center">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+            <h2 class="text-4xl font-body font-bold mb-6 tracking-tight">
               What is mq?
             </h2>
             <p
@@ -302,7 +302,7 @@
             >
               mq is a command-line tool that processes Markdown using a syntax
               similar to jq. It's written in Rust, allowing you to easily slice,
-              filter, map, and transform structured data — no regular
+              filter, map, and transform structured data, no regular
               expressions or custom scripts required.
             </p>
           </div>
@@ -315,11 +315,11 @@
                   >data_object</span
                 >
               </div>
-              <h4 class="font-bold mb-1 font-headline text-sm">
+              <h4 class="font-bold mb-1 font-body text-sm">
                 Structural, not textual
               </h4>
               <p class="text-sm text-on-surface-variant">
-                Queries walk the Markdown AST — matching headings, lists,
+                Queries walk the Markdown AST, matching headings, lists,
                 tables, and code blocks, not raw text.
               </p>
             </div>
@@ -331,11 +331,11 @@
                   >bolt</span
                 >
               </div>
-              <h4 class="font-bold mb-1 font-headline text-sm">
+              <h4 class="font-bold mb-1 font-body text-sm">
                 Built in Rust
               </h4>
               <p class="text-sm text-on-surface-variant">
-                A single native binary with no runtime dependencies — built
+                A single native binary with no runtime dependencies, built
                 for speed on files large and small.
               </p>
             </div>
@@ -347,12 +347,12 @@
                   >terminal</span
                 >
               </div>
-              <h4 class="font-bold mb-1 font-headline text-sm">
+              <h4 class="font-bold mb-1 font-body text-sm">
                 Familiar jq-like syntax
               </h4>
               <p class="text-sm text-on-surface-variant">
                 If you already know jq, you already know how to pipe, filter,
-                and transform with mq — the core ideas carry straight over.
+                and transform with mq. The core ideas carry straight over.
               </p>
             </div>
           </div>
@@ -363,7 +363,7 @@
       <section id="why-mq" class="py-32">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-20 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+            <h2 class="text-4xl font-body font-bold mb-6 tracking-tight">
               Why mq?
             </h2>
             <p class="text-on-surface-variant">
@@ -386,7 +386,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >auto_awesome</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 LLM Workflows
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
@@ -408,7 +408,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >library_books</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 Documentation Management
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
@@ -428,7 +428,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >batch_prediction</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 Batch Processing
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
@@ -452,7 +452,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >format_align_left</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 LLM Input Generation
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
@@ -473,7 +473,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >manage_search</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 Content Analysis
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
@@ -496,7 +496,7 @@
       <section id="features" class="py-24">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-20 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+            <h2 class="text-4xl font-body font-bold mb-6 tracking-tight">
               Features
             </h2>
             <p class="text-on-surface-variant">
@@ -513,7 +513,7 @@
                   >filter_list</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Slice and Filter</h4>
+              <h4 class="font-bold mb-2 font-body">Slice and Filter</h4>
               <p class="text-sm text-on-surface-variant">
                 Extract specific parts of your Markdown documents with ease.
               </p>
@@ -526,7 +526,7 @@
                   >transform</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Map and Transform</h4>
+              <h4 class="font-bold mb-2 font-body">Map and Transform</h4>
               <p class="text-sm text-on-surface-variant">
                 Apply transformations to your Markdown content.
               </p>
@@ -539,7 +539,7 @@
                   >terminal</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">
+              <h4 class="font-bold mb-2 font-body">
                 Command-line Interface
               </h4>
               <p class="text-sm text-on-surface-variant">
@@ -554,7 +554,7 @@
                   >extension</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Extensibility</h4>
+              <h4 class="font-bold mb-2 font-body">Extensibility</h4>
               <p class="text-sm text-on-surface-variant">
                 Easily extendable with custom functions.
               </p>
@@ -567,7 +567,7 @@
                   >support</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Built-in Support</h4>
+              <h4 class="font-bold mb-2 font-body">Built-in Support</h4>
               <p class="text-sm text-on-surface-variant">
                 Filter and transform content with many built-in functions and
                 selectors.
@@ -581,7 +581,7 @@
                   >keyboard_arrow_right</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">REPL Support</h4>
+              <h4 class="font-bold mb-2 font-body">REPL Support</h4>
               <p class="text-sm text-on-surface-variant">
                 Interactive command-line REPL for testing and experimenting.
               </p>
@@ -592,7 +592,7 @@
               >
                 <span class="material-symbols-outlined text-primary">code</span>
               </div>
-              <h4 class="font-bold mb-2 font-headline">IDE Support</h4>
+              <h4 class="font-bold mb-2 font-body">IDE Support</h4>
               <p class="text-sm text-on-surface-variant">
                 <a
                   href="https://marketplace.visualstudio.com/items?itemName=harehare.vscode-mq"
@@ -612,7 +612,7 @@
                   >bug_report</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">Debugger</h4>
+              <h4 class="font-bold mb-2 font-body">Debugger</h4>
               <p class="text-sm text-on-surface-variant">
                 Experimental debugger (<code class="text-primary">mq-dbg</code>)
                 for inspecting and stepping through mq queries interactively.
@@ -626,7 +626,7 @@
                   >widgets</span
                 >
               </div>
-              <h4 class="font-bold mb-2 font-headline">External Subcommands</h4>
+              <h4 class="font-bold mb-2 font-body">External Subcommands</h4>
               <p class="text-sm text-on-surface-variant">
                 Extend mq with custom subcommands by placing executables
                 starting with <code class="text-primary">mq-</code> in
@@ -641,7 +641,7 @@
       <section id="subcommands" class="py-24 bg-surface-container-low/30">
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-20 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+            <h2 class="text-4xl font-body font-bold mb-6 tracking-tight">
               Subcommands
             </h2>
             <p class="text-on-surface-variant">
@@ -657,7 +657,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >swap_horiz</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-conv" target="_blank"
                   >mq-conv</a
                 >
@@ -674,7 +674,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >travel_explore</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a
                   href="https://github.com/harehare/mq/tree/main/crates/mq-crawler"
                   target="_blank"
@@ -694,7 +694,7 @@
                 alt="mq-tui logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-tui" target="_blank"
                   >mq-tui</a
                 >
@@ -711,7 +711,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >fact_check</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a
                   href="https://github.com/harehare/mq/tree/main/crates/mq-check"
                   target="_blank"
@@ -729,7 +729,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >code</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a
                   href="https://github.com/harehare/mq/tree/main/crates/mq-lsp"
                   target="_blank"
@@ -749,7 +749,7 @@
                 alt="mq-task logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-task" target="_blank"
                   >mq-task</a
                 >
@@ -767,13 +767,13 @@
                 alt="mq-mount logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-mount" target="_blank"
                   >mq-mount</a
                 >
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
-                Mounts Markdown files as a virtual filesystem — headings become
+                Mounts Markdown files as a virtual filesystem. Headings become
                 directories and section bodies become editable files.
               </p>
             </div>
@@ -785,7 +785,7 @@
                 alt="mq-content-lint logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a
                   href="https://github.com/harehare/mq-content-lint"
                   target="_blank"
@@ -805,7 +805,7 @@
                 alt="mq-db logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-db" target="_blank"
                   >mq-db</a
                 >
@@ -823,7 +823,7 @@
                 alt="mq-mcp logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-mcp" target="_blank"
                   >mq-mcp</a
                 >
@@ -841,7 +841,7 @@
                 alt="mq-view logo"
                 class="w-9 h-9 mb-6"
               />
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a href="https://github.com/harehare/mq-view" target="_blank"
                   >mq-view</a
                 >
@@ -858,7 +858,7 @@
                 class="material-symbols-outlined text-primary mb-6 text-4xl block"
                 >science</span
               >
-              <h3 class="text-2xl font-headline font-bold mb-4">
+              <h3 class="text-2xl font-body font-bold mb-4">
                 <a
                   href="https://github.com/harehare/mq/tree/main/crates/mq-test"
                   target="_blank"
@@ -866,14 +866,14 @@
                 >
               </h3>
               <p class="text-on-surface-variant leading-relaxed">
-                A standalone test runner for mq — auto-discovers and executes
+                A standalone test runner for mq. Auto-discovers and executes
                 test functions in <code class="text-primary">.mq</code> files,
                 with optional line-coverage reports.
               </p>
             </div>
           </div>
           <div
-            class="mt-16 p-8 bg-surface-container-low rounded-xl border border-outline-variant/20 text-center max-w-3xl mx-auto"
+            class="mt-12 text-center max-w-3xl mx-auto"
           >
             <div class="flex justify-center">
               <a
@@ -898,7 +898,7 @@
       >
         <div class="max-w-7xl mx-auto px-8">
           <div class="mb-16 text-center max-w-2xl mx-auto">
-            <h2 class="text-4xl font-headline font-bold mb-6 tracking-tight">
+            <h2 class="text-4xl font-body font-bold mb-6 tracking-tight">
               Try mq right now
             </h2>
             <p class="text-on-surface-variant text-lg leading-relaxed">
@@ -1063,7 +1063,7 @@ See the [full docs](https://mqlang.org/book/) for more.</textarea
               />
               <button
                 id="playground-run"
-                class="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-primary to-primary-container text-on-primary font-bold rounded-md scale-98-on-click transition-all text-sm font-headline disabled:opacity-50 shrink-0"
+                class="flex items-center gap-1.5 px-5 py-2 bg-gradient-to-r from-primary to-primary-container text-on-primary font-medium rounded-md scale-98-on-click transition-all text-sm font-body disabled:opacity-50 shrink-0"
               >
                 <span
                   class="material-symbols-outlined text-base leading-none"
@@ -1090,7 +1090,7 @@ See the [full docs](https://mqlang.org/book/) for more.</textarea
       >
         <div class="flex flex-col items-center md:items-start gap-2">
           <span
-            class="text-[#85d4ff] font-bold text-lg font-headline tracking-tighter"
+            class="text-[#85d4ff] font-bold text-lg font-body tracking-tighter"
             >mq</span
           >
           <p class="text-xs uppercase tracking-widest text-slate-500">
