@@ -67,6 +67,18 @@ use rstest::rstest;
     "- [ ] \n  b\n",
     "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> b</li>\n</ul>\n"
 )]
+#[case::task_after_empty_marker(
+    "-\n  [ ] b\n",
+    "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> b</li>\n</ul>\n"
+)]
+#[case::checked_task_after_empty_marker(
+    "-\n  [x] b\n",
+    "<ul>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> b</li>\n</ul>\n"
+)]
+#[case::raw_html_ignores_other_closing_tags(
+    "<script>\n</style>\n*hello*\n</script>\n",
+    "&lt;script>\n&lt;/style>\n*hello*\n&lt;/script>\n"
+)]
 #[case::footnote_with_blank_line_after_marker(
     "a[^1]\n\n[^1]:\n\n    text\n",
     "<p>a<sup><a href=\"#user-content-fn-1\" id=\"user-content-fnref-1\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-1\">\n<p>text <a href=\"#user-content-fnref-1\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
@@ -182,9 +194,9 @@ fn links_and_images(#[case] input: &str, #[case] expected: &str) {
 
 #[rstest]
 #[case::fenced("```\na\n```\n", "<pre><code>a\n</code></pre>\n")]
-#[case::fenced_language("```rust\na\n```\n", "<pre lang=\"rust\"><code>a\n</code></pre>\n")]
-#[case::fenced_meta_is_dropped("```rust title=x\na\n```\n", "<pre lang=\"rust\"><code>a\n</code></pre>\n")]
-#[case::fenced_language_escaped("```a\"b\nc\n```\n", "<pre lang=\"a&quot;b\"><code>c\n</code></pre>\n")]
+#[case::fenced_language("```rust\na\n```\n", "<pre><code class=\"language-rust\">a\n</code></pre>\n")]
+#[case::fenced_meta_is_dropped("```rust title=x\na\n```\n", "<pre><code class=\"language-rust\">a\n</code></pre>\n")]
+#[case::fenced_language_escaped("```a\"b\nc\n```\n", "<pre><code class=\"language-a&quot;b\">c\n</code></pre>\n")]
 #[case::fenced_empty("```\n```\n", "<pre><code></code></pre>\n")]
 #[case::fenced_blank_line("```\n\n```\n", "<pre><code>\n</code></pre>\n")]
 #[case::fenced_blank_lines_kept("```\na\n\n\n```\n", "<pre><code>a\n\n\n</code></pre>\n")]

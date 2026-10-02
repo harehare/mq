@@ -1154,30 +1154,13 @@ mod tests {
         }
     }
 
-    /// The HTML in the form of the spec, which gives the language of code as a class and not as `lang`.
-    fn spec_html(html: &str) -> String {
-        let mut result = String::with_capacity(html.len());
-        let mut rest = html;
-        while let Some(start) = rest.find("<pre lang=\"") {
-            let (before, tag) = rest.split_at(start);
-            let value_start = "<pre lang=\"".len();
-            let end = tag[value_start..].find("\"><code>").map(|end| value_start + end);
-            let Some(end) = end else { break };
-            result.push_str(before);
-            result.push_str(&format!("<pre><code class=\"language-{}\">", &tag[value_start..end]));
-            rest = &tag[end + "\"><code>".len()..];
-        }
-        result.push_str(rest);
-        result
-    }
-
     /// The numbers of the examples of `text` that are not rendered as in the spec.
     fn differing_examples(text: &str, minimum: usize) -> Vec<usize> {
         let examples = spec_examples(text);
         assert!(examples.len() > minimum, "only {} examples were found", examples.len());
         examples
             .iter()
-            .filter(|(_, markdown, html)| spec_html(&to_html(markdown)) != *html)
+            .filter(|(_, markdown, html)| to_html(markdown) != *html)
             .map(|(number, ..)| *number)
             .collect()
     }

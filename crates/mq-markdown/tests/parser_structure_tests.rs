@@ -136,6 +136,7 @@ fn attributes(#[case] input: &str, #[case] name: &str, #[case] expected: &str) {
 // The position of an item is the one of its content.
 #[case::list_item("- a", 0, (1, 3), (1, 4))]
 #[case::emphasis_position("a *b*", 1, (1, 3), (1, 6))]
+#[case::task_after_tab("- [ ]\tfoo", 0, (1, 9), (1, 12))]
 #[case::crlf("a\r\nb", 0, (1, 1), (2, 2))]
 #[case::cr("a\rb", 0, (1, 1), (2, 2))]
 #[case::second_line_after_crlf("a\r\n\r\nb", 1, (3, 1), (3, 2))]

@@ -84,7 +84,7 @@ nodes: [Text(Text { value: "**", @1:1-1:3 })]
 html: "<p>**</p>\n"
 ## fence_lang_meta "```rust title\nlet a;\n```\n"
 nodes: [Code(Code { value: "let a;", lang: Some("rust"), @1:1-3:4, meta: Some("title"), fence: true })]
-html: "<pre lang=\"rust\"><code>let a;\n</code></pre>\n"
+html: "<pre><code class=\"language-rust\">let a;\n</code></pre>\n"
 ## fence_indented "  ```\n  a\n   b\n  ```\n"
 nodes: [Code(Code { value: "a\n b", lang: None, @1:3-4:6, meta: None, fence: true })]
 html: "<pre><code>a\n b\n</code></pre>\n"
@@ -1020,7 +1020,7 @@ nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Link(Link { ur
 html: "<ul>\n<li>\n<p>a</p>\n<p><a href=\"h\">P</a> x</p>\n</li>\n</ul>\n"
 ## fence_after_partial_tab "- a\n\n\t```ts\n\t\tx\n\t```\n"
 nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "\tx", lang: Some("ts"), @3:5-5:8, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:8 })]
-html: "<ul>\n<li>\n<p>a</p>\n<pre lang=\"ts\"><code>\tx\n</code></pre>\n</li>\n</ul>\n"
+html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-ts\">\tx\n</code></pre>\n</li>\n</ul>\n"
 ## math_after_partial_tab "- a\n\n\t$$\n\tm\n\t$$\n"
 nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Math(Math { value: "m", @3:5-5:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:7 })]
 html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-math math-display\">m\n</code></pre>\n</li>\n</ul>\n"
@@ -1092,13 +1092,13 @@ nodes: [Text(Text { value: "👨\u{200d}👩\u{200d}👧 ", @1:1-1:20 }), Emphas
 html: "<p>👨\u{200d}👩\u{200d}👧 <em>a</em></p>"
 ## fence_cjk_info "```あ\n日本語\n```\n"
 nodes: [Code(Code { value: "日本語", lang: Some("あ"), @1:1-3:4, meta: None, fence: true })]
-html: "<pre lang=\"あ\"><code>日本語\n</code></pre>\n"
+html: "<pre><code class=\"language-あ\">日本語\n</code></pre>\n"
 ## fence_in_quote_emoji "> ```🎉\n> x\n> ```\n"
 nodes: [Blockquote(Blockquote { values: [Code(Code { value: "x", lang: Some("🎉"), @1:3-3:6, meta: None, fence: true })], @1:1-3:6 })]
-html: "<blockquote>\n<pre lang=\"🎉\"><code>x\n</code></pre>\n</blockquote>\n"
+html: "<blockquote>\n<pre><code class=\"language-🎉\">x\n</code></pre>\n</blockquote>\n"
 ## fence_in_list_cjk "- ```あ\n  日本語\n  ```\n"
 nodes: [List(List { values: [Code(Code { value: "日本語", lang: Some("あ"), @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:6 })]
-html: "<ul>\n<li>\n<pre lang=\"あ\"><code>日本語\n</code></pre>\n</li>\n</ul>\n"
+html: "<ul>\n<li>\n<pre><code class=\"language-あ\">日本語\n</code></pre>\n</li>\n</ul>\n"
 ## math_cjk "$$\nあ\n$$\n\n$い$\n"
 nodes: [Math(Math { value: "あ", @1:1-3:3 }), MathInline(MathInline { value: "い", @5:1-5:6 })]
 html: "<pre><code class=\"language-math math-display\">あ\n</code></pre>\n<p><code class=\"language-math math-inline\">い</code></p>\n"
