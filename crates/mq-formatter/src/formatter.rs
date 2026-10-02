@@ -511,7 +511,11 @@ impl Formatter {
         }
 
         // A `Missing` closer has no text, and its comments were already written above.
-        if !matches!(last.kind, mq_lang::CstNodeKind::Missing { .. }) {
+        if matches!(last.kind, mq_lang::CstNodeKind::Missing { .. }) {
+            if after_newline && !is_multiline && !has_comment {
+                self.append_newline();
+            }
+        } else {
             self.format_node(last, indent_level);
         }
     }
@@ -3434,6 +3438,10 @@ def func_a(): test;
     #[case::junk_string("foo(1 \"a b\", 2)", "foo(1 \"a b\", 2)")]
     #[case::unknown_token("foo(1, §, 2)", "foo(1, §, 2)")]
     #[case::missing_paren("foo(1, 2", "foo(1, 2")]
+    #[case::array_final_newline("[1\n", "[1\n")]
+    #[case::array_items_final_newline("[1, 2\n", "[1, 2\n")]
+    #[case::dict_final_newline("{\"a\": 1\n", "{\"a\": 1\n")]
+    #[case::call_final_newline("foo(1\n", "foo(1\n")]
     fn test_format_with_cst_keeps_broken_source(#[case] code: &str, #[case] expected: &str) {
         let (mut nodes, errors) = mq_lang::parse_recovery(code);
         assert!(errors.has_errors());
