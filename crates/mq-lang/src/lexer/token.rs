@@ -132,6 +132,37 @@ pub enum TokenKind {
     Yield,
 }
 
+impl TokenKind {
+    /// Binding precedence of a binary operator (higher binds tighter); `None` for other tokens.
+    /// Shared by the AST and CST parsers so both build the same tree shape.
+    pub(crate) fn binary_op_precedence(&self) -> Option<u8> {
+        match self {
+            TokenKind::Equal
+            | TokenKind::PlusEqual
+            | TokenKind::MinusEqual
+            | TokenKind::StarEqual
+            | TokenKind::SlashEqual
+            | TokenKind::PercentEqual
+            | TokenKind::DoubleSlashEqual
+            | TokenKind::PipeEqual => Some(0),
+            TokenKind::Or => Some(1),
+            TokenKind::And => Some(2),
+            TokenKind::EqEq
+            | TokenKind::NeEq
+            | TokenKind::Gt
+            | TokenKind::Gte
+            | TokenKind::Lt
+            | TokenKind::Lte
+            | TokenKind::TildeEqual
+            | TokenKind::NotTildeEqual => Some(3),
+            TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => Some(4),
+            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent | TokenKind::Convert => Some(5),
+            TokenKind::DoubleDot | TokenKind::Coalesce => Some(6),
+            _ => None,
+        }
+    }
+}
+
 impl Token {
     pub fn new(kind: TokenKind) -> Self {
         Self {

@@ -148,29 +148,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
     #[inline(always)]
     fn binary_op_precedence(kind: &TokenKind) -> u8 {
-        match kind {
-            TokenKind::Equal
-            | TokenKind::PlusEqual
-            | TokenKind::MinusEqual
-            | TokenKind::StarEqual
-            | TokenKind::SlashEqual
-            | TokenKind::PercentEqual
-            | TokenKind::DoubleSlashEqual => 0,
-            TokenKind::Or => 1,
-            TokenKind::And => 2,
-            TokenKind::EqEq
-            | TokenKind::NeEq
-            | TokenKind::Gt
-            | TokenKind::Gte
-            | TokenKind::Lt
-            | TokenKind::Lte
-            | TokenKind::TildeEqual
-            | TokenKind::NotTildeEqual => 3,
-            TokenKind::Plus | TokenKind::Minus | TokenKind::RightShift | TokenKind::LeftShift => 4,
-            TokenKind::Asterisk | TokenKind::Slash | TokenKind::Percent | TokenKind::Convert => 5,
-            TokenKind::DoubleDot | TokenKind::Coalesce => 6,
-            _ => 0,
-        }
+        kind.binary_op_precedence().unwrap_or(0)
     }
 
     fn binary_op_function_name(kind: &TokenKind) -> &'static str {
