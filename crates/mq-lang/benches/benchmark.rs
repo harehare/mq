@@ -525,6 +525,13 @@ fn parse_fibonacci() -> Vec<Shared<mq_lang::AstNode>> {
     .unwrap()
 }
 
+/// Parses the embedded `builtin.mq`, which every engine start pays for.
+#[divan::bench]
+fn parse_builtin_module() -> Vec<Shared<mq_lang::AstNode>> {
+    let token_arena = Shared::new(SharedCell::new(mq_lang::Arena::new(65_536)));
+    mq_lang::parse(mq_lang::BUILTIN_MODULE_FILE, token_arena).unwrap()
+}
+
 /// Exercises byte-string lexing without charging construction of the input to the parser.
 #[divan::bench]
 fn parse_large_byte_string() -> Vec<Shared<mq_lang::AstNode>> {
