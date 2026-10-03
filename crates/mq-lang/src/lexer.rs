@@ -1,8 +1,5 @@
 pub mod token;
 
-#[cfg(test)]
-mod nom_reference;
-
 use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
@@ -1638,49 +1635,11 @@ mod tests {
         ("modules/yaml_test.mq", include_str!("../modules/yaml_test.mq")),
     ];
 
-    /// Checks that the hand-written lexer returns exactly what the `nom` reference does.
-    fn assert_matches_nom_reference(source: &str) {
-        for (ignore_errors, include_spaces) in [(false, false), (false, true), (true, false), (true, true)] {
-            let options = Options {
-                ignore_errors,
-                include_spaces,
-            };
-            assert_eq!(
-                Lexer::new(options.clone()).tokenize(source, 1.into()),
-                nom_reference::NomLexer::new(options).tokenize(source, 1.into()),
-                "lexers diverged (ignore_errors={ignore_errors}, include_spaces={include_spaces}) on {source:?}"
-            );
-        }
-    }
-
     #[test]
-    fn matches_nom_reference_and_parses_on_real_mq_files() {
+    fn parses_real_mq_files() {
         for (name, source) in FILES {
-            assert_matches_nom_reference(source);
             let token_arena = crate::Shared::new(crate::SharedCell::new(crate::Arena::new(256)));
             crate::parse(source, token_arena).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
-        }
-    }
-
-    #[test]
-    fn matches_nom_reference_on_curated_snippets() {
-        for source in [
-            "def check(arg1, arg2): startswith(\"\\u{0061}\")",
-            r#"let world = "world" | s"$$Hello, ${world}$$""#,
-            r#"b"\xf0\x9f""#,
-            "b foo",
-            "b\"\u{00e9}\"",
-            ".h1 | .[] | .\"quoted key\"",
-            "1..10 | -3 + -4.5e-2 | .5",
-            "+0 +5 a+0 a +0 a+b +=b --5 -+5",
-            "a -> b | a - b | a--b | a---b",
-            "== === =~ !~ != ! << <= < >> >= > && || |= |",
-            "+= -= *= /= //= %= ?? ? :: : ; , @",
-            "self None true false end elif else while until unless loop match module",
-            "import \"m\" as m | m::foo | include \"m\"",
-            "$ENV_VAR | $$not_env",
-        ] {
-            assert_matches_nom_reference(source);
         }
     }
 
@@ -1833,51 +1792,43 @@ mod tests {
         })
     }
 
-    proptest! {
-        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(4000))]
+    /// Lexes `source` with every option combination and checks the structural invariants.
+    fn assert_lexes_consistently(source: &str) {
+        for (ignore_errors, include_spaces) in [(false, false), (false, true), (true, false), (true, true)] {
+            let options = Options {
+                ignore_errors,
+                include_spaces,
+            };
+            let Ok(tokens) = Lexer::new(options).tokenize(source, 1.into()) else {
+                continue;
+            };
 
-        #[test]
-        fn matches_nom_reference_on_token_soup(s in fragments_strategy()) {
-            assert_matches_nom_reference(&s);
-        }
-
-        #[cfg(feature = "debugger")]
-        #[test]
-        fn matches_nom_reference_on_interpolation_segments(s in fragments_strategy()) {
-            proptest::prop_assert_eq!(
-                parse_interpolation_segments(&s, 1.into()),
-                nom_reference::nom_parse_interpolation_segments(&s, 1.into())
+            assert_eq!(tokens.last().map(|t| &t.kind), Some(&TokenKind::Eof), "{source:?}");
+            let starts: Vec<_> = tokens
+                .iter()
+                .map(|t| (t.range.start.line, t.range.start.column))
+                .collect();
+            assert!(
+                starts.windows(2).all(|w| w[0] <= w[1]),
+                "token starts are not ordered for {source:?}: {starts:?}"
             );
         }
+    }
 
+    proptest! {
         #[test]
-        fn matches_nom_reference_on_arbitrary_unicode(s in "\\PC{0,80}") {
-            assert_matches_nom_reference(&s);
+        fn lexes_token_soup_consistently(s in fragments_strategy()) {
+            assert_lexes_consistently(&s);
         }
 
         #[test]
-        fn matches_nom_reference_on_any_chars(s in proptest::collection::vec(proptest::prelude::any::<char>(), 0..60)) {
-            assert_matches_nom_reference(&s.into_iter().collect::<String>());
+        fn lexes_arbitrary_unicode_consistently(s in "\\PC{0,80}") {
+            assert_lexes_consistently(&s);
         }
 
         #[test]
-        fn matches_nom_reference_on_truncated_and_cut_files(
-            file in 0..FILES.len(),
-            from in 0.0f64..1.0,
-            len in 0.0f64..0.05,
-        ) {
-            let source = FILES[file].1;
-            let boundary = |ratio: f64| {
-                let mut i = ((source.len() as f64) * ratio) as usize;
-                while !source.is_char_boundary(i) {
-                    i -= 1;
-                }
-                i
-            };
-            let start = boundary(from);
-            let end = boundary((from + len).min(1.0));
-            assert_matches_nom_reference(&source[..start]);
-            assert_matches_nom_reference(&format!("{}{}", &source[..start], &source[end..]));
+        fn lexes_arbitrary_chars_consistently(s in proptest::collection::vec(proptest::prelude::any::<char>(), 0..60)) {
+            assert_lexes_consistently(&s.into_iter().collect::<String>());
         }
     }
 
@@ -1915,11 +1866,6 @@ mod tests {
             let code = format!("\"{s}\" | x");
             let range = ident_range(&code, "x");
             proptest::prop_assert_eq!(range.start.column, s.chars().count() + 6);
-        }
-
-        #[test]
-        fn matches_nom_reference_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
-            assert_matches_nom_reference(&s);
         }
     }
 

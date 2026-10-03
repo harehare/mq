@@ -83,8 +83,6 @@ nix = {version = "0.31", default-features = false, features = ["fs"]}
 md5 = "0.8.0"
 miette = "7.6.0"
 mimalloc = "0.1.48"
-nom = "8.0.0"
-nom_locate = "5.0.0"
 notify = "8.2.0"
 opentelemetry = "0.33"
 opentelemetry-otlp = {version = "0.33", features = ["grpc-tonic"]}
