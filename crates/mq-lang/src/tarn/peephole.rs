@@ -49,10 +49,56 @@ pub(crate) fn specialize_static_exact_calls(chunks: &mut [Chunk]) {
     }
 }
 
+/// Longest `Jump` chain followed when threading; also bounds cycles such as `Jump -1`.
+const MAX_JUMP_HOPS: usize = 16;
+
+fn branch_offset_mut(op: &mut OpCode) -> Option<&mut i32> {
+    match op {
+        OpCode::Jump(offset)
+        | OpCode::JumpIfFalse(offset)
+        | OpCode::JumpIfFalseLocalLocal { offset, .. }
+        | OpCode::JumpIfFalseLocalConst { offset, .. }
+        | OpCode::JumpIfFalseLocalNumberConst { offset, .. } => Some(offset),
+        _ => None,
+    }
+}
+
+/// Jumps straight to the final destination of a chain of unconditional `Jump`s, and replaces a
+/// `Jump` that lands on a `Return` with that `Return`.
+///
+/// No instruction is added or removed, so jump targets and line entries stay valid.
+fn thread_jumps(chunk: &mut Chunk) {
+    for pc in 0..chunk.code.len() {
+        let is_jump = matches!(chunk.code[pc], OpCode::Jump(_));
+        let Some(offset) = branch_offset_mut(&mut chunk.code[pc]).map(|offset| *offset) else {
+            continue;
+        };
+        let Some(mut target) = jump_target(pc, offset) else {
+            continue;
+        };
+        for _ in 0..MAX_JUMP_HOPS {
+            let Some(OpCode::Jump(next)) = chunk.code.get(target) else {
+                break;
+            };
+            let Some(next_target) = jump_target(target, *next) else {
+                break;
+            };
+            target = next_target;
+        }
+        if is_jump && matches!(chunk.code.get(target), Some(OpCode::Return)) {
+            chunk.code[pc] = OpCode::Return;
+        } else if let Some(offset) = branch_offset_mut(&mut chunk.code[pc]) {
+            *offset = target as i32 - pc as i32 - 1;
+        }
+    }
+}
+
 fn optimize_chunk(chunk: &mut Chunk) {
     if chunk.code.is_empty() {
         return;
     }
+
+    thread_jumps(chunk);
 
     let has_rewrite = chunk.code.iter().enumerate().any(|(pc, op)| {
         matches!(op, OpCode::BinaryLocalConst { constant, .. } if numeric_constant(&chunk.constants, *constant).is_some())
@@ -766,7 +812,12 @@ mod tests {
     #[test]
     fn peephole_keeps_a_return_target_that_needs_its_operand() {
         let mut chunk = Chunk {
-            code: vec![OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return],
+            code: vec![
+                OpCode::PushNone,
+                OpCode::JumpIfFalse(1),
+                OpCode::GetLocal(0),
+                OpCode::Return,
+            ],
             local_count: 1,
             ..Default::default()
         };
@@ -775,8 +826,58 @@ mod tests {
 
         assert!(matches!(
             chunk.code.as_slice(),
-            [OpCode::Jump(1), OpCode::GetLocal(0), OpCode::Return]
+            [
+                OpCode::PushNone,
+                OpCode::JumpIfFalse(1),
+                OpCode::GetLocal(0),
+                OpCode::Return
+            ]
         ));
+    }
+
+    #[test]
+    fn peephole_threads_jumps_through_unconditional_jumps_and_into_returns() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::JumpIfFalse(3),
+                OpCode::PushNone,
+                OpCode::Jump(2),
+                // The conditional jump lands on the `Jump` at pc 5, which lands on the `Return`.
+                OpCode::PushNone,
+                OpCode::Jump(0),
+                OpCode::Return,
+            ],
+            ..Default::default()
+        };
+
+        thread_jumps(&mut chunk);
+
+        assert!(matches!(
+            chunk.code.as_slice(),
+            [
+                OpCode::PushNone,
+                OpCode::JumpIfFalse(4),
+                OpCode::PushNone,
+                OpCode::Return,
+                OpCode::PushNone,
+                OpCode::Return,
+                OpCode::Return,
+            ]
+        ));
+    }
+
+    #[test]
+    fn peephole_threading_terminates_on_a_jump_cycle() {
+        let mut chunk = Chunk {
+            code: vec![OpCode::Jump(0), OpCode::Jump(-3), OpCode::Jump(-1)],
+            ..Default::default()
+        };
+
+        thread_jumps(&mut chunk);
+
+        assert_eq!(chunk.code.len(), 3);
+        assert!(chunk.code.iter().all(|op| matches!(op, OpCode::Jump(_))));
     }
 
     #[test]
@@ -863,7 +964,7 @@ mod tests {
                     offset: 2,
                 },
                 OpCode::Jump(-2),
-                OpCode::Jump(1),
+                OpCode::Return,
                 OpCode::PushNone,
                 OpCode::Return,
             ]
