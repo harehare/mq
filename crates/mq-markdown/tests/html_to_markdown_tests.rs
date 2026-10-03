@@ -349,6 +349,40 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::ul_empty("<ul></ul>", ConversionOptions::default(), "")]
 #[case::ol_empty("<ol></ol>", ConversionOptions::default(), "")]
 #[case::ul_with_empty_li("<ul><li></li><li>Item 2</li></ul>", ConversionOptions::default(), "* \n* Item 2")]
+#[case::ul_li_leading_br("<ul><li><br>Text</li></ul>", ConversionOptions::default(), "* Text")]
+#[case::ol_li_leading_br(
+    "<ol><li><br>Text</li><li>Next</li></ol>",
+    ConversionOptions::default(),
+    "1. Text\n2. Next"
+)]
+#[case::ul_li_leading_empty_paragraph("<ul><li><p></p><p>Text</p></li></ul>", ConversionOptions::default(), "* Text")]
+#[case::ul_nested_li_leading_br(
+    "<ul><li>A<ul><li><br>Nested</li></ul></li></ul>",
+    ConversionOptions::default(),
+    "* A\n  * Nested"
+)]
+#[case::ol_li_only_br("<ol><li><br></li><li>x</li></ol>", ConversionOptions::default(), "1. \n2. x")]
+#[case::heading_code_keeps_inner_spaces("<h2><code>a  b</code></h2>", ConversionOptions::default(), "## `a  b`")]
+#[case::heading_collapses_text_whitespace(
+    "<h2>a   b <em>x  y</em><br>z</h2>",
+    ConversionOptions::default(),
+    "## a b *x y* z"
+)]
+#[case::table_cell_pre_single_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>print(1)</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `print(1)` |"
+)]
+#[case::table_cell_pre_escapes_pipe(
+    "<table><tr><th>H</th></tr><tr><td><pre>a|b</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a\\|b` |"
+)]
+#[case::table_cell_pre_multi_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>a\n  b</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a`<br>`  b` |"
+)]
 #[case::ol_with_empty_li("<ol><li>Item 1</li><li></li></ol>", ConversionOptions::default(), "1. Item 1\n2. ")]
 #[case::ul_nested(
     "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>",

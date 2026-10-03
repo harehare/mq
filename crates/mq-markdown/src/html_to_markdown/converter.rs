@@ -221,10 +221,26 @@ fn convert_table_cell_content(nodes: &[HtmlNode]) -> miette::Result<String> {
         .any(|n| matches!(n, HtmlNode::Element(el) if BLOCK_TAGS.contains(&el.tag_name.as_str())));
     if has_block {
         let md = convert_nodes_to_markdown(nodes, &ConversionOptions::default())?;
-        Ok(md.trim().replace("\n\n", "\n"))
+        Ok(fenced_blocks_to_code_spans(md.trim()).replace("\n\n", "\n"))
     } else {
         convert_children_to_string(nodes)
     }
+}
+
+/// Rewrites fenced code blocks as one code span per line, since table cells can't hold fences.
+fn fenced_blocks_to_code_spans(md: &str) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_fence = false;
+    for line in md.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+        } else if !in_fence {
+            out.push(line.to_string());
+        } else if !line.trim().is_empty() {
+            out.push(wrap_code_span(line));
+        }
+    }
+    out.join("\n")
 }
 
 /// Extracts a header row's cells, padding `colspan` with empty cells (alignment repeated) so
@@ -441,12 +457,44 @@ fn process_url_for_markdown(url: &str) -> String {
     }
 }
 
+/// Collapses whitespace runs in text nodes and turns `<br>` into a space, leaving `<code>`
+/// content untouched.
+fn flatten_heading_nodes(nodes: &[HtmlNode]) -> Vec<HtmlNode> {
+    nodes
+        .iter()
+        .map(|node| match node {
+            HtmlNode::Text(text) => {
+                let normalized = normalize_unicode_whitespace(text);
+                let words = normalized.split_whitespace().join(" ");
+                let leading = if normalized.starts_with(char::is_whitespace) {
+                    " "
+                } else {
+                    ""
+                };
+                let trailing = if !words.is_empty() && normalized.ends_with(char::is_whitespace) {
+                    " "
+                } else {
+                    ""
+                };
+                HtmlNode::Text(format!("{leading}{words}{trailing}"))
+            }
+            HtmlNode::Element(el) if el.tag_name == "br" => HtmlNode::Text(" ".to_string()),
+            HtmlNode::Element(el) if el.tag_name == "code" => node.clone(),
+            HtmlNode::Element(el) => HtmlNode::Element(HtmlElement {
+                tag_name: el.tag_name.clone(),
+                attributes: el.attributes.clone(),
+                children: flatten_heading_nodes(&el.children),
+            }),
+            HtmlNode::Comment(_) => node.clone(),
+        })
+        .collect()
+}
+
 fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
     // Headings are single-line: `<br>` becomes a space and edge whitespace is dropped.
-    let children_content_str = convert_children_to_string(&element.children)?
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let children_content_str = convert_children_to_string(&flatten_heading_nodes(&element.children))?
+        .trim()
+        .to_string();
     let marker_level = element.tag_name[1..].parse().unwrap_or(1);
     Ok(format!("{} {}", "#".repeat(marker_level), children_content_str))
 }
@@ -863,6 +911,10 @@ fn convert_html_list_to_markdown(
                             in_fence = !in_fence;
                         }
                         if line.trim().is_empty() {
+                            // Leading blank lines (e.g. from `<br>`) must not displace the marker.
+                            if item_lines.is_empty() {
+                                continue;
+                            }
                             // A blank line before a nested list keeps the item tight; before
                             // other blocks (e.g. a second paragraph) it makes the list loose.
                             let next = lines[i + 1..].iter().find(|l| !l.trim().is_empty());
@@ -873,11 +925,14 @@ fn convert_html_list_to_markdown(
                                 loose = true;
                             }
                             item_lines.push(String::new());
-                        } else if i == 0 {
+                        } else if item_lines.is_empty() {
                             item_lines.push(format!("{}{}{}", base_indent, marker_prefix, line));
                         } else {
                             item_lines.push(format!("{}{}{}", base_indent, continuation_indent, line));
                         }
+                    }
+                    if item_lines.is_empty() {
+                        item_lines.push(format!("{}{}", base_indent, marker_prefix));
                     }
                     markdown_items.push(item_lines.join("\n"));
                 }
@@ -1154,7 +1209,13 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
             HtmlNode::Comment(_) => {}
         }
     }
-    Ok(collapse_redundant_spaces(&parts.join("")))
+    let joined = parts.join("");
+    // Inside `<code>` the text is verbatim.
+    Ok(if escape_text {
+        collapse_redundant_spaces(&joined)
+    } else {
+        joined
+    })
 }
 
 /// Pushes `wrapped` emphasis, merging it into the previous part when that was the same
@@ -1173,13 +1234,39 @@ fn push_emphasis(parts: &mut Vec<String>, wrapped: String, delimiter: &str, last
 }
 
 /// Collapses runs of 2+ spaces to one (HTML whitespace collapsing), except before a
-/// newline where they form a meaningful CommonMark hard line break.
+/// newline where they form a meaningful CommonMark hard line break, and inside code spans.
 fn collapse_redundant_spaces(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut result = String::with_capacity(text.len());
     let mut i = 0;
     while i < chars.len() {
-        if chars[i] == ' ' {
+        if chars[i] == '`' && (i == 0 || chars[i - 1] != '\\') {
+            let mut j = i;
+            while j < chars.len() && chars[j] == '`' {
+                j += 1;
+            }
+            let fence_len = j - i;
+            // Find the closing backtick run of the same length; copy the span verbatim.
+            let mut k = j;
+            let mut close = None;
+            while k < chars.len() {
+                if chars[k] == '`' {
+                    let start = k;
+                    while k < chars.len() && chars[k] == '`' {
+                        k += 1;
+                    }
+                    if k - start == fence_len {
+                        close = Some(k);
+                        break;
+                    }
+                } else {
+                    k += 1;
+                }
+            }
+            let end = close.unwrap_or(j);
+            result.extend(&chars[i..end]);
+            i = end;
+        } else if chars[i] == ' ' {
             let mut j = i;
             while j < chars.len() && chars[j] == ' ' {
                 j += 1;
