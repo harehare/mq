@@ -154,6 +154,85 @@ fn unary_builtin_calls_with_local_arguments_use_compact_bytecode() {
     );
 }
 
+#[rstest]
+#[case::not_operator("let a = true | let b = !a | b")]
+#[case::not_call("let a = true | let b = not(a) | b")]
+#[case::not_in_array("let a = true | [!a, !!a]")]
+#[case::negate_operator("let a = 1 | let b = -a | b")]
+fn prefix_operators_compile_to_opcodes_not_builtin_calls(#[case] code: &str) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let ops = || compiled.chunks.iter().flat_map(|chunk| chunk.code.iter());
+
+    assert!(
+        ops().any(|op| matches!(op, OpCode::Not | OpCode::Neg)),
+        "expected Not/Neg: {:?}",
+        compiled.chunks
+    );
+    assert!(
+        !ops().any(|op| matches!(op, OpCode::CallBuiltin(..) | OpCode::CallBuiltinLocal { .. })),
+        "unexpected builtin call: {:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
+#[case::not_true("!true", RuntimeValue::Boolean(false))]
+#[case::not_none("!None", RuntimeValue::Boolean(true))]
+#[case::not_zero("!0", RuntimeValue::Boolean(true))]
+#[case::double_not("!!\"x\"", RuntimeValue::Boolean(true))]
+#[case::not_of_group("!(1 > 2)", RuntimeValue::Boolean(true))]
+#[case::negate_number("let a = 3 | -a", RuntimeValue::Number((-3).into()))]
+#[case::negate_group("-(1 + 1)", RuntimeValue::Number((-2).into()))]
+#[case::negate_group_of_negate("-(-3)", RuntimeValue::Number(3.into()))]
+#[case::negate_group_with_local("let a = 2 | -(a * a)", RuntimeValue::Number((-4).into()))]
+#[case::unless_negated("unless (!true): 1", RuntimeValue::Number(1.into()))]
+#[case::unless_and("unless (true && false): 1", RuntimeValue::Number(1.into()))]
+#[case::unless_skipped("unless (true): 1", RuntimeValue::None)]
+#[case::until_negated("var i = 0 | until (!(i < 3)): i += 1; | i", RuntimeValue::Number(3.into()))]
+#[case::not_operator_ignores_user_not("def not(x): 42; | !true", RuntimeValue::Boolean(false))]
+#[case::not_call_uses_user_not("def not(x): 42; | not(true)", RuntimeValue::Number(42.into()))]
+fn prefix_operators_evaluate(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+// The compiler walks the AST to prune unread defs, find prelude builtins and detect generators.
+// Each walk must look through a prefix operator.
+#[rstest]
+#[case::user_def_under_not("def helper(): true; | !helper()", RuntimeValue::Boolean(false))]
+#[case::user_def_under_negate("def helper(): 2; | -helper()", RuntimeValue::Number((-2).into()))]
+#[case::user_def_nested_in_not("def helper(): 1; | !(helper() == 2)", RuntimeValue::Boolean(true))]
+#[case::user_def_in_function_body("def helper(): true; | def f(): !helper(); | f()", RuntimeValue::Boolean(false))]
+fn prefix_operator_operands_keep_referenced_defs(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+#[rstest]
+#[case::not_prelude_call("!is_empty(\"\")", RuntimeValue::Boolean(false))]
+#[case::not_prelude_call_in_function("def f(s): !is_empty(s); | f(\"x\")", RuntimeValue::Boolean(true))]
+#[case::negate_prelude_call("-first([4, 5])", RuntimeValue::Number((-4).into()))]
+fn prefix_operator_operands_resolve_prelude_builtins(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run_with_prelude(code), expected);
+}
+
+#[test]
+fn yield_inside_prefix_operator_makes_a_generator() {
+    assert_eq!(
+        run(r#"def g(): !(yield: 1); | let stream = g() | get(next(stream), "value")"#),
+        RuntimeValue::Number(1.into())
+    );
+}
+
+#[test]
+fn negating_a_non_number_reports_an_error() {
+    assert!(run_result(r#"let a = "a" | -a"#).is_err());
+    assert!(run_result(r#"-"a""#).is_err());
+    assert!(run_result(r#"-(None)"#).is_err());
+}
+
 #[rstest::fixture]
 fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(10)));
@@ -396,6 +475,21 @@ fn numeric_local_constant_updates_preserve_results(#[case] operator: &str, #[cas
         run(&format!("var value = 6 | value {operator} 3 | value")),
         RuntimeValue::Number(expected.into())
     );
+}
+
+#[rstest]
+#[case::const_suffix(r#"var s = "a" | s += "b" | s"#, "ab")]
+#[case::local_suffix(r#"var s = "a" | var t = "b" | s += t | s"#, "ab")]
+#[case::number_suffix(r#"var s = "a" | s += 1 | s"#, "a1")]
+#[case::self_suffix(r#"var s = "ab" | s += s | s"#, "abab")]
+#[case::repeated(r#"var s = "" | var i = 0 | while(i < 3): s += "x" | i += 1; | s"#, "xxx")]
+#[case::repeated_number_suffix(r#"var s = "" | var i = 0 | while(i < 3): s += 1 | i += 1; | s"#, "111")]
+#[case::alias_keeps_original(r#"var a = "x" | var b = a | b += "y" | a"#, "x")]
+#[case::alias_receives_suffix(r#"var a = "x" | var b = a | b += "y" | b"#, "xy")]
+#[case::array_element_unchanged(r#"var a = "x" | var xs = [a] | a += "y" | xs[0]"#, "x")]
+#[case::captured_local(r#"var s = "a" | def f(): s += "b"; | f() | s"#, "ab")]
+fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] expected: &str) {
+    assert_eq!(run(code), RuntimeValue::from(expected));
 }
 
 #[rstest]
@@ -4413,4 +4507,63 @@ proptest! {
         prop_assert!(kept.is_ok(), "{code}: {kept:?}");
         prop_assert_eq!(dropped, kept, "{}", code);
     }
+}
+
+const CONDITION_OPERANDS: [&str; 7] = ["true", "false", "None", "\"\"", "0", "\"x\"", "1"];
+
+/// `if`/`while` conditions compile `&&`/`||` into jumps; a value-position `&&`/`||` keeps the
+/// old operand-producing form, so the two must agree on every truthiness combination.
+#[rstest]
+#[case::and("&&")]
+#[case::or("||")]
+fn condition_jumps_match_value_semantics_for_two_operands(#[case] op: &str) {
+    for a in CONDITION_OPERANDS {
+        for b in CONDITION_OPERANDS {
+            let in_condition = run(&format!("if ({a} {op} {b}): 1 else: 2"));
+            let as_value = run(&format!("let v = ({a} {op} {b}) | if (v): 1 else: 2"));
+            assert_eq!(in_condition, as_value, "{a} {op} {b}");
+        }
+    }
+}
+
+#[rstest]
+#[case::and_or("a && b || c")]
+#[case::or_and("a || b && c")]
+#[case::grouped_or_in_and("(a || b) && c")]
+#[case::grouped_and_in_or("a || (b && c)")]
+#[case::three_and("a && b && c")]
+#[case::three_or("a || b || c")]
+#[case::both_groups("(a || b) && (b || c)")]
+#[case::negated_operand("!a && b")]
+#[case::negated_or("!(a || b)")]
+#[case::negated_and_in_or("!(a && b) || c")]
+#[case::double_negation("!!a")]
+#[case::negated_group_in_and("a && !(b || c)")]
+#[case::not_call("not(a) || not(b && c)")]
+fn condition_jumps_match_value_semantics_for_nested_conditions(#[case] shape: &str) {
+    for a in ["true", "false", "0"] {
+        for b in ["true", "false", "\"x\""] {
+            for c in ["true", "false", "None"] {
+                let condition = shape.replace('a', a).replace('b', b).replace('c', c);
+                let in_condition = run(&format!("if ({condition}): 1 else: 2"));
+                let as_value = run(&format!("let v = ({condition}) | if (v): 1 else: 2"));
+                assert_eq!(in_condition, as_value, "{condition}");
+            }
+        }
+    }
+}
+
+#[rstest]
+#[case::and_skips_right_operand(r#"if (false && error("not evaluated")): 1 else: 2"#, 2.0)]
+#[case::or_skips_right_operand(r#"if (true || error("not evaluated")): 1 else: 2"#, 1.0)]
+#[case::and_evaluates_right_operand_when_left_is_true(r#"if (true && 1): 1 else: 2"#, 1.0)]
+#[case::elif_condition(r#"if (false && true): 1 elif (false || true): 2 else: 3"#, 2.0)]
+#[case::while_condition("var i = 0 | var n = 0 | while (i < 10 && n < 3): i += 1 | n += 1; | i", 3.0)]
+#[case::while_or_condition("var i = 0 | while (i < 3 || i == 5): i += 1; | i", 3.0)]
+#[case::while_negated_condition("var i = 0 | while (!(i >= 3)): i += 1; | i", 3.0)]
+#[case::negated_comparison("var x = 4 | if (!(x < 2)): 1 else: 2", 1.0)]
+#[case::user_defined_not_is_not_inlined("def not(x): true; | if (not(true)): 1 else: 2", 1.0)]
+#[case::until_and_unless_keep_working("var i = 0 | until (i >= 3 || i == 10): i += 1; | i", 3.0)]
+fn condition_jumps_short_circuit_and_drive_loops(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
 }

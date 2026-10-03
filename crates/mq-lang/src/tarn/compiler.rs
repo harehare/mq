@@ -571,6 +571,7 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             collect_soft_builtin_names(lhs, shadowed, names);
             collect_soft_builtin_names(rhs, shadowed, names);
         }
+        Expr::UnaryOp(_, operand) => collect_soft_builtin_names(operand, shadowed, names),
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -688,6 +689,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
             collect_referenced_names(lhs, names);
             collect_referenced_names(rhs, names);
         }
+        Expr::UnaryOp(_, operand) => collect_referenced_names(operand, names),
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -786,6 +788,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         }
         Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_contains_direct_yield),
         Expr::BinaryOp(_, lhs, rhs) => node_contains_direct_yield(lhs) || node_contains_direct_yield(rhs),
+        Expr::UnaryOp(_, operand) => node_contains_direct_yield(operand),
         Expr::InterpolatedString(segments) => segments
             .iter()
             .any(|segment| matches!(segment, StringSegment::Expr(expr) if node_contains_direct_yield(expr))),
@@ -2326,13 +2329,17 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
+    fn begin_node(&mut self, node: &Shared<Node>) {
         self.current_token_id = node.token_id;
         #[cfg(feature = "debugger")]
         if self.instrument {
             self.chunk_mut().debug_nodes.push((node.token_id, Shared::clone(node)));
             self.emit(OpCode::StmtBoundary(node.token_id));
         }
+    }
+
+    fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
+        self.begin_node(node);
         match &node.expr {
             Expr::Literal(lit) => {
                 let value = literal_to_runtime_value(lit);
@@ -2503,6 +2510,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::And(operands) => self.compile_and(operands),
             Expr::Or(operands) => self.compile_or(operands),
             Expr::BinaryOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
+            Expr::UnaryOp(op, operand) => self.compile_unary_op(*op, operand),
         }
     }
 
@@ -2681,6 +2689,11 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(binary_op_opcode(op));
             return Ok(());
         }
+        if args.len() == 1 && !shadowed && ident == builtins::NOT.into() {
+            self.compile_expr(&args[0])?;
+            self.emit(OpCode::Not);
+            return Ok(());
+        }
         if args.len() == 1 && ident == builtins::NEGATE.into() {
             self.compile_expr(&args[0])?;
             self.set_call_token_id(call_token_id);
@@ -2847,6 +2860,19 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    fn compile_unary_op(&mut self, op: ast::UnaryOp, operand: &Shared<Node>) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        self.compile_expr(operand)?;
+        match op {
+            ast::UnaryOp::Not => self.emit(OpCode::Not),
+            ast::UnaryOp::Neg => {
+                self.set_call_token_id(token_id);
+                self.emit(OpCode::Neg)
+            }
+        };
+        Ok(())
+    }
+
     fn current_local_slot(&self, node: &Shared<Node>) -> Option<u16> {
         let Expr::Ident(ident) = &node.expr else {
             return None;
@@ -2981,24 +3007,115 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    /// The operand of `!x`, or of an unshadowed builtin `not(x)` call.
+    fn negated_operand<'a>(&mut self, node: &'a Shared<Node>) -> Option<&'a Shared<Node>> {
+        let (ident, args) = match &node.expr {
+            Expr::UnaryOp(ast::UnaryOp::Not, operand) => return Some(operand),
+            Expr::Call(ident, args) => (ident, args),
+            _ => return None,
+        };
+        let name = ident.name;
+        let is_self_call = self
+            .function_names
+            .last()
+            .and_then(|entry| *entry)
+            .is_some_and(|(function, _, _)| function == name);
+        (name == builtins::NOT.into()
+            && args.len() == 1
+            && !is_self_call
+            && self.scope_mut().shadowed_builtin != Some(name)
+            && self.resolve(name).is_none())
+        .then(|| &args[0])
+    }
+
+    /// Compiles `node` as a branch on its truthiness, without building a value.
+    ///
+    /// Returns the jumps taken when the truthiness equals `jump_when`, for the caller to patch;
+    /// otherwise execution falls through. `&&`, `||` and `!` become jumps, so there is no
+    /// `Dup`/`Pop`, no intermediate boolean and no builtin call.
+    fn compile_branch(&mut self, node: &Shared<Node>, jump_when: bool) -> CompileResult<Vec<usize>> {
+        if let Some(operand) = self.negated_operand(node) {
+            self.begin_node(node);
+            return self.compile_branch(operand, !jump_when);
+        }
+        match &node.expr {
+            // `a && b` is decided by the first false operand, `a || b` by the first true one.
+            Expr::And(operands) if !operands.is_empty() => {
+                self.begin_node(node);
+                self.compile_short_circuit(operands, false, jump_when)
+            }
+            Expr::Or(operands) if !operands.is_empty() => {
+                self.begin_node(node);
+                self.compile_short_circuit(operands, true, jump_when)
+            }
+            _ => {
+                self.compile_expr(node)?;
+                let jump = if jump_when {
+                    OpCode::JumpIfTrue(0)
+                } else {
+                    OpCode::JumpIfFalse(0)
+                };
+                Ok(vec![self.emit(jump)])
+            }
+        }
+    }
+
+    /// Branches on a chain whose result is `deciding` as soon as one operand is `deciding`.
+    fn compile_short_circuit(
+        &mut self,
+        operands: &[Shared<Node>],
+        deciding: bool,
+        jump_when: bool,
+    ) -> CompileResult<Vec<usize>> {
+        let mut jumps = Vec::new();
+        if jump_when == deciding {
+            // Leave as soon as any operand decides the chain.
+            for operand in operands {
+                jumps.extend(self.compile_branch(operand, deciding)?);
+            }
+            return Ok(jumps);
+        }
+        // Leave only when no operand decides it. A deciding operand skips the rest and falls
+        // through.
+        let (last, init) = operands.split_last().expect("operands are not empty");
+        let mut decided = Vec::new();
+        for operand in init {
+            if deciding {
+                // Branch on the non-deciding case: a comparison fuses with `JumpIfFalse` but not
+                // with `JumpIfTrue`, and that is the common path through a chain.
+                let next = self.compile_branch(operand, false)?;
+                decided.push(self.emit(OpCode::Jump(0)));
+                for jump in next {
+                    self.chunk_mut().patch_jump(jump);
+                }
+            } else {
+                decided.extend(self.compile_branch(operand, false)?);
+            }
+        }
+        jumps.extend(self.compile_branch(last, jump_when)?);
+        for jump in decided {
+            self.chunk_mut().patch_jump(jump);
+        }
+        Ok(jumps)
+    }
+
     fn compile_if(&mut self, branches: &ast::Branches) -> CompileResult<()> {
         let mut end_jumps = Vec::with_capacity(branches.len());
         let mut has_else = false;
 
         for (cond, body) in branches {
-            let else_jump = if let Some(cond) = cond {
-                self.compile_expr(cond)?;
-                Some(self.emit(OpCode::JumpIfFalse(0)))
+            let else_jumps = if let Some(cond) = cond {
+                self.compile_branch(cond, false)?
             } else {
                 has_else = true;
-                None
+                Vec::new()
             };
 
             self.compile_expr(body)?;
             if cond.is_some() {
                 end_jumps.push(self.emit(OpCode::Jump(0)));
             }
-            if let Some(else_jump) = else_jump {
+            for else_jump in else_jumps {
                 self.chunk_mut().patch_jump(else_jump);
             }
             if cond.is_none() {
@@ -3022,12 +3139,12 @@ impl<R: ModuleResolver> Compiler<R> {
             return Ok(());
         };
         if let Some(condition) = condition {
-            self.compile_expr(condition)?;
-            self.emit(OpCode::Not);
-            let skip = self.emit(OpCode::JumpIfFalse(0));
+            let skips = self.compile_branch(condition, true)?;
             self.compile_expr(body)?;
             let end = self.emit(OpCode::Jump(0));
-            self.chunk_mut().patch_jump(skip);
+            for skip in skips {
+                self.chunk_mut().patch_jump(skip);
+            }
             self.emit(OpCode::PushNone);
             self.chunk_mut().patch_jump(end);
         } else {
@@ -3156,15 +3273,13 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::Const(false_idx));
         self.emit(OpCode::SetLocal(completed_iteration_slot));
         let loop_start = self.chunk_mut().code.len();
-        self.compile_expr(cond)?;
-        if invert {
-            self.emit(OpCode::Not);
-        }
-        let exit_jump = self.emit(OpCode::JumpIfFalse(0));
+        let exit_jumps = self.compile_branch(cond, invert)?;
         let (break_jumps, break_try_catches, continue_try_catches) =
             self.compile_loop_body(loop_start, acc_slot, Some(completed_iteration_slot), body)?;
 
-        self.chunk_mut().patch_jump(exit_jump);
+        for exit_jump in exit_jumps {
+            self.chunk_mut().patch_jump(exit_jump);
+        }
         for jump in break_jumps {
             self.chunk_mut().patch_jump(jump);
         }
@@ -3300,5 +3415,35 @@ fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
         Literal::Symbol(i) => RuntimeValue::Symbol(*i),
         Literal::Bool(b) => RuntimeValue::Boolean(*b),
         Literal::None => RuntimeValue::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arena::Arena;
+    use crate::{SharedCell, parse};
+    use rstest::rstest;
+
+    fn parse_program(code: &str) -> Program {
+        parse(code, Shared::new(SharedCell::new(Arena::new(100)))).unwrap()
+    }
+
+    #[rstest]
+    #[case::not("!is_empty(\"\")", "is_empty")]
+    #[case::negate("-first([1])", "first")]
+    #[case::nested("!(last([]) == 1)", "last")]
+    fn soft_builtin_names_look_through_prefix_operators(#[case] code: &str, #[case] expected: &str) {
+        let names = soft_builtin_names_in_program(&parse_program(code));
+        assert!(names.contains(&Ident::new(expected)), "{code}: {names:?}");
+    }
+
+    #[rstest]
+    #[case::not("!helper()")]
+    #[case::negate("-helper()")]
+    #[case::nested("!(helper() == 1)")]
+    fn referenced_names_look_through_prefix_operators(#[case] code: &str) {
+        let names = referenced_names_in_program(&parse_program(code));
+        assert!(names.contains(&Ident::new("helper")), "{code}: {names:?}");
     }
 }

@@ -213,6 +213,43 @@ fn eval_compiled_captured_static_function_call(bencher: divan::Bencher) {
     );
 }
 
+/// Branches on `&&`/`||` conditions in a loop, which compile to direct jumps rather than values.
+#[divan::bench]
+fn eval_compiled_logical_condition_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        "var i = 0 | var c = 0 | while (i < 10000): i += 1 | (if (i > 5 && i < 9000 || i == 3): c += 1 else: c); | c",
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
+/// Branches on a negated condition and an `||` chain of string comparisons, whose comparisons
+/// must stay fused with their jumps.
+#[divan::bench]
+fn eval_compiled_negated_or_chain_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var i = 0 | var c = 0 | var s = "d" | while (i < 10000): i += 1 | (if (!(i < 3) && (s == "a" || s == "b" || s == "d")): c += 1 else: c); | c"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
+/// Appends to a string local in a loop, which must stay linear in the number of appends.
+#[divan::bench]
+fn eval_compiled_string_append_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var s = "" | var i = 0 | while(i < 20000): s += "a" | i += 1; | len(s)"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
 /// Measures calls through a local holding a native function, which use the VM's generic call
 /// path instead of the fixed-arity closure fast path.
 #[divan::bench]

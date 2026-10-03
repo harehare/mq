@@ -1,6 +1,6 @@
 use crate::Program;
 
-use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment};
+use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment, UnaryOp};
 use std::fmt::Write;
 
 impl Node {
@@ -82,6 +82,22 @@ impl Node {
                 format_binary_operand(lhs, *op, buf, indent, false);
                 write!(buf, " {} ", op.as_str()).unwrap();
                 format_binary_operand(rhs, *op, buf, indent, true);
+            }
+            Expr::UnaryOp(op, operand) => {
+                buf.push_str(op.as_str());
+                let needs_parens = match &operand.expr {
+                    Expr::BinaryOp(..) | Expr::And(_) | Expr::Or(_) => true,
+                    // `--x` and `!-x` do not parse.
+                    Expr::UnaryOp(inner_op, ..) => *op == UnaryOp::Neg || *inner_op == UnaryOp::Neg,
+                    _ => false,
+                };
+                if needs_parens {
+                    buf.push('(');
+                    operand.format_to_code(buf, indent);
+                    buf.push(')');
+                } else {
+                    operand.format_to_code(buf, indent);
+                }
             }
             Expr::Array(args) => {
                 buf.push('[');
@@ -643,7 +659,29 @@ mod tests {
         Shared::new(create_node(Expr::Or(operands)))
     }
 
+    fn unary_op_node(op: UnaryOp, operand: Shared<Node>) -> Shared<Node> {
+        Shared::new(create_node(Expr::UnaryOp(op, operand)))
+    }
+
     #[rstest]
+    #[case::not_ident(Expr::UnaryOp(UnaryOp::Not, ident_node("x")), "!x")]
+    #[case::negate_ident(Expr::UnaryOp(UnaryOp::Neg, ident_node("x")), "-x")]
+    #[case::double_not_stays_bare(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Not, ident_node("x"))), "!!x")]
+    // `--x` does not parse.
+    #[case::double_negate_needs_parens(
+        Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Neg, ident_node("x"))),
+        "-(-x)"
+    )]
+    // `!-x` does not parse.
+    #[case::not_negate_needs_parens(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x"))), "!(-x)")]
+    #[case::not_wraps_binary_operand(
+        Expr::UnaryOp(UnaryOp::Not, binary_op_node(BinaryOp::Lt, ident_node("a"), ident_node("b"))),
+        "!(a < b)"
+    )]
+    #[case::not_wraps_and_operand(
+        Expr::UnaryOp(UnaryOp::Not, and_node(vec![ident_node("a"), ident_node("b")])),
+        "!(a && b)"
+    )]
     #[case::higher_precedence_op_wraps_lower_precedence_rhs(
         Expr::BinaryOp(
             BinaryOp::Mul,
@@ -1264,5 +1302,28 @@ mod tests {
     fn test_to_code_complex(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
+    }
+
+    #[rstest]
+    #[case::not_negate(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x"))))]
+    #[case::negate_not(Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Not, ident_node("x"))))]
+    #[case::negate_negate(Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Neg, ident_node("x"))))]
+    #[case::not_not(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Not, ident_node("x"))))]
+    #[case::not_not_negate(Expr::UnaryOp(
+        UnaryOp::Not,
+        unary_op_node(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x")))
+    ))]
+    fn test_to_code_unary_op_reparses(#[case] expr: Expr) {
+        let code = create_node(expr).to_code();
+        let tokens = crate::Lexer::new(crate::lexer::Options::default())
+            .tokenize(&code, crate::Module::TOP_LEVEL_MODULE_ID)
+            .unwrap_or_else(|e| panic!("`{code}` failed to lex: {e:?}"));
+        let mut arena = crate::arena::Arena::new(16);
+        let program = crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::Module::TOP_LEVEL_MODULE_ID)
+            .parse()
+            .unwrap_or_else(|e| panic!("`{code}` failed to parse: {e:?}"));
+
+        assert_eq!(program.len(), 1, "`{code}` should parse to one expression");
+        assert_eq!(program[0].to_code(), code);
     }
 }

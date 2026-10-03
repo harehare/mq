@@ -836,24 +836,20 @@ pub(super) fn call_builtin_args(
     env: &VmEnv,
     host_functions: &HostFunctions,
 ) -> VmResult<RuntimeValue> {
-    // Builtins keep precedence. A host-only name can run with its original arguments,
-    // without building the builtin's NotDefined error and candidate-name list.
-    if !host_functions.is_empty()
-        && let Some(host_fn) = host_functions.get(ident)
-        && builtin::get_builtin_functions(ident).is_none()
-    {
-        return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(&args)))
-            .unwrap_or_else(|payload| Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload)))))
-            .map_err(|e| VmError::Host(*ident, e.message().to_string()));
-    }
-    match builtin::eval_builtin(self_value, ident, args, env) {
+    // Builtins keep precedence over host functions of the same name.
+    let Some(builtin_fn) = builtin::get_builtin_functions(ident) else {
+        if let Some(host_fn) = host_functions.get(ident) {
+            return std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| host_fn.call(&args)))
+                .unwrap_or_else(|payload| Err(HostFunctionError::new(format!("panic: {}", panic_message(&*payload)))))
+                .map_err(|e| VmError::Host(*ident, e.message().to_string()));
+        }
         // Keep the VM's existing error shape for unknown function names.
-        Err(builtin::Error::NotDefined(_, _)) => Err(VmError::Builtin(builtin::Error::NotDefined(
+        return Err(VmError::Builtin(builtin::Error::NotDefined(
             ident.to_string(),
             Vec::new(),
-        ))),
-        result => result.map_err(VmError::Builtin),
-    }
+        )));
+    };
+    builtin::eval_resolved_builtin(builtin_fn, self_value, ident, args, env).map_err(VmError::Builtin)
 }
 
 pub(super) fn negate_ident() -> &'static Ident {

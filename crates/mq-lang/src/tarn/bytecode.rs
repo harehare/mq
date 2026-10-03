@@ -262,6 +262,8 @@ pub(crate) enum OpCode {
     Dup,
     Jump(i32),
     JumpIfFalse(i32),
+    /// Pops a value and jumps when it is truthy.
+    JumpIfTrue(i32),
     Add,
     Sub,
     Mul,
@@ -558,6 +560,7 @@ impl OpCode {
             | Self::Dup
             | Self::Jump(_)
             | Self::JumpIfFalse(_)
+            | Self::JumpIfTrue(_)
             | Self::Add
             | Self::Sub
             | Self::Mul
@@ -643,6 +646,7 @@ impl OpCode {
             Self::Dup => "Dup",
             Self::Jump(_) => "Jump",
             Self::JumpIfFalse(_) => "JumpIfFalse",
+            Self::JumpIfTrue(_) => "JumpIfTrue",
             Self::Add => "Add",
             Self::Sub => "Sub",
             Self::Mul => "Mul",
@@ -924,7 +928,7 @@ impl Chunk {
     pub(crate) fn patch_jump(&mut self, at: usize) {
         let offset = (self.code.len() - at - 1) as i32;
         match &mut self.code[at] {
-            OpCode::Jump(o) | OpCode::JumpIfFalse(o) => *o = offset,
+            OpCode::Jump(o) | OpCode::JumpIfFalse(o) | OpCode::JumpIfTrue(o) => *o = offset,
             OpCode::ForeachNext { exit_offset, .. } => *exit_offset = offset,
             _ => unreachable!("patch_jump target is not a jump instruction"),
         }
@@ -1633,7 +1637,7 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                         _ => {}
                     }
                 }
-                OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) => {
+                OpCode::Jump(offset) | OpCode::JumpIfFalse(offset) | OpCode::JumpIfTrue(offset) => {
                     verify_jump_target(chunk, chunk_index, pc, *offset)?;
                 }
                 OpCode::TryCatch(info) => {
@@ -1770,6 +1774,7 @@ fn verify_stack_effects(chunk: &Chunk, chunk_index: usize, remaining_work: &mut 
                 );
             }
             OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfTrue(offset)
             | OpCode::JumpIfFalseLocalLocal { offset, .. }
             | OpCode::JumpIfFalseLocalConst { offset, .. }
             | OpCode::JumpIfFalseLocalNumberConst { offset, .. } => {
@@ -1847,7 +1852,7 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::JumpIfFalseLocalConst { .. }
         | OpCode::JumpIfFalseLocalNumberConst { .. }
         | OpCode::ForeachBinaryLocalNumberConstAndJump { .. } => (0, 0),
-        OpCode::JumpIfFalse(_) => (1, 0),
+        OpCode::JumpIfFalse(_) | OpCode::JumpIfTrue(_) => (1, 0),
         OpCode::Add
         | OpCode::Sub
         | OpCode::Mul

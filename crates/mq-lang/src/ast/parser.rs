@@ -13,7 +13,7 @@ use std::iter::Peekable;
 use std::sync::LazyLock;
 
 use super::constants;
-use super::node::{AccessTarget, Args, BinaryOp, Branches, Expr, Literal, Node, Param, Params};
+use super::node::{AccessTarget, Args, BinaryOp, Branches, Expr, Literal, Node, Param, Params, UnaryOp};
 use super::{Program, TokenId};
 
 type IfExpr = (Option<Shared<Node>>, Shared<Node>);
@@ -585,21 +585,12 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_postfix_ops(paren_node, lparen_token)
     }
 
-    #[inline(never)]
-    fn parse_not(&mut self, not_token: &Token) -> Result<Shared<Node>, SyntaxError> {
-        let token_id = self.alloc_token(not_token);
-
-        let expr_token = match self.tokens.next() {
-            Some(t) if t.kind == TokenKind::Eof => {
-                return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone()));
-            }
-            Some(t) => t,
-            None => return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone())),
-        };
-
-        if !matches!(
-            expr_token.kind,
+    /// Tokens that can start the operand of a prefix `!` or `-`.
+    fn is_prefix_operand_start(kind: &TokenKind) -> bool {
+        matches!(
+            kind,
             TokenKind::BoolLiteral(_)
+                | TokenKind::None
                 | TokenKind::StringLiteral(_)
                 | TokenKind::BytesLiteral(_)
                 | TokenKind::NumberLiteral(_)
@@ -616,19 +607,30 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 | TokenKind::Env(_)
                 | TokenKind::Not
                 | TokenKind::Ident(_)
-        ) {
+        )
+    }
+
+    #[inline(never)]
+    fn parse_not(&mut self, not_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let token_id = self.alloc_token(not_token);
+
+        let expr_token = match self.tokens.next() {
+            Some(t) if t.kind == TokenKind::Eof => {
+                return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone()));
+            }
+            Some(t) => t,
+            None => return Err(SyntaxError::UnexpectedEOFAfterToken(not_token.clone())),
+        };
+
+        if !Self::is_prefix_operand_start(&expr_token.kind) {
             return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
 
-        // Convert ! to not() function call
-        let not_ident = IdentWithToken::new_with_token(constants::builtins::NOT, Some(self.shared_token(not_token)));
-        let args = smallvec![expr_node];
-
         Ok(Shared::new(Node {
             token_id,
-            expr: Expr::Call(not_ident, args),
+            expr: Expr::UnaryOp(UnaryOp::Not, expr_node),
         }))
     }
 
@@ -644,31 +646,15 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFAfterToken(minus_token.clone())),
         };
 
-        if !matches!(
-            expr_token.kind,
-            TokenKind::NumberLiteral(_)
-                | TokenKind::If
-                | TokenKind::Foreach
-                | TokenKind::LBrace
-                | TokenKind::LBracket
-                | TokenKind::While
-                | TokenKind::Loop
-                | TokenKind::Match
-                | TokenKind::Self_
-                | TokenKind::Env(_)
-                | TokenKind::Ident(_)
-        ) {
+        if !Self::is_prefix_operand_start(&expr_token.kind) {
             return Err(SyntaxError::UnexpectedToken(expr_token.clone()));
         }
 
         let expr_node = self.parse_primary_expr(expr_token)?;
-        let negate_ident =
-            IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(self.shared_token(minus_token)));
-        let args = smallvec![expr_node];
 
         Ok(Shared::new(Node {
             token_id,
-            expr: Expr::Call(negate_ident, args),
+            expr: Expr::UnaryOp(UnaryOp::Neg, expr_node),
         }))
     }
 
@@ -6785,15 +6771,10 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
-                            smallvec![
-                                Shared::new(Node {
+                        expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
                                     token_id: 1.into(),
                                     expr: Expr::Literal(Literal::Bool(false)),
-                                }),
-                            ],
-                        ),
+                                })),
                     })
                 ]))]
     #[case::not_with_expr(
@@ -6805,15 +6786,10 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
-                            smallvec![
-                                Shared::new(Node {
+                        expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
                                     token_id: 1.into(),
                                     expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
-                                }),
-                            ],
-                        ),
+                                })),
                     })
                 ]))]
     #[case::bracket_access_with_number(
@@ -6954,10 +6930,7 @@ mod tests {
                 Ok(vec![
                     Shared::new(Node {
                         token_id: 0.into(),
-                        expr: Expr::Call(
-                            IdentWithToken::new_with_token(constants::builtins::NOT, Some(Shared::new(token(TokenKind::Not)))),
-                            smallvec![
-                                Shared::new(Node {
+                        expr: Expr::UnaryOp(UnaryOp::Not, Shared::new(Node {
                                     token_id: 1.into(),
                                     expr: Expr::Paren(
                                         Shared::new(Node {
@@ -6965,8 +6938,24 @@ mod tests {
                                             expr: Expr::Literal(Literal::Bool(false)),
                                         })
                                     ),
-                                }),
-                            ],
+                                })),
+                    })
+                ]))]
+    #[case::not_none(
+                vec![
+                    token(TokenKind::Not),
+                    token(TokenKind::None),
+                    token(TokenKind::Eof)
+                ],
+                Ok(vec![
+                    Shared::new(Node {
+                        token_id: 0.into(),
+                        expr: Expr::UnaryOp(
+                            UnaryOp::Not,
+                            Shared::new(Node {
+                                token_id: 1.into(),
+                                expr: Expr::Literal(Literal::None),
+                            })
                         ),
                     })
                 ]))]
@@ -7662,15 +7651,10 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
-                    smallvec![
-                        Shared::new(Node {
+                expr: Expr::UnaryOp(UnaryOp::Neg, Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Literal(Literal::Number(42.into())),
-                        }),
-                    ],
-                ),
+                        })),
             })
         ]))]
     #[case::negate_with_identifier(
@@ -7682,14 +7666,50 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 0.into(),
-                expr: Expr::Call(
-                    IdentWithToken::new_with_token(constants::builtins::NEGATE, Some(Shared::new(token(TokenKind::Minus)))),
-                    smallvec![
-                        Shared::new(Node {
+                expr: Expr::UnaryOp(UnaryOp::Neg, Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
-                        }),
-                    ],
+                        })),
+            })
+        ]))]
+    #[case::negate_paren_expr(
+        vec![
+            token(TokenKind::Minus),
+            token(TokenKind::LParen),
+            token(TokenKind::NumberLiteral(1.into())),
+            token(TokenKind::RParen),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Expr::UnaryOp(
+                    UnaryOp::Neg,
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Expr::Paren(Shared::new(Node {
+                            token_id: 2.into(),
+                            expr: Expr::Literal(Literal::Number(1.into())),
+                        })),
+                    })
+                ),
+            })
+        ]))]
+    #[case::negate_string(
+        vec![
+            token(TokenKind::Minus),
+            token(TokenKind::StringLiteral("a".to_owned())),
+            token(TokenKind::Eof)
+        ],
+        Ok(vec![
+            Shared::new(Node {
+                token_id: 0.into(),
+                expr: Expr::UnaryOp(
+                    UnaryOp::Neg,
+                    Shared::new(Node {
+                        token_id: 1.into(),
+                        expr: Expr::Literal(Literal::String("a".to_owned())),
+                    })
                 ),
             })
         ]))]
