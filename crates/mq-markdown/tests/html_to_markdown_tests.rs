@@ -1861,3 +1861,31 @@ fn test_no_base_url_leaves_relative_links_unresolved() {
 // Test for parsing error on malformed heading (illustrative, might need adjustment based on parser behavior)
 // At this stage, the generic "parsing not yet fully implemented" error is expected for unhandled valid tags,
 // but malformed tags might also trigger it or a more specific error once the parser is more developed.
+
+#[rstest]
+#[case::multiple_articles(
+    "<body><div><article><h2>One</h2><p>First</p></article><article><h2>Two</h2><p>Second</p></article></div></body>",
+    &["One", "First", "Two", "Second"]
+)]
+#[case::small_article_beside_content(
+    "<body><div><h1>Real Title</h1><p>Real body text that is long enough to count as prose.</p><aside><article><p>Teaser</p></article></aside></div></body>",
+    &["Real Title", "Real body text"]
+)]
+#[case::heading_outside_main(
+    "<body><h1>Title</h1><main><p>Main content</p></main></body>",
+    &["Title", "Main content"]
+)]
+fn test_smart_extraction_keeps_content_outside_entry_point(#[case] html: &str, #[case] expected: &[&str]) {
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    for text in expected {
+        assert!(md.contains(text), "missing {text:?} in: {md}");
+    }
+}
+
+#[test]
+fn test_smart_extraction_ignores_header_when_using_main() {
+    let html = "<body><header><h1>Site</h1></header><main><p>Main content</p></main></body>";
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Main content"));
+    assert!(!md.contains("Site"), "header should still be excluded: {md}");
+}

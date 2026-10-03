@@ -283,9 +283,18 @@ pub fn convert_html_to_markdown(html_input: &str, options: ConversionOptions) ->
         ".article-body",
         ".markdown-body",
     ];
+    // An entry point is skipped if it would drop headings/prose elsewhere in the body
+    // (e.g. a feed of several `<article>`s, or a small `<article>` beside the real content).
+    let body = find_element(&html, "body");
     let doc_children = ENTRY_POINT_SELECTORS
         .iter()
-        .find_map(|sel| find_element(&html, sel).map(|el| el.children().collect::<Vec<_>>()))
+        .find_map(|sel| {
+            let el = find_element(&html, sel)?;
+            if body.is_some_and(|b| scoring::has_heading_or_prose_outside(b, el.id())) {
+                return None;
+            }
+            Some(el.children().collect::<Vec<_>>())
+        })
         .or_else(|| scoring::find_best_candidate(&html).map(|el| el.children().collect::<Vec<_>>()))
         .unwrap_or_else(|| html.root_element().children().collect());
 

@@ -68,8 +68,9 @@ fn link_density(el: &ElementRef) -> f64 {
 }
 
 /// True if a heading/substantial paragraph exists in `el`'s subtree outside `best_id`.
-fn has_heading_or_prose_outside(el: ElementRef, best_id: ego_tree::NodeId) -> bool {
-    if el.id() == best_id {
+/// Page chrome (`nav`/`header`/`footer`/`aside`) is ignored.
+pub(super) fn has_heading_or_prose_outside(el: ElementRef, best_id: ego_tree::NodeId) -> bool {
+    if el.id() == best_id || matches!(el.value().name(), "nav" | "header" | "footer" | "aside") {
         return false;
     }
     let is_heading = matches!(el.value().name(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6");
