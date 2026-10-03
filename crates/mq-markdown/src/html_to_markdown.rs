@@ -54,7 +54,9 @@ fn resolve_relative_urls(nodes: &mut [node::HtmlNode], base: &url::Url) {
 /// Recursively drops unrendered and boilerplate (ads/share/comments/cookie banners/...) nodes.
 fn strip_noise_nodes(nodes: &mut Vec<node::HtmlNode>) {
     nodes.retain(|n| match n {
-        node::HtmlNode::Element(el) => !(noise::is_hidden_element(el) || noise::is_noise_by_class_id(el)),
+        node::HtmlNode::Element(el) => {
+            !(noise::is_hidden_element(el) || noise::is_noise_by_class_id(el) || noise::is_ui_control(el))
+        }
         _ => true,
     });
     for n in nodes.iter_mut() {

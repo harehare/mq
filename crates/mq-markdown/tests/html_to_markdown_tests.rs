@@ -358,7 +358,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::li_with_multiple_paragraphs(
     "<ul><li><p>First para.</p><p>Second para.</p></li></ul>",
     ConversionOptions::default(),
-    "* First para.\n  Second para."
+    "* First para.\n\n  Second para."
 )]
 #[case::li_with_text_then_nested_list(
     "<ul><li>Item text<ul><li>Nested 1</li><li>Nested 2</li></ul></li></ul>",
@@ -373,12 +373,12 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::li_with_blockquote(
     "<ul><li>Item text<blockquote><p>Quoted</p></blockquote></li></ul>",
     ConversionOptions::default(),
-    "* Item text\n  > Quoted"
+    "* Item text\n\n  > Quoted"
 )]
 #[case::li_with_pre_code(
     "<ul><li>Item text<pre><code>code\nblock</code></pre></li></ul>",
     ConversionOptions::default(),
-    "* Item text\n  ```\n  code\n  block\n  ```"
+    "* Item text\n\n  ```\n  code\n  block\n  ```"
 )]
 #[case::iframe_simple(
     "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
@@ -403,10 +403,10 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ),
     ConversionOptions::default(),
     concat!(
-        "* Paragraph 1 in li.\n",
+        "* Paragraph 1 in li.\n\n",
         "  Paragraph 2 in li.\n",
-        "  * Nested item\n",
-        "  > Quote in li.\n",
+        "  * Nested item\n\n",
+        "  > Quote in li.\n\n",
         "  ```\n",
         "  Code in li.\n",
         "  ```"
@@ -425,7 +425,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "| Header |\n",
         "|---|\n",
         "| Cell with **bold**, *italic*,<br>and a [link](#). |\n",
-        "| Cell with list:L1L2 (list becomes inline) |\n",
+        "| Cell with list:<br>* L1<br>* L2<br>(list becomes inline) |\n",
         "| Cell with image: ![alt](img.png) |"
     )
 )]
@@ -842,10 +842,10 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
 )]
-#[case::table_with_colspan_repeated_across_columns(
+#[case::table_with_colspan_padded_with_empty_cells(
     "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
     ConversionOptions::default(),
-    "| H | H |\n|---|---|\n| A | B |"
+    "| H |  |\n|---|---|\n| A | B |"
 )]
 #[case::table_with_rowspan_carried_into_next_row(
     "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>",
@@ -1024,7 +1024,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "# Hello"
 )]
 #[case::h2_empty("<h2></h2>", ConversionOptions::default(), "## ")] // Or just "##" - common practice is a space after #
-#[case::h3_with_whitespace("<h3>  Spaced Out  </h3>", ConversionOptions::default(), "###  Spaced Out ")]
+#[case::h3_with_whitespace("<h3>  Spaced Out  </h3>", ConversionOptions::default(), "### Spaced Out")]
 #[case::multiple_headings(
     "<h1>First</h1><h2>Second</h2>",
     ConversionOptions::default(),
@@ -1108,12 +1108,18 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[Example](https://example.com \"Cool Site\")"
 )]
-#[case::link_empty_text(
-    "<a href=\"https://example.com\"></a>",
+#[case::link_empty_text("<a href=\"https://example.com\"></a>", ConversionOptions::default(), "")]
+#[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "")]
+#[case::link_icon_only_dropped(
+    "<p>a <a href=\"/x\" aria-label=\"Print\"></a>b</p>",
     ConversionOptions::default(),
-    "[](https://example.com)"
+    "a b"
 )]
-#[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "[](<>)")]
+#[case::whitespace_between_inline_siblings_kept(
+    "<div><strong>a</strong> <em>b</em><span> </span><span>c</span></div>",
+    ConversionOptions::default(),
+    "**a** *b* c"
+)]
 #[case::link_no_href("<a name=\"anchor\">Anchor Text</a>", ConversionOptions::default(), "Anchor Text")]
 #[case::link_with_emphasized_text(
     "<a href=\"/foo\"><em>italic link</em></a>",
@@ -1300,7 +1306,46 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::inline_nav_aside_noscript(
     "<p>Text <nav>nav</nav> <aside>aside</aside> <noscript>noscript</noscript> End</p>",
     ConversionOptions::default(),
-    "Text  End"
+    "Text\n\nEnd"
+)]
+#[case::adjacent_em_merged("<p><em>a</em><em>b</em></p>", ConversionOptions::default(), "*ab*")]
+#[case::adjacent_strong_merged(
+    "<p><strong>a</strong><strong>b</strong></p>",
+    ConversionOptions::default(),
+    "**ab**"
+)]
+#[case::em_then_strong_not_merged("<p><em>a</em><strong>b</strong></p>", ConversionOptions::default(), "*a***b**")]
+#[case::tight_list_item_with_nested_list(
+    "<ul><li>one<ul><li>nested</li></ul></li><li>two</li></ul>",
+    ConversionOptions::default(),
+    "* one\n  * nested\n* two"
+)]
+#[case::table_cell_with_list(
+    "<table><thead><tr><th>H</th></tr></thead><tbody><tr><td><ul><li>x</li><li>y</li></ul></td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| * x<br>* y |"
+)]
+#[case::text_after_nested_div("<div>a<div>b</div>tail</div>", ConversionOptions::default(), "a\n\nb\n\ntail")]
+#[case::details_summary_then_body(
+    "<details><summary>Sum</summary>body</details>",
+    ConversionOptions::default(),
+    "**Sum**\n\nbody"
+)]
+#[case::heading_br_is_single_line("<h1>Query.<br>Filter. </h1>", ConversionOptions::default(), "# Query. Filter.")]
+#[case::icon_font_glyph_dropped(
+    "<p><span class=\"material-symbols-outlined\">bolt</span>Fast</p>",
+    ConversionOptions::default(),
+    "Fast"
+)]
+#[case::inline_style_dropped(
+    "<p>x<style>.z{color:red}</style>y</p><table><tr><td><style>.q{}</style>cell</td></tr></table>",
+    ConversionOptions::default(),
+    "xy\n\n| cell |\n|---|"
+)]
+#[case::button_and_search_input_dropped(
+    "<p>Body</p><button>Run</button><input type=\"search\" placeholder=\"Search\">",
+    ConversionOptions::default(),
+    "Body"
 )]
 #[case::span_in_paragraph("<p>Hello <span>world</span>!</p>", ConversionOptions::default(), "Hello world!")]
 #[case::consecutive_paragraphs("<p>P1</p><p>P2</p>", ConversionOptions::default(), "P1\n\nP2")]
@@ -1644,7 +1689,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "</tbody></table>"
     ),
     ConversionOptions::default(),
-    "| A | B | C |\n|---|---|---|\n| R1 | wide | wide |\n| R1 | x | y |"
+    "| A | B | C |\n|---|---|---|\n| R1 | wide |  |\n| R1 | x | y |"
 )]
 #[case::nested_table_falls_back_to_raw_html(
     "<table><tr><td>outer<table><tr><td>inner</td></tr></table></td></tr></table>",

@@ -198,8 +198,37 @@ fn get_span_attr(element: &HtmlElement, attr: &str) -> usize {
         .min(64)
 }
 
-/// Extracts a header row's cells, repeating content/alignment across `colspan` so header
-/// and body column counts match.
+/// Converts a table cell's children to single-line markdown. Block children (lists,
+/// paragraphs, ...) are joined with `<br>` instead of being concatenated.
+fn convert_table_cell_content(nodes: &[HtmlNode]) -> miette::Result<String> {
+    const BLOCK_TAGS: &[&str] = &[
+        "p",
+        "ul",
+        "ol",
+        "div",
+        "pre",
+        "blockquote",
+        "dl",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+    ];
+    let has_block = nodes
+        .iter()
+        .any(|n| matches!(n, HtmlNode::Element(el) if BLOCK_TAGS.contains(&el.tag_name.as_str())));
+    if has_block {
+        let md = convert_nodes_to_markdown(nodes, &ConversionOptions::default())?;
+        Ok(md.trim().replace("\n\n", "\n"))
+    } else {
+        convert_children_to_string(nodes)
+    }
+}
+
+/// Extracts a header row's cells, padding `colspan` with empty cells (alignment repeated) so
+/// header and body column counts match.
 fn expand_header_row_cells(tr_element: &HtmlElement) -> miette::Result<(Vec<String>, Vec<Alignment>)> {
     let mut cells = Vec::new();
     let mut alignments = Vec::new();
@@ -207,12 +236,13 @@ fn expand_header_row_cells(tr_element: &HtmlElement) -> miette::Result<(Vec<Stri
         if let HtmlNode::Element(cell_element) = cell_node
             && (cell_element.tag_name == "th" || cell_element.tag_name == "td")
         {
-            let cell_content = convert_children_to_string(&cell_element.children)?;
+            let cell_content = convert_table_cell_content(&cell_element.children)?;
             let content = escape_table_cell_content(cell_content.trim());
             let alignment = get_cell_alignment(cell_element);
             let colspan = get_span_attr(cell_element, "colspan");
-            for _ in 0..colspan {
-                cells.push(content.clone());
+            for i in 0..colspan {
+                // Spanned columns are left empty so the content isn't duplicated.
+                cells.push(if i == 0 { content.clone() } else { String::new() });
                 alignments.push(alignment);
             }
         }
@@ -245,14 +275,15 @@ fn expand_data_row_cells(
         let Some(cell_element) = real_cells.next() else {
             break;
         };
-        let cell_content = convert_children_to_string(&cell_element.children)?;
+        let cell_content = convert_table_cell_content(&cell_element.children)?;
         let content = escape_table_cell_content(cell_content.trim());
         let colspan = get_span_attr(cell_element, "colspan");
         let rowspan = get_span_attr(cell_element, "rowspan");
         for i in 0..colspan {
-            current_row_cells.push(content.clone());
+            let cell = if i == 0 { content.clone() } else { String::new() };
+            current_row_cells.push(cell.clone());
             if rowspan > 1 {
-                rowspan_carry.insert(col + i, (content.clone(), rowspan - 1));
+                rowspan_carry.insert(col + i, (cell, rowspan - 1));
             }
         }
         col += colspan;
@@ -411,14 +442,18 @@ fn process_url_for_markdown(url: &str) -> String {
 }
 
 fn handle_heading_element(element: &HtmlElement) -> miette::Result<String> {
-    let children_content_str = convert_children_to_string(&element.children)?;
+    // Headings are single-line: `<br>` becomes a space and edge whitespace is dropped.
+    let children_content_str = convert_children_to_string(&element.children)?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let marker_level = element.tag_name[1..].parse().unwrap_or(1);
     Ok(format!("{} {}", "#".repeat(marker_level), children_content_str))
 }
 
 fn handle_paragraph_element(element: &HtmlElement) -> miette::Result<String> {
     let content = convert_children_to_string(&element.children)?;
-    Ok(escape_leading_block_markers(&content))
+    Ok(escape_leading_block_markers(content.trim_end()))
 }
 
 fn handle_hr_element() -> miette::Result<String> {
@@ -788,6 +823,7 @@ fn convert_html_list_to_markdown(
     options: &ConversionOptions,
 ) -> miette::Result<String> {
     let mut markdown_items = Vec::new();
+    let mut loose = false;
     let base_indent = "    ".repeat(indent_level);
     let mut current_list_number = if list_element.tag_name == "ol" {
         list_element
@@ -818,16 +854,32 @@ fn convert_html_list_to_markdown(
                 if li_content_markdown.is_empty() {
                     markdown_items.push(format!("{}{}", base_indent, marker_prefix));
                 } else {
-                    let mut first_line_in_li = true;
-                    for line in li_content_markdown.lines() {
-                        if first_line_in_li {
-                            markdown_items.push(format!("{}{}{}", base_indent, marker_prefix, line));
-                            first_line_in_li = false;
+                    let continuation_indent = " ".repeat(marker_prefix.len());
+                    let lines: Vec<&str> = li_content_markdown.lines().collect();
+                    let mut in_fence = false;
+                    let mut item_lines: Vec<String> = Vec::new();
+                    for (i, line) in lines.iter().enumerate() {
+                        if line.trim_start().starts_with("```") {
+                            in_fence = !in_fence;
+                        }
+                        if line.trim().is_empty() {
+                            // A blank line before a nested list keeps the item tight; before
+                            // other blocks (e.g. a second paragraph) it makes the list loose.
+                            let next = lines[i + 1..].iter().find(|l| !l.trim().is_empty());
+                            if !in_fence && next.is_none_or(|l| is_list_marker_line(l)) {
+                                continue;
+                            }
+                            if !in_fence && next.is_some_and(|l| !l.trim_start().starts_with("```")) {
+                                loose = true;
+                            }
+                            item_lines.push(String::new());
+                        } else if i == 0 {
+                            item_lines.push(format!("{}{}{}", base_indent, marker_prefix, line));
                         } else {
-                            let continuation_indent = " ".repeat(marker_prefix.len());
-                            markdown_items.push(format!("{}{}{}", base_indent, continuation_indent, line));
+                            item_lines.push(format!("{}{}{}", base_indent, continuation_indent, line));
                         }
                     }
+                    markdown_items.push(item_lines.join("\n"));
                 }
             }
         } else if let HtmlNode::Text(text_content) = node
@@ -835,7 +887,21 @@ fn convert_html_list_to_markdown(
         {
         }
     }
-    Ok(markdown_items.iter().filter(|item| !item.trim().is_empty()).join("\n"))
+    let separator = if loose { "\n\n" } else { "\n" };
+    Ok(markdown_items
+        .iter()
+        .filter(|item| !item.trim().is_empty())
+        .join(separator))
+}
+
+/// Returns true if the line starts (after indentation) with a bullet or ordered list marker.
+fn is_list_marker_line(line: &str) -> bool {
+    let t = line.trim_start();
+    if t.starts_with("* ") {
+        return true;
+    }
+    let digits = t.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && t[digits..].starts_with(". ")
 }
 
 pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> {
@@ -845,8 +911,11 @@ pub fn convert_children_to_string(nodes: &[HtmlNode]) -> miette::Result<String> 
 /// Converts inline HTML nodes to markdown; `escape_text` is off inside `<code>`, whose
 /// content is already verbatim.
 fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> miette::Result<String> {
-    let mut parts = Vec::new();
+    let mut parts: Vec<String> = Vec::new();
+    // Delimiter of the emphasis pushed by the previous node, to merge adjacent siblings.
+    let mut prev_emphasis: Option<&str> = None;
     for node in nodes {
+        let last_emphasis = prev_emphasis.take();
         match node {
             HtmlNode::Text(text) => {
                 let escaped_owned;
@@ -894,13 +963,15 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                     "strong" => {
                         let wrapped = wrap_with_delimiter(&link_text, "**");
                         if !wrapped.is_empty() {
-                            parts.push(wrapped);
+                            push_emphasis(&mut parts, wrapped, "**", last_emphasis);
+                            prev_emphasis = Some("**");
                         }
                     }
                     "em" => {
                         let wrapped = wrap_with_delimiter(&link_text, "*");
                         if !wrapped.is_empty() {
-                            parts.push(wrapped);
+                            push_emphasis(&mut parts, wrapped, "*", last_emphasis);
+                            prev_emphasis = Some("*");
                         }
                     }
                     "a" => {
@@ -913,6 +984,10 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                                 .map(|title_str| format!(" \"{}\"", title_str.replace('"', "\\\"")))
                                 .unwrap_or_default();
                             let processed_href = process_url_for_markdown(href);
+                            // Icon-only links (no text, no image) carry no content.
+                            if link_text.trim().is_empty() {
+                                continue;
+                            }
                             parts.push(format!(
                                 "[{}]({}{})",
                                 link_text.replace("\n", "").trim(),
@@ -1072,7 +1147,7 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
                         }
                     }
                     "span" => parts.push(link_text),
-                    "nav" | "aside" | "noscript" => {} // skip
+                    "nav" | "aside" | "noscript" | "style" | "script" => {} // skip
                     _ => parts.push(link_text),
                 }
             }
@@ -1080,6 +1155,21 @@ fn convert_children_to_string_impl(nodes: &[HtmlNode], escape_text: bool) -> mie
         }
     }
     Ok(collapse_redundant_spaces(&parts.join("")))
+}
+
+/// Pushes `wrapped` emphasis, merging it into the previous part when that was the same
+/// emphasis (`<em>a</em><em>b</em>` -> `*ab*`) so delimiters don't collide.
+fn push_emphasis(parts: &mut Vec<String>, wrapped: String, delimiter: &str, last_emphasis: Option<&str>) {
+    if last_emphasis == Some(delimiter)
+        && let Some(last) = parts.last_mut()
+        && last.ends_with(delimiter)
+        && wrapped.starts_with(delimiter)
+    {
+        last.truncate(last.len() - delimiter.len());
+        last.push_str(&wrapped[delimiter.len()..]);
+    } else {
+        parts.push(wrapped);
+    }
 }
 
 /// Collapses runs of 2+ spaces to one (HTML whitespace collapsing), except before a
@@ -1178,6 +1268,9 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                 if !text.trim().is_empty() {
                     let escaped = escape_leading_block_markers(&escape_markdown_inline(text));
                     markdown_blocks.push((escaped, true));
+                } else if !text.is_empty() && markdown_blocks.last().is_some_and(|b| b.1) {
+                    // Whitespace between inline siblings is significant (`<b>a</b> <i>b</i>`).
+                    markdown_blocks.push((" ".to_string(), true));
                 }
             }
             HtmlNode::Element(element) => {
@@ -1297,7 +1390,11 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
                     | "sup" | "q" | "cite" | "mark" | "abbr" | "picture" | "ruby" | "dfn" | "time" | "small"
                     | "bdi" => {
                         let inline_md = convert_children_to_string(&[HtmlNode::Element(element.clone())])?;
-                        if !inline_md.is_empty() {
+                        if inline_md.trim().is_empty() {
+                            if !inline_md.is_empty() && markdown_blocks.last().is_some_and(|b| b.1) {
+                                markdown_blocks.push((" ".to_string(), true));
+                            }
+                        } else {
                             markdown_blocks.push((inline_md.trim().to_string(), true));
                         }
                     }
@@ -1318,6 +1415,14 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
     let mut result = String::new();
 
     for (i, (block_content, is_inline)) in markdown_blocks.iter().enumerate() {
+        // Inline content following a block (e.g. text after a nested <div>) starts a new paragraph.
+        if *is_inline && i > 0 && !markdown_blocks[i - 1].1 && !result.is_empty() && !result.ends_with('\n') {
+            result.truncate(result.trim_end_matches(' ').len());
+            result.push_str("\n\n");
+        }
+        if !is_inline && i > 0 && result.ends_with(' ') {
+            result.truncate(result.trim_end_matches(' ').len());
+        }
         if !is_inline
             && i > 0
             && !block_content.is_empty()
@@ -1334,7 +1439,8 @@ pub fn convert_nodes_to_markdown(nodes: &[HtmlNode], options: &ConversionOptions
             }
         }
 
-        result.push_str(if *is_inline {
+        let after_block = i > 0 && !markdown_blocks[i - 1].1;
+        result.push_str(if *is_inline && !after_block {
             block_content
         } else {
             block_content.trim_start()
