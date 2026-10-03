@@ -341,7 +341,7 @@ When applied to an array of dicts, the property selector maps over each element:
 ."name"   # Returns: ["Alice", "Bob", "Charlie"]
 ```
 
-Non-dict elements in the array return `none`.
+Elements that are not dicts, or that lack the key, are skipped.
 
 ### Missing Keys
 
@@ -351,6 +351,17 @@ Accessing a key that doesn't exist returns `none`:
 # Input dict: {"name": "Alice"}
 
 ."age"    # Returns: none
+```
+
+### Markdown Selectors on Dicts
+
+Markdown selectors (`.h`, `.code`, `.[0]`, ...) applied to a dict that holds no Markdown nodes return `none`:
+
+```mq
+# Input dict: {"name": "Alice", "tags": ["a", "b"]}
+
+.h        # Returns: none
+.[0]      # Returns: none
 ```
 
 ## Combining Selectors with Functions
