@@ -1316,10 +1316,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 ));
             }
             OpCode::UpdateLocalConst { op, local, constant } => {
-                if *op == BinaryOp::Add && append_to_string_local(locals, *local, &chunk.constants[*constant as usize])
-                {
-                    // Appended in place.
-                } else {
+                let appended = *op == BinaryOp::Add
+                    && append_to_string_local(locals, *local, &chunk.constants[*constant as usize]);
+                if !appended {
                     let a = local_runtime_value(locals, *local, chunks)?;
                     let b = chunk.constants[*constant as usize].clone();
                     let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
@@ -1328,11 +1327,16 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
             }
             OpCode::UpdateLocalNumberConst { op, local, constant } => {
-                if let Some(number) = locals.direct_number_mut(*local)
-                    && let Some(result) = number_arithmetic(*op, *number, Number::new(*constant as f64))
+                let rhs = Number::new(*constant as f64);
+                let updated = if let Some(number) = locals.direct_number_mut(*local)
+                    && let Some(result) = number_arithmetic(*op, *number, rhs)
                 {
                     *number = result;
+                    true
                 } else {
+                    *op == BinaryOp::Add && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
+                };
+                if !updated {
                     let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
                         .map_err(|e| locate(chunk, ip, e))?;
                     locals.set(*local, StackValue::Value(value));
@@ -1340,9 +1344,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::UpdateLocalLocal { op, local, value } => {
                 let b = local_runtime_value(locals, *value, chunks)?;
-                if *op == BinaryOp::Add && append_to_string_local(locals, *local, &b) {
-                    // Appended in place.
-                } else {
+                if !(*op == BinaryOp::Add && append_to_string_local(locals, *local, &b)) {
                     let a = local_runtime_value(locals, *local, chunks)?;
                     let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?;

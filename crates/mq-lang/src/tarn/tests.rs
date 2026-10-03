@@ -404,6 +404,7 @@ fn numeric_local_constant_updates_preserve_results(#[case] operator: &str, #[cas
 #[case::number_suffix(r#"var s = "a" | s += 1 | s"#, "a1")]
 #[case::self_suffix(r#"var s = "ab" | s += s | s"#, "abab")]
 #[case::repeated(r#"var s = "" | var i = 0 | while(i < 3): s += "x" | i += 1; | s"#, "xxx")]
+#[case::repeated_number_suffix(r#"var s = "" | var i = 0 | while(i < 3): s += 1 | i += 1; | s"#, "111")]
 #[case::alias_keeps_original(r#"var a = "x" | var b = a | b += "y" | a"#, "x")]
 #[case::alias_receives_suffix(r#"var a = "x" | var b = a | b += "y" | b"#, "xy")]
 #[case::array_element_unchanged(r#"var a = "x" | var xs = [a] | a += "y" | xs[0]"#, "x")]
