@@ -674,7 +674,7 @@ impl<'a> Cursor<'a> {
         let base_len = bytes.iter().take_while(|&&b| is_word_byte(b)).count();
         let base = &rest[..base_len];
         let next = rest[base_len..].chars().next();
-        let at_word_boundary = next.map(|c| !c.is_alphanumeric() && c != '_').unwrap_or(true);
+        let at_word_boundary = next.is_none_or(|c| !c.is_alphanumeric());
 
         if at_word_boundary && let Some(kind) = keyword_kind(base) {
             return self.simple(base_len, kind);
@@ -1907,6 +1907,11 @@ mod tests {
     #[case::regex_escapes_keep_the_letter(r#""\s\d\/\.""#, vec![TokenKind::StringLiteral("sd/.".into())])]
     #[case::unicode_and_hex_escapes(r#""\u{41}B\x43""#, vec![TokenKind::StringLiteral("ABC".into())])]
     #[case::hex_escape_is_latin1(r#""\xe9""#, vec![TokenKind::StringLiteral("é".into())])]
+    #[case::four_digit_unicode_escape(r#""\u0041\u00e9""#, vec![TokenKind::StringLiteral("Aé".into())])]
+    #[case::braced_unicode_escape_takes_up_to_six_digits(
+        r#""\u{000041}\u{10FFFF}""#,
+        vec![TokenKind::StringLiteral("A\u{10FFFF}".into())]
+    )]
     #[case::empty_strings(r#""" """#, vec![TokenKind::StringLiteral(String::new()), TokenKind::StringLiteral(String::new())])]
     #[case::multiline_string("\"a\nb\"", vec![TokenKind::StringLiteral("a\nb".into())])]
     #[case::interpolation(
@@ -1961,6 +1966,42 @@ mod tests {
     )]
     #[case::selector_with_escaped_quote(r#"."a\"b""#, vec![TokenKind::Selector(r#"."a\"b""#.into())])]
     #[case::ranges_and_spread(".. ... ..5", vec![TokenKind::DoubleDot, TokenKind::DotDotDot, TokenKind::DoubleDot, num(5.0)])]
+    #[case::every_keyword(
+        "as break catch continue def do elif else end fn foreach if import include let loop match module nodes None self try unless until var while yield",
+        vec![
+            TokenKind::As,
+            TokenKind::Break,
+            TokenKind::Catch,
+            TokenKind::Continue,
+            TokenKind::Def,
+            TokenKind::Do,
+            TokenKind::Elif,
+            TokenKind::Else,
+            TokenKind::End,
+            TokenKind::Fn,
+            TokenKind::Foreach,
+            TokenKind::If,
+            TokenKind::Import,
+            TokenKind::Include,
+            TokenKind::Let,
+            TokenKind::Loop,
+            TokenKind::Match,
+            TokenKind::Module,
+            TokenKind::Nodes,
+            TokenKind::None,
+            TokenKind::Self_,
+            TokenKind::Try,
+            TokenKind::Unless,
+            TokenKind::Until,
+            TokenKind::Var,
+            TokenKind::While,
+            TokenKind::Yield,
+        ]
+    )]
+    #[case::keyword_prefixes_are_identifiers(
+        "end_ do1 self2 nodes_ None_",
+        vec![ident("end_"), ident("do1"), ident("self2"), ident("nodes_"), ident("None_")]
+    )]
     #[case::keywords_at_word_boundary(
         "end endx end-x a*b _x True true false",
         vec![
@@ -2033,6 +2074,8 @@ mod tests {
     #[case::unicode_escape_surrogate(r#""\ud800""#)]
     #[case::too_many_unicode_digits(r#""\u{1234567}""#)]
     #[case::short_hex_escape(r#""\x4""#)]
+    #[case::unicode_escape_without_closing_brace(r#""\u{41""#)]
+    #[case::unicode_escape_with_empty_braces(r#""\u{}""#)]
     #[case::bad_byte_escape(r#"b"\q""#)]
     #[case::unterminated_bytes(r#"b"abc"#)]
     #[case::lone_ampersand("a & b")]
