@@ -87,8 +87,8 @@ impl Node {
                 buf.push_str(op.as_str());
                 let needs_parens = match &operand.expr {
                     Expr::BinaryOp(..) | Expr::And(_) | Expr::Or(_) => true,
-                    // `--x` does not parse.
-                    Expr::UnaryOp(..) => *op == UnaryOp::Neg,
+                    // `--x` and `!-x` do not parse.
+                    Expr::UnaryOp(inner_op, ..) => *op == UnaryOp::Neg || *inner_op == UnaryOp::Neg,
                     _ => false,
                 };
                 if needs_parens {
@@ -672,6 +672,8 @@ mod tests {
         Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Neg, ident_node("x"))),
         "-(-x)"
     )]
+    // `!-x` does not parse.
+    #[case::not_negate_needs_parens(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x"))), "!(-x)")]
     #[case::not_wraps_binary_operand(
         Expr::UnaryOp(UnaryOp::Not, binary_op_node(BinaryOp::Lt, ident_node("a"), ident_node("b"))),
         "!(a < b)"
