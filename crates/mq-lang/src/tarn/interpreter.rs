@@ -505,8 +505,29 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
     }
 }
 
+#[inline(always)]
+fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> bool {
+    let Some(RuntimeValue::String(target)) = locals.direct_runtime_value_mut(local) else {
+        return false;
+    };
+    match rhs {
+        RuntimeValue::String(suffix) => runtime_value::string_mut(target).push_str(suffix),
+        RuntimeValue::Number(n) => runtime_value::string_mut(target).push_str(&n.to_string()),
+        _ => return false,
+    }
+    true
+}
+
 fn current_self(locals: &Locals, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
     into_runtime_value(locals.get(SELF_SLOT), chunks)
+}
+
+#[inline(always)]
+fn borrow_self<'a>(locals: &'a Locals, chunks: &Shared<Vec<Chunk>>) -> std::borrow::Cow<'a, RuntimeValue> {
+    locals.direct_runtime_value(SELF_SLOT).map_or_else(
+        || std::borrow::Cow::Owned(current_self(locals, chunks)),
+        std::borrow::Cow::Borrowed,
+    )
 }
 
 #[cfg(feature = "debugger")]
@@ -1295,11 +1316,16 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 ));
             }
             OpCode::UpdateLocalConst { op, local, constant } => {
-                let a = local_runtime_value(locals, *local, chunks)?;
-                let b = chunk.constants[*constant as usize].clone();
-                let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                locals.set(*local, StackValue::Value(value));
+                if *op == BinaryOp::Add && append_to_string_local(locals, *local, &chunk.constants[*constant as usize])
+                {
+                    // Appended in place.
+                } else {
+                    let a = local_runtime_value(locals, *local, chunks)?;
+                    let b = chunk.constants[*constant as usize].clone();
+                    let value = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    locals.set(*local, StackValue::Value(value));
+                }
             }
             OpCode::UpdateLocalNumberConst { op, local, constant } => {
                 if let Some(number) = locals.direct_number_mut(*local)
@@ -1313,11 +1339,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 }
             }
             OpCode::UpdateLocalLocal { op, local, value } => {
-                let a = local_runtime_value(locals, *local, chunks)?;
                 let b = local_runtime_value(locals, *value, chunks)?;
-                let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
-                    .map_err(|e| locate(chunk, ip, e))?;
-                locals.set(*local, StackValue::Value(result));
+                if *op == BinaryOp::Add && append_to_string_local(locals, *local, &b) {
+                    // Appended in place.
+                } else {
+                    let a = local_runtime_value(locals, *local, chunks)?;
+                    let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
+                        .map_err(|e| locate(chunk, ip, e))?;
+                    locals.set(*local, StackValue::Value(result));
+                }
             }
             OpCode::JumpIfFalseLocalLocal {
                 op,
@@ -1548,7 +1578,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let result = call_builtin(
                     builtin,
                     &[value],
-                    &current_self(locals, chunks),
+                    &borrow_self(locals, chunks),
                     execution.env,
                     execution.host_functions,
                 )
@@ -1610,7 +1640,7 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let result = call_builtin_args(
                     ident,
                     args,
-                    &current_self(locals, chunks),
+                    &borrow_self(locals, chunks),
                     execution.env,
                     execution.host_functions,
                 )
@@ -2633,7 +2663,7 @@ fn binop(
         BinaryOp::Mod => &MOD_IDENT,
         _ => return Err(VmError::Corrupt("non-arithmetic opcode in binop")),
     };
-    call_builtin(ident, &[a, b], &current_self(locals, chunks), env, host_functions)
+    call_builtin(ident, &[a, b], &borrow_self(locals, chunks), env, host_functions)
 }
 
 #[inline(always)]

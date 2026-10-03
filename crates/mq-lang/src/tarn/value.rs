@@ -405,6 +405,30 @@ impl Locals {
         }
     }
 
+    /// Mutably borrows a directly stored runtime value, like [`Self::direct_runtime_value`].
+    #[inline(always)]
+    pub(crate) fn direct_runtime_value_mut(&mut self, _slot: u16) -> Option<&mut RuntimeValue> {
+        match self {
+            #[cfg(not(feature = "sync"))]
+            Locals::Flat(slots) => match &mut slots[_slot as usize] {
+                StackValue::Value(value) => Some(value),
+                _ => None,
+            },
+            #[cfg(not(feature = "sync"))]
+            Locals::Hybrid(hybrid) => {
+                let HybridLocals { slots, captured } = &mut **hybrid;
+                if captured[_slot as usize].is_some() {
+                    return None;
+                }
+                match &mut slots[_slot as usize] {
+                    StackValue::Value(value) => Some(value),
+                    _ => None,
+                }
+            }
+            Locals::Boxed(_) => None,
+        }
+    }
+
     /// Borrows a directly stored runtime value without cloning it.
     ///
     /// Returns `None` for boxed/captured slots and internal coroutine markers, whose reads need

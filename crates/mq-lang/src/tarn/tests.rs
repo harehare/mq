@@ -399,6 +399,20 @@ fn numeric_local_constant_updates_preserve_results(#[case] operator: &str, #[cas
 }
 
 #[rstest]
+#[case::const_suffix(r#"var s = "a" | s += "b" | s"#, "ab")]
+#[case::local_suffix(r#"var s = "a" | var t = "b" | s += t | s"#, "ab")]
+#[case::number_suffix(r#"var s = "a" | s += 1 | s"#, "a1")]
+#[case::self_suffix(r#"var s = "ab" | s += s | s"#, "abab")]
+#[case::repeated(r#"var s = "" | var i = 0 | while(i < 3): s += "x" | i += 1; | s"#, "xxx")]
+#[case::alias_keeps_original(r#"var a = "x" | var b = a | b += "y" | a"#, "x")]
+#[case::alias_receives_suffix(r#"var a = "x" | var b = a | b += "y" | b"#, "xy")]
+#[case::array_element_unchanged(r#"var a = "x" | var xs = [a] | a += "y" | xs[0]"#, "x")]
+#[case::captured_local(r#"var s = "a" | def f(): s += "b"; | f() | s"#, "ab")]
+fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] expected: &str) {
+    assert_eq!(run(code), RuntimeValue::from(expected));
+}
+
+#[rstest]
 #[case::equal("==", true)]
 #[case::not_equal("!=", false)]
 #[case::less_than("<", false)]

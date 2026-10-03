@@ -9994,24 +9994,35 @@ pub fn eval_builtin(
 
             Err(Error::NotDefined(ident.to_string(), candidates))
         },
-        |f| {
-            let args_len = args.len() as u8;
-            if f.num_params.is_valid(args_len) {
-                (f.func)(ident, runtime_value, args, env)
-            } else if f.num_params.is_missing_one_params(args_len) {
-                let mut new_args = Args::with_capacity(args.len() + 1);
-                new_args.push(runtime_value.clone());
-                new_args.extend(args);
-                (f.func)(ident, runtime_value, new_args, env)
-            } else {
-                Err(Error::InvalidNumberOfArguments(
-                    ident.to_string(),
-                    f.num_params.to_num(),
-                    args_len,
-                ))
-            }
-        },
+        |f| eval_resolved_builtin(f, runtime_value, ident, args, env),
     )
+}
+
+/// Runs an already resolved builtin, checking the argument count and filling in the implicit
+/// `self` argument when exactly one is missing.
+#[inline]
+pub fn eval_resolved_builtin(
+    f: &BuiltinFunction,
+    runtime_value: &RuntimeValue,
+    ident: &Ident,
+    args: Args,
+    env: &SharedEnv,
+) -> Result<RuntimeValue, Error> {
+    let args_len = args.len() as u8;
+    if f.num_params.is_valid(args_len) {
+        (f.func)(ident, runtime_value, args, env)
+    } else if f.num_params.is_missing_one_params(args_len) {
+        let mut new_args = Args::with_capacity(args.len() + 1);
+        new_args.push(runtime_value.clone());
+        new_args.extend(args);
+        (f.func)(ident, runtime_value, new_args, env)
+    } else {
+        Err(Error::InvalidNumberOfArguments(
+            ident.to_string(),
+            f.num_params.to_num(),
+            args_len,
+        ))
+    }
 }
 
 fn collect_depth_values(args: &[RuntimeValue]) -> Vec<u8> {

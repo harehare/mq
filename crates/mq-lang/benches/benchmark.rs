@@ -213,6 +213,18 @@ fn eval_compiled_captured_static_function_call(bencher: divan::Bencher) {
     );
 }
 
+/// Appends to a string local in a loop, which must stay linear in the number of appends.
+#[divan::bench]
+fn eval_compiled_string_append_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var s = "" | var i = 0 | while(i < 20000): s += "a" | i += 1; | len(s)"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
 /// Measures calls through a local holding a native function, which use the VM's generic call
 /// path instead of the fixed-arity closure fast path.
 #[divan::bench]
