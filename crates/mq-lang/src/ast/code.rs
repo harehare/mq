@@ -1303,4 +1303,27 @@ mod tests {
         let node = create_node(expr);
         assert_eq!(node.to_code(), expected);
     }
+
+    #[rstest]
+    #[case::not_negate(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x"))))]
+    #[case::negate_not(Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Not, ident_node("x"))))]
+    #[case::negate_negate(Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Neg, ident_node("x"))))]
+    #[case::not_not(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Not, ident_node("x"))))]
+    #[case::not_not_negate(Expr::UnaryOp(
+        UnaryOp::Not,
+        unary_op_node(UnaryOp::Not, unary_op_node(UnaryOp::Neg, ident_node("x")))
+    ))]
+    fn test_to_code_unary_op_reparses(#[case] expr: Expr) {
+        let code = create_node(expr).to_code();
+        let tokens = crate::Lexer::new(crate::lexer::Options::default())
+            .tokenize(&code, crate::Module::TOP_LEVEL_MODULE_ID)
+            .unwrap_or_else(|e| panic!("`{code}` failed to lex: {e:?}"));
+        let mut arena = crate::arena::Arena::new(16);
+        let program = crate::ast::parser::Parser::new(tokens.iter(), &mut arena, crate::Module::TOP_LEVEL_MODULE_ID)
+            .parse()
+            .unwrap_or_else(|e| panic!("`{code}` failed to parse: {e:?}"));
+
+        assert_eq!(program.len(), 1, "`{code}` should parse to one expression");
+        assert_eq!(program[0].to_code(), code);
+    }
 }
