@@ -169,6 +169,10 @@ impl Node {
                 start: lhs.range(Shared::clone(&arena)).start,
                 end: rhs.range(Shared::clone(&arena)).end,
             },
+            Expr::UnaryOp(_, operand) => Range {
+                start: arena[self.token_id].range.start,
+                end: operand.range(Shared::clone(&arena)).end,
+            },
             Expr::Break(Some(value_node)) | Expr::Yield(Some(value_node)) => {
                 let start = arena[self.token_id].range.start;
                 let end = value_node.range(Shared::clone(&arena)).end;
@@ -366,6 +370,29 @@ impl Display for BinaryOp {
     }
 }
 
+/// A prefix operator (`!` or `-`). Compiles directly to a VM opcode; see `Expr::UnaryOp`.
+#[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
+#[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
+pub enum UnaryOp {
+    Not,
+    Neg,
+}
+
+impl UnaryOp {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Not => "!",
+            Self::Neg => "-",
+        }
+    }
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum Expr {
@@ -375,6 +402,9 @@ pub enum Expr {
     /// `lhs op rhs`. Never desugared into `Call`, so it compiles to a direct VM opcode
     /// regardless of name resolution/shadowing.
     BinaryOp(BinaryOp, Shared<Node>, Shared<Node>),
+    /// `!operand` / `-operand`. Never desugared into `Call`, so it compiles to a direct VM
+    /// opcode regardless of name resolution/shadowing.
+    UnaryOp(UnaryOp, Shared<Node>),
     /// An `[...]` array literal. Each spread element (`...expr`) remains a nested
     /// `Call` on `constants::builtins::SPREAD`.
     Array(Args),
@@ -933,6 +963,28 @@ mod tests {
             expr,
         };
         assert_eq!(node.range(arena), r0);
+    }
+
+    #[test]
+    fn test_range_unary_op_spans_operator_and_operand() {
+        let r0 = Range {
+            start: Position::new(40, 1),
+            end: Position::new(40, 2),
+        };
+        let r1 = Range {
+            start: Position::new(40, 2),
+            end: Position::new(40, 6),
+        };
+        let mut arena = Arena::new(10);
+        arena.alloc(create_token(r0));
+        arena.alloc(create_token(r1));
+        let node = Node {
+            token_id: ArenaId::new(0),
+            expr: Expr::UnaryOp(UnaryOp::Not, make_node(1)),
+        };
+        let got = node.range(Shared::new(arena));
+        assert_eq!(got.start, r0.start);
+        assert_eq!(got.end, r1.end);
     }
 
     #[test]

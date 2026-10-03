@@ -571,6 +571,7 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             collect_soft_builtin_names(lhs, shadowed, names);
             collect_soft_builtin_names(rhs, shadowed, names);
         }
+        Expr::UnaryOp(_, operand) => collect_soft_builtin_names(operand, shadowed, names),
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -688,6 +689,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
             collect_referenced_names(lhs, names);
             collect_referenced_names(rhs, names);
         }
+        Expr::UnaryOp(_, operand) => collect_referenced_names(operand, names),
         Expr::InterpolatedString(segments) => {
             for segment in segments {
                 if let StringSegment::Expr(expr) = segment {
@@ -786,6 +788,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         }
         Expr::And(operands) | Expr::Or(operands) => operands.iter().any(node_contains_direct_yield),
         Expr::BinaryOp(_, lhs, rhs) => node_contains_direct_yield(lhs) || node_contains_direct_yield(rhs),
+        Expr::UnaryOp(_, operand) => node_contains_direct_yield(operand),
         Expr::InterpolatedString(segments) => segments
             .iter()
             .any(|segment| matches!(segment, StringSegment::Expr(expr) if node_contains_direct_yield(expr))),
@@ -2507,6 +2510,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::And(operands) => self.compile_and(operands),
             Expr::Or(operands) => self.compile_or(operands),
             Expr::BinaryOp(op, lhs, rhs) => self.compile_binary_op(*op, lhs, rhs),
+            Expr::UnaryOp(op, operand) => self.compile_unary_op(*op, operand),
         }
     }
 
@@ -2685,6 +2689,11 @@ impl<R: ModuleResolver> Compiler<R> {
             self.emit(binary_op_opcode(op));
             return Ok(());
         }
+        if args.len() == 1 && !shadowed && ident == builtins::NOT.into() {
+            self.compile_expr(&args[0])?;
+            self.emit(OpCode::Not);
+            return Ok(());
+        }
         if args.len() == 1 && ident == builtins::NEGATE.into() {
             self.compile_expr(&args[0])?;
             self.set_call_token_id(call_token_id);
@@ -2851,6 +2860,19 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    fn compile_unary_op(&mut self, op: ast::UnaryOp, operand: &Shared<Node>) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        self.compile_expr(operand)?;
+        match op {
+            ast::UnaryOp::Not => self.emit(OpCode::Not),
+            ast::UnaryOp::Neg => {
+                self.set_call_token_id(token_id);
+                self.emit(OpCode::Neg)
+            }
+        };
+        Ok(())
+    }
+
     fn current_local_slot(&self, node: &Shared<Node>) -> Option<u16> {
         let Expr::Ident(ident) = &node.expr else {
             return None;
@@ -2985,10 +3007,12 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
-    /// The operand of an unshadowed builtin `!x` / `not(x)` call.
+    /// The operand of `!x`, or of an unshadowed builtin `not(x)` call.
     fn negated_operand<'a>(&mut self, node: &'a Shared<Node>) -> Option<&'a Shared<Node>> {
-        let Expr::Call(ident, args) = &node.expr else {
-            return None;
+        let (ident, args) = match &node.expr {
+            Expr::UnaryOp(ast::UnaryOp::Not, operand) => return Some(operand),
+            Expr::Call(ident, args) => (ident, args),
+            _ => return None,
         };
         let name = ident.name;
         let is_self_call = self
@@ -3115,12 +3139,12 @@ impl<R: ModuleResolver> Compiler<R> {
             return Ok(());
         };
         if let Some(condition) = condition {
-            self.compile_expr(condition)?;
-            self.emit(OpCode::Not);
-            let skip = self.emit(OpCode::JumpIfFalse(0));
+            let skips = self.compile_branch(condition, true)?;
             self.compile_expr(body)?;
             let end = self.emit(OpCode::Jump(0));
-            self.chunk_mut().patch_jump(skip);
+            for skip in skips {
+                self.chunk_mut().patch_jump(skip);
+            }
             self.emit(OpCode::PushNone);
             self.chunk_mut().patch_jump(end);
         } else {
@@ -3249,13 +3273,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::Const(false_idx));
         self.emit(OpCode::SetLocal(completed_iteration_slot));
         let loop_start = self.chunk_mut().code.len();
-        let exit_jumps = if invert {
-            self.compile_expr(cond)?;
-            self.emit(OpCode::Not);
-            vec![self.emit(OpCode::JumpIfFalse(0))]
-        } else {
-            self.compile_branch(cond, false)?
-        };
+        let exit_jumps = self.compile_branch(cond, invert)?;
         let (break_jumps, break_try_catches, continue_try_catches) =
             self.compile_loop_body(loop_start, acc_slot, Some(completed_iteration_slot), body)?;
 
@@ -3397,5 +3415,35 @@ fn literal_to_runtime_value(lit: &Literal) -> RuntimeValue {
         Literal::Symbol(i) => RuntimeValue::Symbol(*i),
         Literal::Bool(b) => RuntimeValue::Boolean(*b),
         Literal::None => RuntimeValue::None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arena::Arena;
+    use crate::{SharedCell, parse};
+    use rstest::rstest;
+
+    fn parse_program(code: &str) -> Program {
+        parse(code, Shared::new(SharedCell::new(Arena::new(100)))).unwrap()
+    }
+
+    #[rstest]
+    #[case::not("!is_empty(\"\")", "is_empty")]
+    #[case::negate("-first([1])", "first")]
+    #[case::nested("!(last([]) == 1)", "last")]
+    fn soft_builtin_names_look_through_prefix_operators(#[case] code: &str, #[case] expected: &str) {
+        let names = soft_builtin_names_in_program(&parse_program(code));
+        assert!(names.contains(&Ident::new(expected)), "{code}: {names:?}");
+    }
+
+    #[rstest]
+    #[case::not("!helper()")]
+    #[case::negate("-helper()")]
+    #[case::nested("!(helper() == 1)")]
+    fn referenced_names_look_through_prefix_operators(#[case] code: &str) {
+        let names = referenced_names_in_program(&parse_program(code));
+        assert!(names.contains(&Ident::new("helper")), "{code}: {names:?}");
     }
 }

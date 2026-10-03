@@ -1,6 +1,6 @@
 use crate::Program;
 
-use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment};
+use super::node::{AccessTarget, Args, BinaryOp, Expr, Literal, Node, Params, Pattern, StringSegment, UnaryOp};
 use std::fmt::Write;
 
 impl Node {
@@ -82,6 +82,22 @@ impl Node {
                 format_binary_operand(lhs, *op, buf, indent, false);
                 write!(buf, " {} ", op.as_str()).unwrap();
                 format_binary_operand(rhs, *op, buf, indent, true);
+            }
+            Expr::UnaryOp(op, operand) => {
+                buf.push_str(op.as_str());
+                let needs_parens = match &operand.expr {
+                    Expr::BinaryOp(..) | Expr::And(_) | Expr::Or(_) => true,
+                    // `--x` does not parse.
+                    Expr::UnaryOp(..) => *op == UnaryOp::Neg,
+                    _ => false,
+                };
+                if needs_parens {
+                    buf.push('(');
+                    operand.format_to_code(buf, indent);
+                    buf.push(')');
+                } else {
+                    operand.format_to_code(buf, indent);
+                }
             }
             Expr::Array(args) => {
                 buf.push('[');
@@ -643,7 +659,27 @@ mod tests {
         Shared::new(create_node(Expr::Or(operands)))
     }
 
+    fn unary_op_node(op: UnaryOp, operand: Shared<Node>) -> Shared<Node> {
+        Shared::new(create_node(Expr::UnaryOp(op, operand)))
+    }
+
     #[rstest]
+    #[case::not_ident(Expr::UnaryOp(UnaryOp::Not, ident_node("x")), "!x")]
+    #[case::negate_ident(Expr::UnaryOp(UnaryOp::Neg, ident_node("x")), "-x")]
+    #[case::double_not_stays_bare(Expr::UnaryOp(UnaryOp::Not, unary_op_node(UnaryOp::Not, ident_node("x"))), "!!x")]
+    // `--x` does not parse.
+    #[case::double_negate_needs_parens(
+        Expr::UnaryOp(UnaryOp::Neg, unary_op_node(UnaryOp::Neg, ident_node("x"))),
+        "-(-x)"
+    )]
+    #[case::not_wraps_binary_operand(
+        Expr::UnaryOp(UnaryOp::Not, binary_op_node(BinaryOp::Lt, ident_node("a"), ident_node("b"))),
+        "!(a < b)"
+    )]
+    #[case::not_wraps_and_operand(
+        Expr::UnaryOp(UnaryOp::Not, and_node(vec![ident_node("a"), ident_node("b")])),
+        "!(a && b)"
+    )]
     #[case::higher_precedence_op_wraps_lower_precedence_rhs(
         Expr::BinaryOp(
             BinaryOp::Mul,

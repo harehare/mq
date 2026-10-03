@@ -154,6 +154,85 @@ fn unary_builtin_calls_with_local_arguments_use_compact_bytecode() {
     );
 }
 
+#[rstest]
+#[case::not_operator("let a = true | let b = !a | b")]
+#[case::not_call("let a = true | let b = not(a) | b")]
+#[case::not_in_array("let a = true | [!a, !!a]")]
+#[case::negate_operator("let a = 1 | let b = -a | b")]
+fn prefix_operators_compile_to_opcodes_not_builtin_calls(#[case] code: &str) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let ops = || compiled.chunks.iter().flat_map(|chunk| chunk.code.iter());
+
+    assert!(
+        ops().any(|op| matches!(op, OpCode::Not | OpCode::Neg)),
+        "expected Not/Neg: {:?}",
+        compiled.chunks
+    );
+    assert!(
+        !ops().any(|op| matches!(op, OpCode::CallBuiltin(..) | OpCode::CallBuiltinLocal { .. })),
+        "unexpected builtin call: {:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
+#[case::not_true("!true", RuntimeValue::Boolean(false))]
+#[case::not_none("!None", RuntimeValue::Boolean(true))]
+#[case::not_zero("!0", RuntimeValue::Boolean(true))]
+#[case::double_not("!!\"x\"", RuntimeValue::Boolean(true))]
+#[case::not_of_group("!(1 > 2)", RuntimeValue::Boolean(true))]
+#[case::negate_number("let a = 3 | -a", RuntimeValue::Number((-3).into()))]
+#[case::negate_group("-(1 + 1)", RuntimeValue::Number((-2).into()))]
+#[case::negate_group_of_negate("-(-3)", RuntimeValue::Number(3.into()))]
+#[case::negate_group_with_local("let a = 2 | -(a * a)", RuntimeValue::Number((-4).into()))]
+#[case::unless_negated("unless (!true): 1", RuntimeValue::Number(1.into()))]
+#[case::unless_and("unless (true && false): 1", RuntimeValue::Number(1.into()))]
+#[case::unless_skipped("unless (true): 1", RuntimeValue::None)]
+#[case::until_negated("var i = 0 | until (!(i < 3)): i += 1; | i", RuntimeValue::Number(3.into()))]
+#[case::not_operator_ignores_user_not("def not(x): 42; | !true", RuntimeValue::Boolean(false))]
+#[case::not_call_uses_user_not("def not(x): 42; | not(true)", RuntimeValue::Number(42.into()))]
+fn prefix_operators_evaluate(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+// The compiler walks the AST to prune unread defs, find prelude builtins and detect generators.
+// Each walk must look through a prefix operator.
+#[rstest]
+#[case::user_def_under_not("def helper(): true; | !helper()", RuntimeValue::Boolean(false))]
+#[case::user_def_under_negate("def helper(): 2; | -helper()", RuntimeValue::Number((-2).into()))]
+#[case::user_def_nested_in_not("def helper(): 1; | !(helper() == 2)", RuntimeValue::Boolean(true))]
+#[case::user_def_in_function_body("def helper(): true; | def f(): !helper(); | f()", RuntimeValue::Boolean(false))]
+fn prefix_operator_operands_keep_referenced_defs(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run(code), expected);
+}
+
+#[rstest]
+#[case::not_prelude_call("!is_empty(\"\")", RuntimeValue::Boolean(false))]
+#[case::not_prelude_call_in_function("def f(s): !is_empty(s); | f(\"x\")", RuntimeValue::Boolean(true))]
+#[case::negate_prelude_call("-first([4, 5])", RuntimeValue::Number((-4).into()))]
+fn prefix_operator_operands_resolve_prelude_builtins(#[case] code: &str, #[case] expected: RuntimeValue) {
+    assert_eq!(run_with_prelude(code), expected);
+}
+
+#[test]
+fn yield_inside_prefix_operator_makes_a_generator() {
+    assert_eq!(
+        run(r#"def g(): !(yield: 1); | let stream = g() | get(next(stream), "value")"#),
+        RuntimeValue::Number(1.into())
+    );
+}
+
+#[test]
+fn negating_a_non_number_reports_an_error() {
+    assert!(run_result(r#"let a = "a" | -a"#).is_err());
+    assert!(run_result(r#"-"a""#).is_err());
+    assert!(run_result(r#"-(None)"#).is_err());
+}
+
 #[rstest::fixture]
 fn token_arena() -> Shared<SharedCell<Arena<Shared<Token>>>> {
     let token_arena = Shared::new(SharedCell::new(Arena::new(10)));

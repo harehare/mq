@@ -81,6 +81,10 @@ fn replace_meta(bytes: &[u8], edit: impl FnOnce(&mut Meta)) -> Vec<u8> {
     "def f(a, b): if (!a && b || !(a || b)): 1 else: 2; | [f(true, false), f(false, true), f(false, false)]",
     "x\n"
 )]
+#[case::prefix_operators_as_values(
+    "def f(a): [!a, !!a, !(a == 1), -(3 + 4)]; | def g(a): -a; | [f(true), f(None), g(3)]",
+    "x\n"
+)]
 #[case::unused_defs("def unused(x): x; | def used(x): x + 1; | used(1)", "x\n")]
 #[case::defs_around_nodes("def f(x): x + 1; | def g(x): x; | .h | nodes | f(len())", "# a\n\n## b\n")]
 fn test_mqc_round_trip_matches_eval(#[case] query: &str, #[case] input: &str) {
