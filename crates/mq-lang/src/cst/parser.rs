@@ -369,15 +369,33 @@ impl<'a> Parser<'a> {
         self.parse_equality_expr(leading_trivia, root, in_loop)
     }
 
-    fn parse_equality_expr(
+    /// Precedence of the binary operator following the trivia at the cursor, if any.
+    fn peek_binary_op_precedence(&self) -> Option<u8> {
+        self.tokens
+            .get(self.pos..)?
+            .iter()
+            .find(|t| {
+                !matches!(
+                    t.kind,
+                    TokenKind::Whitespace(_) | TokenKind::Tab(_) | TokenKind::Comment(_) | TokenKind::NewLine
+                )
+            })
+            .and_then(|t| t.kind.binary_op_precedence())
+    }
+
+    /// Precedence climbing over binary operators, left-associative like the AST parser.
+    fn parse_binary_expr(
         &mut self,
-        leading_trivia: TriviaList,
+        mut lhs: Shared<Node>,
+        min_prec: u8,
         root: bool,
         in_loop: bool,
     ) -> Result<Shared<Node>, ParseError> {
-        let mut lhs = self.parse_primary_expr(leading_trivia, root, in_loop)?;
+        while let Some(prec) = self.peek_binary_op_precedence() {
+            if prec < min_prec {
+                break;
+            }
 
-        while self.try_next_token(|kind| Self::token_kind_to_binary_op(kind).is_some()) {
             let leading_trivia = self.parse_leading_trivia();
             let operator_token = self.advance_or_eof()?;
             let binary_op = Self::token_kind_to_binary_op(&operator_token.kind)
@@ -386,7 +404,14 @@ impl<'a> Parser<'a> {
             let op_trailing_trivia = self.parse_trailing_trivia();
 
             let rhs_leading_trivia = self.parse_leading_trivia();
-            let rhs = self.parse_primary_expr(rhs_leading_trivia, root, in_loop)?;
+            let mut rhs = self.parse_primary_expr(rhs_leading_trivia, root, in_loop)?;
+
+            while let Some(next_prec) = self.peek_binary_op_precedence() {
+                if next_prec <= prec {
+                    break;
+                }
+                rhs = self.parse_binary_expr(rhs, next_prec, root, in_loop)?;
+            }
 
             let node_kind = if is_assignment {
                 NodeKind::Assign {
@@ -409,6 +434,18 @@ impl<'a> Parser<'a> {
                 trailing_trivia: op_trailing_trivia,
             });
         }
+
+        Ok(lhs)
+    }
+
+    fn parse_equality_expr(
+        &mut self,
+        leading_trivia: TriviaList,
+        root: bool,
+        in_loop: bool,
+    ) -> Result<Shared<Node>, ParseError> {
+        let lhs = self.parse_primary_expr(leading_trivia, root, in_loop)?;
+        let lhs = self.parse_binary_expr(lhs, 0, root, in_loop)?;
 
         if self.try_next_token(|kind| matches!(kind, TokenKind::As)) {
             let as_leading_trivia = self.parse_leading_trivia();
@@ -5537,29 +5574,25 @@ Shared::new(Node {
         (
             vec![
                 Shared::new(Node {
+                    kind: NodeKind::BinaryOp { op: BinaryOp::Minus, lhs: Shared::new(Node {
+                    kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
+                            kind: NodeKind::Ident { attr: None },
+                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
+                        }), rhs: Shared::new(Node {
+                            kind: NodeKind::Ident { attr: None },
+                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
+                            leading_trivia: TriviaList::new(),
+                            trailing_trivia: TriviaList::new(),
+                        }) },
+                    token: Some(Shared::new(token(TokenKind::Plus))),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
+                }), rhs: Shared::new(Node {
                     kind: NodeKind::BinaryOp { op: BinaryOp::Multiplication, lhs: Shared::new(Node {
-                            kind: NodeKind::BinaryOp { op: BinaryOp::Minus, lhs: Shared::new(Node {
-                                    kind: NodeKind::BinaryOp { op: BinaryOp::Plus, lhs: Shared::new(Node {
-                                            kind: NodeKind::Ident { attr: None },
-                                            token: Some(Shared::new(token(TokenKind::Ident("a".into())))),
-                                            leading_trivia: TriviaList::new(),
-                                            trailing_trivia: TriviaList::new(),
-                                        }), rhs: Shared::new(Node {
-                                            kind: NodeKind::Ident { attr: None },
-                                            token: Some(Shared::new(token(TokenKind::Ident("b".into())))),
-                                            leading_trivia: TriviaList::new(),
-                                            trailing_trivia: TriviaList::new(),
-                                        }) },
-                                    token: Some(Shared::new(token(TokenKind::Plus))),
-                                    leading_trivia: TriviaList::new(),
-                                    trailing_trivia: TriviaList::new(),
-                                }), rhs: Shared::new(Node {
-                                    kind: NodeKind::Ident { attr: None },
-                                    token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
-                                    leading_trivia: TriviaList::new(),
-                                    trailing_trivia: TriviaList::new(),
-                                }) },
-                            token: Some(Shared::new(token(TokenKind::Minus))),
+                            kind: NodeKind::Ident { attr: None },
+                            token: Some(Shared::new(token(TokenKind::Ident("c".into())))),
                             leading_trivia: TriviaList::new(),
                             trailing_trivia: TriviaList::new(),
                         }), rhs: Shared::new(Node {
@@ -5569,6 +5602,10 @@ Shared::new(Node {
                             trailing_trivia: TriviaList::new(),
                         }) },
                     token: Some(Shared::new(token(TokenKind::Asterisk))),
+                    leading_trivia: TriviaList::new(),
+                    trailing_trivia: TriviaList::new(),
+                }) },
+                    token: Some(Shared::new(token(TokenKind::Minus))),
                     leading_trivia: TriviaList::new(),
                     trailing_trivia: TriviaList::new(),
                 }),
@@ -10804,5 +10841,29 @@ Shared::new(Node {
         .count();
 
         (ranges.len(), expected)
+    }
+
+    fn shape(node: &Node) -> String {
+        match &node.kind {
+            NodeKind::BinaryOp { op, lhs, rhs } | NodeKind::Assign { op, lhs, rhs } => {
+                format!("({} {:?} {})", shape(lhs), op, shape(rhs))
+            }
+            _ => node.token.as_ref().map(|t| t.to_string()).unwrap_or_default(),
+        }
+    }
+
+    #[rstest]
+    #[case::mul_binds_tighter("a + b * c", "(a Plus (b Multiplication c))")]
+    #[case::mul_first("a * b + c", "((a Multiplication b) Plus c)")]
+    #[case::left_assoc("a - b - c", "((a Minus b) Minus c)")]
+    #[case::and_over_or("a || b && c", "(a Or (b And c))")]
+    #[case::cmp_over_and("a == b && c == d", "((a Equal b) And (c Equal d))")]
+    #[case::assign_lowest("x = a + b * c", "(x Assign (a Plus (b Multiplication c)))")]
+    #[case::compound_assign("x += a * b", "(x PlusEqual (a Multiplication b))")]
+    #[case::trivia_between("a +\n  b # c\n  * d", "(a Plus (b Multiplication d))")]
+    fn test_binary_op_precedence_shape(#[case] code: &str, #[case] expected: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(!errors.has_errors(), "unexpected errors for {code:?}");
+        assert_eq!(shape(&nodes[0]), expected);
     }
 }
