@@ -1,46 +1,15 @@
 pub mod token;
 
-use nom::Parser;
-use nom::bytes::complete::{is_not, take_until, take_while1};
-use nom::character::complete::{digit1, line_ending};
-use nom::combinator::{cut, opt};
-use nom::{
-    IResult,
-    branch::alt,
-    bytes::complete::{escaped_transform, tag, take_while, take_while_m_n},
-    character::complete::{alpha1, alphanumeric1, anychar, char, multispace0, none_of, satisfy},
-    combinator::{map, map_opt, map_res, recognize, value},
-    multi::{fold_many0, many0, many1},
-    sequence::{delimited, pair, preceded},
-};
-use nom_locate::{LocatedSpan, position};
+#[cfg(test)]
+mod nom_reference;
+
 use smol_str::SmolStr;
 use token::{StringSegment, Token, TokenKind};
 
 use crate::error::syntax::SyntaxError;
 use crate::module::ModuleId;
 use crate::number::Number;
-use crate::range::Range;
-
-const MARKDOWN: &str = ".";
-
-type Span<'a> = LocatedSpan<&'a str, ModuleId>;
-
-macro_rules! define_token_parser {
-    ($name:ident, $tag:expr, $kind:expr) => {
-        fn $name(input: Span) -> IResult<Span, Token> {
-            map(tag($tag), |span: Span| {
-                let module_id = span.extra;
-                Token {
-                    range: span.into(),
-                    kind: $kind,
-                    module_id,
-                }
-            })
-            .parse(input)
-        }
-    };
-}
+use crate::range::{Position, Range};
 
 #[derive(Debug, Clone, Default)]
 pub struct Options {
@@ -58,479 +27,41 @@ impl Lexer {
     }
 
     pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, SyntaxError> {
-        match tokens(Span::new_extra(input, module_id), &self.options) {
-            Ok((span, mut tokens)) => {
-                let eof: Range = span.into();
+        let mut cursor = Cursor::new(input, module_id);
+        let mut tokens = Vec::with_capacity((input.len() / 5).max(16));
 
-                if eof.start == eof.end || self.options.ignore_errors {
-                    tokens.push(Token {
-                        range: eof,
-                        kind: TokenKind::Eof,
-                        module_id,
-                    });
-                    Ok(tokens)
-                } else {
-                    Err(SyntaxError::UnexpectedToken(Token {
-                        range: eof,
-                        kind: TokenKind::Eof,
-                        module_id,
-                    }))
+        if self.options.include_spaces {
+            loop {
+                match cursor.token_include_spaces() {
+                    Some(token) => tokens.push(token),
+                    None if self.options.ignore_errors && !cursor.rest().is_empty() => tokens.push(cursor.unknown()),
+                    None => break,
                 }
             }
-            Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => Err(SyntaxError::UnexpectedToken(Token {
-                range: e.input.into(),
-                kind: TokenKind::Eof,
-                module_id,
-            })),
-            Err(_) => Err(SyntaxError::UnexpectedToken(Token {
-                range: Range::default(),
-                kind: TokenKind::Eof,
-                module_id,
-            })),
-        }
-    }
-}
-
-fn unicode(input: Span) -> IResult<Span, char> {
-    map_opt(
-        map_res(
-            preceded(
-                char('u'),
-                delimited(
-                    char('{'),
-                    take_while_m_n(1, 6, |c: char| c.is_ascii_hexdigit()),
-                    char('}'),
-                ),
-            ),
-            |span: Span| u32::from_str_radix(span.fragment(), 16),
-        ),
-        char::from_u32,
-    )
-    .parse(input)
-}
-
-/// Parses a 4-digit Unicode escape sequence `\uXXXX`.
-fn unicode4(input: Span) -> IResult<Span, char> {
-    map_opt(
-        map_res(
-            preceded(char('u'), take_while_m_n(4, 4, |c: char| c.is_ascii_hexdigit())),
-            |span: Span| u32::from_str_radix(span.fragment(), 16),
-        ),
-        char::from_u32,
-    )
-    .parse(input)
-}
-
-fn hex_escape(input: Span) -> IResult<Span, char> {
-    map_opt(
-        map_res(
-            preceded(char('x'), take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit())),
-            |span: Span| u8::from_str_radix(span.fragment(), 16),
-        ),
-        |byte| char::from_u32(byte as u32),
-    )
-    .parse(input)
-}
-
-fn inline_comment(input: Span) -> IResult<Span, Token> {
-    let (span, _) = char('#')(input)?;
-    let (span, start) = position(span)?;
-    let (span, comment_text) = opt(is_not("\n\r")).parse(span)?;
-    let (span, end) = position(span)?;
-
-    let module_id = start.extra;
-    let comment_str = comment_text.map(|s: Span| s.fragment().to_string()).unwrap_or_default();
-
-    Ok((
-        span,
-        Token {
-            range: Range {
-                start: start.into(),
-                end: end.into(),
-            },
-            kind: TokenKind::Comment(comment_str),
-            module_id,
-        },
-    ))
-}
-
-/// Skips a `# ...` comment without allocating a String.
-fn skip_comment(input: Span) -> IResult<Span, ()> {
-    let (span, _) = char('#')(input)?;
-    let (span, _) = opt(is_not("\n\r")).parse(span)?;
-    Ok((span, ()))
-}
-
-fn newline(input: Span) -> IResult<Span, Token> {
-    map(line_ending, |span: Span| {
-        let module_id = span.extra;
-        Token {
-            range: span.into(),
-            kind: TokenKind::NewLine,
-            module_id,
-        }
-    })
-    .parse(input)
-}
-
-fn tab(input: Span) -> IResult<Span, Token> {
-    map(take_while1(|c| c == '\t'), |span: Span| {
-        let module_id = span.extra;
-        let num = span.fragment().len();
-        Token {
-            range: span.into(),
-            kind: TokenKind::Tab(num),
-            module_id,
-        }
-    })
-    .parse(input)
-}
-
-fn spaces(input: Span) -> IResult<Span, Token> {
-    map(take_while1(|c| c == ' '), |span: Span| {
-        let module_id = span.extra;
-        let num = span.fragment().len();
-        Token {
-            range: span.into(),
-            kind: TokenKind::Whitespace(num),
-            module_id,
-        }
-    })
-    .parse(input)
-}
-
-define_token_parser!(colon, ":", TokenKind::Colon);
-define_token_parser!(comma, ",", TokenKind::Comma);
-define_token_parser!(double_colon, "::", TokenKind::DoubleColon);
-define_token_parser!(empty_string, "\"\"", TokenKind::StringLiteral(String::new()));
-define_token_parser!(eq_eq, "==", TokenKind::EqEq);
-define_token_parser!(equal, "=", TokenKind::Equal);
-define_token_parser!(l_bracket, "[", TokenKind::LBracket);
-define_token_parser!(l_paren, "(", TokenKind::LParen);
-define_token_parser!(l_brace, "{", TokenKind::LBrace);
-define_token_parser!(asterisk, "*", TokenKind::Asterisk);
-define_token_parser!(minus, "-", TokenKind::Minus);
-define_token_parser!(slash, "/", TokenKind::Slash);
-define_token_parser!(ne_eq, "!=", TokenKind::NeEq);
-define_token_parser!(plus, "+", TokenKind::Plus);
-define_token_parser!(pipe, "|", TokenKind::Pipe);
-define_token_parser!(percent, "%", TokenKind::Percent);
-define_token_parser!(spread_op, "...", TokenKind::DotDotDot);
-define_token_parser!(range_op, "..", TokenKind::DoubleDot);
-define_token_parser!(r_bracket, "]", TokenKind::RBracket);
-define_token_parser!(r_paren, ")", TokenKind::RParen);
-define_token_parser!(r_brace, "}", TokenKind::RBrace);
-define_token_parser!(semi_colon, ";", TokenKind::SemiColon);
-define_token_parser!(lt, "<", TokenKind::Lt);
-define_token_parser!(lte, "<=", TokenKind::Lte);
-define_token_parser!(gt, ">", TokenKind::Gt);
-define_token_parser!(gte, ">=", TokenKind::Gte);
-define_token_parser!(and, "&&", TokenKind::And);
-define_token_parser!(or, "||", TokenKind::Or);
-define_token_parser!(not, "!", TokenKind::Not);
-define_token_parser!(question, "?", TokenKind::Question);
-define_token_parser!(coalesce, "??", TokenKind::Coalesce);
-define_token_parser!(plus_equal, "+=", TokenKind::PlusEqual);
-define_token_parser!(minus_equal, "-=", TokenKind::MinusEqual);
-define_token_parser!(star_equal, "*=", TokenKind::StarEqual);
-define_token_parser!(slash_equal, "/=", TokenKind::SlashEqual);
-define_token_parser!(percent_equal, "%=", TokenKind::PercentEqual);
-define_token_parser!(double_slash_equal, "//=", TokenKind::DoubleSlashEqual);
-define_token_parser!(pipe_equal, "|=", TokenKind::PipeEqual);
-define_token_parser!(tilde_equal, "=~", TokenKind::TildeEqual);
-define_token_parser!(not_tilde_equal, "!~", TokenKind::NotTildeEqual);
-define_token_parser!(left_shift, "<<", TokenKind::LeftShift);
-define_token_parser!(right_shift, ">>", TokenKind::RightShift);
-define_token_parser!(convert_op, "@", TokenKind::Convert);
-define_token_parser!(arrow, "->", TokenKind::Arrow);
-
-fn punctuations(input: Span) -> IResult<Span, Token> {
-    alt((
-        and,
-        or,
-        l_paren,
-        r_paren,
-        l_brace,
-        r_brace,
-        comma,
-        double_colon,
-        colon,
-        semi_colon,
-        l_bracket,
-        r_bracket,
-        coalesce,
-        question,
-        pipe,
-    ))
-    .parse(input)
-}
-
-fn lambda_op(input: Span) -> IResult<Span, Token> {
-    alt((arrow,)).parse(input)
-}
-
-fn assignment_op(input: Span) -> IResult<Span, Token> {
-    alt((
-        plus_equal,
-        minus_equal,
-        star_equal,
-        slash_equal,
-        percent_equal,
-        double_slash_equal,
-        pipe_equal,
-    ))
-    .parse(input)
-}
-
-fn binary_op(input: Span) -> IResult<Span, Token> {
-    alt((
-        convert_op,
-        assignment_op,
-        eq_eq,
-        ne_eq,
-        left_shift,
-        right_shift,
-        tilde_equal,
-        not_tilde_equal,
-        lte,
-        gte,
-        lt,
-        gt,
-        equal,
-        plus,
-        minus,
-        asterisk,
-        slash,
-        percent,
-        spread_op,
-        range_op,
-    ))
-    .parse(input)
-}
-
-fn unary_op(input: Span) -> IResult<Span, Token> {
-    alt((not,)).parse(input)
-}
-
-fn number_literal(input: Span) -> IResult<Span, Token> {
-    map_res(
-        recognize(pair(
-            opt(char('-')),
-            recognize((
-                opt(alt((char('+'), char('-')))),
-                alt((
-                    map((digit1, opt(pair(char('.'), digit1))), |_| ()),
-                    map((char('.'), digit1), |_| ()),
-                )),
-                opt((
-                    alt((char('e'), char('E'))),
-                    opt(alt((char('+'), char('-')))),
-                    cut(digit1),
-                )),
-            )),
-        )),
-        |span: Span| {
-            str::parse(span.fragment()).map(|s| {
-                let module_id = span.extra;
-                Token {
-                    range: span.into(),
-                    kind: TokenKind::NumberLiteral(Number::new(s)),
-                    module_id,
+        } else {
+            loop {
+                cursor.skip_whitespace_and_comments();
+                match cursor.token() {
+                    Some(token) => tokens.push(token),
+                    None => break,
                 }
-            })
-        },
-    )
-    .parse(input)
-}
-
-fn interpolation_expr(input: Span) -> IResult<Span, Span> {
-    delimited(tag("${"), take_until("}"), char('}')).parse(input)
-}
-
-fn string_segment<'a>(input: Span<'a>) -> IResult<Span<'a>, StringSegment> {
-    alt((
-        map(
-            |input: Span<'a>| {
-                let (span, start) = position(input)?;
-                let (span, expr) = interpolation_expr(span)?;
-                let (span, end) = position(span)?;
-                Ok((
-                    span,
-                    (
-                        expr,
-                        Range {
-                            start: start.into(),
-                            end: end.into(),
-                        },
-                    ),
-                ))
-            },
-            |(expr, range)| StringSegment::Expr(expr.to_string().into(), range),
-        ),
-        map(
-            |input| {
-                let (span, start) = position(input)?;
-                let (span, text) = escaped_transform(
-                    none_of("\"\\${"),
-                    '\\',
-                    alt((
-                        value('\\', char('\\')),
-                        value('\"', char('\"')),
-                        value('\r', char('r')),
-                        value('\n', char('n')),
-                        value('\t', char('t')),
-                        value('{', char('{')),
-                        value('}', char('}')),
-                        hex_escape,
-                        unicode,
-                        unicode4,
-                    )),
-                )(span)?;
-                let (span, end) = position(span)?;
-                Ok((
-                    span,
-                    (
-                        text,
-                        Range {
-                            start: start.into(),
-                            end: end.into(),
-                        },
-                    ),
-                ))
-            },
-            |(text, range)| StringSegment::Text(text, range),
-        ),
-        map(
-            |input: Span<'a>| {
-                let (span, start) = position(input)?;
-                let (span, _) = tag("$$")(span)?;
-                let (span, end) = position(span)?;
-                Ok((
-                    span,
-                    (
-                        "$".to_string(),
-                        Range {
-                            start: start.into(),
-                            end: end.into(),
-                        },
-                    ),
-                ))
-            },
-            |(text, range)| StringSegment::Text(text, range),
-        ),
-    ))
-    .parse(input)
-}
-
-fn byte_escape_seq(input: Span) -> IResult<Span, u8> {
-    preceded(
-        char('\\'),
-        alt((
-            preceded(
-                char('x'),
-                map_res(take_while_m_n(2, 2, |c: char| c.is_ascii_hexdigit()), |hex: Span| {
-                    u8::from_str_radix(hex.fragment(), 16)
-                }),
-            ),
-            value(b'\\', char('\\')),
-            value(b'"', char('"')),
-            value(b'\n', char('n')),
-            value(b'\r', char('r')),
-            value(b'\t', char('t')),
-            value(b'\0', char('0')),
-        )),
-    )
-    .parse(input)
-}
-
-/// Returns the byte-string body's encoded length without including a following query.
-fn byte_string_capacity(input: &str) -> usize {
-    let mut escaped = false;
-    for (index, byte) in input.bytes().enumerate() {
-        if escaped {
-            escaped = false;
-        } else if byte == b'\\' {
-            escaped = true;
-        } else if byte == b'"' {
-            return index;
-        }
-    }
-    0
-}
-
-fn byte_string_literal(input: Span) -> IResult<Span, Token> {
-    let (span, start) = position(input)?;
-    let (span, _) = tag("b\"")(span)?;
-    let capacity = byte_string_capacity(span.fragment());
-
-    let (span, bytes) = fold_many0(
-        alt((
-            byte_escape_seq,
-            // Only plain ASCII characters are allowed unescaped; non-ASCII must
-            // use \xNN escapes to avoid silent UTF-8 multi-byte encoding.
-            map(satisfy(|c: char| c.is_ascii() && c != '"' && c != '\\'), |c| c as u8),
-        )),
-        || Vec::with_capacity(capacity),
-        |mut bytes, byte| {
-            bytes.push(byte);
-            bytes
-        },
-    )
-    .parse(span)?;
-
-    let (span, _) = char('"').parse(span)?;
-    let (span, end) = position(span)?;
-    Ok((
-        span,
-        Token {
-            range: Range {
-                start: start.into(),
-                end: end.into(),
-            },
-            kind: TokenKind::BytesLiteral(bytes),
-            module_id: start.extra,
-        },
-    ))
-}
-
-fn interpolated_string(input: Span) -> IResult<Span, Token> {
-    let (span, start) = position(input)?;
-    let (span, _) = tag("s\"")(span)?;
-
-    let mut segments = Vec::with_capacity(4);
-    let mut current = span;
-
-    // Parse at least one segment
-    let (remaining, segment) = string_segment(current)?;
-    segments.push(segment);
-    current = remaining;
-
-    // Parse remaining segments
-    while !current.fragment().is_empty() {
-        match string_segment(current) {
-            Ok((remaining, segment)) => {
-                segments.push(segment);
-                current = remaining;
             }
-            Err(_) => break,
+        }
+
+        let eof = cursor.rest_range();
+        let token = Token {
+            range: eof,
+            kind: TokenKind::Eof,
+            module_id,
+        };
+
+        if token.range.start == token.range.end || self.options.ignore_errors {
+            tokens.push(token);
+            Ok(tokens)
+        } else {
+            Err(SyntaxError::UnexpectedToken(token))
         }
     }
-
-    let (span, _) = char('"')(current)?;
-    let (span, end) = position(span)?;
-    let module_id = start.extra;
-
-    Ok((
-        span,
-        Token {
-            range: Range {
-                start: start.into(),
-                end: end.into(),
-            },
-            kind: TokenKind::InterpolatedString(segments),
-            module_id,
-        },
-    ))
 }
 
 /// Parses `input` as an interpolated string body (like between `s"` and `"`) without requiring
@@ -540,415 +71,788 @@ pub(crate) fn parse_interpolation_segments(
     input: &str,
     module_id: ModuleId,
 ) -> Result<Vec<StringSegment>, SyntaxError> {
-    if input.is_empty() {
-        return Ok(Vec::new());
-    }
-
+    let mut cursor = Cursor::new(input, module_id);
     let mut segments = Vec::with_capacity(4);
-    let mut current = Span::new_extra(input, module_id);
 
-    // escaped_transform matches zero-length on empty input, so stop at EOF ourselves.
-    while !current.fragment().is_empty() {
-        match string_segment(current) {
-            Ok((remaining, segment)) => {
-                segments.push(segment);
-                current = remaining;
-            }
-            Err(_) => break,
+    while !cursor.rest().is_empty() {
+        match cursor.string_segment() {
+            Some(segment) => segments.push(segment),
+            None => break,
         }
     }
 
-    if current.fragment().is_empty() {
+    if cursor.rest().is_empty() {
         Ok(segments)
     } else {
         Err(SyntaxError::UnexpectedToken(Token {
-            range: current.into(),
+            range: cursor.rest_range(),
             kind: TokenKind::Eof,
             module_id,
         }))
     }
 }
 
-fn string_literal(input: Span) -> IResult<Span, Token> {
-    let (span, start) = position(input)?;
-    let (span, s) = delimited(
-        char('"'),
-        escaped_transform(
-            none_of("\"\\"),
-            '\\',
-            alt((
-                alt((
-                    value('\\', char('\\')),
-                    value('\"', char('\"')),
-                    value('\r', char('r')),
-                    value('\n', char('n')),
-                    value('\t', char('t')),
-                    value('/', char('/')),
-                    value('[', char('[')),
-                    value(']', char(']')),
-                    value('(', char('(')),
-                    value(')', char(')')),
-                    value('{', char('{')),
-                    value('}', char('}')),
-                )),
-                alt((
-                    value('+', char('+')),
-                    value('*', char('*')),
-                    value('?', char('?')),
-                    value('^', char('^')),
-                    value('$', char('$')),
-                    value('|', char('|')),
-                    value('-', char('-')),
-                    value('.', char('.')),
-                    value('s', char('s')), // \s (whitespace)
-                    value('S', char('S')), // \S (non-whitespace)
-                    value('d', char('d')), // \d (digit)
-                    value('D', char('D')), // \D (non-digit)
-                    value('w', char('w')), // \w (word character)
-                    value('W', char('W')), // \W (non-word character)
-                    hex_escape,
-                    unicode,
-                    unicode4,
-                )),
-            )),
-        ),
-        char('"'),
-    )
-    .parse(span)?;
-    let (span, end) = position(span)?;
-    let module_id = start.extra;
-
-    Ok((
-        span,
-        Token {
-            range: Range {
-                start: start.into(),
-                end: end.into(),
-            },
-            kind: TokenKind::StringLiteral(s),
-            module_id,
-        },
-    ))
+/// Outcome of scanning a number: `Fatal` is a malformed exponent, which rejects the whole token
+/// instead of letting the caller try other token kinds.
+enum NumberScan {
+    Match(usize),
+    NoMatch,
+    Fatal,
 }
 
-fn literals(input: Span) -> IResult<Span, Token> {
-    alt((
-        byte_string_literal,
-        string_literal,
-        interpolated_string,
-        empty_string,
-        number_literal,
-    ))
-    .parse(input)
+fn keyword_kind(word: &str) -> Option<TokenKind> {
+    Some(match word {
+        "as" => TokenKind::As,
+        "break" => TokenKind::Break,
+        "catch" => TokenKind::Catch,
+        "continue" => TokenKind::Continue,
+        "def" => TokenKind::Def,
+        "do" => TokenKind::Do,
+        "elif" => TokenKind::Elif,
+        "else" => TokenKind::Else,
+        "end" => TokenKind::End,
+        "fn" => TokenKind::Fn,
+        "foreach" => TokenKind::Foreach,
+        "if" => TokenKind::If,
+        "import" => TokenKind::Import,
+        "include" => TokenKind::Include,
+        "let" => TokenKind::Let,
+        "loop" => TokenKind::Loop,
+        "match" => TokenKind::Match,
+        "module" => TokenKind::Module,
+        "nodes" => TokenKind::Nodes,
+        "None" => TokenKind::None,
+        "self" => TokenKind::Self_,
+        "try" => TokenKind::Try,
+        "unless" => TokenKind::Unless,
+        "until" => TokenKind::Until,
+        "var" => TokenKind::Var,
+        "while" => TokenKind::While,
+        "yield" => TokenKind::Yield,
+        _ => return None,
+    })
 }
 
-/// Parses a selector token starting with `.`.
-///
-/// Handles both regular selectors (`.h`, `.p`, `.**`) and special-character
-/// selectors that cannot be parsed as identifiers, such as `.>` (blockquote)
-/// and `.^` (footnote).
-fn selector(input: Span) -> IResult<Span, Token> {
-    map(
-        recognize(pair(
-            tag(MARKDOWN),
-            alt((
-                tag(">"),
-                tag("^"),
-                // Quoted property selector: ."key" or ."key with spaces"
-                recognize(pair(
-                    char('"'),
-                    pair(
-                        many0(alt((recognize(pair(char('\\'), anychar)), recognize(none_of("\"\\"))))),
-                        char('"'),
-                    ),
-                )),
-                recognize(many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*"))))),
-            )),
-        )),
-        |span: Span| {
-            let module_id = span.extra;
-            Token {
-                range: span.into(),
-                kind: TokenKind::Selector(SmolStr::new(span.fragment())),
-                module_id,
-            }
-        },
-    )
-    .parse(input)
-}
-
-/// Parses an identifier or keyword in a single pass.
-///
-/// The ASCII base `[A-Za-z0-9_]+` is parsed first. Keywords are only matched
-/// at a word boundary (next char is not alphanumeric and not `_`). When the
-/// next char after the base is `-` or `*`, a second parse extends the span to
-/// cover the full identifier; otherwise `base_span` is used directly, avoiding
-/// a redundant re-parse.
-fn ident_or_keyword(input: Span) -> IResult<Span, Token> {
-    let (after_base, base_span) =
-        recognize(pair(alt((alpha1, tag("_"))), many0(alt((alphanumeric1, tag("_")))))).parse(input)?;
-
-    let module_id = base_span.extra;
-    let base_frag = *base_span.fragment();
-
-    let next_char = after_base.fragment().chars().next();
-    // A word boundary means the identifier cannot be extended by an alphanumeric
-    // or underscore character (including non-ASCII Unicode letters/digits).
-    let at_word_boundary = next_char.map(|c| !c.is_alphanumeric() && c != '_').unwrap_or(true);
-
-    if at_word_boundary {
-        let keyword_kind = match base_frag {
-            "as" => Some(TokenKind::As),
-            "break" => Some(TokenKind::Break),
-            "catch" => Some(TokenKind::Catch),
-            "continue" => Some(TokenKind::Continue),
-            "def" => Some(TokenKind::Def),
-            "do" => Some(TokenKind::Do),
-            "elif" => Some(TokenKind::Elif),
-            "else" => Some(TokenKind::Else),
-            "end" => Some(TokenKind::End),
-            "fn" => Some(TokenKind::Fn),
-            "foreach" => Some(TokenKind::Foreach),
-            "if" => Some(TokenKind::If),
-            "import" => Some(TokenKind::Import),
-            "include" => Some(TokenKind::Include),
-            "let" => Some(TokenKind::Let),
-            "loop" => Some(TokenKind::Loop),
-            "match" => Some(TokenKind::Match),
-            "module" => Some(TokenKind::Module),
-            "nodes" => Some(TokenKind::Nodes),
-            "None" => Some(TokenKind::None),
-            "self" => Some(TokenKind::Self_),
-            "try" => Some(TokenKind::Try),
-            "unless" => Some(TokenKind::Unless),
-            "until" => Some(TokenKind::Until),
-            "var" => Some(TokenKind::Var),
-            "while" => Some(TokenKind::While),
-            "yield" => Some(TokenKind::Yield),
-            _ => None,
-        };
-
-        if let Some(kind) = keyword_kind {
-            return Ok((
-                after_base,
-                Token {
-                    range: base_span.into(),
-                    kind,
-                    module_id,
-                },
-            ));
-        }
-    }
-
-    // When the next character can extend the identifier (`-` or `*`), re-parse
-    // from the original input to capture the full span. Otherwise `base_span`
-    // already covers the complete identifier, so we reuse it directly.
-    if next_char == Some('-') || next_char == Some('*') {
-        let (after_full, full_span) = recognize(pair(
-            alt((alpha1, tag("_"))),
-            many0(alt((alphanumeric1, tag("_"), tag("-"), tag("*")))),
-        ))
-        .parse(input)?;
-
-        let full_frag = *full_span.fragment();
-        let kind = match full_frag {
-            "true" => TokenKind::BoolLiteral(true),
-            "false" => TokenKind::BoolLiteral(false),
-            s => TokenKind::Ident(SmolStr::new(s)),
-        };
-
-        return Ok((
-            after_full,
-            Token {
-                range: full_span.into(),
-                kind,
-                module_id: full_span.extra,
-            },
-        ));
-    }
-
-    let kind = match base_frag {
+fn ident_kind(word: &str) -> TokenKind {
+    match word {
         "true" => TokenKind::BoolLiteral(true),
         "false" => TokenKind::BoolLiteral(false),
         s => TokenKind::Ident(SmolStr::new(s)),
-    };
-
-    Ok((
-        after_base,
-        Token {
-            range: base_span.into(),
-            kind,
-            module_id,
-        },
-    ))
+    }
 }
 
-fn env(input: Span) -> IResult<Span, Token> {
-    preceded(
-        tag("$"),
-        map(recognize(many1(alt((alphanumeric1, tag("_"))))), |span: Span| {
-            let kind = TokenKind::Env(SmolStr::new(span.fragment()));
-            let module_id = span.extra;
-            Token {
-                range: span.into(),
-                kind,
-                module_id,
-            }
-        }),
+/// Characters of `text` after the `\` of an escape that map to themselves in a string literal.
+fn is_plain_string_escape(c: char) -> bool {
+    matches!(
+        c,
+        '/' | '['
+            | ']'
+            | '('
+            | ')'
+            | '{'
+            | '}'
+            | '+'
+            | '*'
+            | '?'
+            | '^'
+            | '$'
+            | '|'
+            | '-'
+            | '.'
+            | 's'
+            | 'S'
+            | 'd'
+            | 'D'
+            | 'w'
+            | 'W'
     )
-    .parse(input)
 }
 
-fn skip_whitespace_and_comments(input: Span) -> IResult<Span, ()> {
-    let mut current = input;
-    loop {
-        let (remaining, _) = multispace0(current)?;
-        if let Ok((after_comment, ())) = skip_comment(remaining) {
-            current = after_comment;
+/// Decodes the escape following a `\` (`rest` starts right after it) as `(char, bytes consumed)`.
+///
+/// `plain_string_escapes` also accepts the extra single-character escapes of `"..."` literals.
+fn decode_escape(rest: &str, plain_string_escapes: bool) -> Option<(char, usize)> {
+    let mut chars = rest.chars();
+    let c = chars.next()?;
+    let simple = match c {
+        '\\' => Some('\\'),
+        '"' => Some('"'),
+        'r' => Some('\r'),
+        'n' => Some('\n'),
+        't' => Some('\t'),
+        '{' | '}' => Some(c),
+        c if plain_string_escapes && is_plain_string_escape(c) => Some(c),
+        _ => None,
+    };
+    if let Some(ch) = simple {
+        return Some((ch, 1));
+    }
+
+    let bytes = rest.as_bytes();
+    let hex = |range: std::ops::Range<usize>| -> Option<u32> {
+        let digits = bytes.get(range)?;
+        if digits.iter().all(u8::is_ascii_hexdigit) {
+            u32::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()
         } else {
-            return Ok((remaining, ()));
+            None
         }
-    }
-}
-
-fn token_slow(input: Span) -> IResult<Span, Token> {
-    alt((
-        env,
-        literals,
-        lambda_op,
-        binary_op,
-        punctuations,
-        unary_op,
-        selector,
-        ident_or_keyword,
-    ))
-    .parse(input)
-}
-
-fn dispatch_by_first_char(input: Span) -> IResult<Span, Token> {
-    let Some(c) = input.fragment().chars().next() else {
-        return token_slow(input);
     };
+
     match c {
-        '$' => env(input),
-        '"' => alt((string_literal, empty_string)).parse(input),
-        '0'..='9' => number_literal(input),
-        '-' => alt((number_literal, arrow, minus_equal, minus)).parse(input),
-        '.' => alt((number_literal, spread_op, range_op, selector)).parse(input),
-        'b' => alt((byte_string_literal, ident_or_keyword)).parse(input),
-        's' => alt((interpolated_string, ident_or_keyword)).parse(input),
-        '(' => l_paren(input),
-        ')' => r_paren(input),
-        '{' => l_brace(input),
-        '}' => r_brace(input),
-        '[' => l_bracket(input),
-        ']' => r_bracket(input),
-        ',' => comma(input),
-        ';' => semi_colon(input),
-        ':' => alt((double_colon, colon)).parse(input),
-        '?' => alt((coalesce, question)).parse(input),
-        '|' => alt((pipe_equal, or, pipe)).parse(input),
-        '!' => alt((ne_eq, not_tilde_equal, not)).parse(input),
-        '<' => alt((left_shift, lte, lt)).parse(input),
-        '>' => alt((right_shift, gte, gt)).parse(input),
-        '=' => alt((eq_eq, tilde_equal, equal)).parse(input),
-        '+' => alt((number_literal, plus_equal, plus)).parse(input),
-        '*' => alt((star_equal, asterisk)).parse(input),
-        '/' => alt((slash_equal, double_slash_equal, slash)).parse(input),
-        '%' => alt((percent_equal, percent)).parse(input),
-        '&' => and(input),
-        '@' => convert_op(input),
-        c if c.is_ascii_alphabetic() || c == '_' => ident_or_keyword(input),
-        _ => token_slow(input),
-    }
-}
-
-fn token(input: Span) -> IResult<Span, Token> {
-    dispatch_by_first_char(input)
-}
-
-#[cfg(test)]
-fn token_include_spaces_slow(input: Span) -> IResult<Span, Token> {
-    alt((
-        newline,
-        spaces,
-        tab,
-        inline_comment,
-        env,
-        literals,
-        lambda_op,
-        binary_op,
-        punctuations,
-        unary_op,
-        selector,
-        ident_or_keyword,
-    ))
-    .parse(input)
-}
-
-fn token_include_spaces(input: Span) -> IResult<Span, Token> {
-    match input.fragment().chars().next() {
-        Some('\n') | Some('\r') => newline(input),
-        Some(' ') => spaces(input),
-        Some('\t') => tab(input),
-        Some('#') => inline_comment(input),
-        _ => dispatch_by_first_char(input),
-    }
-}
-
-/// Consumes up to the next whitespace or delimiter as a single `Unknown` token so lexing can resume.
-fn unknown(input: Span) -> IResult<Span, Token> {
-    map(
-        recognize(pair(
-            anychar,
-            take_while(|c: char| !c.is_whitespace() && !",()[]{}|;".contains(c)),
-        )),
-        |span: Span| Token {
-            range: span.into(),
-            kind: TokenKind::Unknown(span.fragment().to_string()),
-            module_id: span.extra,
-        },
-    )
-    .parse(input)
-}
-
-fn tokens<'a>(input: Span<'a>, options: &'a Options) -> IResult<Span<'a>, Vec<Token>> {
-    let estimated_capacity = input.fragment().len() / 5;
-    let mut tokens = Vec::with_capacity(estimated_capacity.max(16));
-    let mut current = input;
-
-    if options.include_spaces {
-        loop {
-            match token_include_spaces(current) {
-                Ok((remaining, token)) => {
-                    tokens.push(token);
-                    current = remaining;
-                }
-                Err(_) if options.ignore_errors && !current.fragment().is_empty() => {
-                    let (remaining, token) = unknown(current)?;
-                    tokens.push(token);
-                    current = remaining;
-                }
-                Err(_) => break,
+        'x' => Some((char::from_u32(hex(1..3)?)?, 3)),
+        'u' if bytes.get(1) == Some(&b'{') => {
+            let digits = bytes[2..].iter().take(6).take_while(|b| b.is_ascii_hexdigit()).count();
+            if digits == 0 || bytes.get(2 + digits) != Some(&b'}') {
+                return None;
             }
+            Some((char::from_u32(hex(2..2 + digits)?)?, digits + 3))
         }
-    } else {
-        loop {
-            let (remaining, _) = skip_whitespace_and_comments(current)?;
-            match token(remaining) {
-                Ok((remaining, tok)) => {
-                    tokens.push(tok);
-                    current = remaining;
-                }
-                Err(_) => {
-                    current = remaining;
-                    break;
-                }
-            }
+        'u' => Some((char::from_u32(hex(1..5)?)?, 5)),
+        _ => None,
+    }
+}
+
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+/// Walks the source once, tracking the line and the char-based column of the next byte.
+struct Cursor<'a> {
+    src: &'a str,
+    bytes: &'a [u8],
+    pos: usize,
+    line: u32,
+    col: usize,
+    module_id: ModuleId,
+}
+
+/// Saved cursor state for backtracking.
+#[derive(Clone, Copy)]
+struct Mark {
+    pos: usize,
+    line: u32,
+    col: usize,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(src: &'a str, module_id: ModuleId) -> Self {
+        Self {
+            src,
+            bytes: src.as_bytes(),
+            pos: 0,
+            line: 1,
+            col: 1,
+            module_id,
         }
     }
 
-    Ok((current, tokens))
+    #[inline(always)]
+    fn rest(&self) -> &'a str {
+        &self.src[self.pos..]
+    }
+
+    #[inline(always)]
+    fn peek(&self, offset: usize) -> Option<u8> {
+        self.bytes.get(self.pos + offset).copied()
+    }
+
+    #[inline(always)]
+    fn position(&self) -> Position {
+        Position {
+            line: self.line,
+            column: self.col,
+        }
+    }
+
+    fn mark(&self) -> Mark {
+        Mark {
+            pos: self.pos,
+            line: self.line,
+            col: self.col,
+        }
+    }
+
+    fn reset(&mut self, mark: Mark) {
+        self.pos = mark.pos;
+        self.line = mark.line;
+        self.col = mark.col;
+    }
+
+    /// Moves to the absolute byte offset `end`, updating the line and column.
+    fn advance(&mut self, end: usize) {
+        for &b in &self.bytes[self.pos..end] {
+            if b == b'\n' {
+                self.line += 1;
+                self.col = 1;
+            } else if b & 0xC0 != 0x80 {
+                self.col += 1;
+            }
+        }
+        self.pos = end;
+    }
+
+    /// Moves over `len` ASCII bytes that contain no newline.
+    #[inline(always)]
+    fn advance_ascii(&mut self, len: usize) {
+        self.pos += len;
+        self.col += len;
+    }
+
+    /// Range of the unconsumed input, as reported for the end-of-input token.
+    fn rest_range(&self) -> Range {
+        let start = self.position();
+        let fragment = self.rest();
+        let fragment = if !fragment.starts_with(' ') && fragment.ends_with(' ') {
+            fragment.trim()
+        } else {
+            fragment
+        };
+        Range {
+            start,
+            end: Position {
+                line: start.line,
+                column: start.column + fragment.chars().count(),
+            },
+        }
+    }
+
+    /// Builds a token that spans from the cursor to the byte offset `end` on its first line.
+    fn spanned(&mut self, end: usize, kind: TokenKind) -> Token {
+        let start = self.position();
+        let columns = self.src[self.pos..end].chars().count();
+        self.advance(end);
+        Token {
+            range: Range {
+                start,
+                end: Position {
+                    line: start.line,
+                    column: start.column + columns,
+                },
+            },
+            kind,
+            module_id: self.module_id,
+        }
+    }
+
+    /// Builds a token for `len` ASCII bytes with no newline.
+    #[inline(always)]
+    fn simple(&mut self, len: usize, kind: TokenKind) -> Token {
+        let start = self.position();
+        self.advance_ascii(len);
+        Token {
+            range: Range {
+                start,
+                end: Position {
+                    line: start.line,
+                    column: start.column + len,
+                },
+            },
+            kind,
+            module_id: self.module_id,
+        }
+    }
+
+    /// Builds a token that spans from `start` to the cursor, which may cross lines.
+    fn token_from(&self, start: Position, kind: TokenKind) -> Token {
+        Token {
+            range: Range {
+                start,
+                end: self.position(),
+            },
+            kind,
+            module_id: self.module_id,
+        }
+    }
+
+    fn starts_with(&self, prefix: &str) -> bool {
+        self.rest().starts_with(prefix)
+    }
+
+    fn skip_whitespace_and_comments(&mut self) {
+        loop {
+            let ws = self.bytes[self.pos..]
+                .iter()
+                .take_while(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+                .count();
+            if ws > 0 {
+                self.advance(self.pos + ws);
+            }
+
+            if self.peek(0) == Some(b'#') {
+                let len = self.bytes[self.pos..]
+                    .iter()
+                    .take_while(|b| !matches!(b, b'\n' | b'\r'))
+                    .count();
+                self.advance_text(self.pos + len);
+            } else {
+                return;
+            }
+        }
+    }
+
+    /// Like `advance`, for text without a newline but possibly non-ASCII.
+    fn advance_text(&mut self, end: usize) {
+        self.col += self.src[self.pos..end].chars().count();
+        self.pos = end;
+    }
+
+    fn token_include_spaces(&mut self) -> Option<Token> {
+        match self.peek(0)? {
+            b'\n' => Some(self.spanned(self.pos + 1, TokenKind::NewLine)),
+            b'\r' => {
+                if self.peek(1) == Some(b'\n') {
+                    Some(self.spanned(self.pos + 2, TokenKind::NewLine))
+                } else {
+                    None
+                }
+            }
+            b' ' => {
+                let len = self.bytes[self.pos..].iter().take_while(|&&b| b == b' ').count();
+                Some(self.simple(len, TokenKind::Whitespace(len)))
+            }
+            b'\t' => {
+                let len = self.bytes[self.pos..].iter().take_while(|&&b| b == b'\t').count();
+                Some(self.simple(len, TokenKind::Tab(len)))
+            }
+            b'#' => Some(self.inline_comment()),
+            _ => self.token(),
+        }
+    }
+
+    fn inline_comment(&mut self) -> Token {
+        self.advance_ascii(1);
+        let start = self.position();
+        let len = self.bytes[self.pos..]
+            .iter()
+            .take_while(|b| !matches!(b, b'\n' | b'\r'))
+            .count();
+        let text = self.src[self.pos..self.pos + len].to_string();
+        self.advance_text(self.pos + len);
+        self.token_from(start, TokenKind::Comment(text))
+    }
+
+    /// Consumes up to the next whitespace or delimiter as a single `Unknown` token.
+    fn unknown(&mut self) -> Token {
+        let first = self.rest().chars().next().map_or(0, char::len_utf8);
+        let tail = self.src[self.pos + first..]
+            .find(|c: char| c.is_whitespace() || ",()[]{}|;".contains(c))
+            .unwrap_or(self.src.len() - self.pos - first);
+        let end = self.pos + first + tail;
+        let text = self.src[self.pos..end].to_string();
+        self.spanned(end, TokenKind::Unknown(text))
+    }
+
+    fn token(&mut self) -> Option<Token> {
+        let c = self.peek(0)?;
+        match c {
+            b'$' => self.env(),
+            b'"' => self.string_or_empty(),
+            b'0'..=b'9' => match self.number_scan() {
+                NumberScan::Match(len) => self.number(len),
+                NumberScan::NoMatch | NumberScan::Fatal => None,
+            },
+            b'-' => match self.number_scan() {
+                NumberScan::Match(len) => self.number(len),
+                NumberScan::Fatal => None,
+                NumberScan::NoMatch => Some(self.fixed(&[
+                    ("->", TokenKind::Arrow),
+                    ("-=", TokenKind::MinusEqual),
+                    ("-", TokenKind::Minus),
+                ])),
+            },
+            b'.' => match self.number_scan() {
+                NumberScan::Match(len) => self.number(len),
+                NumberScan::Fatal => None,
+                NumberScan::NoMatch => {
+                    if self.starts_with("...") {
+                        Some(self.simple(3, TokenKind::DotDotDot))
+                    } else if self.starts_with("..") {
+                        Some(self.simple(2, TokenKind::DoubleDot))
+                    } else {
+                        Some(self.selector())
+                    }
+                }
+            },
+            b'b' => {
+                if let Some(token) = self.byte_string() {
+                    Some(token)
+                } else {
+                    Some(self.ident_or_keyword())
+                }
+            }
+            b's' => {
+                if let Some(token) = self.interpolated_string() {
+                    Some(token)
+                } else {
+                    Some(self.ident_or_keyword())
+                }
+            }
+            b'(' => Some(self.simple(1, TokenKind::LParen)),
+            b')' => Some(self.simple(1, TokenKind::RParen)),
+            b'{' => Some(self.simple(1, TokenKind::LBrace)),
+            b'}' => Some(self.simple(1, TokenKind::RBrace)),
+            b'[' => Some(self.simple(1, TokenKind::LBracket)),
+            b']' => Some(self.simple(1, TokenKind::RBracket)),
+            b',' => Some(self.simple(1, TokenKind::Comma)),
+            b';' => Some(self.simple(1, TokenKind::SemiColon)),
+            b':' => Some(self.fixed(&[("::", TokenKind::DoubleColon), (":", TokenKind::Colon)])),
+            b'?' => Some(self.fixed(&[("??", TokenKind::Coalesce), ("?", TokenKind::Question)])),
+            b'|' => Some(self.fixed(&[
+                ("|=", TokenKind::PipeEqual),
+                ("||", TokenKind::Or),
+                ("|", TokenKind::Pipe),
+            ])),
+            b'!' => Some(self.fixed(&[
+                ("!=", TokenKind::NeEq),
+                ("!~", TokenKind::NotTildeEqual),
+                ("!", TokenKind::Not),
+            ])),
+            b'<' => Some(self.fixed(&[
+                ("<<", TokenKind::LeftShift),
+                ("<=", TokenKind::Lte),
+                ("<", TokenKind::Lt),
+            ])),
+            b'>' => Some(self.fixed(&[
+                (">>", TokenKind::RightShift),
+                (">=", TokenKind::Gte),
+                (">", TokenKind::Gt),
+            ])),
+            b'=' => Some(self.fixed(&[
+                ("==", TokenKind::EqEq),
+                ("=~", TokenKind::TildeEqual),
+                ("=", TokenKind::Equal),
+            ])),
+            b'+' => match self.number_scan() {
+                NumberScan::Match(len) => self.number(len),
+                NumberScan::Fatal => None,
+                NumberScan::NoMatch => Some(self.fixed(&[("+=", TokenKind::PlusEqual), ("+", TokenKind::Plus)])),
+            },
+            b'*' => Some(self.fixed(&[("*=", TokenKind::StarEqual), ("*", TokenKind::Asterisk)])),
+            b'/' => Some(self.fixed(&[
+                ("/=", TokenKind::SlashEqual),
+                ("//=", TokenKind::DoubleSlashEqual),
+                ("/", TokenKind::Slash),
+            ])),
+            b'%' => Some(self.fixed(&[("%=", TokenKind::PercentEqual), ("%", TokenKind::Percent)])),
+            b'&' => {
+                if self.starts_with("&&") {
+                    Some(self.simple(2, TokenKind::And))
+                } else {
+                    None
+                }
+            }
+            b'@' => Some(self.simple(1, TokenKind::Convert)),
+            c if c.is_ascii_alphabetic() || c == b'_' => Some(self.ident_or_keyword()),
+            _ => None,
+        }
+    }
+
+    /// Emits the first of `candidates` that the input starts with. The last one must always match.
+    fn fixed(&mut self, candidates: &[(&str, TokenKind)]) -> Token {
+        for (text, kind) in candidates {
+            if self.starts_with(text) {
+                return self.simple(text.len(), kind.clone());
+            }
+        }
+        unreachable!("the last candidate is a prefix of the dispatched character")
+    }
+
+    fn env(&mut self) -> Option<Token> {
+        let name_len = self.bytes[self.pos + 1..]
+            .iter()
+            .take_while(|&&b| is_word_byte(b))
+            .count();
+        if name_len == 0 {
+            return None;
+        }
+        self.advance_ascii(1);
+        let name = SmolStr::new(&self.src[self.pos..self.pos + name_len]);
+        Some(self.simple(name_len, TokenKind::Env(name)))
+    }
+
+    fn number_scan(&self) -> NumberScan {
+        let b = &self.bytes[self.pos..];
+        let digits = |from: usize| b[from.min(b.len())..].iter().take_while(|b| b.is_ascii_digit()).count();
+        let mut i = 0;
+
+        if b.get(i) == Some(&b'-') {
+            i += 1;
+        }
+        if matches!(b.get(i), Some(b'+' | b'-')) {
+            i += 1;
+        }
+
+        let int_digits = digits(i);
+        if int_digits > 0 {
+            i += int_digits;
+            if b.get(i) == Some(&b'.') {
+                let frac = digits(i + 1);
+                if frac > 0 {
+                    i += 1 + frac;
+                }
+            }
+        } else if b.get(i) == Some(&b'.') && digits(i + 1) > 0 {
+            i += 1 + digits(i + 1);
+        } else {
+            return NumberScan::NoMatch;
+        }
+
+        if matches!(b.get(i), Some(b'e' | b'E')) {
+            let mut j = i + 1;
+            if matches!(b.get(j), Some(b'+' | b'-')) {
+                j += 1;
+            }
+            let exp = digits(j);
+            if exp == 0 {
+                return NumberScan::Fatal;
+            }
+            i = j + exp;
+        }
+
+        if self.src[self.pos..self.pos + i].parse::<f64>().is_ok() {
+            NumberScan::Match(i)
+        } else {
+            NumberScan::NoMatch
+        }
+    }
+
+    fn number(&mut self, len: usize) -> Option<Token> {
+        let value = self.src[self.pos..self.pos + len].parse::<f64>().ok()?;
+        Some(self.simple(len, TokenKind::NumberLiteral(Number::new(value))))
+    }
+
+    fn selector(&mut self) -> Token {
+        let rest = self.rest();
+        let bytes = rest.as_bytes();
+        let mut len = 1;
+
+        match bytes.get(1) {
+            Some(b'>' | b'^') => len = 2,
+            Some(b'"') => {
+                if let Some(quoted) = Self::quoted_selector_len(rest) {
+                    len = quoted;
+                }
+            }
+            _ => {
+                len += bytes[1..]
+                    .iter()
+                    .take_while(|&&b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'*'))
+                    .count();
+            }
+        }
+
+        let text = SmolStr::new(&rest[..len]);
+        self.spanned(self.pos + len, TokenKind::Selector(text))
+    }
+
+    /// Length of a quoted selector such as `."key"` at the start of `rest`, or `None` if unterminated.
+    fn quoted_selector_len(rest: &str) -> Option<usize> {
+        let mut chars = rest[2..].char_indices();
+        while let Some((i, c)) = chars.next() {
+            match c {
+                '\\' => {
+                    chars.next()?;
+                }
+                '"' => return Some(2 + i + 1),
+                _ => {}
+            }
+        }
+        None
+    }
+
+    fn ident_or_keyword(&mut self) -> Token {
+        let rest = self.rest();
+        let bytes = rest.as_bytes();
+        let base_len = bytes.iter().take_while(|&&b| is_word_byte(b)).count();
+        let base = &rest[..base_len];
+        let next = rest[base_len..].chars().next();
+        let at_word_boundary = next.map(|c| !c.is_alphanumeric() && c != '_').unwrap_or(true);
+
+        if at_word_boundary && let Some(kind) = keyword_kind(base) {
+            return self.simple(base_len, kind);
+        }
+
+        if matches!(next, Some('-' | '*')) {
+            let full_len = bytes
+                .iter()
+                .take_while(|&&b| is_word_byte(b) || matches!(b, b'-' | b'*'))
+                .count();
+            return self.simple(full_len, ident_kind(&rest[..full_len]));
+        }
+
+        self.simple(base_len, ident_kind(base))
+    }
+
+    fn string_or_empty(&mut self) -> Option<Token> {
+        if self.starts_with("\"\"") {
+            return Some(self.simple(2, TokenKind::StringLiteral(String::new())));
+        }
+
+        let mark = self.mark();
+        let start = self.position();
+        self.advance_ascii(1);
+        let Some((text, end)) = self.escaped_text(|c| c != '"' && c != '\\', true) else {
+            self.reset(mark);
+            return None;
+        };
+        if self.bytes.get(end) != Some(&b'"') {
+            self.reset(mark);
+            return None;
+        }
+        self.advance(end + 1);
+        Some(self.token_from(start, TokenKind::StringLiteral(text)))
+    }
+
+    /// Reads text made of `normal` characters and `\` escapes starting at the cursor and returns it
+    /// with the byte offset where it stops. A first character that is neither is an error.
+    fn escaped_text(&self, normal: impl Fn(char) -> bool, plain_string_escapes: bool) -> Option<(String, usize)> {
+        let rest = self.rest();
+        let mut text = String::new();
+        let mut index = 0;
+
+        while index < rest.len() {
+            let c = rest[index..].chars().next()?;
+            if normal(c) {
+                text.push(c);
+                index += c.len_utf8();
+            } else if c == '\\' {
+                let next = index + 1;
+                if next >= rest.len() {
+                    return None;
+                }
+                let (decoded, used) = decode_escape(&rest[next..], plain_string_escapes)?;
+                text.push(decoded);
+                index = next + used;
+            } else if index == 0 {
+                return None;
+            } else {
+                break;
+            }
+        }
+
+        Some((text, self.pos + index))
+    }
+
+    fn byte_string(&mut self) -> Option<Token> {
+        if !self.starts_with("b\"") {
+            return None;
+        }
+
+        let rest = self.rest();
+        let bytes = rest.as_bytes();
+        let mut value = Vec::new();
+        let mut i = 2;
+
+        loop {
+            match *bytes.get(i)? {
+                b'"' => break,
+                b'\\' => {
+                    let (byte, used) = match *bytes.get(i + 1)? {
+                        b'x' => {
+                            let digits = bytes.get(i + 2..i + 4)?;
+                            if !digits.iter().all(u8::is_ascii_hexdigit) {
+                                return None;
+                            }
+                            (u8::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()?, 4)
+                        }
+                        b'\\' => (b'\\', 2),
+                        b'"' => (b'"', 2),
+                        b'n' => (b'\n', 2),
+                        b'r' => (b'\r', 2),
+                        b't' => (b'\t', 2),
+                        b'0' => (0, 2),
+                        _ => return None,
+                    };
+                    value.push(byte);
+                    i += used;
+                }
+                b if b.is_ascii() => {
+                    value.push(b);
+                    i += 1;
+                }
+                _ => return None,
+            }
+        }
+
+        let start = self.position();
+        self.advance(self.pos + i + 1);
+        Some(self.token_from(start, TokenKind::BytesLiteral(value)))
+    }
+
+    fn interpolated_string(&mut self) -> Option<Token> {
+        if !self.starts_with("s\"") {
+            return None;
+        }
+
+        let mark = self.mark();
+        let start = self.position();
+        self.advance_ascii(2);
+
+        let mut segments = Vec::with_capacity(4);
+        match self.string_segment() {
+            Some(segment) => segments.push(segment),
+            None => {
+                self.reset(mark);
+                return None;
+            }
+        }
+        while !self.rest().is_empty() {
+            match self.string_segment() {
+                Some(segment) => segments.push(segment),
+                None => break,
+            }
+        }
+
+        if self.peek(0) != Some(b'"') {
+            self.reset(mark);
+            return None;
+        }
+        self.advance_ascii(1);
+        Some(self.token_from(start, TokenKind::InterpolatedString(segments)))
+    }
+
+    /// Reads one segment of an interpolated string, leaving the cursor unchanged on failure.
+    fn string_segment(&mut self) -> Option<StringSegment> {
+        let start = self.position();
+
+        if self.starts_with("${")
+            && let Some(close) = self.rest()[2..].find('}')
+        {
+            let expr = SmolStr::new(&self.rest()[2..2 + close]);
+            self.advance(self.pos + 2 + close + 1);
+            return Some(StringSegment::Expr(
+                expr,
+                Range {
+                    start,
+                    end: self.position(),
+                },
+            ));
+        }
+
+        if let Some((text, end)) = self.escaped_text(|c| !matches!(c, '"' | '\\' | '$' | '{'), false) {
+            self.advance(end);
+            return Some(StringSegment::Text(
+                text,
+                Range {
+                    start,
+                    end: self.position(),
+                },
+            ));
+        }
+
+        if self.starts_with("$$") {
+            self.advance_ascii(2);
+            return Some(StringSegment::Text(
+                "$".to_string(),
+                Range {
+                    start,
+                    end: self.position(),
+                },
+            ));
+        }
+
+        None
+    }
 }
 
 #[cfg(test)]
@@ -958,14 +862,6 @@ mod tests {
     use super::*;
     use proptest::proptest;
     use rstest::rstest;
-
-    #[rstest]
-    #[case("value\" | trailing", 5)]
-    #[case(r#"escaped\"quote" | trailing"#, 14)]
-    #[case("unterminated", 0)]
-    fn test_byte_string_capacity(#[case] input: &str, #[case] expected: usize) {
-        assert_eq!(byte_string_capacity(input), expected);
-    }
 
     #[rstest]
     #[case("and(contains(\"test\"))",
@@ -1709,108 +1605,65 @@ mod tests {
         assert_eq!(Lexer::new(options).tokenize(input, 1.into()), expected);
     }
 
-    fn assert_dispatch_matches_exhaustive_alt(source: &str) {
-        let module_id = 1.into();
-        let mut span = Span::new_extra(source, module_id);
-        loop {
-            let fast = token(span);
-            let slow = token_slow(span);
-            match (&fast, &slow) {
-                (Ok((f_rem, f_tok)), Ok((s_rem, s_tok))) => {
-                    assert_eq!(
-                        f_tok,
-                        s_tok,
-                        "token() vs token_slow() diverged at {:?}",
-                        span.fragment()
-                    );
-                    assert_eq!(
-                        f_rem.fragment(),
-                        s_rem.fragment(),
-                        "token() vs token_slow() consumed different amounts at {:?}",
-                        span.fragment()
-                    );
-                }
-                (Err(_), Err(_)) => {}
-                _ => panic!(
-                    "token() and token_slow() disagreed on Ok/Err at {:?}: {fast:?} vs {slow:?}",
-                    span.fragment()
-                ),
-            }
+    const FILES: &[(&str, &str)] = &[
+        ("builtin.mq", include_str!("../builtin.mq")),
+        ("builtin_tests.mq", include_str!("../builtin_tests.mq")),
+        ("modules/cbor.mq", include_str!("../modules/cbor.mq")),
+        ("modules/csv.mq", include_str!("../modules/csv.mq")),
+        ("modules/csv_test.mq", include_str!("../modules/csv_test.mq")),
+        ("modules/fuzzy.mq", include_str!("../modules/fuzzy.mq")),
+        ("modules/fuzzy_test.mq", include_str!("../modules/fuzzy_test.mq")),
+        ("modules/gron.mq", include_str!("../modules/gron.mq")),
+        ("modules/gron_test.mq", include_str!("../modules/gron_test.mq")),
+        ("modules/html.mq", include_str!("../modules/html.mq")),
+        ("modules/html_test.mq", include_str!("../modules/html_test.mq")),
+        ("modules/json.mq", include_str!("../modules/json.mq")),
+        ("modules/json_test.mq", include_str!("../modules/json_test.mq")),
+        ("modules/md.mq", include_str!("../modules/md.mq")),
+        ("modules/md_test.mq", include_str!("../modules/md_test.mq")),
+        ("modules/section.mq", include_str!("../modules/section.mq")),
+        ("modules/section_test.mq", include_str!("../modules/section_test.mq")),
+        ("modules/semver.mq", include_str!("../modules/semver.mq")),
+        ("modules/semver_test.mq", include_str!("../modules/semver_test.mq")),
+        ("modules/table.mq", include_str!("../modules/table.mq")),
+        ("modules/table_test.mq", include_str!("../modules/table_test.mq")),
+        ("modules/test.mq", include_str!("../modules/test.mq")),
+        ("modules/toml.mq", include_str!("../modules/toml.mq")),
+        ("modules/toml_test.mq", include_str!("../modules/toml_test.mq")),
+        ("modules/toon.mq", include_str!("../modules/toon.mq")),
+        ("modules/toon_test.mq", include_str!("../modules/toon_test.mq")),
+        ("modules/xml.mq", include_str!("../modules/xml.mq")),
+        ("modules/xml_test.mq", include_str!("../modules/xml_test.mq")),
+        ("modules/yaml.mq", include_str!("../modules/yaml.mq")),
+        ("modules/yaml_test.mq", include_str!("../modules/yaml_test.mq")),
+    ];
 
-            let fast_spaces = token_include_spaces(span);
-            let slow_spaces = token_include_spaces_slow(span);
-            match (&fast_spaces, &slow_spaces) {
-                (Ok((f_rem, f_tok)), Ok((s_rem, s_tok))) => {
-                    assert_eq!(
-                        f_tok,
-                        s_tok,
-                        "token_include_spaces() vs _slow() diverged at {:?}",
-                        span.fragment()
-                    );
-                    assert_eq!(
-                        f_rem.fragment(),
-                        s_rem.fragment(),
-                        "token_include_spaces() vs _slow() consumed different amounts at {:?}",
-                        span.fragment()
-                    );
-                }
-                (Err(_), Err(_)) => {}
-                _ => panic!(
-                    "token_include_spaces() and _slow() disagreed on Ok/Err at {:?}: {fast_spaces:?} vs {slow_spaces:?}",
-                    span.fragment()
-                ),
-            }
-
-            match fast_spaces {
-                Ok((rest, _)) if rest.fragment().len() < span.fragment().len() => span = rest,
-                _ => break,
-            }
+    /// Checks that the hand-written lexer returns exactly what the `nom` reference does.
+    fn assert_matches_nom_reference(source: &str) {
+        for (ignore_errors, include_spaces) in [(false, false), (false, true), (true, false), (true, true)] {
+            let options = Options {
+                ignore_errors,
+                include_spaces,
+            };
+            assert_eq!(
+                Lexer::new(options.clone()).tokenize(source, 1.into()),
+                nom_reference::NomLexer::new(options).tokenize(source, 1.into()),
+                "lexers diverged (ignore_errors={ignore_errors}, include_spaces={include_spaces}) on {source:?}"
+            );
         }
     }
 
     #[test]
-    fn dispatch_matches_exhaustive_alt_and_parses_on_real_mq_files() {
-        const FILES: &[(&str, &str)] = &[
-            ("builtin.mq", include_str!("../builtin.mq")),
-            ("builtin_tests.mq", include_str!("../builtin_tests.mq")),
-            ("modules/cbor.mq", include_str!("../modules/cbor.mq")),
-            ("modules/csv.mq", include_str!("../modules/csv.mq")),
-            ("modules/csv_test.mq", include_str!("../modules/csv_test.mq")),
-            ("modules/fuzzy.mq", include_str!("../modules/fuzzy.mq")),
-            ("modules/fuzzy_test.mq", include_str!("../modules/fuzzy_test.mq")),
-            ("modules/gron.mq", include_str!("../modules/gron.mq")),
-            ("modules/gron_test.mq", include_str!("../modules/gron_test.mq")),
-            ("modules/html.mq", include_str!("../modules/html.mq")),
-            ("modules/html_test.mq", include_str!("../modules/html_test.mq")),
-            ("modules/json.mq", include_str!("../modules/json.mq")),
-            ("modules/json_test.mq", include_str!("../modules/json_test.mq")),
-            ("modules/md.mq", include_str!("../modules/md.mq")),
-            ("modules/md_test.mq", include_str!("../modules/md_test.mq")),
-            ("modules/section.mq", include_str!("../modules/section.mq")),
-            ("modules/section_test.mq", include_str!("../modules/section_test.mq")),
-            ("modules/semver.mq", include_str!("../modules/semver.mq")),
-            ("modules/semver_test.mq", include_str!("../modules/semver_test.mq")),
-            ("modules/table.mq", include_str!("../modules/table.mq")),
-            ("modules/table_test.mq", include_str!("../modules/table_test.mq")),
-            ("modules/test.mq", include_str!("../modules/test.mq")),
-            ("modules/toml.mq", include_str!("../modules/toml.mq")),
-            ("modules/toml_test.mq", include_str!("../modules/toml_test.mq")),
-            ("modules/toon.mq", include_str!("../modules/toon.mq")),
-            ("modules/toon_test.mq", include_str!("../modules/toon_test.mq")),
-            ("modules/xml.mq", include_str!("../modules/xml.mq")),
-            ("modules/xml_test.mq", include_str!("../modules/xml_test.mq")),
-            ("modules/yaml.mq", include_str!("../modules/yaml.mq")),
-            ("modules/yaml_test.mq", include_str!("../modules/yaml_test.mq")),
-        ];
+    fn matches_nom_reference_and_parses_on_real_mq_files() {
         for (name, source) in FILES {
-            assert_dispatch_matches_exhaustive_alt(source);
+            assert_matches_nom_reference(source);
             let token_arena = crate::Shared::new(crate::SharedCell::new(crate::Arena::new(256)));
             crate::parse(source, token_arena).unwrap_or_else(|e| panic!("{name} failed to parse: {e}"));
         }
     }
 
     #[test]
-    fn dispatch_matches_exhaustive_alt_on_curated_snippets() {
+    fn matches_nom_reference_on_curated_snippets() {
         for source in [
             "def check(arg1, arg2): startswith(\"\\u{0061}\")",
             r#"let world = "world" | s"$$Hello, ${world}$$""#,
@@ -1827,7 +1680,204 @@ mod tests {
             "import \"m\" as m | m::foo | include \"m\"",
             "$ENV_VAR | $$not_env",
         ] {
-            assert_dispatch_matches_exhaustive_alt(source);
+            assert_matches_nom_reference(source);
+        }
+    }
+
+    /// Pieces that stress every token kind and its failure paths when glued together.
+    const FRAGMENTS: &[&str] = &[
+        "def",
+        "end",
+        "if",
+        "elif",
+        "else",
+        "while",
+        "foreach",
+        "let",
+        "var",
+        "fn",
+        "do",
+        "None",
+        "self",
+        "nodes",
+        "true",
+        "false",
+        "foo",
+        "_bar",
+        "a-b",
+        "a*",
+        "b",
+        "s",
+        "x1",
+        "é",
+        "あ",
+        "$",
+        "$ENV",
+        "$a_1",
+        "$$",
+        "${",
+        "}",
+        "{",
+        "(",
+        ")",
+        "[",
+        "]",
+        ",",
+        ";",
+        ":",
+        "::",
+        "|",
+        "||",
+        "|=",
+        "&",
+        "&&",
+        "?",
+        "??",
+        "!",
+        "!=",
+        "!~",
+        "=",
+        "==",
+        "=~",
+        "<",
+        "<<",
+        "<=",
+        ">",
+        ">>",
+        ">=",
+        "+",
+        "+=",
+        "-",
+        "-=",
+        "->",
+        "*",
+        "*=",
+        "/",
+        "/=",
+        "//=",
+        "%",
+        "%=",
+        "@",
+        ".",
+        "..",
+        "...",
+        ".h1",
+        ".[]",
+        ".>",
+        ".^",
+        ".\"k\"",
+        ".\"k",
+        "0",
+        "12",
+        "-3",
+        "+4",
+        "1.5",
+        ".5",
+        "1e",
+        "1e5",
+        "1E+5",
+        "1e-",
+        "--5",
+        "-+5",
+        "5.",
+        "\"",
+        "\"\"",
+        "\"a\"",
+        "\"a\\n\"",
+        "\"\\q\"",
+        "\"\\u{41}\"",
+        "\"\\u{110000}\"",
+        "\"\\x41\"",
+        "\"\\",
+        "\\",
+        "s\"",
+        "s\"a\"",
+        "s\"${x}\"",
+        "s\"$$\"",
+        "s\"\\{\"",
+        "s\"a$b\"",
+        "b\"",
+        "b\"a\"",
+        "b\"\\x41\"",
+        "b\"\\q\"",
+        "b\"é\"",
+        "#",
+        "# c",
+        " ",
+        "  ",
+        "\t",
+        "\n",
+        "\r\n",
+        "\r",
+        "\u{b}",
+        "\u{a0}",
+        "§",
+        "🎉",
+        "`",
+        "~",
+        "^",
+        "'",
+    ];
+
+    fn fragments_strategy() -> impl proptest::strategy::Strategy<Value = String> {
+        use proptest::prelude::*;
+        proptest::collection::vec(
+            (0..FRAGMENTS.len(), prop_oneof![Just(""), Just(" "), Just("\n")]),
+            0..24,
+        )
+        .prop_map(|parts| {
+            parts
+                .into_iter()
+                .map(|(i, sep)| format!("{}{}", FRAGMENTS[i], sep))
+                .collect::<String>()
+        })
+    }
+
+    proptest! {
+        #![proptest_config(proptest::prelude::ProptestConfig::with_cases(4000))]
+
+        #[test]
+        fn matches_nom_reference_on_token_soup(s in fragments_strategy()) {
+            assert_matches_nom_reference(&s);
+        }
+
+        #[cfg(feature = "debugger")]
+        #[test]
+        fn matches_nom_reference_on_interpolation_segments(s in fragments_strategy()) {
+            proptest::prop_assert_eq!(
+                parse_interpolation_segments(&s, 1.into()),
+                nom_reference::nom_parse_interpolation_segments(&s, 1.into())
+            );
+        }
+
+        #[test]
+        fn matches_nom_reference_on_arbitrary_unicode(s in "\\PC{0,80}") {
+            assert_matches_nom_reference(&s);
+        }
+
+        #[test]
+        fn matches_nom_reference_on_any_chars(s in proptest::collection::vec(proptest::prelude::any::<char>(), 0..60)) {
+            assert_matches_nom_reference(&s.into_iter().collect::<String>());
+        }
+
+        #[test]
+        fn matches_nom_reference_on_truncated_and_cut_files(
+            file in 0..FILES.len(),
+            from in 0.0f64..1.0,
+            len in 0.0f64..0.05,
+        ) {
+            let source = FILES[file].1;
+            let boundary = |ratio: f64| {
+                let mut i = ((source.len() as f64) * ratio) as usize;
+                while !source.is_char_boundary(i) {
+                    i -= 1;
+                }
+                i
+            };
+            let start = boundary(from);
+            let end = boundary((from + len).min(1.0));
+            assert_matches_nom_reference(&source[..start]);
+            assert_matches_nom_reference(&format!("{}{}", &source[..start], &source[end..]));
         }
     }
 
@@ -1868,8 +1918,8 @@ mod tests {
         }
 
         #[test]
-        fn dispatch_matches_exhaustive_alt_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
-            assert_dispatch_matches_exhaustive_alt(&s);
+        fn matches_nom_reference_on_arbitrary_ascii(s in "[ -~\\n\\t]{0,120}") {
+            assert_matches_nom_reference(&s);
         }
     }
 
