@@ -100,9 +100,42 @@ fn class_id_tokens(element: &HtmlElement) -> impl Iterator<Item = String> + '_ {
         .map(|token| token.to_ascii_lowercase())
 }
 
+/// Returns true for interactive UI controls whose label/placeholder is chrome, not content:
+/// `<button>` and `<input>` of type search/button/submit/reset.
+pub(super) fn is_ui_control(element: &HtmlElement) -> bool {
+    match element.tag_name.as_str() {
+        "button" => true,
+        "input" => element
+            .attributes
+            .get("type")
+            .and_then(|v| v.as_deref())
+            .is_some_and(|t| {
+                matches!(
+                    t.to_ascii_lowercase().as_str(),
+                    "search" | "button" | "submit" | "reset"
+                )
+            }),
+        _ => false,
+    }
+}
+
+/// Returns true for icon-font glyph elements (Material Icons/Symbols), whose text content is
+/// a ligature name like `bolt` that would otherwise leak into the output.
+fn is_icon_font(element: &HtmlElement) -> bool {
+    element
+        .attributes
+        .get("class")
+        .and_then(|v| v.as_deref())
+        .is_some_and(|class| {
+            class
+                .split_ascii_whitespace()
+                .any(|c| c.starts_with("material-icons") || c.starts_with("material-symbols"))
+        })
+}
+
 /// Returns true if `element`'s `class`/`id` tokens identify it as boilerplate noise.
 pub(super) fn is_noise_by_class_id(element: &HtmlElement) -> bool {
-    class_id_tokens(element).any(|token| NOISE_TOKENS.contains(&token.as_str()))
+    is_icon_font(element) || class_id_tokens(element).any(|token| NOISE_TOKENS.contains(&token.as_str()))
 }
 
 #[cfg(test)]
@@ -140,6 +173,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case("button", &[], true)]
+    #[case("input", &[("type", "search")], true)]
+    #[case("input", &[("type", "SUBMIT")], true)]
+    #[case("input", &[("type", "checkbox")], false)]
+    #[case("input", &[], false)]
+    #[case("a", &[], false)]
+    fn test_is_ui_control(#[case] tag: &str, #[case] attrs: &[(&str, &str)], #[case] expected: bool) {
+        let mut el = element_with_attrs(attrs);
+        el.tag_name = tag.to_string();
+        assert_eq!(is_ui_control(&el), expected);
+    }
+
+    #[rstest]
     #[case(&[("class", "ad-slot")], true)]
     #[case(&[("class", "site-header")], false)]
     #[case(&[("id", "comments")], true)]
@@ -149,6 +195,9 @@ mod tests {
     #[case(&[("class", "cookie-banner")], true)]
     #[case(&[("class", "breadcrumb-nav")], true)]
     #[case(&[("class", "sidebar-widget")], true)]
+    #[case(&[("class", "material-symbols-outlined text-9xl")], true)]
+    #[case(&[("class", "material-icons")], true)]
+    #[case(&[("class", "material-design")], false)]
     #[case(&[("class", "already-read")], false)]
     #[case(&[("class", "gradient-bg")], false)]
     #[case(&[("class", "article-content")], false)]

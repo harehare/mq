@@ -151,6 +151,9 @@ mod tests {
 
     use super::*;
 
+    /// Hostnames without consecutive hyphens, so `xn--` (punycode, normalized by the URL parser) never occurs.
+    const HOST_PATTERN: &str = "[a-z][a-z0-9]{2,8}(-[a-z0-9]{1,4})?\\.[a-z]{2,4}";
+
     #[rstest]
     #[case("https://example.invalid/foo.mq", true)]
     #[case("http://example.invalid/foo.mq", true)]
@@ -372,7 +375,7 @@ mod tests {
 
         #[test]
         fn prop_arbitrary_domain_blocked_by_empty_allowlist(
-            host in "[a-z][a-z0-9-]{2,10}\\.[a-z]{2,4}",
+            host in HOST_PATTERN,
             path in "[a-z0-9/_.-]{1,20}",
         ) {
             prop_assume!(host != "raw.githubusercontent.com");
@@ -382,7 +385,7 @@ mod tests {
 
         #[test]
         fn prop_own_domain_allowed_when_listed(
-            host in "[a-z][a-z0-9-]{2,10}\\.[a-z]{2,4}",
+            host in HOST_PATTERN,
             path in "[a-z0-9/_.-]{1,20}",
         ) {
             let url = format!("https://{}/{}", host, path);
@@ -392,7 +395,7 @@ mod tests {
 
         #[test]
         fn prop_prefix_attack_blocked(
-            host in "[a-z][a-z0-9-]{2,10}\\.[a-z]{2,4}",
+            host in HOST_PATTERN,
             path in "[a-z0-9/_.-]{1,20}",
         ) {
             // "example.invalid.evil.com" must not match "example.invalid".

@@ -349,6 +349,45 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::ul_empty("<ul></ul>", ConversionOptions::default(), "")]
 #[case::ol_empty("<ol></ol>", ConversionOptions::default(), "")]
 #[case::ul_with_empty_li("<ul><li></li><li>Item 2</li></ul>", ConversionOptions::default(), "* \n* Item 2")]
+#[case::ul_li_leading_br("<ul><li><br>Text</li></ul>", ConversionOptions::default(), "* Text")]
+#[case::ol_li_leading_br(
+    "<ol><li><br>Text</li><li>Next</li></ol>",
+    ConversionOptions::default(),
+    "1. Text\n2. Next"
+)]
+#[case::ul_li_leading_empty_paragraph("<ul><li><p></p><p>Text</p></li></ul>", ConversionOptions::default(), "* Text")]
+#[case::ul_nested_li_leading_br(
+    "<ul><li>A<ul><li><br>Nested</li></ul></li></ul>",
+    ConversionOptions::default(),
+    "* A\n  * Nested"
+)]
+#[case::ol_li_only_br("<ol><li><br></li><li>x</li></ol>", ConversionOptions::default(), "1. \n2. x")]
+#[case::heading_code_keeps_inner_spaces("<h2><code>a  b</code></h2>", ConversionOptions::default(), "## `a  b`")]
+#[case::heading_collapses_text_whitespace(
+    "<h2>a   b <em>x  y</em><br>z</h2>",
+    ConversionOptions::default(),
+    "## a b *x y* z"
+)]
+#[case::table_cell_pre_single_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>print(1)</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `print(1)` |"
+)]
+#[case::table_cell_pre_escapes_pipe(
+    "<table><tr><th>H</th></tr><tr><td><pre>a|b</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a\\|b` |"
+)]
+#[case::table_cell_pre_multi_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>a\n  b</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a`<br>`  b` |"
+)]
+#[case::table_cell_pre_keeps_blank_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>a\n\nb</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a`<br><br>`b` |"
+)]
 #[case::ol_with_empty_li("<ol><li>Item 1</li><li></li></ol>", ConversionOptions::default(), "1. Item 1\n2. ")]
 #[case::ul_nested(
     "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>",
@@ -358,7 +397,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::li_with_multiple_paragraphs(
     "<ul><li><p>First para.</p><p>Second para.</p></li></ul>",
     ConversionOptions::default(),
-    "* First para.\n  Second para."
+    "* First para.\n\n  Second para."
 )]
 #[case::li_with_text_then_nested_list(
     "<ul><li>Item text<ul><li>Nested 1</li><li>Nested 2</li></ul></li></ul>",
@@ -373,12 +412,12 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::li_with_blockquote(
     "<ul><li>Item text<blockquote><p>Quoted</p></blockquote></li></ul>",
     ConversionOptions::default(),
-    "* Item text\n  > Quoted"
+    "* Item text\n\n  > Quoted"
 )]
 #[case::li_with_pre_code(
     "<ul><li>Item text<pre><code>code\nblock</code></pre></li></ul>",
     ConversionOptions::default(),
-    "* Item text\n  ```\n  code\n  block\n  ```"
+    "* Item text\n\n  ```\n  code\n  block\n  ```"
 )]
 #[case::iframe_simple(
     "<iframe src=\"https://example.com/embed\" title=\"My Embed\"></iframe>",
@@ -403,10 +442,10 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ),
     ConversionOptions::default(),
     concat!(
-        "* Paragraph 1 in li.\n",
+        "* Paragraph 1 in li.\n\n",
         "  Paragraph 2 in li.\n",
-        "  * Nested item\n",
-        "  > Quote in li.\n",
+        "  * Nested item\n\n",
+        "  > Quote in li.\n\n",
         "  ```\n",
         "  Code in li.\n",
         "  ```"
@@ -425,7 +464,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "| Header |\n",
         "|---|\n",
         "| Cell with **bold**, *italic*,<br>and a [link](#). |\n",
-        "| Cell with list:L1L2 (list becomes inline) |\n",
+        "| Cell with list:<br>* L1<br>* L2<br>(list becomes inline) |\n",
         "| Cell with image: ![alt](img.png) |"
     )
 )]
@@ -842,10 +881,10 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H1 | H2 |\n|---|---|\n| C1 | C2 |"
 )]
-#[case::table_with_colspan_repeated_across_columns(
+#[case::table_with_colspan_padded_with_empty_cells(
     "<table><thead><tr><th colspan=\"2\">H</th></tr></thead><tbody><tr><td>A</td><td>B</td></tr></tbody></table>",
     ConversionOptions::default(),
-    "| H | H |\n|---|---|\n| A | B |"
+    "| H |  |\n|---|---|\n| A | B |"
 )]
 #[case::table_with_rowspan_carried_into_next_row(
     "<table><thead><tr><th>H1</th><th>H2</th></tr></thead><tbody><tr><td rowspan=\"2\">R1C1</td><td>R1C2</td></tr><tr><td>R2C2</td></tr></tbody></table>",
@@ -1024,7 +1063,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     "# Hello"
 )]
 #[case::h2_empty("<h2></h2>", ConversionOptions::default(), "## ")] // Or just "##" - common practice is a space after #
-#[case::h3_with_whitespace("<h3>  Spaced Out  </h3>", ConversionOptions::default(), "###  Spaced Out ")]
+#[case::h3_with_whitespace("<h3>  Spaced Out  </h3>", ConversionOptions::default(), "### Spaced Out")]
 #[case::multiple_headings(
     "<h1>First</h1><h2>Second</h2>",
     ConversionOptions::default(),
@@ -1108,12 +1147,18 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "[Example](https://example.com \"Cool Site\")"
 )]
-#[case::link_empty_text(
-    "<a href=\"https://example.com\"></a>",
+#[case::link_empty_text("<a href=\"https://example.com\"></a>", ConversionOptions::default(), "")]
+#[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "")]
+#[case::link_icon_only_dropped(
+    "<p>a <a href=\"/x\" aria-label=\"Print\"></a>b</p>",
     ConversionOptions::default(),
-    "[](https://example.com)"
+    "a b"
 )]
-#[case::link_href_empty_processed("<a href=\"\"></a>", ConversionOptions::default(), "[](<>)")]
+#[case::whitespace_between_inline_siblings_kept(
+    "<div><strong>a</strong> <em>b</em><span> </span><span>c</span></div>",
+    ConversionOptions::default(),
+    "**a** *b* c"
+)]
 #[case::link_no_href("<a name=\"anchor\">Anchor Text</a>", ConversionOptions::default(), "Anchor Text")]
 #[case::link_with_emphasized_text(
     "<a href=\"/foo\"><em>italic link</em></a>",
@@ -1300,7 +1345,46 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
 #[case::inline_nav_aside_noscript(
     "<p>Text <nav>nav</nav> <aside>aside</aside> <noscript>noscript</noscript> End</p>",
     ConversionOptions::default(),
-    "Text  End"
+    "Text\n\nEnd"
+)]
+#[case::adjacent_em_merged("<p><em>a</em><em>b</em></p>", ConversionOptions::default(), "*ab*")]
+#[case::adjacent_strong_merged(
+    "<p><strong>a</strong><strong>b</strong></p>",
+    ConversionOptions::default(),
+    "**ab**"
+)]
+#[case::em_then_strong_not_merged("<p><em>a</em><strong>b</strong></p>", ConversionOptions::default(), "*a***b**")]
+#[case::tight_list_item_with_nested_list(
+    "<ul><li>one<ul><li>nested</li></ul></li><li>two</li></ul>",
+    ConversionOptions::default(),
+    "* one\n  * nested\n* two"
+)]
+#[case::table_cell_with_list(
+    "<table><thead><tr><th>H</th></tr></thead><tbody><tr><td><ul><li>x</li><li>y</li></ul></td></tr></tbody></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| * x<br>* y |"
+)]
+#[case::text_after_nested_div("<div>a<div>b</div>tail</div>", ConversionOptions::default(), "a\n\nb\n\ntail")]
+#[case::details_summary_then_body(
+    "<details><summary>Sum</summary>body</details>",
+    ConversionOptions::default(),
+    "**Sum**\n\nbody"
+)]
+#[case::heading_br_is_single_line("<h1>Query.<br>Filter. </h1>", ConversionOptions::default(), "# Query. Filter.")]
+#[case::icon_font_glyph_dropped(
+    "<p><span class=\"material-symbols-outlined\">bolt</span>Fast</p>",
+    ConversionOptions::default(),
+    "Fast"
+)]
+#[case::inline_style_dropped(
+    "<p>x<style>.z{color:red}</style>y</p><table><tr><td><style>.q{}</style>cell</td></tr></table>",
+    ConversionOptions::default(),
+    "xy\n\n| cell |\n|---|"
+)]
+#[case::button_and_search_input_dropped(
+    "<p>Body</p><button>Run</button><input type=\"search\" placeholder=\"Search\">",
+    ConversionOptions::default(),
+    "Body"
 )]
 #[case::span_in_paragraph("<p>Hello <span>world</span>!</p>", ConversionOptions::default(), "Hello world!")]
 #[case::consecutive_paragraphs("<p>P1</p><p>P2</p>", ConversionOptions::default(), "P1\n\nP2")]
@@ -1644,7 +1728,7 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
         "</tbody></table>"
     ),
     ConversionOptions::default(),
-    "| A | B | C |\n|---|---|---|\n| R1 | wide | wide |\n| R1 | x | y |"
+    "| A | B | C |\n|---|---|---|\n| R1 | wide |  |\n| R1 | x | y |"
 )]
 #[case::nested_table_falls_back_to_raw_html(
     "<table><tr><td>outer<table><tr><td>inner</td></tr></table></td></tr></table>",
@@ -1861,3 +1945,31 @@ fn test_no_base_url_leaves_relative_links_unresolved() {
 // Test for parsing error on malformed heading (illustrative, might need adjustment based on parser behavior)
 // At this stage, the generic "parsing not yet fully implemented" error is expected for unhandled valid tags,
 // but malformed tags might also trigger it or a more specific error once the parser is more developed.
+
+#[rstest]
+#[case::multiple_articles(
+    "<body><div><article><h2>One</h2><p>First</p></article><article><h2>Two</h2><p>Second</p></article></div></body>",
+    &["One", "First", "Two", "Second"]
+)]
+#[case::small_article_beside_content(
+    "<body><div><h1>Real Title</h1><p>Real body text that is long enough to count as prose.</p><aside><article><p>Teaser</p></article></aside></div></body>",
+    &["Real Title", "Real body text"]
+)]
+#[case::heading_outside_main(
+    "<body><h1>Title</h1><main><p>Main content</p></main></body>",
+    &["Title", "Main content"]
+)]
+fn test_smart_extraction_keeps_content_outside_entry_point(#[case] html: &str, #[case] expected: &[&str]) {
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    for text in expected {
+        assert!(md.contains(text), "missing {text:?} in: {md}");
+    }
+}
+
+#[test]
+fn test_smart_extraction_ignores_header_when_using_main() {
+    let html = "<body><header><h1>Site</h1></header><main><p>Main content</p></main></body>";
+    let md = convert_html_to_markdown(html, ConversionOptions::default()).unwrap();
+    assert!(md.contains("Main content"));
+    assert!(!md.contains("Site"), "header should still be excluded: {md}");
+}
