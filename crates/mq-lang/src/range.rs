@@ -1,14 +1,5 @@
-use nom_locate::LocatedSpan;
-
-use crate::module::ModuleId;
 #[cfg(feature = "ast-json")]
 use serde::{Deserialize, Serialize};
-
-/// A span representing a location in source code with module context.
-///
-/// This type combines nom's `LocatedSpan` with a module identifier,
-/// enabling accurate source location tracking across multiple modules.
-pub type Span<'a> = LocatedSpan<&'a str, ModuleId>;
 
 /// A position in source code, representing a line and column.
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -44,35 +35,5 @@ impl Range {
     pub fn contains(&self, position: &Position) -> bool {
         (self.start.line < position.line || (self.start.line == position.line && self.start.column <= position.column))
             && (self.end.line > position.line || (self.end.line == position.line && self.end.column >= position.column))
-    }
-}
-
-impl<'a> From<Span<'a>> for Range {
-    fn from(span: Span<'a>) -> Self {
-        let fragment = span.fragment();
-        let fragment = if !fragment.starts_with(" ") && fragment.ends_with(" ") {
-            fragment.trim()
-        } else {
-            fragment
-        };
-
-        let line = span.location_line();
-        let column = span.get_utf8_column();
-        Range {
-            start: Position { line, column },
-            end: Position {
-                line,
-                column: column + fragment.chars().count(),
-            },
-        }
-    }
-}
-
-impl<'a> From<Span<'a>> for Position {
-    fn from(span: Span<'a>) -> Self {
-        Position {
-            line: span.location_line(),
-            column: span.get_utf8_column(),
-        }
     }
 }

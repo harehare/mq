@@ -27,10 +27,9 @@ glob = {workspace = true}
 ignore = {workspace = true, optional = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
+memchr = {workspace = true}
 miette = {workspace = true}
 mq-markdown = {workspace = true, features = ["json", "obsidian"]}
-nom = {workspace = true}
-nom_locate = {workspace = true}
 percent-encoding = {workspace = true}
 rand = {workspace = true}
 regex = {workspace = true}
