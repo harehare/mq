@@ -16,9 +16,28 @@ pub enum ParseError {
     UnknownSelector(selector::UnknownSelector),
     #[error("Unexpected `end` keyword — no open block to close")]
     UnmatchedEnd(Shared<Token>),
+    /// A required token is absent; `found` is the token standing where it was expected.
+    #[error("Expected {expected} but got `{found}`")]
+    Missing {
+        expected: &'static str,
+        found: Shared<Token>,
+    },
 }
 
 impl ParseError {
+    /// Source range of the offending token, or `None` for end-of-input errors.
+    pub fn range(&self) -> Option<crate::Range> {
+        match self {
+            ParseError::UnexpectedToken(token)
+            | ParseError::InsufficientTokens(token)
+            | ParseError::ExpectedClosingBracket(token)
+            | ParseError::UnmatchedEnd(token)
+            | ParseError::Missing { found: token, .. } => Some(token.range),
+            ParseError::UnknownSelector(selector::UnknownSelector(token)) => Some(token.range),
+            ParseError::UnexpectedEOFDetected => None,
+        }
+    }
+
     /// User-facing hint text for this error, mirroring the `help()` text the AST-level
     /// `SyntaxError` produces for the equivalent case, so CST-based (LSP) and AST-based
     /// (CLI) diagnostics stay consistent.
@@ -40,6 +59,9 @@ impl ParseError {
             ),
             ParseError::ExpectedClosingBracket(_) => Some(
                 "Expected a closing bracket ']'. Check your brackets for balance.".to_string(),
+            ),
+            ParseError::Missing { .. } => Some(
+                "A token is missing here. Check for unclosed brackets, parentheses, or blocks.".to_string(),
             ),
             ParseError::UnmatchedEnd(_) => Some(
                 "This `end` keyword does not match any open block. Note: single-line `if` expressions do not require `end`. Check that each `end` closes a `def`, `fn`, `do`, `while`, `loop`, or `foreach` block.".to_string(),

@@ -121,6 +121,8 @@ pub enum TokenKind {
     TildeEqual,
     NotTildeEqual,
     Try,
+    /// Text the lexer could not tokenize; only produced when `ignore_errors` is set.
+    Unknown(String),
     Unless,
     Until,
     Whitespace(usize),
@@ -245,6 +247,7 @@ impl Display for TokenKind {
             TokenKind::TildeEqual => write!(f, "=~"),
             TokenKind::NotTildeEqual => write!(f, "!~"),
             TokenKind::Try => write!(f, "try"),
+            TokenKind::Unknown(text) => write!(f, "{}", text),
             TokenKind::Unless => write!(f, "unless"),
             TokenKind::Until => write!(f, "until"),
             TokenKind::Catch => write!(f, "catch"),

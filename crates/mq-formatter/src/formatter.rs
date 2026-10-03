@@ -300,7 +300,11 @@ impl Formatter {
                     mq_lang::CstNodeKind::Fn { .. } | mq_lang::CstNodeKind::Loop { .. }
                 ),
             ),
-            mq_lang::CstNodeKind::Eof => {}
+            mq_lang::CstNodeKind::Eof | mq_lang::CstNodeKind::Missing { .. } => {}
+            mq_lang::CstNodeKind::Error { .. } => {
+                self.separate_error_node(node);
+                self.append_raw_children(node);
+            }
             mq_lang::CstNodeKind::Elif { .. } => self.format_elif(node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Else { .. } => self.format_else(node, indent_level_consider_new_line),
             mq_lang::CstNodeKind::Ident { .. } => self.format_ident(node, indent_level_consider_new_line),
@@ -506,7 +510,14 @@ impl Formatter {
             self.output.pop();
         }
 
-        self.format_node(last, indent_level);
+        // A `Missing` closer has no text, and its comments were already written above.
+        if matches!(last.kind, mq_lang::CstNodeKind::Missing { .. }) {
+            if after_newline && !is_multiline && !has_comment {
+                self.append_newline();
+            }
+        } else {
+            self.format_node(last, indent_level);
+        }
     }
 
     fn format_binary_op(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, block_indent_level: usize) {
@@ -1315,6 +1326,73 @@ impl Formatter {
         }
     }
 
+    /// Keeps an error node apart from the preceding token; the space between them is
+    /// trailing trivia of the previous node, which the formatter does not emit.
+    fn separate_error_node(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>) {
+        let attaches = |c: char| c.is_whitespace() || matches!(c, '(' | '[' | '{');
+        let first_attaches = node
+            .children()
+            .next()
+            .and_then(|c| c.token.as_ref())
+            .is_some_and(|token| {
+                matches!(
+                    token.kind,
+                    mq_lang::TokenKind::Comma
+                        | mq_lang::TokenKind::SemiColon
+                        | mq_lang::TokenKind::RParen
+                        | mq_lang::TokenKind::RBracket
+                        | mq_lang::TokenKind::RBrace
+                )
+            });
+
+        if !first_attaches && self.output.chars().last().is_some_and(|c| !attaches(c)) {
+            self.output.push(' ');
+        }
+    }
+
+    /// Emits an error node's children as written, since unparsable source has no formatting rules.
+    fn append_raw_children(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>) {
+        for child in node.children() {
+            for trivia in &child.leading_trivia {
+                self.append_raw_trivia(trivia);
+            }
+            if let Some(token) = &child.token {
+                self.append_raw_token(token);
+            }
+            self.append_raw_children(child);
+            for trivia in &child.trailing_trivia {
+                self.append_raw_trivia(trivia);
+            }
+        }
+    }
+
+    fn append_raw_trivia(&mut self, trivia: &mq_lang::CstTrivia) {
+        match trivia {
+            mq_lang::CstTrivia::Comment(_) => self.append_comment(trivia),
+            _ => self.append_display(trivia),
+        }
+    }
+
+    /// Writes `token` so that it re-lexes to itself (`Display` drops string quotes).
+    fn append_raw_token(&mut self, token: &mq_lang::Token) {
+        match &token.kind {
+            mq_lang::TokenKind::StringLiteral(s) => self.append_string_literal(token, s),
+            mq_lang::TokenKind::NumberLiteral(n) => self.append_display(&n.value()),
+            mq_lang::TokenKind::InterpolatedString(_) => {
+                self.output.push_str("s\"");
+                let escaped = token
+                    .to_string()
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\t', "\\t")
+                    .replace('\r', "\\r");
+                self.output.push_str(&escaped);
+                self.output.push('"');
+            }
+            _ => self.append_display(token),
+        }
+    }
+
     fn append_leading_trivia(&mut self, node: &mq_lang::Shared<mq_lang::CstNode>, indent_level: usize) {
         for trivia in &node.leading_trivia {
             match trivia {
@@ -1527,6 +1605,12 @@ impl Formatter {
                     }
                 }
                 mq_lang::TokenKind::Colon => self.append_display(token),
+                mq_lang::TokenKind::SemiColon => {
+                    if node.leading_trivia.iter().any(|trivia| trivia.is_comment()) {
+                        self.append_leading_trivia(node, indent_level);
+                    }
+                    self.append_display(token);
+                }
                 mq_lang::TokenKind::Equal => {
                     self.output.push(' ');
                     self.append_display(token);
@@ -3335,6 +3419,53 @@ def func_a(): test;
         let (mut nodes, _) = mq_lang::parse_recovery(r#""\u{41}\t""#);
         let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
         assert_eq!(result, r#""A\t""#);
+    }
+
+    /// Comments before a terminating `;` are kept, and formatting them again changes nothing.
+    #[rstest::rstest]
+    #[case::own_line_in_def("def f():\n  1\n  # note\n;", "def f():\n  1\n  # note\n;\n")]
+    #[case::trailing_in_def("def f():\n  1 # trail\n;", "def f():\n  1 # trail\n;\n")]
+    #[case::after_let("let x = 1\n# c\n;", "let x = 1\n# c\n;\n")]
+    #[case::in_text("# a ; b\nlet x = 1", "# a ; b\nlet x = 1\n")]
+    fn test_format_keeps_comment_before_semicolon(#[case] code: &str, #[case] expected: &str) {
+        let once = Formatter::new(None).format(code).unwrap();
+        assert_eq!(once, expected);
+        assert_eq!(Formatter::new(None).format(&once).unwrap(), once);
+    }
+
+    /// Unparsable source in an `Error` node is emitted as written, strings included.
+    #[rstest::rstest]
+    #[case::junk_string("foo(1 \"a b\", 2)", "foo(1 \"a b\", 2)")]
+    #[case::unknown_token("foo(1, §, 2)", "foo(1, §, 2)")]
+    #[case::missing_paren("foo(1, 2", "foo(1, 2")]
+    #[case::array_final_newline("[1\n", "[1\n")]
+    #[case::array_items_final_newline("[1, 2\n", "[1, 2\n")]
+    #[case::dict_final_newline("{\"a\": 1\n", "{\"a\": 1\n")]
+    #[case::call_final_newline("foo(1\n", "foo(1\n")]
+    fn test_format_with_cst_keeps_broken_source(#[case] code: &str, #[case] expected: &str) {
+        let (mut nodes, errors) = mq_lang::parse_recovery(code);
+        assert!(errors.has_errors());
+
+        let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
+
+        assert_eq!(result, expected);
+    }
+
+    /// A comment before an absent closer at EOF is kept exactly once.
+    #[rstest::rstest]
+    #[case::call("foo(1 # note\n")]
+    #[case::array("[1 # note\n")]
+    #[case::dict("{\"a\": 1 # note\n")]
+    #[case::call_own_line("foo(1,\n  # note\n")]
+    #[case::array_own_line("[1,\n  # note\n")]
+    #[case::dict_own_line("{\"a\": 1,\n  # note\n")]
+    fn test_format_with_cst_keeps_comment_before_missing_closer(#[case] code: &str) {
+        let (mut nodes, errors) = mq_lang::parse_recovery(code);
+        assert!(errors.has_errors());
+
+        let result = Formatter::new(None).format_with_cst(&mut nodes).unwrap();
+
+        assert_eq!(result.matches("# note").count(), 1, "{code:?} -> {result:?}");
     }
 
     #[test]

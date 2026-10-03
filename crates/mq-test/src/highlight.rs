@@ -100,7 +100,7 @@ fn classify_token(
         }
         LParen | RParen | LBrace | RBrace | LBracket | RBracket | Colon | DoubleColon | SemiColon | Comma
         | Question => TokenClass::Punctuation,
-        Whitespace(_) | Tab(_) | NewLine | Eof => return Option::None,
+        Whitespace(_) | Tab(_) | NewLine | Eof | Unknown(_) => return Option::None,
     })
 }
 
