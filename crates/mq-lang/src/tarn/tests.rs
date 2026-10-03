@@ -4429,3 +4429,52 @@ proptest! {
         prop_assert_eq!(dropped, kept, "{}", code);
     }
 }
+
+const CONDITION_OPERANDS: [&str; 7] = ["true", "false", "None", "\"\"", "0", "\"x\"", "1"];
+
+/// `if`/`while` conditions compile `&&`/`||` into jumps; a value-position `&&`/`||` keeps the
+/// old operand-producing form, so the two must agree on every truthiness combination.
+#[rstest]
+#[case::and("&&")]
+#[case::or("||")]
+fn condition_jumps_match_value_semantics_for_two_operands(#[case] op: &str) {
+    for a in CONDITION_OPERANDS {
+        for b in CONDITION_OPERANDS {
+            let in_condition = run(&format!("if ({a} {op} {b}): 1 else: 2"));
+            let as_value = run(&format!("let v = ({a} {op} {b}) | if (v): 1 else: 2"));
+            assert_eq!(in_condition, as_value, "{a} {op} {b}");
+        }
+    }
+}
+
+#[rstest]
+#[case::and_or("a && b || c")]
+#[case::or_and("a || b && c")]
+#[case::grouped_or_in_and("(a || b) && c")]
+#[case::grouped_and_in_or("a || (b && c)")]
+#[case::three_and("a && b && c")]
+#[case::three_or("a || b || c")]
+#[case::both_groups("(a || b) && (b || c)")]
+fn condition_jumps_match_value_semantics_for_nested_conditions(#[case] shape: &str) {
+    for a in ["true", "false", "0"] {
+        for b in ["true", "false", "\"x\""] {
+            for c in ["true", "false", "None"] {
+                let condition = shape.replace('a', a).replace('b', b).replace('c', c);
+                let in_condition = run(&format!("if ({condition}): 1 else: 2"));
+                let as_value = run(&format!("let v = ({condition}) | if (v): 1 else: 2"));
+                assert_eq!(in_condition, as_value, "{condition}");
+            }
+        }
+    }
+}
+
+#[rstest]
+#[case::and_skips_right_operand(r#"if (false && error("not evaluated")): 1 else: 2"#, 2.0)]
+#[case::or_skips_right_operand(r#"if (true || error("not evaluated")): 1 else: 2"#, 1.0)]
+#[case::and_evaluates_right_operand_when_left_is_true(r#"if (true && 1): 1 else: 2"#, 1.0)]
+#[case::elif_condition(r#"if (false && true): 1 elif (false || true): 2 else: 3"#, 2.0)]
+#[case::while_condition("var i = 0 | var n = 0 | while (i < 10 && n < 3): i += 1 | n += 1; | i", 3.0)]
+#[case::while_or_condition("var i = 0 | while (i < 3 || i == 5): i += 1; | i", 3.0)]
+fn condition_jumps_short_circuit_and_drive_loops(#[case] code: &str, #[case] expected: f64) {
+    assert_eq!(run(code), RuntimeValue::Number(expected.into()));
+}

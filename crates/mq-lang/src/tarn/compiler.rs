@@ -2326,13 +2326,17 @@ impl<R: ModuleResolver> Compiler<R> {
         }
     }
 
-    fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
+    fn begin_node(&mut self, node: &Shared<Node>) {
         self.current_token_id = node.token_id;
         #[cfg(feature = "debugger")]
         if self.instrument {
             self.chunk_mut().debug_nodes.push((node.token_id, Shared::clone(node)));
             self.emit(OpCode::StmtBoundary(node.token_id));
         }
+    }
+
+    fn compile_expr(&mut self, node: &Shared<Node>) -> CompileResult<()> {
+        self.begin_node(node);
         match &node.expr {
             Expr::Literal(lit) => {
                 let value = literal_to_runtime_value(lit);
@@ -2981,24 +2985,76 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    /// Compiles `node` for its truthiness only. `&&` and `||` become jumps instead of building a
+    /// value, so no `Dup`/`Pop` and no intermediate boolean are needed.
+    ///
+    /// Falling through means true. The returned jumps leave when the condition is false, or
+    /// (second list) true early; the caller patches both: the latter to the fall-through point.
+    fn compile_condition(&mut self, node: &Shared<Node>) -> CompileResult<ConditionJumps> {
+        match &node.expr {
+            Expr::And(operands) if !operands.is_empty() => {
+                self.begin_node(node);
+                let mut jumps = ConditionJumps::default();
+                for operand in operands {
+                    let operand_jumps = self.compile_condition(operand)?;
+                    // An early-true operand continues with the next operand.
+                    for jump in operand_jumps.on_true {
+                        self.chunk_mut().patch_jump(jump);
+                    }
+                    jumps.on_false.extend(operand_jumps.on_false);
+                }
+                Ok(jumps)
+            }
+            Expr::Or(operands) if !operands.is_empty() => {
+                self.begin_node(node);
+                let mut jumps = ConditionJumps::default();
+                let last = operands.len() - 1;
+                for (i, operand) in operands.iter().enumerate() {
+                    let operand_jumps = self.compile_condition(operand)?;
+                    jumps.on_true.extend(operand_jumps.on_true);
+                    if i == last {
+                        jumps.on_false = operand_jumps.on_false;
+                    } else {
+                        jumps.on_true.push(self.emit(OpCode::Jump(0)));
+                        // A false operand continues with the next one.
+                        for jump in operand_jumps.on_false {
+                            self.chunk_mut().patch_jump(jump);
+                        }
+                    }
+                }
+                Ok(jumps)
+            }
+            _ => {
+                self.compile_expr(node)?;
+                Ok(ConditionJumps {
+                    on_false: vec![self.emit(OpCode::JumpIfFalse(0))],
+                    on_true: Vec::new(),
+                })
+            }
+        }
+    }
+
     fn compile_if(&mut self, branches: &ast::Branches) -> CompileResult<()> {
         let mut end_jumps = Vec::with_capacity(branches.len());
         let mut has_else = false;
 
         for (cond, body) in branches {
-            let else_jump = if let Some(cond) = cond {
-                self.compile_expr(cond)?;
-                Some(self.emit(OpCode::JumpIfFalse(0)))
+            let else_jumps = if let Some(cond) = cond {
+                let jumps = self.compile_condition(cond)?;
+                for jump in jumps.on_true {
+                    self.chunk_mut().patch_jump(jump);
+                }
+                jumps.on_false
             } else {
                 has_else = true;
-                None
+                Vec::new()
             };
 
             self.compile_expr(body)?;
             if cond.is_some() {
                 end_jumps.push(self.emit(OpCode::Jump(0)));
             }
-            if let Some(else_jump) = else_jump {
+            for else_jump in else_jumps {
                 self.chunk_mut().patch_jump(else_jump);
             }
             if cond.is_none() {
@@ -3156,15 +3212,23 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::Const(false_idx));
         self.emit(OpCode::SetLocal(completed_iteration_slot));
         let loop_start = self.chunk_mut().code.len();
-        self.compile_expr(cond)?;
-        if invert {
+        let exit_jumps = if invert {
+            self.compile_expr(cond)?;
             self.emit(OpCode::Not);
-        }
-        let exit_jump = self.emit(OpCode::JumpIfFalse(0));
+            vec![self.emit(OpCode::JumpIfFalse(0))]
+        } else {
+            let jumps = self.compile_condition(cond)?;
+            for jump in jumps.on_true {
+                self.chunk_mut().patch_jump(jump);
+            }
+            jumps.on_false
+        };
         let (break_jumps, break_try_catches, continue_try_catches) =
             self.compile_loop_body(loop_start, acc_slot, Some(completed_iteration_slot), body)?;
 
-        self.chunk_mut().patch_jump(exit_jump);
+        for exit_jump in exit_jumps {
+            self.chunk_mut().patch_jump(exit_jump);
+        }
         for jump in break_jumps {
             self.chunk_mut().patch_jump(jump);
         }
@@ -3205,6 +3269,15 @@ impl<R: ModuleResolver> Compiler<R> {
         self.emit(OpCode::GetLocal(acc_slot));
         Ok(())
     }
+}
+
+/// Jumps out of a condition compiled by `compile_condition`, still to be patched.
+#[derive(Default)]
+struct ConditionJumps {
+    /// Taken when the condition is false.
+    on_false: Vec<usize>,
+    /// Taken when the condition is already known true; they land where fall-through continues.
+    on_true: Vec<usize>,
 }
 
 fn to_vm_binary_op(op: ast::BinaryOp) -> BinaryOp {
