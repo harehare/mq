@@ -221,13 +221,14 @@ fn convert_table_cell_content(nodes: &[HtmlNode]) -> miette::Result<String> {
         .any(|n| matches!(n, HtmlNode::Element(el) if BLOCK_TAGS.contains(&el.tag_name.as_str())));
     if has_block {
         let md = convert_nodes_to_markdown(nodes, &ConversionOptions::default())?;
-        Ok(fenced_blocks_to_code_spans(md.trim()).replace("\n\n", "\n"))
+        Ok(fenced_blocks_to_code_spans(md.trim()))
     } else {
         convert_children_to_string(nodes)
     }
 }
 
 /// Rewrites fenced code blocks as one code span per line, since table cells can't hold fences.
+/// Blank lines between blocks are dropped, but blank lines inside code are kept.
 fn fenced_blocks_to_code_spans(md: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut in_fence = false;
@@ -235,8 +236,12 @@ fn fenced_blocks_to_code_spans(md: &str) -> String {
         if line.trim_start().starts_with("```") {
             in_fence = !in_fence;
         } else if !in_fence {
-            out.push(line.to_string());
-        } else if !line.trim().is_empty() {
+            if !line.is_empty() {
+                out.push(line.to_string());
+            }
+        } else if line.trim().is_empty() {
+            out.push(String::new());
+        } else {
             out.push(wrap_code_span(line));
         }
     }

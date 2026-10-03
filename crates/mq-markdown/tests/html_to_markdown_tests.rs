@@ -383,6 +383,11 @@ fn assert_conversion_with_options(html: &str, expected_markdown: &str, options: 
     ConversionOptions::default(),
     "| H |\n|---|\n| `a`<br>`  b` |"
 )]
+#[case::table_cell_pre_keeps_blank_line(
+    "<table><tr><th>H</th></tr><tr><td><pre>a\n\nb</pre></td></tr></table>",
+    ConversionOptions::default(),
+    "| H |\n|---|\n| `a`<br><br>`b` |"
+)]
 #[case::ol_with_empty_li("<ol><li>Item 1</li><li></li></ol>", ConversionOptions::default(), "1. Item 1\n2. ")]
 #[case::ul_nested(
     "<ul><li>Parent 1<ul><li>Child A</li><li>Child B</li></ul></li><li>Parent 2</li></ul>",
