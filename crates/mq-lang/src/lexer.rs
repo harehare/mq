@@ -221,6 +221,8 @@ struct Cursor<'a> {
     line: u32,
     col: usize,
     module_id: ModuleId,
+    /// Byte offset from which no `}` exists, so later `${` scans can stop early.
+    no_closing_brace_from: usize,
 }
 
 /// Saved cursor state for backtracking.
@@ -240,6 +242,7 @@ impl<'a> Cursor<'a> {
             line: 1,
             col: 1,
             module_id,
+            no_closing_brace_from: usize::MAX,
         }
     }
 
@@ -816,12 +819,25 @@ impl<'a> Cursor<'a> {
         Some(self.token_from(start, TokenKind::InterpolatedString(segments)))
     }
 
+    /// Offset of the first `}` after the `${` at the cursor, relative to the text after `${`.
+    fn find_closing_brace(&mut self) -> Option<usize> {
+        let from = self.pos + 2;
+        if from >= self.no_closing_brace_from {
+            return None;
+        }
+        let close = memchr::memchr(b'}', &self.bytes[from..]);
+        if close.is_none() {
+            self.no_closing_brace_from = from;
+        }
+        close
+    }
+
     /// Reads one segment of an interpolated string, leaving the cursor unchanged on failure.
     fn string_segment(&mut self) -> Option<StringSegment> {
         let start = self.position();
 
         if self.starts_with("${")
-            && let Some(close) = self.rest()[2..].find('}')
+            && let Some(close) = self.find_closing_brace()
         {
             let expr = SmolStr::new(&self.rest()[2..2 + close]);
             self.advance(self.pos + 2 + close + 1);
@@ -1916,6 +1932,18 @@ mod tests {
         vec![ident("s"), TokenKind::StringLiteral("a{b".into())]
     )]
     #[case::carriage_return_is_whitespace_when_skipping("a\rb", vec![ident("a"), ident("b")])]
+    #[case::repeated_interpolation_without_closing_brace_falls_back(
+        r#"s"${x" s"${y""#,
+        vec![ident("s"), TokenKind::StringLiteral("${x".into()), ident("s"), TokenKind::StringLiteral("${y".into())]
+    )]
+    #[case::interpolation_before_an_unclosed_one(
+        r#"s"${a}" s"${b""#,
+        vec![
+            TokenKind::InterpolatedString(vec![StringSegment::Expr("a".into(), Range::default())]),
+            ident("s"),
+            TokenKind::StringLiteral("${b".into()),
+        ]
+    )]
     #[case::empty_interpolated_string_falls_back(r#"s"""#, vec![ident("s"), TokenKind::StringLiteral(String::new())])]
     #[case::bytes(r#"b"A\x42\n\0\\\"""#, vec![TokenKind::BytesLiteral(vec![0x41, 0x42, b'\n', 0, b'\\', b'"'])])]
     #[case::bytes_with_non_ascii_falls_back("b\"é\"", vec![ident("b"), TokenKind::StringLiteral("é".into())])]
