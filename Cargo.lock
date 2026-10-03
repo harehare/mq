@@ -2752,6 +2752,7 @@ dependencies = [
  "indexmap",
  "itertools 0.15.0",
  "md5",
+ "memchr",
  "miette",
  "mimalloc",
  "mq-macros",

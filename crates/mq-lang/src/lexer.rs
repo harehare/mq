@@ -92,7 +92,7 @@ pub(crate) fn parse_interpolation_segments(
 /// Outcome of scanning a number: `Fatal` is a malformed exponent, which rejects the whole token
 /// instead of letting the caller try other token kinds.
 enum NumberScan {
-    Match(usize),
+    Match(usize, f64),
     NoMatch,
     Fatal,
 }
@@ -365,26 +365,39 @@ impl<'a> Cursor<'a> {
         self.rest().starts_with(prefix)
     }
 
+    /// Skips spaces, tabs, line breaks and `#` comments in one pass.
     fn skip_whitespace_and_comments(&mut self) {
-        loop {
-            let ws = self.bytes[self.pos..]
-                .iter()
-                .take_while(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
-                .count();
-            if ws > 0 {
-                self.advance(self.pos + ws);
-            }
+        let (mut i, mut line, mut col) = (self.pos, self.line, self.col);
 
-            if self.peek(0) == Some(b'#') {
-                let len = self.bytes[self.pos..]
-                    .iter()
-                    .take_while(|b| !matches!(b, b'\n' | b'\r'))
-                    .count();
-                self.advance_text(self.pos + len);
-            } else {
-                return;
+        loop {
+            match self.bytes.get(i) {
+                Some(b' ' | b'\t' | b'\r') => {
+                    i += 1;
+                    col += 1;
+                }
+                Some(b'\n') => {
+                    i += 1;
+                    line += 1;
+                    col = 1;
+                }
+                Some(b'#') => {
+                    let len = Self::comment_len(&self.bytes[i..]);
+                    col += self.src[i..i + len].chars().count();
+                    i += len;
+                }
+                _ => break,
             }
         }
+
+        self.pos = i;
+        self.line = line;
+        self.col = col;
+    }
+
+    /// Length of the comment text that starts at `bytes[0]`, up to the line break.
+    #[inline(always)]
+    fn comment_len(bytes: &[u8]) -> usize {
+        memchr::memchr2(b'\n', b'\r', bytes).unwrap_or(bytes.len())
     }
 
     /// Like `advance`, for text without a newline but possibly non-ASCII.
@@ -419,10 +432,7 @@ impl<'a> Cursor<'a> {
     fn inline_comment(&mut self) -> Token {
         self.advance_ascii(1);
         let start = self.position();
-        let len = self.bytes[self.pos..]
-            .iter()
-            .take_while(|b| !matches!(b, b'\n' | b'\r'))
-            .count();
+        let len = Self::comment_len(&self.bytes[self.pos..]);
         let text = self.src[self.pos..self.pos + len].to_string();
         self.advance_text(self.pos + len);
         self.token_from(start, TokenKind::Comment(text))
@@ -445,20 +455,20 @@ impl<'a> Cursor<'a> {
             b'$' => self.env(),
             b'"' => self.string_or_empty(),
             b'0'..=b'9' => match self.number_scan() {
-                NumberScan::Match(len) => self.number(len),
+                NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::NoMatch | NumberScan::Fatal => None,
             },
             b'-' => match self.number_scan() {
-                NumberScan::Match(len) => self.number(len),
+                NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::Fatal => None,
-                NumberScan::NoMatch => Some(self.fixed(&[
-                    ("->", TokenKind::Arrow),
-                    ("-=", TokenKind::MinusEqual),
-                    ("-", TokenKind::Minus),
-                ])),
+                NumberScan::NoMatch => Some(match self.peek(1) {
+                    Some(b'>') => self.simple(2, TokenKind::Arrow),
+                    Some(b'=') => self.simple(2, TokenKind::MinusEqual),
+                    _ => self.simple(1, TokenKind::Minus),
+                }),
             },
             b'.' => match self.number_scan() {
-                NumberScan::Match(len) => self.number(len),
+                NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::Fatal => None,
                 NumberScan::NoMatch => {
                     if self.starts_with("...") {
@@ -492,45 +502,45 @@ impl<'a> Cursor<'a> {
             b']' => Some(self.simple(1, TokenKind::RBracket)),
             b',' => Some(self.simple(1, TokenKind::Comma)),
             b';' => Some(self.simple(1, TokenKind::SemiColon)),
-            b':' => Some(self.fixed(&[("::", TokenKind::DoubleColon), (":", TokenKind::Colon)])),
-            b'?' => Some(self.fixed(&[("??", TokenKind::Coalesce), ("?", TokenKind::Question)])),
-            b'|' => Some(self.fixed(&[
-                ("|=", TokenKind::PipeEqual),
-                ("||", TokenKind::Or),
-                ("|", TokenKind::Pipe),
-            ])),
-            b'!' => Some(self.fixed(&[
-                ("!=", TokenKind::NeEq),
-                ("!~", TokenKind::NotTildeEqual),
-                ("!", TokenKind::Not),
-            ])),
-            b'<' => Some(self.fixed(&[
-                ("<<", TokenKind::LeftShift),
-                ("<=", TokenKind::Lte),
-                ("<", TokenKind::Lt),
-            ])),
-            b'>' => Some(self.fixed(&[
-                (">>", TokenKind::RightShift),
-                (">=", TokenKind::Gte),
-                (">", TokenKind::Gt),
-            ])),
-            b'=' => Some(self.fixed(&[
-                ("==", TokenKind::EqEq),
-                ("=~", TokenKind::TildeEqual),
-                ("=", TokenKind::Equal),
-            ])),
+            b':' => Some(self.one_or_two(b':', TokenKind::DoubleColon, TokenKind::Colon)),
+            b'?' => Some(self.one_or_two(b'?', TokenKind::Coalesce, TokenKind::Question)),
+            b'|' => Some(match self.peek(1) {
+                Some(b'=') => self.simple(2, TokenKind::PipeEqual),
+                Some(b'|') => self.simple(2, TokenKind::Or),
+                _ => self.simple(1, TokenKind::Pipe),
+            }),
+            b'!' => Some(match self.peek(1) {
+                Some(b'=') => self.simple(2, TokenKind::NeEq),
+                Some(b'~') => self.simple(2, TokenKind::NotTildeEqual),
+                _ => self.simple(1, TokenKind::Not),
+            }),
+            b'<' => Some(match self.peek(1) {
+                Some(b'<') => self.simple(2, TokenKind::LeftShift),
+                Some(b'=') => self.simple(2, TokenKind::Lte),
+                _ => self.simple(1, TokenKind::Lt),
+            }),
+            b'>' => Some(match self.peek(1) {
+                Some(b'>') => self.simple(2, TokenKind::RightShift),
+                Some(b'=') => self.simple(2, TokenKind::Gte),
+                _ => self.simple(1, TokenKind::Gt),
+            }),
+            b'=' => Some(match self.peek(1) {
+                Some(b'=') => self.simple(2, TokenKind::EqEq),
+                Some(b'~') => self.simple(2, TokenKind::TildeEqual),
+                _ => self.simple(1, TokenKind::Equal),
+            }),
             b'+' => match self.number_scan() {
-                NumberScan::Match(len) => self.number(len),
+                NumberScan::Match(len, value) => self.number(len, value),
                 NumberScan::Fatal => None,
-                NumberScan::NoMatch => Some(self.fixed(&[("+=", TokenKind::PlusEqual), ("+", TokenKind::Plus)])),
+                NumberScan::NoMatch => Some(self.one_or_two(b'=', TokenKind::PlusEqual, TokenKind::Plus)),
             },
-            b'*' => Some(self.fixed(&[("*=", TokenKind::StarEqual), ("*", TokenKind::Asterisk)])),
-            b'/' => Some(self.fixed(&[
-                ("/=", TokenKind::SlashEqual),
-                ("//=", TokenKind::DoubleSlashEqual),
-                ("/", TokenKind::Slash),
-            ])),
-            b'%' => Some(self.fixed(&[("%=", TokenKind::PercentEqual), ("%", TokenKind::Percent)])),
+            b'*' => Some(self.one_or_two(b'=', TokenKind::StarEqual, TokenKind::Asterisk)),
+            b'/' => Some(match (self.peek(1), self.peek(2)) {
+                (Some(b'='), _) => self.simple(2, TokenKind::SlashEqual),
+                (Some(b'/'), Some(b'=')) => self.simple(3, TokenKind::DoubleSlashEqual),
+                _ => self.simple(1, TokenKind::Slash),
+            }),
+            b'%' => Some(self.one_or_two(b'=', TokenKind::PercentEqual, TokenKind::Percent)),
             b'&' => {
                 if self.starts_with("&&") {
                     Some(self.simple(2, TokenKind::And))
@@ -544,14 +554,14 @@ impl<'a> Cursor<'a> {
         }
     }
 
-    /// Emits the first of `candidates` that the input starts with. The last one must always match.
-    fn fixed(&mut self, candidates: &[(&str, TokenKind)]) -> Token {
-        for (text, kind) in candidates {
-            if self.starts_with(text) {
-                return self.simple(text.len(), kind.clone());
-            }
+    /// Emits `two` if the byte after the current one is `second`, else `one`.
+    #[inline(always)]
+    fn one_or_two(&mut self, second: u8, two: TokenKind, one: TokenKind) -> Token {
+        if self.peek(1) == Some(second) {
+            self.simple(2, two)
+        } else {
+            self.simple(1, one)
         }
-        unreachable!("the last candidate is a prefix of the dispatched character")
     }
 
     fn env(&mut self) -> Option<Token> {
@@ -606,15 +616,13 @@ impl<'a> Cursor<'a> {
             i = j + exp;
         }
 
-        if self.src[self.pos..self.pos + i].parse::<f64>().is_ok() {
-            NumberScan::Match(i)
-        } else {
-            NumberScan::NoMatch
+        match self.src[self.pos..self.pos + i].parse::<f64>() {
+            Ok(value) => NumberScan::Match(i, value),
+            Err(_) => NumberScan::NoMatch,
         }
     }
 
-    fn number(&mut self, len: usize) -> Option<Token> {
-        let value = self.src[self.pos..self.pos + len].parse::<f64>().ok()?;
+    fn number(&mut self, len: usize, value: f64) -> Option<Token> {
         Some(self.simple(len, TokenKind::NumberLiteral(Number::new(value))))
     }
 
@@ -1830,6 +1838,242 @@ mod tests {
         fn lexes_arbitrary_chars_consistently(s in proptest::collection::vec(proptest::prelude::any::<char>(), 0..60)) {
             assert_lexes_consistently(&s.into_iter().collect::<String>());
         }
+    }
+
+    /// Lexes `input` and returns the token kinds, with the ranges inside string segments cleared.
+    fn kinds(input: &str, include_spaces: bool) -> Result<Vec<TokenKind>, SyntaxError> {
+        Lexer::new(Options {
+            ignore_errors: false,
+            include_spaces,
+        })
+        .tokenize(input, 1.into())
+        .map(|tokens| {
+            tokens
+                .into_iter()
+                .map(|t| match t.kind {
+                    TokenKind::InterpolatedString(segments) => TokenKind::InterpolatedString(
+                        segments
+                            .into_iter()
+                            .map(|segment| match segment {
+                                StringSegment::Text(text, _) => StringSegment::Text(text, Range::default()),
+                                StringSegment::Expr(expr, _) => StringSegment::Expr(expr, Range::default()),
+                            })
+                            .collect(),
+                    ),
+                    kind => kind,
+                })
+                .collect()
+        })
+    }
+
+    fn num(value: f64) -> TokenKind {
+        TokenKind::NumberLiteral(Number::new(value))
+    }
+
+    fn ident(name: &str) -> TokenKind {
+        TokenKind::Ident(name.into())
+    }
+
+    fn text(value: &str) -> StringSegment {
+        StringSegment::Text(value.to_string(), Range::default())
+    }
+
+    #[rstest]
+    #[case::numbers(
+        "1 2.5 .5 -3 +4 1e3 1E+3 2.5e-2",
+        vec![num(1.0), num(2.5), num(0.5), num(-3.0), num(4.0), num(1000.0), num(1000.0), num(0.025)]
+    )]
+    #[case::dot_without_digit_after_integer("1.e3", vec![num(1.0), TokenKind::Selector(".e3".into())])]
+    #[case::double_sign_is_not_a_number("--5", vec![TokenKind::Minus, num(-5.0)])]
+    #[case::sign_then_plus("-+5", vec![TokenKind::Minus, num(5.0)])]
+    #[case::minus_before_identifier("a-b -b", vec![ident("a-b"), TokenKind::Minus, ident("b")])]
+    #[case::string_escapes(r#""a\nb\t\"\\""#, vec![TokenKind::StringLiteral("a\nb\t\"\\".into())])]
+    #[case::regex_escapes_keep_the_letter(r#""\s\d\/\.""#, vec![TokenKind::StringLiteral("sd/.".into())])]
+    #[case::unicode_and_hex_escapes(r#""\u{41}B\x43""#, vec![TokenKind::StringLiteral("ABC".into())])]
+    #[case::hex_escape_is_latin1(r#""\xe9""#, vec![TokenKind::StringLiteral("é".into())])]
+    #[case::empty_strings(r#""" """#, vec![TokenKind::StringLiteral(String::new()), TokenKind::StringLiteral(String::new())])]
+    #[case::multiline_string("\"a\nb\"", vec![TokenKind::StringLiteral("a\nb".into())])]
+    #[case::interpolation(
+        r#"s"a${b}c$$d\{""#,
+        vec![TokenKind::InterpolatedString(vec![
+            text("a"),
+            StringSegment::Expr("b".into(), Range::default()),
+            text("c"),
+            text("$"),
+            text("d{"),
+        ])]
+    )]
+    #[case::interpolation_expr_keeps_everything_up_to_the_brace(
+        r#"s"${ "a" + 1 }""#,
+        vec![TokenKind::InterpolatedString(vec![StringSegment::Expr(" \"a\" + 1 ".into(), Range::default())])]
+    )]
+    #[case::interpolation_without_closing_brace_falls_back(
+        r#"s"${x""#,
+        vec![ident("s"), TokenKind::StringLiteral("${x".into())]
+    )]
+    #[case::unmatched_brace_in_interpolated_text_falls_back(
+        r#"s"a{b""#,
+        vec![ident("s"), TokenKind::StringLiteral("a{b".into())]
+    )]
+    #[case::carriage_return_is_whitespace_when_skipping("a\rb", vec![ident("a"), ident("b")])]
+    #[case::empty_interpolated_string_falls_back(r#"s"""#, vec![ident("s"), TokenKind::StringLiteral(String::new())])]
+    #[case::bytes(r#"b"A\x42\n\0\\\"""#, vec![TokenKind::BytesLiteral(vec![0x41, 0x42, b'\n', 0, b'\\', b'"'])])]
+    #[case::bytes_with_non_ascii_falls_back("b\"é\"", vec![ident("b"), TokenKind::StringLiteral("é".into())])]
+    #[case::selectors(
+        r#". .h1 .> .^ .* .a-b ."a b""#,
+        vec![
+            TokenKind::Selector(".".into()),
+            TokenKind::Selector(".h1".into()),
+            TokenKind::Selector(".>".into()),
+            TokenKind::Selector(".^".into()),
+            TokenKind::Selector(".*".into()),
+            TokenKind::Selector(".a-b".into()),
+            TokenKind::Selector(r#"."a b""#.into()),
+        ]
+    )]
+    #[case::selector_with_escaped_quote(r#"."a\"b""#, vec![TokenKind::Selector(r#"."a\"b""#.into())])]
+    #[case::ranges_and_spread(".. ... ..5", vec![TokenKind::DoubleDot, TokenKind::DotDotDot, TokenKind::DoubleDot, num(5.0)])]
+    #[case::keywords_at_word_boundary(
+        "end endx end-x a*b _x True true false",
+        vec![
+            TokenKind::End,
+            ident("endx"),
+            TokenKind::End,
+            TokenKind::Minus,
+            ident("x"),
+            ident("a*b"),
+            ident("_x"),
+            ident("True"),
+            TokenKind::BoolLiteral(true),
+            TokenKind::BoolLiteral(false),
+        ]
+    )]
+    #[case::env("$HOME $a_1", vec![TokenKind::Env("HOME".into()), TokenKind::Env("a_1".into())])]
+    #[case::operators(
+        "== =~ = != !~ ! << <= < >> >= > && || | |= ?? ? :: : -> - -= + += * *= / /= // //= % %= @",
+        vec![
+            TokenKind::EqEq, TokenKind::TildeEqual, TokenKind::Equal, TokenKind::NeEq, TokenKind::NotTildeEqual,
+            TokenKind::Not, TokenKind::LeftShift, TokenKind::Lte, TokenKind::Lt, TokenKind::RightShift, TokenKind::Gte,
+            TokenKind::Gt, TokenKind::And, TokenKind::Or, TokenKind::Pipe, TokenKind::PipeEqual, TokenKind::Coalesce,
+            TokenKind::Question, TokenKind::DoubleColon, TokenKind::Colon, TokenKind::Arrow, TokenKind::Minus,
+            TokenKind::MinusEqual, TokenKind::Plus, TokenKind::PlusEqual, TokenKind::Asterisk, TokenKind::StarEqual,
+            TokenKind::Slash, TokenKind::SlashEqual, TokenKind::Slash, TokenKind::Slash, TokenKind::DoubleSlashEqual,
+            TokenKind::Percent, TokenKind::PercentEqual, TokenKind::Convert,
+        ]
+    )]
+    #[case::comments_are_skipped("a # c\n# d\nb", vec![ident("a"), ident("b")])]
+    fn test_token_kinds(#[case] input: &str, #[case] expected: Vec<TokenKind>) {
+        let mut expected = expected;
+        expected.push(TokenKind::Eof);
+        assert_eq!(kinds(input, false), Ok(expected));
+    }
+
+    #[rstest]
+    #[case::spaces_tabs_comment_and_crlf(
+        "a  \tb # c\r\nd",
+        vec![
+            ident("a"),
+            TokenKind::Whitespace(2),
+            TokenKind::Tab(1),
+            ident("b"),
+            TokenKind::Whitespace(1),
+            TokenKind::Comment(" c".into()),
+            TokenKind::NewLine,
+            ident("d"),
+        ]
+    )]
+    #[case::empty_comment("#\nx", vec![TokenKind::Comment(String::new()), TokenKind::NewLine, ident("x")])]
+    fn test_token_kinds_with_spaces(#[case] input: &str, #[case] expected: Vec<TokenKind>) {
+        let mut expected = expected;
+        expected.push(TokenKind::Eof);
+        assert_eq!(kinds(input, true), Ok(expected));
+    }
+
+    #[test]
+    fn test_lone_carriage_return_is_an_error_when_keeping_spaces() {
+        assert!(matches!(kinds("a\rb", true), Err(SyntaxError::UnexpectedToken(_))));
+    }
+
+    #[rstest]
+    #[case::malformed_exponent("1e")]
+    #[case::exponent_after_digits("5 1else")]
+    #[case::exponent_sign_without_digits("1e+")]
+    #[case::unterminated_string("\"abc")]
+    #[case::trailing_backslash("\"abc\\")]
+    #[case::unknown_escape(r#""\q""#)]
+    #[case::unicode_escape_out_of_range(r#""\u{110000}""#)]
+    #[case::unicode_escape_surrogate(r#""\ud800""#)]
+    #[case::too_many_unicode_digits(r#""\u{1234567}""#)]
+    #[case::short_hex_escape(r#""\x4""#)]
+    #[case::bad_byte_escape(r#"b"\q""#)]
+    #[case::unterminated_bytes(r#"b"abc"#)]
+    #[case::lone_ampersand("a & b")]
+    #[case::non_ascii_identifier("é")]
+    #[case::non_ascii_after_identifier("foo é")]
+    #[case::bare_dollar("$ a")]
+    #[case::bad_interpolation_escape(r#"s"\q""#)]
+    fn test_lex_errors(#[case] input: &str) {
+        for include_spaces in [false, true] {
+            assert!(
+                matches!(kinds(input, include_spaces), Err(SyntaxError::UnexpectedToken(_))),
+                "{input:?} (include_spaces={include_spaces}) should fail"
+            );
+        }
+    }
+
+    fn range(start: (u32, usize), end: (u32, usize)) -> Range {
+        Range {
+            start: Position {
+                line: start.0,
+                column: start.1,
+            },
+            end: Position {
+                line: end.0,
+                column: end.1,
+            },
+        }
+    }
+
+    fn token_ranges(input: &str, include_spaces: bool) -> Vec<Range> {
+        Lexer::new(Options {
+            ignore_errors: false,
+            include_spaces,
+        })
+        .tokenize(input, 1.into())
+        .unwrap()
+        .into_iter()
+        .map(|t| t.range)
+        .collect()
+    }
+
+    #[rstest]
+    #[case::env_range_excludes_the_dollar("$ab", false, vec![range((1, 2), (1, 4)), range((1, 4), (1, 4))])]
+    #[case::newline_range_stays_on_its_line("a\r\nb", true, vec![range((1, 1), (1, 2)), range((1, 2), (1, 4)), range((2, 1), (2, 2)), range((2, 2), (2, 2))])]
+    #[case::comment_range_excludes_the_hash("x#hi", true, vec![range((1, 1), (1, 2)), range((1, 3), (1, 5)), range((1, 5), (1, 5))])]
+    #[case::multiline_string_ends_on_its_last_line("\"a\nb\" x", false, vec![range((1, 1), (2, 3)), range((2, 4), (2, 5)), range((2, 5), (2, 5))])]
+    #[case::columns_restart_after_a_newline("ab\n  cd", false, vec![range((1, 1), (1, 3)), range((2, 3), (2, 5)), range((2, 5), (2, 5))])]
+    #[case::columns_count_chars("\"あい\" x", false, vec![range((1, 1), (1, 5)), range((1, 6), (1, 7)), range((1, 7), (1, 7))])]
+    #[case::eof_after_trailing_comment("x # é", false, vec![range((1, 1), (1, 2)), range((1, 6), (1, 6))])]
+    fn test_token_ranges(#[case] input: &str, #[case] include_spaces: bool, #[case] expected: Vec<Range>) {
+        assert_eq!(token_ranges(input, include_spaces), expected);
+    }
+
+    #[rstest]
+    #[case::at_the_failing_token("a 1e", range((1, 3), (1, 5)))]
+    #[case::covers_the_rest_of_the_input("a & b c", range((1, 3), (1, 8)))]
+    #[case::trailing_space_is_trimmed_from_the_range("\"abc ", range((1, 1), (1, 5)))]
+    fn test_error_range(#[case] input: &str, #[case] expected: Range) {
+        match kinds_error(input) {
+            SyntaxError::UnexpectedToken(token) => {
+                assert_eq!(token.kind, TokenKind::Eof);
+                assert_eq!(token.range, expected);
+            }
+            other => panic!("unexpected error {other:?}"),
+        }
+    }
+
+    fn kinds_error(input: &str) -> SyntaxError {
+        Lexer::new(Options::default()).tokenize(input, 1.into()).unwrap_err()
     }
 
     fn ident_range(code: &str, name: &str) -> Range {

@@ -79,6 +79,7 @@ js-sys = "0.3.77"
 libc = "0.2"
 libfuzzer-sys = "0.4"
 markdown = "1.0.0"
+memchr = "2"
 nix = {version = "0.31", default-features = false, features = ["fs"]}
 md5 = "0.8.0"
 miette = "7.6.0"
