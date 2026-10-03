@@ -2,15 +2,19 @@
 use crate::html_to_markdown;
 #[cfg(feature = "html-to-markdown")]
 use crate::html_to_markdown::ConversionOptions;
+#[cfg(feature = "html-to-markdown")]
+use crate::node::ListStyle;
 use crate::node::{
-    Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, list_own_prefix_width, reindent_all_lines,
-    render_values,
+    Code, ColorTheme, Node, Position, RenderOptions, TableAlign, TableCell, indent_lines, list_own_prefix_width,
+    reindent_all_lines, render_cell_values, render_values_block,
 };
-use markdown::{CompileOptions, Constructs, Options, ParseOptions};
+use list_order::CONTINUATION;
+#[cfg(any(feature = "json", feature = "html-to-markdown"))]
 use miette::miette;
 use std::{fmt, str::FromStr};
 use table_layout::{TableLayout, write_padded_cell};
 
+mod list_order;
 mod table_layout;
 
 #[derive(Debug, Clone)]
@@ -57,7 +61,7 @@ impl Markdown {
         self.render_with_theme(theme)
     }
 
-    fn render_with_theme(&self, theme: &ColorTheme<'_>) -> String {
+    pub(crate) fn render_with_theme(&self, theme: &ColorTheme<'_>) -> String {
         let mut pre_position: Option<Position> = None;
         let mut is_first = true;
         let mut current_table_row: Option<usize> = None;
@@ -67,22 +71,24 @@ impl Markdown {
         // nested-list indentation from the nearest open ancestor at each level.
         let mut list_indent_stack: Vec<usize> = Vec::new();
 
-        let mut buffer = String::with_capacity(self.nodes.len() * 50);
+        let reordered = list_order::reorder(&self.nodes);
+        let nodes: &[Node] = reordered.as_deref().unwrap_or(&self.nodes);
+        let mut buffer = String::with_capacity(nodes.len() * 50);
 
-        for (i, node) in self.nodes.iter().enumerate() {
+        for (i, node) in nodes.iter().enumerate() {
             if let Node::TableCell(TableCell {
                 row, column, values, ..
             }) = node
             {
                 let is_new_table = current_table.as_ref().is_none_or(|t| i >= t.end);
                 if is_new_table {
-                    current_table = Some(TableLayout::compute(&self.nodes, &self.options, i));
+                    current_table = Some(TableLayout::compute(nodes, &self.options, i));
                 }
                 let table = current_table.as_ref().unwrap();
                 let align = table.align_for(*column);
                 let width = table.width_for(*column);
 
-                let value = render_values(values, &self.options, theme);
+                let value = render_cell_values(values, &self.options, theme);
                 let plain_width = table.plain_width_at(*row, *column);
 
                 let is_new_row = current_table_row != Some(*row);
@@ -115,7 +121,7 @@ impl Markdown {
 
                 write_padded_cell(&mut buffer, &value, plain_width, width, &align);
 
-                let next_node = self.nodes.get(i + 1);
+                let next_node = nodes.get(i + 1);
                 let next_is_different_row = next_node.is_none_or(
                     |next| !matches!(next, Node::TableCell(TableCell { row: next_row, .. }) if *next_row == *row),
                 );
@@ -133,7 +139,7 @@ impl Markdown {
 
             if let Node::TableAlign(TableAlign { .. }) = node {
                 if current_table.as_ref().is_none_or(|t| i >= t.end) {
-                    current_table = Some(TableLayout::compute(&self.nodes, &self.options, i));
+                    current_table = Some(TableLayout::compute(nodes, &self.options, i));
                 }
                 let table = current_table.as_ref().unwrap();
                 buffer.push_str(&table.render_separator());
@@ -148,15 +154,22 @@ impl Markdown {
             current_table = None;
             in_table = false;
 
-            let prev_node = i.checked_sub(1).and_then(|j| self.nodes.get(j));
+            let prev_node = i.checked_sub(1).and_then(|j| nodes.get(j));
 
-            let value = if let Node::List(list) = node {
+            let value = if let Node::List(list) = node
+                && list.marker == Some(CONTINUATION)
+            {
+                // The rest of an item after its nested items, aligned with the content of the item.
+                list_indent_stack.truncate(list.level as usize + 1);
+                let indent = list_indent_stack.last().copied().unwrap_or(0);
+                indent_lines(&render_values_block(&list.values, &self.options, theme), indent)
+            } else if let Node::List(list) = node {
                 while list_indent_stack.len() > list.level as usize {
                     list_indent_stack.pop();
                 }
                 let own_indent = list_indent_stack.last().copied().unwrap_or(0);
                 let delta = own_indent as isize - list.level as isize * 2;
-                let own_width = own_indent + list_own_prefix_width(list.ordered, list.index, list.start, list.checked);
+                let own_width = own_indent + list_own_prefix_width(list.ordered, list.index, list.start);
                 list_indent_stack.push(own_width);
                 reindent_all_lines(&node.render_with_theme(&self.options, theme), delta)
             } else if let Node::Code(code) = node
@@ -192,6 +205,23 @@ impl Markdown {
                     new_line_count = 2;
                 }
 
+                // A footnote ends where the next line starts, so a block after it needs a blank line.
+                if new_line_count < 2
+                    && matches!(prev_node, Some(Node::Footnote(_)))
+                    && !matches!(node, Node::Footnote(_))
+                {
+                    new_line_count = 2;
+                }
+
+                // An item that starts on the line of the marker that holds it follows it directly.
+                let value =
+                    if new_line_count == 0 && matches!(node, Node::List(_)) && matches!(prev_node, Some(Node::List(_)))
+                    {
+                        value.trim_start().to_string()
+                    } else {
+                        value
+                    };
+
                 // Same-list adjacent items separate by `spread`, not source line gap.
                 if let Node::List(cur_list) = node
                     && let Some(Node::List(prev_list)) = prev_node
@@ -224,27 +254,28 @@ impl Markdown {
             }
         }
 
-        if buffer.is_empty() || buffer.ends_with('\n') {
-            buffer
-        } else {
+        if !buffer.is_empty() && !buffer.ends_with('\n') {
             buffer.push('\n');
-            buffer
         }
+        // A rule of dashes first and a line of three dashes later would read as frontmatter.
+        if matches!(nodes.first(), Some(Node::HorizontalRule(_)))
+            && buffer.starts_with("---\n")
+            && buffer[4..].lines().any(|line| line == "---")
+        {
+            buffer.replace_range(..3, "***");
+        }
+        buffer
     }
 
     pub fn from_mdx_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(content, &markdown::ParseOptions::mdx()).map_err(|e| miette!(e.reason))?;
-        let nodes = Node::from_mdast_node(root);
-
         Ok(Self {
-            nodes,
+            nodes: parse_mdx_nodes(content)?,
             options: RenderOptions::default(),
         })
     }
 
     pub fn to_html(&self) -> String {
-        let md_str = self.to_string();
-        markdown::to_html_with_options(&md_str, &html_options()).unwrap_or_else(|_| markdown::to_html(&md_str))
+        to_html(&self.to_string())
     }
 
     pub fn to_text(&self) -> String {
@@ -276,198 +307,39 @@ impl Markdown {
         html_to_markdown::convert_html_to_markdown(content, options)
             .map_err(|e| miette!(e))
             .and_then(|md_string| Self::from_markdown_str(&md_string))
+            .map(|mut markdown| {
+                // The converter's `*` bullets are an artifact, not a source style to preserve.
+                markdown.options.list_style = Some(ListStyle::Dash);
+                markdown
+            })
     }
 
     pub fn from_markdown_str(content: &str) -> miette::Result<Self> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: Constructs {
-                    attention: true,
-                    autolink: true,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: true,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: true,
-                    html_text: true,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: false,
-                    mdx_expression_flow: false,
-                    mdx_expression_text: false,
-                    mdx_jsx_flow: false,
-                    mdx_jsx_text: false,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette!(e.reason))?;
-        let nodes = Node::from_mdast_node(root);
-
-        #[cfg(all(feature = "embed", feature = "wikilink"))]
-        let nodes = if content.contains("[[") {
-            Node::expand_inline_links(nodes)
-        } else {
-            nodes
-        };
-
-        #[cfg(all(feature = "embed", not(feature = "wikilink")))]
-        let nodes = if content.contains("![[") {
-            Node::expand_embeds(nodes)
-        } else {
-            nodes
-        };
-
-        #[cfg(all(feature = "wikilink", not(feature = "embed")))]
-        let nodes = if content.contains("[[") {
-            Node::expand_wikilinks(nodes)
-        } else {
-            nodes
-        };
+        let nodes = parse_nodes(content)?;
 
         Ok(Self {
             nodes,
             options: RenderOptions::default(),
         })
     }
-
-    /// Parses markdown without running any expand pass. Used in benchmarks to
-    /// isolate expand cost from the mdast parse cost.
-    #[cfg(any(feature = "wikilink", feature = "embed"))]
-    pub fn from_markdown_str_no_expand(content: &str) -> miette::Result<Vec<Node>> {
-        let root = markdown::to_mdast(
-            content,
-            &markdown::ParseOptions {
-                gfm_strikethrough_single_tilde: true,
-                math_text_single_dollar: true,
-                mdx_expression_parse: None,
-                mdx_esm_parse: None,
-                constructs: markdown::Constructs {
-                    attention: true,
-                    autolink: true,
-                    block_quote: true,
-                    character_escape: true,
-                    character_reference: true,
-                    code_indented: true,
-                    code_fenced: true,
-                    code_text: true,
-                    definition: true,
-                    frontmatter: true,
-                    gfm_autolink_literal: true,
-                    gfm_label_start_footnote: true,
-                    gfm_footnote_definition: true,
-                    gfm_strikethrough: true,
-                    gfm_table: true,
-                    gfm_task_list_item: true,
-                    hard_break_escape: true,
-                    hard_break_trailing: true,
-                    heading_atx: true,
-                    heading_setext: true,
-                    html_flow: true,
-                    html_text: true,
-                    label_start_image: true,
-                    label_start_link: true,
-                    label_end: true,
-                    list_item: true,
-                    math_flow: true,
-                    math_text: true,
-                    mdx_esm: false,
-                    mdx_expression_flow: false,
-                    mdx_expression_text: false,
-                    mdx_jsx_flow: false,
-                    mdx_jsx_text: false,
-                    thematic_break: true,
-                },
-            },
-        )
-        .map_err(|e| miette::miette!(e.reason))?;
-        Ok(Node::from_mdast_node(root))
-    }
 }
 
-/// Returns the shared `Options` used for both `Markdown::to_html` and the
-/// standalone `to_html` helper.  The options mirror the constructs that are
-/// enabled during parsing (see `from_markdown_str`) so that every feature
-/// that can be *parsed* is also correctly *rendered* to HTML, including:
+/// Parses `content` into nodes.
+fn parse_nodes(content: &str) -> miette::Result<Vec<Node>> {
+    crate::parser::parse(content)
+}
+
+/// Parses `content` as MDX into nodes.
+fn parse_mdx_nodes(content: &str) -> miette::Result<Vec<Node>> {
+    crate::parser::parse_mdx(content)
+}
+
+/// Converts Markdown to HTML.
 ///
-/// - GFM tables → `<table>`
-/// - GFM task-list items → `<input type="checkbox">`
-/// - GFM strikethrough → `<del>`
-/// - GFM footnotes
-/// - GFM autolink literals
-/// - Math (flow and inline) via `<code class="language-math …">`
-/// - YAML / TOML frontmatter (stripped from HTML output)
-fn html_options() -> Options {
-    Options {
-        parse: ParseOptions {
-            gfm_strikethrough_single_tilde: true,
-            math_text_single_dollar: true,
-            constructs: Constructs {
-                attention: true,
-                autolink: true,
-                block_quote: true,
-                character_escape: true,
-                character_reference: true,
-                code_indented: true,
-                code_fenced: true,
-                code_text: true,
-                definition: true,
-                frontmatter: true,
-                gfm_autolink_literal: true,
-                gfm_label_start_footnote: true,
-                gfm_footnote_definition: true,
-                gfm_strikethrough: true,
-                gfm_table: true,
-                gfm_task_list_item: true,
-                hard_break_escape: true,
-                hard_break_trailing: true,
-                heading_atx: true,
-                heading_setext: true,
-                html_flow: true,
-                html_text: true,
-                label_start_image: true,
-                label_start_link: true,
-                label_end: true,
-                list_item: true,
-                math_flow: true,
-                math_text: true,
-                thematic_break: true,
-                ..Constructs::default()
-            },
-            ..ParseOptions::default()
-        },
-        compile: CompileOptions {
-            allow_dangerous_html: true,
-            ..CompileOptions::default()
-        },
-    }
-}
-
+/// Everything that is parsed is rendered: GFM tables, task list items, strikethrough, footnotes and
+/// autolink literals, math, and raw HTML. Frontmatter is left out.
 pub fn to_html(s: &str) -> String {
-    markdown::to_html_with_options(s, &html_options()).unwrap_or_else(|_| markdown::to_html(s))
+    crate::parser::to_html(s)
 }
 
 #[cfg(test)]
@@ -509,7 +381,7 @@ mod tests {
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
     #[case::definition("[a]: b", 1, "[a]: b\n")]
     #[case::footnote("[^a]: b", 1, "[^a]: b\n")]
-    #[case::footnote_ref("[^a]: b\n\n[^a]", 2, "[^a]: b\n[^a]\n")]
+    #[case::footnote_ref("[^a]: b\n\n[^a]", 2, "[^a]: b\n\n[^a]\n")]
     #[case::image("![a](b)", 1, "![a](b)\n")]
     #[case::image_with_title("![a](b \"c\")", 1, "![a](b \"c\")\n")]
     #[case::image_ref("[a]: b\n\n ![c][a]", 2, "[a]: b\n\n![c][a]\n")]
@@ -523,7 +395,12 @@ mod tests {
     #[case::break_("a\\b", 1, "a\\\\b\n")]
     #[case::delete("~~a~~", 1, "~~a~~\n")]
     #[case::emphasis("*a*", 1, "*a*\n")]
-    #[case::horizontal_rule("---", 1, "***\n")]
+    #[case::horizontal_rule("---", 1, "---\n")]
+    #[case::horizontal_rule_star("***", 1, "***\n")]
+    #[case::horizontal_rule_underscore("___", 1, "___\n")]
+    #[case::list_star("* a\n* b", 2, "* a\n* b\n")]
+    #[case::list_plus("+ a\n+ b", 2, "+ a\n+ b\n")]
+    #[case::list_ordered_paren("3) a\n4) b", 2, "3) a\n4) b\n")]
     #[case::table(
         "| Column1 | Column2 | Column3 |\n|:--------|:--------:|---------:|\n| Left    | Center  | Right   |\n",
         7,
@@ -834,10 +711,10 @@ mod tests {
         assert_eq!(md.options, RenderOptions::default());
 
         md.set_options(RenderOptions {
-            list_style: ListStyle::Plus,
+            list_style: Some(ListStyle::Plus),
             ..RenderOptions::default()
         });
-        assert_eq!(md.options.list_style, ListStyle::Plus);
+        assert_eq!(md.options.list_style, Some(ListStyle::Plus));
 
         let pretty = md.to_string();
         assert!(pretty.contains("+ Item 1"));
@@ -872,7 +749,7 @@ mod tests {
         let mut md = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
 
         md.set_options(RenderOptions {
-            list_style: ListStyle::Star,
+            list_style: Some(ListStyle::Star),
             link_title_style: TitleSurroundStyle::default(),
             link_url_style: UrlSurroundStyle::default(),
         });
@@ -909,7 +786,7 @@ mod color_tests {
     #[case::link("[text](url)", "\x1b[4m\x1b[34m[text](url)\x1b[0m\n")]
     #[case::image("![alt](url)", "\x1b[35m![alt](url)\x1b[0m\n")]
     #[case::delete("~~deleted~~", "\x1b[31m\x1b[2m~~deleted~~\x1b[0m\n")]
-    #[case::horizontal_rule("---", "\x1b[2m***\x1b[0m\n")]
+    #[case::horizontal_rule("---", "\x1b[2m---\x1b[0m\n")]
     #[case::blockquote("> quote", "\x1b[2m> \x1b[0mquote\n")]
     #[case::math_inline("$x^2$", "\x1b[32m$x^2$\x1b[0m\n")]
     #[case::list("- item", "\x1b[33m-\x1b[0m item\n")]

@@ -3167,7 +3167,11 @@ fn to_h_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Result<R
 
 #[mq_macros::mq_fn(name = "to_hr", params = Fixed(0))]
 fn to_hr_impl(_: &Ident, _: &RuntimeValue, _: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
-    Ok(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }).into())
+    Ok(mq_markdown::Node::HorizontalRule(mq_markdown::HorizontalRule {
+        marker: None,
+        position: None,
+    })
+    .into())
 }
 
 #[mq_macros::mq_fn(name = "to_link", params = Fixed(3))]
@@ -3353,6 +3357,7 @@ fn to_callout_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
             RuntimeValue::String(kind),
             RuntimeValue::String(title),
         ] => Ok(mq_markdown::Node::Callout(mq_markdown::Callout {
+            fold: None,
             kind: kind.to_uppercase(),
             title: if title.is_empty() {
                 None
@@ -3365,6 +3370,7 @@ fn to_callout_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
         .into()),
         [a, RuntimeValue::String(kind), RuntimeValue::String(title)] if !a.is_none() => {
             Ok(mq_markdown::Node::Callout(mq_markdown::Callout {
+                fold: None,
                 kind: kind.to_uppercase(),
                 title: if title.is_empty() {
                     None
@@ -3471,6 +3477,7 @@ fn to_md_list_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
     match args.as_slice() {
         [RuntimeValue::Markdown(node, _), RuntimeValue::Number(level)] => {
             Ok(mq_markdown::Node::List(mq_markdown::List {
+                marker: None,
                 values: node.node_values(),
                 index: 0,
                 ordered: false,
@@ -3483,6 +3490,7 @@ fn to_md_list_impl(_: &Ident, _: &RuntimeValue, args: Args, _: &SharedEnv) -> Re
             .into())
         }
         [a, RuntimeValue::Number(level)] if !a.is_none() => Ok(mq_markdown::Node::List(mq_markdown::List {
+            marker: None,
             values: vec![a.to_string().into()],
             index: 0,
             ordered: false,
@@ -11568,62 +11576,62 @@ mod tests {
         false
     )]
     #[case::list_with_matching_index_checked(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(Some(1), Some(true)),
         true
     )]
     #[case::list_with_wrong_index(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(Some(2), Some(true)),
         false
     )]
     #[case::list_without_index(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::List(None, None),
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Task,
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Task,
         true
     )]
     #[case::task_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Task,
         false
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Todo,
         true
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Todo,
         false
     )]
     #[case::todo_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Todo,
         false
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(true), position: None }),
         Selector::Done,
         true
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: Some(false), position: None }),
         Selector::Done,
         false
     )]
     #[case::done_list(
-        Node::List(mq_markdown::List { start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
+        Node::List(mq_markdown::List { marker: None, start: None, spread: false, values: vec!["test".to_string().into()], ordered: false, index: 1, level: 1, checked: None, position: None }),
         Selector::Done,
         false
     )]
@@ -11678,7 +11686,7 @@ mod tests {
         true
     )]
     #[case::horizontal_rule(
-        Node::HorizontalRule(mq_markdown::HorizontalRule{ position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule{ marker: None, position: None }),
         Selector::HorizontalRule,
         true
     )]
@@ -13659,31 +13667,31 @@ mod tests {
         true
     )]
     #[case::callout_kind_match(
-        Node::Callout(mq_markdown::Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(mq_markdown::Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
         vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         true
     )]
     #[case::callout_kind_no_match(
-        Node::Callout(mq_markdown::Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(mq_markdown::Callout { fold: None, kind: "WARNING".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
         vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         false
     )]
     #[case::callout_multi_kind_match(
-        Node::Callout(mq_markdown::Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(mq_markdown::Callout { fold: None, kind: "TIP".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
         vec![RuntimeValue::String(Shared::new("NOTE".into())), RuntimeValue::String(Shared::new("TIP".into()))],
         true
     )]
     #[case::callout_no_args_fallback(
-        Node::Callout(mq_markdown::Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(mq_markdown::Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         Selector::Callout,
         vec![],
         true
     )]
     #[case::callout_non_callout_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Callout,
         vec![RuntimeValue::String(Shared::new("NOTE".into()))],
         false
@@ -13713,7 +13721,7 @@ mod tests {
         true
     )]
     #[case::wikilink_non_wikilink_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::WikiLink,
         vec![RuntimeValue::String(Shared::new("Some Page".into()))],
         false
@@ -13743,7 +13751,7 @@ mod tests {
         true
     )]
     #[case::embed_non_embed_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Embed,
         vec![RuntimeValue::String(Shared::new("image.png".into()))],
         false
@@ -13773,7 +13781,7 @@ mod tests {
         true
     )]
     #[case::link_ref_non_link_ref_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::LinkRef,
         vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
@@ -13803,7 +13811,7 @@ mod tests {
         true
     )]
     #[case::image_ref_non_image_ref_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::ImageRef,
         vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
@@ -13833,7 +13841,7 @@ mod tests {
         true
     )]
     #[case::footnote_ref_non_footnote_ref_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::FootnoteRef,
         vec![RuntimeValue::String(Shared::new("1".into()))],
         false
@@ -13863,7 +13871,7 @@ mod tests {
         true
     )]
     #[case::footnote_non_footnote_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Footnote,
         vec![RuntimeValue::String(Shared::new("1".into()))],
         false
@@ -13893,7 +13901,7 @@ mod tests {
         true
     )]
     #[case::definition_non_definition_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Definition,
         vec![RuntimeValue::String(Shared::new("ref".into()))],
         false
@@ -13923,7 +13931,7 @@ mod tests {
         true
     )]
     #[case::mdx_jsx_flow_element_non_matching_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::MdxJsxFlowElement,
         vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
@@ -13953,43 +13961,43 @@ mod tests {
         true
     )]
     #[case::mdx_jsx_text_element_non_matching_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::MdxJsxTextElement,
         vec![RuntimeValue::String(Shared::new("Alert".into()))],
         false
     )]
     #[case::non_heading_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Heading(None),
         vec![RuntimeValue::Number(1.into())],
         false
     )]
     #[case::list_index_match(
-        Node::List(mq_markdown::List { index: 2, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { marker: None, index: 2, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(2.into())],
         true
     )]
     #[case::list_index_no_match(
-        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into())],
         false
     )]
     #[case::list_multi_index_match(
-        Node::List(mq_markdown::List { index: 3, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { marker: None, index: 3, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(1.into()), RuntimeValue::Number(3.into())],
         true
     )]
     #[case::list_no_args_fallback(
-        Node::List(mq_markdown::List { index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
+        Node::List(mq_markdown::List { marker: None, index: 0, level: 0, checked: None, ordered: false, start: None, spread: false, values: vec![], position: None }),
         Selector::List(None, None),
         vec![],
         true
     )]
     #[case::list_non_list_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::List(None, None),
         vec![RuntimeValue::Number(0.into())],
         false
@@ -14025,7 +14033,7 @@ mod tests {
         true
     )]
     #[case::table_non_table_node(
-        Node::HorizontalRule(mq_markdown::HorizontalRule { position: None }),
+        Node::HorizontalRule(mq_markdown::HorizontalRule { marker: None, position: None }),
         Selector::Table(None, None),
         vec![RuntimeValue::Number(0.into())],
         false

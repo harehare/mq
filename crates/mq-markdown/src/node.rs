@@ -3,7 +3,6 @@ use crate::node::attr_value::{
     attr_keys::{self, CHILDREN},
 };
 use itertools::Itertools;
-use markdown::mdast::{self};
 use smol_str::SmolStr;
 use std::{
     borrow::Cow,
@@ -145,16 +144,12 @@ impl ColorTheme<'_> {
     }
 }
 
-type Level = u8;
-
-pub const EMPTY_NODE: Node = Node::Text(Text {
-    value: String::new(),
-    position: None,
-});
+pub(crate) type Level = u8;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RenderOptions {
-    pub list_style: ListStyle,
+    /// Bullet marker for lists. `None` keeps each list's original marker (`-` if unknown).
+    pub list_style: Option<ListStyle>,
     pub link_url_style: UrlSurroundStyle,
     pub link_title_style: TitleSurroundStyle,
 }
@@ -183,7 +178,7 @@ impl Display for ListStyle {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct Url(String);
+pub struct Url(pub(crate) String);
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum UrlSurroundStyle {
@@ -220,7 +215,7 @@ pub enum TitleSurroundStyle {
     derive(serde::Serialize, serde::Deserialize),
     serde(rename_all = "camelCase")
 )]
-pub struct Title(String);
+pub struct Title(pub(crate) String);
 
 impl Display for Title {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -253,17 +248,6 @@ pub enum TableAlignKind {
     Right,
     Center,
     None,
-}
-
-impl From<mdast::AlignKind> for TableAlignKind {
-    fn from(value: mdast::AlignKind) -> Self {
-        match value {
-            mdast::AlignKind::Left => Self::Left,
-            mdast::AlignKind::Right => Self::Right,
-            mdast::AlignKind::Center => Self::Center,
-            mdast::AlignKind::None => Self::None,
-        }
-    }
 }
 
 impl From<&str> for TableAlignKind {
@@ -306,6 +290,9 @@ pub struct List {
     /// Starting number for an ordered list (e.g. `5` in `5. foo`); `None` means 1.
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub start: Option<u32>,
+    /// Source marker: `-`, `+` or `*` for bullets, `.` or `)` for ordered lists.
+    #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub marker: Option<char>,
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -423,8 +410,11 @@ pub struct Link {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct Callout {
-    /// The callout type in uppercase (e.g. `"NOTE"`, `"WARNING"`, `"TIP"`).
+    /// The callout type as written, e.g. `"NOTE"` or `"warning"`.
     pub kind: String,
+    /// The fold marker right after `[!TYPE]`: `+` for open and `-` for folded.
+    #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub fold: Option<char>,
     /// Optional custom title after the `[!TYPE]` marker.
     pub title: Option<String>,
     /// Body content nodes (the lines after the header).
@@ -781,6 +771,9 @@ pub struct Break {
     serde(rename_all = "camelCase", tag = "type")
 )]
 pub struct HorizontalRule {
+    /// Source marker: `*`, `-` or `_`.
+    #[cfg_attr(feature = "json", serde(default, skip_serializing_if = "Option::is_none"))]
+    pub marker: Option<char>,
     #[cfg_attr(feature = "json", serde(skip_serializing_if = "Option::is_none"))]
     pub position: Option<Position>,
 }
@@ -878,21 +871,6 @@ pub struct Position {
 pub struct Point {
     pub line: usize,
     pub column: usize,
-}
-
-impl From<markdown::unist::Position> for Position {
-    fn from(value: markdown::unist::Position) -> Self {
-        Self {
-            start: Point {
-                line: value.start.line,
-                column: value.start.column,
-            },
-            end: Point {
-                line: value.end.line,
-                column: value.end.column,
-            },
-        }
-    }
 }
 
 impl From<String> for Node {
@@ -1107,27 +1085,26 @@ impl Node {
                 ordered,
                 index,
                 start,
+                marker,
                 ..
             }) => {
                 let marker = if *ordered {
-                    format!("{}.", start.unwrap_or(1) as usize + *index)
+                    let delimiter = marker.filter(|c| *c == ')').unwrap_or('.');
+                    format!("{}{}", start.unwrap_or(1) as usize + *index, delimiter)
+                } else if let Some(style) = &options.list_style {
+                    style.to_string()
                 } else {
-                    options.list_style.to_string()
+                    marker
+                        .filter(|c| matches!(c, '-' | '+' | '*'))
+                        .unwrap_or('-')
+                        .to_string()
                 };
                 let checkbox = (*checked).map(|it| if it { "[x] " } else { "[ ] " }).unwrap_or("");
-                let prefix_width = *level as usize * 2 + list_own_prefix_width(*ordered, *index, *start, *checked);
-                // A block quote/callout child needs a flat prefix_width add, not the delta below.
-                let delta = if values.first().is_some_and(Self::is_blockquote_like) {
-                    prefix_width as isize
-                } else {
-                    // Marker width is normalized, shifting continuation lines' source columns.
-                    let original_first_column = values.first().and_then(|v| v.position()).map(|p| p.start.column);
-                    original_first_column
-                        .map(|c| prefix_width as isize - (c as isize - 1))
-                        .unwrap_or(0)
-                };
-                let content = reindent_continuation(&render_values(values, options, theme), delta);
-                let content = reindent_first_leaf_block(content, values.first(), options, theme, prefix_width);
+                let prefix_width = *level as usize * 2 + list_own_prefix_width(*ordered, *index, *start);
+                // Lines after the first are indented to the content of the item, whatever column they
+                // had in the source, which is not reliable after an escape.
+                let content = render_values_block(values, options, theme);
+                let content = indent_continuation(&content, prefix_width);
                 let (ms, me) = &theme.list_marker;
                 format!(
                     "{}{}{}{} {}{}",
@@ -1148,7 +1125,7 @@ impl Node {
                     .join("|");
                 format!("{}|{}{}|", ts, te, cells)
             }
-            Self::TableCell(TableCell { values, .. }) => render_values(values, options, theme),
+            Self::TableCell(TableCell { values, .. }) => render_cell_values(values, options, theme),
             Self::TableAlign(TableAlign { align, .. }) => {
                 let (ts, te) = &theme.table_separator;
                 format!("{}|{}|{}", ts, align.iter().map(|a| a.to_string()).join("|"), te)
@@ -1162,12 +1139,17 @@ impl Node {
             }
             #[cfg(feature = "callout")]
             Self::Callout(Callout {
-                kind, title, values, ..
+                kind,
+                fold,
+                title,
+                values,
+                ..
             }) => {
                 let (bs, be) = &theme.blockquote_marker;
+                let fold = fold.map(String::from).unwrap_or_default();
                 let header = match title.as_deref() {
-                    Some(t) if !t.is_empty() => format!("[!{}] {}", kind, t),
-                    _ => format!("[!{}]", kind),
+                    Some(t) if !t.is_empty() => format!("[!{}]{} {}", kind, fold, t),
+                    _ => format!("[!{}]{}", kind, fold),
                 };
                 let header_line = format!("{}> {}{}", bs, be, header);
                 if values.is_empty() {
@@ -1194,7 +1176,7 @@ impl Node {
                 lang,
                 fence,
                 meta,
-                ..
+                position,
             }) => {
                 let (cs, ce) = &theme.code;
                 if lang.is_some() || *fence {
@@ -1203,7 +1185,11 @@ impl Node {
                     // Empty body skips the content line so it doesn't gain a blank one.
                     let fence_str = code_fence(value, &info);
                     if value.is_empty() {
-                        format!("{}{}{}\n{}{}", cs, fence_str, info, fence_str, ce)
+                        // Blank lines are not in the value, but the lines of the block tell of them.
+                        let blank = position
+                            .as_ref()
+                            .map_or(0, |p| p.end.line.saturating_sub(p.start.line).saturating_sub(1));
+                        format!("{}{}{}\n{}{}{}", cs, fence_str, info, "\n".repeat(blank), fence_str, ce)
                     } else {
                         format!("{}{}{}\n{}\n{}{}", cs, fence_str, info, value, fence_str, ce)
                     }
@@ -1236,7 +1222,6 @@ impl Node {
                 format!("{}~~{}~~{}", ds, render_values(values, options, theme), de)
             }
             Self::Emphasis(Emphasis { values, .. }) => {
-                let (es, ee) = &theme.emphasis;
                 // A lone nested Emphasis child needs the other delimiter, or adjacent
                 // `*` `*` pairs fuse into `**` and reparse as Strong instead.
                 let delim = if matches!(values.as_slice(), [Self::Emphasis(_)]) {
@@ -1244,14 +1229,7 @@ impl Node {
                 } else {
                     "*"
                 };
-                format!(
-                    "{}{}{}{}{}",
-                    es,
-                    delim,
-                    render_values(values, options, theme),
-                    delim,
-                    ee
-                )
+                render_emphasis(values, delim, options, theme)
             }
             Self::Footnote(Footnote { values, ident, .. }) => {
                 format!("[^{}]: {}", escape_label(ident), render_values(values, options, theme))
@@ -1335,6 +1313,11 @@ impl Node {
             }
             Self::Link(Link { url, title, values, .. }) => {
                 let (ls, le) = &theme.link;
+                if title.is_none()
+                    && let Some(target) = autolink_target(url.as_str(), values)
+                {
+                    return format!("{ls}<{target}>{le}");
+                }
                 format!(
                     "{}[{}]({}{}){}",
                     ls,
@@ -1360,7 +1343,9 @@ impl Node {
                 let (ls, le) = &theme.link;
                 let rendered = render_values(values, options, theme);
                 let plain = values_to_value(values);
-                let mismatched = normalize_reference_identifier(&plain) != ident.as_str();
+                // The label of a shortcut reference is its text as written, markup included.
+                let written = render_values(values, options, &ColorTheme::PLAIN);
+                let mismatched = normalize_reference_identifier(&written) != ident.as_str();
 
                 if mismatched || needs_broad_escaping(&plain) {
                     format!("{}[{}][{}]{}", ls, rendered, ident, le)
@@ -1444,15 +1429,19 @@ impl Node {
             Self::MdxJsEsm(mdxjs_esm) => mdxjs_esm.value.to_string(),
             Self::Strong(Strong { values, .. }) => {
                 let (ss, se) = &theme.strong;
-                format!(
-                    "{}**{}**{}",
-                    ss,
-                    values
-                        .iter()
-                        .map(|value| value.render_with_theme(options, theme))
-                        .collect::<String>(),
-                    se
-                )
+                let last = values.len().saturating_sub(1);
+                let content = values
+                    .iter()
+                    .enumerate()
+                    .map(|(index, value)| match value {
+                        // Emphasis at an end uses the other delimiter, or `*` and `**` fuse into `***`.
+                        Self::Emphasis(Emphasis { values, .. }) if index == 0 || index == last => {
+                            render_emphasis(values, "_", options, theme)
+                        }
+                        value => value.render_with_theme(options, theme),
+                    })
+                    .collect::<String>();
+                format!("{}**{}**{}", ss, content, se)
             }
             Self::Yaml(Yaml { value, .. }) => {
                 let (fs, fe) = &theme.frontmatter;
@@ -1463,10 +1452,10 @@ impl Node {
                 format!("{}+++\n{}\n+++{}", fs, value, fe)
             }
             Self::Break(_) => "\\\n".to_string(),
-            Self::HorizontalRule(_) => {
-                // `***` avoids ambiguity with a setext heading underline (`---`).
+            Self::HorizontalRule(HorizontalRule { marker, .. }) => {
                 let (hs, he) = &theme.horizontal_rule;
-                format!("{}***{}", hs, he)
+                let marker = marker.filter(|c| matches!(c, '-' | '_')).unwrap_or('*');
+                format!("{hs}{marker}{marker}{marker}{he}")
             }
             Self::Fragment(Fragment { values }) => values
                 .iter()
@@ -2322,9 +2311,14 @@ impl Node {
             },
             #[cfg(feature = "callout")]
             Node::Callout(Callout {
-                kind, title, values, ..
+                kind,
+                fold,
+                title,
+                values,
+                ..
             }) => match attr {
                 attr_keys::KIND => Some(AttrValue::String(kind.clone())),
+                attr_keys::FOLD => fold.map(|fold| AttrValue::String(fold.to_string())),
                 attr_keys::TITLE => title.clone().map(AttrValue::String),
                 attr_keys::VALUE => Some(AttrValue::String(values_to_string(values, &RenderOptions::default()))),
                 attr_keys::VALUES | attr_keys::CHILDREN => Some(AttrValue::Array(values.clone())),
@@ -2677,6 +2671,7 @@ impl Node {
             #[cfg(feature = "callout")]
             Node::Callout(c) => match attr {
                 attr_keys::KIND => c.kind = value_str,
+                attr_keys::FOLD => c.fold = value_str.chars().next().filter(|c| matches!(c, '+' | '-')),
                 attr_keys::TITLE => c.title = if value_str.is_empty() { None } else { Some(value_str) },
                 _ => (),
             },
@@ -2687,73 +2682,6 @@ impl Node {
                 _ => (),
             },
         }
-    }
-
-    /// Tries to parse a `Blockquote`'s converted nodes as an Obsidian callout.
-    ///
-    /// Returns a `Callout` node when the first text starts with `[!TYPE]`, otherwise
-    /// falls back to a plain `Blockquote`.
-    #[cfg(feature = "callout")]
-    fn try_parse_callout(values: Vec<Node>, position: Option<Position>) -> Node {
-        // Peek without cloning so plain blockquotes pay no allocation cost.
-        if !matches!(values.first(), Some(Node::Text(t)) if t.value.starts_with("[!")) {
-            return Node::Blockquote(Blockquote { values, position });
-        }
-
-        let mut iter = values.into_iter();
-        // SAFETY: the peek above guarantees at least one Text node exists.
-        let first_text = match iter.next().unwrap() {
-            Node::Text(t) => t.value,
-            _ => unreachable!(),
-        };
-
-        let Some(rest) = first_text.strip_prefix("[!") else {
-            unreachable!()
-        };
-
-        let Some(bracket_end) = rest.find(']') else {
-            // Malformed `[!…` without closing `]` — treat as plain blockquote.
-            let mut values = vec![Node::Text(Text {
-                value: first_text,
-                position: None,
-            })];
-            values.extend(iter);
-            return Node::Blockquote(Blockquote { values, position });
-        };
-
-        let kind = rest[..bracket_end].to_string();
-        let after_bracket = &rest[bracket_end + 1..];
-
-        let (title, remaining_body) = if let Some(nl) = after_bracket.find('\n') {
-            let t = after_bracket[..nl].trim();
-            (
-                if t.is_empty() { None } else { Some(t.to_string()) },
-                after_bracket[nl + 1..].to_string(),
-            )
-        } else {
-            let t = after_bracket.trim();
-            (if t.is_empty() { None } else { Some(t.to_string()) }, String::new())
-        };
-
-        let body = if !remaining_body.trim().is_empty() {
-            let rest_nodes: Vec<Node> = iter.collect();
-            let mut b = Vec::with_capacity(rest_nodes.len() + 1);
-            b.push(Node::Text(Text {
-                value: remaining_body,
-                position: None,
-            }));
-            b.extend(rest_nodes);
-            b
-        } else {
-            iter.collect()
-        };
-
-        Node::Callout(Callout {
-            kind,
-            title,
-            values: body,
-            position,
-        })
     }
 
     /// Returns true if any `Text` descendant contains `[[`, covering both
@@ -3090,486 +3018,6 @@ impl Node {
         }
     }
 
-    pub(crate) fn from_mdast_node(node: mdast::Node) -> Vec<Node> {
-        match node {
-            mdast::Node::Root(root) => root
-                .children
-                .into_iter()
-                .flat_map(Self::from_mdast_node)
-                .collect::<Vec<_>>(),
-            mdast::Node::ListItem(list_item) => list_item
-                .children
-                .into_iter()
-                .flat_map(Self::from_mdast_node)
-                .collect::<Vec<_>>(),
-            mdast::Node::List(list) => Self::mdast_list_items(&list, 0),
-            mdast::Node::Table(table) => table
-                .children
-                .iter()
-                .enumerate()
-                .flat_map(|(row, n)| {
-                    if let mdast::Node::TableRow(table_row) = n {
-                        itertools::concat(vec![
-                            table_row
-                                .children
-                                .iter()
-                                .enumerate()
-                                .flat_map(|(column, node)| {
-                                    if let mdast::Node::TableCell(_) = node {
-                                        vec![Self::TableCell(TableCell {
-                                            row,
-                                            column,
-                                            values: Self::mdast_children_to_node(node.clone()),
-                                            position: node.position().map(|p| p.clone().into()),
-                                        })]
-                                    } else {
-                                        Vec::new()
-                                    }
-                                })
-                                .collect(),
-                            if row == 0 {
-                                vec![Self::TableAlign(TableAlign {
-                                    align: table.align.iter().map(|a| (*a).into()).collect::<Vec<_>>(),
-                                    position: n.position().map(|p| Position {
-                                        start: Point {
-                                            line: p.start.line + 1,
-                                            column: 1,
-                                        },
-                                        end: Point {
-                                            line: p.start.line + 1,
-                                            column: 1,
-                                        },
-                                    }),
-                                })]
-                            } else {
-                                Vec::new()
-                            },
-                        ])
-                    } else {
-                        Vec::new()
-                    }
-                })
-                .collect(),
-            mdast::Node::Code(mdast::Code {
-                value,
-                position,
-                lang,
-                meta,
-                ..
-            }) => match lang {
-                Some(lang) => {
-                    vec![Self::Code(Code {
-                        value,
-                        lang: Some(lang),
-                        position: position.map(|p| p.clone().into()),
-                        meta,
-                        fence: true,
-                    })]
-                }
-                None => {
-                    let line_count = position
-                        .as_ref()
-                        .map(|p| p.end.line - p.start.line + 1)
-                        .unwrap_or_default();
-                    let fence = value.lines().count() != line_count;
-
-                    vec![Self::Code(Code {
-                        value,
-                        lang,
-                        position: position.map(|p| p.clone().into()),
-                        meta,
-                        fence,
-                    })]
-                }
-            },
-            mdast::Node::Blockquote(mdast::Blockquote { ref position, .. }) => {
-                let pos = position.clone().map(|p| p.into());
-                let values = Self::mdast_children_to_node(node);
-                #[cfg(feature = "callout")]
-                {
-                    vec![Self::try_parse_callout(values, pos)]
-                }
-                #[cfg(not(feature = "callout"))]
-                {
-                    vec![Self::Blockquote(Blockquote { values, position: pos })]
-                }
-            }
-            mdast::Node::Definition(mdast::Definition {
-                url,
-                title,
-                identifier,
-                label,
-                position,
-                ..
-            }) => {
-                vec![Self::Definition(Definition {
-                    ident: identifier,
-                    url: Url(url),
-                    label,
-                    title: title.map(Title),
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Heading(mdast::Heading {
-                depth, ref position, ..
-            }) => {
-                let position = position.clone().map(|p| p.into());
-                vec![Self::Heading(Heading {
-                    values: Self::mdast_children_to_node(node),
-                    depth,
-                    position,
-                })]
-            }
-            mdast::Node::Break(mdast::Break { position }) => {
-                vec![Self::Break(Break {
-                    position: position.map(|p| p.into()),
-                })]
-            }
-            mdast::Node::Delete(mdast::Delete { ref position, .. }) => {
-                let position = position.clone().map(|p| p.into());
-                vec![Self::Delete(Delete {
-                    values: Self::mdast_children_to_node(node),
-                    position,
-                })]
-            }
-            mdast::Node::Emphasis(mdast::Emphasis { ref position, .. }) => {
-                let position = position.clone().map(|p| p.into());
-                vec![Self::Emphasis(Emphasis {
-                    values: Self::mdast_children_to_node(node),
-                    position,
-                })]
-            }
-            mdast::Node::Strong(mdast::Strong { ref position, .. }) => {
-                let position = position.clone().map(|p| p.into());
-                vec![Self::Strong(Strong {
-                    values: Self::mdast_children_to_node(node),
-                    position,
-                })]
-            }
-            mdast::Node::ThematicBreak(mdast::ThematicBreak { position, .. }) => {
-                vec![Self::HorizontalRule(HorizontalRule {
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Html(mdast::Html { value, position }) => {
-                vec![Self::Html(Html {
-                    value,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Yaml(mdast::Yaml { value, position }) => {
-                vec![Self::Yaml(Yaml {
-                    value,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Toml(mdast::Toml { value, position }) => {
-                vec![Self::Toml(Toml {
-                    value,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Image(mdast::Image {
-                alt,
-                url,
-                title,
-                position,
-            }) => {
-                vec![Self::Image(Image {
-                    alt,
-                    url,
-                    title,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::ImageReference(mdast::ImageReference {
-                alt,
-                identifier,
-                label,
-                position,
-                ..
-            }) => {
-                vec![Self::ImageRef(ImageRef {
-                    alt,
-                    ident: identifier,
-                    label,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::InlineCode(mdast::InlineCode { value, position, .. }) => {
-                vec![Self::CodeInline(CodeInline {
-                    value: value.into(),
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::InlineMath(mdast::InlineMath { value, position }) => {
-                vec![Self::MathInline(MathInline {
-                    value: value.into(),
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Link(mdast::Link {
-                title,
-                url,
-                position,
-                children,
-                ..
-            }) => {
-                let converted: Vec<Node> = children.into_iter().flat_map(Self::from_mdast_node).collect();
-                // Flatten nested links that arise from GFM autolink literal parsing.
-                // When the link text is a bare URL (e.g. `[https://x](https://x)`),
-                // markdown-rs parses the inner text as another Link node with the same
-                // URL, which causes double-nesting on re-serialisation.  Unwrap any
-                // such inner link whose URL matches the outer one.
-                let values = converted
-                    .into_iter()
-                    .flat_map(|child| match child {
-                        Self::Link(Link {
-                            url: ref inner_url,
-                            ref values,
-                            ..
-                        }) if inner_url.0 == url => values.clone(),
-                        other => vec![other],
-                    })
-                    .collect();
-                vec![Self::Link(Link {
-                    url: Url(url),
-                    title: title.map(Title),
-                    values,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::LinkReference(mdast::LinkReference {
-                identifier,
-                label,
-                position,
-                children,
-                ..
-            }) => {
-                vec![Self::LinkRef(LinkRef {
-                    ident: identifier,
-                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
-                    label,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Math(mdast::Math { value, position, .. }) => {
-                vec![Self::Math(Math {
-                    value,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::FootnoteDefinition(mdast::FootnoteDefinition {
-                identifier,
-                position,
-                children,
-                ..
-            }) => {
-                vec![Self::Footnote(Footnote {
-                    ident: identifier,
-                    values: children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>(),
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::FootnoteReference(mdast::FootnoteReference {
-                identifier,
-                label,
-                position,
-                ..
-            }) => {
-                vec![Self::FootnoteRef(FootnoteRef {
-                    ident: identifier,
-                    label,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::MdxFlowExpression(mdx) => {
-                vec![Self::MdxFlowExpression(MdxFlowExpression {
-                    value: mdx.value.into(),
-                    position: mdx.position.map(|position| position.into()),
-                })]
-            }
-            mdast::Node::MdxJsxFlowElement(mdx) => {
-                vec![Self::MdxJsxFlowElement(MdxJsxFlowElement {
-                    children: mdx
-                        .children
-                        .into_iter()
-                        .flat_map(Self::from_mdast_node)
-                        .collect::<Vec<_>>(),
-                    position: mdx.position.map(|p| p.clone().into()),
-                    name: mdx.name,
-                    attributes: mdx
-                        .attributes
-                        .iter()
-                        .map(|attr| match attr {
-                            mdast::AttributeContent::Expression(mdast::MdxJsxExpressionAttribute { value, .. }) => {
-                                MdxAttributeContent::Expression(value.into())
-                            }
-                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute { value, name, .. }) => {
-                                MdxAttributeContent::Property(MdxJsxAttribute {
-                                    name: name.into(),
-                                    value: value.as_ref().map(|value| match value {
-                                        mdast::AttributeValue::Literal(value) => {
-                                            MdxAttributeValue::Literal(value.into())
-                                        }
-                                        mdast::AttributeValue::Expression(mdast::AttributeValueExpression {
-                                            value,
-                                            ..
-                                        }) => MdxAttributeValue::Expression(value.into()),
-                                    }),
-                                })
-                            }
-                        })
-                        .collect(),
-                })]
-            }
-            mdast::Node::MdxJsxTextElement(mdx) => {
-                vec![Self::MdxJsxTextElement(MdxJsxTextElement {
-                    children: mdx
-                        .children
-                        .into_iter()
-                        .flat_map(Self::from_mdast_node)
-                        .collect::<Vec<_>>(),
-                    position: mdx.position.map(|p| p.clone().into()),
-                    name: mdx.name.map(|name| name.into()),
-                    attributes: mdx
-                        .attributes
-                        .iter()
-                        .map(|attr| match attr {
-                            mdast::AttributeContent::Expression(mdast::MdxJsxExpressionAttribute { value, .. }) => {
-                                MdxAttributeContent::Expression(value.into())
-                            }
-                            mdast::AttributeContent::Property(mdast::MdxJsxAttribute { value, name, .. }) => {
-                                MdxAttributeContent::Property(MdxJsxAttribute {
-                                    name: name.into(),
-                                    value: value.as_ref().map(|value| match value {
-                                        mdast::AttributeValue::Literal(value) => {
-                                            MdxAttributeValue::Literal(value.into())
-                                        }
-                                        mdast::AttributeValue::Expression(mdast::AttributeValueExpression {
-                                            value,
-                                            ..
-                                        }) => MdxAttributeValue::Expression(value.into()),
-                                    }),
-                                })
-                            }
-                        })
-                        .collect(),
-                })]
-            }
-            mdast::Node::MdxTextExpression(mdx) => {
-                vec![Self::MdxTextExpression(MdxTextExpression {
-                    value: mdx.value.into(),
-                    position: mdx.position.map(|position| position.into()),
-                })]
-            }
-            mdast::Node::MdxjsEsm(mdx) => {
-                vec![Self::MdxJsEsm(MdxJsEsm {
-                    value: mdx.value.into(),
-                    position: mdx.position.map(|position| position.into()),
-                })]
-            }
-            mdast::Node::Text(mdast::Text { position, value, .. }) => {
-                vec![Self::Text(Text {
-                    value,
-                    position: position.map(|p| p.clone().into()),
-                })]
-            }
-            mdast::Node::Paragraph(mdast::Paragraph { children, .. }) => {
-                children.into_iter().flat_map(Self::from_mdast_node).collect::<Vec<_>>()
-            }
-            _ => Vec::new(),
-        }
-    }
-
-    /// Converts the children of `node`, moving them out to avoid deep-cloning the subtree at every level.
-    fn mdast_children_to_node(mut node: mdast::Node) -> Vec<Node> {
-        match node.children_mut() {
-            Some(children) => std::mem::take(children)
-                .into_iter()
-                .flat_map(Self::from_mdast_node)
-                .collect::<Vec<_>>(),
-            None => vec![EMPTY_NODE],
-        }
-    }
-
-    fn mdast_list_items(list: &mdast::List, level: Level) -> Vec<Node> {
-        let mut result = Vec::new();
-        for node in &list.children {
-            match node {
-                mdast::Node::ListItem(list_item) => {
-                    result.push(Self::mdast_list_item_node(list_item, list, level));
-                    for child in &list_item.children {
-                        match child {
-                            mdast::Node::List(sub_list) => {
-                                result.extend(Self::mdast_list_items(sub_list, level + 1));
-                            }
-                            mdast::Node::ListItem(child_item) => {
-                                result.push(Self::mdast_list_item_node(child_item, list, level + 1));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                mdast::Node::List(sub_list) => result.extend(Self::mdast_list_items(sub_list, level + 1)),
-                _ => {}
-            }
-        }
-
-        result
-            .into_iter()
-            .scan(0usize, |next_index, node| {
-                // Only renumber this call's own level; deeper items flattened in from a
-                // recursive call already have their own, independently-numbered index.
-                Some(match node {
-                    Self::List(mut l) if l.level == level => {
-                        l.index = *next_index;
-                        *next_index += 1;
-                        Self::List(l)
-                    }
-                    other => other,
-                })
-            })
-            .collect()
-    }
-
-    /// Converts one list item without recursively converting its nested list children.
-    ///
-    /// The enclosing [`Self::mdast_list_items`] call emits those children at their own level,
-    /// so skipping them here prevents constructing and discarding the same subtree first.
-    fn mdast_list_item_node(list_item: &mdast::ListItem, list: &mdast::List, level: Level) -> Node {
-        let values = list_item
-            .children
-            .iter()
-            .filter(|node| !matches!(node, mdast::Node::List(_)))
-            .flat_map(|node| Self::from_mdast_node(node.clone()))
-            .collect::<Vec<_>>();
-        let position = if values.is_empty() {
-            list_item.position.as_ref().map(|position| position.clone().into())
-        } else {
-            let first_pos = values.first().and_then(Node::position);
-            let last_pos = values.last().and_then(Node::position);
-            match (first_pos, last_pos) {
-                (Some(start), Some(end)) => Some(Position {
-                    start: start.start.clone(),
-                    end: end.end.clone(),
-                }),
-                _ => list_item.position.as_ref().map(|position| position.clone().into()),
-            }
-        };
-
-        Self::List(List {
-            level,
-            index: 0,
-            ordered: list.ordered,
-            checked: list_item.checked,
-            start: list.start,
-            spread: list.spread,
-            values,
-            position,
-        })
-    }
-
     fn mdx_attribute_content_to_string(attr: &MdxAttributeContent) -> SmolStr {
         match attr {
             MdxAttributeContent::Expression(value) => format!("{{{}}}", value).into(),
@@ -3588,6 +3036,63 @@ pub(crate) fn values_to_string(values: &[Node], options: &RenderOptions) -> Stri
     render_values(values, options, &ColorTheme::PLAIN)
 }
 
+/// Indents every line, the first included, by `width` spaces, except empty ones.
+pub(crate) fn indent_lines(content: &str, width: usize) -> String {
+    let pad = " ".repeat(width);
+    content
+        .split('\n')
+        .map(|line| {
+            if line.is_empty() {
+                line.to_string()
+            } else {
+                format!("{pad}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Indents every line after the first by `width` spaces, except empty ones.
+fn indent_continuation(content: &str, width: usize) -> String {
+    let Some((first, rest)) = content.split_once('\n') else {
+        return content.to_string();
+    };
+    let pad = " ".repeat(width);
+    let mut result = String::with_capacity(content.len() + width * 2);
+    result.push_str(first);
+    for line in rest.split('\n') {
+        result.push('\n');
+        if !line.is_empty() {
+            result.push_str(&pad);
+            result.push_str(line);
+        }
+    }
+    result
+}
+
+fn render_emphasis(values: &[Node], delim: &str, options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    let (es, ee) = &theme.emphasis;
+    format!("{es}{delim}{}{delim}{ee}", render_values(values, options, theme))
+}
+
+/// Renders the content of a table cell. A pipe that is not escaped yet, as in code, would end the cell.
+pub(crate) fn render_cell_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    let rendered = render_values(values, options, theme);
+    if !rendered.contains('|') {
+        return rendered;
+    }
+    let mut result = String::with_capacity(rendered.len() + 4);
+    let mut escaped = false;
+    for c in rendered.chars() {
+        if c == '|' && !escaped {
+            result.push('\\');
+        }
+        escaped = c == '\\' && !escaped;
+        result.push(c);
+    }
+    result
+}
+
 pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
     let mut pre_position: Option<Position> = None;
     values
@@ -3596,7 +3101,7 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
             if let Some(pos) = value.position() {
                 let new_line_count = pre_position
                     .as_ref()
-                    .map(|p: &Position| pos.start.line - p.end.line)
+                    .map(|p: &Position| pos.start.line.saturating_sub(p.end.line))
                     .unwrap_or_default();
 
                 let space = if new_line_count > 0
@@ -3643,27 +3148,54 @@ pub(crate) fn render_values(values: &[Node], options: &RenderOptions, theme: &Co
 /// so applying column-based spacing causes double-indentation. This variant preserves
 /// blank lines between values (via newline counting) but ignores the column position.
 pub(crate) fn render_values_block(values: &[Node], options: &RenderOptions, theme: &ColorTheme<'_>) -> String {
+    let is_table_part = |node: &Node| matches!(node, Node::TableCell(_) | Node::TableAlign(_));
+    let mut result = String::new();
     let mut pre_position: Option<Position> = None;
-    values
-        .iter()
-        .map(|value| {
-            if let Some(pos) = value.position() {
-                let new_line_count = pre_position
-                    .as_ref()
-                    .map(|p: &Position| pos.start.line - p.end.line)
-                    .unwrap_or_default();
-                pre_position = Some(pos);
-                format!(
-                    "{}{}",
-                    "\n".repeat(new_line_count),
-                    value.render_with_theme(options, theme)
-                )
-            } else {
-                pre_position = None;
-                value.render_with_theme(options, theme)
-            }
-        })
-        .collect::<String>()
+    let mut index = 0;
+
+    while index < values.len() {
+        // The cells of a table are laid out together, as at the top level.
+        let (rendered, position, next) = if is_table_part(&values[index]) {
+            let end = values[index..]
+                .iter()
+                .position(|node| !is_table_part(node))
+                .map_or(values.len(), |offset| index + offset);
+            let run = &values[index..end];
+            let table = crate::Markdown {
+                nodes: run.to_vec(),
+                options: options.clone(),
+            };
+            let position = match (run[0].position(), run[run.len() - 1].position()) {
+                (Some(first), Some(last)) => Some(Position {
+                    start: first.start,
+                    end: last.end,
+                }),
+                _ => None,
+            };
+            (
+                table.render_with_theme(theme).trim_end_matches('\n').to_string(),
+                position,
+                end,
+            )
+        } else {
+            let value = &values[index];
+            (value.render_with_theme(options, theme), value.position(), index + 1)
+        };
+        index = next;
+
+        if let Some(pos) = position {
+            let new_line_count = pre_position
+                .as_ref()
+                .map(|p: &Position| pos.start.line.saturating_sub(p.end.line))
+                .unwrap_or_default();
+            pre_position = Some(pos);
+            result.push_str(&"\n".repeat(new_line_count));
+        } else {
+            pre_position = None;
+        }
+        result.push_str(&rendered);
+    }
+    result
 }
 
 fn values_to_value(values: &[Node]) -> String {
@@ -3756,53 +3288,16 @@ pub(crate) fn reindent_all_lines(content: &str, delta: isize) -> String {
         .join("\n")
 }
 
-/// Indents a `Code`/`Math`/`Yaml`/`Toml` first child's own continuation lines,
-/// which `render_values` leaves flush-left since it only indents non-first children.
-fn reindent_first_leaf_block(
-    content: String,
-    first: Option<&Node>,
-    options: &RenderOptions,
-    theme: &ColorTheme<'_>,
-    target_indent: usize,
-) -> String {
-    let Some(first) = first else { return content };
-    if !matches!(first, Node::Code(_) | Node::Math(_) | Node::Yaml(_) | Node::Toml(_)) {
-        return content;
-    }
-    let first_rendered = first.render_with_theme(options, theme);
-    if !first_rendered.contains('\n') {
-        return content;
-    }
-    let reindented_first = reindent_continuation(&first_rendered, target_indent as isize);
-    let mut lines: Vec<&str> = content.split('\n').collect();
-    for (line, replacement) in lines.iter_mut().zip(reindented_first.split('\n')) {
-        *line = replacement;
-    }
-    lines.join("\n")
-}
-
-/// Like [`reindent_all_lines`] but leaves the first line untouched, for shifting a
-/// value's own continuation lines without disturbing its already-placed first line.
-fn reindent_continuation(content: &str, delta: isize) -> String {
-    if delta == 0 || !content.contains('\n') {
-        return content.to_string();
-    }
-    let mut lines = content.splitn(2, '\n');
-    let first = lines.next().unwrap_or_default();
-    let rest = lines.next().unwrap_or_default();
-    format!("{}\n{}", first, reindent_all_lines(rest, delta))
-}
-
-/// The width of a list item's own marker + trailing space + checkbox (not
-/// including ancestor indentation), e.g. 3 for `"1. "`, 4 for `"10. "` or `"- [x] "`.
-pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u32>, checked: Option<bool>) -> usize {
+/// The width of a list item's own marker and trailing space (not including ancestor indentation),
+/// e.g. 2 for `"- "`, 3 for `"1. "`, 4 for `"10. "`. A checkbox is not part of it, as the content of
+/// the item starts at the checkbox, so children are indented to the marker alone.
+pub(crate) fn list_own_prefix_width(ordered: bool, index: usize, start: Option<u32>) -> usize {
     let marker_len = if ordered {
         (start.unwrap_or(1) as usize + index).to_string().chars().count() + 1
     } else {
         1
     };
-    let checkbox_len = if checked.is_some() { 4 } else { 0 };
-    marker_len + 1 + checkbox_len
+    marker_len + 1
 }
 
 /// Longest fence-char run in `value` + 1 (min 3); switches to tilde when `info`
@@ -3856,6 +3351,33 @@ fn escape_label(s: &str) -> String {
         result.push(c);
     }
     result
+}
+
+/// The text of an autolink for a link whose only content is its own destination, when writing that
+/// text as a link label would need escapes. A URL in a label is read as it is, so `\_` would stay.
+fn autolink_target(url: &str, values: &[Node]) -> Option<String> {
+    let [Node::Text(Text { value, .. })] = values else {
+        return None;
+    };
+    let target = if value == url {
+        url
+    } else if url.strip_prefix("mailto:") == Some(value.as_str()) && value.contains('@') {
+        value.as_str()
+    } else {
+        return None;
+    };
+    let plain = !target
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>'));
+    let scheme = target.split_once(':').is_some_and(|(scheme, _)| {
+        (2..=32).contains(&scheme.len())
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+    });
+    let email = value != url;
+    (plain && (scheme || email) && escape_text(target.to_string()) != target).then(|| target.to_string())
 }
 
 /// Re-escapes markdown-significant characters so plain text can't be reinterpreted as
@@ -4018,15 +3540,15 @@ mod tests {
     #[case::footnote(Node::Footnote(Footnote {ident: "test".to_string(), values: Vec::new(), position: None }),
            "test".to_string(),
            Node::Footnote(Footnote{ident: "test".to_string(), values: Vec::new(), position: None }))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }),
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }),
+           Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None }))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{start: None, spread: false, index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }),
+           Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None }))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }),
            "test".to_string(),
-           Node::List(List{start: None, spread: false, index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }))]
+           Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 2, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None }))]
     #[case::code_inline(Node::CodeInline(CodeInline{ value: "t".into(), position: None }),
            "test".to_string(),
            Node::CodeInline(CodeInline{ value: "test".into(), position: None }))]
@@ -4068,9 +3590,9 @@ mod tests {
     #[case::break_(Node::Break(Break{ position: None}),
             "test".to_string(),
             Node::Break(Break{position: None}))]
-    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ position: None}),
+    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ marker: None, position: None}),
             "test".to_string(),
-            Node::HorizontalRule(HorizontalRule{position: None}))]
+            Node::HorizontalRule(HorizontalRule{ marker: None,position: None}))]
     #[case::mdx_flow_expression(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}),
            "updated".to_string(),
            Node::MdxFlowExpression(MdxFlowExpression{value: "updated".into(), position: None}))]
@@ -4175,13 +3697,13 @@ mod tests {
             Node::Text(Text{value: "first".to_string(), position: None}),
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false,  values: vec![
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false,  values: vec![
             Node::Text(Text{value: "new".to_string(), position: None}),
             Node::Text(Text{value: "second".to_string(), position: None})
         ], position: None}))]
@@ -4203,20 +3725,20 @@ mod tests {
         "new",
         0,
         Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}),
         "new",
         0,
-        Node::List(List{start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None})
     ], position: None}),
         "new",
         2,
-        Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "first".to_string(), position: None})
         ], position: None}))]
     #[case::link_ref(Node::LinkRef(LinkRef{ident: "id".to_string(), values: vec![
@@ -4314,7 +3836,7 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None }),
            "test".to_string())]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
            "    - test".to_string())]
     fn test_display(#[case] node: Node, #[case] expected: String) {
         assert_eq!(node.to_string_with(&RenderOptions::default()), expected);
@@ -4404,7 +3926,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::HorizontalRule(HorizontalRule{position: None}), true)]
+    #[case(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_horizontal_rule(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_horizontal_rule(), expected);
@@ -4635,7 +4157,7 @@ mod tests {
            &Node::Heading(Heading{depth: 1, values: vec!["test".to_string().into()], position: None})),
            vec!["test".to_string().into()])]
     #[case(Node::node_values(
-           &Node::List(List{values: vec!["test".to_string().into()], ordered: false, level: 1, checked: Some(false), index: 0, start: None, spread: false, position: None})),
+           &Node::List(List{ marker: None,values: vec!["test".to_string().into()], ordered: false, level: 1, checked: Some(false), index: 0, start: None, spread: false, position: None})),
            vec!["test".to_string().into()])]
     fn test_node_value(#[case] actual: Vec<Node>, #[case] expected: Vec<Node>) {
         assert_eq!(actual, expected);
@@ -4734,12 +4256,12 @@ mod tests {
 
     #[rstest]
     #[case::text(Node::Text(Text{value: "test".to_string(), position: None }), RenderOptions::default(), "test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "    - test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Plus, ..Default::default() }, "  + test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: ListStyle::Star, ..Default::default() }, "  * [x] test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. test")]
-    #[case::list(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: Some(false), ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. [ ] test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 2, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "    - test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: Some(ListStyle::Plus), ..Default::default() }, "  + test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions { list_style: Some(ListStyle::Star), ..Default::default() }, "  * [x] test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: Some(false), ordered: false, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  - [ ] test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. test")]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: Some(false), ordered: true, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "  1. [ ] test")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_row(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None})], position: None}), RenderOptions::default(), "|test|")]
     #[case::table_cell(Node::TableCell(TableCell{column: 0, row: 0, values: vec!["test".to_string().into()], position: None}), RenderOptions::default(), "test")]
@@ -4793,7 +4315,7 @@ mod tests {
     #[case::yaml(Node::Yaml(Yaml{value: "key: value".to_string(), position: None}), RenderOptions::default(), "---\nkey: value\n---")]
     #[case::toml(Node::Toml(Toml{value: "key = \"value\"".to_string(), position: None}), RenderOptions::default(), "+++\nkey = \"value\"\n+++")]
     #[case::break_(Node::Break(Break{position: None}), RenderOptions::default(), "\\\n")]
-    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{position: None}), RenderOptions::default(), "***")]
+    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), RenderOptions::default(), "***")]
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{
         name: Some("div".to_string()),
         attributes: vec![
@@ -4990,13 +4512,13 @@ mod tests {
     #[case(Node::Link(Link{url: Url::new("".to_string()), title: None, values: Vec::new(), position: None}), "link")]
     #[case(Node::LinkRef(LinkRef{ident: "".to_string(), values: Vec::new(), label: None, position: None}), "link_ref")]
     #[case(Node::Math(Math{value: "".to_string(), position: None}), "math")]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: None}), "list")]
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: None}), "list")]
     #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "table_align")]
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: None}), "table_row")]
     #[case(Node::TableCell(TableCell{column: 0, row: 0, values: Vec::new(), position: None}), "table_cell")]
     #[case(Node::Code(Code{value: "".to_string(), lang: None, fence: true, meta: None, position: None}), "code")]
     #[case(Node::Strong(Strong{values: Vec::new(), position: None}), "strong")]
-    #[case(Node::HorizontalRule(HorizontalRule{position: None}), "Horizontal_rule")]
+    #[case(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), "Horizontal_rule")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "".into(), position: None}), "mdx_flow_expression")]
     #[case(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_flow_element")]
     #[case(Node::MdxJsxTextElement(MdxJsxTextElement{name: None, attributes: Vec::new(), children: Vec::new(), position: None}), "mdx_jsx_text_element")]
@@ -5009,7 +4531,7 @@ mod tests {
 
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), "test")]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Blockquote(Blockquote{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Delete(Delete{values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
@@ -5031,7 +4553,7 @@ mod tests {
     #[case(Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None}), "test")]
     #[case(Node::TableRow(TableRow{values: vec![Node::TableCell(TableCell{column: 0, row: 0, values: vec![Node::Text(Text{value: "test".to_string(), position: None})], position: None})], position: None}), "test")]
     #[case(Node::Break(Break{position: None}), "")]
-    #[case(Node::HorizontalRule(HorizontalRule{position: None}), "")]
+    #[case(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), "")]
     #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: None}), "")]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: None}), "test")]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: None}), "test")]
@@ -5046,7 +4568,7 @@ mod tests {
     #[rstest]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), None)]
     #[case(Node::Text(Text{value: "test".to_string(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Blockquote(Blockquote{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Delete(Delete{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Heading(Heading{depth: 1, values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -5069,7 +4591,7 @@ mod tests {
     #[case(Node::TableRow(TableRow{values: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::TableAlign(TableAlign{align: Vec::new(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::Break(Break{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
-    #[case(Node::HorizontalRule(HorizontalRule{position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
+    #[case(Node::HorizontalRule(HorizontalRule{ marker: None,position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxFlowExpression(MdxFlowExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxTextExpression(MdxTextExpression{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
     #[case(Node::MdxJsEsm(MdxJsEsm{value: "test".into(), position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}), Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}}))]
@@ -5129,7 +4651,7 @@ mod tests {
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 0, Some(Node::Text(Text{value: "first".to_string(), position: None})))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
         Node::Text(Text{value: "first".to_string(), position: None}),
         Node::Text(Text{value: "second".to_string(), position: None})
     ], position: None}), 1, Some(Node::Text(Text{value: "second".to_string(), position: None})))]
@@ -5156,7 +4678,7 @@ mod tests {
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Emphasis(Emphasis{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
     #[case(Node::Strong(Strong{values: vec!["test".to_string().into()], position: None}),
            Node::Fragment(Fragment{values: vec!["test".to_string().into()]}))]
@@ -5199,8 +4721,8 @@ mod tests {
     #[case::heading_mixed(Node::Heading(Heading{depth: 1, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
     #[case::emphasis_all_empty(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Empty], position: None}), "")]
     #[case::emphasis_mixed(Node::Emphasis(Emphasis{values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
-    #[case::list_all_empty(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Empty], position: None}), "")]
-    #[case::list_mixed(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
+    #[case::list_all_empty(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Empty], position: None}), "")]
+    #[case::list_mixed(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Empty, Node::Text(Text{value: "kept".to_string(), position: None})], position: None}), "kept")]
     #[case::strong_all_empty(Node::Strong(Strong{values: vec![Node::Empty, Node::Empty], position: None}), "")]
     #[case::strong_mixed(Node::Strong(Strong{values: vec![Node::Text(Text{value: "kept".to_string(), position: None}), Node::Empty], position: None}), "kept")]
     #[case::link_all_empty(Node::Link(Link{url: Url(attr_keys::URL.to_string()), title: None, values: vec![Node::Empty, Node::Empty], position: None}), "")]
@@ -5261,13 +4783,13 @@ mod tests {
         ], position: None})
     )]
     #[case(
-        &mut Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+        &mut Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "old".to_string(), position: None})
         ], position: None}),
         Node::Fragment(Fragment{values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ]}),
-        Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "new".to_string(), position: None})
         ], position: None})
     )]
@@ -5379,7 +4901,7 @@ mod tests {
         ], position: None})
     )]
     #[case(
-        &mut Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+        &mut Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "text1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None}),
@@ -5387,7 +4909,7 @@ mod tests {
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Fragment(Fragment{values: Vec::new()})
         ]}),
-        Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![
             Node::Text(Text{value: "new1".to_string(), position: None}),
             Node::Text(Text{value: "text2".to_string(), position: None})
         ], position: None})
@@ -5404,9 +4926,9 @@ mod tests {
     #[case(Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}},
        Node::Code(Code{value: "code".to_string(), lang: None, fence: true, meta: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 3, column: 3}})}))]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![], position: None}),
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![], position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}},
-       Node::List(List{start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
+       Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 1, checked: None, ordered: false, values: vec![], position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 5}})}))]
     #[case(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: None, label: None, position: None}),
        Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}},
        Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: None, label: None, position: Some(Position{start: Point{line: 1, column: 1}, end: Point{line: 1, column: 10}})}))]
@@ -5590,6 +5112,7 @@ mod tests {
     #[test]
     fn test_clear_text_position_at_selected_index() {
         let mut node = Node::List(List {
+            marker: None,
             start: None,
             spread: false,
             index: 0,
@@ -5620,8 +5143,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
-    #[case(Node::List(List{start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
+    #[case(Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec!["test".to_string().into()], position: None}), true)]
     #[case(Node::Text(Text{value: "test".to_string(), position: None}), false)]
     fn test_is_list(#[case] node: Node, #[case] expected: bool) {
         assert_eq!(node.is_list(), expected);
@@ -5699,10 +5222,10 @@ mod tests {
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), label: Some(attr_keys::LABEL.to_string()), position: None}), attr_keys::TITLE, Some(AttrValue::String(attr_keys::TITLE.to_string())))]
     #[case::definition(Node::Definition(Definition{ident: "id".to_string(), url: Url::new(attr_keys::URL.to_string()), title: Some(Title::new(attr_keys::TITLE.to_string())), label: Some(attr_keys::LABEL.to_string()), position: None}), attr_keys::LABEL, Some(AttrValue::String(attr_keys::LABEL.to_string())))]
     #[case::heading(Node::Heading(Heading{depth: 3, values: Vec::new(), position: None}), "depth", Some(AttrValue::Integer(3)))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "index", Some(AttrValue::Integer(2)))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some(AttrValue::Integer(1)))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some(AttrValue::Boolean(true)))]
-    #[case::list(Node::List(List{start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), attr_keys::CHECKED, Some(AttrValue::Boolean(true)))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "index", Some(AttrValue::Integer(2)))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "level", Some(AttrValue::Integer(1)))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), "ordered", Some(AttrValue::Boolean(true)))]
+    #[case::list(Node::List(List{ marker: None,start: None, spread: false, index: 2, level: 1, checked: Some(true), ordered: true, values: Vec::new(), position: None}), attr_keys::CHECKED, Some(AttrValue::Boolean(true)))]
     #[case::table_cell(Node::TableCell(TableCell{column: 1, row: 2, values: Vec::new(), position: None}), "column", Some(AttrValue::Integer(1)))]
     #[case::table_cell(Node::TableCell(TableCell{column: 1, row: 2, values: Vec::new(), position: None}), "row", Some(AttrValue::Integer(2)))]
     #[case::table_align(Node::TableAlign(TableAlign{align: vec![TableAlignKind::Left, TableAlignKind::Right], position: None}), "align", Some(AttrValue::String(":---,---:".to_string())))]
@@ -5712,7 +5235,7 @@ mod tests {
     #[case::mdx_jsx_flow_element(Node::MdxJsxFlowElement(MdxJsxFlowElement{name: Some("div".to_string()), attributes: Vec::new(), children: Vec::new(), position: None}), attr_keys::NAME, Some(AttrValue::String("div".to_string())))]
     #[case::mdx_jsx_flow_element(Node::MdxJsxTextElement(MdxJsxTextElement{name: Some("span".into()), attributes: Vec::new(), children: Vec::new(), position: None}), attr_keys::NAME, Some(AttrValue::String("span".to_string())))]
     #[case::break_(Node::Break(Break{position: None}), attr_keys::VALUE, None)]
-    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{position: None}), attr_keys::VALUE, None)]
+    #[case::horizontal_rule(Node::HorizontalRule(HorizontalRule{ marker: None,position: None}), attr_keys::VALUE, None)]
     #[case::fragment(Node::Fragment(Fragment{values: Vec::new()}), attr_keys::VALUE, Some(AttrValue::String("".to_string())))]
     #[case::heading(Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "heading text".to_string(), position: None})], position: None}), attr_keys::VALUE, Some(AttrValue::String("heading text".to_string())))]
     #[case::heading(Node::Heading(Heading{depth: 2, values: vec![], position: None}), attr_keys::VALUE, Some(AttrValue::String("".to_string())))]
@@ -5721,7 +5244,7 @@ mod tests {
         Node::Text(Text{value: "second".to_string(), position: None}),
     ], position: None}), attr_keys::VALUE, Some(AttrValue::String("firstsecond".to_string())))]
     #[case(
-        Node::List(List {
+        Node::List(List { marker: None,
             index: 0,
             level: 1,
             checked: None,
@@ -5803,7 +5326,7 @@ mod tests {
         ]))
         )]
     #[case::list(
-        Node::List(List {
+        Node::List(List { marker: None,
             index: 0,
             level: 1,
             checked: None,
@@ -5969,9 +5492,9 @@ mod tests {
         Node::Heading(Heading{depth: 1, values: vec![Node::Text(Text{value: "child".to_string(), position: None})], position: None})
     )]
     #[case::list(
-        Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None}),
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![], position: None}),
         vec![Node::Text(Text{value: "item".to_string(), position: None})],
-        Node::List(List{start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "item".to_string(), position: None})], position: None})
+        Node::List(List{ marker: None,start: None, spread: false, index: 0, level: 0, checked: None, ordered: false, values: vec![Node::Text(Text{value: "item".to_string(), position: None})], position: None})
     )]
     #[case::blockquote(
         Node::Blockquote(Blockquote{values: vec![], position: None}),
@@ -6096,16 +5619,16 @@ mod tests {
         Node::Heading(Heading{depth: 3, values: vec![], position: None})
     )]
     #[case(
-        Node::List(List{start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
+        Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
         attr_keys::CHECKED,
         "false",
-        Node::List(List{start: None, spread: false, index: 1, level: 2, checked: Some(false), ordered: false, values: vec![], position: None})
+        Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(false), ordered: false, values: vec![], position: None})
     )]
     #[case(
-        Node::List(List{start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
+        Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: false, values: vec![], position: None}),
         "ordered",
         "true",
-        Node::List(List{start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: true, values: vec![], position: None})
+        Node::List(List{ marker: None,start: None, spread: false, index: 1, level: 2, checked: Some(true), ordered: true, values: vec![], position: None})
     )]
     #[case(
         Node::TableCell(TableCell{column: 1, row: 2, values: vec![], position: None}),
@@ -6344,114 +5867,35 @@ mod tests {
 
     #[cfg(feature = "callout")]
     #[rstest]
-    // basic [!NOTE] with body on next line
-    #[case(
-        vec![Node::Text(Text { value: "[!NOTE]\nbody text".to_string(), position: None })],
-        Node::Callout(Callout {
-            kind: "NOTE".to_string(),
-            title: None,
-            values: vec![Node::Text(Text { value: "body text".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    // [!WARNING] with custom title
-    #[case(
-        vec![Node::Text(Text { value: "[!WARNING] My Title\nbody".to_string(), position: None })],
-        Node::Callout(Callout {
-            kind: "WARNING".to_string(),
-            title: Some("My Title".to_string()),
-            values: vec![Node::Text(Text { value: "body".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    // [!TIP] with no body
-    #[case(
-        vec![Node::Text(Text { value: "[!TIP]".to_string(), position: None })],
-        Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None })
-    )]
-    // lowercase kind is preserved as-is
-    #[case(
-        vec![Node::Text(Text { value: "[!note]\ncontent".to_string(), position: None })],
-        Node::Callout(Callout {
-            kind: "note".to_string(),
-            title: None,
-            values: vec![Node::Text(Text { value: "content".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    // not a callout — plain text stays Blockquote
-    #[case(
-        vec![Node::Text(Text { value: "plain quote".to_string(), position: None })],
-        Node::Blockquote(Blockquote {
-            values: vec![Node::Text(Text { value: "plain quote".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    // [! without closing ] — stays Blockquote
-    #[case(
-        vec![Node::Text(Text { value: "[!UNCLOSED".to_string(), position: None })],
-        Node::Blockquote(Blockquote {
-            values: vec![Node::Text(Text { value: "[!UNCLOSED".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    // first node is not Text — stays Blockquote
-    #[case(
-        vec![Node::Code(Code { value: "code".to_string(), lang: None, fence: true, meta: None, position: None })],
-        Node::Blockquote(Blockquote {
-            values: vec![Node::Code(Code { value: "code".to_string(), lang: None, fence: true, meta: None, position: None })],
-            position: None,
-        })
-    )]
-    // multi-paragraph callout (header-only node + separate body node)
-    #[case(
-        vec![
-            Node::Text(Text { value: "[!NOTE]".to_string(), position: None }),
-            Node::Text(Text { value: "second paragraph".to_string(), position: None }),
-        ],
-        Node::Callout(Callout {
-            kind: "NOTE".to_string(),
-            title: None,
-            values: vec![Node::Text(Text { value: "second paragraph".to_string(), position: None })],
-            position: None,
-        })
-    )]
-    fn test_try_parse_callout(#[case] values: Vec<Node>, #[case] expected: Node) {
-        let result = Node::try_parse_callout(values, None);
-        assert_eq!(result, expected);
-    }
-
-    #[cfg(feature = "callout")]
-    #[rstest]
     // basic render
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None,
             values: vec![Node::Text(Text { value: "content".to_string(), position: None })],
             position: None }),
         "> [!NOTE]\n> content"
     )]
     // with title
     #[case(
-        Node::Callout(Callout { kind: "WARNING".to_string(), title: Some("Heads up".to_string()),
+        Node::Callout(Callout { fold: None, kind: "WARNING".to_string(), title: Some("Heads up".to_string()),
             values: vec![Node::Text(Text { value: "watch out".to_string(), position: None })],
             position: None }),
         "> [!WARNING] Heads up\n> watch out"
     )]
     // empty body
     #[case(
-        Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(Callout { fold: None, kind: "TIP".to_string(), title: None, values: vec![], position: None }),
         "> [!TIP]"
     )]
     // multiline body: single Text with embedded '\n' — each line prefixed with "> "
     #[case(
-        Node::Callout(Callout { kind: "INFO".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "INFO".to_string(), title: None,
             values: vec![Node::Text(Text { value: "line one\nline two".to_string(), position: None })],
             position: None }),
         "> [!INFO]\n> line one\n> line two"
     )]
     // two separate position-less Text values are concatenated inline (no implicit newline)
     #[case(
-        Node::Callout(Callout { kind: "INFO".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "INFO".to_string(), title: None,
             values: vec![
                 Node::Text(Text { value: "part a".to_string(), position: None }),
                 Node::Text(Text { value: "part b".to_string(), position: None }),
@@ -6465,11 +5909,11 @@ mod tests {
 
     #[cfg(feature = "callout")]
     #[rstest]
-    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "kind", Some(AttrValue::String("NOTE".to_string())))]
-    #[case(Node::Callout(Callout { kind: "WARNING".to_string(), title: Some("Title".to_string()), values: vec![], position: None }), "title", Some(AttrValue::String("Title".to_string())))]
-    #[case(Node::Callout(Callout { kind: "TIP".to_string(), title: None, values: vec![], position: None }), "title", None)]
-    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "value", Some(AttrValue::String("body".to_string())))]
-    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "children", Some(AttrValue::Array(vec![Node::Text(Text { value: "body".to_string(), position: None })])))]
+    #[case(Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "kind", Some(AttrValue::String("NOTE".to_string())))]
+    #[case(Node::Callout(Callout { fold: None, kind: "WARNING".to_string(), title: Some("Title".to_string()), values: vec![], position: None }), "title", Some(AttrValue::String("Title".to_string())))]
+    #[case(Node::Callout(Callout { fold: None, kind: "TIP".to_string(), title: None, values: vec![], position: None }), "title", None)]
+    #[case(Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "value", Some(AttrValue::String("body".to_string())))]
+    #[case(Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![Node::Text(Text { value: "body".to_string(), position: None })], position: None }), "children", Some(AttrValue::Array(vec![Node::Text(Text { value: "body".to_string(), position: None })])))]
     fn test_callout_attr(#[case] node: Node, #[case] attr: &str, #[case] expected: Option<AttrValue>) {
         assert_eq!(node.attr(attr), expected);
     }
@@ -6477,26 +5921,26 @@ mod tests {
     #[cfg(feature = "callout")]
     #[rstest]
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         "kind", "WARNING",
-        Node::Callout(Callout { kind: "WARNING".to_string(), title: None, values: vec![], position: None })
+        Node::Callout(Callout { fold: None, kind: "WARNING".to_string(), title: None, values: vec![], position: None })
     )]
     // set_attr stores kind as-is without case conversion
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         "kind", "tip",
-        Node::Callout(Callout { kind: "tip".to_string(), title: None, values: vec![], position: None })
+        Node::Callout(Callout { fold: None, kind: "tip".to_string(), title: None, values: vec![], position: None })
     )]
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }),
         "title", "My title",
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: Some("My title".to_string()), values: vec![], position: None })
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: Some("My title".to_string()), values: vec![], position: None })
     )]
     // empty string clears title
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: Some("old".to_string()), values: vec![], position: None }),
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: Some("old".to_string()), values: vec![], position: None }),
         "title", "",
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None })
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None })
     )]
     fn test_callout_set_attr(#[case] mut node: Node, #[case] attr: &str, #[case] value: &str, #[case] expected: Node) {
         node.set_attr(attr, value);
@@ -6507,11 +5951,11 @@ mod tests {
     #[rstest]
     // with_value changes first body node
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None,
             values: vec![Node::Text(Text { value: "old".to_string(), position: None })],
             position: None }),
         "new",
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None,
             values: vec![Node::Text(Text { value: "new".to_string(), position: None })],
             position: None })
     )]
@@ -6522,7 +5966,7 @@ mod tests {
 
     #[cfg(feature = "callout")]
     #[rstest]
-    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "callout")]
+    #[case(Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }), "callout")]
     fn test_callout_name(#[case] node: Node, #[case] expected: &str) {
         assert_eq!(node.name(), expected);
     }
@@ -6530,7 +5974,7 @@ mod tests {
     #[cfg(feature = "callout")]
     #[rstest]
     #[case(
-        Node::Callout(Callout { kind: "NOTE".to_string(), title: None,
+        Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None,
             values: vec![Node::Text(Text { value: "body".to_string(), position: None })],
             position: None }),
         "body"
@@ -6541,7 +5985,7 @@ mod tests {
 
     #[cfg(feature = "callout")]
     #[rstest]
-    #[case(Node::Callout(Callout { kind: "NOTE".to_string(), title: None, values: vec![], position: None }), true)]
+    #[case(Node::Callout(Callout { fold: None, kind: "NOTE".to_string(), title: None, values: vec![], position: None }), true)]
     #[case(Node::Blockquote(Blockquote { values: vec![], position: None }), false)]
     #[case(Node::Text(Text { value: "test".to_string(), position: None }), false)]
     fn test_is_callout(#[case] node: Node, #[case] expected: bool) {
@@ -6956,14 +6400,12 @@ mod tests {
     }
 
     #[rstest]
-    #[case::no_newline_unchanged("abc", 5, "abc")]
-    #[case::zero_delta_unchanged("a\n  b", 0, "a\n  b")]
-    #[case::positive_delta_adds_spaces("a\n  b", 2, "a\n    b")]
-    #[case::negative_delta_removes_spaces_clamped_at_zero("a\n  b", -5, "a\nb")]
-    #[case::first_line_never_shifted("  a\nb", 3, "  a\n   b")]
+    #[case::no_newline_unchanged("abc", 2, "abc")]
+    #[case::continuation_indented("a\nb", 2, "a\n  b")]
     #[case::empty_lines_untouched("a\n\nb", 2, "a\n\n  b")]
-    fn test_reindent_continuation(#[case] content: &str, #[case] delta: isize, #[case] expected: &str) {
-        assert_eq!(reindent_continuation(content, delta), expected);
+    #[case::first_line_never_indented("  a\nb", 3, "  a\n   b")]
+    fn test_indent_continuation(#[case] content: &str, #[case] width: usize, #[case] expected: &str) {
+        assert_eq!(indent_continuation(content, width), expected);
     }
 
     #[rstest]
@@ -6976,57 +6418,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case::code_first_child_indented(
-        Some(Node::Code(Code { value: "foo".to_string(), lang: None, fence: true, meta: None, position: None })),
-        "```\nfoo\n```".to_string(),
-        3,
-        "```\n   foo\n   ```"
-    )]
-    #[case::empty_code_first_child_closing_fence_indented(
-        Some(Node::Code(Code { value: "".to_string(), lang: None, fence: true, meta: None, position: None })),
-        "```\n```".to_string(),
-        3,
-        "```\n   ```"
-    )]
-    #[case::non_leaf_first_child_untouched(
-        Some(Node::Text(Text { value: "foo".to_string(), position: None })),
-        "foo".to_string(),
-        3,
-        "foo"
-    )]
-    #[case::no_first_child_untouched(None, "".to_string(), 3, "")]
-    fn test_reindent_first_leaf_block(
-        #[case] first: Option<Node>,
-        #[case] content: String,
-        #[case] target_indent: usize,
-        #[case] expected: &str,
-    ) {
-        assert_eq!(
-            reindent_first_leaf_block(
-                content,
-                first.as_ref(),
-                &RenderOptions::default(),
-                &ColorTheme::PLAIN,
-                target_indent
-            ),
-            expected
-        );
-    }
-
-    #[rstest]
-    #[case::unordered_bullet(false, 0, None, None, 2)]
-    #[case::unordered_checked(false, 0, None, Some(true), 6)]
-    #[case::ordered_single_digit(true, 0, None, None, 3)]
-    #[case::ordered_double_digit(true, 9, None, None, 4)]
-    #[case::ordered_with_start(true, 0, Some(10), None, 4)]
+    #[case::unordered_bullet(false, 0, None, 2)]
+    #[case::ordered_single_digit(true, 0, None, 3)]
+    #[case::ordered_double_digit(true, 9, None, 4)]
+    #[case::ordered_with_start(true, 0, Some(10), 4)]
     fn test_list_own_prefix_width(
         #[case] ordered: bool,
         #[case] index: usize,
         #[case] start: Option<u32>,
-        #[case] checked: Option<bool>,
         #[case] expected: usize,
     ) {
-        assert_eq!(list_own_prefix_width(ordered, index, start, checked), expected);
+        assert_eq!(list_own_prefix_width(ordered, index, start), expected);
     }
 
     #[rstest]
@@ -7084,24 +6486,6 @@ mod tests {
             let _ = node.to_string_with(&RenderOptions::default());
         }
 
-        // A list item whose first child is a code block with arbitrary Unicode
-        // content must render without panicking, regardless of target indent.
-        #[test]
-        fn list_with_code_first_child_never_panics_on_unicode_text(
-            code_value in prop::collection::vec(any::<char>(), 0..30).prop_map(|cs| cs.into_iter().collect::<String>()),
-            target_indent in 0usize..10,
-        ) {
-            let code = Node::Code(Code { value: code_value, lang: None, fence: true, meta: None, position: None });
-            let rendered = code.render_with_theme(&RenderOptions::default(), &ColorTheme::PLAIN);
-            let _ = reindent_first_leaf_block(
-                rendered,
-                Some(&code),
-                &RenderOptions::default(),
-                &ColorTheme::PLAIN,
-                target_indent,
-            );
-        }
-
         #[test]
         fn escape_label_is_losslessly_invertible(
             s in prop::collection::vec(any::<char>(), 0..40).prop_map(|cs| cs.into_iter().collect::<String>())
@@ -7130,18 +6514,6 @@ mod tests {
             prop_assert_eq!(link, Some(url));
         }
 
-        // Shifting continuation lines out by `delta` and back by the same amount must
-        // restore the original when the lines start with no indentation of their own,
-        // since the second shift can never be clamped away.
-        #[test]
-        fn reindent_continuation_add_then_remove_round_trips(
-            body in "[a-zA-Z]{0,5}(\n[a-zA-Z]{0,5}){0,4}",
-            delta in 0isize..20,
-        ) {
-            let shifted = reindent_continuation(&body, delta);
-            let restored = reindent_continuation(&shifted, -delta);
-            prop_assert_eq!(restored, body);
-        }
     }
 
     fn naive_unescape(s: &str) -> String {

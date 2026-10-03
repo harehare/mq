@@ -1,4 +1,4 @@
-use crate::node::{ColorTheme, Node, RenderOptions, TableAlign, TableAlignKind, TableCell, render_values};
+use crate::node::{ColorTheme, Node, RenderOptions, TableAlign, TableAlignKind, TableCell, render_cell_values};
 use unicode_width::UnicodeWidthStr;
 
 /// Per-column widths and alignment of a single contiguous table, computed by
@@ -8,6 +8,8 @@ use unicode_width::UnicodeWidthStr;
 pub(super) struct TableLayout {
     widths: Vec<usize>,
     align: Vec<TableAlignKind>,
+    /// Number of cells in the header row, which the delimiter row has to match.
+    header_columns: usize,
     /// Plain (color-free) display width of every cell, keyed by `(row, column)`,
     /// computed once during the scan so the main render pass never has to
     /// re-render a cell just to measure it.
@@ -21,6 +23,7 @@ impl TableLayout {
         let mut widths: Vec<usize> = Vec::new();
         let mut align: Vec<TableAlignKind> = Vec::new();
         let mut cell_widths = rustc_hash::FxHashMap::default();
+        let mut header_columns = 0;
         let mut i = start;
 
         while let Some(node) = nodes.get(i) {
@@ -31,6 +34,9 @@ impl TableLayout {
                     // row 0 after an align row means an adjacent next table, not a continuation.
                     if *row == 0 && *column == 0 && !align.is_empty() {
                         break;
+                    }
+                    if *row == 0 {
+                        header_columns = header_columns.max(*column + 1);
                     }
                     let width = cell_display_width(values, options);
                     cell_widths.insert((*row, *column), width);
@@ -60,6 +66,7 @@ impl TableLayout {
         Self {
             widths,
             align,
+            header_columns,
             cell_widths,
             end: i,
         }
@@ -82,9 +89,16 @@ impl TableLayout {
     }
 
     pub(super) fn render_separator(&self) -> String {
+        // The delimiter row has as many columns as the header, whatever a body row has more.
+        let columns = if self.header_columns == 0 {
+            self.widths.len()
+        } else {
+            self.header_columns
+        };
         let segments = self
             .widths
             .iter()
+            .take(columns)
             .enumerate()
             .map(|(idx, &width)| {
                 let align = self.align_for(idx);
@@ -116,7 +130,7 @@ fn column_min_width(align: &TableAlignKind) -> usize {
 /// content, ignoring any ANSI color codes so padding stays correct with
 /// `--color` output.
 fn cell_display_width(values: &[Node], options: &RenderOptions) -> usize {
-    UnicodeWidthStr::width(render_values(values, options, &ColorTheme::PLAIN).as_str())
+    UnicodeWidthStr::width(render_cell_values(values, options, &ColorTheme::PLAIN).as_str())
 }
 
 /// Writes an already-rendered (possibly colored) cell value padded to `width` columns.

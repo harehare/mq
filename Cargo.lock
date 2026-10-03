@@ -2444,15 +2444,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
-name = "markdown"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5cab8f2cadc416a82d2e783a1946388b31654d391d1c7d92cc1f03e295b1deb"
-dependencies = [
- "unicode-id",
-]
-
-[[package]]
 name = "markup5ever"
 version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2842,7 +2833,6 @@ dependencies = [
  "codspeed-divan-compat",
  "ego-tree",
  "itertools 0.15.0",
- "markdown",
  "miette",
  "proptest",
  "rstest",
@@ -2851,6 +2841,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol_str",
+ "unicode-id",
  "unicode-width 0.2.2",
  "ureq",
  "url",

@@ -1,0 +1,1311 @@
+## empty ""
+nodes: []
+html: ""
+## blank_lines "\n\n  \n"
+nodes: []
+html: ""
+## paragraph "hello\n"
+nodes: [Text(Text { value: "hello", @1:1-1:6 })]
+html: "<p>hello</p>\n"
+## paragraph_no_eol "hello"
+nodes: [Text(Text { value: "hello", @1:1-1:6 })]
+html: "<p>hello</p>"
+## paragraph_multiline "a\nb\nc\n"
+nodes: [Text(Text { value: "a\nb\nc", @1:1-3:2 })]
+html: "<p>a\nb\nc</p>\n"
+## paragraph_indented_continuation "a\n    b\n"
+nodes: [Text(Text { value: "a\nb", @1:1-2:6 })]
+html: "<p>a\nb</p>\n"
+## paragraph_trailing_space "あい\n  うえ  \n"
+nodes: [Text(Text { value: "あい\nうえ", @1:1-2:9 })]
+html: "<p>あい\nうえ</p>\n"
+## two_paragraphs "a\n\nb\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Text(Text { value: "b", @3:1-3:2 })]
+html: "<p>a</p>\n<p>b</p>\n"
+## crlf "a\r\nb\r\n\r\nc\r\n"
+nodes: [Text(Text { value: "a\r\nb", @1:1-2:2 }), Text(Text { value: "c", @4:1-4:2 })]
+html: "<p>a\r\nb</p>\r\n<p>c</p>\r\n"
+## crlf_fence "```\r\na\r\nb\r\n```\r\n"
+nodes: [Code(Code { value: "a\r\nb", lang: None, @1:1-4:4, meta: None, fence: true })]
+html: "<pre><code>a\r\nb\r\n</code></pre>\r\n"
+## cr_only "a\rb\r"
+nodes: [Text(Text { value: "a\rb", @1:1-2:2 })]
+html: "<p>a\rb</p>\r"
+## atx_h1 "# title\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "title", @1:3-1:8 })], @1:1-1:8 })]
+html: "<h1>title</h1>\n"
+## atx_h6 "###### title\n"
+nodes: [Heading(Heading { depth: 6, values: [Text(Text { value: "title", @1:8-1:13 })], @1:1-1:13 })]
+html: "<h6>title</h6>\n"
+## atx_seven "####### title\n"
+nodes: [Text(Text { value: "####### title", @1:1-1:14 })]
+html: "<p>####### title</p>\n"
+## atx_no_space "#title\n"
+nodes: [Text(Text { value: "#title", @1:1-1:7 })]
+html: "<p>#title</p>\n"
+## atx_empty "#\n"
+nodes: [Heading(Heading { depth: 1, values: [], @1:1-1:2 })]
+html: "<h1></h1>\n"
+## atx_closing "## title ##\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "title", @1:4-1:9 })], @1:1-1:12 })]
+html: "<h2>title</h2>\n"
+## atx_closing_no_space "## title##\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "title##", @1:4-1:11 })], @1:1-1:11 })]
+html: "<h2>title##</h2>\n"
+## atx_indent "  ## title ##  \n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "title", @1:6-1:11 })], @1:1-1:16 })]
+html: "<h2>title</h2>\n"
+## atx_multibyte "# あ h #\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "あ h", @1:3-1:8 })], @1:1-1:10 })]
+html: "<h1>あ h</h1>\n"
+## atx_interrupts_paragraph "a\n# b\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Heading(Heading { depth: 1, values: [Text(Text { value: "b", @2:3-2:4 })], @2:1-2:4 })]
+html: "<p>a</p>\n<h1>b</h1>\n"
+## setext_h1 "Title\n===\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "Title", @1:1-1:6 })], @1:1-2:4 })]
+html: "<h1>Title</h1>\n"
+## setext_h2 "a\n  ---\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:1-1:2 })], @1:1-2:6 })]
+html: "<h2>a</h2>\n"
+## setext_multiline "a\nb\n---\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a\nb", @1:1-2:2 })], @1:1-3:4 })]
+html: "<h2>a\nb</h2>\n"
+## thematic_star "***\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('*'), @1:1-1:4 })]
+html: "<hr />\n"
+## thematic_dash_spaced "- - -\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:6 })]
+html: "<hr />\n"
+## thematic_underscore "  ___  \n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('_'), @1:1-1:8 })]
+html: "<hr />\n"
+## thematic_two "**\n"
+nodes: [Text(Text { value: "**", @1:1-1:3 })]
+html: "<p>**</p>\n"
+## fence_lang_meta "```rust title\nlet a;\n```\n"
+nodes: [Code(Code { value: "let a;", lang: Some("rust"), @1:1-3:4, meta: Some("title"), fence: true })]
+html: "<pre><code class=\"language-rust\">let a;\n</code></pre>\n"
+## fence_indented "  ```\n  a\n   b\n  ```\n"
+nodes: [Code(Code { value: "a\n b", lang: None, @1:3-4:6, meta: None, fence: true })]
+html: "<pre><code>a\n b\n</code></pre>\n"
+## fence_tilde "~~~\na\n~~~\n"
+nodes: [Code(Code { value: "a", lang: None, @1:1-3:4, meta: None, fence: true })]
+html: "<pre><code>a\n</code></pre>\n"
+## fence_unclosed "```\na\n"
+nodes: [Code(Code { value: "a", lang: None, @1:1-3:1, meta: None, fence: true })]
+html: "<pre><code>a\n</code></pre>\n"
+## fence_empty "para\n\n\n```\n```\n"
+nodes: [Text(Text { value: "para", @1:1-1:5 }), Code(Code { value: "", lang: None, @4:1-5:4, meta: None, fence: true })]
+html: "<p>para</p>\n<pre><code></code></pre>\n"
+## fence_longer_close "```\na\n`````\n"
+nodes: [Code(Code { value: "a", lang: None, @1:1-3:6, meta: None, fence: true })]
+html: "<pre><code>a\n</code></pre>\n"
+## fence_shorter_close "````\na\n```\nb\n````\n"
+nodes: [Code(Code { value: "a\n```\nb", lang: None, @1:1-5:5, meta: None, fence: true })]
+html: "<pre><code>a\n```\nb\n</code></pre>\n"
+## fence_blank_inside "```\na\n\nb\n```\n"
+nodes: [Code(Code { value: "a\n\nb", lang: None, @1:1-5:4, meta: None, fence: true })]
+html: "<pre><code>a\n\nb\n</code></pre>\n"
+## fence_backtick_info "``` a`b\nc\n"
+nodes: [Text(Text { value: "``` a`b\nc", @1:1-2:2 })]
+html: "<p>``` a`b\nc</p>\n"
+## fence_interrupts_paragraph "a\n```\nb\n```\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Code(Code { value: "b", lang: None, @2:1-4:4, meta: None, fence: true })]
+html: "<p>a</p>\n<pre><code>b\n</code></pre>\n"
+## indented_code "    code\n\n      more\n\nx\n"
+nodes: [Code(Code { value: "code\n\n  more", lang: None, @1:1-3:11, meta: None, fence: false }), Text(Text { value: "x", @5:1-5:2 })]
+html: "<pre><code>code\n\n  more\n</code></pre>\n<p>x</p>\n"
+## quote "> a\n> b\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:3-2:4 })], @1:1-2:4 })]
+html: "<blockquote>\n<p>a\nb</p>\n</blockquote>\n"
+## quote_indented_lazy "  > a\nb\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:2 })], @1:1-2:2 })]
+html: "<blockquote>\n<p>a\nb</p>\n</blockquote>\n"
+## quote_heading "> # h\n>\n> c\n"
+nodes: [Blockquote(Blockquote { values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:5-1:6 })], @1:3-1:6 }), Text(Text { value: "c", @3:3-3:4 })], @1:1-3:4 })]
+html: "<blockquote>\n<h1>h</h1>\n<p>c</p>\n</blockquote>\n"
+## quote_no_space ">a\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:3 })]
+html: "<blockquote>\n<p>a</p>\n</blockquote>\n"
+## quote_empty ">\n"
+nodes: [Blockquote(Blockquote { values: [], @1:1-1:2 })]
+html: "<blockquote>\n</blockquote>\n"
+## quote_nested "> > a\n> b\n"
+nodes: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:4 })], @1:3-2:4 })], @1:1-2:4 })]
+html: "<blockquote>\n<blockquote>\n<p>a\nb</p>\n</blockquote>\n</blockquote>\n"
+## quote_lazy_nested "> > a\nb\n"
+nodes: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:2 })], @1:3-2:2 })], @1:1-2:2 })]
+html: "<blockquote>\n<blockquote>\n<p>a\nb</p>\n</blockquote>\n</blockquote>\n"
+## quote_blank_ends "> a\n\n> b\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:3-1:4 })], @1:1-1:4 }), Blockquote(Blockquote { values: [Text(Text { value: "b", @3:3-3:4 })], @3:1-3:4 })]
+html: "<blockquote>\n<p>a</p>\n</blockquote>\n<blockquote>\n<p>b</p>\n</blockquote>\n"
+## quote_fence "> ```\n> a\n> ```\n"
+nodes: [Blockquote(Blockquote { values: [Code(Code { value: "a", lang: None, @1:3-3:6, meta: None, fence: true })], @1:1-3:6 })]
+html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>\n"
+## quote_no_lazy_after_fence "> ```\n> a\nb\n"
+nodes: [Blockquote(Blockquote { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], @1:1-2:4 }), Text(Text { value: "b", @3:1-3:2 })]
+html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>\n<p>b</p>\n"
+## quote_interrupts_paragraph "a\n> b\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Blockquote(Blockquote { values: [Text(Text { value: "b", @2:3-2:4 })], @2:1-2:4 })]
+html: "<p>a</p>\n<blockquote>\n<p>b</p>\n</blockquote>\n"
+## quote_thematic_not_lazy "> a\n---\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:3-1:4 })], @1:1-1:4 }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+html: "<blockquote>\n<p>a</p>\n</blockquote>\n<hr />\n"
+## quote_multibyte "> あ\n> い\n"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "あ\nい", @1:3-2:6 })], @1:1-2:6 })]
+html: "<blockquote>\n<p>あ\nい</p>\n</blockquote>\n"
+## bullet "- a\n- b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+html: "<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n"
+## bullet_loose "- a\n\n- b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @3:3-3:4 })]
+html: "<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n"
+## bullet_indent " - a\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:4-1:5 })]
+html: "<ul>\n<li>a</li>\n</ul>\n"
+## bullet_mixed_markers "* a\n+ b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('*'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('+'), @2:3-2:4 })]
+html: "<ul>\n<li>a</li>\n</ul>\n<ul>\n<li>b</li>\n</ul>\n"
+## ordered "1. a\n2. b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:4-2:5 })]
+html: "<ol>\n<li>a</li>\n<li>b</li>\n</ol>\n"
+## ordered_paren "5) a\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(5), marker: Some(')'), @1:4-1:5 })]
+html: "<ol start=\"5\">\n<li>a</li>\n</ol>\n"
+## ordered_zero "0. a\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(0), marker: Some('.'), @1:4-1:5 })]
+html: "<ol start=\"0\">\n<li>a</li>\n</ol>\n"
+## ordered_too_long "1234567890. a\n"
+nodes: [Text(Text { value: "1234567890. a", @1:1-1:14 })]
+html: "<p>1234567890. a</p>\n"
+## ordered_mixed_delimiters "1. a\n2) b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some(')'), @2:4-2:5 })]
+html: "<ol>\n<li>a</li>\n</ol>\n<ol start=\"2\">\n<li>b</li>\n</ol>\n"
+## task "- [ ] x\n- [x] y\n- [X] z\n"
+nodes: [List(List { values: [Text(Text { value: "x", @1:7-1:8 })], index: 0, level: 0, ordered: false, checked: Some(false), spread: false, start: None, marker: Some('-'), @1:7-1:8 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some('-'), @2:7-2:8 }), List(List { values: [Text(Text { value: "z", @3:7-3:8 })], index: 2, level: 0, ordered: false, checked: Some(true), spread: false, start: None, marker: Some('-'), @3:7-3:8 })]
+html: "<ul>\n<li><input type=\"checkbox\" disabled=\"\" /> x</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> y</li>\n<li><input type=\"checkbox\" checked=\"\" disabled=\"\" /> z</li>\n</ul>\n"
+## task_empty "- [ ]\n"
+nodes: [List(List { values: [Text(Text { value: "[ ]", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:6 })]
+html: "<ul>\n<li>[ ]</li>\n</ul>\n"
+## task_no_space "- [ ]x\n"
+nodes: [List(List { values: [Text(Text { value: "[ ]x", @1:3-1:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:7 })]
+html: "<ul>\n<li>[ ]x</li>\n</ul>\n"
+## nested "- a\n  - b\n    c\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b\nc", @2:5-3:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-3:6 })]
+html: "<ul>\n<li>a\n<ul>\n<li>b\nc</li>\n</ul>\n</li>\n</ul>\n"
+## nested_ordered "1. a\n   1. b\n   2. c\n2. d\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:7-3:8 })], index: 1, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:7-3:8 }), List(List { values: [Text(Text { value: "d", @4:4-4:5 })], index: 1, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @4:4-4:5 })]
+html: "<ol>\n<li>a\n<ol>\n<li>b</li>\n<li>c</li>\n</ol>\n</li>\n<li>d</li>\n</ol>\n"
+## nested_dedent "- a\n  - b\n- c\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-2:6 }), List(List { values: [Text(Text { value: "c", @3:3-3:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+html: "<ul>\n<li>a\n<ul>\n<li>b</li>\n</ul>\n</li>\n<li>c</li>\n</ul>\n"
+## two_paragraphs "- a\n\n  b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:4 })]
+html: "<ul>\n<li>\n<p>a</p>\n<p>b</p>\n</li>\n</ul>\n"
+## two_paragraphs_then_item "- a\n\n  b\n- c\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:4 }), List(List { values: [Text(Text { value: "c", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @4:3-4:4 })]
+html: "<ul>\n<li>\n<p>a</p>\n<p>b</p>\n</li>\n<li>\n<p>c</p>\n</li>\n</ul>\n"
+## empty_item "-\n"
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 })]
+html: "<ul>\n<li></li>\n</ul>\n"
+## empty_item_content "-\n  foo\n"
+nodes: [List(List { values: [Text(Text { value: "foo", @2:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:6 })]
+html: "<ul>\n<li>foo</li>\n</ul>\n"
+## empty_item_blank_then_text "-\n\n  foo\n"
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 }), Text(Text { value: "foo", @3:3-3:6 })]
+html: "<ul>\n<li></li>\n</ul>\n<p>foo</p>\n"
+## empty_items "-\n-\n"
+nodes: [List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:1-1:2 }), List(List { values: [], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:1-2:2 })]
+html: "<ul>\n<li></li>\n<li></li>\n</ul>\n"
+## wide_marker_gap "-   a\n    b\n"
+nodes: [List(List { values: [Text(Text { value: "a\nb", @1:5-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-2:6 })]
+html: "<ul>\n<li>a\nb</li>\n</ul>\n"
+## code_in_item "-     a\n"
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-1:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:8 })]
+html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n"
+## lazy "- a\nb\n"
+nodes: [List(List { values: [Text(Text { value: "a\nb", @1:3-2:2 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:2 })]
+html: "<ul>\n<li>a\nb</li>\n</ul>\n"
+## lazy_after_blank "- a\n\nb\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), Text(Text { value: "b", @3:1-3:2 })]
+html: "<ul>\n<li>a</li>\n</ul>\n<p>b</p>\n"
+## list_interrupts_paragraph "a\n- b\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+html: "<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n"
+## ordered_two_no_interrupt "a\n2. b\n"
+nodes: [Text(Text { value: "a\n2. b", @1:1-2:5 })]
+html: "<p>a\n2. b</p>\n"
+## ordered_one_interrupts "a\n1. b\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @2:4-2:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:4-2:5 })]
+html: "<p>a</p>\n<ol>\n<li>b</li>\n</ol>\n"
+## empty_item_no_interrupt "a\n-\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:1-1:2 })], @1:1-2:2 })]
+html: "<h2>a</h2>\n"
+## thematic_over_list "- - -\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:6 })]
+html: "<hr />\n"
+## list_in_quote "> - a\n> - b\n"
+nodes: [Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-1:6 }), List(List { values: [Text(Text { value: "b", @2:5-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:5-2:6 })], @1:1-2:6 })]
+html: "<blockquote>\n<ul>\n<li>a</li>\n<li>b</li>\n</ul>\n</blockquote>\n"
+## quote_in_list "- > a\n  > b\n"
+nodes: [List(List { values: [Blockquote(Blockquote { values: [Text(Text { value: "a\nb", @1:5-2:6 })], @1:3-2:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:6 })]
+html: "<ul>\n<li>\n<blockquote>\n<p>a\nb</p>\n</blockquote>\n</li>\n</ul>\n"
+## quote_in_list_level "- a\n  > - b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 })], @2:3-2:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:8 })]
+html: "<ul>\n<li>a\n<blockquote>\n<ul>\n<li>b</li>\n</ul>\n</blockquote>\n</li>\n</ul>\n"
+## heading_in_item "- # h\n  text\n"
+nodes: [List(List { values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:5-1:6 })], @1:3-1:6 }), Text(Text { value: "text", @2:3-2:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:7 })]
+html: "<ul>\n<li>\n<h1>h</h1>\ntext</li>\n</ul>\n"
+## fence_in_item "- ```\n  a\n  ```\n"
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:6 })]
+html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n"
+## multibyte_item "- あ\n- い\n"
+nodes: [List(List { values: [Text(Text { value: "あ", @1:3-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:6 }), List(List { values: [Text(Text { value: "い", @2:3-2:6 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:6 })]
+html: "<ul>\n<li>あ</li>\n<li>い</li>\n</ul>\n"
+## list_after_paragraph_blank "a\n\n- b\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), List(List { values: [Text(Text { value: "b", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+html: "<p>a</p>\n<ul>\n<li>b</li>\n</ul>\n"
+## two_lists_split "- a\n\n\n- b\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @4:3-4:4 })], index: 1, level: 0, ordered: false, checked: None, spread: true, start: None, marker: Some('-'), @4:3-4:4 })]
+html: "<ul>\n<li>\n<p>a</p>\n</li>\n<li>\n<p>b</p>\n</li>\n</ul>\n"
+## deep_quote ">>>>>> a\n"
+nodes: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:8-1:9 })], @1:6-1:9 })], @1:5-1:9 })], @1:4-1:9 })], @1:3-1:9 })], @1:2-1:9 })], @1:1-1:9 })]
+html: "<blockquote>\n<blockquote>\n<blockquote>\n<blockquote>\n<blockquote>\n<blockquote>\n<p>a</p>\n</blockquote>\n</blockquote>\n</blockquote>\n</blockquote>\n</blockquote>\n</blockquote>\n"
+## fence_unclosed_no_eol "```\na"
+nodes: [Code(Code { value: "a", lang: None, @1:1-2:2, meta: None, fence: true })]
+html: "<pre><code>a\n</code></pre>\n"
+## fence_unclosed_in_item "- ```\n  a\n"
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-3:1, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:1 })]
+html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>"
+## fence_unclosed_in_item_no_eol "- ```\n  a"
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 })]
+html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>"
+## fence_unclosed_in_quote_no_eol "> ```\n> a"
+nodes: [Blockquote(Blockquote { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], @1:1-2:4 })]
+html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>"
+## fence_unclosed_in_quote_eof "> ```\n> a\n"
+nodes: [Blockquote(Blockquote { values: [Code(Code { value: "a", lang: None, @1:3-3:1, meta: None, fence: true })], @1:1-3:1 })]
+html: "<blockquote>\n<pre><code>a\n</code></pre>\n</blockquote>"
+## fence_unclosed_trailing_blank "```\na\n\n"
+nodes: [Code(Code { value: "a\n", lang: None, @1:1-4:1, meta: None, fence: true })]
+html: "<pre><code>a\n\n</code></pre>\n"
+## fence_unclosed_item_then_para "- ```\n  a\nb\n"
+nodes: [List(List { values: [Code(Code { value: "a", lang: None, @1:3-2:4, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 }), Text(Text { value: "b", @3:1-3:2 })]
+html: "<ul>\n<li>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n<p>b</p>\n"
+## item_code_then_unindented_text "- ===\n\n      a\n==="
+nodes: [List(List { values: [Text(Text { value: "===", @1:3-1:6 }), Code(Code { value: "a", lang: None, @3:3-3:8, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 }), Text(Text { value: "===", @4:1-4:4 })]
+html: "<ul>\n<li>\n<p>===</p>\n<pre><code>a\n</code></pre>\n</li>\n</ul>\n<p>===</p>"
+## quote_setext_dashes "> a\n> ---\n> ---\n> a"
+nodes: [Blockquote(Blockquote { values: [Heading(Heading { depth: 2, values: [Text(Text { value: "a", @1:3-1:4 })], @1:3-2:6 }), HorizontalRule(HorizontalRule { marker: Some('-'), @3:3-3:6 }), Text(Text { value: "a", @4:3-4:4 })], @1:1-4:4 })]
+html: "<blockquote>\n<h2>a</h2>\n<hr />\n<p>a</p>\n</blockquote>"
+## table_basic "| a | b |\n|---|:-:|\n| 1 | 2 |\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:5 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:7-1:8 })]:1, row: 0, @1:5-1:10 }), TableAlign(TableAlign { align: [None, Center], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "1", @3:3-3:4 })]:0, row: 1, @3:1-3:5 }), TableCell(TableCell { values: [Text(Text { value: "2", @3:7-3:8 })]:1, row: 1, @3:5-3:10 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th align=\"center\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td align=\"center\">2</td>\n</tr>\n</tbody>\n</table>\n"
+## table_no_edge_pipes "a|b\n-|-\n1|2|3\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "1", @3:1-3:2 })]:0, row: 1, @3:1-3:2 }), TableCell(TableCell { values: [Text(Text { value: "2", @3:3-3:4 })]:1, row: 1, @3:2-3:4 }), TableCell(TableCell { values: [Text(Text { value: "3", @3:5-3:6 })]:2, row: 1, @3:4-3:6 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</tbody>\n</table>\n"
+## table_short_row "|a|b|\n|-|-|\n|1|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:3 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:4-1:5 })]:1, row: 0, @1:3-1:6 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "1", @3:2-3:3 })]:0, row: 1, @3:1-3:4 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>1</td>\n<td></td>\n</tr>\n</tbody>\n</table>\n"
+## table_escaped_pipe "| a \\| b | c |\n|--|--|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a | b", @1:3-1:9 })]:0, row: 0, @1:1-1:10 }), TableCell(TableCell { values: [Text(Text { value: "c", @1:12-1:13 })]:1, row: 0, @1:10-1:15 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a | b</th>\n<th>c</th>\n</tr>\n</thead>\n</table>\n"
+## table_indented "  | a |\n  |---|\n  | b |\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:5-1:6 })]:0, row: 0, @1:1-1:8 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @3:5-3:6 })]:0, row: 1, @3:1-3:8 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>b</td>\n</tr>\n</tbody>\n</table>\n"
+## table_text_after "| a |\n|---|\ntext after\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:6 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "text after", @3:1-3:11 })]:0, row: 1, @3:1-3:11 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>text after</td>\n</tr>\n</tbody>\n</table>\n"
+## table_in_quote "> | a |\n> |---|\n> | b |\n"
+nodes: [Blockquote(Blockquote { values: [TableCell(TableCell { values: [Text(Text { value: "a", @1:5-1:6 })]:0, row: 0, @1:3-1:8 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @3:5-3:6 })]:0, row: 1, @3:3-3:8 })], @1:1-3:8 })]
+html: "<blockquote>\n<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>b</td>\n</tr>\n</tbody>\n</table>\n</blockquote>\n"
+## table_after_paragraph "x\n| a |\n|---|\n"
+nodes: [Text(Text { value: "x", @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "a", @2:3-2:4 })]:0, row: 0, @2:1-2:6 }), TableAlign(TableAlign { align: [None], @3:1-3:1 })]
+html: "<p>x</p>\n<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n"
+## table_column_mismatch "| a | b |\n|---|\n"
+nodes: [Text(Text { value: "| a | b |\n|---|", @1:1-2:6 })]
+html: "<p>| a | b |\n|---|</p>\n"
+## table_bad_delimiter "|a|\n|:|\n"
+nodes: [Text(Text { value: "|a|\n|:|", @1:1-2:4 })]
+html: "<p>|a|\n|:|</p>\n"
+## table_then_blank_para "|a|\n|-|\n\nnext\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), Text(Text { value: "next", @4:1-4:5 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<p>next</p>\n"
+## table_then_quote "|a|\n|-|\n> q\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @3:3-3:4 })], @3:1-3:4 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<blockquote>\n<p>q</p>\n</blockquote>\n"
+## table_then_heading "|a|\n|-|\n# h\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @3:3-3:4 })], @3:1-3:4 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<h1>h</h1>\n"
+## table_then_fence "|a|\n|-|\n```\nx\n```\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), Code(Code { value: "x", lang: None, @3:1-5:4, meta: None, fence: true })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<pre><code>x\n</code></pre>\n"
+## table_then_list "|a|\n|-|\n- x\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:3-3:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:3-3:4 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<ul>\n<li>x</li>\n</ul>\n"
+## table_two "|a|\n|-|\n\n|b|\n|-|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @4:2-4:3 })]:0, row: 0, @4:1-4:4 }), TableAlign(TableAlign { align: [None], @5:1-5:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n<table>\n<thead>\n<tr>\n<th>b</th>\n</tr>\n</thead>\n</table>\n"
+## table_align_spaces "|a|b|\n|:-|-:|\n|  x  |  y|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:3 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:4-1:5 })]:1, row: 0, @1:3-1:6 }), TableAlign(TableAlign { align: [Left, Right], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "x", @3:4-3:5 })]:0, row: 1, @3:1-3:7 }), TableCell(TableCell { values: [Text(Text { value: "y", @3:10-3:11 })]:1, row: 1, @3:7-3:12 })]
+html: "<table>\n<thead>\n<tr>\n<th align=\"left\">a</th>\n<th align=\"right\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">x</td>\n<td align=\"right\">y</td>\n</tr>\n</tbody>\n</table>\n"
+## table_indented_code_row "|a|\n|-|\n|b|\n    |c|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @3:2-3:3 })]:0, row: 1, @3:1-3:4 }), Code(Code { value: "|c|", lang: None, @4:1-4:8, meta: None, fence: false })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>b</td>\n</tr>\n</tbody>\n</table>\n<pre><code>|c|\n</code></pre>\n"
+## table_no_body "| a |\n| - |\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:6 }), TableAlign(TableAlign { align: [None], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n"
+## table_empty_cells "||\n|-|\n"
+nodes: [TableCell(TableCell { values: []:0, row: 0, @1:1-1:3 }), TableAlign(TableAlign { align: [None], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th></th>\n</tr>\n</thead>\n</table>\n"
+## table_lone_pipe_row "|a|\n|-|\n|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:2-1:3 })]:0, row: 0, @1:1-1:4 }), TableAlign(TableAlign { align: [None], @2:1-2:1 }), TableCell(TableCell { values: []:0, row: 1, @3:1-3:2 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td></td>\n</tr>\n</tbody>\n</table>\n"
+## table_no_trailing_pipe "| a | b\n|-|-\n| c | d\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:5 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:7-1:8 })]:1, row: 0, @1:5-1:8 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "c", @3:3-3:4 })]:0, row: 1, @3:1-3:5 }), TableCell(TableCell { values: [Text(Text { value: "d", @3:7-3:8 })]:1, row: 1, @3:5-3:8 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>c</td>\n<td>d</td>\n</tr>\n</tbody>\n</table>\n"
+## table_multibyte "| あ | い |\n|---|---|\n| う | え |\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "あ", @1:3-1:6 })]:0, row: 0, @1:1-1:7 }), TableCell(TableCell { values: [Text(Text { value: "い", @1:9-1:12 })]:1, row: 0, @1:7-1:14 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "う", @3:3-3:6 })]:0, row: 1, @3:1-3:7 }), TableCell(TableCell { values: [Text(Text { value: "え", @3:9-3:12 })]:1, row: 1, @3:7-3:14 })]
+html: "<table>\n<thead>\n<tr>\n<th>あ</th>\n<th>い</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>う</td>\n<td>え</td>\n</tr>\n</tbody>\n</table>\n"
+## not_table_setext "Title\n---\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "Title", @1:1-1:6 })], @1:1-2:4 })]
+html: "<h2>Title</h2>\n"
+## not_table_no_pipe_delim "a|b\n---\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "a|b", @1:1-1:4 })], @1:1-2:4 })]
+html: "<h2>a|b</h2>\n"
+## table_header_no_pipe "a\n|-|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableAlign(TableAlign { align: [None], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n</tr>\n</thead>\n</table>\n"
+## table_one_col_dash "|a|\n-\n"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "|a|", @1:1-1:4 })], @1:1-2:2 })]
+html: "<h2>|a|</h2>\n"
+## inline_escape "a\\*b"
+nodes: [Text(Text { value: "a*b", @1:1-1:5 })]
+html: "<p>a*b</p>"
+## inline_escape_nonpunct "a\\qb"
+nodes: [Text(Text { value: "a\\qb", @1:1-1:5 })]
+html: "<p>a\\qb</p>"
+## inline_entities "a&amp;b &copy; &#35; &#x41; &unknown; &"
+nodes: [Text(Text { value: "a&b © # A &unknown; &", @1:1-1:40 })]
+html: "<p>a&amp;b © # A &amp;unknown; &amp;</p>"
+## inline_emphasis_all "a *b* **c** _d_ __e__ ***f***"
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:4-1:5 })], @1:3-1:6 }), Text(Text { value: " ", @1:6-1:7 }), Strong(Strong { values: [Text(Text { value: "c", @1:9-1:10 })], @1:7-1:12 }), Text(Text { value: " ", @1:12-1:13 }), Emphasis(Emphasis { values: [Text(Text { value: "d", @1:14-1:15 })], @1:13-1:16 }), Text(Text { value: " ", @1:16-1:17 }), Strong(Strong { values: [Text(Text { value: "e", @1:19-1:20 })], @1:17-1:22 }), Text(Text { value: " ", @1:22-1:23 }), Emphasis(Emphasis { values: [Strong(Strong { values: [Text(Text { value: "f", @1:26-1:27 })], @1:24-1:29 })], @1:23-1:30 })]
+html: "<p>a <em>b</em> <strong>c</strong> <em>d</em> <strong>e</strong> <em><strong>f</strong></em></p>"
+## inline_code "`code` `` a`b `` ` a `"
+nodes: [CodeInline(CodeInline { value: "code", @1:1-1:7 }), Text(Text { value: " ", @1:7-1:8 }), CodeInline(CodeInline { value: "a`b", @1:8-1:17 }), Text(Text { value: " ", @1:17-1:18 }), CodeInline(CodeInline { value: "a", @1:18-1:23 })]
+html: "<p><code>code</code> <code>a`b</code> <code>a</code></p>"
+## inline_code_unclosed "`a ``b`"
+nodes: [CodeInline(CodeInline { value: "a ``b", @1:1-1:8 })]
+html: "<p><code>a ``b</code></p>"
+## inline_hard_break_spaces "a  \nb"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Break(Break { @1:2-2:1 }), Text(Text { value: "b", @2:1-2:2 })]
+html: "<p>a<br />\nb</p>"
+## inline_hard_break_backslash "a\\\nb"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Break(Break { @1:2-2:1 }), Text(Text { value: "b", @2:1-2:2 })]
+html: "<p>a<br />\nb</p>"
+## inline_soft_break "a\nb"
+nodes: [Text(Text { value: "a\nb", @1:1-2:2 })]
+html: "<p>a\nb</p>"
+## inline_soft_break_trailing_space "a \nb"
+nodes: [Text(Text { value: "a\nb", @1:1-2:2 })]
+html: "<p>a\nb</p>"
+## inline_emphasis_multiline "*a\nb*"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "a\nb", @1:2-2:2 })], @1:1-2:3 })]
+html: "<p><em>a\nb</em></p>"
+## inline_strike "a ~b~ ~~c~~ ~~~d~~~"
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), Delete(Delete { values: [Text(Text { value: "b", @1:4-1:5 })], @1:3-1:6 }), Text(Text { value: " ", @1:6-1:7 }), Delete(Delete { values: [Text(Text { value: "c", @1:9-1:10 })], @1:7-1:12 }), Text(Text { value: " ~~~d~~~", @1:12-1:20 })]
+html: "<p>a <del>b</del> <del>c</del> ~~~d~~~</p>"
+## inline_math "$x$ $$y$$ $ a"
+nodes: [MathInline(MathInline { value: "x", @1:1-1:4 }), Text(Text { value: " ", @1:4-1:5 }), MathInline(MathInline { value: "y", @1:5-1:10 }), Text(Text { value: " $ a", @1:10-1:14 })]
+html: "<p><code class=\"language-math math-inline\">x</code> <code class=\"language-math math-inline\">y</code> $ a</p>"
+## inline_autolinks "<http://a.b> <a@b.c> <span> <!-- c --> <br/>"
+nodes: [Link(Link { url: Url("http://a.b"), title: None, values: [Text(Text { value: "http://a.b", @1:2-1:12 })], @1:1-1:13 }), Text(Text { value: " ", @1:13-1:14 }), Link(Link { url: Url("mailto:a@b.c"), title: None, values: [Text(Text { value: "a@b.c", @1:15-1:20 })], @1:14-1:21 }), Text(Text { value: " ", @1:21-1:22 }), Html(Html { value: "<span>", @1:22-1:28 }), Text(Text { value: " ", @1:28-1:29 }), Html(Html { value: "<!-- c -->", @1:29-1:39 }), Text(Text { value: " ", @1:39-1:40 }), Html(Html { value: "<br/>", @1:40-1:45 })]
+html: "<p><a href=\"http://a.b\">http://a.b</a> <a href=\"mailto:a@b.c\">a@b.c</a> <span> <!-- c --> <br/></p>"
+## inline_links "[a](http://x \"t\") [b][c] [d][] [e] ![f](g) ![h][i]"
+nodes: [Link(Link { url: Url("http://x"), title: Some(Title("t")), values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:18 }), Text(Text { value: " [b][c] [d][] [e] ", @1:18-1:36 }), Image(Image { alt: "f", url: "g", title: None, @1:36-1:43 }), Text(Text { value: " ![h][i]", @1:43-1:51 })]
+html: "<p><a href=\"http://x\" title=\"t\">a</a> [b][c] [d][] [e] <img src=\"g\" alt=\"f\" /> ![h][i]</p>"
+## inline_link_forms "[a](<b c> 'x') [d]( e ) [f](g (h)) [i](j \"k\\\"l\") [m](n&amp;o)"
+nodes: [Link(Link { url: Url("b c"), title: Some(Title("x")), values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:15 }), Text(Text { value: " ", @1:15-1:16 }), Link(Link { url: Url("e"), title: None, values: [Text(Text { value: "d", @1:17-1:18 })], @1:16-1:24 }), Text(Text { value: " ", @1:24-1:25 }), Link(Link { url: Url("g"), title: Some(Title("h")), values: [Text(Text { value: "f", @1:26-1:27 })], @1:25-1:35 }), Text(Text { value: " ", @1:35-1:36 }), Link(Link { url: Url("j"), title: Some(Title("k\"l")), values: [Text(Text { value: "i", @1:37-1:38 })], @1:36-1:49 }), Text(Text { value: " ", @1:49-1:50 }), Link(Link { url: Url("n&o"), title: None, values: [Text(Text { value: "m", @1:51-1:52 })], @1:50-1:62 })]
+html: "<p><a href=\"b%20c\" title=\"x\">a</a> <a href=\"e\">d</a> <a href=\"g\" title=\"h\">f</a> <a href=\"j\" title=\"k&quot;l\">i</a> <a href=\"n&amp;o\">m</a></p>"
+## inline_link_multiline "[a](b\n\"t\") [c](d"
+nodes: [Link(Link { url: Url("b"), title: Some(Title("t")), values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-2:5 }), Text(Text { value: " [c](d", @2:5-2:11 })]
+html: "<p><a href=\"b\" title=\"t\">a</a> [c](d</p>"
+## inline_image_alt "![a *b* `c`](d) ![e ![f](g)](h)"
+nodes: [Image(Image { alt: "a b c", url: "d", title: None, @1:1-1:16 }), Text(Text { value: " ", @1:16-1:17 }), Image(Image { alt: "e f", url: "h", title: None, @1:17-1:32 })]
+html: "<p><img src=\"d\" alt=\"a b c\" /> <img src=\"h\" alt=\"e f\" /></p>"
+## inline_link_in_link "[a [b](c) d](e)"
+nodes: [Text(Text { value: "[a ", @1:1-1:4 }), Link(Link { url: Url("c"), title: None, values: [Text(Text { value: "b", @1:5-1:6 })], @1:4-1:10 }), Text(Text { value: " d](e)", @1:10-1:16 })]
+html: "<p>[a <a href=\"c\">b</a> d](e)</p>"
+## inline_emphasis_link "*[a](b)* **[c][a]**"
+nodes: [Emphasis(Emphasis { values: [Link(Link { url: Url("b"), title: None, values: [Text(Text { value: "a", @1:3-1:4 })], @1:2-1:8 })], @1:1-1:9 }), Text(Text { value: " ", @1:9-1:10 }), Strong(Strong { values: [Text(Text { value: "[c][a]", @1:12-1:18 })], @1:10-1:20 })]
+html: "<p><em><a href=\"b\">a</a></em> <strong>[c][a]</strong></p>"
+## inline_html "<a href=\"x\">t</a> <a\nhref=x>"
+nodes: [Html(Html { value: "<a href=\"x\">", @1:1-1:13 }), Text(Text { value: "t", @1:13-1:14 }), Html(Html { value: "</a>", @1:14-1:18 }), Text(Text { value: " ", @1:18-1:19 }), Html(Html { value: "<a\nhref=x>", @1:19-2:8 })]
+html: "<p><a href=\"x\">t</a> <a\nhref=x></p>"
+## inline_html_misc "<http://a b> <a+b@c> <ab> </a> <?x?> <![CDATA[x]]> <!X y>"
+nodes: [Text(Text { value: "<", @1:1-1:2 }), Link(Link { url: Url("http://a"), title: None, values: [Text(Text { value: "http://a", @1:2-1:10 })], @1:2-1:10 }), Text(Text { value: " b> ", @1:10-1:14 }), Link(Link { url: Url("mailto:a+b@c"), title: None, values: [Text(Text { value: "a+b@c", @1:15-1:20 })], @1:14-1:21 }), Text(Text { value: " ", @1:21-1:22 }), Html(Html { value: "<ab>", @1:22-1:26 }), Text(Text { value: " ", @1:26-1:27 }), Html(Html { value: "</a>", @1:27-1:31 }), Text(Text { value: " ", @1:31-1:32 }), Html(Html { value: "<?x?>", @1:32-1:37 }), Text(Text { value: " ", @1:37-1:38 }), Html(Html { value: "<![CDATA[x]]>", @1:38-1:51 }), Text(Text { value: " ", @1:51-1:52 }), Html(Html { value: "<!X y>", @1:52-1:58 })]
+html: "<p>&lt;<a href=\"http://a\">http://a</a> b&gt; <a href=\"mailto:a+b@c\">a+b@c</a> <ab> </a> <?x?> <![CDATA[x]]> <!X y></p>"
+## inline_nested_emphasis "*a **b** c* **a *b* c**"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "a ", @1:2-1:4 }), Strong(Strong { values: [Text(Text { value: "b", @1:6-1:7 })], @1:4-1:9 }), Text(Text { value: " c", @1:9-1:11 })], @1:1-1:12 }), Text(Text { value: " ", @1:12-1:13 }), Strong(Strong { values: [Text(Text { value: "a ", @1:15-1:17 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:18-1:19 })], @1:17-1:20 }), Text(Text { value: " c", @1:20-1:22 })], @1:13-1:24 })]
+html: "<p><em>a <strong>b</strong> c</em> <strong>a <em>b</em> c</strong></p>"
+## inline_intraword "a_b_c a*b*c _a_b"
+nodes: [Text(Text { value: "a_b_c a", @1:1-1:8 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:9-1:10 })], @1:8-1:11 }), Text(Text { value: "c _a_b", @1:11-1:17 })]
+html: "<p>a_b_c a<em>b</em>c _a_b</p>"
+## inline_unmatched "*a **b _c ~d [e ![f"
+nodes: [Text(Text { value: "*a **b _c ~d [e ![f", @1:1-1:20 })]
+html: "<p>*a **b _c ~d [e ![f</p>"
+## inline_rule_of_three "*foo**bar**baz* ***a** b*"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "foo", @1:2-1:5 }), Strong(Strong { values: [Text(Text { value: "bar", @1:7-1:10 })], @1:5-1:12 }), Text(Text { value: "baz", @1:12-1:15 })], @1:1-1:16 }), Text(Text { value: " ", @1:16-1:17 }), Emphasis(Emphasis { values: [Strong(Strong { values: [Text(Text { value: "a", @1:20-1:21 })], @1:18-1:23 }), Text(Text { value: " b", @1:23-1:25 })], @1:17-1:26 })]
+html: "<p><em>foo<strong>bar</strong>baz</em> <em><strong>a</strong> b</em></p>"
+## inline_heading "# a *b* `c`\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 }), Text(Text { value: " ", @1:8-1:9 }), CodeInline(CodeInline { value: "c", @1:9-1:12 })], @1:1-1:12 })]
+html: "<h1>a <em>b</em> <code>c</code></h1>\n"
+## inline_setext_heading "a *b*\nc\n===\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a ", @1:1-1:3 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:4-1:5 })], @1:3-1:6 }), Text(Text { value: "\nc", @1:6-2:2 })], @1:1-3:4 })]
+html: "<h1>a <em>b</em>\nc</h1>\n"
+## inline_list_item "- a *b*\n  c **d**\n"
+nodes: [List(List { values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 }), Text(Text { value: "\nc ", @1:8-2:5 }), Strong(Strong { values: [Text(Text { value: "d", @2:7-2:8 })], @2:5-2:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:10 })]
+html: "<ul>\n<li>a <em>b</em>\nc <strong>d</strong></li>\n</ul>\n"
+## inline_table_cell "| a *b* | `c\\|d` |\n|-|-|\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a ", @1:3-1:5 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:6-1:7 })], @1:5-1:8 })]:0, row: 0, @1:1-1:9 }), TableCell(TableCell { values: [CodeInline(CodeInline { value: "c|d", @1:11-1:17 })]:1, row: 0, @1:9-1:19 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a <em>b</em></th>\n<th><code>c|d</code></th>\n</tr>\n</thead>\n</table>\n"
+## inline_multibyte "あ*い*う `え` [お](か)"
+nodes: [Text(Text { value: "あ", @1:1-1:4 }), Emphasis(Emphasis { values: [Text(Text { value: "い", @1:5-1:8 })], @1:4-1:9 }), Text(Text { value: "う ", @1:9-1:13 }), CodeInline(CodeInline { value: "え", @1:13-1:18 }), Text(Text { value: " ", @1:18-1:19 }), Link(Link { url: Url("か"), title: None, values: [Text(Text { value: "お", @1:20-1:23 })], @1:19-1:29 })]
+html: "<p>あ<em>い</em>う <code>え</code> <a href=\"%E3%81%8B\">お</a></p>"
+## inline_crlf_break "a  \r\nb\r\n"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Break(Break { @1:2-2:1 }), Text(Text { value: "b", @2:1-2:2 })]
+html: "<p>a<br />\r\nb</p>\r\n"
+## math_multiline "x$\nx$"
+nodes: [Text(Text { value: "x", @1:1-1:2 }), MathInline(MathInline { value: "\nx", @1:2-2:3 })]
+html: "<p>x<code class=\"language-math math-inline\"> x</code></p>"
+## decl_email "x<!a@b.co>"
+nodes: [Text(Text { value: "x", @1:1-1:2 }), Html(Html { value: "<!a@b.co>", @1:2-1:11 })]
+html: "<p>x<!a@b.co></p>"
+## code_multiline "x`\nx`"
+nodes: [Text(Text { value: "x", @1:1-1:2 }), CodeInline(CodeInline { value: "\nx", @1:2-2:3 })]
+html: "<p>x<code> x</code></p>"
+## def_basic "[a]: b"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_title "[a]: <b c> 'T'"
+nodes: [Definition(Definition { @1:1-1:15, url: Url("b c"), title: Some(Title("T")), ident: "a", label: Some("a") })]
+html: ""
+## def_next_lines "[a]:\nb\n\"t\""
+nodes: [Definition(Definition { @1:1-3:4, url: Url("b"), title: Some(Title("t")), ident: "a", label: Some("a") })]
+html: ""
+## def_title_junk_next_line "[a]: b\n\"t\" x"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "\"t\" x", @2:1-2:6 })]
+html: "<p>&quot;t&quot; x</p>"
+## def_title_junk_same_line "[a]: b \"t\" x"
+nodes: [Text(Text { value: "[a]: b \"t\" x", @1:1-1:13 })]
+html: "<p>[a]: b &quot;t&quot; x</p>"
+## def_then_paragraph "[a]: b\nc"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "c", @2:1-2:2 })]
+html: "<p>c</p>"
+## def_two_then_text "[a]: b\n[c]: d\ntext"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Definition(Definition { @2:1-2:7, url: Url("d"), title: None, ident: "c", label: Some("c") }), Text(Text { value: "text", @3:1-3:5 })]
+html: "<p>text</p>"
+## def_not_at_start "text\n[a]: b"
+nodes: [Text(Text { value: "text\n[a]: b", @1:1-2:7 })]
+html: "<p>text\n[a]: b</p>"
+## def_then_setext_equals "[a]: b\n=== "
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "===", @2:1-2:4 })]
+html: "<p>===</p>"
+## def_then_setext_dashes "[a]: b\n---"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+html: "<hr />"
+## def_indent1 " [a]: b"
+nodes: [Definition(Definition { @1:1-1:8, url: Url("b"), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_indent3 "   [a]: b"
+nodes: [Definition(Definition { @1:1-1:10, url: Url("b"), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_indent4 "    [a]: b"
+nodes: [Code(Code { value: "[a]: b", lang: None, @1:1-1:11, meta: None, fence: false })]
+html: "<pre><code>[a]: b\n</code></pre>"
+## def_in_quote "> [a]: b"
+nodes: [Blockquote(Blockquote { values: [Definition(Definition { @1:3-1:9, url: Url("b"), title: None, ident: "a", label: Some("a") })], @1:1-1:9 })]
+html: "<blockquote>\n</blockquote>"
+## def_in_list "- [a]: b"
+nodes: [List(List { values: [Definition(Definition { @1:3-1:9, url: Url("b"), title: None, ident: "a", label: Some("a") })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:9 })]
+html: "<ul>\n<li></li>\n</ul>"
+## def_no_dest "[a]:"
+nodes: [Text(Text { value: "[a]:", @1:1-1:5 })]
+html: "<p>[a]:</p>"
+## def_empty_label "[]: b"
+nodes: [Text(Text { value: "[]: b", @1:1-1:6 })]
+html: "<p>[]: b</p>"
+## def_blank_label "[ ]: b"
+nodes: [Text(Text { value: "[ ]: b", @1:1-1:7 })]
+html: "<p>[ ]: b</p>"
+## def_escaped_label "[a\\]b]: c"
+nodes: [Definition(Definition { @1:1-1:10, url: Url("c"), title: None, ident: "a\\]b", label: Some("a]b") })]
+html: ""
+## def_multiline_title "[a]: b \"t\nt\""
+nodes: [Definition(Definition { @1:1-2:3, url: Url("b"), title: Some(Title("t\nt")), ident: "a", label: Some("a") })]
+html: ""
+## def_title_indented "[a]: b\n  \"t\""
+nodes: [Definition(Definition { @1:1-2:6, url: Url("b"), title: Some(Title("t")), ident: "a", label: Some("a") })]
+html: ""
+## def_no_space "[a]:b"
+nodes: [Definition(Definition { @1:1-1:6, url: Url("b"), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_dest_junk "[a]: b c"
+nodes: [Text(Text { value: "[a]: b c", @1:1-1:9 })]
+html: "<p>[a]: b c</p>"
+## def_duplicate_labels "[A  b]: c\n[a b]: d"
+nodes: [Definition(Definition { @1:1-1:10, url: Url("c"), title: None, ident: "a b", label: Some("A  b") }), Definition(Definition { @2:1-2:9, url: Url("d"), title: None, ident: "a b", label: Some("a b") })]
+html: ""
+## def_empty_angle "[a]: <>"
+nodes: [Definition(Definition { @1:1-1:8, url: Url(""), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_quote_in_dest "[a]: 'x"
+nodes: [Definition(Definition { @1:1-1:8, url: Url("'x"), title: None, ident: "a", label: Some("a") })]
+html: ""
+## def_use_shortcut "[a]: /u\n\n[a] [a][] [b][a] [a][b] [A b]"
+nodes: [Definition(Definition { @1:1-1:8, url: Url("/u"), title: None, ident: "a", label: Some("a") }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:2-3:3 })], @3:1-3:4 }), Text(Text { value: " ", @3:4-3:5 }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:6-3:7 })], @3:5-3:10 }), Text(Text { value: " ", @3:10-3:11 }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "b", @3:12-3:13 })], @3:11-3:17 }), Text(Text { value: " [a][b] [A b]", @3:17-3:30 })]
+html: "<p><a href=\"/u\">a</a> <a href=\"/u\">a</a> <a href=\"/u\">b</a> [a][b] [A b]</p>"
+## def_use_normalized "[ab cd]: /u\n\n[AB   CD] [ab\ncd]"
+nodes: [Definition(Definition { @1:1-1:12, url: Url("/u"), title: None, ident: "ab cd", label: Some("ab cd") }), LinkRef(LinkRef { ident: "ab cd", label: Some("AB   CD"), values: [Text(Text { value: "AB   CD", @3:2-3:9 })], @3:1-3:10 }), Text(Text { value: " ", @3:10-3:11 }), LinkRef(LinkRef { ident: "ab cd", label: Some("ab\ncd"), values: [Text(Text { value: "ab\ncd", @3:12-4:3 })], @3:11-4:4 })]
+html: "<p><a href=\"/u\">AB   CD</a> <a href=\"/u\">ab\ncd</a></p>"
+## def_use_before "[a] and [b][a]\n\n[a]: /u \"T\""
+nodes: [LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:4 }), Text(Text { value: " and ", @1:4-1:9 }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "b", @1:10-1:11 })], @1:9-1:15 }), Definition(Definition { @3:1-3:12, url: Url("/u"), title: Some(Title("T")), ident: "a", label: Some("a") })]
+html: "<p><a href=\"/u\" title=\"T\">a</a> and <a href=\"/u\" title=\"T\">b</a></p>\n"
+## def_use_in_link_text "[a]: b\n\n[a](x) [a]"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Link(Link { url: Url("x"), title: None, values: [Text(Text { value: "a", @3:2-3:3 })], @3:1-3:7 }), Text(Text { value: " ", @3:7-3:8 }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:9-3:10 })], @3:8-3:11 })]
+html: "<p><a href=\"x\">a</a> <a href=\"b\">a</a></p>"
+## def_use_image "[x]: /u\n\n![x] ![y][x] ![x][]"
+nodes: [Definition(Definition { @1:1-1:8, url: Url("/u"), title: None, ident: "x", label: Some("x") }), ImageRef(ImageRef { alt: "x", ident: "x", label: Some("x"), @3:1-3:5 }), Text(Text { value: " ", @3:5-3:6 }), ImageRef(ImageRef { alt: "y", ident: "x", label: Some("x"), @3:6-3:13 }), Text(Text { value: " ", @3:13-3:14 }), ImageRef(ImageRef { alt: "x", ident: "x", label: Some("x"), @3:14-3:20 })]
+html: "<p><img src=\"/u\" alt=\"x\" /> <img src=\"/u\" alt=\"y\" /> <img src=\"/u\" alt=\"x\" /></p>"
+## def_link_in_emphasis "[a]: b\n\n*[a]* **[c][a]**"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Emphasis(Emphasis { values: [LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:3-3:4 })], @3:2-3:5 })], @3:1-3:6 }), Text(Text { value: " ", @3:6-3:7 }), Strong(Strong { values: [LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "c", @3:10-3:11 })], @3:9-3:15 })], @3:7-3:17 })]
+html: "<p><em><a href=\"b\">a</a></em> <strong><a href=\"b\">c</a></strong></p>"
+## fn_basic "[^a]: b"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 })]
+html: ""
+## fn_lazy "[^a]: b\nc"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b\nc", @1:7-2:2 })], @1:1-2:2 })]
+html: ""
+## fn_indented_continuation "[^a]: b\n    c"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b\nc", @1:7-2:6 })], @1:1-2:6 })]
+html: ""
+## fn_two_paragraphs "[^a]: b\n\n    c"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 }), Text(Text { value: "c", @3:5-3:6 })], @1:1-3:6 })]
+html: ""
+## fn_two_paragraphs_then_text "[^a]: b\n\n    c\n\nd"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 }), Text(Text { value: "c", @3:5-3:6 })], @1:1-4:1 }), Text(Text { value: "d", @5:1-5:2 })]
+html: "<p>d</p>"
+## fn_two_space_continuation "[^a]: b\n  c"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b\nc", @1:7-2:4 })], @1:1-2:4 })]
+html: ""
+## fn_empty "[^a]:"
+nodes: [Footnote(Footnote { ident: "a", values: [], @1:1-1:6 })]
+html: ""
+## fn_empty_space "[^a]: "
+nodes: [Footnote(Footnote { ident: "a", values: [], @1:1-1:7 })]
+html: ""
+## fn_content_next_line "[^a]:\n    b"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @2:5-2:6 })], @1:1-2:6 })]
+html: ""
+## fn_two_adjacent "[^a]: b\n[^c]: d"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), Footnote(Footnote { ident: "c", values: [Text(Text { value: "d", @2:7-2:8 })], @2:1-2:8 })]
+html: ""
+## fn_two_separated "[^a]: b\n\n[^c]: d"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-2:1 }), Footnote(Footnote { ident: "c", values: [Text(Text { value: "d", @3:7-3:8 })], @3:1-3:8 })]
+html: ""
+## fn_label_space "[^ a]: b"
+nodes: [Definition(Definition { @1:1-1:9, url: Url("b"), title: None, ident: "^ a", label: Some("^ a") })]
+html: ""
+## fn_label_inner_space "[^a b]: b"
+nodes: [Definition(Definition { @1:1-1:10, url: Url("b"), title: None, ident: "^a b", label: Some("^a b") })]
+html: ""
+## fn_label_empty "[^]: b"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "^", label: Some("^") })]
+html: ""
+## fn_indent1 " [^a]: b"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:8-1:9 })], @1:1-1:9 })]
+html: ""
+## fn_indent4 "    [^a]: b"
+nodes: [Code(Code { value: "[^a]: b", lang: None, @1:1-1:12, meta: None, fence: false })]
+html: "<pre><code>[^a]: b\n</code></pre>"
+## fn_in_quote "> [^a]: b"
+nodes: [Blockquote(Blockquote { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:9-1:10 })], @1:3-1:10 })], @1:1-1:10 })]
+html: "<blockquote>\n</blockquote>"
+## fn_in_list "- [^a]: b"
+nodes: [List(List { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:9-1:10 })], @1:3-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:10 })]
+html: "<ul>\n<li></li>\n</ul>"
+## fn_then_quote "[^a]: b\n> q"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @2:3-2:4 })], @2:1-2:4 })]
+html: "<blockquote>\n<p>q</p>\n</blockquote>"
+## fn_then_list "[^a]: b\n- x"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+html: "<ul>\n<li>x</li>\n</ul>"
+## fn_heading "[^a]: # h"
+nodes: [Footnote(Footnote { ident: "a", values: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:9-1:10 })], @1:7-1:10 })], @1:1-1:10 })]
+html: ""
+## fn_list "[^a]: - x\n    - y"
+nodes: [Footnote(Footnote { ident: "a", values: [List(List { values: [Text(Text { value: "x", @1:9-1:10 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:9-1:10 }), List(List { values: [Text(Text { value: "y", @2:7-2:8 })], index: 1, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 })], @1:1-2:8 })]
+html: ""
+## fn_fence "[^a]: b\n    ```\n    x\n    ```"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 }), Code(Code { value: "x", lang: None, @2:5-4:8, meta: None, fence: true })], @1:1-4:8 })]
+html: ""
+## fn_ref_case "[^A]: b\n\nx[^a]"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-2:1 }), Text(Text { value: "x", @3:1-3:2 }), FootnoteRef(FootnoteRef { ident: "a", label: Some("a"), @3:2-3:6 })]
+html: "<p>x<sup><a href=\"#user-content-fn-a\" id=\"user-content-fnref-a\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-a\">\n<p>b <a href=\"#user-content-fnref-a\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+## fn_no_space "[^a]:b"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:6-1:7 })], @1:1-1:7 })]
+html: ""
+## fn_interrupts_paragraph "text\n[^a]: b"
+nodes: [Text(Text { value: "text", @1:1-1:5 }), Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @2:7-2:8 })], @2:1-2:8 })]
+html: "<p>text</p>\n"
+## fn_then_dashes "[^a]: b\n---"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b", @1:7-1:8 })], @1:1-1:8 }), HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 })]
+html: "<hr />"
+## fn_then_equals "[^a]: b\n==="
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "b\n===", @1:7-2:4 })], @1:1-2:4 })]
+html: ""
+## fn_ref_basic "[^a]\n\n[^a]: note"
+nodes: [FootnoteRef(FootnoteRef { ident: "a", label: Some("a"), @1:1-1:5 }), Footnote(Footnote { ident: "a", values: [Text(Text { value: "note", @3:7-3:11 })], @3:1-3:11 })]
+html: "<p><sup><a href=\"#user-content-fn-a\" id=\"user-content-fnref-a\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-a\">\n<p>note <a href=\"#user-content-fnref-a\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+## fn_ref_no_def "[^b] no def"
+nodes: [Text(Text { value: "[^b] no def", @1:1-1:12 })]
+html: "<p>[^b] no def</p>"
+## fn_ref_inline "x[^a] and [^a]!\n\n[^a]: note"
+nodes: [Text(Text { value: "x", @1:1-1:2 }), FootnoteRef(FootnoteRef { ident: "a", label: Some("a"), @1:2-1:6 }), Text(Text { value: " and ", @1:6-1:11 }), FootnoteRef(FootnoteRef { ident: "a", label: Some("a"), @1:11-1:15 }), Text(Text { value: "!", @1:15-1:16 }), Footnote(Footnote { ident: "a", values: [Text(Text { value: "note", @3:7-3:11 })], @3:1-3:11 })]
+html: "<p>x<sup><a href=\"#user-content-fn-a\" id=\"user-content-fnref-a\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup> and <sup><a href=\"#user-content-fn-a\" id=\"user-content-fnref-a-2\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup>!</p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-a\">\n<p>note <a href=\"#user-content-fnref-a\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a> <a href=\"#user-content-fnref-a-2\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩<sup>2</sup></a></p>\n</li>\n</ol>\n</section>\n"
+## fn_ref_in_link_text "[a[^a]](b)\n\n[^a]: note"
+nodes: [Text(Text { value: "[a", @1:1-1:3 }), FootnoteRef(FootnoteRef { ident: "a", label: Some("a"), @1:3-1:7 }), Text(Text { value: "](b)", @1:7-1:11 }), Footnote(Footnote { ident: "a", values: [Text(Text { value: "note", @3:7-3:11 })], @3:1-3:11 })]
+html: "<p>[a<sup><a href=\"#user-content-fn-a\" id=\"user-content-fnref-a\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup>](b)</p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-a\">\n<p>note <a href=\"#user-content-fnref-a\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+## html_div "<div>\nx\n</div>\n\ny"
+nodes: [Html(Html { value: "<div>\nx\n</div>", @1:1-3:7 }), Text(Text { value: "y", @5:1-5:2 })]
+html: "<div>\nx\n</div>\n<p>y</p>"
+## html_indented "  <div>\n  x\n"
+nodes: [Html(Html { value: "  <div>\n  x", @1:1-2:4 })]
+html: "  <div>\n  x\n"
+## html_oneline "<div>x</div>"
+nodes: [Html(Html { value: "<div>x</div>", @1:1-1:13 })]
+html: "<div>x</div>"
+## html_script "<script>\nx\n\ny\n</script>\nz"
+nodes: [Html(Html { value: "<script>\nx\n\ny\n</script>", @1:1-5:10 }), Text(Text { value: "z", @6:1-6:2 })]
+html: "&lt;script>\nx\n\ny\n&lt;/script>\n<p>z</p>"
+## html_pre "<pre>\na\n\nb</pre>\nc"
+nodes: [Html(Html { value: "<pre>\na\n\nb</pre>", @1:1-4:8 }), Text(Text { value: "c", @5:1-5:2 })]
+html: "<pre>\na\n\nb</pre>\n<p>c</p>"
+## html_style_inline_end "<style>x</style> y\nz"
+nodes: [Html(Html { value: "<style>x</style> y", @1:1-1:19 }), Text(Text { value: "z", @2:1-2:2 })]
+html: "&lt;style>x&lt;/style> y\n<p>z</p>"
+## html_comment "<!-- c\n\n d -->\nx"
+nodes: [Html(Html { value: "<!-- c\n\n d -->", @1:1-3:7 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<!-- c\n\n d -->\n<p>x</p>"
+## html_instruction "<?php\nx ?>\ny"
+nodes: [Html(Html { value: "<?php\nx ?>", @1:1-2:5 }), Text(Text { value: "y", @3:1-3:2 })]
+html: "<?php\nx ?>\n<p>y</p>"
+## html_declaration "<!DOCTYPE html>\nx"
+nodes: [Html(Html { value: "<!DOCTYPE html>", @1:1-1:16 }), Text(Text { value: "x", @2:1-2:2 })]
+html: "<!DOCTYPE html>\n<p>x</p>"
+## html_cdata "<![CDATA[\n\nx]]>\ny"
+nodes: [Html(Html { value: "<![CDATA[\n\nx]]>", @1:1-3:5 }), Text(Text { value: "y", @4:1-4:2 })]
+html: "<![CDATA[\n\nx]]>\n<p>y</p>"
+## html_complete_tag "<a href=\"x\">\ny"
+nodes: [Html(Html { value: "<a href=\"x\">\ny", @1:1-2:2 })]
+html: "<a href=\"x\">\ny"
+## html_tag_then_text "<a href=\"x\">y"
+nodes: [Html(Html { value: "<a href=\"x\">", @1:1-1:13 }), Text(Text { value: "y", @1:13-1:14 })]
+html: "<p><a href=\"x\">y</p>"
+## html_interrupt_basic "text\n<div>"
+nodes: [Text(Text { value: "text", @1:1-1:5 }), Html(Html { value: "<div>", @2:1-2:6 })]
+html: "<p>text</p>\n<div>"
+## html_no_interrupt_complete "text\n<a href=\"x\">"
+nodes: [Text(Text { value: "text\n", @1:1-2:1 }), Html(Html { value: "<a href=\"x\">", @2:1-2:13 })]
+html: "<p>text\n<a href=\"x\"></p>"
+## html_custom_element "<x-y>\nz"
+nodes: [Html(Html { value: "<x-y>\nz", @1:1-2:2 })]
+html: "<x-y>\nz"
+## html_closing "</div>\nz"
+nodes: [Html(Html { value: "</div>\nz", @1:1-2:2 })]
+html: "</div>\nz"
+## html_multiline_open "<div\nclass=\"a\">\nz"
+nodes: [Html(Html { value: "<div\nclass=\"a\">\nz", @1:1-3:2 })]
+html: "<div\nclass=\"a\">\nz"
+## html_in_quote "> <div>\n> x"
+nodes: [Blockquote(Blockquote { values: [Html(Html { value: "<div>\nx", @1:3-2:4 })], @1:1-2:4 })]
+html: "<blockquote>\n<div>\nx\n</blockquote>"
+## html_in_list "- <div>\n  x"
+nodes: [List(List { values: [Html(Html { value: "<div>\nx", @1:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-2:4 })]
+html: "<ul>\n<li>\n<div>\nx\n</li>\n</ul>"
+## html_uppercase "<DIV>\nx"
+nodes: [Html(Html { value: "<DIV>\nx", @1:1-2:2 })]
+html: "<DIV>\nx"
+## html_self_closing "<div/>\nx"
+nodes: [Html(Html { value: "<div/>\nx", @1:1-2:2 })]
+html: "<div/>\nx"
+## html_ins "<ins>\nx"
+nodes: [Html(Html { value: "<ins>\nx", @1:1-2:2 })]
+html: "<ins>\nx"
+## html_br "<br>\nx"
+nodes: [Html(Html { value: "<br>\nx", @1:1-2:2 })]
+html: "<br>\nx"
+## html_textarea "<textarea>\nx\n\ny</textarea>"
+nodes: [Html(Html { value: "<textarea>\nx\n\ny</textarea>", @1:1-4:13 })]
+html: "&lt;textarea>\nx\n\ny&lt;/textarea>"
+## html_table_two_blocks "<table>\n<tr>\n\n<td>"
+nodes: [Html(Html { value: "<table>\n<tr>", @1:1-2:5 }), Html(Html { value: "<td>", @4:1-4:5 })]
+html: "<table>\n<tr>\n<td>"
+## html_img_self_close "<img src=\"x\" />\nz"
+nodes: [Html(Html { value: "<img src=\"x\" />\nz", @1:1-2:2 })]
+html: "<img src=\"x\" />\nz"
+## html_img_then_text "<img src=\"x\" /> y"
+nodes: [Html(Html { value: "<img src=\"x\" />", @1:1-1:16 }), Text(Text { value: " y", @1:16-1:18 })]
+html: "<p><img src=\"x\" /> y</p>"
+## html_multiline_tag_inline "<a\nb>\nz"
+nodes: [Html(Html { value: "<a\nb>", @1:1-2:3 }), Text(Text { value: "\nz", @2:3-3:2 })]
+html: "<p><a\nb>\nz</p>"
+## html_indent4 "    <div>"
+nodes: [Code(Code { value: "<div>", lang: None, @1:1-1:10, meta: None, fence: false })]
+html: "<pre><code>&lt;div&gt;\n</code></pre>"
+## html_comment_then_text "<!--x-->y\nz"
+nodes: [Html(Html { value: "<!--x-->y", @1:1-1:10 }), Text(Text { value: "z", @2:1-2:2 })]
+html: "<!--x-->y\n<p>z</p>"
+## html_then_code_line "<div>\n    code"
+nodes: [Html(Html { value: "<div>\n    code", @1:1-2:9 })]
+html: "<div>\n    code"
+## html_comment_short "<!-->\nx"
+nodes: [Html(Html { value: "<!-->", @1:1-1:6 }), Text(Text { value: "x", @2:1-2:2 })]
+html: "<!-->\n<p>x</p>"
+## html_instruction_short "<?>\nx"
+nodes: [Html(Html { value: "<?>", @1:1-1:4 }), Text(Text { value: "x", @2:1-2:2 })]
+html: "<?>\n<p>x</p>"
+## html_lazy_quote "> <div>\nx"
+nodes: [Blockquote(Blockquote { values: [Html(Html { value: "<div>", @1:3-1:8 })], @1:1-1:8 }), Text(Text { value: "x", @2:1-2:2 })]
+html: "<blockquote>\n<div>\n</blockquote>\n<p>x</p>"
+## html_attr_forms "<a b c=d e='f' g=\"h\">\nx"
+nodes: [Html(Html { value: "<a b c=d e='f' g=\"h\">\nx", @1:1-2:2 })]
+html: "<a b c=d e='f' g=\"h\">\nx"
+## html_bad_attr "<a b=>\nx"
+nodes: [Text(Text { value: "<a b=>\nx", @1:1-2:2 })]
+html: "<p>&lt;a b=&gt;\nx</p>"
+## fm_yaml "---\na: b\n---\ntext"
+nodes: [Yaml(Yaml { value: "a: b", @1:1-3:4 }), Text(Text { value: "text", @4:1-4:5 })]
+html: "<p>text</p>"
+## fm_yaml_only "---\na: b\n---"
+nodes: [Yaml(Yaml { value: "a: b", @1:1-3:4 })]
+html: ""
+## fm_empty "---\n---"
+nodes: [Yaml(Yaml { value: "", @1:1-2:4 })]
+html: ""
+## fm_unclosed "---\na\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Text(Text { value: "a", @2:1-2:2 })]
+html: "<hr />\n<p>a</p>\n"
+## fm_blank_content "---\n\n---\nx"
+nodes: [Yaml(Yaml { value: "", @1:1-3:4 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<p>x</p>"
+## fm_toml "+++\na = 1\n+++\nx"
+nodes: [Toml(Toml { value: "a = 1", @1:1-3:4 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<p>x</p>"
+## fm_indented " ---\na\n---"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:5 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
+html: "<hr />\n<h2>a</h2>"
+## fm_close_trailing_space "---\na\n--- \nx"
+nodes: [Yaml(Yaml { value: "a", @1:1-3:5 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<p>x</p>"
+## fm_close_longer "---\na\n----\nx"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:5 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<hr />\n<h2>a</h2>\n<p>x</p>"
+## fm_open_trailing_space "---  \na\n---"
+nodes: [Yaml(Yaml { value: "a", @1:1-3:4 })]
+html: ""
+## fm_open_junk "---x\na\n---"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "---x\na", @1:1-2:2 })], @1:1-3:4 })]
+html: "<h2>---x\na</h2>"
+## fm_not_first "text\n---\na\n---"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "text", @1:1-1:5 })], @1:1-2:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @3:1-3:2 })], @3:1-4:4 })]
+html: "<h2>text</h2>\n<h2>a</h2>"
+## fm_blank_before "\n---\na\n---"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @2:1-2:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @3:1-3:2 })], @3:1-4:4 })]
+html: "<hr />\n<h2>a</h2>"
+## fm_multiline_content "---\na: 1\n\nb: 2\n---\n# h"
+nodes: [Yaml(Yaml { value: "a: 1\n\nb: 2", @1:1-5:4 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @6:3-6:4 })], @6:1-6:4 })]
+html: "<h1>h</h1>"
+## fm_hr_after "---\na\n---\n\n---"
+nodes: [Yaml(Yaml { value: "a", @1:1-3:4 }), HorizontalRule(HorizontalRule { marker: Some('-'), @5:1-5:4 })]
+html: "<hr />"
+## math_basic "$$\na\n$$"
+nodes: [Math(Math { value: "a", @1:1-3:3 })]
+html: "<pre><code class=\"language-math math-display\">a\n</code></pre>"
+## math_then_text "$$\na\n$$\nx"
+nodes: [Math(Math { value: "a", @1:1-3:3 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<pre><code class=\"language-math math-display\">a\n</code></pre>\n<p>x</p>"
+## math_meta "$$ meta\na\n$$"
+nodes: [Math(Math { value: "a", @1:1-3:3 })]
+html: "<pre><code class=\"language-math math-display\">a\n</code></pre>"
+## math_unclosed "$$\na"
+nodes: [Math(Math { value: "a", @1:1-2:2 })]
+html: "<pre><code class=\"language-math math-display\">a\n</code></pre>\n"
+## math_longer_open "$$$\na\n$$"
+nodes: [Math(Math { value: "a\n$$", @1:1-3:3 })]
+html: "<pre><code class=\"language-math math-display\">a\n$$\n</code></pre>\n"
+## math_longer_close "$$\na\n$$$$"
+nodes: [Math(Math { value: "a", @1:1-3:5 })]
+html: "<pre><code class=\"language-math math-display\">a\n</code></pre>"
+## math_indented "  $$\n  a\n   b\n  $$"
+nodes: [Math(Math { value: "a\n b", @1:3-4:5 })]
+html: "<pre><code class=\"language-math math-display\">a\n b\n</code></pre>"
+## math_empty "$$\n$$"
+nodes: [Math(Math { value: "", @1:1-2:3 })]
+html: "<pre><code class=\"language-math math-display\"></code></pre>"
+## math_inline_not_block "$$a$$"
+nodes: [MathInline(MathInline { value: "a", @1:1-1:6 })]
+html: "<p><code class=\"language-math math-inline\">a</code></p>"
+## math_info_no_close "$$a\n$$"
+nodes: [Math(Math { value: "", @1:1-2:3 })]
+html: "<pre><code class=\"language-math math-display\"></code></pre>"
+## math_in_quote "> $$\n> a\n> $$"
+nodes: [Blockquote(Blockquote { values: [Math(Math { value: "a", @1:3-3:5 })], @1:1-3:5 })]
+html: "<blockquote>\n<pre><code class=\"language-math math-display\">a\n</code></pre>\n</blockquote>"
+## math_in_list "- $$\n  a\n  $$"
+nodes: [List(List { values: [Math(Math { value: "a", @1:3-3:5 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:5 })]
+html: "<ul>\n<li>\n<pre><code class=\"language-math math-display\">a\n</code></pre>\n</li>\n</ul>"
+## math_close_junk "$$\na\n$$ x"
+nodes: [Math(Math { value: "a\n$$ x", @1:1-3:5 })]
+html: "<pre><code class=\"language-math math-display\">a\n$$ x\n</code></pre>\n"
+## math_interrupts_paragraph "text\n$$\na\n$$"
+nodes: [Text(Text { value: "text", @1:1-1:5 }), Math(Math { value: "a", @2:1-4:3 })]
+html: "<p>text</p>\n<pre><code class=\"language-math math-display\">a\n</code></pre>"
+## math_blank_inside "$$\n\na\n$$"
+nodes: [Math(Math { value: "\na", @1:1-4:3 })]
+html: "<pre><code class=\"language-math math-display\">\na\n</code></pre>"
+## math_single_dollar_line "$ $\nx"
+nodes: [MathInline(MathInline { value: " ", @1:1-1:4 }), Text(Text { value: "\nx", @1:4-2:2 })]
+html: "<p><code class=\"language-math math-inline\"> </code>\nx</p>"
+## crlf_frontmatter "---\r\na\r\n---\r\nx"
+nodes: [Yaml(Yaml { value: "a", @1:1-3:4 }), Text(Text { value: "x", @4:1-4:2 })]
+html: "<p>x</p>"
+## break_end_indented "a  \n  b"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), Break(Break { @1:2-2:1 }), Text(Text { value: "b", @2:3-2:4 })]
+html: "<p>a<br />\nb</p>"
+## text_end_indented_continuation "*a*\n  <x>"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:4 }), Text(Text { value: "\n", @1:4-2:1 }), Html(Html { value: "<x>", @2:3-2:6 })]
+html: "<p><em>a</em>\n<x></p>"
+## soft_end_before_node "a\n  `b`"
+nodes: [Text(Text { value: "a\n", @1:1-2:1 }), CodeInline(CodeInline { value: "b", @2:3-2:6 })]
+html: "<p>a\n<code>b</code></p>"
+## break_in_quote "> a  \n> b"
+nodes: [Blockquote(Blockquote { values: [Text(Text { value: "a", @1:3-1:4 }), Break(Break { @1:4-2:1 }), Text(Text { value: "b", @2:3-2:4 })], @1:1-2:4 })]
+html: "<blockquote>\n<p>a<br />\nb</p>\n</blockquote>"
+## text_eol_in_footnote "[^a]: x \n  [a]"
+nodes: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "x\n[a]", @1:7-2:6 })], @1:1-2:6 })]
+html: ""
+## math_whitespace_content "  $$\n \n  $$"
+nodes: [Math(Math { value: "", @1:3-3:5 })]
+html: "<pre><code class=\"language-math math-display\">\n</code></pre>"
+## math_whitespace_content2 "  $$\n  \n  $$"
+nodes: [Math(Math { value: "", @1:3-3:5 })]
+html: "<pre><code class=\"language-math math-display\">\n</code></pre>"
+## table_indented_no_pipe "  a|b\n|-|:-:|"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:4 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:5-1:6 })]:1, row: 0, @1:4-1:6 }), TableAlign(TableAlign { align: [None, Center], @2:1-2:1 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th align=\"center\">b</th>\n</tr>\n</thead>\n</table>"
+## tab_nested_list "- a\n\t- b\n\t\t- c\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-1:4 }), List(List { values: [Text(Text { value: "b", @2:7-2:8 })], index: 0, level: 1, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:7-2:8 }), List(List { values: [Text(Text { value: "c", @3:11-3:12 })], index: 0, level: 2, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @3:11-3:12 })]
+html: "<ul>\n<li>a\n<ul>\n<li>b\n<ul>\n<li>c</li>\n</ul>\n</li>\n</ul>\n</li>\n</ul>\n"
+## tab_nested_ordered "1. a\n\t1. b\n\t\t1. c\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:4-1:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @1:4-1:5 }), List(List { values: [Text(Text { value: "b", @2:8-2:9 })], index: 0, level: 1, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @2:8-2:9 }), List(List { values: [Text(Text { value: "c", @3:12-3:13 })], index: 0, level: 2, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:12-3:13 })]
+html: "<ol>\n<li>a\n<ol>\n<li>b\n<ol>\n<li>c</li>\n</ol>\n</li>\n</ol>\n</li>\n</ol>\n"
+## tab_list_code "- a\n\n\t\tcode\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "  code", lang: None, @3:3-3:13, meta: None, fence: false })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:13 })]
+html: "<ul>\n<li>\n<p>a</p>\n<pre><code>  code\n</code></pre>\n</li>\n</ul>\n"
+## tab_in_text "a\tb\t*c*\n"
+nodes: [Text(Text { value: "a\tb\t", @1:1-1:9 }), Emphasis(Emphasis { values: [Text(Text { value: "c", @1:10-1:11 })], @1:9-1:12 })]
+html: "<p>a\tb\t<em>c</em></p>\n"
+## tab_code_block "\tcode\n\t\tmore\n"
+nodes: [Code(Code { value: "code\n\tmore", lang: None, @1:1-2:13, meta: None, fence: false })]
+html: "<pre><code>code\n\tmore\n</code></pre>\n"
+## tab_after_marker "-\ta\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:5-1:6 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:5-1:6 })]
+html: "<ul>\n<li>a</li>\n</ul>\n"
+## atx_leading_sequences "# # a"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "# a", @1:3-1:6 })], @1:1-1:6 })]
+html: "<h1># a</h1>"
+## atx_leading_sequences2 "## # a"
+nodes: [Heading(Heading { depth: 2, values: [Text(Text { value: "# a", @1:4-1:7 })], @1:1-1:7 })]
+html: "<h2># a</h2>"
+## atx_only_sequences "# # #"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "#", @1:3-1:4 })], @1:1-1:6 })]
+html: "<h1>#</h1>"
+## atx_no_space_sequence "# #a"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "#a", @1:3-1:5 })], @1:1-1:5 })]
+html: "<h1>#a</h1>"
+## atx_double_sequence "# ## a"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "## a", @1:3-1:7 })], @1:1-1:7 })]
+html: "<h1>## a</h1>"
+## atx_tab_sequence "#\t# a"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "# a", @1:5-1:8 })], @1:1-1:8 })]
+html: "<h1># a</h1>"
+## atx_closing_and_leading "# # a #"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "# a", @1:3-1:6 })], @1:1-1:8 })]
+html: "<h1># a</h1>"
+## atx_inner_hash "# a # b"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a # b", @1:3-1:8 })], @1:1-1:8 })]
+html: "<h1>a # b</h1>"
+## quote_footnote_trailing_space "- a\n  > [^a]: x\n  "
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Footnote(Footnote { ident: "a", values: [Text(Text { value: "x", @2:11-2:12 })], @2:5-3:3 })], @2:3-3:3 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:3 })]
+html: "<ul>\n<li>a\n<blockquote>\n</blockquote>\n</li>\n</ul>"
+## indented_code_trailing_blank "    code\n\n\n"
+nodes: [Code(Code { value: "code", lang: None, @1:1-1:9, meta: None, fence: false })]
+html: "<pre><code>code\n</code></pre>\n"
+## bom_heading "\u{feff}# a\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "a", @1:6-1:7 })], @1:4-1:7 })]
+html: "<h1>a</h1>\n"
+## bom_frontmatter "\u{feff}---\na: b\n---\n"
+nodes: [Yaml(Yaml { value: "a: b", @1:4-3:4 })]
+html: ""
+## bom_text "\u{feff}a\n"
+nodes: [Text(Text { value: "a", @1:4-1:5 })]
+html: "<p>a</p>\n"
+## www_multibyte_after_ww "wwß x"
+nodes: [Text(Text { value: "wwß x", @1:1-1:7 })]
+html: "<p>wwß x</p>"
+## www_combining "ww\u{301}.a.com"
+nodes: [Text(Text { value: "ww\u{301}.a.com", @1:1-1:11 })]
+html: "<p>ww\u{301}.a.com</p>"
+## www_cjk "www.あ.com/パス x"
+nodes: [Link(Link { url: Url("http://www.あ.com/パス"), title: None, values: [Text(Text { value: "www.あ.com/パス", @1:1-1:19 })], @1:1-1:19 }), Text(Text { value: " x", @1:19-1:21 })]
+html: "<p><a href=\"http://www.%E3%81%82.com/%E3%83%91%E3%82%B9\">www.あ.com/パス</a> x</p>"
+## http_cjk "http://あ.jp/パス ok"
+nodes: [Link(Link { url: Url("http://あ.jp/パス"), title: None, values: [Text(Text { value: "http://あ.jp/パス", @1:1-1:21 })], @1:1-1:21 }), Text(Text { value: " ok", @1:21-1:24 })]
+html: "<p><a href=\"http://%E3%81%82.jp/%E3%83%91%E3%82%B9\">http://あ.jp/パス</a> ok</p>"
+## email_cjk_domain "a@あ.com"
+nodes: [Text(Text { value: "a@あ.com", @1:1-1:10 })]
+html: "<p>a@あ.com</p>"
+## email_cjk_local "あ@b.com"
+nodes: [Text(Text { value: "あ@b.com", @1:1-1:10 })]
+html: "<p>あ@b.com</p>"
+## html_inline_continuation "<img a\n     b=\"c\">"
+nodes: [Html(Html { value: "<img a\nb=\"c\">", @1:1-2:12 })]
+html: "<p><img a\nb=\"c\"></p>"
+## html_inline_continuation_tab "<img a\n\t\tb=\"c\">"
+nodes: [Html(Html { value: "<img a\nb=\"c\">", @1:1-2:15 })]
+html: "<p><img a\nb=\"c\"></p>"
+## table_trailing_space "| a | b |  \n|-|-|  \n| c | d |  \n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:5 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:7-1:8 })]:1, row: 0, @1:5-1:12 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "c", @3:3-3:4 })]:0, row: 1, @3:1-3:5 }), TableCell(TableCell { values: [Text(Text { value: "d", @3:7-3:8 })]:1, row: 1, @3:5-3:12 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>c</td>\n<td>d</td>\n</tr>\n</tbody>\n</table>\n"
+## table_no_pipes_trailing_space "a | b\n--|--\nd | e \n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:3 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:5-1:6 })]:1, row: 0, @1:3-1:6 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "d", @3:1-3:2 })]:0, row: 1, @3:1-3:3 }), TableCell(TableCell { values: [Text(Text { value: "e", @3:5-3:6 })]:1, row: 1, @3:3-3:7 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>d</td>\n<td>e</td>\n</tr>\n</tbody>\n</table>\n"
+## table_trailing_tab "| a | b |\t\n|-|-|\n| c | d |   \n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:3-1:4 })]:0, row: 0, @1:1-1:5 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:7-1:8 })]:1, row: 0, @1:5-1:13 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "c", @3:3-3:4 })]:0, row: 1, @3:1-3:5 }), TableCell(TableCell { values: [Text(Text { value: "d", @3:7-3:8 })]:1, row: 1, @3:5-3:13 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td>c</td>\n<td>d</td>\n</tr>\n</tbody>\n</table>\n"
+## table_cjk "| あ | 🎉 |\n|:-|-:|\n| é | ß |\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "あ", @1:3-1:6 })]:0, row: 0, @1:1-1:7 }), TableCell(TableCell { values: [Text(Text { value: "🎉", @1:9-1:13 })]:1, row: 0, @1:7-1:15 }), TableAlign(TableAlign { align: [Left, Right], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "é", @3:3-3:5 })]:0, row: 1, @3:1-3:6 }), TableCell(TableCell { values: [Text(Text { value: "ß", @3:8-3:10 })]:1, row: 1, @3:6-3:12 })]
+html: "<table>\n<thead>\n<tr>\n<th align=\"left\">あ</th>\n<th align=\"right\">🎉</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">é</td>\n<td align=\"right\">ß</td>\n</tr>\n</tbody>\n</table>\n"
+## table_single_column_colon "a\n:-\nb\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableAlign(TableAlign { align: [Left], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @3:1-3:2 })]:0, row: 1, @3:1-3:2 })]
+html: "<table>\n<thead>\n<tr>\n<th align=\"left\">a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"left\">b</td>\n</tr>\n</tbody>\n</table>\n"
+## table_single_column_right "a\n---:\nb\nc\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableAlign(TableAlign { align: [Right], @2:1-2:1 }), TableCell(TableCell { values: [Text(Text { value: "b", @3:1-3:2 })]:0, row: 1, @3:1-3:2 }), TableCell(TableCell { values: [Text(Text { value: "c", @4:1-4:2 })]:0, row: 2, @4:1-4:2 })]
+html: "<table>\n<thead>\n<tr>\n<th align=\"right\">a</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td align=\"right\">b</td>\n</tr>\n<tr>\n<td align=\"right\">c</td>\n</tr>\n</tbody>\n</table>\n"
+## table_double_colon_not_delimiter "a\n::-\n"
+nodes: [Text(Text { value: "a\n::-", @1:1-2:4 })]
+html: "<p>a\n::-</p>\n"
+## table_body_empty_marker "a|b\n|-|-|\n*\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('*'), @3:1-3:2 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ul>\n<li></li>\n</ul>\n"
+## table_body_ordered_marker "a|b\n|-|-|\n2. x\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [Text(Text { value: "x", @3:4-3:5 })], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(2), marker: Some('.'), @3:4-3:5 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ol start=\"2\">\n<li>x</li>\n</ol>\n"
+## table_body_empty_ordered "a|b\n|-|-|\n1.\n"
+nodes: [TableCell(TableCell { values: [Text(Text { value: "a", @1:1-1:2 })]:0, row: 0, @1:1-1:2 }), TableCell(TableCell { values: [Text(Text { value: "b", @1:3-1:4 })]:1, row: 0, @1:2-1:4 }), TableAlign(TableAlign { align: [None, None], @2:1-2:1 }), List(List { values: [], index: 0, level: 0, ordered: true, checked: None, spread: false, start: Some(1), marker: Some('.'), @3:1-3:3 })]
+html: "<table>\n<thead>\n<tr>\n<th>a</th>\n<th>b</th>\n</tr>\n</thead>\n</table>\n<ol>\n<li></li>\n</ol>\n"
+## paragraph_after_partial_tab "- a\n\n\t[P](h) x\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Link(Link { url: Url("h"), title: None, values: [Text(Text { value: "P", @3:6-3:7 })], @3:5-3:11 }), Text(Text { value: " x", @3:11-3:13 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:13 })]
+html: "<ul>\n<li>\n<p>a</p>\n<p><a href=\"h\">P</a> x</p>\n</li>\n</ul>\n"
+## fence_after_partial_tab "- a\n\n\t```ts\n\t\tx\n\t```\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Code(Code { value: "\tx", lang: Some("ts"), @3:5-5:8, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:8 })]
+html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-ts\">\tx\n</code></pre>\n</li>\n</ul>\n"
+## math_after_partial_tab "- a\n\n\t$$\n\tm\n\t$$\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Math(Math { value: "m", @3:5-5:7 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-5:7 })]
+html: "<ul>\n<li>\n<p>a</p>\n<pre><code class=\"language-math math-display\">m\n</code></pre>\n</li>\n</ul>\n"
+## quote_after_partial_tab "- a\n\n\t> q\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Blockquote(Blockquote { values: [Text(Text { value: "q", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 })]
+html: "<ul>\n<li>\n<p>a</p>\n<blockquote>\n<p>q</p>\n</blockquote>\n</li>\n</ul>\n"
+## heading_after_partial_tab "- a\n\n\t# h\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:3-1:4 }), Heading(Heading { depth: 1, values: [Text(Text { value: "h", @3:7-3:8 })], @3:3-3:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:8 })]
+html: "<ul>\n<li>\n<p>a</p>\n<h1>h</h1>\n</li>\n</ul>\n"
+## control_character_references "&#1;&#x7f;&#x85;&#xB;&#xC;&#x9f;&#xa0;&#xd800;&#x110000;&#0;"
+nodes: [Text(Text { value: "����\u{c}�\u{a0}���", @1:1-1:61 })]
+html: "<p>����\u{c}�\u{a0}���</p>"
+## footnote_escaped_bracket "[^a\\]: x"
+nodes: [Text(Text { value: "[^a]: x", @1:1-1:9 })]
+html: "<p>[^a]: x</p>"
+## footnote_escaped_backslash "[^a\\\\]: x"
+nodes: [Footnote(Footnote { ident: "a\\\\", values: [Text(Text { value: "x", @1:9-1:10 })], @1:1-1:10 })]
+html: ""
+## footnote_escaped_open "[^a\\[]: x"
+nodes: [Footnote(Footnote { ident: "a\\[", values: [Text(Text { value: "x", @1:9-1:10 })], @1:1-1:10 })]
+html: ""
+## footnote_unescaped_open "[^a[]: x"
+nodes: [Text(Text { value: "[^a[]: x", @1:1-1:9 })]
+html: "<p>[^a[]: x</p>"
+## footnote_empty_then_blank "[^a]: \n\n"
+nodes: [Footnote(Footnote { ident: "a", values: [], @1:1-2:1 })]
+html: ""
+## footnote_empty_then_spaces "[^a]: \n    \n"
+nodes: [Footnote(Footnote { ident: "a", values: [], @1:1-2:5 })]
+html: ""
+## footnote_empty_then_text "[^a]: \n\nb"
+nodes: [Footnote(Footnote { ident: "a", values: [], @1:1-2:1 }), Text(Text { value: "b", @3:1-3:2 })]
+html: "<p>b</p>"
+## definition_nul_destination "[a]: \0\n\n[a]\n"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("\0"), title: None, ident: "a", label: Some("a") }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:2-3:3 })], @3:1-3:4 })]
+html: "<p><a href=\"%EF%BF%BD\">a</a></p>\n"
+## link_nul_destination "[a](x\0y)"
+nodes: [Link(Link { url: Url("x\0y"), title: None, values: [Text(Text { value: "a", @1:2-1:3 })], @1:1-1:9 })]
+html: "<p><a href=\"x%EF%BF%BDy\">a</a></p>"
+## definition_then_empty_marker "[a]: b\n-"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "-", @2:1-2:2 })]
+html: "<p>-</p>"
+## definition_then_item "[a]: b\n- x"
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), List(List { values: [Text(Text { value: "x", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })]
+html: "<ul>\n<li>x</li>\n</ul>"
+## definition_then_ordered "[a]: b\n1."
+nodes: [Definition(Definition { @1:1-1:7, url: Url("b"), title: None, ident: "a", label: Some("a") }), Text(Text { value: "1.", @2:1-2:3 })]
+html: "<p>1.</p>"
+## emphasis_cjk "*あ*。*い*"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "あ", @1:2-1:5 })], @1:1-1:6 }), Text(Text { value: "。", @1:6-1:9 }), Emphasis(Emphasis { values: [Text(Text { value: "い", @1:10-1:13 })], @1:9-1:14 })]
+html: "<p><em>あ</em>。<em>い</em></p>"
+## strong_cjk "**日本語**です"
+nodes: [Strong(Strong { values: [Text(Text { value: "日本語", @1:3-1:12 })], @1:1-1:14 }), Text(Text { value: "です", @1:14-1:20 })]
+html: "<p><strong>日本語</strong>です</p>"
+## underscore_accent "_é_ _ß_"
+nodes: [Emphasis(Emphasis { values: [Text(Text { value: "é", @1:2-1:4 })], @1:1-1:5 }), Text(Text { value: " ", @1:5-1:6 }), Emphasis(Emphasis { values: [Text(Text { value: "ß", @1:7-1:9 })], @1:6-1:10 })]
+html: "<p><em>é</em> <em>ß</em></p>"
+## fullwidth_markers "＊a＊ ＿b＿"
+nodes: [Text(Text { value: "＊a＊ ＿b＿", @1:1-1:16 })]
+html: "<p>＊a＊ ＿b＿</p>"
+## emphasis_after_cjk_punctuation "。*a*、**b**"
+nodes: [Text(Text { value: "。", @1:1-1:4 }), Emphasis(Emphasis { values: [Text(Text { value: "a", @1:5-1:6 })], @1:4-1:7 }), Text(Text { value: "、", @1:7-1:10 }), Strong(Strong { values: [Text(Text { value: "b", @1:12-1:13 })], @1:10-1:15 })]
+html: "<p>。<em>a</em>、<strong>b</strong></p>"
+## combining_mark "e\u{301}*a*"
+nodes: [Text(Text { value: "e\u{301}", @1:1-1:4 }), Emphasis(Emphasis { values: [Text(Text { value: "a", @1:5-1:6 })], @1:4-1:7 })]
+html: "<p>e\u{301}<em>a</em></p>"
+## emoji_zwj "👨\u{200d}👩\u{200d}👧 *a*"
+nodes: [Text(Text { value: "👨\u{200d}👩\u{200d}👧 ", @1:1-1:20 }), Emphasis(Emphasis { values: [Text(Text { value: "a", @1:21-1:22 })], @1:20-1:23 })]
+html: "<p>👨\u{200d}👩\u{200d}👧 <em>a</em></p>"
+## fence_cjk_info "```あ\n日本語\n```\n"
+nodes: [Code(Code { value: "日本語", lang: Some("あ"), @1:1-3:4, meta: None, fence: true })]
+html: "<pre><code class=\"language-あ\">日本語\n</code></pre>\n"
+## fence_in_quote_emoji "> ```🎉\n> x\n> ```\n"
+nodes: [Blockquote(Blockquote { values: [Code(Code { value: "x", lang: Some("🎉"), @1:3-3:6, meta: None, fence: true })], @1:1-3:6 })]
+html: "<blockquote>\n<pre><code class=\"language-🎉\">x\n</code></pre>\n</blockquote>\n"
+## fence_in_list_cjk "- ```あ\n  日本語\n  ```\n"
+nodes: [List(List { values: [Code(Code { value: "日本語", lang: Some("あ"), @1:3-3:6, meta: None, fence: true })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:6 })]
+html: "<ul>\n<li>\n<pre><code class=\"language-あ\">日本語\n</code></pre>\n</li>\n</ul>\n"
+## math_cjk "$$\nあ\n$$\n\n$い$\n"
+nodes: [Math(Math { value: "あ", @1:1-3:3 }), MathInline(MathInline { value: "い", @5:1-5:6 })]
+html: "<pre><code class=\"language-math math-display\">あ\n</code></pre>\n<p><code class=\"language-math math-inline\">い</code></p>\n"
+## heading_cjk "# 見出し\n\n見出し2\n===\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "見出し", @1:3-1:12 })], @1:1-1:12 }), Heading(Heading { depth: 1, values: [Text(Text { value: "見出し2", @3:1-3:11 })], @3:1-4:4 })]
+html: "<h1>見出し</h1>\n<h1>見出し2</h1>\n"
+## link_cjk "[あ](http://い.jp/う \"え\")"
+nodes: [Link(Link { url: Url("http://い.jp/う"), title: Some(Title("え")), values: [Text(Text { value: "あ", @1:2-1:5 })], @1:1-1:31 })]
+html: "<p><a href=\"http://%E3%81%84.jp/%E3%81%86\" title=\"え\">あ</a></p>"
+## reference_cjk "[あ]\n\n[あ]: /u\n"
+nodes: [LinkRef(LinkRef { ident: "あ", label: Some("あ"), values: [Text(Text { value: "あ", @1:2-1:5 })], @1:1-1:6 }), Definition(Definition { @3:1-3:10, url: Url("/u"), title: None, ident: "あ", label: Some("あ") })]
+html: "<p><a href=\"/u\">あ</a></p>\n"
+## footnote_cjk "あ[^い]\n\n[^い]: う\n"
+nodes: [Text(Text { value: "あ", @1:1-1:4 }), FootnoteRef(FootnoteRef { ident: "い", label: Some("い"), @1:4-1:10 }), Footnote(Footnote { ident: "い", values: [Text(Text { value: "う", @3:9-3:12 })], @3:1-3:12 })]
+html: "<p>あ<sup><a href=\"#user-content-fn-%E3%81%84\" id=\"user-content-fnref-%E3%81%84\" data-footnote-ref=\"\" aria-describedby=\"footnote-label\">1</a></sup></p>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 id=\"footnote-label\" class=\"sr-only\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-%E3%81%84\">\n<p>う <a href=\"#user-content-fnref-%E3%81%84\" data-footnote-backref=\"\" aria-label=\"Back to content\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>\n"
+## ideographic_space "a\u{3000}b\n\u{3000}c"
+nodes: [Text(Text { value: "a\u{3000}b\n\u{3000}c", @1:1-2:5 })]
+html: "<p>a\u{3000}b\n\u{3000}c</p>"
+## nbsp_around_emphasis "a\u{a0}*b*\u{a0}c"
+nodes: [Text(Text { value: "a\u{a0}", @1:1-1:4 }), Emphasis(Emphasis { values: [Text(Text { value: "b", @1:5-1:6 })], @1:4-1:7 }), Text(Text { value: "\u{a0}c", @1:7-1:10 })]
+html: "<p>a\u{a0}<em>b</em>\u{a0}c</p>"
+## entity_cjk_context "あ&amp;い&#12354;&#x1F389;"
+nodes: [Text(Text { value: "あ&いあ🎉", @1:1-1:29 })]
+html: "<p>あ&amp;いあ🎉</p>"
+## autolink_cjk "<http://あ.jp/パス>"
+nodes: [Link(Link { url: Url("http://あ.jp/パス"), title: None, values: [Text(Text { value: "http://あ.jp/パス", @1:2-1:22 })], @1:1-1:23 })]
+html: "<p><a href=\"http://%E3%81%82.jp/%E3%83%91%E3%82%B9\">http://あ.jp/パス</a></p>"
+## code_span_cjk "`あ`と``い`う``"
+nodes: [CodeInline(CodeInline { value: "あ", @1:1-1:6 }), Text(Text { value: "と", @1:6-1:9 }), CodeInline(CodeInline { value: "い`う", @1:9-1:20 })]
+html: "<p><code>あ</code>と<code>い`う</code></p>"
+## hard_break_cjk "あ  \nい\\\nう"
+nodes: [Text(Text { value: "あ", @1:1-1:4 }), Break(Break { @1:4-2:1 }), Text(Text { value: "い", @2:1-2:4 }), Break(Break { @2:4-3:1 }), Text(Text { value: "う", @3:1-3:4 })]
+html: "<p>あ<br />\nい<br />\nう</p>"
+## nul_in_text "a\0b"
+nodes: [Text(Text { value: "a\0b", @1:1-1:4 })]
+html: "<p>a�b</p>"
+## mdx jsx_self "<a />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:6, name: Some("a"), attributes: [] })]
+## mdx jsx_attrs "<a b=\"c&amp;d\" e='f' g={h} {...i} j />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:39, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("c&d")) }), Property(MdxJsxAttribute { name: "e", value: Some(Literal("f")) }), Property(MdxJsxAttribute { name: "g", value: Some(Expression("h")) }), Expression("...i"), Property(MdxJsxAttribute { name: "j", value: None })] })]
+## mdx jsx_member "<a.b.c />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:10, name: Some("a.b.c"), attributes: [] })]
+## mdx jsx_namespace "<a:b c:d=\"e\" />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:16, name: Some("a:b"), attributes: [Property(MdxJsxAttribute { name: "c:d", value: Some(Literal("e")) })] })]
+## mdx jsx_fragment "<></>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:6, name: None, attributes: [] })]
+## mdx jsx_text_pair "<a>x</a>"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "x", @1:4-1:5 })], @1:1-1:9, name: Some("a"), attributes: [] })]
+## mdx jsx_flow_pair "<a>\n\nx\n\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @3:1-3:2 })], @1:1-5:5, name: Some("a"), attributes: [] })]
+## mdx jsx_flow_indented_child "<a>\n  x\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
+## mdx jsx_inline "a <b>c</b> d"
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "c", @1:6-1:7 })], @1:3-1:11, name: Some("b"), attributes: [] }), Text(Text { value: " d", @1:11-1:13 })]
+## mdx jsx_inline_self "a <b/> d"
+nodes: [Text(Text { value: "a ", @1:1-1:3 }), MdxJsxTextElement(MdxJsxTextElement { children: [], @1:3-1:7, name: Some("b"), attributes: [] }), Text(Text { value: " d", @1:7-1:9 })]
+## mdx expr_flow "{a}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a", @1:1-1:4 })]
+## mdx expr_nested "{a {b} c}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a {b} c", @1:1-1:10 })]
+## mdx expr_multiline "{a\nb}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a\nb", @1:1-2:3 })]
+## mdx expr_multiline_indented "{a\n  b\n   c}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a\nb\n c", @1:1-3:6 })]
+## mdx expr_text "x {a} y"
+nodes: [Text(Text { value: "x ", @1:1-1:3 }), MdxTextExpression(MdxTextExpression { value: "a", @1:3-1:6 }), Text(Text { value: " y", @1:6-1:8 })]
+## mdx expr_then_tag "{a} <b/>"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a", @1:1-1:4 }), MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:5-1:9, name: Some("b"), attributes: [] })]
+## mdx tag_then_expr "<b/> {a}"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:5, name: Some("b"), attributes: [] }), MdxFlowExpression(MdxFlowExpression { value: "a", @1:6-1:9 })]
+## mdx tag_then_text "<b/> x"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [], @1:1-1:5, name: Some("b"), attributes: [] }), Text(Text { value: " x", @1:5-1:7 })]
+## mdx expr_then_text "{a}x"
+nodes: [MdxTextExpression(MdxTextExpression { value: "a", @1:1-1:4 }), Text(Text { value: "x", @1:4-1:5 })]
+## mdx jsx_in_expr_child "<a>{b}</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [MdxFlowExpression(MdxFlowExpression { value: "b", @1:4-1:7 })], @1:1-1:11, name: Some("a"), attributes: [] })]
+## mdx jsx_unclosed_text "<a>b"
+nodes: error: Expected a closing tag for `<a>` before the end of the content
+## mdx jsx_mismatch "<a></b>"
+nodes: error: Unexpected closing tag `</b>`, expected corresponding closing tag for `<a>` (1:1)
+## mdx lt_space "a < b"
+nodes: [Text(Text { value: "a < b", @1:1-1:6 })]
+## mdx lt_digit "a <3"
+nodes: error: Unexpected character `3` (U+0033) before name
+## mdx attr_no_value "<a b=>"
+nodes: error: Unexpected character `>` (U+003E) before attribute value
+## mdx jsx_nested_flow "<a>\n<b>\n</b>\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @2:1-3:5, name: Some("b"), attributes: [] })], @1:1-4:5, name: Some("a"), attributes: [] })]
+## mdx jsx_in_quote "> <a>\n> x\n> </a>"
+nodes: [Blockquote(Blockquote { values: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:3-3:7, name: Some("a"), attributes: [] })], @1:1-3:7 })]
+## mdx jsx_in_list "- <a>\n  x\n  </a>"
+nodes: [List(List { values: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Text(Text { value: "x", @2:3-2:4 })], @1:3-3:7, name: Some("a"), attributes: [] })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:3-3:7 })]
+## mdx attr_quote_inside "<a b='c\"d' />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:14, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("c\"d")) })] })]
+## mdx two_tags "<a/><b/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:5, name: Some("a"), attributes: [] }), MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:5-1:9, name: Some("b"), attributes: [] })]
+## mdx two_text_elements "<a>x</a><b>y</b>"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "x", @1:4-1:5 })], @1:1-1:9, name: Some("a"), attributes: [] }), MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "y", @1:12-1:13 })], @1:9-1:17, name: Some("b"), attributes: [] })]
+## mdx interrupt_paragraph_tag "a\n<b/>"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), MdxJsxFlowElement(MdxJsxFlowElement { children: [], @2:1-2:5, name: Some("b"), attributes: [] })]
+## mdx interrupt_paragraph_expr "a\n{b}"
+nodes: [Text(Text { value: "a", @1:1-1:2 }), MdxFlowExpression(MdxFlowExpression { value: "b", @2:1-2:4 })]
+## mdx two_expressions "{a}\n{b}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a", @1:1-1:4 }), MdxFlowExpression(MdxFlowExpression { value: "b", @2:1-2:4 })]
+## mdx expr_in_flow_element "<a>\n\n{b}\n\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [MdxFlowExpression(MdxFlowExpression { value: "b", @3:1-3:4 })], @1:1-5:5, name: Some("a"), attributes: [] })]
+## mdx indented_tag "   <a/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:4-1:8, name: Some("a"), attributes: [] })]
+## mdx very_indented_tag "    <a/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:5-1:9, name: Some("a"), attributes: [] })]
+## mdx heading_jsx "# h <a>b</a>"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "h ", @1:3-1:5 }), MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "b", @1:8-1:9 })], @1:5-1:13, name: Some("a"), attributes: [] })], @1:1-1:13 })]
+## mdx emphasis_crossing "*<a>x</a>*"
+nodes: [Emphasis(Emphasis { values: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "x", @1:5-1:6 })], @1:2-1:10, name: Some("a"), attributes: [] })], @1:1-1:11 })]
+## mdx emphasis_crossing_bad "*<a>x*</a>"
+nodes: error: Expected a closing tag for `<a>` before the end of the content
+## mdx link_jsx "[<a>x</a>](y)"
+nodes: [Link(Link { url: Url("y"), title: None, values: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "x", @1:5-1:6 })], @1:2-1:10, name: Some("a"), attributes: [] })], @1:1-1:14 })]
+## mdx code_not_jsx "`<a/>` {b}"
+nodes: [CodeInline(CodeInline { value: "<a/>", @1:1-1:7 }), Text(Text { value: " ", @1:7-1:8 }), MdxTextExpression(MdxTextExpression { value: "b", @1:8-1:11 })]
+## mdx escaped "\\<a/> \\{b}"
+nodes: [Text(Text { value: "<a/> {b}", @1:2-1:11 })]
+## mdx attr_entities "<a b=\"&lt;&#x41;\" />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:21, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("<A")) })] })]
+## mdx attr_multiline_literal "<a b='x\ny' />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-2:6, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("x\ny")) })] })]
+## mdx closing_spaces "<a  >x</a  >"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "x", @1:6-1:7 })], @1:1-1:13, name: Some("a"), attributes: [] })]
+## mdx lt_space_name "< a>"
+nodes: [Text(Text { value: "< a>", @1:1-1:5 })]
+## mdx self_closing_space "<a / >"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:7, name: Some("a"), attributes: [] })]
+## mdx attr_on_next_line "<a\nb />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-2:5, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b", value: None })] })]
+## mdx dashed_name "<a-b />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:8, name: Some("a-b"), attributes: [] })]
+## mdx dashed_attr "<a b-c=\"d\" />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:14, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "b-c", value: Some(Literal("d")) })] })]
+## mdx bad_name_char "<A_b$.c-d />"
+nodes: error: Unexpected character `$` (U+0024) after name
+## mdx expr_unclosed "{a"
+nodes: error: Unexpected end of file in expression, expected a corresponding closing brace for `{`
+## mdx expr_empty "{}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "", @1:1-1:3 })]
+## mdx expr_space "{ }"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: " ", @1:1-1:4 })]
+## mdx empty_flow_element "<a>\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-2:5, name: Some("a"), attributes: [] })]
+## mdx text_element_unclosed_line "<a>x\n</a>"
+nodes: error: Expected a closing tag for `<a>` before the end of the content
+## mdx stray_close "</a>"
+nodes: error: Unexpected closing slash `/` in tag, expected an open tag first
+## mdx stray_close_text "x </a>"
+nodes: error: Unexpected closing slash `/` in tag, expected an open tag first
+## mdx element_with_emphasis "<a>*b*</a>"
+nodes: [MdxJsxTextElement(MdxJsxTextElement { children: [Emphasis(Emphasis { values: [Text(Text { value: "b", @1:5-1:6 })], @1:4-1:7 })], @1:1-1:11, name: Some("a"), attributes: [] })]
+## mdx flow_element_with_emphasis "<a>\n*b*\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [Emphasis(Emphasis { values: [Text(Text { value: "b", @2:2-2:3 })], @2:1-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
+## mdx flow_element_with_list "<a>\n- b\n</a>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [List(List { values: [Text(Text { value: "b", @2:3-2:4 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @2:3-2:4 })], @1:1-3:5, name: Some("a"), attributes: [] })]
+## mdx list_items_unbalanced "- <a>\n- </a>"
+nodes: error: Expected a closing tag for `<a>` (1:3) before the end of its container
+## mdx spaced_equals "<a b = \"c\" />"
+nodes: [Text(Text { value: "<a b = \"c\" />", @1:1-1:14 })]
+## mdx heading "# h\n\ntext *a* [b](c) `d`\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:3-1:4 })], @1:1-1:4 }), Text(Text { value: "text ", @3:1-3:6 }), Emphasis(Emphasis { values: [Text(Text { value: "a", @3:7-3:8 })], @3:6-3:9 }), Text(Text { value: " ", @3:9-3:10 }), Link(Link { url: Url("c"), title: None, values: [Text(Text { value: "b", @3:11-3:12 })], @3:10-3:16 }), Text(Text { value: " ", @3:16-3:17 }), CodeInline(CodeInline { value: "d", @3:17-3:20 })]
+## mdx indented_is_text "    not code\n"
+nodes: [Text(Text { value: "not code", @1:5-1:13 })]
+## mdx indented_heading "     # h\n"
+nodes: [Heading(Heading { depth: 1, values: [Text(Text { value: "h", @1:8-1:9 })], @1:1-1:9 })]
+## mdx no_autolink "<http://a.b>"
+nodes: error: Unexpected character `/` (U+002F) before local name
+## mdx no_gfm "| a |\n|-|\n\n~a~ www.a.b [^a]\n\n- [ ] a\n"
+nodes: [Text(Text { value: "| a |\n|-|", @1:1-2:4 }), Text(Text { value: "~a~ www.a.b [^a]", @4:1-4:17 }), List(List { values: [Text(Text { value: "[ ] a", @6:3-6:8 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @6:3-6:8 })]
+## mdx no_math "$a$\n\n$$\na\n$$\n"
+nodes: [Text(Text { value: "$a$", @1:1-1:4 }), Text(Text { value: "$$\na\n$$", @3:1-5:3 })]
+## mdx no_frontmatter "---\na\n---\n"
+nodes: [HorizontalRule(HorizontalRule { marker: Some('-'), @1:1-1:4 }), Heading(Heading { depth: 2, values: [Text(Text { value: "a", @2:1-2:2 })], @2:1-3:4 })]
+## mdx esm "import a from 'b'\n\nexport const c = 1\n"
+nodes: [MdxJsEsm(MdxJsEsm { value: "import a from 'b'", @1:1-1:18 }), MdxJsEsm(MdxJsEsm { value: "export const c = 1", @3:1-3:19 })]
+## mdx definition "[a]: /u\n\n[a]\n"
+nodes: [Definition(Definition { @1:1-1:8, url: Url("/u"), title: None, ident: "a", label: Some("a") }), LinkRef(LinkRef { ident: "a", label: Some("a"), values: [Text(Text { value: "a", @3:2-3:3 })], @3:1-3:4 })]
+## mdx list_deep_indent "-      a\n"
+nodes: [List(List { values: [Text(Text { value: "a", @1:8-1:9 })], index: 0, level: 0, ordered: false, checked: None, spread: false, start: None, marker: Some('-'), @1:8-1:9 })]
+## mdx fence "```rust\ncode\n```\n"
+nodes: [Code(Code { value: "code", lang: Some("rust"), @1:1-3:4, meta: None, fence: true })]
+## mdx lone_cr_after_lt "<\r/-x"
+nodes: [Text(Text { value: "<\r/-x", @1:1-2:4 })]
+## mdx crlf_after_lt "<\r\n/-x"
+nodes: [Text(Text { value: "<\r\n/-x", @1:1-2:4 })]
+## mdx expression_lone_cr "{\r }"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "\r", @1:1-2:3 })]
+## mdx expression_cr_indent "{a\r   b\r\n c\n  d}"
+nodes: [MdxFlowExpression(MdxFlowExpression { value: "a\r b\r\nc\nd", @1:1-4:5 })]
+## mdx tilde_not_delimiter "*~*a"
+nodes: [Text(Text { value: "*~*a", @1:1-1:5 })]
+## mdx tilde_strong_not_delimiter "**~**あ"
+nodes: [Text(Text { value: "**~**あ", @1:1-1:9 })]
+## mdx dollar_after_name "<a$/>"
+nodes: error: Unexpected character `$` (U+0024) after name
+## mdx dollar_after_space "<a $b/>"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:8, name: Some("a"), attributes: [Property(MdxJsxAttribute { name: "$b", value: None })] })]
+## mdx cjk_tag_name "<あ b=\"c\" />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:14, name: Some("あ"), attributes: [Property(MdxJsxAttribute { name: "b", value: Some(Literal("c")) })] })]
+## mdx fullwidth_underscore_name "<a＿b />"
+nodes: [MdxJsxFlowElement(MdxJsxFlowElement { children: [], @1:1-1:10, name: Some("a＿b"), attributes: [] })]
+## mdx jsx_text_cjk "あ <b>い</b> う"
+nodes: [Text(Text { value: "あ ", @1:1-1:5 }), MdxJsxTextElement(MdxJsxTextElement { children: [Text(Text { value: "い", @1:8-1:11 })], @1:5-1:15, name: Some("b"), attributes: [] }), Text(Text { value: " う", @1:15-1:19 })]
+## mdx expression_cjk "{あ} い"
+nodes: [MdxTextExpression(MdxTextExpression { value: "あ", @1:1-1:6 }), Text(Text { value: " い", @1:6-1:10 })]

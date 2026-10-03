@@ -11,6 +11,8 @@
 //! - **MDX Support**: Parse and manipulate MDX (Markdown + JSX) content
 //! - **JSON Export**: Serialize markdown AST to JSON (with `json` feature)
 //! - **Configurable Rendering**: Customize output formatting and styles
+//! - **Built-in parser**: CommonMark, GFM (tables, strikethrough, autolink literals, task lists,
+//!   footnotes), frontmatter, math and MDX are parsed, and rendered to HTML, by a parser of this crate.
 //!
 //! ## Quick Start
 //!
@@ -44,7 +46,7 @@
 //!
 //! let mut doc = "- Item 1\n- Item 2".parse::<Markdown>().unwrap();
 //! doc.set_options(RenderOptions {
-//!     list_style: ListStyle::Plus,
+//!     list_style: Some(ListStyle::Plus),
 //!     ..Default::default()
 //! });
 //!
@@ -81,6 +83,7 @@
 mod html_to_markdown;
 mod markdown;
 mod node;
+mod parser;
 pub use markdown::{Markdown, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
