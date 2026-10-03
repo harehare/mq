@@ -3,8 +3,10 @@
 
 use super::inline;
 use super::mdx::TagKind;
-use super::tree::{Block, InlineBlock, InlineKind, JsxTag, ListBlock, TableItem};
-use crate::node::{Footnote, Heading, Level, List, MdxJsxFlowElement, Node, Position, TableAlign, TableCell};
+use super::tree::{Block, InlineBlock, InlineKind, JsxTag, ListBlock, QuoteBlock, TableItem};
+use crate::node::{
+    Blockquote, Footnote, Heading, Level, List, MdxJsxFlowElement, Node, Position, TableAlign, TableCell,
+};
 use rustc_hash::FxHashSet;
 
 /// The identifiers that references can resolve to.
@@ -114,11 +116,7 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
                 inline_block(block, references, &mut out)?;
                 out.into_iter().for_each(|node| frames.push(node));
             }
-            Block::Quote(quote) => {
-                let mut values = Vec::new();
-                flatten(quote.children, references, &mut values)?;
-                frames.push(Node::from_blockquote(values, Some(quote.position)));
-            }
+            Block::Quote(quote) => frames.push(quote_node(quote, references)?),
             Block::List(list) => {
                 let mut out = Vec::new();
                 list_nodes(list, 0, references, &mut out)?;
@@ -174,6 +172,33 @@ fn flatten(blocks: Vec<Block>, references: &References, nodes: &mut Vec<Node>) -
     nodes.append(&mut frames.root);
 
     Ok(())
+}
+
+/// A block quote, or a callout when the `callout` feature is enabled and its first line is a callout header.
+fn quote_node(quote: QuoteBlock, references: &References) -> Result<Node, String> {
+    #[cfg(feature = "callout")]
+    let (header, children) = {
+        let mut children = quote.children;
+        (super::callout::take_header(&mut children), children)
+    };
+    #[cfg(not(feature = "callout"))]
+    let children = quote.children;
+
+    let mut values = Vec::new();
+    flatten(children, references, &mut values)?;
+    let position = Some(quote.position);
+
+    #[cfg(feature = "callout")]
+    if let Some(header) = header {
+        return Ok(Node::Callout(crate::node::Callout {
+            kind: header.kind,
+            fold: header.fold,
+            title: header.title,
+            values,
+            position,
+        }));
+    }
+    Ok(Node::Blockquote(Blockquote { values, position }))
 }
 
 fn inline_block(block: InlineBlock, references: &References, nodes: &mut Vec<Node>) -> Result<(), String> {

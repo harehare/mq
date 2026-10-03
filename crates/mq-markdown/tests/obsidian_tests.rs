@@ -3,6 +3,7 @@
 #![cfg(feature = "obsidian")]
 
 use mq_markdown::{Markdown, Node};
+use proptest::prelude::*;
 use rstest::rstest;
 
 fn describe(node: &Node) -> String {
@@ -103,6 +104,11 @@ fn embeds(#[case] input: &str, #[case] expected: &str) {
 #[case::custom_type("> [!my-custom_1] T", "callout(my-custom_1||T)")]
 #[case::no_space_after_the_quote(">[!note] x", "callout(note||x)")]
 #[case::title_with_emphasis("> [!note] *Title* more\n> b", "callout(note||*Title* more)[text(b)]")]
+#[case::title_markup_then_paragraph("> [!note] *Title*\n>\n> Body", "callout(note||*Title*)[text(Body)]")]
+#[case::title_markup_then_markup_paragraph(
+    "> [!note] *Title*\n>\n> *Body* x",
+    "callout(note||*Title*)[em[text(Body)], text( x)]"
+)]
 #[case::title_with_code("> [!note] a `c` b", "callout(note||a `c` b)")]
 #[case::list_body("> [!note]\n> - a", "callout(note||)[item[text(a)]]")]
 #[case::code_body("> [!note]\n> ```\n> x\n> ```", "callout(note||)[codeblock]")]
@@ -126,4 +132,158 @@ fn writing_and_reading_back_keeps_the_nodes(#[case] input: &str) {
     let written = Markdown::from_markdown_str(input).unwrap().to_string();
     assert_eq!(parse(&written), parse(input), "{written:?}");
     assert_eq!(written, input);
+}
+
+/// Title lines, and the title they have to give: markup in a title spreads it over several nodes.
+const TITLES: &[(&str, &str)] = &[
+    ("Title", "Title"),
+    ("Two words", "Two words"),
+    ("*Title*", "*Title*"),
+    ("**Title**", "**Title**"),
+    ("`Title`", "`Title`"),
+    ("~~Title~~", "~~Title~~"),
+    ("[Title](u)", "[Title](u)"),
+    ("![Title](u)", "![Title](u)"),
+    ("[[Title]]", "[[Title]]"),
+    ("![[Title]]", "![[Title]]"),
+    ("*A* b", "*A* b"),
+    ("a *B*", "a *B*"),
+    ("*A* b *C*", "*A* b *C*"),
+    ("*A* **B**", "*A* **B**"),
+    ("**A** `b` [[c]]", "**A** `b` [[c]]"),
+];
+
+/// Bodies that mean the same alone as after a title, in any separator.
+const BODIES: &[&str] = &[
+    "Body",
+    "Body words",
+    "*Body*",
+    "*Body* x",
+    "x *Body*",
+    "**Body**",
+    "`Body`",
+    "[Body](u)",
+    "[[Body]]",
+    "![[Body]]",
+    "![Body](u)",
+    "a\nb",
+    "*a*\nb",
+    "- a",
+    "1. a",
+    "# h",
+    "```\nx\n```",
+    "> q",
+    "> [!tip] T\n> inner",
+];
+
+/// Bodies that are only right after a blank line, since after a title line they would run into it.
+const PARAGRAPH_BODIES: &[&str] = &["Body\n\nSecond", "*Body*\n\n*Second*", "a\n\n- b", "---"];
+
+/// Puts `prefix` before the first line and `rest` before the others.
+fn indent(text: &str, first: &str, rest: &str) -> String {
+    text.lines()
+        .enumerate()
+        .map(|(i, line)| {
+            let prefix = if i == 0 { first } else { rest };
+            if line.is_empty() && !prefix.trim().is_empty() && i > 0 {
+                prefix.trim_end().to_string()
+            } else {
+                format!("{prefix}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What `body` parses to as the content of a plain quote.
+fn body_alone(body: &str) -> Vec<String> {
+    let nodes = Markdown::from_markdown_str(&indent(body, "> ", "> ")).unwrap().nodes;
+    match nodes.as_slice() {
+        [Node::Blockquote(q)] => q.values.iter().map(describe).collect(),
+        [Node::Callout(c)] => c.values.iter().map(describe).collect(),
+        other => panic!("{body:?} is not a quote: {other:?}"),
+    }
+}
+
+/// The callout at the top, or in the first list item.
+fn find_callout(nodes: &[Node]) -> Option<&mq_markdown::Callout> {
+    nodes.iter().find_map(|node| match node {
+        Node::Callout(c) => Some(c),
+        Node::List(l) => find_callout(&l.values),
+        _ => None,
+    })
+}
+
+/// Parses a callout made of a header and a body, as a top-level quote and inside a list item, and checks
+/// that the title is the header line and the body is what the same text is in a plain quote.
+fn check_callout(kind: &str, fold: &str, title_source: &str, separator: &str, body: &str) {
+    let source = format!("> [!{kind}]{fold} {title_source}{separator}{}", indent(body, "", "> "));
+    let title = title_source.trim();
+    for source in [source.clone(), indent(&source, "- ", "  ")] {
+        let nodes = Markdown::from_markdown_str(&source).unwrap().nodes;
+        let callout = find_callout(&nodes).unwrap_or_else(|| panic!("no callout in {source:?}"));
+        assert_eq!(
+            callout.title.as_deref(),
+            (!title.is_empty()).then_some(title),
+            "title of {source:?}"
+        );
+        assert_eq!(callout.kind, kind, "type of {source:?}");
+        assert_eq!(callout.fold, fold.chars().next(), "fold of {source:?}");
+        let got: Vec<String> = callout.values.iter().map(describe).collect();
+        assert_eq!(got, body_alone(body), "body of {source:?}");
+    }
+}
+
+/// Whatever the title is, and however the body is separated from it, the title is the header line and
+/// the body is what the same text is in a plain quote.
+#[test]
+fn the_title_ends_with_the_header_line() {
+    let separators = [("blank", "\n>\n> "), ("direct", "\n> ")];
+    let mut cases = 0;
+    for kind in ["note", "NOTE", "my-custom_1"] {
+        for fold in ["", "+", "-"] {
+            for &(title_source, title) in TITLES {
+                assert_eq!(title_source, title, "titles are written as they are expected");
+                let bodies = BODIES
+                    .iter()
+                    .map(|b| (*b, true))
+                    .chain(PARAGRAPH_BODIES.iter().map(|b| (*b, false)));
+                for (body, runs_into_title) in bodies {
+                    for (name, separator) in separators {
+                        if name == "direct" && !runs_into_title {
+                            continue;
+                        }
+                        check_callout(kind, fold, title_source, separator, body);
+                        cases += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert!(cases > 500, "only {cases} cases ran");
+}
+
+proptest! {
+    /// The same for any type, any title made of characters that mean something in a title, and any number of
+    /// blank lines between the header and the body.
+    #[test]
+    fn any_title_ends_with_the_header_line(
+        kind in "[a-zA-Z0-9_-]{1,8}",
+        fold in prop::sample::select(vec!["", "+", "-"]),
+        title in "[a-zA-Z0-9 *_`~\\[\\]()!<>&#|.\\\\あ🎉-]{0,24}",
+        body in prop::sample::select(BODIES.iter().chain(PARAGRAPH_BODIES).copied().collect::<Vec<_>>()),
+        blank_lines in 1usize..4,
+    ) {
+        let separator = format!("\n{}> ", ">\n".repeat(blank_lines));
+        check_callout(&kind, fold, &title, &separator, body);
+    }
+
+    /// Without a blank line, a body that is not a paragraph still starts on the line after the title.
+    #[test]
+    fn any_title_ends_at_the_line_ending(
+        title in "[a-zA-Z0-9 *_`~\\[\\]()!<>&#|.\\\\あ🎉-]{0,24}",
+        body in prop::sample::select(BODIES.to_vec()),
+    ) {
+        check_callout("note", "", &title, "\n> ", body);
+    }
 }
