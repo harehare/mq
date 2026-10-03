@@ -4455,6 +4455,12 @@ fn condition_jumps_match_value_semantics_for_two_operands(#[case] op: &str) {
 #[case::three_and("a && b && c")]
 #[case::three_or("a || b || c")]
 #[case::both_groups("(a || b) && (b || c)")]
+#[case::negated_operand("!a && b")]
+#[case::negated_or("!(a || b)")]
+#[case::negated_and_in_or("!(a && b) || c")]
+#[case::double_negation("!!a")]
+#[case::negated_group_in_and("a && !(b || c)")]
+#[case::not_call("not(a) || not(b && c)")]
 fn condition_jumps_match_value_semantics_for_nested_conditions(#[case] shape: &str) {
     for a in ["true", "false", "0"] {
         for b in ["true", "false", "\"x\""] {
@@ -4475,6 +4481,10 @@ fn condition_jumps_match_value_semantics_for_nested_conditions(#[case] shape: &s
 #[case::elif_condition(r#"if (false && true): 1 elif (false || true): 2 else: 3"#, 2.0)]
 #[case::while_condition("var i = 0 | var n = 0 | while (i < 10 && n < 3): i += 1 | n += 1; | i", 3.0)]
 #[case::while_or_condition("var i = 0 | while (i < 3 || i == 5): i += 1; | i", 3.0)]
+#[case::while_negated_condition("var i = 0 | while (!(i >= 3)): i += 1; | i", 3.0)]
+#[case::negated_comparison("var x = 4 | if (!(x < 2)): 1 else: 2", 1.0)]
+#[case::user_defined_not_is_not_inlined("def not(x): true; | if (not(true)): 1 else: 2", 1.0)]
+#[case::until_and_unless_keep_working("var i = 0 | until (i >= 3 || i == 10): i += 1; | i", 3.0)]
 fn condition_jumps_short_circuit_and_drive_loops(#[case] code: &str, #[case] expected: f64) {
     assert_eq!(run(code), RuntimeValue::Number(expected.into()));
 }

@@ -1284,6 +1284,12 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     ip = (ip as i64 + *offset as i64) as usize;
                 }
             }
+            OpCode::JumpIfTrue(offset) => {
+                let cond = pop_value!();
+                if cond.is_truthy() {
+                    ip = (ip as i64 + *offset as i64) as usize;
+                }
+            }
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod => {
                 let b = pop_value!();
                 let a = pop_value!();

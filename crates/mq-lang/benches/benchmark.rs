@@ -225,6 +225,19 @@ fn eval_compiled_logical_condition_loop(bencher: divan::Bencher) {
     );
 }
 
+/// Branches on a negated condition and an `||` chain of string comparisons, whose comparisons
+/// must stay fused with their jumps.
+#[divan::bench]
+fn eval_compiled_negated_or_chain_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var i = 0 | var c = 0 | var s = "d" | while (i < 10000): i += 1 | (if (!(i < 3) && (s == "a" || s == "b" || s == "d")): c += 1 else: c); | c"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
 /// Appends to a string local in a loop, which must stay linear in the number of appends.
 #[divan::bench]
 fn eval_compiled_string_append_loop(bencher: divan::Bencher) {

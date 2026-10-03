@@ -56,6 +56,7 @@ fn branch_offset_mut(op: &mut OpCode) -> Option<&mut i32> {
     match op {
         OpCode::Jump(offset)
         | OpCode::JumpIfFalse(offset)
+        | OpCode::JumpIfTrue(offset)
         | OpCode::JumpIfFalseLocalLocal { offset, .. }
         | OpCode::JumpIfFalseLocalConst { offset, .. }
         | OpCode::JumpIfFalseLocalNumberConst { offset, .. } => Some(offset),
@@ -520,6 +521,7 @@ fn jump_targets(code: &[OpCode]) -> std::collections::BTreeSet<usize> {
         match op {
             OpCode::Jump(offset)
             | OpCode::JumpIfFalse(offset)
+            | OpCode::JumpIfTrue(offset)
             | OpCode::JumpIfFalseLocalLocal { offset, .. }
             | OpCode::JumpIfFalseLocalConst { offset, .. }
             | OpCode::JumpIfFalseLocalNumberConst { offset, .. }
@@ -582,6 +584,7 @@ fn rewrite_targets(op: OpCode, old_pc: usize, new_pc: usize, map: &[usize]) -> O
     match op {
         OpCode::Jump(offset) => OpCode::Jump(rewrite(offset)),
         OpCode::JumpIfFalse(offset) => OpCode::JumpIfFalse(rewrite(offset)),
+        OpCode::JumpIfTrue(offset) => OpCode::JumpIfTrue(rewrite(offset)),
         OpCode::JumpIfFalseLocalLocal {
             op,
             left,
@@ -863,6 +866,26 @@ mod tests {
                 OpCode::Return,
             ]
         ));
+    }
+
+    #[test]
+    fn peephole_threads_a_jump_if_true_through_a_jump() {
+        let mut chunk = Chunk {
+            code: vec![
+                OpCode::PushNone,
+                OpCode::JumpIfTrue(1),
+                OpCode::PushNone,
+                OpCode::Jump(1),
+                OpCode::PushNone,
+                OpCode::Return,
+            ],
+            ..Default::default()
+        };
+
+        thread_jumps(&mut chunk);
+
+        assert!(matches!(chunk.code[1], OpCode::JumpIfTrue(3)));
+        assert!(matches!(chunk.code[3], OpCode::Return));
     }
 
     #[test]

@@ -547,6 +547,10 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             writer.u8(tags::opcode::JUMP_IF_FALSE);
             writer.var_i32(*offset);
         }
+        OpCode::JumpIfTrue(offset) => {
+            writer.u8(tags::opcode::JUMP_IF_TRUE);
+            writer.var_i32(*offset);
+        }
         OpCode::Add => writer.u8(tags::opcode::ADD),
         OpCode::Sub => writer.u8(tags::opcode::SUB),
         OpCode::Mul => writer.u8(tags::opcode::MUL),
@@ -1226,6 +1230,7 @@ impl Decoder<'_> {
             tags::opcode::DUP => OpCode::Dup,
             tags::opcode::JUMP => OpCode::Jump(r.var_i32()?),
             tags::opcode::JUMP_IF_FALSE => OpCode::JumpIfFalse(r.var_i32()?),
+            tags::opcode::JUMP_IF_TRUE => OpCode::JumpIfTrue(r.var_i32()?),
             tags::opcode::ADD => OpCode::Add,
             tags::opcode::SUB => OpCode::Sub,
             tags::opcode::MUL => OpCode::Mul,

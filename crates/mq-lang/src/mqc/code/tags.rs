@@ -215,4 +215,5 @@ pub(super) mod opcode {
     pub(crate) const RETURN: u8 = 93;
     pub(crate) const YIELD: u8 = 94;
     pub(crate) const RESUME: u8 = 95;
+    pub(crate) const JUMP_IF_TRUE: u8 = 96;
 }
