@@ -63,19 +63,16 @@ fn branch_offset_mut(op: &mut OpCode) -> Option<&mut i32> {
     }
 }
 
-/// Jumps straight to the final destination of a chain of unconditional `Jump`s, and replaces a
-/// `Jump` that lands on a `Return` with that `Return`.
-///
-/// No instruction is added or removed, so jump targets and line entries stay valid.
+/// Jumps straight to the final destination of a chain of unconditional `Jump`s, and replaces a `Jump` that lands on a `Return` with that `Return`.
 fn thread_jumps(chunk: &mut Chunk) {
     for pc in 0..chunk.code.len() {
-        let is_jump = matches!(chunk.code[pc], OpCode::Jump(_));
         let Some(offset) = branch_offset_mut(&mut chunk.code[pc]).map(|offset| *offset) else {
             continue;
         };
         let Some(mut target) = jump_target(pc, offset) else {
             continue;
         };
+
         for _ in 0..MAX_JUMP_HOPS {
             let Some(OpCode::Jump(next)) = chunk.code.get(target) else {
                 break;
@@ -85,7 +82,8 @@ fn thread_jumps(chunk: &mut Chunk) {
             };
             target = next_target;
         }
-        if is_jump && matches!(chunk.code.get(target), Some(OpCode::Return)) {
+
+        if matches!(chunk.code[pc], OpCode::Jump(_)) && matches!(chunk.code.get(target), Some(OpCode::Return)) {
             chunk.code[pc] = OpCode::Return;
         } else if let Some(offset) = branch_offset_mut(&mut chunk.code[pc]) {
             *offset = target as i32 - pc as i32 - 1;
