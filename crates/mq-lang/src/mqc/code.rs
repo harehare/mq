@@ -738,13 +738,13 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             encode_selector(writer, tables, &payload.0)?;
             writer.var_u16(payload.1);
         }
-        OpCode::CallBuiltinLocal { builtin, local } => {
+        OpCode::CallBuiltinLocal { builtin, local, .. } => {
             writer.u8(tags::opcode::CALL_BUILTIN_LOCAL);
             tables.note_builtin(*builtin);
             tables.ident(writer, *builtin);
             writer.var_u16(*local);
         }
-        OpCode::CallBuiltin(ident, argc) => {
+        OpCode::CallNative { ident, argc, .. } | OpCode::CallBuiltin(ident, argc) => {
             writer.u8(tags::opcode::CALL_BUILTIN);
             tables.note_builtin(*ident);
             tables.ident(writer, *ident);
@@ -1348,11 +1348,24 @@ impl Decoder<'_> {
                 let selector = self.selector()?;
                 OpCode::SelectorMatchWithArgs(Box::new((selector, self.reader.var_u16()?)))
             }
-            tags::opcode::CALL_BUILTIN_LOCAL => OpCode::CallBuiltinLocal {
-                builtin: self.ident()?,
-                local: self.reader.var_u16()?,
-            },
-            tags::opcode::CALL_BUILTIN => OpCode::CallBuiltin(self.ident()?, self.reader.var_u16()?),
+            tags::opcode::CALL_BUILTIN_LOCAL => {
+                let builtin = self.ident()?;
+                let func = builtin::get_builtin_functions(&builtin)
+                    .ok_or_else(|| invalid(format!("`{builtin}` is not a native builtin")))?;
+                OpCode::CallBuiltinLocal {
+                    func,
+                    builtin,
+                    local: self.reader.var_u16()?,
+                }
+            }
+            tags::opcode::CALL_BUILTIN => {
+                let ident = self.ident()?;
+                let argc = self.reader.var_u16()?;
+                match builtin::get_builtin_functions(&ident) {
+                    Some(func) => OpCode::CallNative { func, ident, argc },
+                    None => OpCode::CallBuiltin(ident, argc),
+                }
+            }
             tags::opcode::CALL_STATIC => OpCode::CallStatic(r.var_u16()?, r.var_u16()?),
             tags::opcode::CALL_STATIC_EXACT => OpCode::CallStaticExact(r.var_u16()?, r.var_u16()?),
             tags::opcode::CALL_STATIC_EXACT0 => OpCode::CallStaticExact0(self.static_target()?),

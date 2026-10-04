@@ -2716,10 +2716,14 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         if args.len() == 1
             && !shadowed
-            && builtin::get_builtin_functions(&ident).is_some()
+            && let Some(func) = builtin::get_builtin_functions(&ident)
             && let Some(local) = self.current_local_slot(&args[0])
         {
-            self.emit(OpCode::CallBuiltinLocal { builtin: ident, local });
+            self.emit(OpCode::CallBuiltinLocal {
+                func,
+                builtin: ident,
+                local,
+            });
             return Ok(());
         }
         // Fast-path bytecode for an explicit, unshadowed `array(...)`/`dict(...)` call. The
@@ -2772,8 +2776,16 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         self.set_call_token_id(call_token_id);
         let argc = self.arg_count(args.len())?;
-        self.emit(OpCode::CallBuiltin(ident, argc));
+        self.emit_call_builtin(ident, argc);
         Ok(())
+    }
+
+    /// Emits a direct call, binding the native builtin now so the interpreter skips the name lookup.
+    fn emit_call_builtin(&mut self, ident: Ident, argc: u16) {
+        match builtin::get_builtin_functions(&ident) {
+            Some(func) => self.emit(OpCode::CallNative { func, ident, argc }),
+            None => self.emit(OpCode::CallBuiltin(ident, argc)),
+        };
     }
 
     fn compile_resume_builtin_call(
@@ -2906,7 +2918,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             self.set_call_token_id(call_token_id);
             let argc = self.arg_count(args.len())?;
-            self.emit(OpCode::CallBuiltin(builtins::DICT.into(), argc));
+            self.emit_call_builtin(builtins::DICT.into(), argc);
             return Ok(());
         }
         self.emit(OpCode::ArrayNew);
@@ -2922,7 +2934,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
         }
         self.set_call_token_id(call_token_id);
-        self.emit(OpCode::CallBuiltin(builtins::DICT.into(), 1));
+        self.emit_call_builtin(builtins::DICT.into(), 1);
         Ok(())
     }
 

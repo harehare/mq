@@ -381,10 +381,14 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::SelectorMatchWithArgs(payload) => {
             format!("SelectorMatchWithArgs {:?}, argc={}", payload.0, payload.1)
         }
-        bytecode::OpCode::CallBuiltinLocal { builtin, local: slot } => {
+        bytecode::OpCode::CallBuiltinLocal {
+            builtin, local: slot, ..
+        } => {
             format!("CallBuiltinLocal {builtin}, local={}", local(*slot))
         }
-        bytecode::OpCode::CallBuiltin(name, argc) => format!("CallBuiltin {name}, argc={argc}"),
+        bytecode::OpCode::CallNative { ident: name, argc, .. } | bytecode::OpCode::CallBuiltin(name, argc) => {
+            format!("CallBuiltin {name}, argc={argc}")
+        }
         bytecode::OpCode::CallStatic(chunk, argc) => format!("CallStatic chunk {chunk}, argc={argc}"),
         bytecode::OpCode::CallStaticExact(chunk, argc) => {
             format!("CallStaticExact chunk {chunk}, argc={argc}")

@@ -1038,6 +1038,37 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
     macro_rules! pop_value {
         () => {{ into_runtime_value(pop!(), chunks) }};
     }
+    // Most direct builtin calls have at most two arguments, which fit in `Args`' inline
+    // storage. Construct those in evaluation order directly; larger calls retain the compact
+    // generic pop-and-reverse path.
+    macro_rules! pop_call_args {
+        ($argc:expr) => {{
+            match $argc {
+                0 => Args::new(),
+                1 => {
+                    let mut args = Args::new();
+                    args.push(pop_value!());
+                    args
+                }
+                2 => {
+                    let second = pop_value!();
+                    let first = pop_value!();
+                    let mut args = Args::new();
+                    args.push(first);
+                    args.push(second);
+                    args
+                }
+                argc => {
+                    let mut args = Args::with_capacity(argc as usize);
+                    for _ in 0..argc {
+                        args.push(pop_value!());
+                    }
+                    args.reverse();
+                    args
+                }
+            }
+        }};
+    }
     macro_rules! bail {
         ($e:expr) => {
             return Err(locate(chunk, ip, $e))
@@ -1581,16 +1612,13 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     Selector::Heading((*level != 0).then_some(*level)),
                 )));
             }
-            OpCode::CallBuiltinLocal { builtin, local } => {
+            OpCode::CallBuiltinLocal { func, builtin, local } => {
                 let value = local_runtime_value(locals, *local, chunks)?;
-                let result = call_builtin(
-                    builtin,
-                    &[value],
-                    &borrow_self(locals, chunks),
-                    execution.env,
-                    execution.host_functions,
-                )
-                .map_err(|e| locate(chunk, ip, e))?;
+                let mut args = Args::new();
+                args.push(value);
+                let result =
+                    builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), builtin, args, execution.env)
+                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
                 stack.push(StackValue::Value(result));
             }
             OpCode::GetEnvVar(name_idx) => {
@@ -1617,34 +1645,15 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 stack.truncate(start);
                 stack.push(StackValue::Value(value));
             }
+            OpCode::CallNative { func, ident, argc } => {
+                let args = pop_call_args!(*argc);
+                let result =
+                    builtin::eval_resolved_builtin(func, &borrow_self(locals, chunks), ident, args, execution.env)
+                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
+                stack.push(StackValue::Value(result));
+            }
             OpCode::CallBuiltin(ident, argc) => {
-                // Most direct builtin calls have at most two arguments, which fit in `Args`'
-                // inline storage. Construct those in evaluation order directly; larger calls
-                // retain the compact generic pop-and-reverse path.
-                let args = match *argc {
-                    0 => Args::new(),
-                    1 => {
-                        let mut args = Args::new();
-                        args.push(pop_value!());
-                        args
-                    }
-                    2 => {
-                        let second = pop_value!();
-                        let first = pop_value!();
-                        let mut args = Args::new();
-                        args.push(first);
-                        args.push(second);
-                        args
-                    }
-                    _ => {
-                        let mut args = Args::with_capacity(*argc as usize);
-                        for _ in 0..*argc {
-                            args.push(pop_value!());
-                        }
-                        args.reverse();
-                        args
-                    }
-                };
+                let args = pop_call_args!(*argc);
                 let result = call_builtin_args(
                     ident,
                     args,

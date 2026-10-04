@@ -6,6 +6,7 @@ use crate::Shared;
 use crate::ast::TokenId;
 #[cfg(feature = "debugger")]
 use crate::ast::node::Node;
+use crate::runtime::builtin::BuiltinFunction;
 use crate::runtime::runtime_value::RuntimeValue;
 use crate::selector::Selector;
 use rustc_hash::{FxHashMap, FxHasher};
@@ -393,11 +394,19 @@ pub(crate) enum OpCode {
     SelectorMatchKind(NodeSelectorKind),
     SelectorMatchHeading(u8),
     SelectorMatchWithArgs(Box<(Selector, u16)>),
-    /// Calls a registered unary builtin with a local argument without stack materialization.
+    /// Calls a native unary builtin with a local argument without stack materialization.
     CallBuiltinLocal {
+        func: &'static BuiltinFunction,
         builtin: Ident,
         local: u16,
     },
+    /// Calls a native builtin resolved when the bytecode was built or decoded.
+    CallNative {
+        func: &'static BuiltinFunction,
+        ident: Ident,
+        argc: u16,
+    },
+    /// Calls a name that is not a native builtin, resolved against host functions at run time.
     CallBuiltin(Ident, u16),
     /// Calls a capture-free fixed-arity chunk through the checked fallback path.
     CallStatic(u16, u16),
@@ -593,6 +602,7 @@ impl OpCode {
             | Self::SelectorMatchHeading(_)
             | Self::SelectorMatchWithArgs(_)
             | Self::CallBuiltin(..)
+            | Self::CallNative { .. }
             | Self::CallStatic(..)
             | Self::CallStaticExact(..)
             | Self::CallStaticExact0(_)
@@ -697,6 +707,7 @@ impl OpCode {
             Self::SelectorMatchWithArgs(_) => "SelectorMatchWithArgs",
             Self::CallBuiltinLocal { .. } => "CallBuiltinLocal",
             Self::CallBuiltin(_, _) => "CallBuiltin",
+            Self::CallNative { .. } => "CallNative",
             Self::CallStatic(_, _) => "CallStatic",
             Self::CallStaticExact(_, _) => "CallStaticExact",
             Self::CallStaticExact0(_) => "CallStaticExact0",
@@ -1886,7 +1897,8 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         OpCode::CallBuiltinLocal { .. } => (0, 1),
         OpCode::InterpString(count) => (*count as usize, 1),
         OpCode::SelectorMatchWithArgs(payload) => (payload.1 as usize + 1, 1),
-        OpCode::CallBuiltin(_, count)
+        OpCode::CallNative { argc: count, .. }
+        | OpCode::CallBuiltin(_, count)
         | OpCode::CallStatic(_, count)
         | OpCode::CallStaticExact(_, count)
         | OpCode::CallStaticImplicitSelf(_, count)
@@ -1993,6 +2005,10 @@ fn verify_jump_target(chunk: &Chunk, chunk_index: usize, pc: usize, offset: i32)
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    fn native(name: &str) -> &'static BuiltinFunction {
+        crate::runtime::builtin::get_builtin_functions(&Ident::new(name)).expect("native builtin")
+    }
 
     #[test]
     fn push_const_reuses_safe_values_within_each_chunk() {
@@ -2131,6 +2147,13 @@ mod tests {
     #[case::pop(vec![OpCode::Pop, OpCode::Return], 0, 1, 0, 0)]
     #[case::binary(vec![OpCode::PushNone, OpCode::Add, OpCode::Return], 1, 2, 1, 0)]
     #[case::call_builtin(vec![OpCode::CallBuiltin(Ident::new("f"), 1), OpCode::Return], 0, 1, 0, 0)]
+    #[case::call_native(
+        vec![OpCode::CallNative { func: native("len"), ident: Ident::new("len"), argc: 1 }, OpCode::Return],
+        0,
+        1,
+        0,
+        0
+    )]
     // TeeLocal peeks, it doesn't duplicate: a second Pop should underflow.
     #[case::tee_local_does_not_duplicate(
         vec![OpCode::PushNone, OpCode::TeeLocal(0), OpCode::Pop, OpCode::Pop, OpCode::Return],
@@ -2290,7 +2313,7 @@ mod tests {
         OpCode::Return,
     ])]
     #[case::call_builtin_local(vec![
-        OpCode::CallBuiltinLocal { builtin: Ident::new("f"), local: 0 },
+        OpCode::CallBuiltinLocal { func: native("len"), builtin: Ident::new("len"), local: 0 },
         OpCode::Return,
     ])]
     fn verifier_rejects_out_of_bounds_local_slots(#[case] code: Vec<OpCode>) {
