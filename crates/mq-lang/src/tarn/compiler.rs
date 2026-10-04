@@ -642,6 +642,180 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
     }
 }
 
+/// Collects the names used inside functions nested in `program`, which can read or write the
+/// enclosing function's locals. `try` and `catch` bodies compile to nested functions too.
+///
+/// A nested function's own parameters and bindings are left out from where they are declared
+/// until the end of their block, since those uses cannot reach the enclosing function's locals.
+fn names_used_in_nested_functions(program: &Program) -> FxHashSet<Ident> {
+    let mut collector = NestedFunctionNames::default();
+    collector.block(program, false);
+    collector.names
+}
+
+#[derive(Default)]
+struct NestedFunctionNames {
+    names: FxHashSet<Ident>,
+    /// Names bound by the nested function being walked, with how many bindings are open.
+    own: FxHashMap<Ident, u32>,
+}
+
+impl NestedFunctionNames {
+    fn use_name(&mut self, ident: &IdentWithToken, nested: bool) {
+        if nested && !self.own.contains_key(&ident.name) {
+            self.names.insert(ident.name);
+        }
+    }
+
+    fn bind(&mut self, name: Ident) {
+        *self.own.entry(name).or_insert(0) += 1;
+    }
+
+    fn unbind(&mut self, name: Ident) {
+        if let Some(count) = self.own.get_mut(&name) {
+            *count -= 1;
+            if *count == 0 {
+                self.own.remove(&name);
+            }
+        }
+    }
+
+    /// Walks a function body. It starts without bindings from any enclosing nested function,
+    /// because a function declared before a binding may be compiled without seeing it.
+    fn function(&mut self, params: &ast::Params, body: &[Shared<Node>]) {
+        let outer = std::mem::take(&mut self.own);
+        for default in params.iter().filter_map(|parameter| parameter.default.as_ref()) {
+            self.node(default, true);
+        }
+        for parameter in params.iter() {
+            self.bind(parameter.ident.name);
+        }
+        self.block(body, true);
+        self.own = outer;
+    }
+
+    fn block(&mut self, nodes: &[Shared<Node>], nested: bool) {
+        let mut bound = Vec::new();
+        for node in nodes {
+            self.node(node, nested);
+            if nested && let Expr::Let(pattern, _) | Expr::Var(pattern, _) = &node.expr {
+                let mut names = Vec::new();
+                collect_pattern_idents(pattern, &mut names);
+                for name in names {
+                    self.bind(name);
+                    bound.push(name);
+                }
+            }
+        }
+        for name in bound {
+            self.unbind(name);
+        }
+    }
+
+    fn nodes(&mut self, nodes: &[Shared<Node>], nested: bool) {
+        for node in nodes {
+            self.node(node, nested);
+        }
+    }
+
+    fn node(&mut self, node: &Shared<Node>, nested: bool) {
+        match &node.expr {
+            Expr::Ident(ident) => self.use_name(ident, nested),
+            Expr::Assign(ident, value) => {
+                self.use_name(ident, nested);
+                self.node(value, nested);
+            }
+            Expr::IndexAssign(ident, index, value) => {
+                self.use_name(ident, nested);
+                self.node(index, nested);
+                self.node(value, nested);
+            }
+            Expr::Call(ident, args) => {
+                self.use_name(ident, nested);
+                self.nodes(args, nested);
+            }
+            Expr::Def(_, params, body) | Expr::Fn(params, body) => self.function(params, body),
+            Expr::Try(body, binder, catch) => {
+                let outer = std::mem::take(&mut self.own);
+                self.node(body, true);
+                if let Some(binder) = binder {
+                    self.bind(binder.name);
+                }
+                self.node(catch, true);
+                self.own = outer;
+            }
+            Expr::As(_, value) | Expr::Let(_, value) | Expr::Var(_, value) | Expr::Paren(value) => {
+                self.node(value, nested);
+            }
+            Expr::UnaryOp(_, operand) => self.node(operand, nested),
+            Expr::BinaryOp(_, lhs, rhs) => {
+                self.node(lhs, nested);
+                self.node(rhs, nested);
+            }
+            Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => self.block(body, nested),
+            Expr::Array(args) | Expr::Dict(args) => self.nodes(args, nested),
+            Expr::CallDynamic(callee, args) => {
+                self.node(callee, nested);
+                self.nodes(args, nested);
+            }
+            Expr::And(operands) | Expr::Or(operands) => self.nodes(operands, nested),
+            Expr::InterpolatedString(segments) => {
+                for segment in segments {
+                    if let StringSegment::Expr(expr) = segment {
+                        self.node(expr, nested);
+                    }
+                }
+            }
+            Expr::SelectorCall(_, args) => self.nodes(args, nested),
+            Expr::While(condition, body) | Expr::Until(condition, body) => {
+                self.node(condition, nested);
+                self.block(body, nested);
+            }
+            Expr::Foreach(binder, iterable, body) => {
+                self.node(iterable, nested);
+                if nested {
+                    self.bind(binder.name);
+                }
+                self.block(body, nested);
+                if nested {
+                    self.unbind(binder.name);
+                }
+            }
+            Expr::If(branches) | Expr::Unless(branches) => {
+                for (condition, body) in branches {
+                    if let Some(condition) = condition {
+                        self.node(condition, nested);
+                    }
+                    self.node(body, nested);
+                }
+            }
+            Expr::Match(subject, arms) => {
+                self.node(subject, nested);
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        self.node(guard, nested);
+                    }
+                    self.node(&arm.body, nested);
+                }
+            }
+            Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => self.nodes(args, nested),
+            Expr::Break(value) | Expr::Yield(value) => {
+                if let Some(value) = value {
+                    self.node(value, nested);
+                }
+            }
+            Expr::Literal(_)
+            | Expr::Selector(_)
+            | Expr::Include(_)
+            | Expr::Import(_, _)
+            | Expr::QualifiedAccess(_, AccessTarget::Ident(_))
+            | Expr::Self_
+            | Expr::Nodes
+            | Expr::Continue => {}
+        }
+    }
+}
+
 /// Collects direct function names used by a program.
 fn referenced_names_in_program(program: &Program) -> FxHashSet<Ident> {
     let mut names = FxHashSet::default();
@@ -838,6 +1012,7 @@ fn compile_program_impl<R: ModuleResolver>(
     seeds: CompileSeeds<'_>,
 ) -> CompileResult<(CompiledProgram, FxHashSet<Ident>)> {
     let mut scope = FunctionScope::default();
+    scope.set_body(program);
     assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
     for name in seeds.seed_bindings {
         let slot = scope.declare(*name);
@@ -1246,6 +1421,7 @@ impl<R: ModuleResolver> Compiler<R> {
         self.current = new_index as usize;
 
         let mut scope = FunctionScope::default();
+        scope.set_body(body);
         assert_eq!(scope.declare_synthetic(), SELF_SLOT, "self must be slot 0");
         if let Some(name) = name_for_shadow
             && builtin::get_builtin_functions(&name).is_some()
@@ -2849,10 +3025,19 @@ impl<R: ModuleResolver> Compiler<R> {
                 if self.scope_mut().is_immutable(slot) {
                     return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
                 }
-                self.compile_expr(index)?;
-                self.compile_expr(value)?;
-                self.set_call_token_id(token_id);
-                self.emit(OpCode::SetIndexLocal(slot));
+                if self.is_used_by_nested_function(name) {
+                    self.emit(OpCode::GetLocal(slot));
+                    self.compile_expr(index)?;
+                    self.compile_expr(value)?;
+                    self.set_call_token_id(token_id);
+                    self.emit_call_builtin(builtins::SET.into(), 3);
+                    self.emit(OpCode::SetLocal(slot));
+                } else {
+                    self.compile_expr(index)?;
+                    self.compile_expr(value)?;
+                    self.set_call_token_id(token_id);
+                    self.emit(OpCode::SetIndexLocal(slot));
+                }
             }
             Some(Resolved::Upvalue {
                 index: upvalue,
@@ -2874,6 +3059,14 @@ impl<R: ModuleResolver> Compiler<R> {
         Ok(())
     }
 
+    /// Whether a function nested in the current one uses `name`. The in-place update opcodes
+    /// read the local after their operands run, so a call in an operand could change what they
+    /// start from; the generic read-first sequence is used for such locals.
+    fn is_used_by_nested_function(&mut self, name: Ident) -> bool {
+        self.scope_mut()
+            .is_used_by_nested_function(name, names_used_in_nested_functions)
+    }
+
     /// Compiles `x = x + rhs` on a mutable local `x` into an opcode that appends to the local in
     /// place; reading `x` first would leave a second reference alive and copy it on every append.
     ///
@@ -2890,6 +3083,7 @@ impl<R: ModuleResolver> Compiler<R> {
             || !matches!(&lhs.expr, Expr::Ident(ident) if ident.name == name)
             || matches!(rhs.expr, Expr::Literal(_))
             || self.current_local_slot(rhs).is_some()
+            || self.is_used_by_nested_function(name)
         {
             return Ok(false);
         }

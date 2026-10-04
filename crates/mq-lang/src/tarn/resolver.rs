@@ -1,5 +1,7 @@
 use super::bytecode::UpvalueSource;
 use crate::Ident;
+use crate::ast::Program;
+use rustc_hash::FxHashSet;
 
 /// Always-active root lexical block.
 const ROOT_BLOCK: u32 = 0;
@@ -18,6 +20,9 @@ pub(crate) struct FunctionScope {
     /// Calls through these slots can bypass materializing and loading a closure.
     static_functions: std::collections::HashMap<u16, u16>,
     pub(crate) shadowed_builtin: Option<Ident>,
+    /// The body this scope compiles, used to find the names that nested functions use.
+    body: Option<Program>,
+    nested_function_names: Option<FxHashSet<Ident>>,
 }
 
 impl Default for FunctionScope {
@@ -31,11 +36,35 @@ impl Default for FunctionScope {
             immutable: std::collections::HashSet::new(),
             static_functions: std::collections::HashMap::new(),
             shadowed_builtin: None,
+            body: None,
+            nested_function_names: None,
         }
     }
 }
 
 impl FunctionScope {
+    /// Records the body compiled in this scope.
+    pub(crate) fn set_body(&mut self, body: &Program) {
+        self.body = Some(Program::clone(body));
+    }
+
+    /// Returns whether a function nested in this scope's body uses `name`, so it may read or
+    /// write the local while the enclosing code is still running.
+    ///
+    /// `collect` runs once, on first use. Without a recorded body the answer is always `true`.
+    pub(crate) fn is_used_by_nested_function(
+        &mut self,
+        name: Ident,
+        collect: impl FnOnce(&Program) -> FxHashSet<Ident>,
+    ) -> bool {
+        let Some(body) = &self.body else {
+            return true;
+        };
+        self.nested_function_names
+            .get_or_insert_with(|| collect(body))
+            .contains(&name)
+    }
+
     /// Opens a lexical block (match arm, loop body); its names resolve only until `pop_scope`.
     pub(crate) fn push_scope(&mut self) {
         let block = self.next_block;

@@ -616,8 +616,47 @@ fn failed_add_assignment_keeps_local_intact() {
 }
 
 #[rstest]
+#[case::add_assign_number("var x = 1 | def f(): x = 10 | 0; | x = x + f() | x == 1")]
+#[case::add_assign_array("var a = [1] | def f(): a = [9] | [0]; | a = a + f() | a == [1, 0]")]
+#[case::add_assign_string(r#"var s = "a" | def f(): s = "z" | "b"; | s = s + f() | s == "ab""#)]
+#[case::compound_add_assign("var x = 1 | def f(): x = 10 | 0; | x += f() | x == 1")]
+#[case::right_operand_still_wins_when_called_first("var x = 1 | def f(): x = 10 | 0; | x = f() + x | x == 10")]
+#[case::index_assign("var a = [1, 2] | def f(): a = [9, 9] | 5; | a[0] = f() | a == [5, 2]")]
+#[case::index_assign_key("var a = [1, 2] | def f(): a = [9, 9] | 1; | a[f()] = 7 | a == [1, 7]")]
+#[case::try_body("var x = 1 | x = x + (try: do x = 10 | 0 end catch: 0) | x == 1")]
+#[case::fn_literal("var a = [1, 2] | var g = fn(): a = [9, 9] | 5; | a[0] = g() | a == [5, 2]")]
+fn local_updates_read_captured_local_before_operands_run(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::index_set_captured("var a = [1] | def f(): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::index_set_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::add_array_used_before_own_binding("var a = [1] | def f(): a | var a = 2 | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::add_array_captured("var a = [1] | def f(): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+fn captured_locals_skip_in_place_opcodes(#[case] code: &str, #[case] unexpected: fn(&super::bytecode::OpCode) -> bool) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        !compiled
+            .chunks
+            .iter()
+            .flat_map(|chunk| chunk.code.iter())
+            .any(unexpected),
+        "{:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
 #[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
 #[case::add_array("var a = [1] | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::index_set_other_function_param("var a = [1] | def f(a): a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::add_array_other_function_param("var a = [1] | def f(a): a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+#[case::index_set_other_function_local("var a = [1] | def f(): var a = [] | a; | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::add_array_other_function_local("var a = [1] | def f(): var a = [] | a; | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
 fn local_collection_updates_compile_to_in_place_opcodes(
     #[case] code: &str,
     #[case] expected: fn(&super::bytecode::OpCode) -> bool,
