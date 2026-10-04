@@ -155,6 +155,26 @@ fn unary_builtin_calls_with_local_arguments_use_compact_bytecode() {
 }
 
 #[rstest]
+#[case::native_builtin("upcase(\"a\", 1)", true)]
+#[case::non_native_name("no_such_builtin(1)", false)]
+fn direct_calls_bind_native_builtins_at_compile_time(#[case] code: &str, #[case] native: bool) {
+    use super::bytecode::OpCode;
+
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+    let ops = || compiled.chunks.iter().flat_map(|chunk| chunk.code.iter());
+
+    assert_eq!(
+        ops().any(|op| matches!(op, OpCode::CallNative { .. })),
+        native,
+        "{:?}",
+        compiled.chunks
+    );
+    assert_eq!(ops().any(|op| matches!(op, OpCode::CallBuiltin(..))), !native);
+}
+
+#[rstest]
 #[case::not_operator("let a = true | let b = !a | b")]
 #[case::not_call("let a = true | let b = not(a) | b")]
 #[case::not_in_array("let a = true | [!a, !!a]")]
@@ -173,7 +193,10 @@ fn prefix_operators_compile_to_opcodes_not_builtin_calls(#[case] code: &str) {
         compiled.chunks
     );
     assert!(
-        !ops().any(|op| matches!(op, OpCode::CallBuiltin(..) | OpCode::CallBuiltinLocal { .. })),
+        !ops().any(|op| matches!(
+            op,
+            OpCode::CallBuiltin(..) | OpCode::CallNative { .. } | OpCode::CallBuiltinLocal { .. }
+        )),
         "unexpected builtin call: {:?}",
         compiled.chunks
     );
