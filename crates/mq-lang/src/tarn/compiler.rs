@@ -580,7 +580,7 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             }
         }
         Expr::SelectorCall(_, args) => {
-            for arg in args {
+            for arg in args.iter() {
                 collect_soft_builtin_names(arg, shadowed, names);
             }
         }
@@ -610,7 +610,7 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             }
         }
         Expr::QualifiedAccess(_, AccessTarget::Call(_, args)) => {
-            for arg in args {
+            for arg in args.iter() {
                 collect_soft_builtin_names(arg, shadowed, names);
             }
         }
@@ -698,7 +698,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
             }
         }
         Expr::SelectorCall(_, args) => {
-            for arg in args {
+            for arg in args.iter() {
                 collect_referenced_names(arg, names);
             }
         }
@@ -729,7 +729,7 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
         }
         Expr::QualifiedAccess(_, AccessTarget::Call(ident, args)) => {
             names.insert(ident.name);
-            for arg in args {
+            for arg in args.iter() {
                 collect_referenced_names(arg, names);
             }
         }
@@ -780,9 +780,8 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         // not part of the enclosing function body. A nested module checks its own boundary when
         // it is compiled below.
         Expr::Module(_, _) => false,
-        Expr::Call(_, args) | Expr::SelectorCall(_, args) | Expr::Array(args) | Expr::Dict(args) => {
-            args.iter().any(node_contains_direct_yield)
-        }
+        Expr::Call(_, args) | Expr::Array(args) | Expr::Dict(args) => args.iter().any(node_contains_direct_yield),
+        Expr::SelectorCall(_, args) => args.iter().any(node_contains_direct_yield),
         Expr::CallDynamic(callee, args) => {
             node_contains_direct_yield(callee) || args.iter().any(node_contains_direct_yield)
         }
@@ -2252,7 +2251,7 @@ impl<R: ModuleResolver> Compiler<R> {
             Resolved::Upvalue { index: idx, .. } => self.emit(OpCode::GetUpvalue(idx)),
         };
         if let AccessTarget::Call(_, args) = target {
-            for arg in args {
+            for arg in args.iter() {
                 self.compile_expr(arg)?;
             }
             let argc = self.arg_count(args.len())?;
@@ -2499,7 +2498,7 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::SelectorCall(selector, args) => {
                 self.emit(OpCode::GetLocal(SELF_SLOT));
-                for arg in args {
+                for arg in args.iter() {
                     self.compile_expr(arg)?;
                 }
                 let argc = self.arg_count(args.len())?;

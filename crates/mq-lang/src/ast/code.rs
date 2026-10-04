@@ -903,7 +903,7 @@ mod tests {
 
     #[rstest]
     #[case::if_simple(
-        Expr::If(smallvec![
+        Expr::If(vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -912,7 +912,7 @@ mod tests {
         "if (x): 1"
     )]
     #[case::if_else(
-        Expr::If(smallvec![
+        Expr::If(vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -925,7 +925,7 @@ mod tests {
         "if (x): 1 else: 2"
     )]
     #[case::if_elif_else(
-        Expr::If(smallvec![
+        Expr::If(vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -948,7 +948,7 @@ mod tests {
 
     #[rstest]
     #[case::unless_simple(
-        Expr::Unless(smallvec![
+        Expr::Unless(vec![
             (
                 Some(Shared::new(create_node(Expr::Ident(IdentWithToken::new("x"))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))
@@ -1254,7 +1254,7 @@ mod tests {
             vec![IdentWithToken::new("module")],
             AccessTarget::Call(
                 IdentWithToken::new("func"),
-                smallvec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
+                Box::new(smallvec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))])
             )
         ),
         "module::func(1)"

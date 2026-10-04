@@ -1126,7 +1126,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let args = self.parse_args()?;
                             let access_target = AccessTarget::Call(
                                 IdentWithToken::new_with_token(&next_ident, Some(self.shared_token(next_token))),
-                                args,
+                                Box::new(args),
                             );
 
                             let token_id = self.alloc_token(ident_token);
@@ -1643,8 +1643,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches: Branches = SmallVec::new();
-        branches.push((Some(Shared::clone(cond)), then_expr));
+        let branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
 
         Ok(Shared::new(Node {
             token_id: self.alloc_token(unless_token),
@@ -1763,8 +1762,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches: Branches = SmallVec::new();
-        branches.push((Some(Shared::clone(cond)), then_expr));
+        let mut branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
 
         let elif_branches = self.parse_elif()?;
         branches.extend(elif_branches);
@@ -2587,7 +2585,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
 
             let step_expr = if self.is_next_token(|kind| matches!(kind, TokenKind::LParen)) {
-                Expr::SelectorCall(step_selector, self.parse_args()?)
+                Expr::SelectorCall(step_selector, Box::new(self.parse_args()?))
             } else {
                 Expr::Selector(step_selector)
             };
@@ -2758,7 +2756,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let args = self.parse_args()?;
                 let base_node = Shared::new(Node {
                     token_id: self.alloc_token(token),
-                    expr: Expr::SelectorCall(selector, args),
+                    expr: Expr::SelectorCall(selector, Box::new(args)),
                 });
                 // Check for attribute access or a descendant chain continuation: `.h(1).level`, `.h(1) .code`
                 return self.parse_selector_tail(token, base_node);
@@ -2815,7 +2813,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let token_id = self.alloc_token(token);
                     nodes.push(Shared::new(Node {
                         token_id,
-                        expr: Expr::SelectorCall(Selector::List(None, None), smallvec![Shared::clone(node)]),
+                        expr: Expr::SelectorCall(Selector::List(None, None), Box::new(smallvec![Shared::clone(node)])),
                     }));
                     return Ok(Shared::new(Node {
                         token_id: self.alloc_token(token),
@@ -2884,7 +2882,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let token_id = self.alloc_token(token);
             return Ok(Shared::new(Node {
                 token_id,
-                expr: Expr::SelectorCall(selector, args),
+                expr: Expr::SelectorCall(selector, Box::new(args)),
             }));
         }
 
@@ -3818,7 +3816,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 7.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3861,7 +3859,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 11.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3905,7 +3903,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3938,7 +3936,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 8.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -4172,7 +4170,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Expr::Unless(smallvec![
+                expr: Expr::Unless(vec![
                     (
                         Some(Shared::new(Node {
                             token_id: 1.into(),
@@ -4390,10 +4388,10 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_heading_multi_arg(
@@ -4411,7 +4409,7 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // args are allocated first (id=0, id=1), then the selector token (id=2)
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -4420,7 +4418,7 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::selector_call_code_lang(
@@ -4436,10 +4434,10 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Code,
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Literal(Literal::String("rust".to_owned())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_with_attribute(
@@ -4464,10 +4462,10 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
                             Selector::Heading(None),
-                            smallvec![Shared::new(Node {
+                            Box::new(smallvec![Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::Number(1.into())),
-                            })],
+                            })]),
                         ),
                     }),
                     Shared::new(Node {
@@ -4499,10 +4497,10 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
                             Selector::Code,
-                            smallvec![Shared::new(Node {
+                            Box::new(smallvec![Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::String("rust".to_owned())),
-                            })],
+                            })]),
                         ),
                     }),
                     Shared::new(Node {
@@ -4541,10 +4539,10 @@ mod tests {
             token_id: 2.into(),
             expr: Expr::SelectorCall(
                 Selector::List(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Number(2.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_single_arg(
@@ -4563,10 +4561,10 @@ mod tests {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 2.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_list_bracket_variable(
@@ -4581,13 +4579,13 @@ mod tests {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
                 Selector::List(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                     )),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_column_variable(
@@ -4604,7 +4602,7 @@ mod tests {
             token_id: 5.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 4.into(),
                         expr: Expr::Literal(Literal::None),
@@ -4616,7 +4614,7 @@ mod tests {
                             Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                         )),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::selector_call_table_bracket_variable(
@@ -4633,13 +4631,13 @@ mod tests {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                     )),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_row_col_args(
@@ -4660,7 +4658,7 @@ mod tests {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -4669,7 +4667,7 @@ mod tests {
                         token_id: 3.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::foreach_error(
@@ -5336,7 +5334,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(smallvec![
+                            expr: Expr::If(vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -5554,7 +5552,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(smallvec![
+                            expr: Expr::If(vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -7755,12 +7753,12 @@ mod tests {
                     vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                        smallvec![
+                        Box::new(smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::String("arg".to_owned())),
                             }),
-                        ],
+                        ]),
                     ),
                 ),
             })
@@ -7786,7 +7784,7 @@ mod tests {
                     ],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                        smallvec![],
+                        Box::new(smallvec![]),
                     ),
                 ),
             })
@@ -7887,7 +7885,7 @@ mod tests {
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                                    smallvec![],
+                                    Box::new(smallvec![]),
                                 ),
                             ),
                         }),
@@ -7928,7 +7926,7 @@ mod tests {
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                                    smallvec![],
+                                    Box::new(smallvec![]),
                                 ),
                             ),
                         }),
