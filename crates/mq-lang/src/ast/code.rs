@@ -352,8 +352,8 @@ fn escape_string(s: &str) -> String {
     result
 }
 
-/// Matches `Parser::binary_op_precedence` so generated code re-parses into the same tree.
-fn binary_op_precedence(op: BinaryOp) -> u8 {
+/// Matches `TokenKind::binary_op_precedence` so generated code re-parses into the same tree.
+pub(super) fn binary_op_precedence(op: BinaryOp) -> u8 {
     match op {
         BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => 0,
         BinaryOp::Add | BinaryOp::Sub => 1,

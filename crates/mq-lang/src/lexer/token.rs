@@ -134,7 +134,8 @@ pub enum TokenKind {
 
 impl TokenKind {
     /// Binding precedence of a binary operator (higher binds tighter); `None` for other tokens.
-    /// Shared by the AST and CST parsers so both build the same tree shape.
+    /// All binary operators are left-associative. Shared by the AST and CST parsers so both build
+    /// the same tree shape.
     pub(crate) fn binary_op_precedence(&self) -> Option<u8> {
         match self {
             TokenKind::Equal
