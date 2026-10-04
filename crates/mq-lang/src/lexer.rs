@@ -24,7 +24,14 @@ impl Lexer {
     }
 
     pub fn tokenize(&self, input: &str, module_id: ModuleId) -> Result<Vec<Token>, SyntaxError> {
+        self.tokenize_from(input, module_id, Position { line: 1, column: 1 })
+    }
+
+    /// Like [`Lexer::tokenize`], but token ranges are reported as if `input` began at `start`.
+    pub fn tokenize_from(&self, input: &str, module_id: ModuleId, start: Position) -> Result<Vec<Token>, SyntaxError> {
         let mut cursor = Cursor::new(input, module_id);
+        cursor.line = start.line;
+        cursor.col = start.column;
         let mut tokens = Vec::with_capacity((input.len() / 5).max(16));
 
         if self.options.include_spaces {
@@ -883,6 +890,15 @@ mod tests {
     use super::*;
     use proptest::proptest;
     use rstest::rstest;
+
+    #[test]
+    fn tokenize_from_offsets_first_line_only() {
+        let tokens = Lexer::new(Options::default())
+            .tokenize_from("a\n b", 1.into(), Position { line: 3, column: 8 })
+            .unwrap();
+        assert_eq!(tokens[0].range.start, Position { line: 3, column: 8 });
+        assert_eq!(tokens[1].range.start, Position { line: 4, column: 2 });
+    }
 
     #[rstest]
     #[case("and(contains(\"test\"))",

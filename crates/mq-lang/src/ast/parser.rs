@@ -4,6 +4,7 @@ use crate::error::syntax::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::token::{Token, TokenKind};
 use crate::module::ModuleId;
+use crate::range::Position;
 use crate::runtime::builtin::io_context;
 use crate::selector::Selector;
 use crate::{Ident, Shared, lexer};
@@ -2222,8 +2223,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                         parsed_segments.push(super::node::StringSegment::Text(text.clone()));
                     }
                     lexer::token::StringSegment::Expr(expr_str, range) => {
-                        // Parse the expression string
-                        let expr_str = expr_str.trim();
+                        let expr_src = expr_str.as_str();
+                        let expr_str = expr_src.trim();
 
                         // Handle special cases first
                         if expr_str == constants::identifiers::SELF {
@@ -2232,30 +2233,20 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             // Environment variable
                             parsed_segments.push(super::node::StringSegment::Env(SmolStr::from(stripped)));
                         } else {
-                            // Parse as a full expression
-                            let lexer = Lexer::new(crate::lexer::Options::default());
-                            let tokens = lexer.tokenize(expr_str, token.module_id).map_err(|_| {
-                                SyntaxError::UnexpectedToken(Token {
-                                    range: *range,
-                                    kind: TokenKind::InterpolatedString(vec![]),
-                                    module_id: token.module_id,
-                                })
-                            })?;
+                            // Lex from the original text so token ranges point into the source.
+                            let expr_start = Position {
+                                line: range.start.line,
+                                column: range.start.column + 2,
+                            };
+                            let tokens = Lexer::new(crate::lexer::Options::default()).tokenize_from(
+                                expr_src,
+                                token.module_id,
+                                expr_start,
+                            )?;
 
                             let mut parser = Parser::new(tokens.iter(), self.token_arena, token.module_id);
                             parser.depth = self.depth;
-                            let expr_node = parser.parse_expr_from_tokens().map_err(|e| match e {
-                                // The token range is local to the extracted expression, so use the segment range.
-                                SyntaxError::TooDeeplyNested(mut nested, limit) => {
-                                    nested.range = *range;
-                                    SyntaxError::TooDeeplyNested(nested, limit)
-                                }
-                                _ => SyntaxError::UnexpectedToken(Token {
-                                    range: *range,
-                                    kind: TokenKind::InterpolatedString(vec![]),
-                                    module_id: token.module_id,
-                                }),
-                            })?;
+                            let expr_node = parser.parse_expr_from_tokens()?;
 
                             parsed_segments.push(super::node::StringSegment::Expr(expr_node));
                         }
@@ -9907,6 +9898,18 @@ Shared::new(Node {
                 }
             }
             Err(err) => panic!("Parse error: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_interpolated_string_inner_syntax_error_is_propagated() {
+        let result = parse_source("let a = 1\n| s\"a ${ 1 + } b\"");
+        match result {
+            Err(SyntaxError::UnexpectedEOFAfterToken(token)) => {
+                assert_eq!(token.kind, TokenKind::Plus);
+                assert_eq!(token.range.start, Position { line: 2, column: 12 });
+            }
+            other => panic!("expected the inner UnexpectedEOFAfterToken, got {:?}", other),
         }
     }
 
