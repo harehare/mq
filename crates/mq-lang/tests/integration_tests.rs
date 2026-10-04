@@ -4144,7 +4144,7 @@ mod ast_json {
     #[case(
     Shared::new(AstNode {
         token_id: default_token_id(),
-        expr: AstExpr::If(smallvec![
+        expr: AstExpr::If(vec![
             (
                 Some(Shared::new(AstNode {
                     token_id: default_token_id(),

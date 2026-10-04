@@ -4,7 +4,6 @@ use mq_lang::{
     SharedCell,
 };
 use proptest::prelude::*;
-use smallvec::smallvec;
 
 fn create_token_arena() -> Shared<SharedCell<Arena<Shared<mq_lang::Token>>>> {
     Shared::new(SharedCell::new(Arena::new(1024)))
@@ -167,13 +166,13 @@ mod strategies {
 
     pub fn if_expr() -> impl Strategy<Value = Shared<AstNode>> {
         (simple_expr(), simple_expr(), simple_expr()).prop_map(|(cond, then_branch, else_branch)| {
-            make_node(AstExpr::If(smallvec![(Some(cond), then_branch), (None, else_branch)]))
+            make_node(AstExpr::If(vec![(Some(cond), then_branch), (None, else_branch)]))
         })
     }
 
     pub fn if_expr_complex() -> impl Strategy<Value = Shared<AstNode>> {
         (simple_expr(), simple_expr(), prop::option::of(simple_expr())).prop_map(|(cond, then_branch, else_branch)| {
-            let mut branches = smallvec![(Some(cond), then_branch)];
+            let mut branches = vec![(Some(cond), then_branch)];
             if let Some(else_b) = else_branch {
                 branches.push((None, else_b));
             }

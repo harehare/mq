@@ -146,13 +146,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_equality_expr(token)
     }
 
-    #[inline(always)]
-    fn binary_op_precedence(kind: &TokenKind) -> u8 {
-        kind.binary_op_precedence().unwrap_or(0)
-    }
-
-    fn binary_op_function_name(kind: &TokenKind) -> &'static str {
-        match kind {
+    fn binary_op_function_name(kind: &TokenKind) -> Option<&'static str> {
+        Some(match kind {
             TokenKind::Asterisk => constants::builtins::MUL,
             TokenKind::Coalesce => constants::builtins::COALESCE,
             TokenKind::EqEq => constants::builtins::EQ,
@@ -171,8 +166,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::LeftShift => constants::builtins::SHIFT_LEFT,
             TokenKind::RightShift => constants::builtins::SHIFT_RIGHT,
             TokenKind::Convert => constants::builtins::CONVERT,
-            _ => unreachable!("binary_op_function_name called with non-binary operator"),
-        }
+            _ => return None,
+        })
     }
 
     /// Maps the token kinds with a dedicated VM fast path (`+ - * / % == != < <= > >=`) to their
@@ -256,11 +251,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_binary_op(parser: &mut Parser, min_prec: u8, mut lhs: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         while let Some(peeked_token_rc) = parser.tokens.peek() {
             let kind = &peeked_token_rc.kind;
-            if !Self::is_binary_op(kind) {
+            let Some(prec) = kind.binary_op_precedence() else {
                 break;
-            }
-
-            let prec = Self::binary_op_precedence(kind);
+            };
 
             if prec < min_prec {
                 break;
@@ -279,15 +272,11 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let mut rhs = parser.parse_primary_expr(rhs_token)?;
 
             loop {
-                let next_prec = if let Some(next_token) = parser.tokens.peek() {
-                    if Self::is_binary_op(&next_token.kind) {
-                        Self::binary_op_precedence(&next_token.kind)
-                    } else {
-                        0
-                    }
-                } else {
-                    0
-                };
+                let next_prec = parser
+                    .tokens
+                    .peek()
+                    .and_then(|next_token| next_token.kind.binary_op_precedence())
+                    .unwrap_or(0);
                 if next_prec > prec {
                     rhs = Self::parse_binary_op(parser, next_prec, rhs)?;
                 } else {
@@ -362,19 +351,23 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     });
                     parser.create_assign(&lhs, floor_div_rhs, operator_token_id, operator_token)?
                 }
-                _ => Shared::new(Node {
-                    token_id: operator_token_id,
-                    expr: match Self::binary_op_kind(kind) {
+                _ => {
+                    let expr = match Self::binary_op_kind(kind) {
                         Some(op) => Expr::BinaryOp(op, lhs, rhs),
-                        None => Expr::Call(
-                            IdentWithToken::new_with_token(
-                                Self::binary_op_function_name(kind),
-                                Some(parser.shared_token(operator_token)),
-                            ),
-                            smallvec![lhs, rhs],
-                        ),
-                    },
-                }),
+                        None => {
+                            let name = Self::binary_op_function_name(kind)
+                                .ok_or_else(|| SyntaxError::UnexpectedToken(operator_token.clone()))?;
+                            Expr::Call(
+                                IdentWithToken::new_with_token(name, Some(parser.shared_token(operator_token))),
+                                smallvec![lhs, rhs],
+                            )
+                        }
+                    };
+                    Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr,
+                    })
+                }
             };
         }
 
@@ -995,39 +988,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }))
     }
 
-    fn is_binary_op(token_kind: &TokenKind) -> bool {
-        matches!(
-            token_kind,
-            TokenKind::And
-                | TokenKind::Asterisk
-                | TokenKind::Equal
-                | TokenKind::EqEq
-                | TokenKind::Coalesce
-                | TokenKind::Gte
-                | TokenKind::Gt
-                | TokenKind::Lte
-                | TokenKind::Lt
-                | TokenKind::Minus
-                | TokenKind::NeEq
-                | TokenKind::Or
-                | TokenKind::Percent
-                | TokenKind::Plus
-                | TokenKind::DoubleDot
-                | TokenKind::Slash
-                | TokenKind::PlusEqual
-                | TokenKind::MinusEqual
-                | TokenKind::SlashEqual
-                | TokenKind::PercentEqual
-                | TokenKind::DoubleSlashEqual
-                | TokenKind::StarEqual
-                | TokenKind::TildeEqual
-                | TokenKind::NotTildeEqual
-                | TokenKind::LeftShift
-                | TokenKind::RightShift
-                | TokenKind::Convert
-        )
-    }
-
     fn is_next_token(&mut self, expected: impl Fn(&TokenKind) -> bool) -> bool {
         self.tokens.peek().as_ref().map(|t| &t.kind).is_some_and(expected)
     }
@@ -1166,7 +1126,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                             let args = self.parse_args()?;
                             let access_target = AccessTarget::Call(
                                 IdentWithToken::new_with_token(&next_ident, Some(self.shared_token(next_token))),
-                                args,
+                                Box::new(args),
                             );
 
                             let token_id = self.alloc_token(ident_token);
@@ -1549,7 +1509,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
         let def_token_id = self.alloc_token(def_token);
         let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon | TokenKind::Do)) {
-            SmallVec::new()
+            Params::new()
         } else {
             self.parse_params()?
         };
@@ -1683,8 +1643,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches: Branches = SmallVec::new();
-        branches.push((Some(Shared::clone(cond)), then_expr));
+        let branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
 
         Ok(Shared::new(Node {
             token_id: self.alloc_token(unless_token),
@@ -1803,8 +1762,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         let then_expr = self.parse_next_expr(token_id)?;
 
-        let mut branches: Branches = SmallVec::new();
-        branches.push((Some(Shared::clone(cond)), then_expr));
+        let mut branches: Branches = vec![(Some(Shared::clone(cond)), then_expr)];
 
         let elif_branches = self.parse_elif()?;
         branches.extend(elif_branches);
@@ -1840,7 +1798,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.consume_colon_or_do();
 
         // Parse match arms
-        let mut arms: super::node::MatchArms = SmallVec::new();
+        let mut arms: super::node::MatchArms = Vec::new();
 
         while let Some(token) = self.tokens.peek() {
             // Check for end of match
@@ -2335,7 +2293,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        let mut params: Params = SmallVec::new();
+        let mut params: Params = Vec::new();
         let mut prev_token: Option<&TokenKind> = None;
         let mut seen_default = false;
         let mut seen_variadic = false;
@@ -2627,7 +2585,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             }));
 
             let step_expr = if self.is_next_token(|kind| matches!(kind, TokenKind::LParen)) {
-                Expr::SelectorCall(step_selector, self.parse_args()?)
+                Expr::SelectorCall(step_selector, Box::new(self.parse_args()?))
             } else {
                 Expr::Selector(step_selector)
             };
@@ -2798,7 +2756,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let args = self.parse_args()?;
                 let base_node = Shared::new(Node {
                     token_id: self.alloc_token(token),
-                    expr: Expr::SelectorCall(selector, args),
+                    expr: Expr::SelectorCall(selector, Box::new(args)),
                 });
                 // Check for attribute access or a descendant chain continuation: `.h(1).level`, `.h(1) .code`
                 return self.parse_selector_tail(token, base_node);
@@ -2855,7 +2813,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                     let token_id = self.alloc_token(token);
                     nodes.push(Shared::new(Node {
                         token_id,
-                        expr: Expr::SelectorCall(Selector::List(None, None), smallvec![Shared::clone(node)]),
+                        expr: Expr::SelectorCall(Selector::List(None, None), Box::new(smallvec![Shared::clone(node)])),
                     }));
                     return Ok(Shared::new(Node {
                         token_id: self.alloc_token(token),
@@ -2924,7 +2882,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             let token_id = self.alloc_token(token);
             return Ok(Shared::new(Node {
                 token_id,
-                expr: Expr::SelectorCall(selector, args),
+                expr: Expr::SelectorCall(selector, Box::new(args)),
             }));
         }
 
@@ -3130,7 +3088,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                     IdentWithToken::new_with_token("filter", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("filter")))))),
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("arg1", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arg1"))))))),
                         Param::new(IdentWithToken::new_with_token("arg2", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arg2"))))))),
                     ],
@@ -3256,7 +3214,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3279,7 +3237,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3371,7 +3329,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3393,7 +3351,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3416,7 +3374,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        smallvec![
+                        vec![
                           Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         ],
                         vec![Shared::new(Node {
@@ -3858,7 +3816,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 7.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3901,7 +3859,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 11.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3945,7 +3903,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 4.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -3978,7 +3936,7 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 8.into(),
-                    expr: Expr::If(smallvec![
+                    expr: Expr::If(vec![
                         (
                             Some(Shared::new(Node {
                                 token_id: 1.into(),
@@ -4212,7 +4170,7 @@ mod tests {
         Ok(vec![
             Shared::new(Node {
                 token_id: 4.into(),
-                expr: Expr::Unless(smallvec![
+                expr: Expr::Unless(vec![
                     (
                         Some(Shared::new(Node {
                             token_id: 1.into(),
@@ -4430,10 +4388,10 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_heading_multi_arg(
@@ -4451,7 +4409,7 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Heading(None),
                 // args are allocated first (id=0, id=1), then the selector token (id=2)
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 0.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -4460,7 +4418,7 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::selector_call_code_lang(
@@ -4476,10 +4434,10 @@ mod tests {
             expr: Expr::SelectorCall(
                 Selector::Code,
                 // arg literal is allocated first (id=0), then the selector token (id=1)
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 0.into(),
                     expr: Expr::Literal(Literal::String("rust".to_owned())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_with_attribute(
@@ -4504,10 +4462,10 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
                             Selector::Heading(None),
-                            smallvec![Shared::new(Node {
+                            Box::new(smallvec![Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::Number(1.into())),
-                            })],
+                            })]),
                         ),
                     }),
                     Shared::new(Node {
@@ -4539,10 +4497,10 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::SelectorCall(
                             Selector::Code,
-                            smallvec![Shared::new(Node {
+                            Box::new(smallvec![Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::String("rust".to_owned())),
-                            })],
+                            })]),
                         ),
                     }),
                     Shared::new(Node {
@@ -4581,10 +4539,10 @@ mod tests {
             token_id: 2.into(),
             expr: Expr::SelectorCall(
                 Selector::List(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Literal(Literal::Number(2.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_single_arg(
@@ -4603,10 +4561,10 @@ mod tests {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 2.into(),
                     expr: Expr::Literal(Literal::Number(1.into())),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_list_bracket_variable(
@@ -4621,13 +4579,13 @@ mod tests {
             token_id: 3.into(),
             expr: Expr::SelectorCall(
                 Selector::List(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                     )),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_column_variable(
@@ -4644,7 +4602,7 @@ mod tests {
             token_id: 5.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 4.into(),
                         expr: Expr::Literal(Literal::None),
@@ -4656,7 +4614,7 @@ mod tests {
                             Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                         )),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::selector_call_table_bracket_variable(
@@ -4673,13 +4631,13 @@ mod tests {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![Shared::new(Node {
+                Box::new(smallvec![Shared::new(Node {
                     token_id: 1.into(),
                     expr: Expr::Ident(IdentWithToken::new_with_token(
                         "v",
                         Some(Shared::new(token(TokenKind::Ident(SmolStr::new("v"))))),
                     )),
-                })],
+                })]),
             ),
         })]))]
     #[case::selector_call_table_bracket_row_col_args(
@@ -4700,7 +4658,7 @@ mod tests {
             token_id: 4.into(),
             expr: Expr::SelectorCall(
                 Selector::Table(None, None),
-                smallvec![
+                Box::new(smallvec![
                     Shared::new(Node {
                         token_id: 2.into(),
                         expr: Expr::Literal(Literal::Number(1.into())),
@@ -4709,7 +4667,7 @@ mod tests {
                         token_id: 3.into(),
                         expr: Expr::Literal(Literal::Number(2.into())),
                     }),
-                ],
+                ]),
             ),
         })]))]
     #[case::foreach_error(
@@ -4851,7 +4809,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    SmallVec::new(),
+                    Vec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
@@ -4882,7 +4840,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                     ],
@@ -4923,7 +4881,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                     ],
                     vec![
@@ -4982,7 +4940,7 @@ mod tests {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                smallvec![
+                                vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
@@ -5376,7 +5334,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(smallvec![
+                            expr: Expr::If(vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -5594,7 +5552,7 @@ mod tests {
                     Ok(vec![
                         Shared::new(Node {
                             token_id: 6.into(),
-                            expr: Expr::If(smallvec![
+                            expr: Expr::If(vec![
                                 (
                                     Some(Shared::new(Node {
                                         token_id: 2.into(),
@@ -7795,12 +7753,12 @@ mod tests {
                     vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                        smallvec![
+                        Box::new(smallvec![
                             Shared::new(Node {
                                 token_id: 0.into(),
                                 expr: Expr::Literal(Literal::String("arg".to_owned())),
                             }),
-                        ],
+                        ]),
                     ),
                 ),
             })
@@ -7826,7 +7784,7 @@ mod tests {
                     ],
                     AccessTarget::Call(
                         IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                        smallvec![],
+                        Box::new(smallvec![]),
                     ),
                 ),
             })
@@ -7927,7 +7885,7 @@ mod tests {
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                                    smallvec![],
+                                    Box::new(smallvec![]),
                                 ),
                             ),
                         }),
@@ -7968,7 +7926,7 @@ mod tests {
                                 vec![IdentWithToken::new_with_token("mod", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("mod"))))))],
                                 AccessTarget::Call(
                                     IdentWithToken::new_with_token("func", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("func")))))),
-                                    smallvec![],
+                                    Box::new(smallvec![]),
                                 ),
                             ),
                         }),
@@ -8251,7 +8209,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![
+                        vec![
                             Param::variadic(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         ],
                         vec![Shared::new(Node {
@@ -8280,7 +8238,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![
+                        vec![
                             Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                             Param::variadic(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest"))))))),
                         ],
@@ -8329,7 +8287,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![],
+                        vec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
@@ -8350,7 +8308,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![],
+                        vec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
@@ -8371,7 +8329,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    SmallVec::new(),
+                    Vec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
@@ -8402,7 +8360,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                     ],
@@ -8450,7 +8408,7 @@ mod tests {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                smallvec![
+                                vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
@@ -9171,7 +9129,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(1.into())),
                             guard: None,
@@ -9232,7 +9190,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Type(Ident::new("string")),
                             guard: None,
@@ -9283,7 +9241,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Array(vec![
                                 Pattern::Ident(IdentWithToken::new("x")),
@@ -9330,7 +9288,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::ArrayRest(
                                 vec![Pattern::Ident(IdentWithToken::new("first"))],
@@ -9380,7 +9338,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Dict(vec![
                                 (IdentWithToken::new("name"), Pattern::Ident(IdentWithToken::new("name"))),
@@ -9446,7 +9404,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Ident(IdentWithToken::new("x")),
                             guard: Some(Shared::new(Node {
@@ -9539,7 +9497,7 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into()))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(1.into())),
                             guard: None,
@@ -9604,7 +9562,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Number(1.into())),
@@ -9660,7 +9618,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::String("a".to_owned())),
@@ -9714,7 +9672,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Type(Ident::new("string")),
@@ -9764,7 +9722,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Number(1.into())),
@@ -9817,7 +9775,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Bool(true)),
@@ -10133,5 +10091,205 @@ mod tests {
         );
         let source = format!("{nested} | {nested} | {nested}");
         assert!(on_small_stack(move || parse_source(&source).is_ok()));
+    }
+
+    /// Renders `node` fully parenthesized with the source symbol of each operator.
+    fn shape(node: &Node, arena: &Arena<Shared<Token>>) -> String {
+        fn compound_rhs(node: &Node) -> &Node {
+            match &node.expr {
+                Expr::BinaryOp(_, _, rhs) => rhs,
+                Expr::Call(_, args) if args.len() == 2 => &args[1],
+                Expr::Call(_, args) if args.len() == 1 => compound_rhs(&args[0]),
+                _ => node,
+            }
+        }
+
+        let operator = arena[node.token_id].to_string();
+        let fold = |operands: &[Shared<Node>], symbol: &str| {
+            operands
+                .iter()
+                .map(|operand| shape(operand, arena))
+                .reduce(|lhs, rhs| format!("({lhs} {symbol} {rhs})"))
+                .unwrap()
+        };
+
+        match &node.expr {
+            Expr::Ident(ident) => ident.name.to_string(),
+            Expr::Literal(literal) => literal.to_string(),
+            Expr::Paren(inner) => format!("<{}>", shape(inner, arena)),
+            Expr::UnaryOp(op, operand) => format!("({op} {})", shape(operand, arena)),
+            Expr::BinaryOp(_, lhs, rhs) => format!("({} {operator} {})", shape(lhs, arena), shape(rhs, arena)),
+            Expr::Call(_, args) if args.len() == 2 && arena[node.token_id].kind.binary_op_precedence().is_some() => {
+                format!("({} {operator} {})", shape(&args[0], arena), shape(&args[1], arena))
+            }
+            Expr::And(operands) => fold(operands, "&&"),
+            Expr::Or(operands) => fold(operands, "||"),
+            Expr::Assign(ident, rhs) if operator == "=" => format!("({} = {})", ident.name, shape(rhs, arena)),
+            Expr::Assign(ident, rhs) => format!("({} {operator} {})", ident.name, shape(compound_rhs(rhs), arena)),
+            Expr::As(ident, expr) => format!("({} as {})", shape(expr, arena), ident.name),
+            other => panic!("shape does not support {other:?}"),
+        }
+    }
+
+    fn parse_shape(code: &str) -> Result<String, SyntaxError> {
+        let tokens = Lexer::new(lexer::Options::default())
+            .tokenize(code, Module::TOP_LEVEL_MODULE_ID)
+            .expect("code should tokenize");
+        let mut arena = Arena::new(16);
+        let program = Parser::new(tokens.iter(), &mut arena, Module::TOP_LEVEL_MODULE_ID).parse()?;
+        assert_eq!(program.len(), 1, "expected one expression for {code:?}");
+        Ok(shape(&program[0], &arena))
+    }
+
+    #[rstest]
+    #[case::add("a + b", "(a + b)")]
+    #[case::sub("a - b", "(a - b)")]
+    #[case::mul("a * b", "(a * b)")]
+    #[case::div("a / b", "(a / b)")]
+    #[case::modulo("a % b", "(a % b)")]
+    #[case::eq("a == b", "(a == b)")]
+    #[case::ne("a != b", "(a != b)")]
+    #[case::lt("a < b", "(a < b)")]
+    #[case::lte("a <= b", "(a <= b)")]
+    #[case::gt("a > b", "(a > b)")]
+    #[case::gte("a >= b", "(a >= b)")]
+    #[case::and("a && b", "(a && b)")]
+    #[case::or("a || b", "(a || b)")]
+    #[case::left_shift("a << b", "(a << b)")]
+    #[case::right_shift("a >> b", "(a >> b)")]
+    #[case::convert("a @ b", "(a @ b)")]
+    #[case::range("a .. b", "(a .. b)")]
+    #[case::coalesce("a ?? b", "(a ?? b)")]
+    #[case::regex_match("a =~ b", "(a =~ b)")]
+    #[case::not_regex_match("a !~ b", "(a !~ b)")]
+    fn test_every_binary_operator_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), Ok(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case::and_over_or("a || b && c", "(a || (b && c))")]
+    #[case::or_after_and("a && b || c", "((a && b) || c)")]
+    #[case::comparison_over_and("a && b == c", "(a && (b == c))")]
+    #[case::and_after_comparison("a == b && c", "((a == b) && c)")]
+    #[case::additive_over_comparison("a == b + c", "(a == (b + c))")]
+    #[case::comparison_after_additive("a + b == c", "((a + b) == c)")]
+    #[case::multiplicative_over_additive("a + b * c", "(a + (b * c))")]
+    #[case::additive_after_multiplicative("a * b + c", "((a * b) + c)")]
+    #[case::range_over_multiplicative("a * b .. c", "(a * (b .. c))")]
+    #[case::multiplicative_after_range("a .. b * c", "((a .. b) * c)")]
+    #[case::coalesce_over_multiplicative("a * b ?? c", "(a * (b ?? c))")]
+    #[case::multiplicative_after_coalesce("a ?? b * c", "((a ?? b) * c)")]
+    #[case::convert_with_multiplicative("a + b @ c", "(a + (b @ c))")]
+    #[case::convert_is_left_associative_with_mul("a * b @ c", "((a * b) @ c)")]
+    #[case::shift_with_additive("a << b + c", "((a << b) + c)")]
+    #[case::additive_with_shift("a + b >> c", "((a + b) >> c)")]
+    #[case::regex_match_with_comparison("a =~ b == c", "((a =~ b) == c)")]
+    #[case::regex_over_and("a !~ b && c", "((a !~ b) && c)")]
+    #[case::three_levels("a || b && c == d + e * f .. g", "(a || (b && (c == (d + (e * (f .. g))))))")]
+    #[case::three_levels_reversed("a .. b * c + d == e && f || g", "((((((a .. b) * c) + d) == e) && f) || g)")]
+    fn test_binary_op_precedence_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), Ok(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case::or("a || b || c", "((a || b) || c)")]
+    #[case::and("a && b && c", "((a && b) && c)")]
+    #[case::comparison("a == b == c", "((a == b) == c)")]
+    #[case::mixed_comparison("a < b != c", "((a < b) != c)")]
+    #[case::sub("a - b - c", "((a - b) - c)")]
+    #[case::add_then_sub("a + b - c", "((a + b) - c)")]
+    #[case::shifts("a << b >> c", "((a << b) >> c)")]
+    #[case::div("a / b / c", "((a / b) / c)")]
+    #[case::mul_div_mod("a * b / c % d", "(((a * b) / c) % d)")]
+    #[case::range("a .. b .. c", "((a .. b) .. c)")]
+    #[case::coalesce("a ?? b ?? c", "((a ?? b) ?? c)")]
+    #[case::range_then_coalesce("a .. b ?? c", "((a .. b) ?? c)")]
+    #[case::coalesce_then_range("a ?? b .. c", "((a ?? b) .. c)")]
+    #[case::convert("a @ b @ c", "((a @ b) @ c)")]
+    fn test_binary_op_associativity_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), Ok(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case::parens_override_precedence("(a + b) * c", "(<(a + b)> * c)")]
+    #[case::parens_on_the_right("a * (b + c)", "(a * <(b + c)>)")]
+    #[case::parens_override_associativity("a - (b - c)", "(a - <(b - c)>)")]
+    #[case::neg_binds_tighter_than_mul("-a * b", "((- a) * b)")]
+    #[case::not_binds_tighter_than_eq("!a == b", "((! a) == b)")]
+    #[case::not_binds_tighter_than_and("!a && !b", "((! a) && (! b))")]
+    #[case::unary_on_the_right("a - -b", "(a - (- b))")]
+    #[case::not_on_the_right("a * !b", "(a * (! b))")]
+    #[case::as_binds_the_whole_expression("a + b * c as x", "((a + (b * c)) as x)")]
+    #[case::as_after_logic("a && b as x", "((a && b) as x)")]
+    fn test_operand_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), Ok(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case::assign("x = a", "(x = a)")]
+    #[case::assign_is_lowest("x = a || b && c == d + e * f", "(x = (a || (b && (c == (d + (e * f))))))")]
+    #[case::assign_takes_the_whole_expression("x = a + b * c", "(x = (a + (b * c)))")]
+    #[case::plus_assign("x += a * b", "(x += (a * b))")]
+    #[case::minus_assign("x -= a * b", "(x -= (a * b))")]
+    #[case::mul_assign("x *= a + b", "(x *= (a + b))")]
+    #[case::div_assign("x /= a + b", "(x /= (a + b))")]
+    #[case::mod_assign("x %= a + b", "(x %= (a + b))")]
+    #[case::floor_div_assign("x //= a + b", "(x //= (a + b))")]
+    fn test_assignment_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), Ok(expected.to_string()));
+    }
+
+    #[rstest]
+    #[case::chained_assignment("a = b = c")]
+    #[case::assign_to_expression("a + b = c")]
+    #[case::assign_to_logic("a || b = c")]
+    #[case::pipe_assign_outside_a_binding("a |= b")]
+    #[case::missing_right_operand("a +")]
+    #[case::missing_right_operand_after_assign("a =")]
+    #[case::missing_right_operand_after_logic("a &&")]
+    #[case::operator_only("+")]
+    #[case::as_without_name("a as")]
+    #[case::as_with_non_identifier("a as 1")]
+    fn test_binary_op_errors(#[case] code: &str) {
+        assert!(parse_shape(code).is_err(), "expected an error for {code:?}");
+    }
+
+    #[test]
+    fn test_code_generation_precedence_matches_the_parser() {
+        let kinds = [
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::Asterisk,
+            TokenKind::Slash,
+            TokenKind::Percent,
+            TokenKind::EqEq,
+            TokenKind::NeEq,
+            TokenKind::Lt,
+            TokenKind::Lte,
+            TokenKind::Gt,
+            TokenKind::Gte,
+        ];
+        for x in &kinds {
+            for y in &kinds {
+                let (op_x, op_y) = (Parser::binary_op_kind(x).unwrap(), Parser::binary_op_kind(y).unwrap());
+                assert_eq!(
+                    crate::ast::code::binary_op_precedence(op_x).cmp(&crate::ast::code::binary_op_precedence(op_y)),
+                    x.binary_op_precedence().cmp(&y.binary_op_precedence()),
+                    "{x} vs {y}"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::after_literal("1 |=")]
+    #[case::after_literal_with_operand("1 |= b")]
+    #[case::after_paren("(a) |= b")]
+    #[case::after_string("\"s\" |= b")]
+    fn test_pipe_assign_is_not_an_infix_operator(#[case] code: &str) {
+        assert!(
+            matches!(parse_shape(code), Err(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::PipeEqual),
+            "expected `|=` to be rejected as an unexpected token for {code:?}"
+        );
     }
 }

@@ -648,7 +648,7 @@ impl ModuleLoader<DefaultModuleResolver> {
 #[cfg(test)]
 mod tests {
     use rstest::{fixture, rstest};
-    use smallvec::{SmallVec, smallvec};
+    use smallvec::smallvec;
     use smol_str::SmolStr;
 
     use crate::{
@@ -708,7 +708,7 @@ mod tests {
                 range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}},
                 module_id: 1.into()
             }))),
-            SmallVec::new(),
+            Vec::new(),
             vec![
                 Shared::new(ast::Node{token_id: 2.into(), expr: ast::Expr::Literal(ast::Literal::Number(1.into()))})
             ]
@@ -721,7 +721,7 @@ mod tests {
         functions: vec![
             Shared::new(ast::Node{token_id: 0.into(), expr: ast::Expr::Def(
                 IdentWithToken::new_with_token("test", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("test")), range: Range{start: Position{line: 1, column: 5}, end: Position{line: 1, column: 9}}, module_id: 1.into()}))),
-                smallvec![
+                vec![
                     Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("a")), range: Range{start: Position{line: 1, column: 10}, end: Position{line: 1, column: 11}}, module_id: 1.into()})))),
                     Param::new(IdentWithToken::new_with_token("b", Some(Shared::new(Token{kind: TokenKind::Ident(SmolStr::new("b")), range: Range{start: Position{line: 1, column: 13}, end: Position{line: 1, column: 14}}, module_id: 1.into()})))),
                 ],

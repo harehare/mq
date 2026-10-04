@@ -53,11 +53,11 @@ impl Param {
     }
 }
 
-pub type Params = SmallVec<[Param; 4]>;
+pub type Params = Vec<Param>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
-pub type Branches = SmallVec<[Cond; 4]>;
-pub type MatchArms = SmallVec<[MatchArm; 4]>;
+pub type Branches = Vec<Cond>;
+pub type MatchArms = Vec<MatchArm>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -301,7 +301,7 @@ impl From<&str> for Literal {
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 pub enum AccessTarget {
-    Call(IdentWithToken, Args),
+    Call(IdentWithToken, Box<Args>),
     Ident(IdentWithToken),
 }
 
@@ -427,7 +427,7 @@ pub enum Expr {
     /// A selector with runtime-evaluated arguments for filtered matching.
     ///
     /// Supports `.h(1..2)`, `.h(1, 2)`, `.code("rust")`, etc.
-    SelectorCall(Selector, Args),
+    SelectorCall(Selector, Box<Args>),
     While(Shared<Node>, Program),
     Until(Shared<Node>, Program),
     Foreach(IdentWithToken, Shared<Node>, Program),
@@ -528,7 +528,7 @@ mod tests {
                 token_id: ArenaId::new(0),
                 expr: Expr::Literal(Literal::String("val".to_string())),
             }),
-            smallvec![
+            vec![
                 MatchArm {
                     pattern: Pattern::Literal(Literal::String("a".to_string())),
                     guard: None,
@@ -617,7 +617,7 @@ mod tests {
     #[case(
         Expr::Def(
             IdentWithToken::new("f"),
-            smallvec![],
+            vec![],
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -637,7 +637,7 @@ mod tests {
     )]
     #[case(
         Expr::Fn(
-            smallvec![],
+            vec![],
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -729,7 +729,7 @@ mod tests {
         Range { start: Position::new(102, 1), end: Position::new(102, 5) }
     )]
     #[case(
-        Expr::If(smallvec![
+        Expr::If(vec![
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -760,7 +760,7 @@ mod tests {
         Range { start: Position::new(113, 1), end: Position::new(117, 5) }
     )]
     #[case(
-        Expr::Unless(smallvec![
+        Expr::Unless(vec![
             (
                 Some(Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -1047,7 +1047,7 @@ mod tests {
         let mut arena = Arena::new(10);
         arena.alloc(create_token(r0));
         arena.alloc(create_token(r1));
-        let expr = Expr::SelectorCall(Selector::Heading(None), smallvec![make_node(1)]);
+        let expr = Expr::SelectorCall(Selector::Heading(None), Box::new(smallvec![make_node(1)]));
         let node = Node {
             token_id: ArenaId::new(0),
             expr,
@@ -1215,5 +1215,20 @@ mod tests {
     #[test]
     fn test_expr_display_other_is_empty() {
         assert_eq!(format!("{}", Expr::Continue), "");
+    }
+
+    #[test]
+    fn test_node_size_stays_small() {
+        // Every node is its own allocation, so one large variant enlarges all of them.
+        assert!(
+            std::mem::size_of::<Expr>() <= 72,
+            "Expr is {} bytes",
+            std::mem::size_of::<Expr>()
+        );
+        assert!(
+            std::mem::size_of::<Node>() <= 80,
+            "Node is {} bytes",
+            std::mem::size_of::<Node>()
+        );
     }
 }

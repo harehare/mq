@@ -10843,27 +10843,141 @@ Shared::new(Node {
         (ranges.len(), expected)
     }
 
+    /// Renders `node` fully parenthesized with the source symbol of each operator.
     fn shape(node: &Node) -> String {
+        let text = |node: &Node| node.token.as_ref().map(|t| t.to_string()).unwrap_or_default();
         match &node.kind {
-            NodeKind::BinaryOp { op, lhs, rhs } | NodeKind::Assign { op, lhs, rhs } => {
-                format!("({} {:?} {})", shape(lhs), op, shape(rhs))
+            NodeKind::BinaryOp { lhs, rhs, .. } | NodeKind::Assign { lhs, rhs, .. } => {
+                format!("({} {} {})", shape(lhs), text(node), shape(rhs))
             }
-            _ => node.token.as_ref().map(|t| t.to_string()).unwrap_or_default(),
+            NodeKind::UnaryOp { operand, .. } => format!("({} {})", text(node), shape(operand)),
+            NodeKind::As { expr, name } => format!("({} as {})", shape(expr), text(name)),
+            NodeKind::Group { expr, .. } => format!("<{}>", shape(expr)),
+            _ => text(node),
         }
     }
 
-    #[rstest]
-    #[case::mul_binds_tighter("a + b * c", "(a Plus (b Multiplication c))")]
-    #[case::mul_first("a * b + c", "((a Multiplication b) Plus c)")]
-    #[case::left_assoc("a - b - c", "((a Minus b) Minus c)")]
-    #[case::and_over_or("a || b && c", "(a Or (b And c))")]
-    #[case::cmp_over_and("a == b && c == d", "((a Equal b) And (c Equal d))")]
-    #[case::assign_lowest("x = a + b * c", "(x Assign (a Plus (b Multiplication c)))")]
-    #[case::compound_assign("x += a * b", "(x PlusEqual (a Multiplication b))")]
-    #[case::trivia_between("a +\n  b # c\n  * d", "(a Plus (b Multiplication d))")]
-    fn test_binary_op_precedence_shape(#[case] code: &str, #[case] expected: &str) {
+    fn parse_shape(code: &str) -> (String, bool) {
         let (nodes, errors) = crate::parse_recovery(code);
-        assert!(!errors.has_errors(), "unexpected errors for {code:?}");
-        assert_eq!(shape(&nodes[0]), expected);
+        let expressions: Vec<_> = nodes.iter().filter(|n| !matches!(n.kind, NodeKind::Eof)).collect();
+        assert_eq!(expressions.len(), 1, "expected one expression for {code:?}");
+        (shape(expressions[0]), errors.has_errors())
+    }
+
+    #[rstest]
+    #[case::add("a + b", "(a + b)")]
+    #[case::sub("a - b", "(a - b)")]
+    #[case::mul("a * b", "(a * b)")]
+    #[case::div("a / b", "(a / b)")]
+    #[case::modulo("a % b", "(a % b)")]
+    #[case::eq("a == b", "(a == b)")]
+    #[case::ne("a != b", "(a != b)")]
+    #[case::lt("a < b", "(a < b)")]
+    #[case::lte("a <= b", "(a <= b)")]
+    #[case::gt("a > b", "(a > b)")]
+    #[case::gte("a >= b", "(a >= b)")]
+    #[case::and("a && b", "(a && b)")]
+    #[case::or("a || b", "(a || b)")]
+    #[case::left_shift("a << b", "(a << b)")]
+    #[case::right_shift("a >> b", "(a >> b)")]
+    #[case::convert("a @ b", "(a @ b)")]
+    #[case::range("a .. b", "(a .. b)")]
+    #[case::coalesce("a ?? b", "(a ?? b)")]
+    #[case::regex_match("a =~ b", "(a =~ b)")]
+    #[case::not_regex_match("a !~ b", "(a !~ b)")]
+    fn test_every_binary_operator_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::and_over_or("a || b && c", "(a || (b && c))")]
+    #[case::or_after_and("a && b || c", "((a && b) || c)")]
+    #[case::comparison_over_and("a && b == c", "(a && (b == c))")]
+    #[case::and_after_comparison("a == b && c", "((a == b) && c)")]
+    #[case::additive_over_comparison("a == b + c", "(a == (b + c))")]
+    #[case::comparison_after_additive("a + b == c", "((a + b) == c)")]
+    #[case::multiplicative_over_additive("a + b * c", "(a + (b * c))")]
+    #[case::additive_after_multiplicative("a * b + c", "((a * b) + c)")]
+    #[case::range_over_multiplicative("a * b .. c", "(a * (b .. c))")]
+    #[case::multiplicative_after_range("a .. b * c", "((a .. b) * c)")]
+    #[case::coalesce_over_multiplicative("a * b ?? c", "(a * (b ?? c))")]
+    #[case::multiplicative_after_coalesce("a ?? b * c", "((a ?? b) * c)")]
+    #[case::convert_with_multiplicative("a + b @ c", "(a + (b @ c))")]
+    #[case::convert_is_left_associative_with_mul("a * b @ c", "((a * b) @ c)")]
+    #[case::shift_with_additive("a << b + c", "((a << b) + c)")]
+    #[case::additive_with_shift("a + b >> c", "((a + b) >> c)")]
+    #[case::regex_match_with_comparison("a =~ b == c", "((a =~ b) == c)")]
+    #[case::regex_over_and("a !~ b && c", "((a !~ b) && c)")]
+    #[case::three_levels("a || b && c == d + e * f .. g", "(a || (b && (c == (d + (e * (f .. g))))))")]
+    #[case::three_levels_reversed("a .. b * c + d == e && f || g", "((((((a .. b) * c) + d) == e) && f) || g)")]
+    fn test_binary_op_precedence_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::or("a || b || c", "((a || b) || c)")]
+    #[case::and("a && b && c", "((a && b) && c)")]
+    #[case::comparison("a == b == c", "((a == b) == c)")]
+    #[case::mixed_comparison("a < b != c", "((a < b) != c)")]
+    #[case::sub("a - b - c", "((a - b) - c)")]
+    #[case::add_then_sub("a + b - c", "((a + b) - c)")]
+    #[case::shifts("a << b >> c", "((a << b) >> c)")]
+    #[case::div("a / b / c", "((a / b) / c)")]
+    #[case::mul_div_mod("a * b / c % d", "(((a * b) / c) % d)")]
+    #[case::range("a .. b .. c", "((a .. b) .. c)")]
+    #[case::coalesce("a ?? b ?? c", "((a ?? b) ?? c)")]
+    #[case::range_then_coalesce("a .. b ?? c", "((a .. b) ?? c)")]
+    #[case::coalesce_then_range("a ?? b .. c", "((a ?? b) .. c)")]
+    #[case::convert("a @ b @ c", "((a @ b) @ c)")]
+    fn test_binary_op_associativity_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::parens_override_precedence("(a + b) * c", "(<(a + b)> * c)")]
+    #[case::parens_on_the_right("a * (b + c)", "(a * <(b + c)>)")]
+    #[case::parens_override_associativity("a - (b - c)", "(a - <(b - c)>)")]
+    #[case::neg_binds_tighter_than_mul("-a * b", "((- a) * b)")]
+    #[case::not_binds_tighter_than_eq("!a == b", "((! a) == b)")]
+    #[case::not_binds_tighter_than_and("!a && !b", "((! a) && (! b))")]
+    #[case::unary_on_the_right("a - -b", "(a - (- b))")]
+    #[case::not_on_the_right("a * !b", "(a * (! b))")]
+    #[case::as_binds_the_whole_expression("a + b * c as x", "((a + (b * c)) as x)")]
+    #[case::as_after_logic("a && b as x", "((a && b) as x)")]
+    fn test_operand_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::assign("x = a", "(x = a)")]
+    #[case::assign_is_lowest("x = a || b && c == d + e * f", "(x = (a || (b && (c == (d + (e * f))))))")]
+    #[case::assign_takes_the_whole_expression("x = a + b * c", "(x = (a + (b * c)))")]
+    #[case::plus_assign("x += a * b", "(x += (a * b))")]
+    #[case::minus_assign("x -= a * b", "(x -= (a * b))")]
+    #[case::mul_assign("x *= a + b", "(x *= (a + b))")]
+    #[case::div_assign("x /= a + b", "(x /= (a + b))")]
+    #[case::mod_assign("x %= a + b", "(x %= (a + b))")]
+    #[case::floor_div_assign("x //= a + b", "(x //= (a + b))")]
+    fn test_assignment_shape(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::trivia_between("a +\n  b # c\n  * d", "(a + (b * d))")]
+    #[case::trivia_before_operator("a\n  + b", "(a + b)")]
+    #[case::trivia_in_assignment("x =\n  a || b", "(x = (a || b))")]
+    fn test_binary_op_shape_with_trivia(#[case] code: &str, #[case] expected: &str) {
+        assert_eq!(parse_shape(code), (expected.to_string(), false));
+    }
+
+    #[rstest]
+    #[case::missing_right_operand("a +")]
+    #[case::missing_right_operand_after_assign("a =")]
+    #[case::missing_right_operand_after_logic("a &&")]
+    #[case::as_without_name("a as")]
+    #[case::as_with_non_identifier("a as 1")]
+    fn test_binary_op_errors(#[case] code: &str) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        assert!(errors.has_errors(), "expected an error for {code:?}, got {nodes:?}");
     }
 }
