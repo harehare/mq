@@ -353,17 +353,6 @@ Accessing a key that doesn't exist returns `none`:
 ."age"    # Returns: none
 ```
 
-### Markdown Selectors on Dicts
-
-Markdown selectors (`.h`, `.code`, `.[0]`, ...) applied to a dict that holds no Markdown nodes return `none`:
-
-```mq
-# Input dict: {"name": "Alice", "tags": ["a", "b"]}
-
-.h        # Returns: none
-.[0]      # Returns: none
-```
-
 ## Combining Selectors with Functions
 
 You can combine selectors with functions like `select()`, `map()`, and `filter()` for powerful transformations:
