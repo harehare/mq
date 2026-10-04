@@ -146,13 +146,6 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_equality_expr(token)
     }
 
-    /// Precedence of `kind` as an infix operator, or `None` if it does not continue an expression.
-    /// `|=` is excluded because only the binding forms (`let`, `var`, ...) accept it.
-    #[inline(always)]
-    fn binary_op_precedence(kind: &TokenKind) -> Option<u8> {
-        kind.binary_op_precedence().filter(|_| *kind != TokenKind::PipeEqual)
-    }
-
     fn binary_op_function_name(kind: &TokenKind) -> Option<&'static str> {
         Some(match kind {
             TokenKind::Asterisk => constants::builtins::MUL,
@@ -258,7 +251,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_binary_op(parser: &mut Parser, min_prec: u8, mut lhs: Shared<Node>) -> Result<Shared<Node>, SyntaxError> {
         while let Some(peeked_token_rc) = parser.tokens.peek() {
             let kind = &peeked_token_rc.kind;
-            let Some(prec) = Self::binary_op_precedence(kind) else {
+            let Some(prec) = kind.binary_op_precedence() else {
                 break;
             };
 
@@ -282,7 +275,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
                 let next_prec = parser
                     .tokens
                     .peek()
-                    .and_then(|next_token| Self::binary_op_precedence(&next_token.kind))
+                    .and_then(|next_token| next_token.kind.binary_op_precedence())
                     .unwrap_or(0);
                 if next_prec > prec {
                     rhs = Self::parse_binary_op(parser, next_prec, rhs)?;
@@ -10283,10 +10276,22 @@ mod tests {
                 let (op_x, op_y) = (Parser::binary_op_kind(x).unwrap(), Parser::binary_op_kind(y).unwrap());
                 assert_eq!(
                     crate::ast::code::binary_op_precedence(op_x).cmp(&crate::ast::code::binary_op_precedence(op_y)),
-                    Parser::binary_op_precedence(x).cmp(&Parser::binary_op_precedence(y)),
+                    x.binary_op_precedence().cmp(&y.binary_op_precedence()),
                     "{x} vs {y}"
                 );
             }
         }
+    }
+
+    #[rstest]
+    #[case::after_literal("1 |=")]
+    #[case::after_literal_with_operand("1 |= b")]
+    #[case::after_paren("(a) |= b")]
+    #[case::after_string("\"s\" |= b")]
+    fn test_pipe_assign_is_not_an_infix_operator(#[case] code: &str) {
+        assert!(
+            matches!(parse_shape(code), Err(SyntaxError::UnexpectedToken(token)) if token.kind == TokenKind::PipeEqual),
+            "expected `|=` to be rejected as an unexpected token for {code:?}"
+        );
     }
 }
