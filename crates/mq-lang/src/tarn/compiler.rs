@@ -534,6 +534,10 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
         | Expr::Var(_, value)
         | Expr::Assign(_, value)
         | Expr::Paren(value) => collect_soft_builtin_names(value, shadowed, names),
+        Expr::IndexAssign(_, index, value) => {
+            collect_soft_builtin_names(index, shadowed, names);
+            collect_soft_builtin_names(value, shadowed, names);
+        }
         Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
             names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
         }
@@ -654,6 +658,11 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
         | Expr::Var(_, value)
         | Expr::Assign(_, value)
         | Expr::Paren(value) => collect_referenced_names(value, names),
+        Expr::IndexAssign(_, index, value) => {
+            names.insert(builtins::SET.into());
+            collect_referenced_names(index, names);
+            collect_referenced_names(value, names);
+        }
         Expr::Block(body) | Expr::Loop(body) | Expr::Module(_, body) => {
             names.extend(referenced_names_in_program(body));
         }
@@ -775,6 +784,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
         | Expr::Var(_, value)
         | Expr::Assign(_, value)
         | Expr::Paren(value) => node_contains_direct_yield(value),
+        Expr::IndexAssign(_, index, value) => node_contains_direct_yield(index) || node_contains_direct_yield(value),
         Expr::Block(body) | Expr::Loop(body) => program_contains_direct_yield(body),
         // Inline modules only declare names in their enclosing scope; their initializer code is
         // not part of the enclosing function body. A nested module checks its own boundary when
@@ -2349,7 +2359,11 @@ impl<R: ModuleResolver> Compiler<R> {
             Expr::Ident(ident) => self.compile_ident_get(ident.name),
             Expr::Let(pattern, value) => self.compile_let_or_var(pattern, value, false),
             Expr::Var(pattern, value) => self.compile_let_or_var(pattern, value, true),
+            Expr::IndexAssign(ident, index, value) => self.compile_index_assign(ident.name, index, value),
             Expr::Assign(ident, value) => {
+                if self.compile_add_assign_local(ident.name, value)? {
+                    return Ok(());
+                }
                 self.compile_expr(value)?;
                 match self.resolve(ident.name) {
                     Some(Resolved::Local(slot)) => {
@@ -2824,6 +2838,68 @@ impl<R: ModuleResolver> Compiler<R> {
             2 => OpCode::CallSelfExact2,
             _ => OpCode::CallSelfExact(argc),
         }
+    }
+
+    /// Compiles `name[index] = value`. A mutable local is updated in place; reading it first
+    /// would leave a second reference alive and make every update copy the whole collection.
+    fn compile_index_assign(&mut self, name: Ident, index: &Shared<Node>, value: &Shared<Node>) -> CompileResult<()> {
+        let token_id = self.current_token_id;
+        match self.resolve(name) {
+            Some(Resolved::Local(slot)) => {
+                if self.scope_mut().is_immutable(slot) {
+                    return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
+                }
+                self.compile_expr(index)?;
+                self.compile_expr(value)?;
+                self.set_call_token_id(token_id);
+                self.emit(OpCode::SetIndexLocal(slot));
+            }
+            Some(Resolved::Upvalue {
+                index: upvalue,
+                immutable,
+            }) => {
+                if immutable {
+                    return Err(CompileError::AssignToImmutable(name.to_string(), token_id));
+                }
+                self.emit(OpCode::GetUpvalue(upvalue));
+                self.compile_expr(index)?;
+                self.compile_expr(value)?;
+                self.set_call_token_id(token_id);
+                self.emit_call_builtin(builtins::SET.into(), 3);
+                self.emit(OpCode::SetUpvalue(upvalue));
+            }
+            None => return Err(CompileError::UndefinedIdent(name.to_string(), token_id)),
+        }
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(())
+    }
+
+    /// Compiles `x = x + rhs` on a mutable local `x` into an opcode that appends to the local in
+    /// place; reading `x` first would leave a second reference alive and copy it on every append.
+    ///
+    /// Returns `false`, emitting nothing, for any other assignment.
+    fn compile_add_assign_local(&mut self, name: Ident, value: &Shared<Node>) -> CompileResult<bool> {
+        let Expr::BinaryOp(ast::BinaryOp::Add, lhs, rhs) = &value.expr else {
+            return Ok(false);
+        };
+        let Some(Resolved::Local(slot)) = self.resolve(name) else {
+            return Ok(false);
+        };
+        // A literal or local operand already compiles to a fused update opcode.
+        if self.scope_mut().is_immutable(slot)
+            || !matches!(&lhs.expr, Expr::Ident(ident) if ident.name == name)
+            || matches!(rhs.expr, Expr::Literal(_))
+            || self.current_local_slot(rhs).is_some()
+        {
+            return Ok(false);
+        }
+
+        let token_id = self.current_token_id;
+        self.compile_expr(rhs)?;
+        self.set_call_token_id(token_id);
+        self.emit(OpCode::AddAssignLocal(slot));
+        self.emit(OpCode::GetLocal(SELF_SLOT));
+        Ok(true)
     }
 
     fn compile_local_binary(&mut self, op: BinaryOp, lhs: &Shared<Node>, rhs: &Shared<Node>) -> bool {

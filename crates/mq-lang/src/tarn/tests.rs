@@ -516,6 +516,124 @@ fn string_local_append_preserves_value_semantics(#[case] code: &str, #[case] exp
 }
 
 #[rstest]
+#[case::set_element("var a = [1, 2] | a[0] = 9 | a == [9, 2]")]
+#[case::grows_with_none("var a = [1] | a[2] = 9 | a == [1, None, 9]")]
+#[case::dict_string_key(r#"var d = {"a": 1} | d["b"] = 2 | d == {"a": 1, "b": 2}"#)]
+#[case::dict_overwrite(r#"var d = {"a": 1} | d["a"] = 2 | d == {"a": 2}"#)]
+#[case::compound_assign("var a = [1, 2] | a[1] += 5 | a == [1, 7]")]
+#[case::repeated("var a = [0, 0, 0] | var i = 0 | while(i < 3): a[i] = i + 1 | i += 1; | a == [1, 2, 3]")]
+#[case::value_reads_target("var a = [1, 2] | a[0] = a[1] + 1 | a == [3, 2]")]
+#[case::value_is_target("var a = [1] | a[0] = a | a == [[1]]")]
+#[case::alias_keeps_original("var a = [1, 2] | var b = a | b[0] = 9 | a == [1, 2]")]
+#[case::alias_receives_update("var a = [1, 2] | var b = a | b[0] = 9 | b == [9, 2]")]
+#[case::nested_copy_unchanged("var a = [1] | var xs = [a] | a[0] = 2 | xs == [[1]]")]
+#[case::captured_local("var a = [1, 2] | def f(): a[0] = 9; | f() | a == [9, 2]")]
+#[case::captured_by_closure_then_set("var a = [1, 2] | def f(): a; | a[0] = 9 | f() == [9, 2]")]
+#[case::ignores_user_defined_set("def set(x, k, v): 0; | var a = [1] | a[0] = 2 | a == [2]")]
+#[case::explicit_set_call("var a = [1, 2] | a = set(a, 0, 9) | a == [9, 2]")]
+fn index_assignment_updates_local_in_place_preserving_value_semantics(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true));
+}
+
+#[test]
+fn index_assignment_yields_pipeline_input() {
+    assert_eq!(run(r#""x" | var a = [1, 2] | a[0] = 9"#), RuntimeValue::from("x"));
+}
+
+#[rstest]
+#[case::array_in_array("var a = [[1, 2], [3]] | a[0][1] = 9 | a == [[1, 9], [3]]")]
+#[case::dict_in_array(r#"var a = [{"k": 1}] | a[0]["k"] = 2 | a == [{"k": 2}]"#)]
+#[case::array_in_dict(r#"var d = {"xs": [1, 2]} | d["xs"][0] = 9 | d == {"xs": [9, 2]}"#)]
+#[case::three_levels("var a = [[[1]]] | a[0][0][0] = 2 | a == [[[2]]]")]
+#[case::grows_inner("var a = [[1]] | a[0][2] = 9 | a == [[1, None, 9]]")]
+#[case::compound_assign("var a = [[1, 2]] | a[0][1] += 5 | a == [[1, 7]]")]
+#[case::alias_keeps_original("var a = [[1, 2]] | var b = a | b[0][0] = 9 | a == [[1, 2]]")]
+#[case::inner_alias_keeps_original("var a = [[1, 2]] | var r = a[0] | a[0][0] = 9 | r == [1, 2]")]
+fn nested_index_assignment_updates_inner_collection(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::call_base("def f(): [1]; | f()[0] = 2")]
+#[case::literal_base("[[1]][0][0] = 2")]
+fn nested_index_assignment_rejects_non_variable_roots(#[case] code: &str) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    assert!(crate::parse(code, token_arena).is_err(), "{code}");
+}
+
+#[rstest]
+#[case::non_collection("var a = 1 | a[0] = 2")]
+#[case::string_target(r#"var a = "ab" | a[0] = "x""#)]
+#[case::array_with_string_key(r#"var a = [1] | a["k"] = 2"#)]
+#[case::fractional_index("var a = [1] | a[0.5] = 2")]
+#[case::index_over_limit("var a = [1] | a[1000000] = 2")]
+#[case::immutable("let a = [1] | a[0] = 2")]
+fn index_assignment_rejects_invalid_targets(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
+}
+
+#[test]
+fn failed_index_assignment_keeps_local_intact() {
+    assert_eq!(
+        run("var a = [1, 2] | (try: a[1000000] = 9 catch: None) | a == [1, 2]"),
+        RuntimeValue::from(true)
+    );
+}
+
+#[rstest]
+#[case::nested_array_element("var a = [1] | a += [[2]] | a == [1, [2]]")]
+#[case::array_literal_spread("var a = [1] | a += [2, 3] | a == [1, 2, 3]")]
+#[case::computed_array("var a = [1] | var i = 2 | a += [i, i + 1] | a == [1, 2, 3]")]
+#[case::scalar_element("var a = [1] | a += 2 | a == [1, 2]")]
+#[case::none_element("var a = [1] | a += None | a == [1, None]")]
+#[case::repeated("var a = [] | var i = 0 | while(i < 4): a += [i] | i += 1; | a == [0, 1, 2, 3]")]
+#[case::self_append("var a = [1, 2] | a += a | a == [1, 2, 1, 2]")]
+#[case::alias_keeps_original("var a = [1] | var b = a | b += [2] | a == [1]")]
+#[case::alias_receives_suffix("var a = [1] | var b = a | b += [2] | b == [1, 2]")]
+#[case::nested_copy_unchanged("var a = [1] | var xs = [a] | a += [2] | xs == [[1]]")]
+#[case::captured_local("var a = [1] | def f(): a += [2]; | f() | a == [1, 2]")]
+#[case::string_from_expression(r#"var s = "a" | s += upcase("b") | s == "aB""#)]
+#[case::number_from_expression("var n = 1 | n += 2 * 3 | n == 7")]
+#[case::string_number_expression(r#"var s = "a" | s += 1 + 2 | s == "a3""#)]
+#[case::unsupported_operands_fall_back("var n = None | n += 1 | n == 1")]
+fn add_assignment_appends_to_local_in_place_preserving_value_semantics(#[case] code: &str) {
+    assert_eq!(run(code), RuntimeValue::from(true), "{code}");
+}
+
+#[rstest]
+#[case::array_array("var a = range(0, 999999) | a += [1, 2]")]
+#[case::array_element("var a = range(0, 999999) | a += 1")]
+fn add_assignment_respects_array_size_limit(#[case] code: &str) {
+    assert!(run_result(code).is_err(), "{code}");
+}
+
+#[test]
+fn failed_add_assignment_keeps_local_intact() {
+    assert_eq!(
+        run("var a = range(0, 999999) | (try: a += [1, 2] catch: None) | len(a)"),
+        RuntimeValue::from(1_000_000)
+    );
+}
+
+#[rstest]
+#[case::index_set("var a = [1] | a[0] = 2", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::SetIndexLocal(_)))]
+#[case::add_array("var a = [1] | a += [2]", |op: &super::bytecode::OpCode| matches!(op, super::bytecode::OpCode::AddAssignLocal(_)))]
+fn local_collection_updates_compile_to_in_place_opcodes(
+    #[case] code: &str,
+    #[case] expected: fn(&super::bytecode::OpCode) -> bool,
+) {
+    let token_arena = Shared::new(SharedCell::new(Arena::new(100)));
+    let program = crate::parse(code, Shared::clone(&token_arena)).unwrap();
+    let compiled = compiler::compile_program(&program, token_arena, ModuleLoader::new(StdModuleResolver)).unwrap();
+
+    assert!(
+        compiled.chunks.iter().flat_map(|chunk| chunk.code.iter()).any(expected),
+        "{:?}",
+        compiled.chunks
+    );
+}
+
+#[rstest]
 #[case::equal("==", true)]
 #[case::not_equal("!=", false)]
 #[case::less_than("<", false)]

@@ -2794,6 +2794,33 @@ fn abs_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> R
     }
 }
 
+pub(crate) fn add_in_place(target: &mut RuntimeValue, rhs: &RuntimeValue) -> Result<bool, Error> {
+    match (target, rhs) {
+        (RuntimeValue::String(s), RuntimeValue::String(suffix)) => runtime_value::string_mut(s).push_str(suffix),
+        (RuntimeValue::String(s), RuntimeValue::Number(n)) => runtime_value::string_mut(s).push_str(&n.to_string()),
+        (RuntimeValue::Array(array), RuntimeValue::Array(other)) => {
+            let total_size = array.len().saturating_add(other.len());
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array concatenation size {total_size} exceeds maximum allowed size of {MAX_RANGE_SIZE}"
+                )));
+            }
+            runtime_value::array_mut(array).extend_from_slice(other);
+        }
+        (RuntimeValue::Array(array), elem) => {
+            let total_size = array.len().saturating_add(1);
+            if total_size > MAX_RANGE_SIZE {
+                return Err(Error::Runtime(format!(
+                    "array size {total_size} exceeds maximum allowed size of {MAX_RANGE_SIZE}"
+                )));
+            }
+            runtime_value::array_mut(array).push(elem.clone());
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
 #[mq_macros::mq_fn(name = "add", params = Fixed(2))]
 fn add_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
@@ -3851,47 +3878,48 @@ fn has_impl(_: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Resul
     }
 }
 
+/// Applies `set(target, key, value)` to `target` in place.
+///
+/// Returns `Ok(false)`, leaving `target` and `value` untouched, when the operand types are not
+/// supported. Every error is raised before `target` is modified.
+pub(crate) fn set_in_place(
+    target: &mut RuntimeValue,
+    key: &RuntimeValue,
+    value: &mut RuntimeValue,
+) -> Result<bool, Error> {
+    match (target, key) {
+        (RuntimeValue::Dict(map), RuntimeValue::String(key)) => {
+            runtime_value::dict_mut(map).insert(Ident::new(key), std::mem::take(value));
+        }
+        (RuntimeValue::Dict(map), RuntimeValue::Symbol(key)) => {
+            runtime_value::dict_mut(map).insert(*key, std::mem::take(value));
+        }
+        (RuntimeValue::Array(array), RuntimeValue::Number(index)) => {
+            let index = bounded_growth_index(index, "set")?;
+            let array = runtime_value::array_mut(array);
+            if index >= array.len() {
+                array.resize(index + 1, RuntimeValue::NONE);
+            }
+            array[index] = std::mem::take(value);
+        }
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
 #[mq_macros::mq_fn(name = "set", params = Fixed(3))]
 fn set_impl(ident: &Ident, _: &RuntimeValue, mut args: Args, _: &SharedEnv) -> Result<RuntimeValue, Error> {
     match args.as_mut_slice() {
-        [RuntimeValue::Dict(map_val), RuntimeValue::String(key_val), value_val] => {
-            let mut new_dict = std::mem::take(map_val);
-            runtime_value::dict_mut(&mut new_dict).insert(Ident::new(key_val), std::mem::take(value_val));
-            Ok(RuntimeValue::Dict(new_dict))
-        }
-        [RuntimeValue::Dict(map_val), RuntimeValue::Symbol(key_val), value_val] => {
-            let mut new_dict = std::mem::take(map_val);
-            runtime_value::dict_mut(&mut new_dict).insert(*key_val, std::mem::take(value_val));
-            Ok(RuntimeValue::Dict(new_dict))
-        }
-        [
-            RuntimeValue::Array(array_val),
-            RuntimeValue::Number(index_val),
-            value_val,
-        ] => {
-            let index = bounded_growth_index(index_val, "set")?;
-
-            // Extend array size if necessary
-            let mut new_array = if index >= array_val.len() {
-                // If index is out of bounds, extend array and fill with None
-                let new_len = index + 1;
-                let mut resized_array = Vec::with_capacity(new_len);
-                resized_array.extend_from_slice(array_val);
-                resized_array.resize(new_len, RuntimeValue::NONE);
-                resized_array
+        [target, key, value] => {
+            if set_in_place(target, key, value)? {
+                Ok(std::mem::take(target))
             } else {
-                // If index is within bounds, clone existing array
-                Shared::unwrap_or_clone(std::mem::take(array_val))
-            };
-
-            // Set value at specified index
-            new_array[index] = std::mem::take(value_val);
-            Ok(RuntimeValue::Array(Shared::new(new_array)))
+                Err(Error::InvalidTypes(
+                    ident.to_string(),
+                    vec![std::mem::take(target), key.clone(), std::mem::take(value)],
+                ))
+            }
         }
-        [a, b, c] => Err(Error::InvalidTypes(
-            ident.to_string(),
-            vec![std::mem::take(a), std::mem::take(b), std::mem::take(c)],
-        )),
         _ => unreachable!("set should always receive exactly three arguments"),
     }
 }

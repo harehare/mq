@@ -505,17 +505,13 @@ fn into_runtime_value(v: StackValue, chunks: &Shared<Vec<Chunk>>) -> RuntimeValu
     }
 }
 
+/// Applies `local + rhs` to a directly stored string or array local in place.
 #[inline(always)]
-fn append_to_string_local(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> bool {
-    let Some(RuntimeValue::String(target)) = locals.direct_runtime_value_mut(local) else {
-        return false;
-    };
-    match rhs {
-        RuntimeValue::String(suffix) => runtime_value::string_mut(target).push_str(suffix),
-        RuntimeValue::Number(n) => runtime_value::string_mut(target).push_str(&n.to_string()),
-        _ => return false,
+fn add_to_local_in_place(locals: &mut Locals, local: u16, rhs: &RuntimeValue) -> Result<bool, builtin::Error> {
+    match locals.direct_runtime_value_mut(local) {
+        Some(target) => builtin::add_in_place(target, rhs),
+        None => Ok(false),
     }
-    true
 }
 
 fn current_self(locals: &Locals, chunks: &Shared<Vec<Chunk>>) -> RuntimeValue {
@@ -1234,6 +1230,58 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                 let v = pop!();
                 locals.set(*slot, v);
             }
+            OpCode::SetIndexLocal(slot) => {
+                let mut value = pop_value!();
+                let key = pop_value!();
+                let updated = match locals.direct_runtime_value_mut(*slot) {
+                    Some(target) => builtin::set_in_place(target, &key, &mut value)
+                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?,
+                    None => false,
+                };
+                if !updated {
+                    // A captured local, or operands `set` does not accept.
+                    let mut target = local_runtime_value(locals, *slot, chunks)?;
+                    if !builtin::set_in_place(&mut target, &key, &mut value)
+                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?
+                    {
+                        return Err(locate(
+                            chunk,
+                            ip,
+                            VmError::Builtin(builtin::Error::InvalidTypes(
+                                builtins::SET.to_string(),
+                                vec![target, key, value],
+                            )),
+                        ));
+                    }
+                    locals.set(*slot, StackValue::Value(target));
+                }
+            }
+            OpCode::AddAssignLocal(slot) => {
+                let rhs = pop_value!();
+                let appended = if let RuntimeValue::Number(n) = &rhs
+                    && let Some(number) = locals.direct_number_mut(*slot)
+                    && let Some(result) = number_arithmetic(BinaryOp::Add, *number, *n)
+                {
+                    *number = result;
+                    true
+                } else {
+                    add_to_local_in_place(locals, *slot, &rhs).map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?
+                };
+                if !appended {
+                    let lhs = local_runtime_value(locals, *slot, chunks)?;
+                    let result = eval_binary_op(
+                        BinaryOp::Add,
+                        lhs,
+                        rhs,
+                        locals,
+                        chunks,
+                        execution.env,
+                        execution.host_functions,
+                    )
+                    .map_err(|e| locate(chunk, ip, e))?;
+                    locals.set(*slot, StackValue::Value(result));
+                }
+            }
             OpCode::SetLocalAndCopy { source, destination } => {
                 debug_assert!(
                     stack.len() > frame.stack_base as usize,
@@ -1354,7 +1402,8 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::UpdateLocalConst { op, local, constant } => {
                 let appended = *op == BinaryOp::Add
-                    && append_to_string_local(locals, *local, &chunk.constants[*constant as usize]);
+                    && add_to_local_in_place(locals, *local, &chunk.constants[*constant as usize])
+                        .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
                 if !appended {
                     let a = local_runtime_value(locals, *local, chunks)?;
                     let b = chunk.constants[*constant as usize].clone();
@@ -1371,7 +1420,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
                     *number = result;
                     true
                 } else {
-                    *op == BinaryOp::Add && append_to_string_local(locals, *local, &RuntimeValue::Number(rhs))
+                    *op == BinaryOp::Add
+                        && add_to_local_in_place(locals, *local, &RuntimeValue::Number(rhs))
+                            .map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?
                 };
                 if !updated {
                     let value = eval_local_number_const_binary_op(*op, locals, *local, *constant, chunks, execution)
@@ -1381,7 +1432,9 @@ fn run_frame_slice<const CHECK_TIMEOUT: bool>(
             }
             OpCode::UpdateLocalLocal { op, local, value } => {
                 let b = local_runtime_value(locals, *value, chunks)?;
-                if !(*op == BinaryOp::Add && append_to_string_local(locals, *local, &b)) {
+                let appended = *op == BinaryOp::Add
+                    && add_to_local_in_place(locals, *local, &b).map_err(|e| locate(chunk, ip, VmError::Builtin(e)))?;
+                if !appended {
                     let a = local_runtime_value(locals, *local, chunks)?;
                     let result = eval_binary_op(*op, a, b, locals, chunks, execution.env, execution.host_functions)
                         .map_err(|e| locate(chunk, ip, e))?;

@@ -228,6 +228,10 @@ pub(crate) enum OpCode {
     PushNone,
     GetLocal(u16),
     SetLocal(u16),
+    /// Pops a value and a key, then applies `set(local, key, value)` to the local in place.
+    SetIndexLocal(u16),
+    /// Pops an operand and applies `local + operand` to the local in place where possible.
+    AddAssignLocal(u16),
     /// Clones the top operand into one local, then pops it into another local.
     SetLocalAndCopy {
         source: u16,
@@ -482,6 +486,8 @@ impl OpCode {
         match self {
             Self::GetLocal(slot)
             | Self::SetLocal(slot)
+            | Self::SetIndexLocal(slot)
+            | Self::AddAssignLocal(slot)
             | Self::TeeLocal(slot)
             | Self::ArrayNewWithCapacityLocal(slot)
             | Self::ArrayLenLocal(slot)
@@ -643,6 +649,8 @@ impl OpCode {
             Self::PushNone => "PushNone",
             Self::GetLocal(_) => "GetLocal",
             Self::SetLocal(_) => "SetLocal",
+            Self::SetIndexLocal(_) => "SetIndexLocal",
+            Self::AddAssignLocal(_) => "AddAssignLocal",
             Self::SetLocalAndCopy { .. } => "SetLocalAndCopy",
             Self::SetLocalAndCopyAndJump { .. } => "SetLocalAndCopyAndJump",
             Self::SetLocalConst { .. } => "SetLocalConst",
@@ -1247,6 +1255,8 @@ pub(crate) fn verify_chunks(chunks: &[Chunk]) -> Result<(), BytecodeError> {
                 }
                 OpCode::GetLocal(slot)
                 | OpCode::SetLocal(slot)
+                | OpCode::SetIndexLocal(slot)
+                | OpCode::AddAssignLocal(slot)
                 | OpCode::TeeLocal(slot)
                 | OpCode::ReturnLocal(slot)
                 | OpCode::CallLocal(slot, _)
@@ -1851,6 +1861,8 @@ fn stack_effect(op: &OpCode) -> (usize, usize) {
         | OpCode::ForeachCollect(_)
         | OpCode::ForeachCollectAndJump { .. } => (1, 0),
         OpCode::TeeLocal(_) => (1, 1),
+        OpCode::AddAssignLocal(_) => (1, 0),
+        OpCode::SetIndexLocal(_) => (2, 0),
         OpCode::Dup => (1, 2),
         OpCode::SetLocalConst { .. }
         | OpCode::CopyLocal { .. }
@@ -2213,6 +2225,13 @@ mod tests {
     #[case::get_local(vec![OpCode::GetLocal(0), OpCode::Pop, OpCode::Return])]
     #[case::return_local(vec![OpCode::ReturnLocal(0)])]
     #[case::set_local(vec![OpCode::PushNone, OpCode::SetLocal(0), OpCode::Return])]
+    #[case::set_index_local(vec![
+        OpCode::PushNone,
+        OpCode::PushNone,
+        OpCode::SetIndexLocal(0),
+        OpCode::Return,
+    ])]
+    #[case::add_assign_local(vec![OpCode::PushNone, OpCode::AddAssignLocal(0), OpCode::Return])]
     #[case::set_local_and_copy(vec![
         OpCode::PushNone,
         OpCode::SetLocalAndCopy { source: 0, destination: 0 },

@@ -491,6 +491,14 @@ fn encode_op(writer: &mut Writer, tables: &mut Tables, op: &OpCode) -> Result<()
             writer.u8(tags::opcode::SET_LOCAL);
             writer.var_u16(*slot);
         }
+        OpCode::SetIndexLocal(slot) => {
+            writer.u8(tags::opcode::SET_INDEX_LOCAL);
+            writer.var_u16(*slot);
+        }
+        OpCode::AddAssignLocal(slot) => {
+            writer.u8(tags::opcode::ADD_ASSIGN_LOCAL);
+            writer.var_u16(*slot);
+        }
         OpCode::SetLocalAndCopy { source, destination } => {
             writer.u8(tags::opcode::SET_LOCAL_AND_COPY);
             writer.var_u16(*source);
@@ -1201,6 +1209,8 @@ impl Decoder<'_> {
             tags::opcode::PUSH_NONE => OpCode::PushNone,
             tags::opcode::GET_LOCAL => OpCode::GetLocal(r.var_u16()?),
             tags::opcode::SET_LOCAL => OpCode::SetLocal(r.var_u16()?),
+            tags::opcode::SET_INDEX_LOCAL => OpCode::SetIndexLocal(r.var_u16()?),
+            tags::opcode::ADD_ASSIGN_LOCAL => OpCode::AddAssignLocal(r.var_u16()?),
             tags::opcode::SET_LOCAL_AND_COPY => OpCode::SetLocalAndCopy {
                 source: r.var_u16()?,
                 destination: r.var_u16()?,

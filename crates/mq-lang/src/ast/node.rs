@@ -125,9 +125,11 @@ impl Node {
                     .unwrap_or_else(|| callable.range(Shared::clone(&arena)).end);
                 Range { start, end }
             }
-            Expr::As(_, node) | Expr::Let(_, node) | Expr::Var(_, node) | Expr::Assign(_, node) => {
-                node.range(Shared::clone(&arena))
-            }
+            Expr::As(_, node)
+            | Expr::Let(_, node)
+            | Expr::Var(_, node)
+            | Expr::Assign(_, node)
+            | Expr::IndexAssign(_, _, node) => node.range(Shared::clone(&arena)),
             Expr::If(nodes) | Expr::Unless(nodes) => {
                 if let (Some(first), Some(last)) = (nodes.first(), nodes.last()) {
                     let start = first.1.range(Shared::clone(&arena));
@@ -418,6 +420,9 @@ pub enum Expr {
     Loop(Program),
     Var(Pattern, Shared<Node>),
     Assign(IdentWithToken, Shared<Node>),
+    /// `ident[index] = value`: sets one element of the variable's array or dict. Never desugared
+    /// into `Assign(ident, set(ident, ..))`, so the VM can update the variable in place.
+    IndexAssign(IdentWithToken, Shared<Node>, Shared<Node>),
     And(Vec<Shared<Node>>),
     Or(Vec<Shared<Node>>),
     Literal(Literal),
