@@ -2832,11 +2832,11 @@ fn to_code_round_trip_preserves_compound_assign_result(mut engine: DefaultEngine
     {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Bob".to_string()))); RuntimeValue::Dict(Shared::new(d))},
     {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Charlie".to_string()))); RuntimeValue::Dict(Shared::new(d))},
 ]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), "Bob".into(), "Charlie".into()]))].into()))]
-// property selector on an array of dicts: non-dict elements map to None
+// property selector on an array of dicts: non-dict elements are skipped
 #[case::property_selector_array_of_dicts_non_dict_element(r#"."name""#, vec![RuntimeValue::Array(Shared::new(vec![
     {let mut d = DictMap::default(); d.insert(Ident::new("name"), RuntimeValue::String(Shared::new("Alice".to_string()))); RuntimeValue::Dict(Shared::new(d))},
     RuntimeValue::Number(1.into()),
-]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into(), RuntimeValue::None]))].into()))]
+]))], Ok(vec![RuntimeValue::Array(Shared::new(vec!["Alice".into()]))].into()))]
 // property iterator: ."items"[] iterates all elements of the array stored at the key
 #[case::property_selector_iterator(r#"."items"[]"#, vec![{let mut d = DictMap::default(); d.insert(Ident::new("items"), RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))); RuntimeValue::Dict(Shared::new(d))}], Ok(vec![RuntimeValue::Array(Shared::new(vec![RuntimeValue::String(Shared::new("a".to_string())), RuntimeValue::String(Shared::new("b".to_string())), RuntimeValue::String(Shared::new("c".to_string()))]))].into()))]
 // property iterator with index: ."items"[0] accesses the first element of the array

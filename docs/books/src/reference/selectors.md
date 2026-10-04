@@ -341,7 +341,7 @@ When applied to an array of dicts, the property selector maps over each element:
 ."name"   # Returns: ["Alice", "Bob", "Charlie"]
 ```
 
-Non-dict elements in the array return `none`.
+Elements that are not dicts, or that lack the key, are skipped.
 
 ### Missing Keys
 

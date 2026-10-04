@@ -91,6 +91,9 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
             if args.is_none() && matches!(selector, Selector::Recursive) {
                 return RuntimeValue::Array(Shared::new(collect_recursive(value)));
             }
+            if args.is_none() && matches!(selector, Selector::List(Some(_), None)) {
+                return RuntimeValue::None;
+            }
             let new_map: DictMap = map
                 .iter()
                 .map(|(k, v)| {
@@ -102,13 +105,23 @@ fn eval_selector_expr_impl(value: &RuntimeValue, selector: &Selector, args: Opti
                     (*k, new_v)
                 })
                 .collect();
-            if new_map.is_empty() {
+            if new_map.values().all(is_blank) {
                 RuntimeValue::None
             } else {
                 RuntimeValue::Dict(Shared::new(new_map))
             }
         }
         _ => RuntimeValue::None,
+    }
+}
+
+/// True for `none` and for arrays/dicts that contain nothing but blank values.
+fn is_blank(value: &RuntimeValue) -> bool {
+    match value {
+        RuntimeValue::None => true,
+        RuntimeValue::Array(items) => items.iter().all(is_blank),
+        RuntimeValue::Dict(map) => map.values().all(is_blank),
+        _ => false,
     }
 }
 
@@ -137,10 +150,9 @@ fn eval_property_selector_expr(value: &RuntimeValue, property_name: &Ident) -> R
         RuntimeValue::Array(values) => RuntimeValue::Array(Shared::new(
             values
                 .iter()
-                .map(|v| match v {
-                    RuntimeValue::Dict(_) => eval_property_selector_expr(v, property_name),
-                    _ => RuntimeValue::None,
-                })
+                .filter(|v| matches!(v, RuntimeValue::Dict(_)))
+                .map(|v| eval_property_selector_expr(v, property_name))
+                .filter(|v| !v.is_none())
                 .collect(),
         )),
         RuntimeValue::Dict(map) => map.get(property_name).cloned().unwrap_or(RuntimeValue::None),
@@ -213,6 +225,49 @@ mod tests {
                 RuntimeValue::None
             ])),
             "recursive dict results must remain flattened when selected through an array"
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::markdown_selector(Selector::Heading(None))]
+    #[case::code_selector(Selector::Code)]
+    #[case::index_selector(Selector::List(Some(0), None))]
+    fn markdown_selector_on_plain_dict_returns_none(#[case] selector: Selector) {
+        let dict = RuntimeValue::Dict(Shared::new(DictMap::from_iter([
+            (
+                Ident::new("name"),
+                RuntimeValue::String(Shared::new("Alice".to_string())),
+            ),
+            (
+                Ident::new("tags"),
+                RuntimeValue::Array(Shared::new(vec![RuntimeValue::Number(1.into())])),
+            ),
+        ])));
+
+        assert_eq!(eval_selector_expr(&dict, &selector), RuntimeValue::None);
+    }
+
+    #[test]
+    fn property_selector_on_array_skips_elements_without_the_key() {
+        let dict = |key: &str, v: i64| {
+            RuntimeValue::Dict(Shared::new(DictMap::from_iter([(
+                Ident::new(key),
+                RuntimeValue::Number(v.into()),
+            )])))
+        };
+        let input = RuntimeValue::Array(Shared::new(vec![
+            dict("a", 1),
+            dict("b", 2),
+            RuntimeValue::Number(3.into()),
+            dict("a", 4),
+        ]));
+
+        assert_eq!(
+            eval_selector_expr(&input, &Selector::Property(Ident::new("a"))),
+            RuntimeValue::Array(Shared::new(vec![
+                RuntimeValue::Number(1.into()),
+                RuntimeValue::Number(4.into())
+            ]))
         );
     }
 
