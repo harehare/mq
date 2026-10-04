@@ -1509,7 +1509,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         }?;
         let def_token_id = self.alloc_token(def_token);
         let params = if self.is_next_token(|token| matches!(token, TokenKind::Colon | TokenKind::Do)) {
-            SmallVec::new()
+            Params::new()
         } else {
             self.parse_params()?
         };
@@ -1800,7 +1800,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.consume_colon_or_do();
 
         // Parse match arms
-        let mut arms: super::node::MatchArms = SmallVec::new();
+        let mut arms: super::node::MatchArms = Vec::new();
 
         while let Some(token) = self.tokens.peek() {
             // Check for end of match
@@ -2295,7 +2295,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             None => return Err(SyntaxError::UnexpectedEOFDetected(self.module_id)),
         };
 
-        let mut params: Params = SmallVec::new();
+        let mut params: Params = Vec::new();
         let mut prev_token: Option<&TokenKind> = None;
         let mut seen_default = false;
         let mut seen_variadic = false;
@@ -3090,7 +3090,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                     IdentWithToken::new_with_token("filter", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("filter")))))),
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("arg1", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arg1"))))))),
                         Param::new(IdentWithToken::new_with_token("arg2", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arg2"))))))),
                     ],
@@ -3216,7 +3216,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3239,7 +3239,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3331,7 +3331,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3353,7 +3353,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        SmallVec::new(),
+                        Vec::new(),
                         vec![Shared::new(Node {
                             token_id: 1.into(),
                             expr: Expr::Literal(Literal::String("value".to_owned())),
@@ -3376,7 +3376,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("name", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("name")))))),
-                        smallvec![
+                        vec![
                           Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         ],
                         vec![Shared::new(Node {
@@ -4811,7 +4811,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    SmallVec::new(),
+                    Vec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
@@ -4842,7 +4842,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                     ],
@@ -4883,7 +4883,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                     ],
                     vec![
@@ -4942,7 +4942,7 @@ mod tests {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                smallvec![
+                                vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
@@ -8211,7 +8211,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![
+                        vec![
                             Param::variadic(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
                         ],
                         vec![Shared::new(Node {
@@ -8240,7 +8240,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![
+                        vec![
                             Param::new(IdentWithToken::new_with_token("a", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("a"))))))),
                             Param::variadic(IdentWithToken::new_with_token("rest", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("rest"))))))),
                         ],
@@ -8289,7 +8289,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![],
+                        vec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
@@ -8310,7 +8310,7 @@ mod tests {
                 token_id: 0.into(),
                 expr: Expr::Def(
                         IdentWithToken::new_with_token("f", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("f")))))),
-                        smallvec![],
+                        vec![],
                         vec![Shared::new(Node {
                             token_id: 2.into(),
                             expr: Expr::Ident(IdentWithToken::new_with_token("args", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("args"))))))),
@@ -8331,7 +8331,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    SmallVec::new(),
+                    Vec::new(),
                     vec![
                         Shared::new(Node {
                             token_id: 2.into(),
@@ -8362,7 +8362,7 @@ mod tests {
             Shared::new(Node {
                 token_id: 0.into(),
                 expr: Expr::Fn(
-                    smallvec![
+                    vec![
                         Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                         Param::new(IdentWithToken::new_with_token("y", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("y"))))))),
                     ],
@@ -8410,7 +8410,7 @@ mod tests {
                         Shared::new(Node {
                             token_id: 0.into(),
                             expr: Expr::Fn(
-                                smallvec![
+                                vec![
                                   Param::new(IdentWithToken::new_with_token("x", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("x"))))))),
                                 ],
                                 vec![
@@ -9131,7 +9131,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(1.into())),
                             guard: None,
@@ -9192,7 +9192,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Type(Ident::new("string")),
                             guard: None,
@@ -9243,7 +9243,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Array(vec![
                                 Pattern::Ident(IdentWithToken::new("x")),
@@ -9290,7 +9290,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::ArrayRest(
                                 vec![Pattern::Ident(IdentWithToken::new("first"))],
@@ -9340,7 +9340,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Dict(vec![
                                 (IdentWithToken::new("name"), Pattern::Ident(IdentWithToken::new("name"))),
@@ -9406,7 +9406,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Ident(IdentWithToken::new("x")),
                             guard: Some(Shared::new(Node {
@@ -9499,7 +9499,7 @@ mod tests {
                         token_id: 1.into(),
                         expr: Expr::Literal(Literal::Number(2.into()))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(1.into())),
                             guard: None,
@@ -9564,7 +9564,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Number(1.into())),
@@ -9620,7 +9620,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::String("a".to_owned())),
@@ -9674,7 +9674,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Type(Ident::new("string")),
@@ -9724,7 +9724,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Number(1.into())),
@@ -9777,7 +9777,7 @@ mod tests {
                             module_id: 1.into()
                         }))))
                     }),
-                    smallvec![
+                    vec![
                         MatchArm {
                             pattern: Pattern::Or(vec![
                                 Pattern::Literal(Literal::Bool(true)),

@@ -53,11 +53,11 @@ impl Param {
     }
 }
 
-pub type Params = SmallVec<[Param; 4]>;
+pub type Params = Vec<Param>;
 pub type Args = SmallVec<[Shared<Node>; 4]>;
 pub type Cond = (Option<Shared<Node>>, Shared<Node>);
 pub type Branches = SmallVec<[Cond; 4]>;
-pub type MatchArms = SmallVec<[MatchArm; 4]>;
+pub type MatchArms = Vec<MatchArm>;
 
 #[derive(PartialEq, PartialOrd, Debug, Clone)]
 #[cfg_attr(feature = "ast-json", derive(Serialize, Deserialize))]
@@ -528,7 +528,7 @@ mod tests {
                 token_id: ArenaId::new(0),
                 expr: Expr::Literal(Literal::String("val".to_string())),
             }),
-            smallvec![
+            vec![
                 MatchArm {
                     pattern: Pattern::Literal(Literal::String("a".to_string())),
                     guard: None,
@@ -617,7 +617,7 @@ mod tests {
     #[case(
         Expr::Def(
             IdentWithToken::new("f"),
-            smallvec![],
+            vec![],
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -637,7 +637,7 @@ mod tests {
     )]
     #[case(
         Expr::Fn(
-            smallvec![],
+            vec![],
             vec![
                 Shared::new(Node {
                     token_id: ArenaId::new(0),
@@ -1215,5 +1215,20 @@ mod tests {
     #[test]
     fn test_expr_display_other_is_empty() {
         assert_eq!(format!("{}", Expr::Continue), "");
+    }
+
+    #[test]
+    fn test_node_size_stays_small() {
+        // Every node is its own allocation, so one large variant enlarges all of them.
+        assert!(
+            std::mem::size_of::<Expr>() <= 88,
+            "Expr is {} bytes",
+            std::mem::size_of::<Expr>()
+        );
+        assert!(
+            std::mem::size_of::<Node>() <= 96,
+            "Node is {} bytes",
+            std::mem::size_of::<Node>()
+        );
     }
 }

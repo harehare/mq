@@ -1064,7 +1064,7 @@ mod tests {
     #[case::no_params_inline(
         Expr::Def(
             IdentWithToken::new("test"),
-            smallvec![],
+            vec![],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
         ),
         "def test(): 42"
@@ -1072,7 +1072,7 @@ mod tests {
     #[case::with_params_inline(
         Expr::Def(
             IdentWithToken::new("add"),
-            smallvec![
+            vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::new(IdentWithToken::new("y"))
             ],
@@ -1083,7 +1083,7 @@ mod tests {
     #[case::with_default_value(
         Expr::Def(
             IdentWithToken::new("greet"),
-            smallvec![
+            vec![
                 Param::new(IdentWithToken::new("name")),
                 Param::with_default(
                     IdentWithToken::new("greeting"),
@@ -1097,7 +1097,7 @@ mod tests {
     #[case::with_multiple_defaults(
         Expr::Def(
             IdentWithToken::new("foo"),
-            smallvec![
+            vec![
                 Param::new(IdentWithToken::new("a")),
                 Param::with_default(
                     IdentWithToken::new("b"),
@@ -1115,7 +1115,7 @@ mod tests {
     #[case::block(
         Expr::Def(
             IdentWithToken::new("test"),
-            smallvec![Param::new(IdentWithToken::new("x"))],
+            vec![Param::new(IdentWithToken::new("x"))],
             vec![
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0))))),
                 Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(2.0)))))
@@ -1131,14 +1131,14 @@ mod tests {
     #[rstest]
     #[case::no_params_inline(
         Expr::Fn(
-            smallvec![],
+            vec![],
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]
         ),
         "fn(): 42"
     )]
     #[case::with_params_inline(
         Expr::Fn(
-            smallvec![
+            vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::new(IdentWithToken::new("y"))
             ],
@@ -1148,7 +1148,7 @@ mod tests {
     )]
     #[case::with_default_value(
         Expr::Fn(
-            smallvec![
+            vec![
                 Param::new(IdentWithToken::new("x")),
                 Param::with_default(
                     IdentWithToken::new("y"),
@@ -1168,7 +1168,7 @@ mod tests {
     #[case::simple(
         Expr::Match(
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("x")))),
-            smallvec![
+            vec![
                 MatchArm {
                     pattern: Pattern::Literal(Literal::Number(Number::new(1.0))),
                     guard: None,
