@@ -1,75 +1,52 @@
 # mq Development Guide
 
-## Project Overview
+`mq` is a jq-like command-line tool for Markdown processing, written in Rust.
 
-`mq` is a jq-like command-line tool for Markdown processing. Written in Rust, it allows you to easily slice, filter, map, and transform Markdown files.
+## Where things live
 
-## Coding Conventions
+- `mq-markdown`: all Markdown parsing and manipulation
+- `mq-run`: all CLI logic
+- `mq-hir`: HIR shared by the LSP, linter and type checker
+- `mq-check`: type checker, holds builtin type signatures
+- `mq-macros`: `#[mq_macros::mq_fn]` native builtin registration
+- `mq-test` / `mq-bench`: runners for `.mq` tests and `bench_` functions
 
-### Rust Code Conventions
+## Commands
 
-- Always format and validate code using `cargo fmt` and `cargo clippy`
-- Add appropriate documentation comments to all public functions, structs, traits, enums, etc.
-- Use the `miette` crate for error handling and provide user-friendly error messages
-- Avoid panics whenever possible and return appropriate `Result` types
-- Write comprehensive tests and update related tests when adding or changing functionality
+Use `just`, not bare `cargo test`.
 
-## Documentation Guidelines
+- `just test-all`: fmt check, clippy, mq tests, doctests, all-features and workspace tests
+- `just test-mq`: `.mq` tests only. Sufficient when the change is confined to `crates/mq-lang`
+- `just lint`: clippy with `-D clippy::all`
+- `just dump-bytecode '<query>'` / `just vm-profile '<query>'`: inspect VM output
 
-When adding new features, update the documentation.
+## Conventions
 
-- Keep documentation up-to-date with code changes.
-- Use clear, concise language and provide usage examples.
-- Document all public APIs, commands, and features.
-- Update `/docs` and crate-level `README.md` files for new features or changes.
-- Ensure documentation is consistent across all files and crates.
-- Use Markdown best practices for formatting and structure.
+- Use `miette` for user-facing errors. Avoid panics.
+- Public items get doc comments. Keep comments and clap help text terse, only on non-obvious parts.
+- Do not write migration or "what changed from the old parser/markdown-rs" notes in docs or comments. Put that in the commit message.
+- Delete code that a change makes unused or always-false, even if the diff grows.
+- Avoid em dashes in comments and docs.
+- Update `docs/` and the crate `README.md` for user-visible changes.
 
-## Testing Conventions
+## Generated docs
 
-- Write comprehensive tests for all new features and bug fixes.
-- Use descriptive names for test functions and modules.
-- Prefer table-driven tests for similar input/output patterns.
-- Use `assert_eq!`, `assert!`, and custom error messages for clarity.
-- Avoid flaky or timing-dependent tests.
-- Place integration tests in the `tests/` directory and unit tests alongside implementation.
-- Mock external dependencies where possible.
-- Keep tests fast and isolated.
-- Update or add tests when changing existing code.
+Do not hand-edit these, and do not run `just docs` during normal development. It is run only at release time. It regenerates them from the released `mq` binary, and CI checks they match it, so a new flag or builtin will not appear until after release.
 
-Use `just test-all` to run tests instead of `cargo test`.
+- `README.md` Options block
+- `docs/books/src/reference/cli.md`
+- `docs/books/src/builtins.html`
 
-## Markdown Parser/Utility Coding Rules
+`mq docs` shells out to the installed `mq-docs`, not to the local build.
 
-- All Markdown parsing and manipulation logic must reside in `mq-markdown`.
-- Write tests for all parsing and transformation functions.
-- Ensure robust handling of edge cases in Markdown syntax.
-- Document all public APIs and provide usage examples in doc comments.
-- Avoid panics on malformed input; return descriptive errors using `miette`.
-- Keep the API surface minimal and focused on Markdown processing.
+## Builtins
 
-## Rust Crate Coding Rules for mq
+- Do not add a builtin that duplicates or thinly wraps an existing one or an operator (e.g. a `substr` when `slice` exists).
+- A new builtin needs its type signature registered in `crates/mq-check/src/builtin.rs`.
+- Pure-mq functions in `builtin.mq`: tests go only in `crates/mq-lang/builtin_tests.mq`.
+- Native Rust builtins: test only the logic you added, not the behavior of the underlying crate (e.g. `regex`).
+- In `builtin.mq`, a multi-statement `let`/`var` pipe chain used as an `if`/`else` branch value must be wrapped in `do ... end`. Single-expression branches need no `end`.
 
-- Each crate must have a clear purpose and be documented in its `README.md` (if present).
-- Organize code into logical modules; avoid large, monolithic files.
-- Use `pub(crate)` or tighter visibility unless wider exposure is necessary.
-- Prefer explicit error types using `miette` for user-facing errors.
-- Write comprehensive unit and integration tests in each crate.
-- Document all public APIs with Rust doc comments.
-- Avoid unsafe code unless absolutely necessary; document all unsafe blocks.
-- Use feature flags for optional functionality.
-- Keep dependencies minimal and up-to-date.
+## Commits
 
-## CLI Tool Coding Rules
-
-- All command-line interface logic must reside in `mq-run`.
-- Use `clap` or similar crate for argument parsing.
-- Provide clear, user-friendly error messages using `miette`.
-- Document all commands, flags, and options in code and in the CLI help output.
-- Write integration tests for CLI behavior and edge cases.
-- Ensure the CLI is robust against malformed input and unexpected usage.
-- Output should be clear and suitable for piping/automation.
-
-## License
-
-This project is provided under the MIT License. Please ensure all contributions are compatible with this license.
+Conventional commits with a leading emoji, e.g. `🐛 fix(lang): ...`, `⚡ perf(lang): ...`.
