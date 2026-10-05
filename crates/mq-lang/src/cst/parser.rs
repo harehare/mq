@@ -702,12 +702,26 @@ impl<'a> Parser<'a> {
 
     // Parses bracket access operations recursively to handle nested access like arr[0][1][2]
     fn parse_bracket_access(&mut self, mut node: Node) -> Result<Shared<Node>, ParseError> {
+        // A qualified access (`module::func()[0]`) stays whole as the first child of a nameless
+        // `Call`, as in `parse_postfix_chain`. Merging its items into the `Call` would turn
+        // `module` into a call name and lose the `module::member` structure that name
+        // resolution relies on.
+        if matches!(node.kind, NodeKind::QualifiedAccess { .. }) {
+            node = Node {
+                kind: NodeKind::Call {
+                    args: std::iter::once(Shared::new(node)).collect(),
+                },
+                token: None,
+                leading_trivia: TriviaList::new(),
+                trailing_trivia: TriviaList::new(),
+            };
+        }
+
         // The node may already be a `Call` (e.g. from `parse_postfix_chain`'s wrapper, or
         // a preceding bracket access being extended by another `[...]`), in which case its
         // existing children live in `args` rather than the legacy `children` field.
         let mut children: Vec<Shared<Node>> = match &mut node.kind {
             NodeKind::Call { args } => std::mem::take(args).into_vec(),
-            NodeKind::QualifiedAccess { items } => std::mem::take(items).into_vec(),
             _ => Vec::new(),
         };
 

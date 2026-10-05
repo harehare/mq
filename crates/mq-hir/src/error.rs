@@ -35,7 +35,11 @@ impl Hir {
             .filter_map(|(symbol_id, symbol)| match symbol.kind {
                 SymbolKind::Call | SymbolKind::Ref => {
                     // builtin.mq may call functions gated behind mq-lang features this build lacks.
-                    if self.references.contains_key(&symbol_id) || self.is_builtin_symbol(symbol) {
+                    // A nameless `Call` is the index/slice in `f(x)[0]`, so there is nothing to resolve.
+                    if symbol.value.is_none()
+                        || self.references.contains_key(&symbol_id)
+                        || self.is_builtin_symbol(symbol)
+                    {
                         None
                     } else {
                         Some(HirError::UnresolvedSymbol {
@@ -418,6 +422,9 @@ mod tests {
         "module m: import \"csv\" | def f(): csv::csv_parse(\"a\", true); end | m::f()",
         false
     )]
+    #[case::qualified_then_index("import \"csv\" | csv::csv_parse(\"a\", true)[0]", false)]
+    #[case::qualified_then_key("import \"csv\" | csv::csv_parse(\"a\", true)[:rows][0]", false)]
+    #[case::bare_then_index("import \"csv\" | csv_parse(\"a\", true)[0]", true)]
     fn test_imported_names_need_qualification(#[case] code: &str, #[case] unresolved: bool) {
         let mut hir = Hir::default();
         let _ = hir.add_code(None, code);
@@ -435,6 +442,19 @@ mod tests {
         let _ = hir.add_code(None, "module m: def f(): upcase(); end | m::f()");
 
         assert!(!unresolved_names(&hir).contains(&"upcase".to_string()));
+    }
+
+    #[rstest]
+    #[case::call_result("def f(d): d[0](1)[0]; | f([])")]
+    #[case::call_result_slice("def f(d): d[0](1)[0:1]; | f([])")]
+    #[case::chained("def f(d): d[0](1)[0](2)[1]; | f([])")]
+    #[case::paren_call("def f(d): (d[0])(1)[0]; | f([])")]
+    fn test_index_after_dynamic_call_is_not_unresolved(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        let _ = hir.add_code(None, code);
+
+        assert!(hir.errors().is_empty(), "{code}: {:?}", hir.errors());
     }
 
     #[test]
