@@ -101,6 +101,14 @@ test-mq:
 bench-mq:
     cargo run --release -p mq-bench -- crates/mq-lang/benches/mq_benches.mq
 
+# Time mq-check per input and pipeline stage (divan).
+bench-check:
+    cargo bench -p mq-check --bench benchmark
+
+# Print the median time of each mq-check phase per input.
+bench-check-phases:
+    cargo run --release -p mq-check --example phase_profile
+
 # Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
 test-gfm-spec:
     cargo test -p mq-markdown --test gfm_roundtrip_fidelity -- --ignored --nocapture

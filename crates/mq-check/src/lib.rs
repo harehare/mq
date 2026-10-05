@@ -252,6 +252,50 @@ pub struct TypeCheckerOptions {
     pub no_exhaustive_patterns: bool,
 }
 
+/// Wall-clock time of each phase of [`TypeChecker::check_profiled`], in execution order.
+///
+/// A phase that runs more than once appears once per run.
+#[derive(Debug, Clone, Default)]
+pub struct PhaseTimings(pub Vec<(&'static str, std::time::Duration)>);
+
+impl PhaseTimings {
+    /// Total time per phase name, in first-seen order.
+    pub fn summed(&self) -> Vec<(&'static str, std::time::Duration)> {
+        let mut out: Vec<(&'static str, std::time::Duration)> = Vec::new();
+        for (name, elapsed) in &self.0 {
+            match out.iter_mut().find(|(n, _)| n == name) {
+                Some((_, total)) => *total += *elapsed,
+                None => out.push((name, *elapsed)),
+            }
+        }
+        out
+    }
+}
+
+/// Records the time between consecutive `lap` calls. Does nothing unless started.
+#[derive(Default)]
+struct Laps {
+    last: Option<std::time::Instant>,
+    timings: Vec<(&'static str, std::time::Duration)>,
+}
+
+impl Laps {
+    fn started() -> Self {
+        Self {
+            last: Some(std::time::Instant::now()),
+            timings: Vec::new(),
+        }
+    }
+
+    fn lap(&mut self, name: &'static str) {
+        if let Some(last) = &mut self.last {
+            let now = std::time::Instant::now();
+            self.timings.push((name, now - *last));
+            *last = now;
+        }
+    }
+}
+
 /// Type checker for mq programs
 ///
 /// Provides type inference and checking capabilities based on HIR information.
@@ -283,20 +327,35 @@ impl TypeChecker {
     ///
     /// Returns a list of type errors found. An empty list means no errors.
     pub fn check(&mut self, hir: &Hir) -> Vec<TypeError> {
+        self.run(hir, &mut Laps::default())
+    }
+
+    /// Like [`check`](Self::check), but also returns the wall-clock time of each phase.
+    pub fn check_profiled(&mut self, hir: &Hir) -> (Vec<TypeError>, PhaseTimings) {
+        let mut laps = Laps::started();
+        let errors = self.run(hir, &mut laps);
+        (errors, PhaseTimings(laps.timings))
+    }
+
+    fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<TypeError> {
         // Create inference context with options
         let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
 
         builtin::register_all(&mut ctx);
+        laps.lap("register_builtins");
 
         // Generate constraints from HIR (collects errors internally).
         // Returns the children index so it can be reused by later passes.
         let children_index = constraint::generate_constraints(hir, &mut ctx);
+        laps.lap("generate_constraints");
 
         // Solve constraints through unification (collects errors internally)
         unify::solve_constraints(&mut ctx);
+        laps.lap("solve");
 
         // Resolve user-defined call return types before narrowing so `y != None` can narrow `let y = f(x)`.
         deferred::propagate_user_call_returns(&mut ctx);
+        laps.lap("propagate_user_call_returns");
 
         // Apply type narrowings from type predicate conditions (e.g., is_string(x))
         // in if/elif branches. This overrides Ref types within narrowed branches.
@@ -320,6 +379,8 @@ impl TypeChecker {
             });
         }
 
+        laps.lap("narrowing");
+
         // Resolve deferred tuple index accesses now that variable types are known.
         if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
             unify::solve_constraints(&mut ctx);
@@ -332,10 +393,12 @@ impl TypeChecker {
 
         // Resolve deferred selector field accesses (.field on records)
         deferred::resolve_selector_field_accesses(&mut ctx);
+        laps.lap("deferred_accesses");
 
         // Propagate return types from user-defined function calls so that
         // f(x)["key"] bracket accesses below have concrete return types to inspect.
         deferred::propagate_user_call_returns(&mut ctx);
+        laps.lap("propagate_user_call_returns");
 
         // Resolve f(x)["key"] bracket accesses on function return values.
         // Must run after propagate_user_call_returns so ret_ty is concrete.
@@ -343,8 +406,11 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
+        laps.lap("deferred_accesses");
+
         // Process deferred overload resolutions (operators with type variable operands).
         deferred::resolve_deferred_overloads(&mut ctx);
+        laps.lap("resolve_deferred_overloads");
 
         // Re-run deferred tuple accesses after overload resolution, because some variable
         // types (e.g., the return type of `first(xs)`) may only be resolved after
@@ -355,18 +421,23 @@ impl TypeChecker {
             unify::solve_constraints(&mut ctx);
         }
 
+        laps.lap("deferred_accesses");
+
         // Resolve deferred try/catch branch-type merges, then retry accesses/operators
         // that depend on a `let v = try: ... catch: ...` variable's now-final type.
         deferred::resolve_deferred_try_catches(&mut ctx);
         if deferred::resolve_deferred_tuple_accesses(&mut ctx) {
             unify::solve_constraints(&mut ctx);
         }
+        laps.lap("deferred_try_catches");
         deferred::resolve_deferred_overloads(&mut ctx);
+        laps.lap("resolve_deferred_overloads");
 
         // Check operators inside user-defined function bodies against call-site types.
         // Uses local substitution (original params → call-site args) without modifying
         // global state, so multiple call sites don't interfere.
         deferred::check_user_call_body_operators(hir, &mut ctx);
+        laps.lap("check_user_call_body_operators");
 
         // Check pattern match exhaustiveness (reuses the children index from constraint generation)
         if !self.options.no_exhaustive_patterns {
@@ -375,11 +446,14 @@ impl TypeChecker {
             }
         }
 
+        laps.lap("exhaustiveness");
+
         // Collect errors before finalizing
         let errors = ctx.take_errors();
 
         // Store inferred types
         self.symbol_types = ctx.finalize();
+        laps.lap("finalize");
 
         errors
     }

@@ -39,3 +39,9 @@ url = {workspace = true, optional = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+divan = {workspace = true}
+url = {workspace = true}
+
+[[bench]]
+harness = false
+name = "benchmark"
