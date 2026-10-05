@@ -250,6 +250,30 @@ fn eval_compiled_string_append_loop(bencher: divan::Bencher) {
     );
 }
 
+/// Appends to an array local in a loop, which must stay linear in the number of appends.
+#[divan::bench]
+fn eval_compiled_array_append_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var a = [] | var i = 0 | while(i < 20000): a += [i] | i += 1; | len(a)"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
+/// Assigns array elements by index in a loop, which must stay linear in the number of writes.
+#[divan::bench]
+fn eval_compiled_array_index_assign_loop(bencher: divan::Bencher) {
+    let mut engine = mq_lang::DefaultEngine::default();
+    bench_compiled(
+        bencher,
+        &mut engine,
+        r#"var a = range(0, 20000) | var i = 0 | while(i < 20000): a[i] = i + 1 | i += 1; | len(a)"#,
+        || vec![mq_lang::RuntimeValue::None],
+    );
+}
+
 /// Measures calls through a local holding a native function, which use the VM's generic call
 /// path instead of the fixed-arity closure fast path.
 #[divan::bench]

@@ -202,6 +202,8 @@ fn format_opcode(opcode: &bytecode::OpCode, chunk: &bytecode::Chunk, pc: usize) 
         bytecode::OpCode::PushNone => "PushNone".to_string(),
         bytecode::OpCode::GetLocal(slot) => format!("GetLocal {}", local(*slot)),
         bytecode::OpCode::SetLocal(slot) => format!("SetLocal {}", local(*slot)),
+        bytecode::OpCode::SetIndexLocal(slot) => format!("SetIndexLocal {}", local(*slot)),
+        bytecode::OpCode::AddAssignLocal(slot) => format!("AddAssignLocal {}", local(*slot)),
         bytecode::OpCode::SetLocalAndCopy { source, destination } => {
             format!("SetLocalAndCopy {} -> {}", local(*source), local(*destination))
         }

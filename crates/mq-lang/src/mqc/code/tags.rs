@@ -216,4 +216,6 @@ pub(super) mod opcode {
     pub(crate) const YIELD: u8 = 94;
     pub(crate) const RESUME: u8 = 95;
     pub(crate) const JUMP_IF_TRUE: u8 = 96;
+    pub(crate) const SET_INDEX_LOCAL: u8 = 97;
+    pub(crate) const ADD_ASSIGN_LOCAL: u8 = 98;
 }

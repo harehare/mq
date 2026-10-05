@@ -208,7 +208,8 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     /// Creates an assignment node, handling both simple identifiers and indexed targets.
     ///
     /// - `x = rhs` → `Assign(x, rhs)`
-    /// - `arr[idx] = rhs` (lhs is `Call("get", [arr, idx])`) → `Assign(arr, set(arr, idx, rhs))`
+    /// - `arr[idx] = rhs` (lhs is `Call("get", [arr, idx])`) → `IndexAssign(arr, idx, rhs)`
+    /// - `arr[i][j] = rhs` → `arr[i] = set(arr[i], j, rhs)`, applied recursively
     fn create_assign(
         &mut self,
         lhs: &Shared<Node>,
@@ -224,20 +225,21 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             Expr::Call(func_ident, args) if func_ident.name == *GET_IDENT && args.len() == 2 => match &args[0].expr {
                 Expr::Ident(var_ident) => Ok(Shared::new(Node {
                     token_id: operator_token_id,
-                    expr: Expr::Assign(
-                        var_ident.clone(),
-                        Shared::new(Node {
-                            token_id: operator_token_id,
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(
-                                    constants::builtins::SET,
-                                    Some(self.shared_token(operator_token)),
-                                ),
-                                smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs,],
-                            ),
-                        }),
-                    ),
+                    expr: Expr::IndexAssign(var_ident.clone(), Shared::clone(&args[1]), rhs),
                 })),
+                Expr::Call(..) => {
+                    let set_call = Shared::new(Node {
+                        token_id: operator_token_id,
+                        expr: Expr::Call(
+                            IdentWithToken::new_with_token(
+                                constants::builtins::SET,
+                                Some(self.shared_token(operator_token)),
+                            ),
+                            smallvec![Shared::clone(&args[0]), Shared::clone(&args[1]), rhs],
+                        ),
+                    });
+                    self.create_assign(&args[0], set_call, operator_token_id, operator_token)
+                }
                 _ => Err(SyntaxError::InvalidAssignmentTarget(
                     (*self.token_arena[args[0].token_id]).clone(),
                 )),
@@ -3640,29 +3642,17 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Assign(
-                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
-                        Shared::new(Node {
-                            token_id: 3.into(),
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::Equal)))),
-                                smallvec![
-                                    Shared::new(Node {
-                                        token_id: 0.into(),
-                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
-                                    }),
-                                    Shared::new(Node {
+                    expr: Expr::IndexAssign(
+IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+Shared::new(Node {
                                         token_id: 1.into(),
                                         expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
-                                    Shared::new(Node {
+Shared::new(Node {
                                         token_id: 4.into(),
                                         expr: Expr::Literal(Literal::Number(10.into())),
                                     }),
-                                ],
-                            ),
-                        }),
-                    ),
+),
                 })
             ]))]
     #[case::index_compound_assign(
@@ -3678,22 +3668,13 @@ mod tests {
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Assign(
-                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
-                        Shared::new(Node {
-                            token_id: 3.into(),
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::PlusEqual)))),
-                                smallvec![
-                                    Shared::new(Node {
-                                        token_id: 0.into(),
-                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
-                                    }),
-                                    Shared::new(Node {
+                    expr: Expr::IndexAssign(
+IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+Shared::new(Node {
                                         token_id: 1.into(),
                                         expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
-                                    Shared::new(Node {
+Shared::new(Node {
                                         token_id: 3.into(),
                                         expr: Expr::BinaryOp(
     BinaryOp::Add,
@@ -3719,10 +3700,7 @@ mod tests {
                                                 }),
                                             ),
                                     }),
-                                ],
-                            ),
-                        }),
-                    ),
+),
                 })
             ]))]
     #[case::index_double_slash_equal(
@@ -3735,26 +3713,17 @@ mod tests {
                 token(TokenKind::NumberLiteral(2.into())),
                 token(TokenKind::Eof)
             ],
-            // arr[0] //= 2  →  arr = set(arr, 0, floor(div(get(arr, 0), 2)))
+            // arr[0] //= 2  →  arr[0] = floor(div(get(arr, 0), 2))
             Ok(vec![
                 Shared::new(Node {
                     token_id: 3.into(),
-                    expr: Expr::Assign(
-                        IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
-                        Shared::new(Node {
-                            token_id: 3.into(),
-                            expr: Expr::Call(
-                                IdentWithToken::new_with_token(constants::builtins::SET, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
-                                smallvec![
-                                    Shared::new(Node {
-                                        token_id: 0.into(),
-                                        expr: Expr::Ident(IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr"))))))),
-                                    }),
-                                    Shared::new(Node {
+                    expr: Expr::IndexAssign(
+IdentWithToken::new_with_token("arr", Some(Shared::new(token(TokenKind::Ident(SmolStr::new("arr")))))),
+Shared::new(Node {
                                         token_id: 1.into(),
                                         expr: Expr::Literal(Literal::Number(0.into())),
                                     }),
-                                    Shared::new(Node {
+Shared::new(Node {
                                         token_id: 3.into(),
                                         expr: Expr::Call(
                                             IdentWithToken::new_with_token(constants::builtins::FLOOR, Some(Shared::new(token(TokenKind::DoubleSlashEqual)))),
@@ -3786,10 +3755,7 @@ mod tests {
                                             })],
                                         ),
                                     }),
-                                ],
-                            ),
-                        }),
-                    ),
+),
                 })
             ]))]
     #[case::root_semicolon_error(

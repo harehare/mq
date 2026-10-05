@@ -146,6 +146,12 @@ impl Node {
                 write!(buf, "{} = ", ident).unwrap();
                 value.format_to_code(buf, indent);
             }
+            Expr::IndexAssign(ident, index, value) => {
+                write!(buf, "{}[", ident).unwrap();
+                index.format_to_code(buf, indent);
+                buf.push_str("] = ");
+                value.format_to_code(buf, indent);
+            }
             Expr::If(branches) => {
                 for (i, (cond_opt, body)) in branches.iter().enumerate() {
                     if i == 0 {
@@ -895,6 +901,14 @@ mod tests {
             Shared::new(create_node(Expr::Ident(IdentWithToken::new("value"))))
         ),
         "z = value"
+    )]
+    #[case::index_assign(
+        Expr::IndexAssign(
+            IdentWithToken::new("xs"),
+            Shared::new(create_node(Expr::Literal(Literal::Number(0.into())))),
+            Shared::new(create_node(Expr::Ident(IdentWithToken::new("value"))))
+        ),
+        "xs[0] = value"
     )]
     fn test_to_code_variables(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);
