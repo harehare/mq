@@ -110,6 +110,7 @@ pub struct TestRunner {
     update_snapshots: bool,
     list: bool,
     format: OutputFormat,
+    module_directories: Vec<PathBuf>,
 }
 
 impl TestRunner {
@@ -128,6 +129,7 @@ impl TestRunner {
             update_snapshots: false,
             list: false,
             format: OutputFormat::default(),
+            module_directories: Vec::new(),
         }
     }
 
@@ -192,6 +194,25 @@ impl TestRunner {
     /// Sets the report format for `--list` and for a normal test run.
     pub fn with_format(mut self, format: OutputFormat) -> Self {
         self.format = format;
+        self
+    }
+
+    /// Module search paths for `file`: its own directory first, then the `-L` directories.
+    /// `None` keeps the engine defaults.
+    fn search_paths(&self, file: &Path) -> Option<Vec<PathBuf>> {
+        let parent = file.parent().filter(|parent| *parent != Path::new(""));
+        if parent.is_none() && self.module_directories.is_empty() {
+            return None;
+        }
+        let mut paths = vec![parent.unwrap_or(Path::new(".")).to_path_buf()];
+        paths.extend(self.module_directories.iter().cloned());
+        Some(paths)
+    }
+
+    /// Adds directories searched for `include`/`import`ed modules, after the
+    /// directory of each test file.
+    pub fn with_module_directories(mut self, dirs: Vec<PathBuf>) -> Self {
+        self.module_directories = dirs;
         self
     }
 
@@ -263,11 +284,9 @@ impl TestRunner {
             engine.load_builtin_module();
             engine.define_string_value("TEST_FILE", file.to_string_lossy().as_ref());
 
-            // Resolve relative `include` statements in the test file.
-            if let Some(parent) = file.parent()
-                && parent != Path::new("")
-            {
-                engine.set_search_paths(vec![parent.to_path_buf()]);
+            // Resolve relative `include` statements in the test file, then fall back to `-L` dirs.
+            if let Some(paths) = self.search_paths(file) {
+                engine.set_search_paths(paths);
             }
 
             {
@@ -1728,6 +1747,36 @@ mod tests {
             rendered.contains("Shrunk from [500] to [5]"),
             "unexpected result: {rendered}"
         );
+    }
+
+    #[test]
+    fn test_module_directories_resolve_includes_outside_the_test_file_directory() {
+        let dir = temp_project_dir("module_directories");
+        let libs = dir.join("libs");
+        let tests = dir.join("tests");
+        fs::create_dir_all(&libs).unwrap();
+        fs::create_dir_all(&tests).unwrap();
+        fs::write(libs.join("lib.mq"), "def add(a, b):\n  a + b\nend\n").unwrap();
+        let test_file = tests.join("tests.mq");
+        fs::write(
+            &test_file,
+            "include \"test\" | include \"lib\"\n|\n\ndef test_add():\n  assert_eq(add(1, 2), 3)\nend\n",
+        )
+        .unwrap();
+
+        let without = TestRunner::new(vec![test_file.clone()]).run().unwrap();
+        let with = TestRunner::new(vec![test_file])
+            .with_module_directories(vec![libs])
+            .run()
+            .unwrap();
+
+        assert!(
+            !without,
+            "module outside the test directory must not resolve by default"
+        );
+        assert!(with);
+
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
