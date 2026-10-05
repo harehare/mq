@@ -14,31 +14,6 @@
 - Avoid panics whenever possible and return appropriate `Result` types
 - Write comprehensive tests and update related tests when adding or changing functionality
 
-## Commit Message Conventions
-
-Use the following format for commit messages:
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer]
-```
-
-- Types include:
-  - ✨ feat: New feature
-  - 🐛 fix: Bug fix
-  - 📝 docs: Documentation changes
-  - 💄 style: Code style changes that don't affect behavior
-  - ♻️ refactor: Refactoring
-  - ⚡ perf: Performance improvements
-  - ✅ test: Adding or modifying tests
-  - 📦 build: Changes to build system or external dependencies
-  - 👷 ci: Changes to CI configuration files and scripts
-- Write clear, concise, and descriptive commit messages.
-- Reference related issues or pull requests when relevant.
-
 ## Documentation Guidelines
 
 When adding new features, update the documentation.
@@ -47,7 +22,6 @@ When adding new features, update the documentation.
 - Use clear, concise language and provide usage examples.
 - Document all public APIs, commands, and features.
 - Update `/docs` and crate-level `README.md` files for new features or changes.
-- Add changelog entries for all user-facing changes.
 - Ensure documentation is consistent across all files and crates.
 - Use Markdown best practices for formatting and structure.
 
