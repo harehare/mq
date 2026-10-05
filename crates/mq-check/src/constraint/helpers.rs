@@ -508,8 +508,10 @@ fn collect_pattern_variables_inner(
     }
 }
 
-/// Only `break: expr` (with a value) contributes to the union type; bare `break`
-/// without a value is ignored because it falls through to the loop's normal exit type.
+/// `break: expr` (with a value) contributes its type to the union. A bare `break`
+/// contributes `none` when `bare_break_yields_none` is set (`loop`, `while`). A `foreach`
+/// returns the results collected so far on a bare `break`, so it passes `false` and the
+/// bare `break` falls through to the loop's normal exit type.
 ///
 /// When a `break: value` is found inside an `if` that has no explicit `else` branch,
 /// a fresh type variable is added to represent the implicit else (pass-through) path.
@@ -520,10 +522,11 @@ pub(super) fn collect_break_value_types(
     loop_symbol_id: SymbolId,
     ctx: &mut InferenceContext,
     children_index: &ChildrenIndex,
+    bare_break_yields_none: bool,
 ) -> Vec<Type> {
     let mut types = Vec::new();
     for &child_id in get_children(children_index, loop_symbol_id) {
-        collect_break_types_inner(hir, child_id, ctx, &mut types, children_index);
+        collect_break_types_inner(hir, child_id, ctx, &mut types, children_index, bare_break_yields_none);
     }
     types
 }
@@ -539,6 +542,7 @@ fn collect_break_types_inner(
     ctx: &mut InferenceContext,
     result: &mut Vec<Type>,
     children_index: &ChildrenIndex,
+    bare_break_yields_none: bool,
 ) -> bool {
     let Some(symbol) = hir.symbol(symbol_id) else {
         return false;
@@ -552,9 +556,11 @@ fn collect_break_types_inner(
         if !children.is_empty() {
             // `break: value` — carries the value's type.
             result.push(ctx.get_or_create_symbol_type(symbol_id));
-        } else {
+        } else if bare_break_yields_none {
             // bare `break` (no value) — the loop exits returning `none`.
             result.push(Type::None);
+        } else {
+            return false;
         }
         return true;
     }
@@ -569,7 +575,7 @@ fn collect_break_types_inner(
 
         let mut found_break = false;
         for &child_id in children {
-            if collect_break_types_inner(hir, child_id, ctx, result, children_index) {
+            if collect_break_types_inner(hir, child_id, ctx, result, children_index, bare_break_yields_none) {
                 found_break = true;
             }
         }
@@ -583,7 +589,7 @@ fn collect_break_types_inner(
     }
     let mut found_break = false;
     for &child_id in get_children(children_index, symbol_id) {
-        if collect_break_types_inner(hir, child_id, ctx, result, children_index) {
+        if collect_break_types_inner(hir, child_id, ctx, result, children_index, bare_break_yields_none) {
             found_break = true;
         }
     }
@@ -672,4 +678,30 @@ pub(super) fn find_lambda_function_child(
             .filter(|s| matches!(s.kind, SymbolKind::Function(_)))
             .map(|_| child_id)
     })
+}
+
+/// Whether two record types have a field of the same name whose types can never be the same,
+/// such as `{a: none}` and `{a: {b: 1}}`. Unresolved variables never conflict.
+///
+/// `is_heterogeneous` compares only the outermost type constructor, which cannot tell these
+/// two apart; unifying them would report an error, unlike mixed element types such as
+/// `[none, 1]`.
+pub(super) fn records_have_conflicting_fields(a: &Type, b: &Type, ctx: &InferenceContext) -> bool {
+    fn conflict(a: &Type, b: &Type, ctx: &InferenceContext) -> bool {
+        let (a, b) = (ctx.resolve_type(a), ctx.resolve_type(b));
+        match (&a, &b) {
+            (Type::Record(fields_a, _), Type::Record(fields_b, _)) => fields_a
+                .iter()
+                .any(|(name, ty_a)| fields_b.get(name).is_some_and(|ty_b| conflict(ty_a, ty_b, ctx))),
+            (Type::Array(elem_a), Type::Array(elem_b)) => conflict(elem_a, elem_b, ctx),
+            (Type::Var(_), _) | (_, Type::Var(_)) | (Type::Dynamic, _) | (_, Type::Dynamic) => false,
+            // Unions and other compound types are left to unification.
+            (Type::Union(_), _) | (_, Type::Union(_)) => false,
+            (Type::Tuple(_) | Type::Dict(..) | Type::Function(..), _)
+            | (_, Type::Tuple(_) | Type::Dict(..) | Type::Function(..)) => false,
+            _ => std::mem::discriminant(&a) != std::mem::discriminant(&b),
+        }
+    }
+
+    matches!((a, b), (Type::Record(..), Type::Record(..))) && conflict(a, b, ctx)
 }

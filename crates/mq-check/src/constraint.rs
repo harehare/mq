@@ -13,8 +13,8 @@ use categories::categorize_symbols;
 use helpers::{
     collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
     find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, merge_loop_types,
-    might_receive_piped_input, resolve_builtin_call, resolve_builtin_call_with_brackets, resolve_pattern_type,
-    resolve_whole_type_pattern, spread_element_type,
+    might_receive_piped_input, records_have_conflicting_fields, resolve_builtin_call,
+    resolve_builtin_call_with_brackets, resolve_pattern_type, resolve_whole_type_pattern, spread_element_type,
 };
 use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
 
@@ -227,7 +227,7 @@ fn infer_while_or_until(
 
         if children.len() > 1 {
             let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-            let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+            let mut break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index, true);
             break_tys.push(Type::None);
             let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
             ctx.set_symbol_type(symbol_id, loop_ty);
@@ -1127,6 +1127,13 @@ pub(super) fn generate_symbol_constraints(
                                     arg_symbol_ids,
                                     range,
                                 });
+                            } else if def_symbol.is_some_and(|s| s.is_function()) {
+                                // A function declared in an included module: module sources are not
+                                // type-checked, so the declaration has no function type. The call is
+                                // a real call, not a bracket access on a variable, so leave its
+                                // result unconstrained.
+                                let ty_var = ctx.fresh_var();
+                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
                             } else {
                                 // Check for potential Record field access via bracket notation
                                 // (e.g., v[:key]). Only trigger when the argument is a
@@ -1179,7 +1186,21 @@ pub(super) fn generate_symbol_constraints(
                                         // Non-function variable with bracket access.
                                         // Two args → range slice v[start:end] lowered as v(start, end).
                                         // One arg  → element access v[i] lowered as v(i).
-                                        if children.len() == 2 {
+                                        //
+                                        // Chained accesses are lowered the same way: `v[0][:key]` is
+                                        // `v(0, :key)`. A String/Symbol literal after the first argument
+                                        // can never be a slice bound, so it marks such a chain.
+                                        let is_chained_access = children.iter().skip(1).any(|&child_id| {
+                                            hir.symbol(child_id).is_some_and(|s| {
+                                                matches!(s.kind, SymbolKind::String | SymbolKind::Symbol)
+                                            })
+                                        });
+                                        if is_chained_access {
+                                            // The container's element type is not tracked through the
+                                            // chain, so leave the result unconstrained.
+                                            let ty_var = ctx.fresh_var();
+                                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                        } else if children.len() == 2 {
                                             // Range slice: delegate to the "slice" builtin.
                                             // Use original_func_ty (not func_ty) so the container's
                                             // type variable stays unified with its definition site.
@@ -1295,9 +1316,10 @@ pub(super) fn generate_symbol_constraints(
 
                 // Check if concrete types are all the same (homogeneous)
                 let is_heterogeneous = concrete_tys.len() >= 2
-                    && concrete_tys
-                        .windows(2)
-                        .any(|w| std::mem::discriminant(w[0]) != std::mem::discriminant(w[1]));
+                    && concrete_tys.windows(2).any(|w| {
+                        std::mem::discriminant(w[0]) != std::mem::discriminant(w[1])
+                            || records_have_conflicting_fields(w[0], w[1], ctx)
+                    });
 
                 // Use Tuple only when there are multiple elements with mixed resolved/unresolved
                 // types, or when the elements are heterogeneous. A single-element array [x] where
@@ -1504,9 +1526,15 @@ pub(super) fn generate_symbol_constraints(
                     // as different types so the overall if-expression preserves the None
                     // possibility. This prevents false dead-code positives when a let
                     // binding is later checked with `is_none(x)`.
+                    //
+                    // A record with a `None` field (`{node: None, pos: 1}`) is the same
+                    // optional-value pattern one level down. Unifying it with a branch whose
+                    // type is still unknown (e.g. a call result) would pin that branch's
+                    // field to `none`, so such records also count.
                     let has_none_branch = resolved.iter().any(|t| match t {
                         Type::None => true,
                         Type::Union(members) => members.iter().any(|m| matches!(m, Type::None)),
+                        Type::Record(fields, _) => fields.values().any(|f| matches!(f, Type::None)),
                         _ => false,
                     });
 
@@ -1614,7 +1642,7 @@ pub(super) fn generate_symbol_constraints(
 
             if !children.is_empty() {
                 let body_ty = ctx.get_or_create_symbol_type(*children.last().unwrap());
-                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index, true);
                 let loop_ty = merge_loop_types(body_ty, break_tys, ctx);
                 ctx.set_symbol_type(symbol_id, loop_ty);
             } else {
@@ -1697,7 +1725,7 @@ pub(super) fn generate_symbol_constraints(
                 };
 
                 // Merge with break value types (each break: value returns that value directly)
-                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index);
+                let break_tys = collect_break_value_types(hir, symbol_id, ctx, children_index, false);
                 let loop_ty = merge_loop_types(array_ty, break_tys, ctx);
                 ctx.set_symbol_type(symbol_id, loop_ty);
             } else {

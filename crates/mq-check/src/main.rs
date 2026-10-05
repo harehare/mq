@@ -195,9 +195,9 @@ fn collect_check_diagnostics(
         hir.builtin.disabled = true;
     }
 
-    hir.add_code(source_url, code);
+    let (source_id, _) = hir.add_code(source_url, code);
 
-    let mut diagnostics = format::syntax_diagnostics(&hir);
+    let mut diagnostics = format::syntax_diagnostics(&hir, source_id);
     let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
 
     if !has_syntax_errors {
@@ -217,13 +217,13 @@ fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &Ch
         hir.builtin.disabled = true;
     }
 
-    hir.add_code(source_url, code);
+    let (source_id, _) = hir.add_code(source_url, code);
 
     if let Some(lbl) = opts.label {
         writeln!(w, "{} {}", "──".dimmed(), lbl.bold())?;
     }
 
-    let syntax_errors = check_syntax(w, &hir)?;
+    let syntax_errors = check_syntax(w, &hir, source_id)?;
     if syntax_errors {
         return Ok(true);
     }
@@ -231,11 +231,22 @@ fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &Ch
     check_type(w, code, &hir, opts.show_types, &opts.type_checker_options)
 }
 
-/// Checks HIR for syntax errors/warnings and writes them in a unified format.
+/// Checks HIR for syntax errors/warnings in `source_id` and writes them in a unified format.
+/// Diagnostics of the modules the source includes or imports are not reported.
 /// Returns `true` if any errors or warnings were found.
-fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir) -> io::Result<bool> {
-    let errors = hir.error_ranges();
-    let warnings = hir.warning_ranges();
+fn check_syntax(w: &mut impl Write, hir: &mq_hir::Hir, source_id: mq_hir::SourceId) -> io::Result<bool> {
+    let errors: Vec<(String, mq_lang::Range)> = hir
+        .errors()
+        .iter()
+        .filter(|error| format::hir_error_symbol(error).source.source_id == Some(source_id))
+        .map(|error| (error.to_string(), format::hir_error_range(error)))
+        .collect();
+    let warnings: Vec<(String, mq_lang::Range)> = hir
+        .warnings()
+        .iter()
+        .filter(|warning| format::hir_warning_symbol(warning).source.source_id == Some(source_id))
+        .map(|warning| (warning.to_string(), format::hir_warning_range(warning)))
+        .collect();
 
     if errors.is_empty() && warnings.is_empty() {
         return Ok(false);
@@ -560,6 +571,34 @@ mod tests {
                 .any(|d| d.code == "typechecker::undefined_symbol" || d.code == "hir::unresolved_symbol")
         );
         assert!(diagnostics.iter().any(|d| d.severity == format::Severity::Error));
+    }
+
+    #[test]
+    fn test_collect_check_diagnostics_ignores_errors_inside_included_modules() {
+        // `TEST_FILE` is injected by the test runner, so the `test` module itself leaves it
+        // unresolved. That is a problem of the module, not of the checked source.
+        let diagnostics = collect_check_diagnostics(
+            "include \"test\" | assert_eq(1, 1)",
+            None,
+            false,
+            &TypeCheckerOptions::default(),
+        );
+        assert!(
+            !diagnostics.iter().any(|d| d.message.contains("TEST_FILE")),
+            "{diagnostics:?}"
+        );
+    }
+
+    #[rstest]
+    #[case("include \"test\" | assert_eq([], [])")]
+    #[case("include \"test\" | assert_eq([1], [1])")]
+    #[case("include \"test\" | assert_eq({a: 1}, {a: 1})")]
+    #[case("include \"test\" | def f(): assert_eq([1], [2]); | f()")]
+    fn test_collect_check_diagnostics_calls_included_functions_with_any_arguments(#[case] code: &str) {
+        // Module sources are not type-checked, so an included function has no function type.
+        // Calling it must not be read as a bracket access (`slice`) on a variable.
+        let diagnostics = collect_check_diagnostics(code, None, false, &TypeCheckerOptions::default());
+        assert!(diagnostics.is_empty(), "{code}: {diagnostics:?}");
     }
 
     #[test]

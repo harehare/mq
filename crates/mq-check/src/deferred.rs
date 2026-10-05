@@ -294,6 +294,11 @@ pub(crate) fn resolve_deferred_tuple_accesses(ctx: &mut InferenceContext) -> boo
                 // conflict and produce spurious "infinite type" or mismatch errors.
                 ctx.add_deferred_tuple_access(access.clone());
             }
+            types::Type::Record(..) => {
+                // A record indexed by a non-literal key (e.g. `{"a": true}[word]`) is a dynamic
+                // dict lookup. The key is unknown statically, so the result stays unconstrained
+                // instead of forcing the record to unify with an array.
+            }
             _ => {
                 // Known non-array/tuple/union type — add array constraint as fallback
                 let elem_var = ctx.fresh_var();
