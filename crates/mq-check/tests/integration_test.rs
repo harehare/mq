@@ -2113,3 +2113,66 @@ fn test_generic_builtin_extra_argument_is_not_treated_as_bracket_key(#[case] cod
         code
     );
 }
+
+/// Regression: `v[0][:key]` is lowered as `v(0, :key)`, which was mistaken for the
+/// range slice `v[0:key]` whenever `v` was not a plain parameter.
+#[rstest]
+#[case(r#"def f(p): let q = p[:x] | q[0][:name]; | f({x: [{name: 1}]})"#)]
+#[case(r#"def f(p): let q = p[:x] | q[0]["name"]; | f({x: [{name: 1}]})"#)]
+#[case(r#"def f(p): let q = p[:x] | q[0][:a][:b]; | f({x: [{a: {b: 1}}]})"#)]
+#[case(r#"def f(p): let q = p[:x] | if (len(q) > 0): q[0][:name] else: "_"; | f({x: []})"#)]
+fn test_chained_bracket_access_is_not_a_slice(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+/// A real range slice must still be checked as a slice.
+#[test]
+fn test_range_slice_with_non_numeric_bound_is_still_an_error() {
+    let errors = check_types(r#"let a = [1, 2, 3] | a[0:true]"#);
+    assert!(!errors.is_empty(), "Expected a slice type error, got none");
+}
+
+/// Regression: indexing a record literal with a non-literal key is a dynamic dict lookup,
+/// not an array access, so it must not force the record to unify with an array.
+#[rstest]
+#[case(r#"let k = {"a": true, "b": true} | def f(w): k[w] != None;"#)]
+#[case(r#"let k = {"a": true, "b": true} | def f(w): if (k[w]): 1 else: 2;"#)]
+#[case(r#"def f(w): let k = {"a": true, "b": true} | k[w] == true;"#)]
+fn test_record_dynamic_key_access_is_not_an_array_access(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+/// Regression: a bare `break` in `foreach` returns the results collected so far (an array),
+/// not `none`, so the loop result is usable as an array afterwards.
+#[rstest]
+#[case(r#"def f(a): let r = foreach (x, a): if (x == 2): break else: x; | r + [1];"#)]
+#[case(r#"def f(a): let r = foreach (x, a): if (x == 2): break; | r + [1];"#)]
+fn test_foreach_bare_break_does_not_yield_none(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+/// Regression: a branch returning `{node: None, ...}` must not pin the other branch's
+/// (call result) `node` field to `none`.
+#[rstest]
+#[case(r#"def g(c): {node: {a: 1}, pos: 1}; def f(c): if (c): g(c) else: {node: None, pos: 2};"#)]
+#[case(r#"def g(c): {node: {a: 1}, pos: 1}; def f(c): let r = if (c): g(c) else: {node: None, pos: 2} | r[:node];"#)]
+fn test_if_branch_record_with_none_field_does_not_pin_other_branch(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+/// Regression: array elements that are records whose same-named fields differ in type
+/// (`none` vs a record, number vs string) are mixed elements, like `[none, 1]`, not a
+/// unification error.
+#[rstest]
+#[case(r#"[{a: None}, {a: {b: 1}}]"#)]
+#[case(r#"[{a: {b: 1}}, {a: None}]"#)]
+#[case(r#"[{a: 1}, {a: "x"}]"#)]
+#[case(r#"[{name: "x", default: None}, {name: "y", default: {kind: "num", val: 1}}]"#)]
+fn test_array_of_records_with_differing_field_types_is_allowed(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}

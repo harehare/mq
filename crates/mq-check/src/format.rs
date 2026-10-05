@@ -7,7 +7,7 @@ mod sarif;
 use std::io::{self, Write};
 
 use mq_check::TypeError;
-use mq_hir::{Hir, HirError, HirWarning};
+use mq_hir::{Hir, HirError, HirWarning, SourceId, Symbol};
 
 /// Severity of a check diagnostic.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -49,11 +49,16 @@ pub(crate) enum OutputFormat {
     Sarif,
 }
 
-/// Returns the syntax errors and warnings on `hir` as [`CheckDiagnostic`]s.
-pub(crate) fn syntax_diagnostics(hir: &Hir) -> Vec<CheckDiagnostic> {
+/// Returns the syntax errors and warnings that `hir` reports for `source_id` as
+/// [`CheckDiagnostic`]s.
+///
+/// `hir` also holds the modules the source includes or imports. Their diagnostics are
+/// positions in other files, so reporting them against `source_id` would be misleading.
+pub(crate) fn syntax_diagnostics(hir: &Hir, source_id: SourceId) -> Vec<CheckDiagnostic> {
     let mut diagnostics: Vec<CheckDiagnostic> = hir
         .errors()
         .iter()
+        .filter(|error| hir_error_symbol(error).source.source_id == Some(source_id))
         .map(|error| CheckDiagnostic {
             severity: Severity::Error,
             code: hir_error_code(error),
@@ -62,12 +67,17 @@ pub(crate) fn syntax_diagnostics(hir: &Hir) -> Vec<CheckDiagnostic> {
         })
         .collect();
 
-    diagnostics.extend(hir.warnings().iter().map(|warning| CheckDiagnostic {
-        severity: Severity::Warning,
-        code: hir_warning_code(warning),
-        message: warning.to_string(),
-        range: Some(hir_warning_range(warning)),
-    }));
+    diagnostics.extend(
+        hir.warnings()
+            .iter()
+            .filter(|warning| hir_warning_symbol(warning).source.source_id == Some(source_id))
+            .map(|warning| CheckDiagnostic {
+                severity: Severity::Warning,
+                code: hir_warning_code(warning),
+                message: warning.to_string(),
+                range: Some(hir_warning_range(warning)),
+            }),
+    );
 
     diagnostics
 }
@@ -81,12 +91,16 @@ fn hir_error_code(error: &HirError) -> &'static str {
     }
 }
 
-fn hir_error_range(error: &HirError) -> mq_lang::Range {
+pub(crate) fn hir_error_symbol(error: &HirError) -> &Symbol {
     match error {
-        HirError::UnresolvedSymbol { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
-        HirError::ModuleNotFound { symbol, .. } => symbol.source.text_range.unwrap_or_default(),
-        HirError::YieldOutsideFunction { symbol } => symbol.source.text_range.unwrap_or_default(),
+        HirError::UnresolvedSymbol { symbol, .. }
+        | HirError::ModuleNotFound { symbol, .. }
+        | HirError::YieldOutsideFunction { symbol } => symbol,
     }
+}
+
+pub(crate) fn hir_error_range(error: &HirError) -> mq_lang::Range {
+    hir_error_symbol(error).source.text_range.unwrap_or_default()
 }
 
 /// Returns a stable rule code for a [`HirWarning`] variant.
@@ -96,10 +110,14 @@ fn hir_warning_code(warning: &HirWarning) -> &'static str {
     }
 }
 
-fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
+pub(crate) fn hir_warning_symbol(warning: &HirWarning) -> &Symbol {
     match warning {
-        HirWarning::UnreachableCode { symbol } => symbol.source.text_range.unwrap_or_default(),
+        HirWarning::UnreachableCode { symbol } => symbol,
     }
+}
+
+pub(crate) fn hir_warning_range(warning: &HirWarning) -> mq_lang::Range {
+    hir_warning_symbol(warning).source.text_range.unwrap_or_default()
 }
 
 /// Converts type-check errors into [`CheckDiagnostic`]s.
