@@ -26,6 +26,7 @@ pub struct Hir {
     pub(crate) fallback_references: FxHashSet<SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
     pub(crate) symbol_insertion_counter: u32,
+    /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
     /// Same ids as `name_index`, grouped by the scope that declares them.
     pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
@@ -278,7 +279,7 @@ impl Hir {
         self.symbols[symbol_id].insertion_order = self.symbol_insertion_counter;
         self.symbol_insertion_counter += 1;
         let symbol = &self.symbols[symbol_id];
-        if let Some(name) = &symbol.value {
+        if let Some(name) = symbol.value.as_ref().filter(|_| Self::is_resolvable_target(symbol)) {
             self.name_index.entry(name.clone()).or_default().push(symbol_id);
             self.scope_name_index
                 .entry(symbol.scope)

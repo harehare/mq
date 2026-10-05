@@ -137,7 +137,8 @@ impl Hir {
             .filter_map(|&symbol_id| {
                 let symbol = self.symbols.get(symbol_id)?;
                 let source_id = symbol.source.source_id?;
-                (source_ids.contains(&source_id) && Self::is_resolvable_target(symbol))
+                source_ids
+                    .contains(&source_id)
                     .then(|| (self.get_symbol_priority_for_cross_source(&symbol.kind), symbol_id))
             })
             .min_by_key(|(priority, _)| *priority)
@@ -145,7 +146,7 @@ impl Hir {
     }
 
     #[inline(always)]
-    fn is_resolvable_target(symbol: &Symbol) -> bool {
+    pub(crate) fn is_resolvable_target(symbol: &Symbol) -> bool {
         symbol.is_function()
             || symbol.is_parameter()
             || symbol.is_variable()
@@ -197,9 +198,6 @@ impl Hir {
                         return None;
                     }
                     let symbol = self.symbols.get(symbol_id)?;
-                    if !Self::is_resolvable_target(symbol) {
-                        return None;
-                    }
                     // A module sees only its own names and builtins.
                     if module.is_some_and(|module| {
                         symbol.source.source_id != Some(self.builtin.source_id) && !self.is_inside(symbol_id, module)
