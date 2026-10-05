@@ -401,6 +401,61 @@ fn check_union_members(
     }
 }
 
+/// Resolves an operation whose single operand is a union of arrays with different return types
+/// by treating that operand as one array of the union of the members' element types.
+///
+/// `map([bool] | [string], f)` is resolved as `map([bool | string], f)`, so `f` is checked
+/// against the elements of every member and the result is `[r]` for the result `r` of `f`.
+/// Returns `false` when more than one operand is a union or a member is not an array, leaving
+/// the operation to be reported.
+fn merge_array_union_operand(
+    ctx: &mut InferenceContext,
+    d: &DeferredOverload,
+    resolved_operands: &[types::Type],
+) -> bool {
+    use types::Type;
+
+    let mut union_positions = resolved_operands.iter().enumerate().filter(|(_, ty)| ty.is_union());
+    let (Some((position, Type::Union(members))), None) = (union_positions.next(), union_positions.next()) else {
+        return false;
+    };
+    let elems: Option<Vec<Type>> = members
+        .iter()
+        .map(|member| match member {
+            Type::Array(elem) => Some(elem.as_ref().clone()),
+            _ => None,
+        })
+        .collect();
+    let Some(elems) = elems else {
+        return false;
+    };
+
+    let merged = Type::array(Type::union(elems));
+    let mut args = resolved_operands.to_vec();
+    args[position] = merged.clone();
+    let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(&d.op_name, &args) else {
+        return false;
+    };
+    if param_tys.len() != d.operand_tys.len() {
+        return false;
+    }
+    for (i, param_ty) in param_tys.iter().enumerate() {
+        let operand_ty = if i == position {
+            merged.clone()
+        } else {
+            d.operand_tys[i].clone()
+        };
+        ctx.add_constraint(Constraint::Equal(
+            operand_ty,
+            param_ty.clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+    true
+}
+
 /// Resolves deferred try/catch branch-type merges, after other deferred passes
 /// (record/tuple access, overloads, ...) have settled the branch types.
 pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
@@ -572,6 +627,10 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         continue;
                     }
                     UnionCheckResult::InconsistentReturn => {
+                        if merge_array_union_operand(ctx, d, &resolved_operands) {
+                            unify::solve_constraints(ctx);
+                            continue;
+                        }
                         let args_str = resolved_operands
                             .iter()
                             .map(|t| t.display_renumbered())

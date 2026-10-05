@@ -2202,3 +2202,13 @@ fn test_flatten_accepts_mixed_and_nested_arrays(#[case] code: &str) {
     };
     assert!(TypeChecker::new().check(&hir).is_empty());
 }
+
+#[rstest]
+#[case::map_over_union_of_arrays(
+    r#"def shrink(v): if (is_bool(v)): [false] elif (is_string(v)): [""] else: [];
+| def go(x): map(shrink(x), fn(c): [c];);"#
+)]
+#[case::map_over_array_union_in_branch(r#"let xs = if (true): [1, 2] else: ["a"] | map(xs, fn(c): c;)"#)]
+fn test_map_distributes_over_union_of_arrays(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}
