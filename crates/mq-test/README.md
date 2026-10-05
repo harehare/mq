@@ -31,6 +31,9 @@ mq-test tests.mq
 # Run multiple test files
 mq-test tests.mq other_tests.mq
 
+# Resolve include/import from an extra module directory (repeatable)
+mq-test -L vendor/mqmq tests.mq
+
 # Run with a line-coverage report
 mq-test --coverage
 

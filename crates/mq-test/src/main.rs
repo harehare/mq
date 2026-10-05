@@ -20,6 +20,8 @@ use std::{path::PathBuf, process::ExitCode};
     mq-test tests.mq other_tests.mq\n\n\
     ## Discover and run all *.mq files in the current directory:\n\
     mq-test\n\n\
+    ## Resolve `include`/`import` from an extra module directory:\n\
+    mq-test -L vendor/mqmq tests.mq\n\n\
     ## Run with a line-coverage report:\n\
     mq-test --coverage\n\n\
     ## Write an lcov tracefile for CI:\n\
@@ -48,6 +50,10 @@ struct Cli {
     /// Path(s) to mq test files.
     /// Defaults to **/*.mq in the current directory when omitted.
     files: Vec<PathBuf>,
+
+    /// Search modules from the directory. Repeatable.
+    #[arg(short = 'L', long = "directory")]
+    module_directories: Vec<PathBuf>,
 
     /// Collect and report line coverage of the `include`d/imported modules
     /// exercised while running the tests. Coverage of the test files'
@@ -110,6 +116,7 @@ fn main() -> ExitCode {
         .with_update_snapshots(cli.update_snapshots)
         .with_list(cli.list)
         .with_format(cli.format)
+        .with_module_directories(cli.module_directories)
         .run()
     {
         Ok(true) => ExitCode::SUCCESS,
