@@ -179,10 +179,15 @@ impl Hir {
             .get(ref_symbol_id)
             .and_then(|s| s.source.text_range)
             .map(|r| r.start.line);
-        let candidates = self.name_index.get(ref_name).map(Vec::as_slice).unwrap_or_default();
         let mut scope_id = Some(scope_id);
 
         while let Some(current_scope_id) = scope_id {
+            let candidates = self
+                .scope_name_index
+                .get(&current_scope_id)
+                .and_then(|names| names.get(ref_name))
+                .map(Vec::as_slice)
+                .unwrap_or_default();
             // Lowest priority wins; among equal priorities, prefer the definition closest
             // to (but before) the ref, i.e. the highest line.
             let best = candidates
@@ -192,7 +197,7 @@ impl Hir {
                         return None;
                     }
                     let symbol = self.symbols.get(symbol_id)?;
-                    if symbol.scope != current_scope_id || !Self::is_resolvable_target(symbol) {
+                    if !Self::is_resolvable_target(symbol) {
                         return None;
                     }
                     // A module sees only its own names and builtins.

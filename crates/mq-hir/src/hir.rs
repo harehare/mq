@@ -27,6 +27,8 @@ pub struct Hir {
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
     pub(crate) symbol_insertion_counter: u32,
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
+    /// Same ids as `name_index`, grouped by the scope that declares them.
+    pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
 impl Default for Hir {
@@ -66,6 +68,7 @@ impl Hir {
             source_symbols: FxHashMap::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
+            scope_name_index: FxHashMap::default(),
         }
     }
 
@@ -241,6 +244,13 @@ impl Hir {
             ids.retain(|id| symbols.contains_key(*id));
             !ids.is_empty()
         });
+        self.scope_name_index.retain(|_, names| {
+            names.retain(|_, ids| {
+                ids.retain(|id| symbols.contains_key(*id));
+                !ids.is_empty()
+            });
+            !names.is_empty()
+        });
     }
 
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
@@ -267,8 +277,15 @@ impl Hir {
         let symbol_id = self.symbols.insert(symbol);
         self.symbols[symbol_id].insertion_order = self.symbol_insertion_counter;
         self.symbol_insertion_counter += 1;
-        if let Some(ref name) = self.symbols[symbol_id].value {
+        let symbol = &self.symbols[symbol_id];
+        if let Some(name) = &symbol.value {
             self.name_index.entry(name.clone()).or_default().push(symbol_id);
+            self.scope_name_index
+                .entry(symbol.scope)
+                .or_default()
+                .entry(name.clone())
+                .or_default()
+                .push(symbol_id);
         }
         symbol_id
     }
