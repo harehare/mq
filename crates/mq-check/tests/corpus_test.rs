@@ -21,6 +21,9 @@ const SOURCE_DIRS: &[&str] = &[
     "crates/mq-lang/benches",
 ];
 
+/// Their resolution depends on the `html` feature of mq-lang, which differs between feature sets.
+const FEATURE_DEPENDENT: &[&str] = &["html.mq", "html_test.mq"];
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -35,6 +38,11 @@ fn corpus_files(root: &Path) -> Vec<PathBuf> {
         .flatten()
         .filter_map(|entry| entry.ok().map(|e| e.path()))
         .filter(|path| path.extension().is_some_and(|ext| ext == "mq"))
+        .filter(|path| {
+            !FEATURE_DEPENDENT
+                .iter()
+                .any(|name| path.file_name().is_some_and(|n| n == *name))
+        })
         .collect();
     files.sort();
     files

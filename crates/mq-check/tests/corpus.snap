@@ -28,11 +28,6 @@ crates/mq-lang/modules/gen.mq: syntax=0 type=3 unresolved_injected=0 unresolved_
 crates/mq-lang/modules/gen_test.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
 crates/mq-lang/modules/gron.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
 crates/mq-lang/modules/gron_test.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
-crates/mq-lang/modules/html.mq: syntax=0 type=1 unresolved_injected=0 unresolved_other=1 dynamic=0
-  typechecker::unification_error
-  unresolved: _html_parse
-crates/mq-lang/modules/html_test.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=22 dynamic=0
-  unresolved: html_attr, html_find, html_find_all, html_parse, html_stringify, html_text, html_to_json
 crates/mq-lang/modules/json.mq: syntax=0 type=2 unresolved_injected=0 unresolved_other=3 dynamic=0
   typechecker::type_mismatch
   typechecker::type_mismatch
@@ -77,4 +72,4 @@ crates/mq-lang/modules/yaml_test.mq: syntax=0 type=3 unresolved_injected=2 unres
 scripts/bump_version.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
 scripts/sitemap.mq: syntax=0 type=1 unresolved_injected=0 unresolved_other=0 dynamic=0
   typechecker::type_mismatch
-TOTAL: type=39 unresolved_injected=10 unresolved_other=562 dynamic=18
+TOTAL: type=38 unresolved_injected=10 unresolved_other=539 dynamic=18
