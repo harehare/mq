@@ -606,49 +606,47 @@ impl InferenceContext {
 
     /// Resolves a type by following type variable bindings.
     ///
-    /// Uses a visited set to detect and break cycles in the substitution map.
+    /// Tracks the variables on the current resolution path to detect and break cycles.
     /// Cycles can form with mutually recursive functions (e.g. `Var(a) →
     /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
     /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        let mut visited = rustc_hash::FxHashSet::default();
-        self.resolve_type_inner(ty, &mut visited)
+        self.resolve_type_inner(ty, &mut Vec::new())
     }
 
-    fn resolve_type_inner(&self, ty: &Type, visited: &mut rustc_hash::FxHashSet<TypeVarId>) -> Type {
+    fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
         match ty {
             Type::Var(var) => {
-                if !visited.insert(*var) {
+                let Some(bound) = self.substitutions.get(var) else {
+                    return ty.clone();
+                };
+                if path.contains(var) {
                     // Cycle detected — return the var unresolved to break infinite recursion
                     return ty.clone();
                 }
-                if let Some(bound) = self.substitutions.get(var) {
-                    let result = self.resolve_type_inner(bound, visited);
-                    visited.remove(var); // Allow the same var in sibling branches
-                    result
-                } else {
-                    visited.remove(var);
-                    ty.clone()
-                }
+                path.push(*var);
+                let result = self.resolve_type_inner(bound, path);
+                path.pop(); // Allow the same var in sibling branches
+                result
             }
-            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, visited))),
+            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, path))),
             Type::Dict(key, value) => Type::Dict(
-                Box::new(self.resolve_type_inner(key, visited)),
-                Box::new(self.resolve_type_inner(value, visited)),
+                Box::new(self.resolve_type_inner(key, path)),
+                Box::new(self.resolve_type_inner(value, path)),
             ),
             Type::Function(params, ret) => {
-                let new_params = params.iter().map(|p| self.resolve_type_inner(p, visited)).collect();
-                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, visited)))
+                let new_params = params.iter().map(|p| self.resolve_type_inner(p, path)).collect();
+                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, path)))
             }
             Type::Record(fields, rest) => {
                 let new_fields = fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, visited)))
+                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, path)))
                     .collect();
-                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, visited)))
+                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, path)))
             }
-            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, visited)).collect()),
-            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, visited)).collect()),
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, path)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, path)).collect()),
             _ => ty.clone(),
         }
     }
