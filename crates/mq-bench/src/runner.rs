@@ -1,4 +1,5 @@
 use glob::glob;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use miette::{IntoDiagnostic, NamedSource};
 use mq_lang::CstNodeKind;
 use rustc_hash::FxHashMap;
@@ -142,6 +143,7 @@ impl BenchRunner {
         let mut records: Vec<BenchRecord> = Vec::new();
         let mut any_failed = false;
 
+        let mut plan: Vec<(&Path, String, Vec<DiscoveredBench>)> = Vec::new();
         for file in &bench_files {
             let content = match fs::read_to_string(file) {
                 Ok(content) => content,
@@ -152,31 +154,52 @@ impl BenchRunner {
                 }
             };
 
-            let benches: Vec<DiscoveredBench> = Self::discover_benches(&content)
+            let (benches, skipped): (Vec<_>, Vec<_>) = Self::discover_benches(&content)
                 .into_iter()
                 .filter(|bench| self.matches(bench))
-                .collect();
+                .partition(|bench| bench.arity == 0);
 
-            for bench in &benches {
-                if bench.arity != 0 {
-                    eprintln!(
-                        "⚠ skipping {} in {}: bench functions must take no parameters (found {})",
-                        bench.name,
-                        file.display(),
-                        bench.arity
-                    );
-                    continue;
-                }
+            for bench in &skipped {
+                eprintln!(
+                    "⚠ skipping {} in {}: bench functions must take no parameters (found {})",
+                    bench.name,
+                    file.display(),
+                    bench.arity
+                );
+            }
+            plan.push((file, content, benches));
+        }
 
-                match self.time_bench(file, &content, bench) {
+        // Draws only when stderr is a terminal, so redirected output and `--format json` stay clean.
+        let multi = MultiProgress::new();
+        let total: usize = plan.iter().map(|(_, _, benches)| benches.len()).sum();
+        let overall = multi.add(ProgressBar::new(total as u64).with_style(Self::progress_style(
+            "{bar:30.cyan/blue} {pos}/{len} benches [{elapsed_precise}]",
+        )));
+
+        for (file, content, benches) in &plan {
+            for bench in benches {
+                let bar = multi.insert_before(
+                    &overall,
+                    ProgressBar::new((self.warmup + self.iterations) as u64)
+                        .with_style(Self::progress_style("  {bar:30.green/white} {pos}/{len} {msg}")),
+                );
+                bar.set_message(bench.name.clone());
+
+                let result = self.time_bench(file, content, bench, &bar);
+                bar.finish_and_clear();
+                overall.inc(1);
+
+                match result {
                     Ok(record) => records.push(record),
                     Err(e) => {
                         any_failed = true;
-                        eprintln!("{}", Self::render_file_error(file, *e));
+                        let _ = multi.println(Self::render_file_error(file, *e));
                     }
                 }
             }
         }
+        overall.finish_and_clear();
 
         let baseline = self.load_baseline()?;
         let output = match self.format {
@@ -193,12 +216,20 @@ impl BenchRunner {
         Ok(!any_failed)
     }
 
+    fn progress_style(template: &str) -> ProgressStyle {
+        ProgressStyle::with_template(template)
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("█▉▊▋▌▍▎▏ ")
+    }
+
     /// Compiles `bench`'s call once, warms it up, then times `iterations` sequential calls.
+    /// `progress` is advanced outside the timed region, in batches to keep its overhead low.
     fn time_bench(
         &self,
         file: &Path,
         content: &str,
         bench: &DiscoveredBench,
+        progress: &ProgressBar,
     ) -> Result<BenchRecord, Box<mq_lang::Error>> {
         let query = format!("{content}\n| {}()", bench.name);
         let mut engine = mq_lang::Engine::with_io(
@@ -222,8 +253,19 @@ impl BenchRunner {
 
         let compiled = engine.compile(&query)?;
 
+        let batch = ((self.warmup + self.iterations) / 100).max(1);
+        let mut done = 0usize;
+        let mut tick = |n: usize| {
+            done += n;
+            if done >= batch {
+                progress.inc(done as u64);
+                done = 0;
+            }
+        };
+
         for _ in 0..self.warmup {
             engine.eval_compiled(&compiled, mq_lang::null_input().into_iter())?;
+            tick(1);
         }
 
         let mut durations: Vec<Duration> = Vec::with_capacity(self.iterations);
@@ -231,6 +273,7 @@ impl BenchRunner {
             let start = Instant::now();
             engine.eval_compiled(&compiled, mq_lang::null_input().into_iter())?;
             durations.push(start.elapsed());
+            tick(1);
         }
 
         durations.sort();
