@@ -1945,15 +1945,14 @@ pub(super) fn generate_symbol_constraints(
                 // Resolve the types to check if they're concrete
                 let resolved_try = ctx.resolve_type(&try_ty);
                 let resolved_catch = ctx.resolve_type(&catch_ty);
-                let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
-                let same_discriminant =
-                    both_concrete && std::mem::discriminant(&resolved_try) == std::mem::discriminant(&resolved_catch);
+                let both_resolved = !resolved_try.is_var() && !resolved_catch.is_var();
 
-                if both_concrete && !same_discriminant {
-                    // Different concrete types: use Union type to represent both possibilities
-                    let union_ty = Type::union(vec![resolved_try, resolved_catch]);
-                    ctx.set_symbol_type(symbol_id, union_ty);
-                } else if both_concrete {
+                if let Some(merged) = both_resolved
+                    .then(|| resolved_try.merge_branches(&resolved_catch, false))
+                    .flatten()
+                {
+                    ctx.set_symbol_type(symbol_id, merged);
+                } else if both_resolved && resolved_try.merge_branches(&resolved_catch, true).is_none() {
                     // Same concrete type: unify them directly.
                     ctx.add_constraint(Constraint::Equal(
                         try_ty.clone(),

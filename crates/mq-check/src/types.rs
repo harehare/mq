@@ -138,6 +138,65 @@ impl Type {
         }
     }
 
+    /// Combines the types of two alternative branches (try/catch) when neither is pending.
+    ///
+    /// Different kinds of type become a union. Records with the same keys are merged field
+    /// by field, so `{error: none}` and `{error: {message: string}}` give
+    /// `{error: none | {message: string}}`. A field that still contains a type variable makes
+    /// the merge fail, or becomes `dynamic` when `lossy`. Returns `None` for other pairs,
+    /// which are unified.
+    pub fn merge_branches(&self, other: &Type, lossy: bool) -> Option<Type> {
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return Some(Type::union(vec![self.clone(), other.clone()]));
+        }
+        self.merge_records(other, lossy)
+    }
+
+    /// Whether the type contains a type variable other than the row tail of a record.
+    fn has_pending_var(&self) -> bool {
+        match self {
+            Type::Var(_) => true,
+            Type::Array(elem) => elem.has_pending_var(),
+            Type::Dict(key, value) => key.has_pending_var() || value.has_pending_var(),
+            Type::Tuple(items) | Type::Union(items) => items.iter().any(Type::has_pending_var),
+            Type::Function(params, ret) => params.iter().any(Type::has_pending_var) || ret.has_pending_var(),
+            Type::Record(fields, _) => fields.values().any(Type::has_pending_var),
+            _ => false,
+        }
+    }
+
+    /// Merges two records with the same keys and the same kind of row tail (both closed, or
+    /// both open).
+    fn merge_records(&self, other: &Type, lossy: bool) -> Option<Type> {
+        let (Type::Record(fields_a, rest_a), Type::Record(fields_b, rest_b)) = (self, other) else {
+            return None;
+        };
+        let same_tail = matches!(
+            (&**rest_a, &**rest_b),
+            (Type::RowEmpty, Type::RowEmpty) | (Type::Var(_), Type::Var(_))
+        );
+        if !same_tail || !fields_a.keys().eq(fields_b.keys()) {
+            return None;
+        }
+        let mut fields = BTreeMap::new();
+        for (key, a) in fields_a {
+            let b = &fields_b[key];
+            let merged = if a == b {
+                a.clone()
+            } else if let Some(merged) = a.merge_records(b, lossy) {
+                merged
+            } else if !a.has_pending_var() && !b.has_pending_var() {
+                Type::union(vec![a.clone(), b.clone()])
+            } else if lossy {
+                Type::Dynamic
+            } else {
+                return None;
+            };
+            fields.insert(key.clone(), merged);
+        }
+        Some(Type::Record(fields, rest_a.clone()))
+    }
+
     /// Removes a type from a union by discriminant, returning the remaining type.
     ///
     /// If this is not a union, returns self unchanged.

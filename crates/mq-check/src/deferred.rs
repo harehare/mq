@@ -415,12 +415,13 @@ pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
         };
         let resolved_try = ctx.resolve_type(&entry.try_ty);
         let resolved_catch = ctx.resolve_type(&entry.catch_ty);
-        let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
-        let same_discriminant =
-            both_concrete && std::mem::discriminant(&resolved_try) == std::mem::discriminant(&resolved_catch);
+        let both_resolved = !resolved_try.is_var() && !resolved_catch.is_var();
 
-        let merged_ty = if both_concrete && !same_discriminant {
-            types::Type::union(vec![resolved_try, resolved_catch])
+        let merged_ty = if let Some(merged) = both_resolved
+            .then(|| resolved_try.merge_branches(&resolved_catch, true))
+            .flatten()
+        {
+            merged
         } else {
             ctx.add_constraint(Constraint::Equal(
                 entry.try_ty.clone(),

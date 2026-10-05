@@ -2176,3 +2176,16 @@ fn test_array_of_records_with_differing_field_types_is_allowed(#[case] code: &st
     let errors = check_types(code);
     assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
 }
+
+#[rstest]
+#[case::none_vs_record_field(r#"try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"message": "x"}}"#)]
+#[case::nested_records(r#"try: {"a": {"b": 1}} catch(e): {"a": {"b": "x"}}"#)]
+fn test_try_catch_merges_record_fields_into_unions(#[case] code: &str) {
+    assert!(check_types(code).is_empty());
+}
+
+#[test]
+fn test_try_catch_record_field_union_keeps_each_member() {
+    let code = r#"let r = try: {"a": 1} catch(e): {"a": "x"} | r["a"] + true"#;
+    assert!(!check_types(code).is_empty());
+}
