@@ -4259,3 +4259,53 @@ mod implicit_pipeline_cst {
         assert_eq!(matches!(first_arg_kind(code), CstNodeKind::Block { .. }), is_block);
     }
 }
+
+/// Source text covered by the error's primary location.
+fn error_span_text<'a>(err: &mq_lang::Error, program: &'a str) -> &'a str {
+    let start = err.location.offset();
+    &program[start..start + err.location.len()]
+}
+
+#[rstest]
+#[case::single_line(r#"s"a ${error("boom")} b""#, "error")]
+#[case::leading_space_in_expr(r#"s"${   error("boom")}""#, "error")]
+#[case::multiline_expr("s\"a ${\n  error(\"boom\")\n} b\"", "error")]
+#[case::multibyte_text_before(r#"s"あい ${error("boom")}""#, "error")]
+#[case::second_interpolation(r#"s"${1} and ${error("boom")}""#, "error")]
+#[case::after_pipe_on_later_line("let x = 1\n| s\"v=${x}, ${error(\"boom\")}\"", "error")]
+#[case::inside_function("def f(): s\"a ${error(\"boom\")}\"; | f()", "error")]
+fn interpolation_runtime_error_points_at_inner_expression(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] expected: &str,
+) {
+    let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+    assert!(format!("{err}").contains("boom"));
+    assert_eq!(error_span_text(&err, program), expected);
+}
+
+#[rstest]
+#[case::missing_rhs(r#"s"a ${ 1 + } b""#, "Expected an expression after `+`", "+")]
+#[case::unclosed_paren_points_at_end_of_expr(r#"s"a ${ (1 } b""#, "closing", "}")]
+#[case::multiline_missing_rhs("s\"a ${\n  1 +\n} b\"", "Expected an expression after `+`", "+")]
+#[case::after_other_segment(r#"s"${1} ${ 2 * }""#, "Expected an expression after `*`", "*")]
+fn interpolation_syntax_error_keeps_cause_and_position(
+    mut engine: Engine,
+    #[case] program: &str,
+    #[case] expected_msg: &str,
+    #[case] expected_span: &str,
+) {
+    let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains(expected_msg), "got {msg:?}");
+    assert!(!msg.contains("Unexpected token ``"), "got {msg:?}");
+    assert_eq!(error_span_text(&err, program), expected_span);
+}
+
+#[rstest]
+#[case::empty_expr(r#"s"a ${} b""#)]
+#[case::whitespace_only_expr(r#"s"a ${  } b""#)]
+fn interpolation_empty_expression_reports_end_of_input(mut engine: Engine, #[case] program: &str) {
+    let err = engine.eval(program, std::iter::once(RuntimeValue::None)).unwrap_err();
+    assert!(format!("{err}").contains("Unexpected end of input"), "got {err}");
+}
