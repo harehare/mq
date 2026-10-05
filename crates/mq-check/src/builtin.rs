@@ -1395,6 +1395,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // (markdown, bool) -> markdown
     register_binary(ctx, "set_check", Type::Markdown, Type::Bool, Type::Markdown);
+    // `none` leaves the node unchecked (a plain list item).
+    register_binary(ctx, "set_check", Type::Markdown, Type::None, Type::Markdown);
     register_binary(ctx, "set_list_ordered", Type::Markdown, Type::Bool, Type::Markdown);
 
     // (markdown, string) -> markdown

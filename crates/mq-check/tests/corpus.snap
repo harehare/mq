@@ -29,10 +29,7 @@ crates/mq-lang/modules/json.mq: syntax=0 type=1 unresolved_injected=0 unresolved
   typechecker::type_mismatch
   unresolved: parent_path
 crates/mq-lang/modules/json_test.mq: syntax=0 type=0 unresolved_injected=2 unresolved_other=0 dynamic=0
-crates/mq-lang/modules/md.mq: syntax=0 type=3 unresolved_injected=0 unresolved_other=0 dynamic=0
-  typechecker::type_mismatch
-  typechecker::type_mismatch
-  typechecker::type_mismatch
+crates/mq-lang/modules/md.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
 crates/mq-lang/modules/md_test.mq: syntax=0 type=6 unresolved_injected=0 unresolved_other=0 dynamic=0
   typechecker::unification_error
   typechecker::unification_error
@@ -63,4 +60,4 @@ crates/mq-lang/modules/yaml_test.mq: syntax=0 type=3 unresolved_injected=2 unres
   typechecker::type_mismatch
 scripts/bump_version.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
 scripts/sitemap.mq: syntax=0 type=0 unresolved_injected=0 unresolved_other=0 dynamic=0
-TOTAL: type=29 unresolved_injected=10 unresolved_other=539 dynamic=18
+TOTAL: type=26 unresolved_injected=10 unresolved_other=539 dynamic=18

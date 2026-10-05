@@ -2212,3 +2212,13 @@ fn test_flatten_accepts_mixed_and_nested_arrays(#[case] code: &str) {
 fn test_map_distributes_over_union_of_arrays(#[case] code: &str) {
     assert!(check_types_with_builtins(code).is_empty());
 }
+
+#[rstest]
+#[case::none_default_param_narrowed_in_else(
+    r#"def f(a, idx = None): let i = if (is_none(idx)): [1] else: idx | len(i) + a; | f(1) | f(2, [3])"#
+)]
+#[case::none_default_param_passed_on(r#"def item(v, checked = None): to_markdown(v) | first() | set_check(checked);"#)]
+#[case::set_check_none(r#"to_markdown("- a") | first() | set_check(None)"#)]
+fn test_none_default_parameter_accepts_other_types(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}

@@ -493,7 +493,12 @@ pub(super) fn generate_symbol_constraints(
                             && let Some(default_sym) = hir.symbol(default_id)
                             && !matches!(default_sym.kind, SymbolKind::Parameter | SymbolKind::Keyword)
                         {
-                            let default_ty = ctx.get_or_create_symbol_type(default_id);
+                            let mut default_ty = ctx.get_or_create_symbol_type(default_id);
+                            // `None` is a sentinel for "not given", so the parameter may hold
+                            // another type too: `none | a`.
+                            if default_sym.kind == SymbolKind::None {
+                                default_ty = Type::union(vec![Type::Var(ctx.fresh_var()), default_ty]);
+                            }
                             ctx.add_constraint(Constraint::Equal(
                                 param_ty.clone(),
                                 default_ty,
