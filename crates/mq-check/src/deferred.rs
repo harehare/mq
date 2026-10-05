@@ -9,11 +9,12 @@
 //! none of them touch `TypeChecker`'s own state directly.
 
 use mq_hir::{Hir, SymbolId};
+use rustc_hash::FxHashMap;
 
 use crate::{
     TypeError,
     constraint::{Constraint, ConstraintOrigin, attr_kind_to_type},
-    infer::{DeferredOverload, InferenceContext},
+    infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
     types::{self, Substitution},
     unify, walk_ancestors,
 };
@@ -771,6 +772,8 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
 pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext) {
     let deferred_calls = ctx.take_deferred_user_calls();
     let unresolved_overloads = ctx.take_deferred_overloads();
+    let deferred_param_calls = ctx.take_deferred_parameter_calls();
+    let index = BodyIndex::new(hir, &unresolved_overloads, &deferred_param_calls);
 
     for call in &deferred_calls {
         // Get the original function type
@@ -804,12 +807,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         // Uses iterative resolution: when an inner operator resolves (e.g. x + 1 → Number),
         // its result type is added to the substitution so outer operators that depend on it
         // (e.g. (x + 1) + true) can also be checked.
-        let body_overloads: Vec<_> = unresolved_overloads
+        let body_overloads: Vec<_> = index
+            .body_overloads(call.def_id)
             .iter()
-            .filter(|d| {
-                is_symbol_inside_function(hir, d.symbol_id, call.def_id)
-                    && !is_inside_control_flow(hir, d.symbol_id, call.def_id)
-            })
+            .map(|&i| &unresolved_overloads[i])
             .collect();
 
         check_deferred_overloads_iteratively(&body_overloads, &mut subst, ctx, call.range);
@@ -823,13 +824,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         // variable `x`). Resolving those arg types with the main substitution
         // yields the concrete element type (e.g. `Number`), which becomes the
         // lambda's parameter substitution for checking its body operators.
-        let deferred_param_calls = ctx.deferred_parameter_calls().to_vec();
-        // Collect outer function's parameter symbol IDs to match against inner calls
-        let outer_param_syms: Vec<SymbolId> = get_function_params(hir, call.def_id);
-        for param_call in &deferred_param_calls {
-            if param_call.outer_def_id != call.def_id {
-                continue;
-            }
+        // The outer function's parameter symbol IDs, to match against inner calls
+        let outer_param_syms = index.params(call.def_id);
+        for &param_call_index in index.param_calls(call.def_id) {
+            let param_call = &deferred_param_calls[param_call_index];
 
             // Map the called parameter to its index in the outer function's param list
             let param_index = match outer_param_syms.iter().position(|&s| s == param_call.param_sym_id) {
@@ -872,9 +870,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
 
             // Check deferred overloads inside the lambda body.
             // Uses iterative resolution for chained operators (e.g. x + 1 + true).
-            let lambda_overloads: Vec<_> = unresolved_overloads
+            let lambda_overloads: Vec<_> = index
+                .inside_overloads(lambda_sym_id)
                 .iter()
-                .filter(|d| is_symbol_inside_function(hir, d.symbol_id, lambda_sym_id))
+                .map(|&i| &unresolved_overloads[i])
                 .collect();
 
             check_deferred_overloads_iteratively(&lambda_overloads, &mut lambda_subst, ctx, call.range);
@@ -993,58 +992,87 @@ fn extract_structural_subst(
     }
 }
 
-/// Returns the HIR symbol IDs of all parameter symbols for a function definition.
-fn get_function_params(hir: &Hir, func_def_id: SymbolId) -> Vec<SymbolId> {
-    hir.symbols()
-        .filter_map(|(id, sym)| {
-            if sym.parent == Some(func_def_id) && sym.is_parameter() {
-                Some(id)
-            } else {
-                None
+/// Per-function lookup tables for [`check_user_call_body_operators`], built in one pass so
+/// the check does not rescan the HIR or walk ancestors once per call site.
+struct BodyIndex {
+    /// Function or lambda symbol -> overloads anywhere inside it.
+    inside: FxHashMap<SymbolId, Vec<usize>>,
+    /// Function symbol -> overloads inside it that are not nested in control flow.
+    body: FxHashMap<SymbolId, Vec<usize>>,
+    /// Function symbol -> its parameter symbols.
+    params: FxHashMap<SymbolId, Vec<SymbolId>>,
+    /// Function symbol -> parameter calls made inside it.
+    param_calls: FxHashMap<SymbolId, Vec<usize>>,
+}
+
+impl BodyIndex {
+    fn new(hir: &Hir, overloads: &[DeferredOverload], param_calls: &[DeferredParameterCall]) -> Self {
+        use mq_hir::SymbolKind;
+
+        let mut inside: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        let mut body: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        for (i, overload) in overloads.iter().enumerate() {
+            // Control flow guards may narrow types beyond what static analysis sees, so an
+            // overload nested in one is not part of the checked body of the enclosing function.
+            let mut in_control_flow = false;
+            for (id, symbol) in walk_ancestors(hir, overload.symbol_id) {
+                inside.entry(id).or_default().push(i);
+                if !in_control_flow {
+                    body.entry(id).or_default().push(i);
+                }
+                in_control_flow |= matches!(
+                    symbol.kind,
+                    SymbolKind::If
+                        | SymbolKind::Unless
+                        | SymbolKind::Elif
+                        | SymbolKind::Else
+                        | SymbolKind::While
+                        | SymbolKind::Until
+                        | SymbolKind::Loop
+                        | SymbolKind::Match
+                        | SymbolKind::MatchArm { .. }
+                        | SymbolKind::Try
+                        | SymbolKind::Catch
+                        | SymbolKind::Foreach
+                );
             }
-        })
-        .collect()
-}
+        }
 
-/// Checks if a symbol is inside a function body by walking the HIR parent chain.
-/// Includes a depth limit to prevent stack overflow on deeply nested or cyclic structures.
-fn is_symbol_inside_function(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
-    for (id, _) in walk_ancestors(hir, symbol_id) {
-        if id == func_id {
-            return true;
+        let mut params: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+        for (id, symbol) in hir.symbols() {
+            if let Some(parent) = symbol.parent
+                && symbol.is_parameter()
+            {
+                params.entry(parent).or_default().push(id);
+            }
+        }
+
+        let mut by_outer: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        for (i, call) in param_calls.iter().enumerate() {
+            by_outer.entry(call.outer_def_id).or_default().push(i);
+        }
+
+        Self {
+            inside,
+            body,
+            params,
+            param_calls: by_outer,
         }
     }
-    false
-}
 
-/// Checks if a symbol is inside a control flow construct (If, Elif, Else, While, Loop,
-/// Match, MatchArm, Try, Catch, Foreach) between itself and the function definition.
-///
-/// This is used to skip operator checking inside type-guarded branches, where runtime
-/// type checks narrow the type beyond what static analysis can determine.
-fn is_inside_control_flow(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
-    use mq_hir::SymbolKind;
-    for (id, symbol) in walk_ancestors(hir, symbol_id) {
-        if id == func_id {
-            return false;
-        }
-        if matches!(
-            symbol.kind,
-            SymbolKind::If
-                | SymbolKind::Unless
-                | SymbolKind::Elif
-                | SymbolKind::Else
-                | SymbolKind::While
-                | SymbolKind::Until
-                | SymbolKind::Loop
-                | SymbolKind::Match
-                | SymbolKind::MatchArm { .. }
-                | SymbolKind::Try
-                | SymbolKind::Catch
-                | SymbolKind::Foreach
-        ) {
-            return true;
-        }
+    fn inside_overloads(&self, func: SymbolId) -> &[usize] {
+        self.inside.get(&func).map_or(&[], Vec::as_slice)
     }
-    false
+
+    fn body_overloads(&self, func: SymbolId) -> &[usize] {
+        self.body.get(&func).map_or(&[], Vec::as_slice)
+    }
+
+    fn params(&self, func: SymbolId) -> &[SymbolId] {
+        self.params.get(&func).map_or(&[], Vec::as_slice)
+    }
+
+    fn param_calls(&self, func: SymbolId) -> &[usize] {
+        self.param_calls.get(&func).map_or(&[], Vec::as_slice)
+    }
 }

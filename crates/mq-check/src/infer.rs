@@ -335,9 +335,9 @@ impl InferenceContext {
         self.deferred_parameter_calls.push(call);
     }
 
-    /// Returns a reference to all deferred parameter calls
-    pub fn deferred_parameter_calls(&self) -> &[DeferredParameterCall] {
-        &self.deferred_parameter_calls
+    /// Takes all deferred parameter calls (consumes them)
+    pub fn take_deferred_parameter_calls(&mut self) -> Vec<DeferredParameterCall> {
+        std::mem::take(&mut self.deferred_parameter_calls)
     }
 
     /// Adds a deferred record field access for post-unification resolution
