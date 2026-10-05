@@ -162,8 +162,21 @@ fn corpus_diagnostics_match_snapshot() {
         return;
     }
     let expected = std::fs::read_to_string(&snap).unwrap_or_default();
-    assert_eq!(
-        actual, expected,
-        "corpus diagnostics changed; if intended, regenerate with UPDATE_CORPUS=1"
-    );
+    if actual != expected {
+        let changed: Vec<String> = expected
+            .lines()
+            .filter(|line| !actual.lines().any(|a| a == *line))
+            .map(|line| format!("- {line}"))
+            .chain(
+                actual
+                    .lines()
+                    .filter(|line| !expected.lines().any(|e| e == *line))
+                    .map(|line| format!("+ {line}")),
+            )
+            .collect();
+        panic!(
+            "corpus diagnostics changed; if intended, regenerate with UPDATE_CORPUS=1\n{}",
+            changed.join("\n")
+        );
+    }
 }

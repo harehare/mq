@@ -143,13 +143,14 @@ impl Type {
     /// Different kinds of type become a union. Records with the same keys are merged field
     /// by field, so `{error: none}` and `{error: {message: string}}` give
     /// `{error: none | {message: string}}`. A field that still contains a type variable makes
-    /// the merge fail, or becomes `dynamic` when `lossy`. Returns `None` for other pairs,
-    /// which are unified.
-    pub fn merge_branches(&self, other: &Type, lossy: bool) -> Option<Type> {
+    /// the merge fail, or stays as a union with that variable when `keep_pending` (it is
+    /// normalised once the variable is resolved). Returns `None` for other pairs, which are
+    /// unified.
+    pub fn merge_branches(&self, other: &Type, keep_pending: bool) -> Option<Type> {
         if std::mem::discriminant(self) != std::mem::discriminant(other) {
             return Some(Type::union(vec![self.clone(), other.clone()]));
         }
-        self.merge_records(other, lossy)
+        self.merge_records(other, keep_pending)
     }
 
     /// Whether the type contains a type variable other than the row tail of a record.
@@ -167,7 +168,7 @@ impl Type {
 
     /// Merges two records with the same keys and the same kind of row tail (both closed, or
     /// both open).
-    fn merge_records(&self, other: &Type, lossy: bool) -> Option<Type> {
+    fn merge_records(&self, other: &Type, keep_pending: bool) -> Option<Type> {
         let (Type::Record(fields_a, rest_a), Type::Record(fields_b, rest_b)) = (self, other) else {
             return None;
         };
@@ -183,12 +184,10 @@ impl Type {
             let b = &fields_b[key];
             let merged = if a == b {
                 a.clone()
-            } else if let Some(merged) = a.merge_records(b, lossy) {
+            } else if let Some(merged) = a.merge_records(b, keep_pending) {
                 merged
-            } else if !a.has_pending_var() && !b.has_pending_var() {
+            } else if keep_pending || (!a.has_pending_var() && !b.has_pending_var()) {
                 Type::union(vec![a.clone(), b.clone()])
-            } else if lossy {
-                Type::Dynamic
             } else {
                 return None;
             };

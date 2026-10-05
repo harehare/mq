@@ -518,7 +518,9 @@ impl InferenceContext {
             }
         }
 
-        best_match.map(|(ty, _score)| self.instantiate_fresh(&ty))
+        let (ty, _score) = best_match?;
+        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
     }
 
     /// Instantiates fresh type variables in a type to avoid contamination

@@ -517,6 +517,27 @@ fn register_string(ctx: &mut InferenceContext) {
     );
 }
 
+/// Returns the signature of `name` specialised to the already resolved `args`, for builtins whose
+/// result type depends on the structure of an argument rather than on a type variable.
+pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
+    match (name, args) {
+        ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
+            Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
+        }
+        _ => None,
+    }
+}
+
+/// The element type left after `flatten` removes every level of array nesting.
+fn flatten_leaf(ty: &Type) -> Type {
+    match ty {
+        Type::Array(elem) => flatten_leaf(elem),
+        Type::Tuple(elems) => Type::union(elems.iter().map(flatten_leaf).collect()),
+        Type::Union(members) => Type::union(members.iter().map(flatten_leaf).collect()),
+        other => other.clone(),
+    }
+}
+
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
 fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
@@ -573,16 +594,8 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Markdown),
     );
 
-    // flatten: [[a]] -> [a]
-    let a = ctx.fresh_var();
-    register_unary(
-        ctx,
-        "flatten",
-        Type::array(Type::array(Type::Var(a))),
-        Type::array(Type::Var(a)),
-    );
-
-    // flatten: [a] -> [a] (identity for already-flat arrays)
+    // flatten: [a] -> [a]. The result element type is computed from the argument by
+    // `refine_signature`, since flattening is recursive and the elements may be mixed.
     let a = ctx.fresh_var();
     register_unary(ctx, "flatten", Type::array(Type::Var(a)), Type::array(Type::Var(a)));
 
@@ -1598,7 +1611,7 @@ mod tests {
     use mq_hir::Hir;
     use rstest::rstest;
 
-    use crate::{TypeChecker, TypeError};
+    use crate::{TypeChecker, TypeError, types::Type};
 
     /// Helper function to create HIR from code
     fn create_hir(code: &str) -> Hir {
@@ -1615,6 +1628,28 @@ mod tests {
         let hir = create_hir(code);
         let mut checker = TypeChecker::new();
         checker.check(&hir)
+    }
+
+    #[rstest]
+    #[case::flat(Type::array(Type::Number), Type::Number)]
+    #[case::nested(Type::array(Type::array(Type::array(Type::String))), Type::String)]
+    #[case::mixed_tuple(
+        Type::tuple(vec![Type::array(Type::String), Type::String]),
+        Type::String
+    )]
+    #[case::union_members(
+        Type::array(Type::union(vec![Type::Number, Type::array(Type::String)])),
+        Type::union(vec![Type::Number, Type::String])
+    )]
+    fn test_flatten_result_type(#[case] arg: Type, #[case] leaf: Type) {
+        let signature = super::refine_signature("flatten", std::slice::from_ref(&arg));
+        assert_eq!(signature, Some(Type::function(vec![arg], Type::array(leaf))));
+    }
+
+    #[test]
+    fn test_refine_signature_ignores_unresolved_and_other_builtins() {
+        assert_eq!(super::refine_signature("flatten", &[Type::Number]), None);
+        assert_eq!(super::refine_signature("reverse", &[Type::array(Type::Number)]), None);
     }
 
     // Mathematical Functions

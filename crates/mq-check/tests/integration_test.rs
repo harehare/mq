@@ -2189,3 +2189,16 @@ fn test_try_catch_record_field_union_keeps_each_member() {
     let code = r#"let r = try: {"a": 1} catch(e): {"a": "x"} | r["a"] + true"#;
     assert!(!check_types(code).is_empty());
 }
+
+#[rstest]
+#[case::mixed_elements(r#"let b = [["x"], "y"] | b | flatten()"#)]
+#[case::nested_arrays(r#"[[1], [2, [3]]] | flatten()"#)]
+#[case::flat_array(r#"[1, 2] | flatten()"#)]
+fn test_flatten_accepts_mixed_and_nested_arrays(#[case] code: &str) {
+    let hir = {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+        hir
+    };
+    assert!(TypeChecker::new().check(&hir).is_empty());
+}
