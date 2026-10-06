@@ -2093,10 +2093,10 @@ fn test_recursive_selector(#[case] code: &str, #[case] should_succeed: bool, #[c
 #[rstest]
 #[case(r#"def myfirst(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];"#)]
 #[case(r#"def myfirst(arr): next(arr)["value"];"#)]
-#[case(r#"next(1)["value"]"#)]
-#[case(r#"let x = next(1) | x["value"]"#)]
+#[case(r#"next(to_coroutine([1]))["value"]"#)]
+#[case(r#"let x = next(to_coroutine([1])) | x["value"]"#)]
 #[case(r#"def myfirst(arr): get(next(arr), "value");"#)]
-#[case(r#"next(1)"#)]
+#[case(r#"next(to_coroutine([1]))"#)]
 fn test_builtin_call_bracket_access_does_not_leak_key_into_overload(#[case] code: &str) {
     let errors = check_types(code);
     assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);

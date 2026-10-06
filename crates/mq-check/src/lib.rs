@@ -378,6 +378,7 @@ impl TypeChecker {
         laps.lap("solve");
 
         // Resolve user-defined call return types before narrowing so `y != None` can narrow `let y = f(x)`.
+        deferred::resolve_generator_yields(&mut ctx);
         deferred::propagate_user_call_returns(&mut ctx);
         laps.lap("propagate_user_call_returns");
 
@@ -421,6 +422,7 @@ impl TypeChecker {
 
         // Propagate return types from user-defined function calls so that
         // f(x)["key"] bracket accesses below have concrete return types to inspect.
+        deferred::resolve_generator_yields(&mut ctx);
         deferred::propagate_user_call_returns(&mut ctx);
         laps.lap("propagate_user_call_returns");
 

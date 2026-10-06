@@ -40,6 +40,16 @@ pub struct DeferredParameterCall {
     pub arg_tys: Vec<Type>,
 }
 
+/// The type a generator yields, which is the join of the types of its `yield`s once they are
+/// known.
+#[derive(Debug, Clone)]
+pub struct DeferredGeneratorYield {
+    /// The type variable standing for the yielded type in the function's return type
+    pub yielded: TypeVarId,
+    /// The `yield` symbols of the function
+    pub yields: Vec<SymbolId>,
+}
+
 /// A deferred user-defined function call for post-unification type checking.
 ///
 /// After unification, the original function's return type will be resolved from
@@ -218,6 +228,9 @@ pub struct InferenceContext {
     piped_inputs: FxHashMap<SymbolId, Type>,
     /// The type of the input document `.`, piped into the first step of the program.
     input_type: Type,
+    /// The `yield` symbols of each function, which make it return a generator.
+    function_yields: FxHashMap<SymbolId, Vec<SymbolId>>,
+    deferred_generator_yields: Vec<DeferredGeneratorYield>,
     /// The previous pipe stage whose result is each symbol's piped input.
     piped_sources: FxHashMap<SymbolId, SymbolId>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
@@ -262,6 +275,8 @@ impl InferenceContext {
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
             input_type: Type::Dynamic,
+            function_yields: FxHashMap::default(),
+            deferred_generator_yields: Vec::new(),
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
@@ -309,6 +324,26 @@ impl InferenceContext {
     }
 
     /// Sets the piped input type for a symbol
+    /// Defers fixing the yielded type of a generator until its `yield`s are typed.
+    pub fn add_deferred_generator_yield(&mut self, entry: DeferredGeneratorYield) {
+        self.deferred_generator_yields.push(entry);
+    }
+
+    /// Takes the pending generator yield types (consumes them).
+    pub fn take_deferred_generator_yields(&mut self) -> Vec<DeferredGeneratorYield> {
+        std::mem::take(&mut self.deferred_generator_yields)
+    }
+
+    /// Records the `yield` symbols of every function.
+    pub fn set_function_yields(&mut self, yields: FxHashMap<SymbolId, Vec<SymbolId>>) {
+        self.function_yields = yields;
+    }
+
+    /// The `yield` symbols directly in `function` (not in a nested function), if any.
+    pub fn function_yields(&self, function: SymbolId) -> &[SymbolId] {
+        self.function_yields.get(&function).map_or(&[], Vec::as_slice)
+    }
+
     /// Sets the type of the input document `.`.
     pub fn set_input_type(&mut self, ty: Type) {
         self.input_type = ty;
@@ -668,6 +703,7 @@ impl InferenceContext {
                 result
             }
             Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, path))),
+            Type::Generator(yielded) => Type::Generator(Box::new(self.resolve_type_inner(yielded, path))),
             Type::Dict(key, value) => Type::Dict(
                 Box::new(self.resolve_type_inner(key, path)),
                 Box::new(self.resolve_type_inner(value, path)),

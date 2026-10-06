@@ -528,6 +528,24 @@ fn register_string(ctx: &mut InferenceContext) {
     );
 }
 
+/// A generator yielding the type variable `yielded`.
+fn generator_of(yielded: crate::types::TypeVarId) -> Type {
+    Type::Generator(Box::new(Type::Var(yielded)))
+}
+
+/// The `{value, done}` record `next` and `send` return; `value` is `none` once it is done.
+fn step_result(yielded: crate::types::TypeVarId) -> Type {
+    Type::record(
+        [
+            ("value".to_string(), Type::union(vec![Type::Var(yielded), Type::None])),
+            ("done".to_string(), Type::Bool),
+        ]
+        .into_iter()
+        .collect(),
+        Type::RowEmpty,
+    )
+}
+
 /// A node of exactly one kind.
 fn node_of(kind: NodeKind) -> Type {
     Type::Node(KindSet::of(kind))
@@ -977,6 +995,50 @@ fn register_collection(ctx: &mut InferenceContext) {
     // first: ([a]) -> a
     let a = ctx.fresh_var();
     register_unary(ctx, "first", Type::array(Type::Var(a)), Type::Var(a));
+
+    // first: (generator<a>) -> a | none. Consumes one value.
+    let a = ctx.fresh_var();
+    register_unary(
+        ctx,
+        "first",
+        generator_of(a),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
+
+    // map/filter/flat_map/fold over a generator are lazy and give a generator (fold consumes it).
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "map",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::Var(b)),
+        generator_of(b),
+    );
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "filter",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::Bool),
+        generator_of(a),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "flat_map",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::array(Type::Var(b))),
+        generator_of(b),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_ternary(
+        ctx,
+        "fold",
+        generator_of(a),
+        Type::Var(b),
+        Type::function(vec![Type::Var(b), Type::Var(a)], Type::Var(b)),
+        Type::Var(b),
+    );
 
     // first: (string) -> string (first character)
     register_unary(ctx, "first", Type::String, Type::String);
@@ -1428,11 +1490,22 @@ fn register_debug(ctx: &mut InferenceContext) {
     // argument. Coroutines and their `{ value, done }` records are runtime-only VM types for
     // now, so the checker models both sides as dynamic while still resolving the builtin name.
     register_nullary(ctx, "next", Type::Dynamic);
-    register_unary(ctx, "next", Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "send", Type::Dynamic, Type::Dynamic);
-    register_binary(ctx, "send", Type::Dynamic, Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "close", Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "status", Type::Dynamic, Type::Symbol);
+    for name in ["next", "send"] {
+        let yielded = ctx.fresh_var();
+        register_unary(ctx, name, generator_of(yielded), step_result(yielded));
+    }
+    let (yielded, sent) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "send",
+        generator_of(yielded),
+        Type::Var(sent),
+        step_result(yielded),
+    );
+    let yielded = ctx.fresh_var();
+    register_unary(ctx, "close", generator_of(yielded), generator_of(yielded));
+    let yielded = ctx.fresh_var();
+    register_unary(ctx, "status", generator_of(yielded), Type::Symbol);
 }
 
 /// File I/O functions

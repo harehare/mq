@@ -110,6 +110,19 @@ Attributes are typed by the kinds a value can have (`.depth` of a heading is `nu
 .code | .lang    // string | none
 ```
 
+### Generators
+
+A function that contains `yield` returns a coroutine, typed `generator<T>` where `T` is the type of the yielded values. `first`, `map`, `filter`, `flat_map`, `fold`, `next`, `send`, `status` and `close` understand it (`next` gives `{value: T | none, done: bool}`), and `is_coroutine(x)` narrows to it.
+
+```mq
+def numbers(): yield: 1 | yield: 2;
+// Inferred type: () -> generator<number>
+
+first(numbers())            // number | none
+map(numbers(), fn(x): to_string(x);)   // generator<string>
+len(numbers())              // Error: a generator is not an array or a string
+```
+
 ### Example:
 
 ```mq

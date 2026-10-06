@@ -103,6 +103,9 @@ pub fn unify(
         // Arrays
         (Type::Array(elem1), Type::Array(elem2)) => unify(ctx, elem1, elem2, range, origin),
 
+        // Generators
+        (Type::Generator(y1), Type::Generator(y2)) => unify(ctx, y1, y2, range, origin),
+
         // Tuples: same-length tuples unify element-wise
         (Type::Tuple(elems1), Type::Tuple(elems2)) => {
             if elems1.len() != elems2.len() {
@@ -309,7 +312,7 @@ fn unify_records(
 fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(v) => var == *v,
-        Type::Array(elem) => occurs_check(var, elem),
+        Type::Array(elem) | Type::Generator(elem) => occurs_check(var, elem),
         Type::Tuple(elems) => elems.iter().any(|e| occurs_check(var, e)),
         Type::Dict(key, value) => occurs_check(var, key) || occurs_check(var, value),
         Type::Function(params, ret) => params.iter().any(|p| occurs_check(var, p)) || occurs_check(var, ret),
@@ -344,7 +347,7 @@ fn occurs_check_transitive(
                 false
             }
         }
-        Type::Array(elem) => occurs_check_transitive(ctx, var, elem, visited),
+        Type::Array(elem) | Type::Generator(elem) => occurs_check_transitive(ctx, var, elem, visited),
         Type::Tuple(elems) => elems.iter().any(|e| occurs_check_transitive(ctx, var, e, visited)),
         Type::Dict(key, value) => {
             occurs_check_transitive(ctx, var, key, visited) || occurs_check_transitive(ctx, var, value, visited)
@@ -386,6 +389,7 @@ fn apply_substitution_inner(ctx: &InferenceContext, ty: &Type, visited: &mut Has
             result
         }
         Type::Array(elem) => Type::Array(Box::new(apply_substitution_inner(ctx, elem, visited))),
+        Type::Generator(yielded) => Type::Generator(Box::new(apply_substitution_inner(ctx, yielded, visited))),
         Type::Tuple(elems) => Type::Tuple(
             elems
                 .iter()
@@ -452,7 +456,7 @@ fn collect_free_vars(ty: &Type, vars: &mut HashSet<TypeVarId>) {
         Type::Var(var) => {
             vars.insert(*var);
         }
-        Type::Array(elem) => collect_free_vars(elem, vars),
+        Type::Array(elem) | Type::Generator(elem) => collect_free_vars(elem, vars),
         Type::Tuple(elems) => {
             for e in elems {
                 collect_free_vars(e, vars);

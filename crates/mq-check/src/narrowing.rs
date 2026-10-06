@@ -223,6 +223,7 @@ pub(crate) fn analyze_type_predicate_call(
             Type::dict(Type::Var(k), Type::Var(v))
         }
         "is_bytes" => Type::Bytes,
+        "is_coroutine" => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
         name if predicate_kinds(name).is_some() => Type::Node(predicate_kinds(name)?),
         _ => return None,
     };
@@ -256,6 +257,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         "symbol" => Some(Type::Symbol),
         "markdown" => Some(Type::markdown()),
         "bytes" => Some(Type::Bytes),
+        "coroutine" => Some(Type::Generator(Box::new(Type::Var(ctx.fresh_var())))),
         "array" => {
             let elem = ctx.fresh_var();
             Some(Type::array(Type::Var(elem)))
@@ -675,6 +677,11 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
             let both = have.intersect(*tested);
             Some(Type::Node(if both.is_empty() { *tested } else { both }))
         };
+    }
+
+    // A generator keeps what it yields: `is_coroutine(x)` does not forget `x: generator<number>`.
+    if let (Type::Generator(_), Type::Generator(_)) = (&var_ty, &entry.narrowed_type) {
+        return (!entry.is_complement).then_some(var_ty);
     }
 
     if var_ty.is_union() {

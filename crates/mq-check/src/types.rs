@@ -47,6 +47,9 @@ pub enum Type {
     /// Union type: represents a value that could be one of multiple types
     /// Used for try/catch expressions with different branch types
     Union(Vec<Type>),
+    /// A coroutine made by calling a function that contains `yield`, with the type of the
+    /// values it yields.
+    Generator(Box<Type>),
     /// Record type with known fields and optional row extension (row polymorphism).
     ///
     /// The first element is a map of field names to their types.
@@ -193,7 +196,7 @@ impl Type {
     pub(crate) fn has_pending_var(&self) -> bool {
         match self {
             Type::Var(_) => true,
-            Type::Array(elem) => elem.has_pending_var(),
+            Type::Array(elem) | Type::Generator(elem) => elem.has_pending_var(),
             Type::Dict(key, value) => key.has_pending_var() || value.has_pending_var(),
             Type::Tuple(items) | Type::Union(items) => items.iter().any(Type::has_pending_var),
             Type::Function(params, ret) => params.iter().any(Type::has_pending_var) || ret.has_pending_var(),
@@ -306,6 +309,7 @@ impl Type {
             Type::Var(_) => 16,
             Type::Never => 17,
             Type::Dynamic => 18,
+            Type::Generator(_) => 19,
         }
     }
 
@@ -340,6 +344,7 @@ impl Type {
         match self {
             Type::Var(id) => subst.lookup(*id).map_or_else(|| self.clone(), |t| t.apply_subst(subst)),
             Type::Array(elem) => Type::Array(Box::new(elem.apply_subst(subst))),
+            Type::Generator(yielded) => Type::Generator(Box::new(yielded.apply_subst(subst))),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| e.apply_subst(subst)).collect()),
             Type::Dict(key, value) => Type::Dict(Box::new(key.apply_subst(subst)), Box::new(value.apply_subst(subst))),
             Type::Function(params, ret) => {
@@ -363,7 +368,7 @@ impl Type {
     pub fn free_vars(&self) -> Vec<TypeVarId> {
         match self {
             Type::Var(id) => vec![*id],
-            Type::Array(elem) => elem.free_vars(),
+            Type::Array(elem) | Type::Generator(elem) => elem.free_vars(),
             Type::Tuple(elems) => elems.iter().flat_map(|e| e.free_vars()).collect(),
             Type::Dict(key, value) => {
                 let mut vars = key.free_vars();
@@ -420,6 +425,7 @@ impl Type {
 
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.can_match(y2),
 
             // Tuples match if they have the same length and all elements can match
             (Type::Tuple(elems1), Type::Tuple(elems2)) => {
@@ -508,6 +514,7 @@ impl Type {
 
             // Arrays: recurse strictly
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.can_branch_unify_with(y2),
 
             // Tuples: same length and all elements strictly match
             (Type::Tuple(elems1), Type::Tuple(elems2)) => {
@@ -598,6 +605,7 @@ impl Type {
 
             // Arrays: structural match scores higher than bare type variable
             (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.match_score(y2).map(|s| s + 20),
 
             // Tuples: structural match on all elements
             (Type::Tuple(elems1), Type::Tuple(elems2)) if elems1.len() == elems2.len() => {
@@ -670,6 +678,7 @@ impl Type {
             Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
+            Type::Generator(yielded) => format!("generator<{}>", yielded.display_resolved()),
             Type::Tuple(elems) => {
                 let elems_str = elems
                     .iter()
@@ -746,6 +755,7 @@ impl Type {
             Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
+            Type::Generator(yielded) => format!("generator<{}>", yielded.fmt_renumbered(var_map, counter)),
             Type::Tuple(elems) => {
                 let elems_str = elems
                     .iter()

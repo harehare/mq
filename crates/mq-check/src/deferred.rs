@@ -892,6 +892,33 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
     }
 }
 
+/// Fixes the yielded type of each generator to the join of the types of its `yield`s, for the
+/// generators whose `yield` types are all known by now. The others are retried on the next call.
+pub(crate) fn resolve_generator_yields(ctx: &mut InferenceContext) {
+    let entries = ctx.take_deferred_generator_yields();
+    for entry in entries {
+        let yielded: Vec<types::Type> = entry
+            .yields
+            .iter()
+            .map(|&y| {
+                let ty = ctx.get_or_create_symbol_type(y);
+                ctx.resolve_type(&ty)
+            })
+            .collect();
+        if yielded.iter().any(|ty| ty.has_pending_var()) {
+            ctx.add_deferred_generator_yield(entry);
+            continue;
+        }
+        ctx.add_constraint(Constraint::Equal(
+            types::Type::Var(entry.yielded),
+            types::Type::join(yielded),
+            None,
+            ConstraintOrigin::General,
+        ));
+    }
+    unify::solve_constraints(ctx);
+}
+
 /// Checks operators inside user-defined function bodies against call-site argument types.
 ///
 /// For each deferred user call, builds a local substitution mapping the original

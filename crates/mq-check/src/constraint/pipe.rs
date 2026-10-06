@@ -104,7 +104,10 @@ pub(super) fn generate_function_body_pipe_constraints(
     // This is the key HM inference step: without it, user-defined function return types remain
     // as free type variables and `propagate_user_call_returns` cannot resolve them, making
     // cross-function type errors (e.g. `c() + 1` where c returns Bool) invisible.
-    if let Some(&last_body_id) = body_children.last() {
+    if let Some(&last_body_id) = body_children
+        .last()
+        .filter(|_| ctx.function_yields(symbol_id).is_empty())
+    {
         let body_ty = ctx.get_or_create_symbol_type(last_body_id);
         let func_ty = ctx.get_or_create_symbol_type(symbol_id);
         if let Type::Function(_, ret_ty) = func_ty {

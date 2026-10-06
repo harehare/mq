@@ -94,6 +94,8 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Build children index once to avoid O(n) scans in get_children()
     let children_index = build_children_index(hir);
 
+    ctx.set_function_yields(collect_function_yields(hir));
+
     // Categorize symbols in a single pass (replaces 5 separate iterations)
     let cats = categorize_symbols(hir);
 
@@ -457,8 +459,17 @@ pub(super) fn generate_symbol_constraints(
             // Create type variables for each parameter
             let param_tys: Vec<Type> = params.iter().map(|_| Type::Var(ctx.fresh_var())).collect();
 
-            // Create type variable for return type
-            let ret_ty = Type::Var(ctx.fresh_var());
+            // A function that yields returns a generator of what it yields; otherwise the return
+            // type is the type of its body.
+            let yields = ctx.function_yields(symbol_id).to_vec();
+            let is_generator = !yields.is_empty();
+            let ret_ty = if is_generator {
+                let yielded = ctx.fresh_var();
+                ctx.add_deferred_generator_yield(infer::DeferredGeneratorYield { yielded, yields });
+                Type::Generator(Box::new(Type::Var(yielded)))
+            } else {
+                Type::Var(ctx.fresh_var())
+            };
 
             // Function type is (param_tys) -> ret_ty
             let func_ty = Type::function(param_tys.clone(), ret_ty.clone());
@@ -527,7 +538,7 @@ pub(super) fn generate_symbol_constraints(
                 })
                 .copied()
                 .collect();
-            if let Some(&last_body) = body_children.last() {
+            if let Some(&last_body) = body_children.last().filter(|_| !is_generator) {
                 let body_ty = ctx.get_or_create_symbol_type(last_body);
                 let range = get_symbol_range(hir, symbol_id);
                 let fn_name = hir.symbol(symbol_id).and_then(|s| s.value.clone()).unwrap_or_default();
@@ -2190,6 +2201,22 @@ pub(super) fn generate_symbol_constraints(
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
     }
+}
+
+/// The `yield` symbols directly inside each function, keyed by the function. A `yield` in a
+/// nested function belongs to that function.
+fn collect_function_yields(hir: &Hir) -> rustc_hash::FxHashMap<SymbolId, Vec<SymbolId>> {
+    let mut yields: rustc_hash::FxHashMap<SymbolId, Vec<SymbolId>> = rustc_hash::FxHashMap::default();
+    for (id, symbol) in hir.symbols() {
+        if symbol.kind == SymbolKind::Keyword
+            && symbol.value.as_deref() == Some("yield")
+            && let Some((function, _)) =
+                crate::walk_ancestors(hir, id).find(|(_, ancestor)| matches!(ancestor.kind, SymbolKind::Function(_)))
+        {
+            yields.entry(function).or_default().push(id);
+        }
+    }
+    yields
 }
 
 /// Whether `symbol_id` is a reference to a function parameter.
