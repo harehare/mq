@@ -8,11 +8,11 @@
     "url": "https://github.com/harehare/mq/issues"
   },
   "devDependencies": {
-    "@types/node": "^26.1.0",
-    "oxlint": "^1.31.0",
+    "@types/node": "^26.6.4",
+    "oxlint": "^1.87.0",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.3"
   },
   "files": [
     "dist"
