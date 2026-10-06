@@ -1117,15 +1117,22 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::dict(Type::Var(k), Type::Var(b)),
     );
 
-    // Generic fallback: map(a, (a) -> b) -> [b]
-    // Handles dynamically typed code where the collection type is runtime-guarded
+    // map: (string, (string) -> b) -> [b] over the characters, (none, (a) -> b) -> none
+    let b = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "map",
+        Type::String,
+        Type::function(vec![Type::String], Type::Var(b)),
+        Type::array(Type::Var(b)),
+    );
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(
         ctx,
         "map",
-        Type::Var(a),
+        Type::None,
         Type::function(vec![Type::Var(a)], Type::Var(b)),
-        Type::array(Type::Var(b)),
+        Type::None,
     );
 
     // filter: ([a], (a) -> bool) -> [a]
@@ -1138,14 +1145,13 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
-    // Generic fallback: filter(a, (a) -> bool) -> [a]
-    let a = ctx.fresh_var();
+    // filter: (string, (string) -> bool) -> [string] over the characters
     register_binary(
         ctx,
         "filter",
-        Type::Var(a),
-        Type::function(vec![Type::Var(a)], Type::Bool),
-        Type::array(Type::Var(a)),
+        Type::String,
+        Type::function(vec![Type::String], Type::Bool),
+        Type::array(Type::String),
     );
     // None propagation: filter(none, (none) -> a) -> none
     // The lambda return type is irrelevant for None propagation since it's never called

@@ -615,7 +615,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
             let d = &deferred[idx];
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-            let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
+            let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
             let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
             if has_union {
@@ -790,7 +790,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
 
                 // Don't resolve when any operand still contains a free type variable
                 // and there are multiple overloads — store back for user call body checking
-                let any_var_best = resolved_operands.iter().any(|ty| !ty.is_concrete());
+                let any_var_best = resolved_operands.iter().any(|ty| ty.has_pending_var());
                 if any_var_best {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
@@ -814,7 +814,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
                     }
                 } else {
-                    let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
+                    let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
                     if all_concrete {
                         ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                     } else {
