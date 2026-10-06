@@ -2,12 +2,12 @@
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
-use smol_str::SmolStr;
 
-use crate::infer::{DeferredOverload, InferenceContext};
+use crate::infer::InferenceContext;
 use crate::types::Type;
 use crate::walk_ancestors;
 
+use super::call::{BuiltinCall, CallKind, resolve_builtin};
 use super::{Constraint, ConstraintOrigin};
 
 /// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
@@ -250,84 +250,23 @@ pub(super) fn build_piped_call_args(
     }
 }
 
-/// Whether adding one more argument in front (the piped input) would make the call match an
-/// overload of the builtin `func_name`, as in `map(join(","))`, where `join` gets each element.
-fn completed_by_piped_input(ctx: &mut InferenceContext, func_name: &str, args: &[Type]) -> bool {
-    let piped = Type::Var(ctx.fresh_var());
-    let with_piped: Vec<Type> = std::iter::once(piped).chain(args.iter().cloned()).collect();
-    ctx.resolve_overload(func_name, &with_piped).is_some()
-}
-
-/// Resolves a builtin function call using overload resolution and returns the
-/// type assigned to `symbol_id`.
+/// Resolves a call `f(args)` of a builtin and assigns the result type to `symbol_id`.
 ///
-/// If `defer_error` is true (e.g., the call might receive piped input later),
-/// no error is generated on mismatch — only a fresh type variable is assigned.
+/// If `may_get_piped_input` is true (e.g., the call is an argument that is applied to each
+/// element), a mismatch is reported only when no piped input could make the call match.
 pub(super) fn resolve_builtin_call(
     ctx: &mut InferenceContext,
     symbol_id: SymbolId,
     func_name: &str,
     arg_tys: &[Type],
     range: Option<mq_lang::Range>,
-    defer_error: bool,
+    may_get_piped_input: bool,
 ) -> Type {
-    let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
-    let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
-    let has_unresolved_args = resolved_arg_tys.iter().any(Type::is_pending_operand);
-
-    // If any argument is still a type variable and there are multiple overloads,
-    // defer resolution to avoid committing to the wrong overload
-    if has_unresolved_args && is_builtin {
-        let overload_count = ctx.get_builtin_overloads(func_name).map(|o| o.len()).unwrap_or(0);
-        if overload_count > 1 {
-            let ty_var = ctx.fresh_var();
-            let result_ty = Type::Var(ty_var);
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            ctx.add_deferred_overload(DeferredOverload {
-                symbol_id,
-                op_name: SmolStr::new(func_name),
-                operand_tys: arg_tys.to_vec(),
-                range,
-            });
-            return result_ty;
-        }
-    }
-
-    if let Some(resolved_ty) = ctx.resolve_overload(func_name, &resolved_arg_tys) {
-        if let Type::Function(param_tys, ret_ty) = resolved_ty {
-            for (arg_index, (arg_ty, param_ty)) in arg_tys.iter().zip(param_tys.iter()).enumerate() {
-                ctx.add_constraint(Constraint::Equal(
-                    arg_ty.clone(),
-                    param_ty.clone(),
-                    range,
-                    ConstraintOrigin::Argument {
-                        fn_name: SmolStr::new(func_name),
-                        arg_index,
-                    },
-                ));
-            }
-            let result_ty = ret_ty.as_ref().clone();
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            result_ty
-        } else {
-            let ty_var = ctx.fresh_var();
-            let result_ty = Type::Var(ty_var);
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            result_ty
-        }
-    } else if is_builtin && (!defer_error || !completed_by_piped_input(ctx, func_name, &resolved_arg_tys)) {
-        // A call that may still be given piped input is not reported, unless no piped input could
-        // make it match: then the arguments it has are the wrong types.
-        ctx.report_no_matching_overload(func_name, &resolved_arg_tys, range);
-        let ty_var = ctx.fresh_var();
-        let result_ty = Type::Var(ty_var);
-        ctx.set_symbol_type(symbol_id, result_ty.clone());
-        result_ty
-    } else {
-        let ret_ty = Type::Var(ctx.fresh_var());
-        ctx.set_symbol_type(symbol_id, ret_ty.clone());
-        ret_ty
-    }
+    let mut call = BuiltinCall::new(symbol_id, func_name, arg_tys, range, CallKind::Function);
+    call.may_get_piped_input = may_get_piped_input;
+    let result = resolve_builtin(ctx, &call).into_type();
+    ctx.set_symbol_type(symbol_id, result.clone());
+    result
 }
 
 /// Resolves a builtin call, splitting off and chaining any trailing bracket-access

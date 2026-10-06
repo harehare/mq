@@ -1,5 +1,6 @@
 //! Constraint generation for type inference.
 
+mod call;
 mod categories;
 mod helpers;
 mod pipe;
@@ -9,6 +10,7 @@ pub(crate) use helpers::{
     ChildrenIndex, attr_kind_to_type, build_children_index, get_children, get_non_keyword_children,
 };
 
+use call::{BuiltinCall, CallKind, Resolution, resolve_builtin};
 use categories::categorize_symbols;
 use helpers::{
     collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
@@ -21,8 +23,8 @@ use pipe::{
 };
 
 use crate::infer::{
-    CrossArmNarrowing, DeferredCallReturnAccess, DeferredOverload, DeferredParameterCall, DeferredUserCall,
-    InferenceContext, NarrowingEntry, TypeNarrowing,
+    CrossArmNarrowing, DeferredCallReturnAccess, DeferredParameterCall, DeferredUserCall, InferenceContext,
+    NarrowingEntry, TypeNarrowing,
 };
 use crate::narrowing::{analyze_condition, selector_kinds};
 use crate::node_attr::{SelectorOutput, node_selector_output};
@@ -577,52 +579,12 @@ pub(super) fn generate_symbol_constraints(
 
                         // If there's a piped input, treat this as a call with the piped value
                         if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-                            // Resolve the piped type through substitutions before overload resolution,
-                            // so that bound type variables are replaced with their concrete types.
-                            let resolved_piped = ctx.resolve_type(&piped_ty);
-
-                            // If the piped input is still a type variable, defer overload resolution
-                            // to avoid committing to a wrong overload when multiple are available.
-                            if resolved_piped.is_pending_operand() {
-                                let overload_count =
-                                    ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
-                                if overload_count > 1 {
-                                    let ty_var = ctx.fresh_var();
-                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                    ctx.add_deferred_overload(DeferredOverload {
-                                        symbol_id,
-                                        op_name: SmolStr::new(name.as_str()),
-                                        operand_tys: vec![piped_ty],
-                                        range: get_symbol_range(hir, symbol_id),
-                                    });
-                                    return;
-                                }
-                            }
-
-                            let arg_tys = vec![resolved_piped];
-                            if let Some(resolved_ty) = ctx.resolve_overload(name.as_str(), &arg_tys) {
-                                if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                                    let range = get_symbol_range(hir, symbol_id);
-                                    for (arg_ty, param_ty) in [piped_ty].iter().zip(param_tys.iter()) {
-                                        ctx.add_constraint(Constraint::Equal(
-                                            arg_ty.clone(),
-                                            param_ty.clone(),
-                                            range,
-                                            ConstraintOrigin::PipedInput {
-                                                fn_name: SmolStr::new(name.as_str()),
-                                            },
-                                        ));
-                                    }
-                                    ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
-                                    return;
-                                }
-                            } else {
-                                let range = get_symbol_range(hir, symbol_id);
-                                ctx.report_no_matching_overload(name.as_str(), &arg_tys, range);
-                                let ty_var = ctx.fresh_var();
-                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                return;
-                            }
+                            let range = get_symbol_range(hir, symbol_id);
+                            let args = [piped_ty];
+                            let call = BuiltinCall::new(symbol_id, name.as_str(), &args, range, CallKind::Piped);
+                            let result = resolve_builtin(ctx, &call).into_type();
+                            ctx.set_symbol_type(symbol_id, result);
+                            return;
                         }
 
                         let overload_count = ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
@@ -712,19 +674,17 @@ pub(super) fn generate_symbol_constraints(
                     && ctx.get_builtin_overloads(name.as_str()).is_some()
                 {
                     if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-                        let arg_tys = vec![piped_ty];
-                        if let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(name.as_str(), &arg_tys) {
-                            let range = get_symbol_range(hir, symbol_id);
-                            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                ctx.add_constraint(Constraint::Equal(
-                                    arg_ty.clone(),
-                                    param_ty.clone(),
-                                    range,
-                                    ConstraintOrigin::General,
-                                ));
+                        let range = get_symbol_range(hir, symbol_id);
+                        let args = [piped_ty];
+                        let mut call = BuiltinCall::new(symbol_id, name.as_str(), &args, range, CallKind::Piped);
+                        // The name is not known to the HIR, so a mismatch is left to it.
+                        call.report = false;
+                        match resolve_builtin(ctx, &call) {
+                            Resolution::Failed(_) => {}
+                            resolved => {
+                                ctx.set_symbol_type(symbol_id, resolved.into_type());
+                                return;
                             }
-                            ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
-                            return;
                         }
                     }
 
@@ -749,75 +709,10 @@ pub(super) fn generate_symbol_constraints(
                         let left_ty = ctx.get_or_create_symbol_type(children[0]);
                         let right_ty = ctx.get_or_create_symbol_type(children[1]);
                         let range = get_symbol_range(hir, symbol_id);
-
-                        // Resolve types to get their concrete values if already determined
-                        let resolved_left = ctx.resolve_type(&left_ty);
-                        let resolved_right = ctx.resolve_type(&right_ty);
-
-                        // Check if any operand is a union type
-                        let has_union = resolved_left.is_union() || resolved_right.is_union();
-
-                        // If any operand is still a type variable, defer overload resolution
-                        // until after the first round of unification when types may be known
-                        if resolved_left.is_var() || resolved_right.is_var() {
-                            let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            ctx.add_deferred_overload(DeferredOverload {
-                                symbol_id,
-                                op_name: SmolStr::new(op_name.as_str()),
-                                operand_tys: vec![left_ty, right_ty],
-                                range,
-                            });
-                        } else if has_union {
-                            // Defer — Union operands are resolved in `resolve_deferred_overloads`
-                            // where `union_members_consistent_return` can check all members.
-                            let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            ctx.add_deferred_overload(DeferredOverload {
-                                symbol_id,
-                                op_name: SmolStr::new(op_name.as_str()),
-                                operand_tys: vec![left_ty, right_ty],
-                                range,
-                            });
-                        } else {
-                            // Try to resolve the best matching overload
-                            let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
-                            if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
-                                // resolved_ty is the matched function type: (T1, T2) -> T3
-                                if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                                    if param_tys.len() == 2 {
-                                        ctx.add_constraint(Constraint::Equal(
-                                            left_ty,
-                                            param_tys[0].clone(),
-                                            range,
-                                            ConstraintOrigin::Operator {
-                                                op: SmolStr::new(op_name.as_str()),
-                                            },
-                                        ));
-                                        ctx.add_constraint(Constraint::Equal(
-                                            right_ty,
-                                            param_tys[1].clone(),
-                                            range,
-                                            ConstraintOrigin::Operator {
-                                                op: SmolStr::new(op_name.as_str()),
-                                            },
-                                        ));
-                                        ctx.set_symbol_type(symbol_id, *ret_ty);
-                                    } else {
-                                        let ty_var = ctx.fresh_var();
-                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                    }
-                                } else {
-                                    let ty_var = ctx.fresh_var();
-                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                }
-                            } else {
-                                // No matching overload found - collect error
-                                ctx.report_no_matching_overload(op_name, &[resolved_left, resolved_right], range);
-                                let ty_var = ctx.fresh_var();
-                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            }
-                        }
+                        let args = [left_ty, right_ty];
+                        let call = BuiltinCall::new(symbol_id, op_name.as_str(), &args, range, CallKind::Operator);
+                        let result = resolve_builtin(ctx, &call).into_type();
+                        ctx.set_symbol_type(symbol_id, result);
                     } else {
                         // Not enough operands
                         let ty_var = ctx.fresh_var();
@@ -878,42 +773,14 @@ pub(super) fn generate_symbol_constraints(
                                 _ => op_name,
                             };
                             let current_var_ty = ctx.get_or_create_symbol_type(var_id);
-                            let resolved_left = ctx.resolve_type(&current_var_ty);
-                            let resolved_right = ctx.resolve_type(&rhs_ty);
-
-                            if resolved_left.is_var() || resolved_right.is_var() {
-                                // Defer if types not yet known
-                                let ty_var = ctx.fresh_var();
-                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                ctx.add_deferred_overload(DeferredOverload {
-                                    symbol_id,
-                                    op_name: SmolStr::new(base_op),
-                                    operand_tys: vec![current_var_ty, rhs_ty],
-                                    range,
-                                });
-                            } else {
-                                let arg_types = vec![resolved_left.clone(), resolved_right.clone()];
-                                if let Some(resolved_ty) = ctx.resolve_overload(base_op, &arg_types)
-                                    && let Type::Function(param_tys, ret_ty) = resolved_ty
-                                    && param_tys.len() == 2
-                                {
-                                    ctx.add_constraint(Constraint::Equal(
-                                        current_var_ty,
-                                        param_tys[0].clone(),
-                                        range,
-                                        ConstraintOrigin::General,
-                                    ));
-                                    ctx.add_constraint(Constraint::Equal(
-                                        rhs_ty,
-                                        param_tys[1].clone(),
-                                        range,
-                                        ConstraintOrigin::General,
-                                    ));
-                                    // Update variable type to result
-                                    ctx.set_symbol_type(var_id, *ret_ty);
-                                } else if ctx.resolve_overload(base_op, &arg_types).is_none() {
-                                    ctx.report_no_matching_overload(base_op, &[resolved_left, resolved_right], range);
-                                }
+                            let args = [current_var_ty, rhs_ty];
+                            let call = BuiltinCall::new(symbol_id, base_op, &args, range, CallKind::Operator);
+                            match resolve_builtin(ctx, &call) {
+                                // The variable takes the type of the result
+                                Resolution::Resolved(result) => ctx.set_symbol_type(var_id, result),
+                                // Until the operands are known, the assignment stands for the result
+                                Resolution::Deferred(result) => ctx.set_symbol_type(symbol_id, result),
+                                Resolution::Failed(_) => {}
                             }
                         }
                     }
@@ -941,50 +808,10 @@ pub(super) fn generate_symbol_constraints(
                     if !children.is_empty() {
                         let operand_ty = ctx.get_or_create_symbol_type(children[0]);
                         let range = get_symbol_range(hir, symbol_id);
-
-                        // Resolve type to get its concrete value if already determined
-                        let resolved_operand = ctx.resolve_type(&operand_ty);
-
-                        // If the operand is still a type variable, defer overload resolution
-                        if resolved_operand.is_var() {
-                            let ty_var = ctx.fresh_var();
-                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            ctx.add_deferred_overload(DeferredOverload {
-                                symbol_id,
-                                op_name: SmolStr::new(op_name.as_str()),
-                                operand_tys: vec![operand_ty],
-                                range,
-                            });
-                        } else {
-                            // Try to resolve the best matching overload
-                            let arg_types = vec![resolved_operand.clone()];
-                            if let Some(resolved_ty) = ctx.resolve_overload(op_name.as_str(), &arg_types) {
-                                if let Type::Function(param_tys, ret_ty) = resolved_ty {
-                                    if param_tys.len() == 1 {
-                                        ctx.add_constraint(Constraint::Equal(
-                                            operand_ty,
-                                            param_tys[0].clone(),
-                                            range,
-                                            ConstraintOrigin::Operator {
-                                                op: SmolStr::new(op_name.as_str()),
-                                            },
-                                        ));
-                                        ctx.set_symbol_type(symbol_id, *ret_ty);
-                                    } else {
-                                        let ty_var = ctx.fresh_var();
-                                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                    }
-                                } else {
-                                    let ty_var = ctx.fresh_var();
-                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                }
-                            } else {
-                                // No matching overload found - collect error
-                                ctx.report_no_matching_overload(op_name, &[resolved_operand], range);
-                                let ty_var = ctx.fresh_var();
-                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            }
-                        }
+                        let args = [operand_ty];
+                        let call = BuiltinCall::new(symbol_id, op_name.as_str(), &args, range, CallKind::Operator);
+                        let result = resolve_builtin(ctx, &call).into_type();
+                        ctx.set_symbol_type(symbol_id, result);
                     } else {
                         let ty_var = ctx.fresh_var();
                         ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
