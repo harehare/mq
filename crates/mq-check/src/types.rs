@@ -180,7 +180,11 @@ impl Type {
     /// keys are merged field by field (`{id: number}` and `{id: none}` give `{id: number | none}`).
     pub fn join(types: impl IntoIterator<Item = Type>) -> Type {
         let mut joined: Vec<Type> = Vec::new();
-        for ty in types {
+        let members = types.into_iter().flat_map(|ty| match ty {
+            Type::Union(members) => members,
+            other => vec![other],
+        });
+        for ty in members {
             let merged = joined
                 .iter()
                 .position(|existing| existing.merge_records(&ty, true).is_some());
@@ -621,7 +625,7 @@ impl Type {
                     .zip(elems2.iter())
                     .map(|(e1, e2)| e1.match_score(e2).unwrap_or(0))
                     .sum();
-                Some(total / elems1.len() as u32 + 20)
+                Some(total / elems1.len().max(1) as u32 + 20)
             }
 
             // Tuple ↔ Array compatibility (lower score than direct Tuple match)

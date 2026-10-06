@@ -2619,6 +2619,7 @@ dependencies = [
  "mq-lang",
  "mq-markdown",
  "mq-test",
+ "proptest",
  "rstest",
  "rustc-hash",
  "serde_json",
