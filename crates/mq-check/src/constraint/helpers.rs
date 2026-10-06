@@ -293,7 +293,7 @@ pub(super) fn resolve_builtin_call_with_brackets(
     let arg_tys = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
     let defer = might_receive_piped_input(hir, symbol_id);
     let result_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
-    let current_ty = chain_bracket_accesses(hir, ctx, symbol_id, children, trailing_bracket_count, result_ty, range);
+    let current_ty = chain_bracket_accesses(hir, ctx, children, trailing_bracket_count, result_ty, range);
     ctx.set_symbol_type(symbol_id, current_ty);
 }
 
@@ -303,7 +303,6 @@ pub(super) fn resolve_builtin_call_with_brackets(
 pub(super) fn chain_bracket_accesses(
     hir: &Hir,
     ctx: &mut InferenceContext,
-    call_id: SymbolId,
     children: &[SymbolId],
     key_count: usize,
     result_ty: Type,
@@ -317,8 +316,8 @@ pub(super) fn chain_bracket_accesses(
             .unwrap_or_default();
         let next_ty = Type::Var(ctx.fresh_var());
         ctx.add_deferred_call_return_access(crate::infer::DeferredCallReturnAccess {
-            call_symbol_id: call_id,
             return_type: current_ty,
+            result_ty: next_ty.clone(),
             field_name,
             range,
         });

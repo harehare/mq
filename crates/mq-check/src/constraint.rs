@@ -1706,7 +1706,7 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // `break: value` / `yield: value` carry the type of their value expression.
-        // Bare `break`/`yield` (no value child) get a fresh type variable.
+        // Bare `yield` is `none`; bare `break` gets a fresh type variable.
         SymbolKind::Keyword => {
             let symbol = hir.symbol(symbol_id);
             if symbol.is_some_and(|s| matches!(s.value.as_deref(), Some("break") | Some("yield"))) {
@@ -1714,6 +1714,8 @@ pub(super) fn generate_symbol_constraints(
                 if let Some(&value_child) = children.first() {
                     let child_ty = ctx.get_or_create_symbol_type(value_child);
                     ctx.set_symbol_type(symbol_id, child_ty);
+                } else if symbol.is_some_and(|s| s.value.as_deref() == Some("yield")) {
+                    ctx.set_symbol_type(symbol_id, Type::None);
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
@@ -1908,7 +1910,6 @@ fn generate_call_constraints(
                         let result_ty = chain_bracket_accesses(
                             hir,
                             ctx,
-                            symbol_id,
                             &children,
                             trailing_bracket_count,
                             ret_ty.as_ref().clone(),

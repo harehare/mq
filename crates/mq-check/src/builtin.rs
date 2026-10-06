@@ -344,30 +344,26 @@ fn register_string(ctx: &mut InferenceContext) {
         Type::markdown(),
     );
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
-    register_binary(
-        ctx,
-        "split_records",
-        Type::String,
-        Type::String,
-        Type::array(closed_record(&[
-            ("text", Type::String),
-            ("index", Type::Number),
-            ("start_byte", Type::Number),
-            ("end_byte", Type::Number),
-            ("terminator", Type::union(vec![Type::String, Type::None])),
-        ])),
-    );
-    register_unary(
-        ctx,
-        "extract_urls",
-        Type::String,
-        Type::array(closed_record(&[
-            ("url", Type::String),
-            ("start_byte", Type::Number),
-            ("end_byte", Type::Number),
-            ("kind", Type::String),
-        ])),
-    );
+    // split_records and extract_urls also accept a markdown node (its text) and none (no records).
+    let split_record = Type::array(closed_record(&[
+        ("text", Type::String),
+        ("index", Type::Number),
+        ("start_byte", Type::Number),
+        ("end_byte", Type::Number),
+        ("terminator", Type::union(vec![Type::String, Type::None])),
+    ]));
+    for input in [Type::String, Type::markdown(), Type::None] {
+        register_binary(ctx, "split_records", input, Type::String, split_record.clone());
+    }
+    let url_record = Type::array(closed_record(&[
+        ("url", Type::String),
+        ("start_byte", Type::Number),
+        ("end_byte", Type::Number),
+        ("kind", Type::String),
+    ]));
+    for input in [Type::String, Type::markdown(), Type::None] {
+        register_unary(ctx, "extract_urls", input, url_record.clone());
+    }
 
     // word_wrap: (string, number) -> string
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
@@ -934,8 +930,9 @@ fn register_dict(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
 
-    // get: (string, number) -> string (a character), (none, a) -> none
+    // get: (string, number) -> string (a character), (markdown, number) -> markdown, (none, a) -> none
     register_binary(ctx, "get", Type::String, Type::Number, Type::String);
+    register_binary(ctx, "get", Type::markdown(), Type::Number, Type::markdown());
     let key = ctx.fresh_var();
     register_binary(ctx, "get", Type::None, Type::Var(key), Type::None);
 

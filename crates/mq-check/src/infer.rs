@@ -140,15 +140,16 @@ pub struct DeferredSelectorAccess {
 /// the call appears to have one extra argument beyond the function's parameter
 /// count. When the trailing argument is a string/symbol/number key, it represents
 /// a bracket access on `f`'s return value rather than an extra function argument.
-/// This entry records the fresh return-type variable (resolved after unification)
-/// and the key so that `resolve_deferred_call_return_accesses` can look up the
-/// field type and bind the call expression's type to it.
+/// With several keys, each key is one entry whose `return_type` is the previous entry's
+/// `result_ty`. This entry records the type being indexed (resolved after unification) and the key
+/// so that `resolve_deferred_call_return_accesses` can look up the field type and bind `result_ty`
+/// to it.
 #[derive(Debug, Clone)]
 pub struct DeferredCallReturnAccess {
-    /// The call symbol ID (the `f(x)["key"]` expression in the HIR)
-    pub call_symbol_id: SymbolId,
-    /// Fresh return-type variable from the function's type instantiation
+    /// The type being indexed: the call's return type, or the result of the previous key
     pub return_type: Type,
+    /// The type of the field read by this key
+    pub result_ty: Type,
     /// The field name to access (the bracket key)
     pub field_name: String,
     /// Source range for error reporting

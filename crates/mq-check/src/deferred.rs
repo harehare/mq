@@ -145,40 +145,59 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 /// When the CST lowers `f(x)["key"]` as `Call(f, [x, "key"])` and the type
 /// checker detects trailing bracket keys, it defers the field lookup until
 /// after unification. This function resolves the function's return type (now
-/// concrete) and looks up the field, binding the call expression's type to it.
+/// concrete) and looks up the field, binding the access's result to it. The key of a
+/// chain `f(x)["a"]["b"]` reads the result of the previous one, so accesses whose input is
+/// not known yet are retried after the others are solved.
 pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) -> bool {
-    let accesses = ctx.take_deferred_call_return_accesses();
-    if accesses.is_empty() {
-        return false;
-    }
-
+    let mut pending = ctx.take_deferred_call_return_accesses();
     let mut resolved_any = false;
-    for access in &accesses {
-        let return_ty = ctx.resolve_type(&access.return_type);
 
-        if let types::Type::Record(..) = &return_ty {
-            if let Some(field_ty) = find_record_field(ctx, &return_ty, &access.field_name) {
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
-                resolved_any = true;
-            } else if record_row_is_closed(ctx, &return_ty) {
-                ctx.add_error(TypeError::UndefinedField {
-                    field: access.field_name.clone(),
-                    record_ty: return_ty.display_renumbered(),
-                    span: access.range.as_ref().map(unify::range_to_span),
-                    location: access.range,
-                });
+    while !pending.is_empty() {
+        let mut waiting = Vec::new();
+        let mut resolved_round = false;
+        for access in pending {
+            let return_ty = ctx.resolve_type(&access.return_type);
+
+            if let types::Type::Record(..) = &return_ty {
+                if let Some(field_ty) = find_record_field(ctx, &return_ty, &access.field_name) {
+                    ctx.add_constraint(Constraint::Equal(
+                        access.result_ty.clone(),
+                        field_ty,
+                        None,
+                        ConstraintOrigin::General,
+                    ));
+                    resolved_round = true;
+                } else if record_row_is_closed(ctx, &return_ty) {
+                    ctx.add_error(TypeError::UndefinedField {
+                        field: access.field_name.clone(),
+                        record_ty: return_ty.display_renumbered(),
+                        span: access.range.as_ref().map(unify::range_to_span),
+                        location: access.range,
+                    });
+                }
+            } else if let types::Type::Dict(..) = &return_ty {
+                // Dict access: result is a fresh type variable (dynamic value type)
+                resolved_round = true;
+            } else if let types::Type::Union(members) = &return_ty
+                && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default())
+            {
+                ctx.add_constraint(Constraint::Equal(
+                    access.result_ty.clone(),
+                    field_ty,
+                    None,
+                    ConstraintOrigin::General,
+                ));
+                resolved_round = true;
+            } else if return_ty.is_var() {
+                waiting.push(access);
             }
-        } else if let types::Type::Dict(..) = &return_ty {
-            // Dict access: result is a fresh type variable (dynamic value type)
-            resolved_any = true;
-        } else if let types::Type::Union(members) = &return_ty
-            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default())
-        {
-            let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-            ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
-            resolved_any = true;
         }
+        if !resolved_round {
+            break;
+        }
+        resolved_any = true;
+        unify::solve_constraints(ctx);
+        pending = waiting;
     }
     resolved_any
 }

@@ -35,6 +35,14 @@ fn test_a_function_that_yields_returns_a_generator(#[case] code: &str, #[case] e
 }
 
 #[test]
+fn test_a_bare_yield_yields_none() {
+    assert_eq!(
+        type_of("def g(): yield;\n| g()", SymbolKind::Call, "g"),
+        "generator<none>"
+    );
+}
+
+#[test]
 fn test_a_function_without_yield_is_unchanged() {
     assert_eq!(type_of("def f(): 1;\n| f()", SymbolKind::Call, "f"), "number");
 }
