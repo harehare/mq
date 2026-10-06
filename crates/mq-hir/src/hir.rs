@@ -29,6 +29,8 @@ pub struct Hir {
     /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
     /// Same ids as `name_index`, grouped by the scope that declares them.
+    /// Child scopes of each scope that leave their `let` bindings visible after the construct.
+    pub(crate) leaking_scopes: FxHashMap<ScopeId, Vec<ScopeId>>,
     pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
@@ -69,6 +71,7 @@ impl Hir {
             source_symbols: FxHashMap::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
+            leaking_scopes: FxHashMap::default(),
             scope_name_index: FxHashMap::default(),
         }
     }
@@ -253,6 +256,11 @@ impl Hir {
         if let Some(scope) = module_scope_id.and_then(|id| self.scopes.get_mut(id)) {
             scope.children.clear();
         }
+        let scopes = &self.scopes;
+        self.leaking_scopes.retain(|parent, children| {
+            children.retain(|child| scopes.contains_key(*child));
+            scopes.contains_key(*parent) && !children.is_empty()
+        });
 
         let symbols = &self.symbols;
         self.references
@@ -273,9 +281,34 @@ impl Hir {
         });
     }
 
+    /// Whether a `let` in this scope stays visible to the pipe steps after its construct:
+    /// the bodies of `if`/`elif`/`else`/`unless` and loops, but not `match` arms or functions.
+    fn scope_leaks_bindings(&self, kind: &ScopeKind) -> bool {
+        let (ScopeKind::Block(owner) | ScopeKind::Loop(owner)) = kind else {
+            return false;
+        };
+        self.symbols.get(*owner).is_some_and(|owner| {
+            matches!(
+                owner.kind,
+                SymbolKind::If
+                    | SymbolKind::Elif
+                    | SymbolKind::Else
+                    | SymbolKind::Unless
+                    | SymbolKind::While
+                    | SymbolKind::Until
+                    | SymbolKind::Loop
+                    | SymbolKind::Foreach
+            )
+        })
+    }
+
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
         let parent_scope_id = scope.parent_id;
+        let leaks = self.scope_leaks_bindings(&scope.kind);
         let scope_id = self.scopes.insert(scope);
+        if let Some(parent_scope_id) = parent_scope_id.filter(|_| leaks) {
+            self.leaking_scopes.entry(parent_scope_id).or_default().push(scope_id);
+        }
 
         if let Some(parent_scope_id) = parent_scope_id
             && let Some(parent) = self.scopes.get_mut(parent_scope_id)

@@ -168,6 +168,59 @@ impl Hir {
         }
     }
 
+    /// A `let` inside an `if`/`elif`/`else`/loop body stays visible to the pipe steps that
+    /// follow the construct, as at runtime. Returns the latest such binding of `ref_name` in
+    /// the descendants of `scope_id` that end before the reference.
+    fn resolve_leaked_binding(
+        &self,
+        scope_id: ScopeId,
+        ref_name: &SmolStr,
+        ref_symbol_id: SymbolId,
+        module: Option<SymbolId>,
+    ) -> Option<SymbolId> {
+        let ref_start = self.symbols.get(ref_symbol_id)?.source.text_range?.start;
+        let mut best: Option<(mq_lang::Position, SymbolId)> = None;
+        let mut pending = vec![scope_id];
+
+        while let Some(parent_id) = pending.pop() {
+            for &child_id in self.leaking_scopes.get(&parent_id).into_iter().flatten() {
+                let Some(child) = self.scopes.get(child_id) else {
+                    continue;
+                };
+                if child.source.text_range.is_none_or(|range| range.end > ref_start) {
+                    continue;
+                }
+                pending.push(child_id);
+
+                let candidates = self
+                    .scope_name_index
+                    .get(&child_id)
+                    .and_then(|names| names.get(ref_name))
+                    .into_iter()
+                    .flatten();
+                for &symbol_id in candidates {
+                    let Some(symbol) = self.symbols.get(symbol_id) else {
+                        continue;
+                    };
+                    let Some(start) = symbol.source.text_range.map(|range| range.start) else {
+                        continue;
+                    };
+                    if !symbol.is_variable()
+                        || start > ref_start
+                        || module.is_some_and(|module| !self.is_inside(symbol_id, module))
+                    {
+                        continue;
+                    }
+                    if best.is_none_or(|(best_start, _)| start > best_start) {
+                        best = Some((start, symbol_id));
+                    }
+                }
+            }
+        }
+
+        best.map(|(_, symbol_id)| symbol_id)
+    }
+
     fn resolve_ref_symbol_of_scope(
         &self,
         scope_id: ScopeId,
@@ -221,6 +274,10 @@ impl Hir {
                 .min_by_key(|(priority, line, _)| (*priority, *line));
 
             if let Some((_, _, symbol_id)) = best {
+                return Some(symbol_id);
+            }
+
+            if let Some(symbol_id) = self.resolve_leaked_binding(current_scope_id, ref_name, ref_symbol_id, module) {
                 return Some(symbol_id);
             }
 
@@ -387,6 +444,36 @@ mod tests {
             expected_refs
         );
         assert_eq!(resolutions(&reused), expected);
+    }
+
+    #[rstest]
+    #[case::else_branch(
+        "def g(p):\n  if (is_empty(p)):\n    1\n  else:\n    let a = len(p)\n  | [a]\nend",
+        true
+    )]
+    #[case::nested_if(
+        "def g(p):\n  if (true):\n    1\n  else:\n    if (true):\n      2\n    else:\n      let a = 1\n  | [a]\nend",
+        true
+    )]
+    #[case::foreach_body("def g(p):\n  foreach (i, p):\n    let a = i\n  | [a]\nend", true)]
+    #[case::match_arm_does_not_leak(
+        "def g(p):\n  match (p):\n  | 1:\n    let a = 1\n  | _: 2\n  end\n  | [a]\nend",
+        false
+    )]
+    #[case::function_body_does_not_leak("def g(p):\n  fn(): let a = 1;\n  | [a]\nend", false)]
+    #[case::ref_before_the_binding_stays_unresolved(
+        "def g(p):\n  if (true):\n    [a]\n  else:\n    let a = 1\n  | a\nend",
+        false
+    )]
+    fn test_let_in_branch_is_visible_after_the_construct(#[case] code: &str, #[case] resolves: bool) {
+        let mut hir = hir_without_builtin();
+        add(&mut hir, USER, code);
+        let unresolved = hir
+            .errors()
+            .iter()
+            .filter(|e| matches!(e, crate::HirError::UnresolvedSymbol { symbol, .. } if symbol.value.as_deref() == Some("a")))
+            .count();
+        assert_eq!(unresolved == 0, resolves, "{code}");
     }
 
     fn statement() -> impl Strategy<Value = String> {

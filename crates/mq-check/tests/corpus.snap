@@ -24,9 +24,8 @@ crates/mq-lang/modules/gen.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/gen_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/gron.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/gron_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
-crates/mq-lang/modules/json.mq: syntax=0 type=1 unresolved=3 dynamic=0
+crates/mq-lang/modules/json.mq: syntax=0 type=1 unresolved=0 dynamic=0
   typechecker::type_mismatch
-  unresolved: parent_path
 crates/mq-lang/modules/json_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/md.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/md_test.mq: syntax=0 type=6 unresolved=0 dynamic=0
@@ -59,4 +58,4 @@ crates/mq-lang/modules/yaml_test.mq: syntax=0 type=3 unresolved=0 dynamic=0
   typechecker::type_mismatch
 scripts/bump_version.mq: syntax=0 type=0 unresolved=0 dynamic=0
 scripts/sitemap.mq: syntax=0 type=0 unresolved=0 dynamic=0
-TOTAL: type=26 unresolved=538 dynamic=18
+TOTAL: type=26 unresolved=535 dynamic=18
