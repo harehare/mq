@@ -467,7 +467,8 @@ fn merge_array_union_operand(
     true
 }
 
-/// Resolves an operation whose single operand is a union of containers (arrays, dicts, records)
+/// Resolves an operation whose single operand is a union of containers (arrays, dicts, records,
+/// generators, `none`)
 /// by resolving it for each member and taking the union of the results.
 ///
 /// `get(x, k)` with `x: [a] | {k: v}` is `a | v`. Each member's own signature is tied to that
@@ -485,10 +486,11 @@ fn distribute_over_container_members(
     let (Some((position, Type::Union(members))), None) = (union_positions.next(), union_positions.next()) else {
         return false;
     };
+    // Containers, plus `none` and generators, which functions over collections pass through.
     let is_container = |member: &Type| {
         matches!(
             member,
-            Type::Array(_) | Type::Tuple(_) | Type::Dict(..) | Type::Record(..)
+            Type::Array(_) | Type::Tuple(_) | Type::Dict(..) | Type::Record(..) | Type::None | Type::Generator(_)
         )
     };
     if !members.iter().all(is_container) {
@@ -557,6 +559,10 @@ pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
             .flatten()
         {
             merged
+        } else if !both_resolved {
+            // A branch whose type is still unknown must not be pinned to the other branch's type:
+            // `try: f() catch: "error"` is whatever `f()` returns, or a string.
+            types::Type::union(vec![resolved_try, resolved_catch])
         } else {
             ctx.add_constraint(Constraint::Equal(
                 entry.try_ty.clone(),

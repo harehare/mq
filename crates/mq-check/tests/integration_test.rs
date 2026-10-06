@@ -2276,3 +2276,13 @@ fn test_array_literal_of_records_that_differ_only_in_some_pairs(#[case] code: &s
     let errors = check_types_with_builtins(code);
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[rstest]
+#[case::none_or_unknown_piped_into_a_function(
+    "def g(v): (if (is_none(v)): None else: v) | len() end\n| let r = g([1]) | r + 1"
+)]
+#[case::try_with_an_unknown_body(r#"let r = try: merge_with({"a": 1}, {"a": 2}, "replace") catch: "error" | r["a"]"#)]
+fn test_an_unknown_branch_is_not_pinned_to_the_other_branch(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}

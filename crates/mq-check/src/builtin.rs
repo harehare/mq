@@ -362,7 +362,9 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
     // truncate: (string, number, string) -> string
     register_ternary(ctx, "truncate", Type::String, Type::Number, Type::String, Type::String);
-    register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
+    // join: ([a], string) -> string. The elements are converted to strings.
+    let a = ctx.fresh_var();
+    register_binary(ctx, "join", Type::array(Type::Var(a)), Type::String, Type::String);
 
     // contains: (string, string) -> bool
     register_binary(ctx, "contains", Type::String, Type::String, Type::Bool);
@@ -641,6 +643,10 @@ fn register_array(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "flatten", Type::array(Type::Var(a)), Type::array(Type::Var(a)));
 
+    // flatten: generator<a> -> generator<a>. A generator is returned unchanged.
+    let a = ctx.fresh_var();
+    register_unary(ctx, "flatten", generator_of(a), generator_of(a));
+
     // flatten: {k: v} -> {k: v} (identity/passthrough for dicts)
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_unary(
@@ -676,15 +682,15 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
-    // insert: ([a], number, a) -> [a]
-    let a = ctx.fresh_var();
+    // insert: ([a], number, b) -> [a | b]. Arrays may hold mixed elements.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_ternary(
         ctx,
         "insert",
         Type::array(Type::Var(a)),
         Type::Number,
-        Type::Var(a),
-        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
     );
 
     // array: a -> [a]
@@ -835,6 +841,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(k),
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // del: ([a], number) -> [a], (string, number) -> string. Removes the element at an index.
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "del",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+    register_binary(ctx, "del", Type::String, Type::Number, Type::String);
 
     // update: ({k: v}, {k: v}) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
@@ -1342,11 +1359,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
         register_unary(ctx, name, Type::Var(value), node_of(kind));
     }
 
-    // to_callout: (markdown, string, string) -> markdown
+    // to_callout: (a, string, string) -> callout. The body is a string or a node.
+    let callout_body = ctx.fresh_var();
     register_ternary(
         ctx,
         "to_callout",
-        Type::markdown(),
+        Type::Var(callout_body),
         Type::String,
         Type::String,
         node_of(NodeKind::Callout),
@@ -1442,7 +1460,8 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // Other markdown functions
     register_nullary(ctx, "to_hr", node_of(NodeKind::HorizontalRule));
     register_unary(ctx, "to_md_name", Type::markdown(), Type::String);
-    register_unary(ctx, "to_md_text", Type::markdown(), Type::String);
+    let value = ctx.fresh_var();
+    register_unary(ctx, "to_md_text", Type::Var(value), Type::String);
 
     // to_md_table_cell: (a, number, number) -> markdown
     let a = ctx.fresh_var();
@@ -1616,6 +1635,7 @@ fn register_bytes(ctx: &mut InferenceContext) {
 
     // reverse: (bytes) -> bytes
     register_unary(ctx, "reverse", Type::Bytes, Type::Bytes);
+    register_unary(ctx, "reverse", Type::String, Type::String);
 
     // len: (bytes) -> number
     register_unary(ctx, "len", Type::Bytes, Type::Number);

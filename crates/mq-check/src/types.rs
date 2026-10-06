@@ -323,6 +323,13 @@ impl Type {
         self.free_vars().is_empty()
     }
 
+    /// Whether the type is not settled enough as an operand to pick an overload for it: a type
+    /// variable, or a union (`none | [a]`), whose members may each need a different overload.
+    /// Committing to one would pin the variable and give the result of a single member.
+    pub fn is_pending_operand(&self) -> bool {
+        matches!(self, Type::Var(_) | Type::Union(_))
+    }
+
     /// Checks if this is a union type
     pub fn is_union(&self) -> bool {
         matches!(self, Type::Union(_))

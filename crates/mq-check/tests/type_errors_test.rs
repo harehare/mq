@@ -586,17 +586,17 @@ fn test_tuple_three_elements() {
 
 #[rstest]
 #[case::array_number_none_valid(
-    "let v = try: [1, 2, 3] catch: none; | v[0] + 1",
+    "let v = try: [1, 2, 3] catch: None; | v[0] + 1",
     true,
     "v[0] + 1 on Union(Array(Number), None) should succeed"
 )]
 #[case::array_number_none_type_error(
-    "let v = try: [1, 2, 3] catch: none; | v[0] + true",
+    "let v = try: [1, 2, 3] catch: None; | v[0] + true",
     false,
     "v[0] + true on Union(Array(Number), None) should produce a type error"
 )]
 #[case::array_string_none_valid(
-    r#"let v = try: ["a", "b"] catch: none; | upcase(v[0])"#,
+    r#"let v = try: ["a", "b"] catch: None; | upcase(v[0])"#,
     true,
     "upcase(v[0]) on Union(Array(String), None) should succeed"
 )]
@@ -612,12 +612,12 @@ fn test_union_array_index_access(#[case] code: &str, #[case] should_succeed: boo
 
 #[rstest]
 #[case::tuple_number_string_none_index0_valid(
-    r#"let v = try: [1, "hello"] catch: none; | v[0] + 1"#,
+    r#"let v = try: [1, "hello"] catch: None; | v[0] + 1"#,
     true,
     "v[0] + 1 on Union(Tuple(Number, String), None) should succeed"
 )]
 #[case::tuple_number_string_none_index1_type_error(
-    r#"let v = try: [1, "hello"] catch: none; | v[1] - 1"#,
+    r#"let v = try: [1, "hello"] catch: None; | v[1] - 1"#,
     false,
     "v[1] - 1 on Union(Tuple(Number, String), None) should produce a type error"
 )]

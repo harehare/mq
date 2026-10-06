@@ -583,7 +583,7 @@ pub(super) fn generate_symbol_constraints(
 
                             // If the piped input is still a type variable, defer overload resolution
                             // to avoid committing to a wrong overload when multiple are available.
-                            if resolved_piped.is_var() {
+                            if resolved_piped.is_pending_operand() {
                                 let overload_count =
                                     ctx.get_builtin_overloads(name.as_str()).map(|o| o.len()).unwrap_or(0);
                                 if overload_count > 1 {

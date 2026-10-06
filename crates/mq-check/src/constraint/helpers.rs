@@ -265,7 +265,7 @@ pub(super) fn resolve_builtin_call(
 ) -> Type {
     let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
     let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
-    let has_unresolved_args = resolved_arg_tys.iter().any(|ty| ty.is_var());
+    let has_unresolved_args = resolved_arg_tys.iter().any(Type::is_pending_operand);
 
     // If any argument is still a type variable and there are multiple overloads,
     // defer resolution to avoid committing to the wrong overload
