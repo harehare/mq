@@ -19,7 +19,7 @@
 //!
 //! - Type predicates: `is_string(x)`, `is_number(x)`, `is_bool(x)`, …
 //! - Literal equality: `x == "foo"` (then-branch: String), `x != none` (removes None)
-//! - Type name check: `type(x) == "string"` → String
+//! - Type name check: `type(x) == "string"` → String, `to_md_name(x) == "h1"` → h1
 //! - Negation: `!is_string(x)` → swaps then/else
 //! - AND: `is_string(x) && is_bool(y)` → both in then-branch
 //! - OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
@@ -327,6 +327,42 @@ pub(crate) fn analyze_type_call_equality(
     Some((def_id, narrowed_type))
 }
 
+/// Tries to extract `(def_id, narrowed_type)` from `to_md_name(x) == "h1"`, where the name is
+/// one of the node kind names.
+pub(crate) fn analyze_md_name_equality(
+    hir: &Hir,
+    call_id: SymbolId,
+    lit_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Option<(SymbolId, Type)> {
+    let call_sym = hir.symbol(call_id)?;
+    if !matches!(call_sym.kind, SymbolKind::Call) || call_sym.value.as_deref() != Some("to_md_name") {
+        return None;
+    }
+    let call_args = get_non_keyword_children(hir, call_id, children_index);
+    let [arg_id] = call_args.as_slice() else {
+        return None;
+    };
+    if !matches!(hir.symbol(*arg_id)?.kind, SymbolKind::Ref) {
+        return None;
+    }
+
+    let lit_sym = hir.symbol(lit_id)?;
+    if !matches!(lit_sym.kind, SymbolKind::String) {
+        return None;
+    }
+    let name = lit_sym.value.as_deref()?;
+    let kinds = KindSet::from_kinds(
+        NodeKind::ALL
+            .into_iter()
+            .filter(|kind| !name.is_empty() && kind.name() == name),
+    );
+    if kinds.is_empty() {
+        return None;
+    }
+    Some((hir.resolve_reference_symbol(*arg_id)?, Type::Node(kinds)))
+}
+
 /// Tries to extract `(def_id, narrowed_type)` from `x == literal` or `literal == x`.
 pub(crate) fn analyze_literal_equality(hir: &Hir, lhs: SymbolId, rhs: SymbolId) -> Option<(SymbolId, Type)> {
     // Try (Ref, Literal) then (Literal, Ref)
@@ -408,9 +444,12 @@ pub(crate) fn analyze_condition(
 
             // Try (in order):
             //   1. type(x) == "typename"  (either argument order)
-            //   2. x == literal           (either argument order)
+            //   2. to_md_name(x) == "h1"  (either argument order)
+            //   3. x == literal           (either argument order)
             let narrowing = analyze_type_call_equality(hir, children[0], children[1], children_index, ctx)
                 .or_else(|| analyze_type_call_equality(hir, children[1], children[0], children_index, ctx))
+                .or_else(|| analyze_md_name_equality(hir, children[0], children[1], children_index))
+                .or_else(|| analyze_md_name_equality(hir, children[1], children[0], children_index))
                 .or_else(|| analyze_literal_equality(hir, children[0], children[1]))
                 .or_else(|| analyze_literal_equality(hir, children[1], children[0]));
 

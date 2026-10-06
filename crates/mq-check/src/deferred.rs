@@ -15,7 +15,7 @@ use crate::{
     TypeError,
     constraint::{Constraint, ConstraintOrigin},
     infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
-    node_attr::{SelectorOutput, node_selector_output},
+    node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
 };
@@ -890,6 +890,43 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
     for call in deferred_calls {
         ctx.add_deferred_user_call(call);
     }
+}
+
+/// Types the `attr(node, "name")` calls whose node argument is a known node type, from the
+/// attribute table. Returns whether any was resolved; the others are kept for a later call.
+pub(crate) fn resolve_attr_calls(ctx: &mut InferenceContext) -> bool {
+    let calls = ctx.take_deferred_attr_calls();
+    let mut resolved_any = false;
+
+    for call in calls {
+        let mut node_ty = ctx.resolve_type(&call.node_ty);
+        if node_ty.is_var()
+            && let Some(source_ty) = call.node_source.and_then(|source| ctx.get_symbol_type(source).cloned())
+        {
+            node_ty = ctx.resolve_type(&source_ty);
+        }
+        if node_ty.is_var() {
+            ctx.add_deferred_attr_call(call);
+            continue;
+        }
+        let types::Type::Node(kinds) = node_ty else {
+            continue;
+        };
+        resolved_any = true;
+        match node_attr_type(kinds, &call.attr_name) {
+            Some(attr_ty) => {
+                let call_ty = ctx.get_or_create_symbol_type(call.symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, attr_ty, None, ConstraintOrigin::General));
+            }
+            None => ctx.add_error(TypeError::UndefinedAttribute {
+                attr: call.attr_name.clone(),
+                node_ty: types::Type::Node(kinds).display_renumbered(),
+                span: call.range.as_ref().map(unify::range_to_span),
+                location: call.range,
+            }),
+        }
+    }
+    resolved_any
 }
 
 /// Fixes the yielded type of each generator to the join of the types of its `yield`s, for the

@@ -2733,7 +2733,7 @@ mod tests {
     // Markdown Manipulation Functions
 
     #[rstest]
-    #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"href\")", true)]
+    #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"url\")", true)]
     #[case::set_attr("to_markdown(\"[link](url)\") | first() | set_attr(\"href\", \"new\")", true)]
     #[case::set_children("to_markdown(\"# heading\") | first() | set_children([\"new\"])", true)]
     #[case::get_title("to_markdown(\"[link](url)\") | first() | get_title", true)]

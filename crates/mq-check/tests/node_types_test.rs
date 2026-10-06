@@ -189,3 +189,52 @@ fn test_declared_input_type_checks_selectors(#[case] query: &str, #[case] input:
 fn test_without_a_declared_input_type_the_input_is_unknown() {
     assert!(errors(".depth").is_empty());
 }
+
+#[rstest]
+#[case::equal(r#"to_md_name(h) == "h1""#, "h1", "markdown - h1")]
+#[case::reversed(r#""code" == to_md_name(h)"#, "code", "markdown - code")]
+#[case::not_equal(r#"to_md_name(h) != "h1""#, "markdown - h1", "h1")]
+#[case::or(r#"to_md_name(h) == "h1" || to_md_name(h) == "h2""#, "h1 | h2", "markdown - h1 - h2")]
+fn test_comparing_the_node_name_narrows_the_kinds(
+    #[case] condition: &str,
+    #[case] then_type: &str,
+    #[case] else_type: &str,
+) {
+    let code = format!("def f():\n  {ANY_NODE}\n  | if ({condition}):\n    h\n  else:\n    h\nend");
+    let types = ref_types(&code, "h");
+    let condition_refs = types.len() - 2;
+    assert_eq!(types[condition_refs], then_type, "{types:?}");
+    assert_eq!(types[condition_refs + 1], else_type, "{types:?}");
+}
+
+#[test]
+fn test_an_unknown_node_name_does_not_narrow() {
+    let code = format!("def f():\n  {ANY_NODE}\n  | if (to_md_name(h) == \"nope\"):\n    h\n  else:\n    h\nend");
+    let types = ref_types(&code, "h");
+    assert_eq!(types[types.len() - 2], "markdown", "{types:?}");
+}
+
+#[rstest]
+#[case::depth_is_a_number(r#"let n = to_h("a", 2) | attr(n, "depth") + 1"#)]
+#[case::value_is_a_string(r##"let n = first(to_markdown("# a")) | attr(n, "value") | upcase()"##)]
+#[case::optional_attribute_may_be_none(r#"let n = to_code("a", "rust") | attr(n, "lang") | upcase()"#)]
+fn test_attr_with_a_literal_name_has_the_attribute_type(#[case] code: &str) {
+    let errors = errors(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::depth_of_code(r#"let n = to_code("a", "rust") | attr(n, "depth")"#, "depth")]
+#[case::unknown_attribute(r##"let n = first(to_markdown("# a")) | attr(n, "href")"##, "href")]
+fn test_attr_with_a_name_no_kind_has_is_an_error(#[case] code: &str, #[case] attr: &str) {
+    let errors = errors(code);
+    assert!(
+        matches!(errors.as_slice(), [mq_check::TypeError::UndefinedAttribute { attr: a, .. }] if a == attr),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn test_attr_with_a_dynamic_name_is_left_open() {
+    assert!(errors(r##"let n = first(to_markdown("# a")) | let name = "depth" | attr(n, name) + 1"##).is_empty());
+}

@@ -107,6 +107,8 @@ Attributes are typed by the kinds a value can have (`.depth` of a heading is `nu
 
 ```mq
 .code | .depth   // Error: attribute `depth` does not exist on code
+attr(n, "depth") // number for a heading, the same table when the name is a string literal
+if (to_md_name(n) == "h1"): n   // n: h1 inside the branch
 .code | .lang    // string | none
 ```
 

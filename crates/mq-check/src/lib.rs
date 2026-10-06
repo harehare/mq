@@ -439,7 +439,7 @@ impl TypeChecker {
         laps.lap("resolve_deferred_overloads");
 
         // Selectors applied to a value that an overload call just resolved (`first() | .h1.depth`).
-        while deferred::resolve_selector_field_accesses(&mut ctx) {
+        while deferred::resolve_selector_field_accesses(&mut ctx) | deferred::resolve_attr_calls(&mut ctx) {
             unify::solve_constraints(&mut ctx);
         }
 

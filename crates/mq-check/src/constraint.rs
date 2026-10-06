@@ -1011,6 +1011,10 @@ pub(super) fn generate_symbol_constraints(
 
                     let range = get_symbol_range(hir, symbol_id);
 
+                    if func_name.as_str() == "attr" {
+                        record_attr_call(hir, symbol_id, &children, &explicit_arg_tys, ctx);
+                    }
+
                     // Try user-defined function first (via HIR reference resolution)
                     if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
                         let def_symbol = hir.symbol(def_id);
@@ -2226,6 +2230,50 @@ fn collect_function_yields(hir: &Hir) -> rustc_hash::FxHashMap<SymbolId, Vec<Sym
         }
     }
     yields
+}
+
+/// Records a call `attr(node, "name")` of the builtin `attr` whose name is a string literal, so
+/// that its result type can be taken from the attribute table once the kinds of `node` are known.
+fn record_attr_call(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    children: &[SymbolId],
+    explicit_arg_tys: &[Type],
+    ctx: &mut InferenceContext,
+) {
+    let is_builtin = hir
+        .resolve_reference_symbol(symbol_id)
+        .and_then(|def| hir.symbol(def))
+        .is_some_and(|def| hir.is_builtin_symbol(def));
+    if !is_builtin {
+        return;
+    }
+    let real = children.len() - hir.bracket_key_count(symbol_id).min(children.len());
+    let literal = |id: SymbolId| {
+        hir.symbol(id)
+            .filter(|symbol| symbol.kind == SymbolKind::String)
+            .and_then(|symbol| symbol.value.as_ref().map(|name| name.to_string()))
+    };
+    let (node_ty, node_source, attr_name) = match real {
+        // attr(node, "name")
+        2 => match literal(children[1]) {
+            Some(name) => (explicit_arg_tys[0].clone(), None, name),
+            None => return,
+        },
+        // node | attr("name")
+        1 => match (literal(children[0]), ctx.get_piped_input(symbol_id).cloned()) {
+            (Some(name), Some(piped_ty)) => (piped_ty, ctx.get_piped_source(symbol_id), name),
+            _ => return,
+        },
+        _ => return,
+    };
+    ctx.add_deferred_attr_call(infer::DeferredAttrCall {
+        symbol_id,
+        node_ty,
+        node_source,
+        attr_name,
+        range: get_symbol_range(hir, symbol_id),
+    });
 }
 
 /// Whether `symbol_id` is a reference to a function parameter.
