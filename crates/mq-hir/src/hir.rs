@@ -522,7 +522,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
-    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false })]
+    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false, is_or: false })]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::import_as("import \"foo\" as bar", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::import_as_alias_ident("import \"foo\" as bar", "bar", SymbolKind::Ident)]

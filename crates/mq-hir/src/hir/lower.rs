@@ -1422,7 +1422,10 @@ impl Hir {
         {
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
-                kind: SymbolKind::Pattern { is_dict: false },
+                kind: SymbolKind::Pattern {
+                    is_dict: false,
+                    is_or: true,
+                },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1458,6 +1461,7 @@ impl Hir {
                 value: dict_key.or_else(|| node.name()),
                 kind: SymbolKind::Pattern {
                     is_dict: is_dict_pattern,
+                    is_or: false,
                 },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,

@@ -88,8 +88,10 @@ pub enum SymbolKind {
     Parameter,
     /// `is_dict` is `true` for dict patterns (`{a, b}` or `{x: y}`),
     /// `false` for array patterns (`[a, b]`) or match arm patterns.
+    /// `is_or` is `true` for alternatives (`p1 || p2`), whose children are the alternatives.
     Pattern {
         is_dict: bool,
+        is_or: bool,
     },
     /// A variable introduced by a pattern binding.
     ///

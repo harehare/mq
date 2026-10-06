@@ -254,6 +254,53 @@ fn test_gsub_accepts_markdown_narrowed_by_match() {
     false,
     "multiple string literals without wildcard"
 )]
+#[case::union_type_patterns(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number: 1 | :string: 2 end"#,
+    true,
+    "type patterns cover each member of a union"
+)]
+#[case::union_type_pattern_missing(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number: 1 end"#,
+    false,
+    "the string member is not covered"
+)]
+#[case::union_or_type_patterns(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number || :string: 1 end"#,
+    true,
+    "an alternative of type patterns covers both members"
+)]
+#[case::union_with_none_literal(
+    r#"let v = if (true): 1 else: None; | match (v): | :number: 1 | None: 2 end"#,
+    true,
+    "a type pattern and the None literal"
+)]
+#[case::or_with_wildcard(
+    r#"match (1): | 1 || _: 1 end"#,
+    true,
+    "an alternative containing a wildcard covers everything"
+)]
+#[case::array_rest_covers_all(
+    r#"let v = [1, 2]; | match (v): | []: 0 | [a, ..r]: a end"#,
+    true,
+    "[] and [a, ..r] cover every length"
+)]
+#[case::array_rest_misses_empty(
+    r#"let v = [1, 2]; | match (v): | [a, ..r]: a end"#,
+    false,
+    "the empty array is not covered"
+)]
+#[case::array_exact_only(
+    r#"let v = [1, 2]; | match (v): | [a, b]: a end"#,
+    false,
+    "only length two is covered"
+)]
+#[case::array_type_pattern(r#"let v = [1, 2]; | match (v): | :array: 0 end"#, true, ":array covers every array")]
+#[case::record_dict_pattern(
+    r#"let v = {"a": 1}; | match (v): | {a}: a end"#,
+    true,
+    "a dict pattern over the keys of a record"
+)]
+#[case::unknown_input_is_not_checked(r#"match (.): | :h1: 1 end"#, true, "unknown input is not checked")]
 fn test_match_exhaustiveness(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
     let result = check_types(code);
     let has_exhaustiveness_error = result.iter().any(|e| matches!(e, TypeError::NonExhaustiveMatch { .. }));

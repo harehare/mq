@@ -339,7 +339,7 @@ pub(super) fn generate_symbol_constraints(
             let outer_pattern_id = children.first().copied();
             let is_dict_pattern = outer_pattern_id
                 .and_then(|pid| hir.symbol(pid))
-                .is_some_and(|s| matches!(s.kind, SymbolKind::Pattern { is_dict: true }));
+                .is_some_and(|s| matches!(s.kind, SymbolKind::Pattern { is_dict: true, .. }));
 
             if is_dict_pattern {
                 // Dict pattern: constrain binding to the initializer.
