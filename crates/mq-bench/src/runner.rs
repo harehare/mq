@@ -1,5 +1,5 @@
 use glob::glob;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use miette::{IntoDiagnostic, NamedSource};
 use mq_lang::CstNodeKind;
 use rustc_hash::FxHashMap;
@@ -171,23 +171,23 @@ impl BenchRunner {
         }
 
         // Draws only when stderr is a terminal, so redirected output and `--format json` stay clean.
-        let multi = MultiProgress::new();
+        // Both bars live for the whole run and share a layout, so the lines neither shift nor flicker.
+        let multi = MultiProgress::with_draw_target(ProgressDrawTarget::stderr_with_hz(10));
         let total: usize = plan.iter().map(|(_, _, benches)| benches.len()).sum();
+        let bar = multi.add(
+            ProgressBar::new((self.warmup + self.iterations) as u64)
+                .with_style(Self::progress_style("{bar:30.green/white} {pos}/{len} {msg}")),
+        );
         let overall = multi.add(ProgressBar::new(total as u64).with_style(Self::progress_style(
             "{bar:30.cyan/blue} {pos}/{len} benches [{elapsed_precise}]",
         )));
 
         for (file, content, benches) in &plan {
             for bench in benches {
-                let bar = multi.insert_before(
-                    &overall,
-                    ProgressBar::new((self.warmup + self.iterations) as u64)
-                        .with_style(Self::progress_style("  {bar:30.green/white} {pos}/{len} {msg}")),
-                );
+                bar.reset();
                 bar.set_message(bench.name.clone());
 
                 let result = self.time_bench(file, content, bench, &bar);
-                bar.finish_and_clear();
                 overall.inc(1);
 
                 match result {
@@ -199,6 +199,7 @@ impl BenchRunner {
                 }
             }
         }
+        bar.finish_and_clear();
         overall.finish_and_clear();
 
         let baseline = self.load_baseline()?;
