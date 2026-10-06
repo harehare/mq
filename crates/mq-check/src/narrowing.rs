@@ -225,7 +225,7 @@ pub(crate) fn analyze_type_predicate_call(
         "is_bytes" => Type::Bytes,
         "is_coroutine" => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
         name if predicate_kinds(name).is_some() => Type::Node(predicate_kinds(name)?),
-        _ => user_predicate_type(hir, call_id, children_index, ctx)?,
+        _ => return None,
     };
 
     // The argument must be a single variable reference
@@ -245,16 +245,15 @@ pub(crate) fn analyze_type_predicate_call(
     Some((def_id, narrowed_type))
 }
 
-/// The type a call to a user-defined predicate tests for, when the function takes one parameter
-/// and its body is a single condition on it: `def is_title(n): to_md_name(n) == "h1" || ..` holds
-/// exactly when `n` is of the type the condition narrows `n` to. A condition joined with `&&`
-/// is not exact in its else-branch, so it does not count.
-fn user_predicate_type(
+/// What a call to a user-defined predicate tells about its argument, when the function takes one
+/// parameter and its body is a single condition: `def is_title(n): to_md_name(n) == "h1" || ..`
+/// narrows the argument of a call as the condition narrows `n`.
+fn user_predicate_narrowings(
     hir: &Hir,
     call_id: SymbolId,
     children_index: &ChildrenIndex,
     ctx: &mut InferenceContext,
-) -> Option<Type> {
+) -> Option<ConditionNarrowings> {
     let def_id = hir.resolve_reference_symbol(call_id)?;
     let def = hir.symbol(def_id)?;
     if hir.is_builtin_symbol(def) || !matches!(def.kind, SymbolKind::Function(_)) {
@@ -274,10 +273,15 @@ fn user_predicate_type(
     else {
         return None;
     };
-    let body_symbol = hir.symbol(body)?;
-    if body_symbol.kind == SymbolKind::BinaryOp && matches!(body_symbol.value.as_deref(), Some("&&") | Some("and")) {
+
+    let args = get_non_keyword_children(hir, call_id, children_index);
+    let [arg] = args[..] else {
+        return None;
+    };
+    if hir.symbol(arg)?.kind != SymbolKind::Ref {
         return None;
     }
+    let arg_def = hir.resolve_reference_symbol(arg)?;
 
     if !ctx.begin_predicate(def_id) {
         return None;
@@ -285,10 +289,20 @@ fn user_predicate_type(
     let narrowings = analyze_condition(hir, body, children_index, ctx);
     ctx.end_predicate();
 
-    match narrowings.then_narrowings.as_slice() {
-        [entry] if entry.def_id == param && !entry.is_complement => Some(entry.narrowed_type.clone()),
-        _ => None,
-    }
+    let on_argument = |entries: Vec<NarrowingEntry>| -> Vec<NarrowingEntry> {
+        entries
+            .into_iter()
+            .filter(|entry| entry.def_id == param)
+            .map(|entry| NarrowingEntry {
+                def_id: arg_def,
+                ..entry
+            })
+            .collect()
+    };
+    Some(ConditionNarrowings {
+        then_narrowings: on_argument(narrowings.then_narrowings),
+        else_narrowings: on_argument(narrowings.else_narrowings),
+    })
 }
 
 /// Maps the runtime type-name string (returned by the `type()` builtin) to its `Type`.
@@ -468,7 +482,7 @@ pub(crate) fn analyze_condition(
                     }],
                 }
             } else {
-                ConditionNarrowings::empty()
+                user_predicate_narrowings(hir, cond_id, children_index, ctx).unwrap_or_else(ConditionNarrowings::empty)
             }
         }
         SymbolKind::UnaryOp if symbol.value.as_deref() == Some("!") => {

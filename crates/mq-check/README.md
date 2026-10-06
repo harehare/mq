@@ -112,9 +112,13 @@ if (to_md_name(n) == "h1"): n   // n: h1 inside the branch
 .code | .lang    // string | none
 ```
 
-A function of one parameter whose body is a single condition on it, such as `def is_title(n): to_md_name(n) == "h1" || to_md_name(n) == "h2";`, narrows the same way as the built-in predicates when it is used as a condition. A condition joined with `&&`, or a body with more than one step, does not.
+A function of one parameter whose body is a single condition on it, such as `def is_title(n): to_md_name(n) == "h1" || to_md_name(n) == "h2";`, narrows the same way as the built-in predicates when it is used as a condition. With `&&` only the then-branch narrows, and a body with more than one step does not narrow. `!`, `||` and calls of other such functions work as in a plain condition.
 
 ### Generators
+
+Reading a record field narrows with the tests around it: in `if (v["a"] != None): ...` (or `!is_none(v["a"])`, or the else-branch of `== None`) the read is not `none`, and `if (contains(keys(v), "a")): ...` selects the members of a union of records that have the key. Without such a test, a record that lacks the key reads as `none`.
+
+`match` is checked for exhaustiveness against the type of the value. `:number`-style type patterns, `||` alternatives, `[]` with `[a, ..rest]`, `:array` and `:dict` cover what they match, and a match that cannot be decided (an unknown type, nested refutable patterns) is not reported.
 
 A function that contains `yield` returns a coroutine, typed `generator<T>` where `T` is the type of the yielded values. `first`, `map`, `filter`, `flat_map`, `fold`, `next`, `send`, `status` and `close` understand it (`next` gives `{value: T | none, done: bool}`), and `is_coroutine(x)` narrows to it.
 

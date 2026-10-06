@@ -254,6 +254,12 @@ fn test_attr_with_a_dynamic_name_is_left_open() {
     "h1",
     "markdown - h1"
 )]
+#[case::conjunction_narrows_only_the_then_branch(
+    "def is_heading_but_h2(n): is_h(n) && !is_h2(n);",
+    "is_heading_but_h2",
+    "h1 | h3 | h4 | h5 | h6",
+    "markdown"
+)]
 fn test_user_defined_predicates_narrow_like_builtin_ones(
     #[case] definition: &str,
     #[case] predicate: &str,
@@ -267,7 +273,6 @@ fn test_user_defined_predicates_narrow_like_builtin_ones(
 }
 
 #[rstest]
-#[case::conjunction("def is_h1_text(n): is_h1(n) && is_text(n);", "is_h1_text(h)")]
 #[case::two_parameters("def is_h1_of(n, m): is_h1(n);", "is_h1_of(h, h)")]
 #[case::recursive("def loops(n): loops(n);", "loops(h)")]
 #[case::more_than_a_condition("def is_h1_loud(n): let x = 1 | is_h1(n);", "is_h1_loud(h)")]

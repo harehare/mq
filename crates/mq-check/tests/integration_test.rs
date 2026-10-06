@@ -1725,6 +1725,37 @@ fn test_var_reassignment_type_error_after() {
     true,
     "type(x) == \"None\" is the runtime name of none and narrows the else branch to number"
 )]
+#[case::user_predicate_and(
+    r#"def is_pos(x): is_number(x) && x > 0;
+let v = if (true): 1 else: "a"; | if (is_pos(v)): v + 1 else: 0"#,
+    true,
+    "a predicate joined with && narrows the then-branch"
+)]
+#[case::user_predicate_and_else_not_narrowed(
+    r#"def is_pos(x): is_number(x) && x > 0;
+let v = if (true): 1 else: "a"; | if (is_pos(v)): 0 else: upcase(v)"#,
+    false,
+    "the else-branch of an && predicate stays a union"
+)]
+#[case::user_predicate_negated(
+    r#"def not_str(x): !is_string(x);
+let v = if (true): 1 else: "a"; | if (not_str(v)): v + 1 else: upcase(v)"#,
+    true,
+    "a negated predicate swaps its branches"
+)]
+#[case::user_predicate_or(
+    r#"def is_numstr(x): is_number(x) || is_string(x);
+let v = if (true): 1 else: [1]; | if (is_numstr(v)): 0 else: len(v)"#,
+    true,
+    "an alternative of tests on one variable"
+)]
+#[case::user_predicate_nested(
+    r#"def is_num(x): is_number(x);
+def is_numish(x): is_num(x);
+let v = if (true): 1 else: "a"; | if (is_numish(v)): v + 1 else: upcase(v)"#,
+    true,
+    "a predicate defined by another predicate"
+)]
 #[case::union_and_compound_narrowing(
     r#"let x = if (true): 42 else: "string"; |
     let y = if (true): 10 else: "other"; |
