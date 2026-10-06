@@ -366,6 +366,8 @@ fn register_string(ctx: &mut InferenceContext) {
 
     // contains: (string, string) -> bool
     register_binary(ctx, "contains", Type::String, Type::String, Type::Bool);
+    // A markdown node is searched through its text.
+    register_binary(ctx, "contains", Type::markdown(), Type::String, Type::Bool);
 
     // Character/codepoint conversion
     register_unary(ctx, "explode", Type::String, Type::array(Type::Number));
@@ -1366,10 +1368,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // Markdown attribute functions
     register_unary(ctx, "get_title", Type::markdown(), Type::String);
     register_unary(ctx, "get_url", Type::markdown(), Type::String);
+    // Anything else than a node has no position, which gives `none` at runtime.
+    let value = ctx.fresh_var();
     register_unary(
         ctx,
         "get_location",
-        Type::markdown(),
+        Type::Var(value),
         Type::dict(Type::String, Type::Number),
     );
 

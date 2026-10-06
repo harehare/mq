@@ -71,7 +71,7 @@ fn test_dict_heterogeneous_values_allowed() {
 
 #[test]
 fn test_function_arity_mismatch() {
-    let result = check_types("def add(x, y): x + y;\n| add(1)");
+    let result = check_types("def add(x, y): x + y;\n| add(1, 2, 3)");
     println!("Function arity mismatch: {:?}", result);
     assert!(!result.is_empty(), "Expected arity mismatch error");
 }
@@ -80,8 +80,7 @@ fn test_function_arity_mismatch() {
 fn test_function_arity_mismatch_hint_names_function_and_counts() {
     // `add(1)` here is not the sole expression after a pipe (which would make the
     // call site ambiguous re: piped-input arity), so this reliably hits the
-    // `TypeError::WrongArity` path in constraint.rs rather than a piped-input-driven
-    // `UnificationError` like `test_function_arity_mismatch` above does.
+    // `TypeError::WrongArity` path in constraint.rs.
     let result = check_types("def add(x, y): x + y; | [add(1)]");
 
     let has_hint = result.iter().any(|err| {

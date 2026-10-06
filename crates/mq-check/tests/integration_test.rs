@@ -394,9 +394,11 @@ fn test_heterogeneous_array_allowed() {
 
 #[test]
 fn test_function_arity_mismatch() {
-    // Calling function with wrong number of arguments
-    let result = check_types("def f(x, y): x + y;\n| f(1)");
-    assert!(!result.is_empty(), "Expected arity mismatch error");
+    // Calling function with wrong number of arguments. The piped input counts as the first
+    // argument, so `f(1)` is fine for two parameters but not for three.
+    assert!(!check_types("def f(x, y): x + y;\n| f(1, 2, 3)").is_empty());
+    assert!(!check_types("def f(x, y, z): x + y + z;\n| f(1)").is_empty());
+    assert!(check_types("def f(x, y): x + y;\n| f(1)").is_empty());
 }
 
 #[test]
@@ -2234,4 +2236,22 @@ fn test_bracket_access_on_a_builtin_call_result(#[case] code: &str) {
 #[test]
 fn test_literal_extra_argument_of_a_builtin_is_still_an_arity_error() {
     assert!(!check_types_with_builtins("def f(xs): first(xs, 1);").is_empty());
+}
+
+#[rstest]
+#[case::default_omitted("def f(a, b = 1): a + b;\n| f(1)")]
+#[case::default_none_omitted("def f(a, b = None): a + 1;\n| f(1)")]
+#[case::all_defaults_omitted("def f(a = 1, b = 2): a + b;\n| f()")]
+#[case::lambda_default("let g = fn(x, y = 1): x + y;\n| g(1)")]
+#[case::after_definition_the_input_flows_through("def f(a, b): a + b;\n| f(1)")]
+fn test_omitted_default_arguments_are_not_an_arity_error(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::too_many("def f(a, b = 1): a + b;\n| f(1, 2, 3)")]
+#[case::too_few_even_with_input("def f(a, b, c = 1): a + b;\n| f()")]
+fn test_arity_is_still_checked_with_defaults(#[case] code: &str) {
+    assert!(!check_types(code).is_empty());
 }

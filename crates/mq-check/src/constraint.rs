@@ -16,7 +16,9 @@ use helpers::{
     might_receive_piped_input, records_have_conflicting_fields, resolve_builtin_call,
     resolve_builtin_call_with_brackets, resolve_pattern_type, resolve_whole_type_pattern, spread_element_type,
 };
-use pipe::{generate_block_constraints, generate_function_body_pipe_constraints, resolve_branch_body_type};
+use pipe::{
+    generate_block_constraints, generate_function_body_pipe_constraints, pipe_stage_output, resolve_branch_body_type,
+};
 
 use crate::infer::{
     CrossArmNarrowing, DeferredCallReturnAccess, DeferredOverload, DeferredParameterCall, DeferredUserCall,
@@ -132,9 +134,11 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
         ctx.set_piped_input(cats.root_symbols[0], input_type);
     }
     for i in 1..cats.root_symbols.len() {
-        let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);
+        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, cats.root_symbols[i - 1]);
         ctx.set_piped_input(cats.root_symbols[i], prev_ty.clone());
-        ctx.set_piped_source(cats.root_symbols[i], cats.root_symbols[i - 1]);
+        if let Some(source) = prev_source {
+            ctx.set_piped_source(cats.root_symbols[i], source);
+        }
 
         // For root-level Variables (e.g. `let x = first()`), forward the piped type to
         // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
@@ -1024,47 +1028,28 @@ pub(super) fn generate_symbol_constraints(
                             let def_id = effective_def_id;
 
                             if let Type::Function(param_tys, ret_ty) = &func_ty {
-                                // CST lowers `f(x)["key"]` as `Call(f, [x, "key"])`, so
-                                // trailing String/Symbol args beyond arity are bracket keys.
-                                // Numbers are excluded: `f(x, 1)` and `f(x)[1]` are identical
-                                // in the HIR, so numeric extras are treated as wrong-arity.
-                                let trailing_bracket_count = if explicit_arg_tys.len() > param_tys.len() {
-                                    let excess = explicit_arg_tys.len() - param_tys.len();
-                                    let trailing_are_keys = children.len() >= param_tys.len() + excess
-                                        && children[param_tys.len()..].iter().all(|&child_id| {
-                                            hir.symbol(child_id).is_some_and(|s| {
-                                                matches!(s.kind, SymbolKind::String | SymbolKind::Symbol)
-                                            })
-                                        });
-                                    if trailing_are_keys { excess } else { 0 }
-                                } else {
-                                    0
+                                // The HIR lists the key of `f(x)["key"]` as a further argument of `f`.
+                                let trailing_bracket_count =
+                                    hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
+                                let real_explicit =
+                                    &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
+
+                                // Explicit arguments fill the parameters from the first one, and
+                                // defaults cover the rest. Only when they do not even cover the
+                                // required parameters is the piped input the first argument.
+                                let (required, variadic) = user_function_arity(hir.symbol(def_id));
+                                let piped_ty = ctx.get_piped_input(symbol_id).cloned();
+                                let prepend_piped = real_explicit.len() < required && piped_ty.is_some();
+                                let arg_tys = match piped_ty.filter(|_| prepend_piped) {
+                                    Some(piped_ty) => {
+                                        std::iter::once(piped_ty).chain(real_explicit.iter().cloned()).collect()
+                                    }
+                                    None => real_explicit.to_vec(),
                                 };
 
-                                let arg_tys = if trailing_bracket_count > 0 {
-                                    let real_explicit = &explicit_arg_tys[..param_tys.len()];
-                                    if real_explicit.len() == param_tys.len() {
-                                        real_explicit.to_vec()
-                                    } else if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-                                        let mut piped_args = vec![piped_ty];
-                                        piped_args.extend_from_slice(real_explicit);
-                                        piped_args
-                                    } else {
-                                        real_explicit.to_vec()
-                                    }
-                                } else if param_tys.len() != explicit_arg_tys.len() {
-                                    if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
-                                        let mut piped_args = vec![piped_ty];
-                                        piped_args.extend(explicit_arg_tys.iter().cloned());
-                                        piped_args
-                                    } else {
-                                        explicit_arg_tys.clone()
-                                    }
-                                } else {
-                                    explicit_arg_tys.clone()
-                                };
-
-                                if param_tys.len() != arg_tys.len() {
+                                let arity_ok =
+                                    arg_tys.len() >= required && (variadic || arg_tys.len() <= param_tys.len());
+                                if !arity_ok {
                                     if !might_receive_piped_input(hir, symbol_id) {
                                         ctx.add_error(TypeError::WrongArity {
                                             expected: param_tys.len(),
@@ -1093,7 +1078,7 @@ pub(super) fn generate_symbol_constraints(
                                 if trailing_bracket_count > 0 {
                                     let mut current_ty: Type = ret_ty.as_ref().clone();
                                     for i in 0..trailing_bracket_count {
-                                        let key_child_id = children[param_tys.len() + i];
+                                        let key_child_id = children[children.len() - trailing_bracket_count + i];
                                         let field_name = hir
                                             .symbol(key_child_id)
                                             .and_then(|s| s.value.as_ref().map(|v| v.to_string()))
@@ -1112,18 +1097,14 @@ pub(super) fn generate_symbol_constraints(
                                     ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
                                 }
 
-                                let real_children = if trailing_bracket_count > 0 {
-                                    children[..param_tys.len()].to_vec()
-                                } else {
-                                    children.clone()
-                                };
-                                let arg_symbol_ids = if param_tys.len() == real_children.len() {
-                                    real_children
-                                } else {
+                                let real_children = &children[..children.len() - trailing_bracket_count];
+                                let arg_symbol_ids = if prepend_piped {
                                     // piped input was prepended — include a placeholder
                                     let mut ids = vec![symbol_id]; // placeholder for piped arg
-                                    ids.extend_from_slice(&real_children);
+                                    ids.extend_from_slice(real_children);
                                     ids
+                                } else {
+                                    real_children.to_vec()
                                 };
                                 ctx.add_deferred_user_call(DeferredUserCall {
                                     call_symbol_id: symbol_id,
@@ -1559,9 +1540,22 @@ pub(super) fn generate_symbol_constraints(
                         }
                     });
 
+                    // A branch that is just a parameter must not be pinned to the type of the
+                    // other branches: `if (c): x else: {..}` is `x | {..}`, and `x` stays free.
+                    let has_parameter_branch = resolved.len() >= 2
+                        && std::iter::once(children[1])
+                            .chain(
+                                children[2..]
+                                    .iter()
+                                    .filter_map(|&id| get_children(children_index, id).last().copied()),
+                            )
+                            .any(|branch| is_parameter_ref(hir, branch))
+                        && resolved.iter().any(|ty| ty != &resolved[0]);
+
                     if would_cause_infinite_type
                         || (!all_same && concrete.len() >= 2)
                         || (has_none_branch && resolved.len() >= 2)
+                        || has_parameter_branch
                     {
                         // Different concrete types across branches — use Union type.
                         // Include ALL resolved branch types (vars and concrete) so that
@@ -2188,6 +2182,27 @@ pub(super) fn generate_symbol_constraints(
             let ty_var = ctx.fresh_var();
             ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
         }
+    }
+}
+
+/// Whether `symbol_id` is a reference to a function parameter.
+fn is_parameter_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
+    hir.symbol(symbol_id)
+        .is_some_and(|symbol| symbol.kind == SymbolKind::Ref)
+        && hir
+            .resolve_reference_symbol(symbol_id)
+            .and_then(|def| hir.symbol(def))
+            .is_some_and(|def| def.kind == SymbolKind::Parameter)
+}
+
+/// The number of required parameters of a function, and whether it takes variadic arguments.
+fn user_function_arity(def: Option<&mq_hir::Symbol>) -> (usize, bool) {
+    match def.map(|def| &def.kind) {
+        Some(SymbolKind::Function(params)) => (
+            params.iter().filter(|p| !p.has_default && !p.is_variadic).count(),
+            params.iter().any(|p| p.is_variadic),
+        ),
+        _ => (0, true),
     }
 }
 

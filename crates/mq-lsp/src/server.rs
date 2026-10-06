@@ -2651,7 +2651,7 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         // Code with type error: function arity mismatch
-        let code = "def add(x, y): x + y;\n| add(1)";
+        let code = "def add(x, y): x + y;\n| add(1, 2, 3)";
 
         // Exercise the full diagnostics pipeline: on_change should parse, type check,
         // and populate error_map with type errors when there are no parse errors.
