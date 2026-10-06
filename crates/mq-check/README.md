@@ -224,6 +224,10 @@ just test-all
 
 `just test-conformance` steps through the `.mq` test suite and checks that the value of every `let` binding fits the type the checker inferred for it (`var` bindings, whose type changes as they are assigned, and bindings seen as `none`, which may just not have run yet, are left out). A mismatch is a sign of an unsound inference. The result is pinned in `crates/mq-check/tests/runtime_conformance.snap`; regenerate it with `UPDATE_CORPUS=1`.
 
+### Differential fuzzing
+
+`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
+
 ### Building
 
 ```bash
