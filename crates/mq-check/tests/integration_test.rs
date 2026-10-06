@@ -1668,6 +1668,16 @@ fn test_var_reassignment_type_error_after() {
     true,
     "negated narrowing: !is_number narrows to string in then, number in else"
 )]
+#[case::type_name_none_narrowing(
+    r#"let x = if (true): 42 else: None; |
+    if (type(x) == "None"):
+        0
+    else:
+        x + 1
+    ;"#,
+    true,
+    "type(x) == \"None\" is the runtime name of none and narrows the else branch to number"
+)]
 #[case::union_and_compound_narrowing(
     r#"let x = if (true): 42 else: "string"; |
     let y = if (true): 10 else: "other"; |

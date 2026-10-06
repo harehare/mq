@@ -299,7 +299,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         "string" => Some(Type::String),
         "number" => Some(Type::Number),
         "bool" => Some(Type::Bool),
-        "none" => Some(Type::None),
+        "None" => Some(Type::None),
         "symbol" => Some(Type::Symbol),
         "markdown" => Some(Type::markdown()),
         "bytes" => Some(Type::Bytes),
@@ -1052,6 +1052,40 @@ mod tests {
             assert!(
                 mq_lang::BUILTIN_MODULE_FILE.contains(&format!("def {predicate}(")),
                 "`{predicate}` is not defined in builtin.mq"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod type_name_tests {
+    use super::*;
+
+    #[test]
+    fn test_every_runtime_type_name_narrows() {
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.load_builtin_module();
+        let mut ctx = InferenceContext::new();
+        for value in [
+            "1",
+            "\"a\"",
+            "true",
+            "None",
+            "[1]",
+            "{\"a\": 1}",
+            ":a",
+            "to_coroutine([1])",
+            "to_bytes(\"a\")",
+            "to_text(\"a\") | to_md_text()",
+        ] {
+            let name = engine
+                .eval(&format!("{value} | type()"), mq_lang::null_input().into_iter())
+                .unwrap_or_else(|e| panic!("{value}: {e}"))
+                .values()[0]
+                .to_string();
+            assert!(
+                type_name_to_type(&name, &mut ctx).is_some(),
+                "type() of `{value}` is {name:?}, which the checker does not narrow on"
             );
         }
     }
