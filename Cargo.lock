@@ -2617,6 +2617,7 @@ dependencies = [
  "miette",
  "mq-hir",
  "mq-lang",
+ "mq-markdown",
  "rstest",
  "rustc-hash",
  "serde_json",
