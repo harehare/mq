@@ -292,24 +292,39 @@ pub(super) fn resolve_builtin_call_with_brackets(
     let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
     let arg_tys = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
     let defer = might_receive_piped_input(hir, symbol_id);
-    let mut current_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+    let result_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+    let current_ty = chain_bracket_accesses(hir, ctx, symbol_id, children, trailing_bracket_count, result_ty, range);
+    ctx.set_symbol_type(symbol_id, current_ty);
+}
 
-    for i in 0..trailing_bracket_count {
-        let key_child_id = children[explicit_arg_tys.len() - trailing_bracket_count + i];
+/// The type of `f(x)[k1][k2]...`: each trailing bracket key of the call, which are the last
+/// `key_count` of its `children`, accesses a field of the previous result. The accesses are
+/// resolved once the type of the call result is known.
+pub(super) fn chain_bracket_accesses(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+    call_id: SymbolId,
+    children: &[SymbolId],
+    key_count: usize,
+    result_ty: Type,
+    range: Option<mq_lang::Range>,
+) -> Type {
+    let mut current_ty = result_ty;
+    for &key_id in &children[children.len() - key_count..] {
         let field_name = hir
-            .symbol(key_child_id)
+            .symbol(key_id)
             .and_then(|s| s.value.as_ref().map(|v| v.to_string()))
             .unwrap_or_default();
-        let result_ty = Type::Var(ctx.fresh_var());
+        let next_ty = Type::Var(ctx.fresh_var());
         ctx.add_deferred_call_return_access(crate::infer::DeferredCallReturnAccess {
-            call_symbol_id: symbol_id,
+            call_symbol_id: call_id,
             return_type: current_ty,
             field_name,
             range,
         });
-        current_ty = result_ty;
+        current_ty = next_ty;
     }
-    ctx.set_symbol_type(symbol_id, current_ty);
+    current_ty
 }
 
 /// Returns the type if the pattern matches an entire type class (safe to subtract cross-arm).

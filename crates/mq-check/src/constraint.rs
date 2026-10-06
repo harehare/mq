@@ -13,7 +13,7 @@ pub(crate) use helpers::{
 use call::{BuiltinCall, CallKind, Resolution, resolve_builtin};
 use categories::categorize_symbols;
 use helpers::{
-    collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
+    chain_bracket_accesses, collect_break_value_types, collect_pattern_variable_descendants, find_enclosing_function,
     find_lambda_function_child, get_post_loop_siblings, get_symbol_range, is_foreach_iterable_ref, merge_loop_types,
     might_receive_piped_input, records_have_conflicting_fields, resolve_builtin_call,
     resolve_builtin_call_with_brackets, resolve_pattern_type, resolve_whole_type_pattern, spread_element_type,
@@ -23,8 +23,7 @@ use pipe::{
 };
 
 use crate::infer::{
-    CrossArmNarrowing, DeferredCallReturnAccess, DeferredParameterCall, DeferredUserCall, InferenceContext,
-    NarrowingEntry, TypeNarrowing,
+    CrossArmNarrowing, DeferredParameterCall, DeferredUserCall, InferenceContext, NarrowingEntry, TypeNarrowing,
 };
 use crate::narrowing::{analyze_condition, selector_kinds};
 use crate::node_attr::{SelectorOutput, node_selector_output};
@@ -917,27 +916,16 @@ pub(super) fn generate_symbol_constraints(
                                     }
                                 }
 
-                                if trailing_bracket_count > 0 {
-                                    let mut current_ty: Type = ret_ty.as_ref().clone();
-                                    for i in 0..trailing_bracket_count {
-                                        let key_child_id = children[children.len() - trailing_bracket_count + i];
-                                        let field_name = hir
-                                            .symbol(key_child_id)
-                                            .and_then(|s| s.value.as_ref().map(|v| v.to_string()))
-                                            .unwrap_or_default();
-                                        let result_ty = Type::Var(ctx.fresh_var());
-                                        ctx.add_deferred_call_return_access(DeferredCallReturnAccess {
-                                            call_symbol_id: symbol_id,
-                                            return_type: current_ty,
-                                            field_name,
-                                            range,
-                                        });
-                                        current_ty = result_ty;
-                                    }
-                                    ctx.set_symbol_type(symbol_id, current_ty);
-                                } else {
-                                    ctx.set_symbol_type(symbol_id, ret_ty.as_ref().clone());
-                                }
+                                let result_ty = chain_bracket_accesses(
+                                    hir,
+                                    ctx,
+                                    symbol_id,
+                                    &children,
+                                    trailing_bracket_count,
+                                    ret_ty.as_ref().clone(),
+                                    range,
+                                );
+                                ctx.set_symbol_type(symbol_id, result_ty);
 
                                 let real_children = &children[..children.len() - trailing_bracket_count];
                                 let arg_symbol_ids = if prepend_piped {
