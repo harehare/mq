@@ -2464,6 +2464,15 @@ process();"#,
         "let t = 1\n| fold(xs, 0, fn(acc, x):\n  let y = x + 1\n  | acc + y\n  )",
         "let t = 1\n| fold(xs, 0, fn(acc, x):\n    let y = x + 1\n    | acc + y\n  )\n"
     )]
+    #[case::fn_without_params("map(xs, fn: self + 1)", "map(xs, fn: self + 1)")]
+    #[case::fn_without_params_with_pipe(
+        "filter(xs, fn: select(.h || .code) | !is_none, 1)",
+        "filter(xs, fn: select(.h || .code) | !is_none, 1)"
+    )]
+    #[case::fn_without_params_nested("map(xs, fn: map(fn: to_text))", "map(xs, fn: map(fn: to_text))")]
+    #[case::fn_without_params_terminated("let f = fn: self + 1;", "let f = fn: self + 1;")]
+    #[case::fn_without_params_spacing("map(xs, fn : self)", "map(xs, fn: self)")]
+    #[case::fn_without_params_multi_line("map(\n  fn:\n    process(self)\n)", "map(\n  fn:\n    process(self)\n)\n")]
     #[case::group_simple("(1)", "(1)")]
     #[case::group_with_expr("(1 + 2)", "(1 + 2)")]
     #[case::group_with_nested_group("((1 + 2) * 3)", "((1 + 2) * 3)")]

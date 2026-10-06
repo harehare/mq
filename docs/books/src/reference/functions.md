@@ -142,6 +142,35 @@ The `->` syntax is a shorthand alias for `fn`:
 ->(parameters): program end
 ```
 
+### Implicit Argument
+
+`fn:` without a parameter list defines a one-argument function. The body runs with the argument as the current pipeline value (`self`), the same as [Parenthesis-Free Calls](#parenthesis-free-calls) do for a named function.
+
+```
+fn: program
+
+f(fn: program, other_arg)
+```
+
+The terminator rules are the same as for `fn(parameters):`. Use `fn(acc, x):` when the function needs more than one argument, or when the body needs to refer to the argument by name.
+
+```mq
+# Same as map(fn(s): s | split(" ") | len)
+["a b", "c d e"] | map(fn: split(" ") | len)
+# Output: [2, 3]
+
+# `self` is the argument
+[1, 2, 3, 4] | filter(fn: self > 2)
+# Output: [3, 4]
+
+# Markdown nodes
+nodes | filter(fn: select(.h || .code) | !is_none())
+```
+
+- The body does not see the pipeline value that was current outside the function. `self` is always the argument, even when the caller does not pipe it.
+- In a nested `fn:`, the inner argument hides the outer one. Use `fn(x):` for the outer function to keep a name for its argument.
+- Calling an `fn:` function with zero or several arguments is an error, for example `fold(arr, 0, fn: self)`.
+
 ### Examples
 
 ```mq

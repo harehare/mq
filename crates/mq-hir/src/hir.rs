@@ -722,6 +722,34 @@ end"#;
         assert!(hir.errors().is_empty(), "Should have no unresolved symbols");
     }
 
+    #[rstest]
+    #[case::bare("fn: self")]
+    #[case::call_arg("map([1], fn: self + 1)")]
+    #[case::nested("map([[1]], fn: map(fn: self + 1))")]
+    fn test_fn_without_params_takes_one_argument(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+
+        assert!(
+            hir.symbols()
+                .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.len() == 1))
+        );
+        assert!(hir.symbols().all(|(_, s)| s.kind != SymbolKind::Parameter));
+    }
+
+    #[test]
+    fn test_fn_with_empty_params_takes_no_argument() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, "fn(): 1");
+
+        assert!(
+            hir.symbols()
+                .any(|(_, s)| matches!(&s.kind, SymbolKind::Function(params) if params.is_empty()))
+        );
+    }
+
     #[test]
     fn test_catch_error_binder_resolution() {
         let mut hir = Hir::default();

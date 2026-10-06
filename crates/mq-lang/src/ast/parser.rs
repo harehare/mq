@@ -457,6 +457,9 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
             TokenKind::Var => self.parse_var(token),
             TokenKind::Def => self.parse_def(token),
             TokenKind::Do => self.parse_block(token),
+            TokenKind::Fn if self.is_next_token(|kind| matches!(kind, TokenKind::Colon)) => {
+                self.parse_implicit_fn(token)
+            }
             TokenKind::Fn | TokenKind::Arrow => self.parse_fn(token),
             TokenKind::While => self.parse_while(token),
             TokenKind::Loop => self.parse_loop(token),
@@ -1577,11 +1580,7 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
     fn parse_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
         // Taken before the params, whose defaults may contain call arguments of their own.
-        let kind = if std::mem::take(&mut self.fn_in_arg) {
-            ProgramKind::ArgBody
-        } else {
-            ProgramKind::Block
-        };
+        let kind = self.take_fn_body_kind();
         let params = self.parse_params()?;
 
         self.consume_colon_or_do();
@@ -1595,6 +1594,32 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
 
         // Handle postfix operations: fn(...): ... end(args), fn(...): ... end(args)[N], etc.
         self.parse_postfix_ops(fn_node, fn_token)
+    }
+
+    /// `fn: body`, a one-argument function without a parameter list.
+    #[inline(never)]
+    fn parse_implicit_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
+        let fn_token_id = self.alloc_token(fn_token);
+        let kind = self.take_fn_body_kind();
+        self.consume_colon();
+
+        let program = self.parse_program(kind)?;
+
+        let fn_node = Shared::new(Node {
+            token_id: fn_token_id,
+            expr: Expr::ImplicitFn(program),
+        });
+
+        self.parse_postfix_ops(fn_node, fn_token)
+    }
+
+    /// Whether the lambda being parsed is a call argument, which lets its body end at `,` or `)`.
+    fn take_fn_body_kind(&mut self) -> ProgramKind {
+        if std::mem::take(&mut self.fn_in_arg) {
+            ProgramKind::ArgBody
+        } else {
+            ProgramKind::Block
+        }
     }
 
     #[inline(never)]
@@ -9959,7 +9984,7 @@ Shared::new(Node {
         };
         args.iter()
             .map(|arg| match &arg.expr {
-                Expr::Fn(_, body) => Some(body.len()),
+                Expr::Fn(_, body) | Expr::ImplicitFn(body) => Some(body.len()),
                 _ => None,
             })
             .collect()
@@ -9994,6 +10019,52 @@ Shared::new(Node {
     #[case::inner_end_then_semicolon("f(fn(x): foreach (i, x): i end;)", vec![Some(1)])]
     fn test_lambda_in_call_args_may_omit_terminator(#[case] source: &str, #[case] expected: Vec<Option<usize>>) {
         assert_eq!(lambda_arg_body_lens(source), expected);
+    }
+
+    // `fn: body` is its own node, not an `Expr::Fn` with a parameter.
+    #[rstest]
+    #[case::only_arg("f(fn: self + 1)", vec![Some(1)])]
+    #[case::last_arg("f(a, fn: self + 1)", vec![None, Some(1)])]
+    #[case::ends_at_comma("f(fn: self, 1)", vec![Some(1), None])]
+    #[case::pipe_stays_in_body("f(fn: g(1) | h(2))", vec![Some(2)])]
+    #[case::pipe_before_comma("f(fn: g | h, 1)", vec![Some(2), None])]
+    #[case::call_with_commas_in_body("f(fn: g(1, 2), 3)", vec![Some(1), None])]
+    #[case::nested("f(fn: g(fn: self + 1))", vec![Some(1)])]
+    #[case::nested_then_comma("f(fn: g(fn: self + 1), 2)", vec![Some(1), None])]
+    #[case::mixed_with_named_params("f(fn: self, fn(x): x)", vec![Some(1), Some(1)])]
+    #[case::if_else_in_body("f(fn: if (self): 1 else: 2, 3)", vec![Some(1), None])]
+    #[case::semicolon_form("f(fn: self + 1;)", vec![Some(1)])]
+    #[case::end_form("f(fn: do self end;, 1)", vec![Some(1), None])]
+    fn test_lambda_without_params(#[case] source: &str, #[case] expected: Vec<Option<usize>>) {
+        assert_eq!(lambda_arg_body_lens(source), expected);
+    }
+
+    #[test]
+    fn test_lambda_without_params_is_not_a_fn_with_params() {
+        let program = parse_source("f(fn: self, fn(): 1)").expect("source should parse");
+        let Expr::Call(_, args) = &program[0].expr else {
+            panic!("expected a call");
+        };
+        assert!(matches!(&args[0].expr, Expr::ImplicitFn(_)));
+        assert!(matches!(&args[1].expr, Expr::Fn(params, _) if params.is_empty()));
+    }
+
+    #[test]
+    fn test_lambda_without_params_outside_call_args_with_terminator() {
+        let program = parse_source("let g = fn: self + 1;").expect("source should parse");
+        assert!(matches!(&program[0].expr, Expr::Let(..)));
+    }
+
+    #[rstest]
+    #[case::let_value_without_terminator("let g = fn: self + 1)")]
+    #[case::array_element("[fn: self, 1]")]
+    #[case::empty_body("f(fn: )")]
+    #[case::empty_body_then_comma("f(fn:, 1)")]
+    #[case::unclosed_call("f(fn: self")]
+    #[case::arrow_has_no_paramless_form("f(->: self)")]
+    #[case::missing_colon("f(fn self)")]
+    fn test_lambda_without_params_reports_malformed_input(#[case] source: &str) {
+        assert!(parse_source(source).is_err(), "{source} should not parse");
     }
 
     #[rstest]

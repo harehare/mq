@@ -1178,6 +1178,8 @@ impl Hir {
                 insertion_order: 0,
             });
 
+            // `fn: body` has no parameter list at all, not even `()`.
+            let implicit_arg = params.is_empty();
             let params = || params.iter().filter(|param| !param.is_token());
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
@@ -1233,6 +1235,15 @@ impl Hir {
                     self.add_expr(default_expr, source_id, default_scope_id, Some(symbol_id));
                 }
             });
+
+            // The argument is `self` in the body, so it has no symbol of its own.
+            if implicit_arg {
+                param_info.push(ParamInfo {
+                    name: "self".into(),
+                    has_default: false,
+                    is_variadic: false,
+                });
+            }
 
             self.symbols[symbol_id].kind = SymbolKind::Function(param_info);
 

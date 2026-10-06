@@ -975,7 +975,13 @@ impl<'a> Parser<'a> {
         } else {
             ProgramKind::Block
         };
-        let params = self.parse_params()?;
+        // `fn: body` has no parameter list.
+        let params =
+            if matches!(token.kind, TokenKind::Fn) && self.try_next_token(|kind| matches!(kind, TokenKind::Colon)) {
+                Vec::new()
+            } else {
+                self.parse_params()?
+            };
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
         let program = self.parse_program(kind, in_loop);
 
@@ -10955,6 +10961,44 @@ Shared::new(Node {
     #[case::semicolon_form_then_arg("f(fn(x): x; , 1)", vec![Some(1), None])]
     fn test_lambda_in_call_args_may_omit_terminator(#[case] code: &str, #[case] expected: Vec<Option<usize>>) {
         assert_eq!(lambda_arg_body_lens(code), (expected, false));
+    }
+
+    #[rstest]
+    #[case::only_arg("f(fn: self + 1)", vec![Some(1)])]
+    #[case::ends_at_comma("f(fn: self, 1)", vec![Some(1), None])]
+    #[case::pipe_before_comma("f(fn: g | h, 1)", vec![Some(2), None])]
+    #[case::call_with_commas_in_body("f(fn: g(1, 2), 3)", vec![Some(1), None])]
+    #[case::nested("f(fn: g(fn: self + 1), 2)", vec![Some(1), None])]
+    #[case::semicolon_form("f(fn: self + 1;)", vec![Some(1)])]
+    #[case::spaced_colon("f(fn : self)", vec![Some(1)])]
+    fn test_lambda_without_params(#[case] code: &str, #[case] expected: Vec<Option<usize>>) {
+        assert_eq!(lambda_arg_body_lens(code), (expected, false));
+    }
+
+    #[test]
+    fn test_lambda_without_params_has_no_param_nodes() {
+        let (nodes, errors) = crate::parse_recovery("f(fn: self)");
+        assert!(!errors.has_errors());
+        let NodeKind::Call { args } = &nodes[0].kind else {
+            panic!("expected a call");
+        };
+        let Some(NodeKind::Fn { params, .. }) = args
+            .iter()
+            .map(|arg| &arg.kind)
+            .find(|k| matches!(k, NodeKind::Fn { .. }))
+        else {
+            panic!("expected a lambda");
+        };
+        assert!(params.is_empty());
+    }
+
+    #[rstest]
+    #[case::arrow_has_no_paramless_form("f(->: self)")]
+    #[case::empty_body("f(fn: )")]
+    #[case::unclosed_call("f(fn: self")]
+    fn test_lambda_without_params_reports_malformed_input(#[case] code: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        assert!(errors.has_errors(), "{code:?} should report an error");
     }
 
     #[rstest]
