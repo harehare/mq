@@ -566,7 +566,6 @@ fn collect_soft_builtin_names(node: &Shared<Node>, shadowed: &FxHashSet<Ident>, 
             }
             names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed));
         }
-        Expr::ImplicitFn(body) => names.extend(soft_builtin_names_in_program_with_shadowed(body, shadowed)),
         Expr::And(operands) | Expr::Or(operands) => {
             for operand in operands {
                 collect_soft_builtin_names(operand, shadowed, names);
@@ -736,7 +735,6 @@ impl NestedFunctionNames {
                 self.nodes(args, nested);
             }
             Expr::Def(_, params, body) | Expr::Fn(params, body) => self.function(params, body),
-            Expr::ImplicitFn(body) => self.function(&ast::Params::new(), body),
             Expr::Try(body, binder, catch) => {
                 let outer = std::mem::take(&mut self.own);
                 self.node(body, true);
@@ -865,7 +863,6 @@ fn collect_referenced_names(node: &Shared<Node>, names: &mut FxHashSet<Ident>) {
             }
             names.extend(referenced_names_in_program(body));
         }
-        Expr::ImplicitFn(body) => names.extend(referenced_names_in_program(body)),
         Expr::And(operands) | Expr::Or(operands) => {
             for operand in operands {
                 collect_referenced_names(operand, names);
@@ -955,7 +952,7 @@ fn node_contains_direct_yield(node: &Shared<Node>) -> bool {
     match &node.expr {
         Expr::Yield(_) => true,
         // A nested function's `yield` makes only that function a generator.
-        Expr::Def(_, _, _) | Expr::Fn(_, _) | Expr::ImplicitFn(_) => false,
+        Expr::Def(_, _, _) | Expr::Fn(_, _) => false,
         Expr::As(_, value)
         | Expr::Let(_, value)
         | Expr::Var(_, value)
@@ -1395,20 +1392,9 @@ impl<R: ModuleResolver> Compiler<R> {
         body: &Program,
         name_for_shadow: Option<Ident>,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
-        self.compile_fn_chunk(params, body, name_for_shadow, false)
-    }
-
-    /// `implicit_arg` is `fn: body`: one nameless parameter that becomes `self` for the body.
-    fn compile_fn_chunk(
-        &mut self,
-        params: &ast::Params,
-        body: &Program,
-        name_for_shadow: Option<Ident>,
-        implicit_arg: bool,
-    ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let is_generator = program_contains_direct_yield(body);
         let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, true);
-        let result = self.compile_function(params, body, name_for_shadow, is_generator, implicit_arg);
+        let result = self.compile_function(params, body, name_for_shadow, is_generator);
         self.in_fn_body = outer_in_fn_body;
         let (chunk_idx, upvalues) = result?;
         self.chunks[chunk_idx as usize].is_generator = is_generator;
@@ -1421,7 +1407,6 @@ impl<R: ModuleResolver> Compiler<R> {
         body: &Program,
         name_for_shadow: Option<Ident>,
         is_generator: bool,
-        implicit_arg: bool,
     ) -> CompileResult<(u16, Vec<UpvalueSource>)> {
         let outer = self.current;
         if self.chunks.len() > usize::from(u16::MAX) {
@@ -1444,7 +1429,6 @@ impl<R: ModuleResolver> Compiler<R> {
             scope.shadowed_builtin = Some(name);
         }
         let param_slots: Vec<u16> = params.iter().map(|param| scope.declare(param.ident.name)).collect();
-        let implicit_slot = implicit_arg.then(|| scope.declare_synthetic());
         self.scopes.push(scope);
         let is_fixed_arity = params.iter().all(|param| !param.is_variadic && param.default.is_none());
         self.function_names
@@ -1462,7 +1446,7 @@ impl<R: ModuleResolver> Compiler<R> {
                 // A default-value expression runs before the function body starts, so `yield`
                 // in it is not "inside the function" for this purpose.
                 let outer_in_fn_body = std::mem::replace(&mut self.in_fn_body, false);
-                let default_result = self.compile_function(&ast::Params::new(), &default_body, None, false, false);
+                let default_result = self.compile_function(&ast::Params::new(), &default_body, None, false);
                 self.in_fn_body = outer_in_fn_body;
                 let (default_chunk, default_upvalues) = default_result?;
                 bindings.push(ParamBinding::Optional(slot, default_chunk, default_upvalues));
@@ -1470,13 +1454,6 @@ impl<R: ModuleResolver> Compiler<R> {
                 required += 1;
                 bindings.push(ParamBinding::Required(slot));
             }
-        }
-
-        if let Some(slot) = implicit_slot {
-            required += 1;
-            bindings.push(ParamBinding::Required(slot));
-            self.emit(OpCode::GetLocal(slot));
-            self.emit(OpCode::SetLocal(SELF_SLOT));
         }
 
         self.compile_body(body)?;
@@ -1512,7 +1489,7 @@ impl<R: ModuleResolver> Compiler<R> {
     ) -> CompileResult<()> {
         let try_program: Program = vec![Shared::clone(body)];
         self.try_depth += 1;
-        let try_result = self.compile_function(&ast::Params::new(), &try_program, None, false, false);
+        let try_result = self.compile_function(&ast::Params::new(), &try_program, None, false);
         self.try_depth -= 1;
         let (try_chunk, try_upvalues) = try_result?;
 
@@ -1522,7 +1499,7 @@ impl<R: ModuleResolver> Compiler<R> {
         }
         let catch_program: Program = vec![Shared::clone(catch)];
         self.try_depth += 1;
-        let catch_result = self.compile_function(&catch_params, &catch_program, None, false, false);
+        let catch_result = self.compile_function(&catch_params, &catch_program, None, false);
         self.try_depth -= 1;
         let (catch_chunk, catch_upvalues) = catch_result?;
 
@@ -2606,11 +2583,6 @@ impl<R: ModuleResolver> Compiler<R> {
             }
             Expr::Fn(params, body) => {
                 let (chunk_idx, upvalues) = self.compile_def_or_fn(params, body, None)?;
-                self.emit_closure(chunk_idx, upvalues);
-                Ok(())
-            }
-            Expr::ImplicitFn(body) => {
-                let (chunk_idx, upvalues) = self.compile_fn_chunk(&ast::Params::new(), body, None, true)?;
                 self.emit_closure(chunk_idx, upvalues);
                 Ok(())
             }

@@ -1236,13 +1236,8 @@ impl Hir {
                 }
             });
 
-            // The argument is `self` in the body, so it has no symbol of its own.
             if implicit_arg {
-                param_info.push(ParamInfo {
-                    name: "self".into(),
-                    has_default: false,
-                    is_variadic: false,
-                });
+                param_info.push(crate::symbol::ParamInfo::from("self"));
             }
 
             self.symbols[symbol_id].kind = SymbolKind::Function(param_info);

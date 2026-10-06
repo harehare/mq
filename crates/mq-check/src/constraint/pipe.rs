@@ -116,15 +116,26 @@ pub(super) fn generate_function_body_pipe_constraints(
         }
     }
 
-    if body_children.len() <= 1 {
+    // The argument of `fn: body` is piped into the first statement.
+    let is_implicit = matches!(
+        hir.symbol(symbol_id).map(|s| &s.kind),
+        Some(SymbolKind::Function(params)) if params.last().is_some_and(|param| param.is_implicit())
+    );
+    let first_piped = usize::from(!is_implicit);
+
+    if body_children.len() <= first_piped {
         return;
     }
 
     // Thread types through the pipe chain sequentially:
     // Set piped input and re-process each child before moving to the next,
     // so that resolved types propagate correctly through the chain.
-    for i in 1..body_children.len() {
-        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, body_children[i - 1]);
+    for i in first_piped..body_children.len() {
+        let (prev_ty, prev_source) = if i == 0 {
+            (ctx.implicit_arg_ty(symbol_id), None)
+        } else {
+            pipe_stage_output(hir, ctx, body_children[i - 1])
+        };
         ctx.set_piped_input(body_children[i], prev_ty);
         if let Some(source) = prev_source {
             ctx.set_piped_source(body_children[i], source);

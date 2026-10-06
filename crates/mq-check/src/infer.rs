@@ -254,6 +254,8 @@ pub struct InferenceContext {
     predicate_stack: Vec<SymbolId>,
     /// The previous pipe stage whose result is each symbol's piped input.
     piped_sources: FxHashMap<SymbolId, SymbolId>,
+    /// Argument types of `fn: body` functions, keyed by function symbol
+    implicit_arg_tys: FxHashMap<SymbolId, Type>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
     /// keyed by `SymbolId` so that insert/replace is O(1).
     deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
@@ -301,6 +303,7 @@ impl InferenceContext {
             deferred_attr_calls: Vec::new(),
             predicate_stack: Vec::new(),
             piped_sources: FxHashMap::default(),
+            implicit_arg_tys: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
@@ -418,6 +421,18 @@ impl InferenceContext {
     /// Gets the piped input type for a symbol
     pub fn get_piped_input(&self, symbol: SymbolId) -> Option<&Type> {
         self.piped_inputs.get(&symbol)
+    }
+
+    /// Returns the argument type of the `fn: body` function, creating it on first use.
+    ///
+    /// Body symbols are typed before their function, so both sides must share one variable.
+    pub fn implicit_arg_ty(&mut self, function: SymbolId) -> Type {
+        if let Some(ty) = self.implicit_arg_tys.get(&function) {
+            return ty.clone();
+        }
+        let ty = Type::Var(self.fresh_var());
+        self.implicit_arg_tys.insert(function, ty.clone());
+        ty
     }
 
     /// Adds a deferred overload resolution.

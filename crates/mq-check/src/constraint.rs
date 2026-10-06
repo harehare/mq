@@ -30,7 +30,7 @@ use crate::node_attr::{SelectorOutput, node_selector_output};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use crate::{TypeError, field_guard::field_guard, infer};
-use mq_hir::{Hir, SymbolId, SymbolKind};
+use mq_hir::{Hir, ScopeKind, SymbolId, SymbolKind};
 
 use smol_str::SmolStr;
 use std::fmt;
@@ -258,6 +258,40 @@ fn infer_while_or_until(
     }
 }
 
+/// The `fn: body` function for which `symbol_id` is in the first body statement, where `self`
+/// is still the argument. Later statements receive the previous statement's result instead.
+fn enclosing_implicit_fn(hir: &Hir, symbol_id: SymbolId, children_index: &ChildrenIndex) -> Option<SymbolId> {
+    let mut scope_id = hir.symbol(symbol_id)?.scope;
+    let function = loop {
+        let scope = hir.scope(scope_id)?;
+        match scope.kind {
+            ScopeKind::Function(function) => break function,
+            // A default value runs before the body, so `self` is not the argument there.
+            ScopeKind::DefaultParam(_) | ScopeKind::Module(_) => return None,
+            _ => scope_id = scope.parent_id?,
+        }
+    };
+    let SymbolKind::Function(params) = &hir.symbol(function)?.kind else {
+        return None;
+    };
+    if !params.last().is_some_and(|param| param.is_implicit()) {
+        return None;
+    }
+
+    let first_statement = get_children(children_index, function)
+        .iter()
+        .copied()
+        .find(|&child| hir.symbol(child).is_some_and(|s| s.kind != SymbolKind::Keyword))?;
+    let mut current = symbol_id;
+    while current != first_statement {
+        current = hir.symbol(current)?.parent?;
+        if current == function {
+            return None;
+        }
+    }
+    Some(function)
+}
+
 pub(super) fn generate_symbol_constraints(
     hir: &Hir,
     symbol_id: SymbolId,
@@ -466,7 +500,16 @@ pub(super) fn generate_symbol_constraints(
         // Function definitions
         SymbolKind::Function(params) => {
             // Create type variables for each parameter
-            let param_tys: Vec<Type> = params.iter().map(|_| Type::Var(ctx.fresh_var())).collect();
+            let param_tys: Vec<Type> = params
+                .iter()
+                .map(|param| {
+                    if param.is_implicit() {
+                        ctx.implicit_arg_ty(symbol_id)
+                    } else {
+                        Type::Var(ctx.fresh_var())
+                    }
+                })
+                .collect();
 
             // A function that yields returns a generator of what it yields; otherwise the return
             // type is the type of its body.
@@ -1731,6 +1774,9 @@ pub(super) fn generate_symbol_constraints(
                 // `.` and `self` both refer to the piped input value
                 if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
                     ctx.set_symbol_type(symbol_id, piped_ty);
+                } else if let Some(function) = enclosing_implicit_fn(hir, symbol_id, children_index) {
+                    let arg_ty = ctx.implicit_arg_ty(function);
+                    ctx.set_symbol_type(symbol_id, arg_ty);
                 } else {
                     let ty_var = ctx.fresh_var();
                     ctx.set_symbol_type(symbol_id, Type::Var(ty_var));

@@ -532,7 +532,10 @@ mod tests {
 
     #[rstest]
     #[case::fold_passes_two_arguments("[1, 2] | fold(0, fn: self)")]
-    fn test_fn_without_params_reports_arity_errors(#[case] code: &str) {
+    #[case::elements_subtracted("[\"a\"] | map(fn: self - 1)")]
+    #[case::direct_call("let f = fn: self - 1 | f(\"text\")")]
+    #[case::piped_call_in_body("[1] | map(fn: split(\" \"))")]
+    fn test_fn_without_params_rejects_incompatible_calls(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
         let errors = TypeChecker::new().check(&hir);

@@ -91,7 +91,6 @@ impl Node {
             Expr::Block(program)
             | Expr::Def(_, _, program)
             | Expr::Fn(_, program)
-            | Expr::ImplicitFn(program)
             | Expr::While(_, program)
             | Expr::Until(_, program)
             | Expr::Loop(program)
@@ -417,9 +416,6 @@ pub enum Expr {
     CallDynamic(Shared<Node>, Args),
     Def(IdentWithToken, Params, Program),
     Fn(Params, Program),
-    /// `fn: body`. A one-argument function with no parameter list: the argument is the current
-    /// value (`self`) while the body runs.
-    ImplicitFn(Program),
     Let(Pattern, Shared<Node>),
     Loop(Program),
     Var(Pattern, Shared<Node>),

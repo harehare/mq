@@ -2131,3 +2131,19 @@ def test_lambda_without_params_takes_exactly_one_argument():
   | assert_eq(try: fold([1, 2], 0, fn: self) catch: "arity", "arity")
   | assert_eq(try: one(1, 2) catch: "arity", "arity")
 end
+
+def test_lambda_without_params_recursion():
+  let top = fn: if (self > 0): self + top(self - 1) else: 0;
+  | assert_eq(top(3), 6)
+  | assert_eq(nested_lambda_recursion(3), 6)
+end
+
+def nested_lambda_recursion(n):
+  let f = fn: if (self > 0): self + f(self - 1) else: 0;
+  | f(n)
+end
+
+def test_lambda_without_params_fills_missing_argument_from_pipeline():
+  let one = fn: self;
+  | assert_eq(42 | one(), 42)
+end

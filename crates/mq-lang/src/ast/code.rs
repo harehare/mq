@@ -254,15 +254,6 @@ impl Node {
                     stmt.format_to_code(buf, indent);
                 }
             }
-            Expr::ImplicitFn(program) => {
-                buf.push_str("fn");
-                if needs_block_syntax(program) {
-                    format_program_block(program, buf, indent);
-                } else if let Some(stmt) = program.first() {
-                    buf.push_str(": ");
-                    stmt.format_to_code(buf, indent);
-                }
-            }
             Expr::Match(value, arms) => {
                 buf.push_str("match (");
                 value.format_to_code(buf, indent);
@@ -1181,10 +1172,6 @@ mod tests {
             vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(1.0)))))]
         ),
         "fn(x, y = 10): 1"
-    )]
-    #[case::implicit_arg_inline(
-        Expr::ImplicitFn(vec![Shared::new(create_node(Expr::Literal(Literal::Number(Number::new(42.0)))))]),
-        "fn: 42"
     )]
     fn test_to_code_fn(#[case] expr: Expr, #[case] expected: &str) {
         let node = create_node(expr);

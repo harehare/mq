@@ -169,7 +169,7 @@ nodes | filter(fn: select(.h || .code) | !is_none())
 
 - The body does not see the pipeline value that was current outside the function. `self` is always the argument, even when the caller does not pipe it.
 - In a nested `fn:`, the inner argument hides the outer one. Use `fn(x):` for the outer function to keep a name for its argument.
-- Calling an `fn:` function with zero or several arguments is an error, for example `fold(arr, 0, fn: self)`.
+- Calling an `fn:` function with several arguments is an error, for example `fold(arr, 0, fn: self)`. With no argument, the piped value is the argument, as for any one-parameter function.
 
 ### Examples
 

@@ -1596,18 +1596,33 @@ impl<'a, 'alloc> Parser<'a, 'alloc> {
         self.parse_postfix_ops(fn_node, fn_token)
     }
 
-    /// `fn: body`, a one-argument function without a parameter list.
+    /// `fn: body`, parsed as `fn(self): self | body`. `self` in the source is its own token, so the
+    /// parameter is only ever read by the leading statement.
     #[inline(never)]
     fn parse_implicit_fn(&mut self, fn_token: &Token) -> Result<Shared<Node>, SyntaxError> {
         let fn_token_id = self.alloc_token(fn_token);
         let kind = self.take_fn_body_kind();
         self.consume_colon();
 
-        let program = self.parse_program(kind)?;
+        let mut program = self.parse_program(kind)?;
+        program.insert(
+            0,
+            Shared::new(Node {
+                token_id: fn_token_id,
+                expr: Expr::Ident(IdentWithToken::new(constants::identifiers::SELF)),
+            }),
+        );
 
         let fn_node = Shared::new(Node {
             token_id: fn_token_id,
-            expr: Expr::ImplicitFn(program),
+            expr: Expr::Fn(
+                vec![Param {
+                    ident: IdentWithToken::new(constants::identifiers::SELF),
+                    default: None,
+                    is_variadic: false,
+                }],
+                program,
+            ),
         });
 
         self.parse_postfix_ops(fn_node, fn_token)
@@ -9984,7 +9999,7 @@ Shared::new(Node {
         };
         args.iter()
             .map(|arg| match &arg.expr {
-                Expr::Fn(_, body) | Expr::ImplicitFn(body) => Some(body.len()),
+                Expr::Fn(_, body) => Some(body.len()),
                 _ => None,
             })
             .collect()
@@ -10021,7 +10036,7 @@ Shared::new(Node {
         assert_eq!(lambda_arg_body_lens(source), expected);
     }
 
-    // `fn: body` is its own node, not an `Expr::Fn` with a parameter.
+    // Body lengths exclude the leading `fn:` argument statement.
     #[rstest]
     #[case::only_arg("f(fn: self + 1)", vec![Some(1)])]
     #[case::last_arg("f(a, fn: self + 1)", vec![None, Some(1)])]
@@ -10031,21 +10046,27 @@ Shared::new(Node {
     #[case::call_with_commas_in_body("f(fn: g(1, 2), 3)", vec![Some(1), None])]
     #[case::nested("f(fn: g(fn: self + 1))", vec![Some(1)])]
     #[case::nested_then_comma("f(fn: g(fn: self + 1), 2)", vec![Some(1), None])]
-    #[case::mixed_with_named_params("f(fn: self, fn(x): x)", vec![Some(1), Some(1)])]
     #[case::if_else_in_body("f(fn: if (self): 1 else: 2, 3)", vec![Some(1), None])]
     #[case::semicolon_form("f(fn: self + 1;)", vec![Some(1)])]
     #[case::end_form("f(fn: do self end;, 1)", vec![Some(1), None])]
     fn test_lambda_without_params(#[case] source: &str, #[case] expected: Vec<Option<usize>>) {
+        let expected: Vec<_> = expected.into_iter().map(|len| len.map(|len| len + 1)).collect();
         assert_eq!(lambda_arg_body_lens(source), expected);
     }
 
     #[test]
-    fn test_lambda_without_params_is_not_a_fn_with_params() {
+    fn test_lambda_without_params_takes_one_argument() {
         let program = parse_source("f(fn: self, fn(): 1)").expect("source should parse");
         let Expr::Call(_, args) = &program[0].expr else {
             panic!("expected a call");
         };
-        assert!(matches!(&args[0].expr, Expr::ImplicitFn(_)));
+        let Expr::Fn(params, body) = &args[0].expr else {
+            panic!("expected a function");
+        };
+        let [param] = params.as_slice() else {
+            panic!("expected one parameter");
+        };
+        assert!(matches!(&body[0].expr, Expr::Ident(ident) if ident.name == param.ident.name));
         assert!(matches!(&args[1].expr, Expr::Fn(params, _) if params.is_empty()));
     }
 
