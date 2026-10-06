@@ -969,12 +969,26 @@ impl Hir {
                 insertion_order: 0,
             });
 
-            node.non_token_children().for_each(|child| {
+            // Arguments after a `[` are the keys of `f(x)[key]`, not arguments of `f`.
+            let mut after_bracket = false;
+            let mut bracket_keys = 0;
+            node.children().for_each(|child| {
+                if child.is_token() {
+                    after_bracket |= child
+                        .token
+                        .as_ref()
+                        .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::LBracket));
+                    return;
+                }
+                bracket_keys += usize::from(after_bracket);
                 // Process all arguments recursively to handle complex expressions
                 // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
                 // are properly registered as Ref symbols that can be resolved
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
+            if bracket_keys > 0 {
+                self.bracket_key_counts.insert(symbol_id, bracket_keys);
+            }
         }
     }
 

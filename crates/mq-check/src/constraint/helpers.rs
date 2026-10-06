@@ -320,59 +320,8 @@ pub(super) fn resolve_builtin_call(
     }
 }
 
-const BRACKET_FUSABLE_BUILTINS: &[&str] = &["next", "send"];
-
-pub(super) fn trailing_bracket_key_count(
-    hir: &Hir,
-    ctx: &InferenceContext,
-    func_name: &str,
-    explicit_arg_tys: &[Type],
-    children: &[SymbolId],
-) -> usize {
-    if !BRACKET_FUSABLE_BUILTINS.contains(&func_name) {
-        return 0;
-    }
-
-    let overloads = match ctx.get_builtin_overloads(func_name) {
-        Some(overloads) => overloads,
-        None => return 0,
-    };
-
-    let is_fully_generic = |params: &[Type]| params.iter().all(|p| matches!(p, Type::Dynamic | Type::Var(_)));
-
-    let arities: Vec<usize> = overloads
-        .iter()
-        .filter_map(|ty| match ty {
-            Type::Function(params, _) => Some(params.len()),
-            _ => None,
-        })
-        .collect();
-
-    if arities.contains(&explicit_arg_tys.len()) {
-        return 0;
-    }
-
-    overloads
-        .iter()
-        .filter_map(|ty| match ty {
-            Type::Function(params, _) if params.len() < explicit_arg_tys.len() && is_fully_generic(params) => {
-                Some(params.len())
-            }
-            _ => None,
-        })
-        .filter(|&arity| {
-            children[arity..].iter().all(|&child_id| {
-                hir.symbol(child_id)
-                    .is_some_and(|s| matches!(s.kind, SymbolKind::String | SymbolKind::Symbol))
-            })
-        })
-        .max()
-        .map(|arity| explicit_arg_tys.len() - arity)
-        .unwrap_or(0)
-}
-
 /// Resolves a builtin call, splitting off and chaining any trailing bracket-access
-/// keys via `trailing_bracket_key_count`/`DeferredCallReturnAccess`.
+/// keys (`first(xs)[:ident]`) via `DeferredCallReturnAccess`.
 pub(super) fn resolve_builtin_call_with_brackets(
     hir: &Hir,
     ctx: &mut InferenceContext,
@@ -382,7 +331,7 @@ pub(super) fn resolve_builtin_call_with_brackets(
     children: &[SymbolId],
     range: Option<mq_lang::Range>,
 ) {
-    let trailing_bracket_count = trailing_bracket_key_count(hir, ctx, func_name, explicit_arg_tys, children);
+    let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
 
     if trailing_bracket_count == 0 {
         let arg_tys = build_piped_call_args(ctx, symbol_id, explicit_arg_tys, func_name);

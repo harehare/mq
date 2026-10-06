@@ -31,6 +31,8 @@ pub struct Hir {
     /// Same ids as `name_index`, grouped by the scope that declares them.
     /// Child scopes of each scope that leave their `let` bindings visible after the construct.
     pub(crate) leaking_scopes: FxHashMap<ScopeId, Vec<ScopeId>>,
+    /// For each call `f(x)[k]`, how many of its trailing arguments are bracket-access keys.
+    pub(crate) bracket_key_counts: FxHashMap<SymbolId, usize>,
     pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
@@ -72,6 +74,7 @@ impl Hir {
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
             leaking_scopes: FxHashMap::default(),
+            bracket_key_counts: FxHashMap::default(),
             scope_name_index: FxHashMap::default(),
         }
     }
@@ -263,6 +266,7 @@ impl Hir {
         });
 
         let symbols = &self.symbols;
+        self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
         self.references
             .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
         let references = &self.references;
@@ -375,6 +379,24 @@ mod tests {
     use super::*;
     use itertools::Itertools;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::none("first(xs)", 0)]
+    #[case::extra_argument("first(xs, 1)", 0)]
+    #[case::string_key(r#"first(xs)["k"]"#, 1)]
+    #[case::symbol_key("first(xs)[:k]", 1)]
+    #[case::index("first(xs)[0]", 1)]
+    #[case::chained(r#"f(xs)["a"]["b"]"#, 2)]
+    fn test_bracket_key_count_tells_keys_from_arguments(#[case] code: &str, #[case] expected: usize) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+        let (call, _) = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.kind == SymbolKind::Call)
+            .unwrap();
+        assert_eq!(hir.bracket_key_count(call), expected);
+    }
 
     #[test]
     fn test_declare_global_resolves_host_defined_names() {

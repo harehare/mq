@@ -2222,3 +2222,16 @@ fn test_map_distributes_over_union_of_arrays(#[case] code: &str) {
 fn test_none_default_parameter_accepts_other_types(#[case] code: &str) {
     assert!(check_types_with_builtins(code).is_empty());
 }
+
+#[rstest]
+#[case::symbol_key(r#"def f(xs): first(xs)[:ident];"#)]
+#[case::string_key(r#"def f(xs): last(xs)["ident"];"#)]
+#[case::index(r#"def f(xs): first(xs)[0];"#)]
+fn test_bracket_access_on_a_builtin_call_result(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}
+
+#[test]
+fn test_literal_extra_argument_of_a_builtin_is_still_an_arity_error() {
+    assert!(!check_types_with_builtins("def f(xs): first(xs, 1);").is_empty());
+}
