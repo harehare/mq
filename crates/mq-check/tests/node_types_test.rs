@@ -140,3 +140,25 @@ fn test_attribute_of_a_narrowed_variable_is_accepted() {
 fn test_attr_call_result_is_decided_by_its_use(#[case] code: &str) {
     assert!(errors(code).is_empty());
 }
+
+#[rstest]
+#[case::code(r#"to_code("a", "rust")"#, "code")]
+#[case::heading(r#"to_h("a", 2)"#, "h")]
+#[case::link(r#"to_link("u", "t", "d")"#, "link")]
+#[case::strong(r#"to_strong("a")"#, "strong")]
+#[case::list(r#"to_md_list("a", 0)"#, "list")]
+#[case::horizontal_rule("to_hr()", "Horizontal_rule")]
+#[case::setter_keeps_the_kind(r#"set_check(to_md_list("a", 0), true)"#, "list")]
+fn test_builtin_constructors_return_their_kind(#[case] expr: &str, #[case] expected: &str) {
+    let types = ref_types(&format!("let n = {expr}\n| n"), "n");
+    assert_eq!(types, vec![expected.to_string()]);
+}
+
+#[test]
+fn test_attribute_of_a_constructed_node_is_checked() {
+    let errors = errors("let c = to_code(\"a\", \"rust\")\n| c.depth");
+    assert!(
+        matches!(errors.as_slice(), [mq_check::TypeError::UndefinedAttribute { .. }]),
+        "{errors:?}"
+    );
+}

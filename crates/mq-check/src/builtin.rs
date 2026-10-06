@@ -5,7 +5,9 @@
 //! find the appropriate category function and add a registration call.
 
 use crate::infer::InferenceContext;
+use crate::kind_set::KindSet;
 use crate::types::Type;
+use mq_markdown::NodeKind;
 
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {
@@ -524,6 +526,11 @@ fn register_string(ctx: &mut InferenceContext) {
     );
 }
 
+/// A node of exactly one kind.
+fn node_of(kind: NodeKind) -> Type {
+    Type::Node(KindSet::of(kind))
+}
+
 /// Returns the signature of `name` specialised to the already resolved `args`, for builtins whose
 /// result type depends on the structure of an argument rather than on a type variable.
 pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
@@ -531,6 +538,14 @@ pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
         ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
             Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
         }
+        // Setters change a node's contents but keep its kind.
+        (
+            "set_check" | "set_list_ordered" | "set_code_block_lang" | "set_ref" | "set_attr" | "set_children",
+            [node @ Type::Node(_), rest @ ..],
+        ) => Some(Type::function(
+            std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
+            node.clone(),
+        )),
         _ => None,
     }
 }
@@ -1248,22 +1263,20 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::String,
     );
 
-    // Markdown manipulation: markdown -> markdown
-    register_many(
-        ctx,
-        &[
-            "to_code_inline",
-            "to_strong",
-            "to_em",
-            "to_blockquote",
-            "to_delete",
-            "to_math",
-            "to_math_inline",
-            "to_md_table_row",
-        ],
-        vec![Type::markdown()],
-        Type::markdown(),
-    );
+    // Markdown constructors: any value (a string or a node) -> a node of one fixed kind
+    for (name, kind) in [
+        ("to_code_inline", NodeKind::CodeInline),
+        ("to_strong", NodeKind::Strong),
+        ("to_em", NodeKind::Emphasis),
+        ("to_blockquote", NodeKind::Blockquote),
+        ("to_delete", NodeKind::Delete),
+        ("to_math", NodeKind::Math),
+        ("to_math_inline", NodeKind::MathInline),
+        ("to_md_table_row", NodeKind::TableRow),
+    ] {
+        let value = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(value), node_of(kind));
+    }
 
     // to_callout: (markdown, string, string) -> markdown
     register_ternary(
@@ -1272,7 +1285,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::markdown(),
         Type::String,
         Type::String,
-        Type::markdown(),
+        node_of(NodeKind::Callout),
     );
 
     // to_md_fragment: markdown -> markdown, [a] -> markdown
@@ -1282,17 +1295,23 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // to_md_table_align: [a] -> markdown
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_md_table_align", Type::array(Type::Var(a)), Type::markdown());
+    register_unary(
+        ctx,
+        "to_md_table_align",
+        Type::array(Type::Var(a)),
+        node_of(NodeKind::TableAlign),
+    );
 
     // (markdown, number) -> markdown
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::markdown());
+    // A depth outside 1..=6 gives a heading that no `is_h<n>` matches, so the depth is not narrowed.
+    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::Node(KindSet::HEADING));
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, Type::markdown());
+    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, node_of(NodeKind::List));
 
     // (markdown, string) -> markdown/string
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::markdown());
+    register_binary(ctx, "to_code", Type::Var(a), Type::String, node_of(NodeKind::Code));
     // The result depends on the attribute name (`attr(h, "depth")` is a number), which is not part
     // of the type, so it stays open and is fixed by how it is used.
     let attr_ret = ctx.fresh_var();
@@ -1333,7 +1352,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::String,
         Type::String,
         Type::String,
-        Type::markdown(),
+        node_of(NodeKind::Link),
     );
     register_ternary(
         ctx,
@@ -1341,7 +1360,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::String,
         Type::String,
         Type::String,
-        Type::markdown(),
+        node_of(NodeKind::Image),
     );
 
     // Markdown attribute functions
@@ -1355,7 +1374,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
     );
 
     // Other markdown functions
-    register_nullary(ctx, "to_hr", Type::markdown());
+    register_nullary(ctx, "to_hr", node_of(NodeKind::HorizontalRule));
     register_unary(ctx, "to_md_name", Type::markdown(), Type::String);
     register_unary(ctx, "to_md_text", Type::markdown(), Type::String);
 
@@ -1367,7 +1386,7 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::Var(a),
         Type::Number,
         Type::Number,
-        Type::markdown(),
+        node_of(NodeKind::TableCell),
     );
 
     // (markdown, bool) -> markdown
