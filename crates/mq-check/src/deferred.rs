@@ -137,7 +137,7 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
     for access in &accesses {
         let resolved = ctx.resolve_type(&access.piped_ty);
 
-        if let types::Type::Markdown = resolved {
+        if let types::Type::Node(_) = resolved {
             // Piped input resolved to a Markdown node (e.g. `let md = .h | md.depth`).
             // Attr selectors return their concrete type; non-Attr selectors return Markdown.
             if let Some(ref attr_kind) = access.attr_kind {
@@ -148,7 +148,7 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
                 let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
                 ctx.add_constraint(Constraint::Equal(
                     sel_ty,
-                    types::Type::Markdown,
+                    types::Type::markdown(),
                     None,
                     ConstraintOrigin::General,
                 ));

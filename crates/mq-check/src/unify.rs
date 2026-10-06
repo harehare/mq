@@ -59,8 +59,10 @@ pub fn unify(
         | (Type::Bool, Type::Bool)
         | (Type::Symbol, Type::Symbol)
         | (Type::None, Type::None)
-        | (Type::Markdown, Type::Markdown)
         | (Type::Bytes, Type::Bytes) => {}
+
+        // Node types unify when they share a kind
+        (Type::Node(a), Type::Node(b)) if a.intersects(*b) => {}
 
         // Type variables
         (Type::Var(v1), Type::Var(v2)) if v1 == v2 => {}
@@ -479,6 +481,33 @@ mod tests {
 
         unify(&mut ctx, &Type::String, &Type::Number, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_node_types_requires_a_shared_kind() {
+        use crate::kind_set::KindSet;
+        use mq_markdown::NodeKind::{Code, H1, H2};
+
+        let node = |kinds: &[mq_markdown::NodeKind]| Type::Node(KindSet::from_kinds(kinds.iter().copied()));
+        let mut ctx = InferenceContext::new();
+        unify(
+            &mut ctx,
+            &node(&[H1, H2]),
+            &Type::markdown(),
+            None,
+            &ConstraintOrigin::General,
+        );
+        unify(
+            &mut ctx,
+            &node(&[H1, H2]),
+            &node(&[H2, Code]),
+            None,
+            &ConstraintOrigin::General,
+        );
+        assert!(ctx.take_errors().is_empty());
+
+        unify(&mut ctx, &node(&[H1]), &node(&[Code]), None, &ConstraintOrigin::General);
+        assert_eq!(ctx.take_errors().len(), 1);
     }
 
     #[test]

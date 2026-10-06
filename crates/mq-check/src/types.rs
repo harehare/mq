@@ -5,6 +5,8 @@ use slotmap::SlotMap;
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::kind_set::KindSet;
+
 slotmap::new_key_type! {
     /// Unique identifier for type variables
     pub struct TypeVarId;
@@ -27,8 +29,8 @@ pub enum Type {
     Symbol,
     /// None/null type
     None,
-    /// Markdown document type
-    Markdown,
+    /// A Markdown node of one of the given kinds. `markdown` is the set of every kind.
+    Node(KindSet),
     /// Raw binary data type (e.g. CBOR byte strings)
     Bytes,
     /// Array type with element type
@@ -74,6 +76,11 @@ pub enum Type {
 }
 
 impl Type {
+    /// Any Markdown node, written `markdown`.
+    pub const fn markdown() -> Self {
+        Type::Node(KindSet::ALL)
+    }
+
     /// Creates a new function type
     pub fn function(params: Vec<Type>, ret: Type) -> Self {
         Type::Function(params, Box::new(ret))
@@ -109,6 +116,19 @@ impl Type {
                 Type::Union(inner) => normalized.extend(inner),
                 _ => normalized.push(ty),
             }
+        }
+
+        // Node types of one union fold into a single node type of the combined kinds
+        let mut nodes: Option<KindSet> = None;
+        normalized.retain(|ty| match ty {
+            Type::Node(set) => {
+                nodes = Some(nodes.map_or(*set, |acc| acc.union(*set)));
+                false
+            }
+            _ => true,
+        });
+        if let Some(set) = nodes {
+            normalized.push(Type::Node(set));
         }
 
         // Deduplicate and sort
@@ -209,8 +229,14 @@ impl Type {
             Type::Union(members) => {
                 let remaining: Vec<Type> = members
                     .iter()
-                    .filter(|t| std::mem::discriminant(*t) != std::mem::discriminant(exclude))
-                    .cloned()
+                    .filter_map(|t| match (t, exclude) {
+                        (Type::Node(set), Type::Node(excluded)) => {
+                            let rest = set.difference(*excluded);
+                            (!rest.is_empty()).then_some(Type::Node(rest))
+                        }
+                        _ if std::mem::discriminant(t) == std::mem::discriminant(exclude) => None,
+                        _ => Some(t.clone()),
+                    })
                     .collect();
                 if remaining.is_empty() {
                     Type::Never
@@ -252,7 +278,7 @@ impl Type {
             Type::Bool => 4,
             Type::Symbol => 5,
             Type::None => 6,
-            Type::Markdown => 7,
+            Type::Node(_) => 7,
             Type::Bytes => 8,
             Type::Array(_) => 9,
             Type::Tuple(_) => 10,
@@ -371,8 +397,10 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => true,
+
+            // Node types match when they share a kind
+            (Type::Node(a), Type::Node(b)) => a.intersects(*b),
 
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
@@ -457,8 +485,10 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => true,
+
+            // Node types match when they share a kind
+            (Type::Node(a), Type::Node(b)) => a.intersects(*b),
 
             // Arrays: recurse strictly
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
@@ -515,8 +545,19 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => Some(100),
+
+            // `self` is the parameter and `other` the argument: a subset fits fully, an overlap
+            // only partly
+            (Type::Node(param), Type::Node(arg)) => {
+                if arg.is_subset_of(*param) {
+                    Some(100)
+                } else if arg.intersects(*param) {
+                    Some(60)
+                } else {
+                    None
+                }
+            }
 
             // Dynamic matches anything with low score (prefer concrete over dynamic)
             (Type::Dynamic, _) | (_, Type::Dynamic) => Some(10),
@@ -610,7 +651,7 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
-            Type::Markdown => "markdown".to_string(),
+            Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
             Type::Tuple(elems) => {
@@ -686,7 +727,7 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
-            Type::Markdown => "markdown".to_string(),
+            Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
             Type::Tuple(elems) => {
@@ -1070,6 +1111,42 @@ mod tests {
     #[case(vec![Type::Number, Type::String, Type::Number], Type::union(vec![Type::Number, Type::String]))]
     fn test_type_union(#[case] types: Vec<Type>, #[case] expected: Type) {
         assert_eq!(Type::union(types), expected);
+    }
+
+    fn node(kinds: impl IntoIterator<Item = mq_markdown::NodeKind>) -> Type {
+        Type::Node(KindSet::from_kinds(kinds))
+    }
+
+    #[test]
+    fn test_union_folds_node_types_into_one() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        assert_eq!(
+            Type::union(vec![node([H1]), Type::Number, node([H2])]),
+            Type::union(vec![Type::Number, node([H1, H2])])
+        );
+        assert_eq!(Type::union(vec![node([Code]), Type::markdown()]), Type::markdown());
+    }
+
+    #[test]
+    fn test_subtract_removes_only_the_excluded_kinds_from_a_node_member() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        let ty = Type::union(vec![Type::None, node([H1, H2, Code])]);
+        assert_eq!(
+            ty.subtract(&node([H1])),
+            Type::union(vec![Type::None, node([H2, Code])])
+        );
+        assert_eq!(ty.subtract(&node([H1, H2, Code])), Type::None);
+    }
+
+    #[test]
+    fn test_node_types_match_when_they_share_a_kind() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        assert!(node([H1, H2]).can_match(&node([H2, Code])));
+        assert!(!node([H1]).can_match(&node([Code])));
+        assert!(Type::markdown().can_match(&node([Code])));
+        assert_eq!(node([H1, H2]).match_score(&node([H1])), Some(100));
+        assert_eq!(node([H1]).match_score(&node([H1, H2])), Some(60));
+        assert_eq!(node([H1]).match_score(&node([Code])), None);
     }
 
     #[rstest]

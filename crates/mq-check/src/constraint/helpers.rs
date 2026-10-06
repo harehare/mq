@@ -177,7 +177,7 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
         | AttrKind::Line
         | AttrKind::EndLine => Type::Number,
         AttrKind::Ordered | AttrKind::Checked => Type::Bool,
-        AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),
+        AttrKind::Values | AttrKind::Children => Type::array(Type::markdown()),
     }
 }
 

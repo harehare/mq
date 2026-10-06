@@ -30,6 +30,7 @@ colored = {workspace = true, optional = true}
 miette = {workspace = true, features = ["fancy-no-backtrace"]}
 mq-hir = {workspace = true}
 mq-lang = {workspace = true, features = ["cst", "file-io"]}
+mq-markdown = {workspace = true}
 rustc-hash = {workspace = true}
 serde_json = {workspace = true, optional = true}
 slotmap = {workspace = true}

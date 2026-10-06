@@ -2016,11 +2016,11 @@ pub(super) fn generate_symbol_constraints(
         // Selector: resolve the type for chained selectors like `.h1.value` or `.h1.depth`.
         //
         // In the HIR, `.h1.value` is represented as Selector(.h1) with a child Selector(.value).
-        // The parent selector's output type (always `Type::Markdown` for non-Attr selectors)
+        // The parent selector's output type (always `Type::markdown()` for non-Attr selectors)
         // is propagated as piped input to each child selector in the chain.
         //
         // Attr selectors (`Selector::Attr`) return the concrete attribute type via `attr_kind_to_type`.
-        // Non-Attr selectors (`.h1`, `.code`, etc.) always return `Type::Markdown`.
+        // Non-Attr selectors (`.h1`, `.code`, etc.) always return `Type::markdown()`.
         SymbolKind::Selector(ref selector) => {
             // Compute this selector's own output type based on the incoming piped input.
             let own_type = if let Some(piped_ty) = ctx.get_piped_input(symbol_id).cloned() {
@@ -2030,16 +2030,16 @@ pub(super) fn generate_symbol_constraints(
                     .and_then(|s| s.value.as_ref())
                     .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
 
-                if let Type::Markdown = resolved {
+                if let Type::Node(_) = resolved {
                     // Piped input is a Markdown node (from a parent selector in a chain).
                     // Attr selectors return their specific type; Recursive returns [markdown];
                     // all other non-Attr selectors still return Markdown.
                     if let mq_lang::Selector::Attr(attr_kind) = selector {
                         attr_kind_to_type(attr_kind)
                     } else if matches!(selector, mq_lang::Selector::Recursive) {
-                        Type::array(Type::Markdown)
+                        Type::array(Type::markdown())
                     } else {
-                        Type::Markdown
+                        Type::markdown()
                     }
                 } else if let Type::Record(ref fields, ref rest) = resolved {
                     if let Some(name) = field_name {
@@ -2092,9 +2092,9 @@ pub(super) fn generate_symbol_constraints(
                 if let mq_lang::Selector::Attr(attr_kind) = selector {
                     attr_kind_to_type(attr_kind)
                 } else if matches!(selector, mq_lang::Selector::Recursive) {
-                    Type::array(Type::Markdown)
+                    Type::array(Type::markdown())
                 } else {
-                    Type::Markdown
+                    Type::markdown()
                 }
             };
 
@@ -2219,7 +2219,7 @@ mod tests {
     #[case(mq_lang::AttrKind::Value, Type::String)]
     #[case(mq_lang::AttrKind::Depth, Type::Number)]
     #[case(mq_lang::AttrKind::Ordered, Type::Bool)]
-    #[case(mq_lang::AttrKind::Children, Type::array(Type::Markdown))]
+    #[case(mq_lang::AttrKind::Children, Type::array(Type::markdown()))]
     fn test_attr_kind_to_type(#[case] kind: mq_lang::AttrKind, #[case] expected: Type) {
         assert_eq!(attr_kind_to_type(&kind), expected);
     }

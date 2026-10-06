@@ -98,8 +98,8 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     }
 
     // Addition: markdown + markdown -> markdown
-    register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
-    register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
+    register_binary(ctx, "+", Type::markdown(), Type::markdown(), Type::markdown());
+    register_binary(ctx, "add", Type::markdown(), Type::markdown(), Type::markdown());
 
     // Addition: [a] + a -> [a] (array element append)
     for name in ["+", "add"] {
@@ -114,8 +114,8 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     }
 
     // Addition: markdown + string -> markdown
-    register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
-    register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "+", Type::markdown(), Type::String, Type::markdown());
+    register_binary(ctx, "add", Type::markdown(), Type::String, Type::markdown());
 
     // Subtraction: (number, number) -> number
     register_binary(ctx, "-", Type::Number, Type::Number, Type::Number);
@@ -333,7 +333,14 @@ fn register_string(ctx: &mut InferenceContext) {
     register_ternary(ctx, "replace", Type::Var(a), Type::String, Type::String, Type::Var(a));
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
     // gsub also accepts a markdown node at runtime.
-    register_ternary(ctx, "gsub", Type::Markdown, Type::String, Type::String, Type::Markdown);
+    register_ternary(
+        ctx,
+        "gsub",
+        Type::markdown(),
+        Type::String,
+        Type::String,
+        Type::markdown(),
+    );
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
     register_binary(
         ctx,
@@ -403,7 +410,7 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "markdown_escape", Type::String, Type::String, Type::String);
 
     // markdown_escape: (markdown, context) -> markdown
-    register_binary(ctx, "markdown_escape", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "markdown_escape", Type::markdown(), Type::String, Type::markdown());
 
     // Capture: (string, pattern) -> {k: v}
     let k = ctx.fresh_var();
@@ -580,18 +587,18 @@ fn register_array(ctx: &mut InferenceContext) {
     register_binary(
         ctx,
         "token_compress",
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
         Type::Number,
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
     );
     // token_compress: ([markdown], number, model: string) -> [markdown]
     register_ternary(
         ctx,
         "token_compress",
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
         Type::Number,
         Type::String,
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
     );
 
     // flatten: [a] -> [a]. The result element type is computed from the argument by
@@ -1190,11 +1197,11 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_callout",
         "is_table_align",
     ] {
-        register_unary(ctx, name, Type::Markdown, Type::Bool);
+        register_unary(ctx, name, Type::markdown(), Type::Bool);
     }
 
     // is_h_level: (markdown, number) -> bool
-    register_binary(ctx, "is_h_level", Type::Markdown, Type::Number, Type::Bool);
+    register_binary(ctx, "is_h_level", Type::markdown(), Type::Number, Type::Bool);
 
     // Markdown type check functions also accept any type (dynamic usage)
     for name in [
@@ -1226,18 +1233,18 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // a -> markdown
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_markdown", Type::Var(a), Type::array(Type::Markdown));
+    register_unary(ctx, "to_markdown", Type::Var(a), Type::array(Type::markdown()));
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_mdx", Type::Var(a), Type::array(Type::Markdown));
+    register_unary(ctx, "to_mdx", Type::Var(a), Type::array(Type::markdown()));
 
     // string (HTML) -> array(markdown)
-    register_unary(ctx, "from_html", Type::String, Type::array(Type::Markdown));
+    register_unary(ctx, "from_html", Type::String, Type::array(Type::markdown()));
 
     // markdown -> string functions
     register_many(
         ctx,
         &["to_markdown_string", "to_text", "to_html"],
-        vec![Type::Markdown],
+        vec![Type::markdown()],
         Type::String,
     );
 
@@ -1254,39 +1261,39 @@ fn register_markdown(ctx: &mut InferenceContext) {
             "to_math_inline",
             "to_md_table_row",
         ],
-        vec![Type::Markdown],
-        Type::Markdown,
+        vec![Type::markdown()],
+        Type::markdown(),
     );
 
     // to_callout: (markdown, string, string) -> markdown
     register_ternary(
         ctx,
         "to_callout",
-        Type::Markdown,
+        Type::markdown(),
         Type::String,
         Type::String,
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // to_md_fragment: markdown -> markdown, [a] -> markdown
-    register_unary(ctx, "to_md_fragment", Type::Markdown, Type::Markdown);
+    register_unary(ctx, "to_md_fragment", Type::markdown(), Type::markdown());
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_md_fragment", Type::array(Type::Var(a)), Type::Markdown);
+    register_unary(ctx, "to_md_fragment", Type::array(Type::Var(a)), Type::markdown());
 
     // to_md_table_align: [a] -> markdown
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_md_table_align", Type::array(Type::Var(a)), Type::Markdown);
+    register_unary(ctx, "to_md_table_align", Type::array(Type::Var(a)), Type::markdown());
 
     // (markdown, number) -> markdown
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::Markdown);
+    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::markdown());
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, Type::Markdown);
+    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, Type::markdown());
 
     // (markdown, string) -> markdown/string
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::Markdown);
-    register_binary(ctx, "attr", Type::Markdown, Type::String, Type::String);
+    register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::markdown());
+    register_binary(ctx, "attr", Type::markdown(), Type::String, Type::String);
     let a = ctx.fresh_var();
     register_binary(
         ctx,
@@ -1300,10 +1307,10 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_ternary(
         ctx,
         "set_attr",
-        Type::Markdown,
+        Type::markdown(),
         Type::String,
         Type::String,
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // (markdown, array) -> markdown
@@ -1311,36 +1318,43 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_binary(
         ctx,
         "set_children",
-        Type::Markdown,
+        Type::markdown(),
         Type::array(Type::Var(a)),
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // (string, string, string) -> markdown
-    register_ternary(ctx, "to_link", Type::String, Type::String, Type::String, Type::Markdown);
+    register_ternary(
+        ctx,
+        "to_link",
+        Type::String,
+        Type::String,
+        Type::String,
+        Type::markdown(),
+    );
     register_ternary(
         ctx,
         "to_image",
         Type::String,
         Type::String,
         Type::String,
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // Markdown attribute functions
-    register_unary(ctx, "get_title", Type::Markdown, Type::String);
-    register_unary(ctx, "get_url", Type::Markdown, Type::String);
+    register_unary(ctx, "get_title", Type::markdown(), Type::String);
+    register_unary(ctx, "get_url", Type::markdown(), Type::String);
     register_unary(
         ctx,
         "get_location",
-        Type::Markdown,
+        Type::markdown(),
         Type::dict(Type::String, Type::Number),
     );
 
     // Other markdown functions
-    register_nullary(ctx, "to_hr", Type::Markdown);
-    register_unary(ctx, "to_md_name", Type::Markdown, Type::String);
-    register_unary(ctx, "to_md_text", Type::Markdown, Type::String);
+    register_nullary(ctx, "to_hr", Type::markdown());
+    register_unary(ctx, "to_md_name", Type::markdown(), Type::String);
+    register_unary(ctx, "to_md_text", Type::markdown(), Type::String);
 
     // to_md_table_cell: (a, number, number) -> markdown
     let a = ctx.fresh_var();
@@ -1350,18 +1364,24 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::Var(a),
         Type::Number,
         Type::Number,
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // (markdown, bool) -> markdown
-    register_binary(ctx, "set_check", Type::Markdown, Type::Bool, Type::Markdown);
+    register_binary(ctx, "set_check", Type::markdown(), Type::Bool, Type::markdown());
     // `none` leaves the node unchecked (a plain list item).
-    register_binary(ctx, "set_check", Type::Markdown, Type::None, Type::Markdown);
-    register_binary(ctx, "set_list_ordered", Type::Markdown, Type::Bool, Type::Markdown);
+    register_binary(ctx, "set_check", Type::markdown(), Type::None, Type::markdown());
+    register_binary(ctx, "set_list_ordered", Type::markdown(), Type::Bool, Type::markdown());
 
     // (markdown, string) -> markdown
-    register_binary(ctx, "set_code_block_lang", Type::Markdown, Type::String, Type::Markdown);
-    register_binary(ctx, "set_ref", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(
+        ctx,
+        "set_code_block_lang",
+        Type::markdown(),
+        Type::String,
+        Type::markdown(),
+    );
+    register_binary(ctx, "set_ref", Type::markdown(), Type::String, Type::markdown());
 
     // None propagation for markdown -> string functions
     register_none_propagation_unary(ctx, &["to_text", "to_html", "to_markdown_string"]);

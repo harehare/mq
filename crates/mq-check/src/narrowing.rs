@@ -126,7 +126,7 @@ pub(crate) fn analyze_type_predicate_call(
         }
         // All Markdown structural predicates narrow to Markdown
         "is_markdown" | "is_h" | "is_h1" | "is_h2" | "is_h3" | "is_h4" | "is_h5" | "is_h6" | "is_code" | "is_em"
-        | "is_list" | "is_table_cell" | "is_html" | "is_text" | "is_toml" | "is_yaml" => Type::Markdown,
+        | "is_list" | "is_table_cell" | "is_html" | "is_text" | "is_toml" | "is_yaml" => Type::markdown(),
         "is_bytes" => Type::Bytes,
         _ => return None,
     };
@@ -158,7 +158,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         "bool" => Some(Type::Bool),
         "none" => Some(Type::None),
         "symbol" => Some(Type::Symbol),
-        "markdown" => Some(Type::Markdown),
+        "markdown" => Some(Type::markdown()),
         "bytes" => Some(Type::Bytes),
         "array" => {
             let elem = ctx.fresh_var();
@@ -172,7 +172,7 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         // Node-kind pattern (`:h1`, `:code`, `:list`) narrows to Markdown.
         _ => mq_lang::Selector::from_selector_str(&format!(".{name}"))
             .filter(|selector| !selector.is_attribute_selector())
-            .map(|_| Type::Markdown),
+            .map(|_| Type::markdown()),
     }
 }
 
@@ -402,12 +402,12 @@ pub(crate) fn analyze_condition(
                 ConditionNarrowings {
                     then_narrowings: vec![NarrowingEntry {
                         def_id,
-                        narrowed_type: Type::Markdown,
+                        narrowed_type: Type::markdown(),
                         is_complement: false,
                     }],
                     else_narrowings: vec![NarrowingEntry {
                         def_id,
-                        narrowed_type: Type::Markdown,
+                        narrowed_type: Type::markdown(),
                         is_complement: true,
                     }],
                 }

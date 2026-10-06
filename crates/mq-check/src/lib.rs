@@ -29,6 +29,7 @@ pub mod constraint;
 pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
 pub mod infer;
+pub mod kind_set;
 pub mod narrowing;
 pub mod types;
 pub mod unify;

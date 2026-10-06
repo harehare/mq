@@ -81,6 +81,7 @@
 mod html_to_markdown;
 mod markdown;
 mod node;
+mod node_kind;
 pub use markdown::{Markdown, to_html};
 pub use node::{
     Blockquote, Break, Code, CodeInline, ColorTheme, Definition, Delete, Emphasis, Footnote, FootnoteRef, Fragment,
@@ -89,6 +90,7 @@ pub use node::{
     RenderOptions, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url,
     UrlSurroundStyle, Yaml, attr_value::AttrValue,
 };
+pub use node_kind::NodeKind;
 
 #[cfg(feature = "wikilink")]
 pub use node::WikiLink;
