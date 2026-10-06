@@ -398,6 +398,15 @@ mod tests {
         assert_eq!(hir.bracket_key_count(call), expected);
     }
 
+    #[rstest]
+    #[case::index_on_a_dict_literal_in_a_dict_value(r#"{"a": {"a": 1}["a"]}"#)]
+    #[case::unclosed_dict(r#"{"a": 1, "b": "#)]
+    #[case::stray_token_in_a_dict(r#"{"a": 1 ] "b": 2}"#)]
+    fn test_syntax_errors_inside_a_dict_do_not_panic(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+    }
+
     #[test]
     fn test_declare_global_resolves_host_defined_names() {
         let mut hir = Hir::default();

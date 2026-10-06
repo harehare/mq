@@ -899,7 +899,7 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
 }
 
 /// Types the `attr(node, "name")` calls whose node argument is a known node type, from the
-/// attribute table. Returns whether any was resolved; the others are kept for a later call.
+/// attribute table, and `get(record, "name")` calls from the field of the record. Returns whether any was resolved; the others are kept for a later call.
 pub(crate) fn resolve_attr_calls(ctx: &mut InferenceContext) -> bool {
     let calls = ctx.take_deferred_attr_calls();
     let mut resolved_any = false;
@@ -913,6 +913,15 @@ pub(crate) fn resolve_attr_calls(ctx: &mut InferenceContext) -> bool {
         }
         if node_ty.is_var() {
             ctx.add_deferred_attr_call(call);
+            continue;
+        }
+        if call.is_get {
+            // A field of a record has its own type; other containers are left to the signature.
+            if let Some(field_ty) = find_record_field(ctx, &node_ty, &call.attr_name) {
+                resolved_any = true;
+                let call_ty = ctx.get_or_create_symbol_type(call.symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            }
             continue;
         }
         let types::Type::Node(kinds) = node_ty else {

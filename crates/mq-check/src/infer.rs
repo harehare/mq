@@ -50,8 +50,8 @@ pub struct DeferredGeneratorYield {
     pub yields: Vec<SymbolId>,
 }
 
-/// A call `attr(node, "name")` whose result type depends on the attribute name and the kinds of
-/// `node`, which are known only after unification.
+/// A call `attr(node, "name")` or `get(record, "name")` whose result type depends on the literal
+/// name and on the type of the first argument, which is known only after unification.
 #[derive(Debug, Clone)]
 pub struct DeferredAttrCall {
     /// The call symbol
@@ -60,8 +60,10 @@ pub struct DeferredAttrCall {
     pub node_ty: Type,
     /// The pipe stage that feeds the node when it is piped, for a type not resolved yet
     pub node_source: Option<SymbolId>,
-    /// The attribute name, taken from the string literal argument
+    /// The attribute or field name, taken from the string literal argument
     pub attr_name: String,
+    /// Whether the call is `get` on a record rather than `attr` on a node
+    pub is_get: bool,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }

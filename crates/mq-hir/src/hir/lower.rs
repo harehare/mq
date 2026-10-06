@@ -1293,9 +1293,8 @@ impl Hir {
                     });
 
                     self.add_expr(value_node, source_id, scope_id, Some(key_symbol_id));
-                } else {
-                    unreachable!("Dict entry does not have expected structure of key ':' value");
                 }
+                // Anything else is a node the parser recovered from a syntax error inside the dict.
             }
         }
     }

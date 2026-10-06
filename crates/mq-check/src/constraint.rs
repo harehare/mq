@@ -1011,8 +1011,8 @@ pub(super) fn generate_symbol_constraints(
 
                     let range = get_symbol_range(hir, symbol_id);
 
-                    if func_name.as_str() == "attr" {
-                        record_attr_call(hir, symbol_id, &children, &explicit_arg_tys, ctx);
+                    if matches!(func_name.as_str(), "attr" | "get") {
+                        record_attr_call(hir, symbol_id, &children, &explicit_arg_tys, func_name == "get", ctx);
                     }
 
                     // Try user-defined function first (via HIR reference resolution)
@@ -1571,8 +1571,8 @@ pub(super) fn generate_symbol_constraints(
                         }
                     });
 
-                    // A branch that is just a parameter must not be pinned to the type of the
-                    // other branches: `if (c): x else: {..}` is `x | {..}`, and `x` stays free.
+                    // A branch that is just a parameter or variable must not be pinned to the type
+                    // of the other branches: `if (c): x else: {..}` is `x | {..}`, and `x` stays free.
                     let has_parameter_branch = resolved.len() >= 2
                         && std::iter::once(children[1])
                             .chain(
@@ -1580,7 +1580,7 @@ pub(super) fn generate_symbol_constraints(
                                     .iter()
                                     .filter_map(|&id| get_children(children_index, id).last().copied()),
                             )
-                            .any(|branch| is_parameter_ref(hir, branch))
+                            .any(|branch| is_unpinnable_branch(hir, branch))
                         && resolved.iter().any(|ty| ty != &resolved[0]);
 
                     if would_cause_infinite_type
@@ -2232,13 +2232,15 @@ fn collect_function_yields(hir: &Hir) -> rustc_hash::FxHashMap<SymbolId, Vec<Sym
     yields
 }
 
-/// Records a call `attr(node, "name")` of the builtin `attr` whose name is a string literal, so
-/// that its result type can be taken from the attribute table once the kinds of `node` are known.
+/// Records a call `attr(node, "name")` or `get(record, "name")` of the builtin whose name is a
+/// string literal, so that its result type can be taken from the attribute table (or the field
+/// of the record) once the type of the first argument is known.
 fn record_attr_call(
     hir: &Hir,
     symbol_id: SymbolId,
     children: &[SymbolId],
     explicit_arg_tys: &[Type],
+    is_get: bool,
     ctx: &mut InferenceContext,
 ) {
     let is_builtin = hir
@@ -2272,18 +2274,33 @@ fn record_attr_call(
         node_ty,
         node_source,
         attr_name,
+        is_get,
         range: get_symbol_range(hir, symbol_id),
     });
 }
 
-/// Whether `symbol_id` is a reference to a function parameter.
-fn is_parameter_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
+/// Whether a branch value must not be unified with the other branches: a reference to a
+/// parameter or variable, or a call of a builtin whose result is typed only after unification.
+/// (A call of a user function stays unified, which is how a recursive call gets its type.)
+fn is_unpinnable_branch(hir: &Hir, symbol_id: SymbolId) -> bool {
+    let is_builtin_call = hir
+        .symbol(symbol_id)
+        .is_some_and(|symbol| symbol.kind == SymbolKind::Call)
+        && hir
+            .resolve_reference_symbol(symbol_id)
+            .and_then(|def| hir.symbol(def))
+            .is_some_and(|def| hir.is_builtin_symbol(def));
+    is_binding_ref(hir, symbol_id) || is_builtin_call
+}
+
+/// Whether `symbol_id` is a reference to a function parameter or a `let`/`var` variable.
+fn is_binding_ref(hir: &Hir, symbol_id: SymbolId) -> bool {
     hir.symbol(symbol_id)
         .is_some_and(|symbol| symbol.kind == SymbolKind::Ref)
         && hir
             .resolve_reference_symbol(symbol_id)
             .and_then(|def| hir.symbol(def))
-            .is_some_and(|def| def.kind == SymbolKind::Parameter)
+            .is_some_and(|def| matches!(def.kind, SymbolKind::Parameter | SymbolKind::Variable))
 }
 
 /// The number of required parameters of a function, and whether it takes variadic arguments.

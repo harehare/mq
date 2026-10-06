@@ -166,9 +166,19 @@ pub fn unify(
         (Type::Record(fields, rest), Type::Dict(k, v)) | (Type::Dict(k, v), Type::Record(fields, rest)) => {
             // All record keys are strings → unify k with String
             unify(ctx, k, &Type::String, range, origin);
-            // All record field values must unify with the dict value type
-            for field_ty in fields.values() {
-                unify(ctx, field_ty, v, range, origin);
+            // Every field value must fit the dict value type. A value type that is still unknown
+            // becomes the join of the field types: a record with fields of different types is a
+            // dict of their union.
+            let resolved: Vec<Type> = fields.values().map(|f| ctx.resolve_type(f)).collect();
+            if let Type::Var(var) = ctx.resolve_type(v)
+                && resolved.iter().all(|f| !f.has_pending_var())
+                && !resolved.is_empty()
+            {
+                ctx.bind_type_var(var, Type::join(resolved));
+            } else {
+                for field_ty in fields.values() {
+                    unify(ctx, field_ty, v, range, origin);
+                }
             }
             // The rest of the row must also be compatible with the dict
             unify(ctx, rest, &Type::Dict(k.clone(), v.clone()), range, origin);

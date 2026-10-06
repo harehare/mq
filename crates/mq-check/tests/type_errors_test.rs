@@ -97,11 +97,11 @@ fn test_function_arity_mismatch_hint_names_function_and_counts() {
 
 #[test]
 fn test_function_type_arity_mismatch_hint_shows_param_counts() {
-    // Unifying two function *types* with different arities (e.g. two branches of an
-    // `if` returning lambdas with different signatures) hits the WrongArity path in
+    // Unifying two function *types* with different arities (e.g. comparing lambdas with
+    // different signatures) hits the WrongArity path in
     // unify.rs, which has no call-site function name available, unlike the
     // constraint.rs path exercised above.
-    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | if (true): f else: g;");
+    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | f == g");
 
     let has_hint = result.iter().any(|err| {
         matches!(

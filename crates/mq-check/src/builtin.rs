@@ -696,6 +696,15 @@ fn register_array(ctx: &mut InferenceContext) {
     // array: a -> [a]
     let a = ctx.fresh_var();
     register_unary(ctx, "array", Type::Var(a), Type::array(Type::Var(a)));
+    // array takes any number of values: array(1, 2, 3) is [1, 2, 3]. Mixed values give a union.
+    for count in 2..=5 {
+        let vars: Vec<crate::types::TypeVarId> = (0..count).map(|_| ctx.fresh_var()).collect();
+        let element = Type::union(vars.iter().map(|v| Type::Var(*v)).collect());
+        ctx.register_builtin(
+            "array",
+            Type::function(vars.iter().map(|v| Type::Var(*v)).collect(), Type::array(element)),
+        );
+    }
 
     // range: (number) -> [number], (number, number) -> [number], (number, number, number) -> [number]
     register_unary(ctx, "range", Type::Number, Type::array(Type::Number));
@@ -798,6 +807,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         "entries",
         Type::dict(Type::Var(k), Type::Var(v)),
         Type::array(Type::array(Type::Var(k))),
+    );
+
+    // get: (record, string) -> a. The field type is taken from the literal key once the record
+    // type is known (see `DeferredAttrCall`); until then, and for a computed key, it is open.
+    let (row, result) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "get",
+        Type::record(std::collections::BTreeMap::new(), Type::Var(row)),
+        Type::String,
+        Type::Var(result),
     );
 
     // get: ({k: v}, k) -> v
@@ -1012,6 +1032,19 @@ fn register_collection(ctx: &mut InferenceContext) {
     // first: ([a]) -> a
     let a = ctx.fresh_var();
     register_unary(ctx, "first", Type::array(Type::Var(a)), Type::Var(a));
+
+    // last: (generator<a>) -> a | none. Consumes the generator.
+    let a = ctx.fresh_var();
+    register_unary(
+        ctx,
+        "last",
+        generator_of(a),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
+
+    // compact: (generator<a>) -> generator<a>. Lazy.
+    let a = ctx.fresh_var();
+    register_unary(ctx, "compact", generator_of(a), generator_of(a));
 
     // first: (generator<a>) -> a | none. Consumes one value.
     let a = ctx.fresh_var();

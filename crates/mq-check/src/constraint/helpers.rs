@@ -250,6 +250,14 @@ pub(super) fn build_piped_call_args(
     }
 }
 
+/// Whether adding one more argument in front (the piped input) would make the call match an
+/// overload of the builtin `func_name`, as in `map(join(","))`, where `join` gets each element.
+fn completed_by_piped_input(ctx: &mut InferenceContext, func_name: &str, args: &[Type]) -> bool {
+    let piped = Type::Var(ctx.fresh_var());
+    let with_piped: Vec<Type> = std::iter::once(piped).chain(args.iter().cloned()).collect();
+    ctx.resolve_overload(func_name, &with_piped).is_some()
+}
+
 /// Resolves a builtin function call using overload resolution and returns the
 /// type assigned to `symbol_id`.
 ///
@@ -307,7 +315,9 @@ pub(super) fn resolve_builtin_call(
             ctx.set_symbol_type(symbol_id, result_ty.clone());
             result_ty
         }
-    } else if is_builtin && !defer_error {
+    } else if is_builtin && (!defer_error || !completed_by_piped_input(ctx, func_name, &resolved_arg_tys)) {
+        // A call that may still be given piped input is not reported, unless no piped input could
+        // make it match: then the arguments it has are the wrong types.
         ctx.report_no_matching_overload(func_name, &resolved_arg_tys, range);
         let ty_var = ctx.fresh_var();
         let result_ty = Type::Var(ty_var);
