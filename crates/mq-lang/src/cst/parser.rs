@@ -116,10 +116,23 @@ impl ErrorReporter {
     }
 }
 
+/// How a program ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ProgramKind {
+    /// Top level, ends at EOF.
+    Root,
+    /// Nested body, ends at `;` or `end`.
+    Block,
+    /// Body of a lambda that is a call argument. Also ends before the `,` or `)` of the call.
+    ArgBody,
+}
+
 pub struct Parser<'a> {
     tokens: &'a [Shared<Token>],
     pos: usize,
     errors: ErrorReporter,
+    /// Set by `parse_arg` for the `fn`/`->` token it is about to parse.
+    fn_in_arg: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -128,6 +141,7 @@ impl<'a> Parser<'a> {
             tokens,
             pos: 0,
             errors: ErrorReporter::new(100),
+            fn_in_arg: false,
         }
     }
 
@@ -160,7 +174,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse(&mut self) -> (Vec<Shared<Node>>, ErrorReporter) {
-        let nodes = self.parse_program(true, false);
+        let nodes = self.parse_program(ProgramKind::Root, false);
         (nodes, std::mem::take(&mut self.errors))
     }
 
@@ -199,7 +213,8 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_program(&mut self, root: bool, in_loop: bool) -> Vec<Shared<Node>> {
+    fn parse_program(&mut self, kind: ProgramKind, in_loop: bool) -> Vec<Shared<Node>> {
+        let root = kind == ProgramKind::Root;
         // Nested programs usually contain only a few nodes. Reserving for the
         // entire remaining token stream at every nesting level wastes memory.
         let mut nodes: Vec<Shared<Node>> = if root {
@@ -318,6 +333,12 @@ impl<'a> Parser<'a> {
                         continue;
                     }
 
+                    break;
+                }
+                // The `,` or `)` of the enclosing call (or EOF, which the call reports) ends the body.
+                TokenKind::Comma | TokenKind::RParen | TokenKind::Eof if kind == ProgramKind::ArgBody => {
+                    // Leave the trivia for the enclosing program, which owns this token.
+                    self.pos -= leading_trivia.len();
                     break;
                 }
                 // Statements need no separator (as in the AST parser): parse the next one.
@@ -868,6 +889,7 @@ impl<'a> Parser<'a> {
             | TokenKind::Colon
             | TokenKind::Try
             | TokenKind::LBrace => {
+                self.fn_in_arg = matches!(token.kind, TokenKind::Fn | TokenKind::Arrow);
                 let expr = self.parse_expr(leading_trivia, false, false)?;
                 self.parse_implicit_pipeline(expr)
             }
@@ -929,7 +951,7 @@ impl<'a> Parser<'a> {
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
 
-        let program = self.parse_program(false, false);
+        let program = self.parse_program(ProgramKind::Block, false);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Def {
@@ -948,9 +970,14 @@ impl<'a> Parser<'a> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
 
+        let kind = if std::mem::take(&mut self.fn_in_arg) {
+            ProgramKind::ArgBody
+        } else {
+            ProgramKind::Block
+        };
         let params = self.parse_params()?;
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(false, in_loop);
+        let program = self.parse_program(kind, in_loop);
 
         let node = Node {
             kind: NodeKind::Fn {
@@ -970,7 +997,7 @@ impl<'a> Parser<'a> {
     fn parse_block(&mut self, leading_trivia: TriviaList, in_loop: bool) -> Result<Shared<Node>, ParseError> {
         let token = self.advance_or_eof()?;
         let trailing_trivia = self.parse_trailing_trivia();
-        let program = self.parse_program(false, in_loop);
+        let program = self.parse_program(ProgramKind::Block, in_loop);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Block {
@@ -1265,7 +1292,7 @@ impl<'a> Parser<'a> {
 
         // Parse program block (contains let, def, or module statements).
         // parse_program reports errors directly into self.errors, so no merging is needed here.
-        let program = self.parse_program(false, false);
+        let program = self.parse_program(ProgramKind::Block, false);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Module {
@@ -1643,7 +1670,7 @@ impl<'a> Parser<'a> {
         args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(false, true);
+        let program = self.parse_program(ProgramKind::Block, true);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Foreach {
@@ -1686,7 +1713,7 @@ impl<'a> Parser<'a> {
         args.push(self.next_node(|kind| matches!(kind, TokenKind::RParen), NodeKind::Token)?);
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(false, true);
+        let program = self.parse_program(ProgramKind::Block, true);
 
         Ok((token, trailing_trivia, args, colon_or_do, program.into()))
     }
@@ -1696,7 +1723,7 @@ impl<'a> Parser<'a> {
         let trailing_trivia = self.parse_trailing_trivia();
 
         let colon_or_do = self.parse_colon_or_do_token_if_present()?;
-        let program = self.parse_program(false, true);
+        let program = self.parse_program(ProgramKind::Block, true);
 
         Ok(Shared::new(Node {
             kind: NodeKind::Loop {
@@ -10876,6 +10903,78 @@ Shared::new(Node {
         let expressions: Vec<_> = nodes.iter().filter(|n| !matches!(n.kind, NodeKind::Eof)).collect();
         assert_eq!(expressions.len(), 1, "expected one expression for {code:?}");
         (shape(expressions[0]), errors.has_errors())
+    }
+
+    /// For each argument of the top-level call, the statement count of its body if it is a lambda,
+    /// and whether parsing reported errors.
+    fn lambda_arg_body_lens(code: &str) -> (Vec<Option<usize>>, bool) {
+        let (nodes, errors) = crate::parse_recovery(code);
+        let expressions: Vec<_> = nodes.iter().filter(|n| !matches!(n.kind, NodeKind::Eof)).collect();
+        let [call] = expressions.as_slice() else {
+            panic!("expected one expression for {code:?}");
+        };
+        let NodeKind::Call { args } = &call.kind else {
+            panic!("expected a call for {code:?}");
+        };
+        let lens = args
+            .iter()
+            .filter(|arg| !matches!(arg.kind, NodeKind::Token))
+            .map(|arg| match &arg.kind {
+                NodeKind::Fn { program, .. } => Some(
+                    program
+                        .iter()
+                        .filter(|node| !matches!(node.kind, NodeKind::Token | NodeKind::End))
+                        .count(),
+                ),
+                _ => None,
+            })
+            .collect();
+        (lens, errors.has_errors())
+    }
+
+    #[rstest]
+    #[case::only_arg("f(fn(x): x + 1)", vec![Some(1)])]
+    #[case::arrow("f(->(x): x + 1)", vec![Some(1)])]
+    #[case::last_arg("f(a, fn(x): x + 1)", vec![None, Some(1)])]
+    #[case::ends_at_comma("f(fn(x): x, 1)", vec![Some(1), None])]
+    #[case::lambda_between_args("f(a, fn(x): x, b)", vec![None, Some(1), None])]
+    #[case::two_lambdas("f(fn(x): x + 1, fn(x): x * 2)", vec![Some(1), Some(1)])]
+    #[case::pipe_stays_in_body("f(fn(x): x | g(.h))", vec![Some(2)])]
+    #[case::pipe_before_comma("f(fn(x): x | g(.h), 1)", vec![Some(2), None])]
+    #[case::call_with_commas_in_body("f(fn(x): g(x, 1, 2), 3)", vec![Some(1), None])]
+    #[case::array_in_body("f(fn(x): [x, 1], 2)", vec![Some(1), None])]
+    #[case::paren_in_body("f(fn(x): (x + 1) * 2, 3)", vec![Some(1), None])]
+    #[case::if_else_in_body("f(fn(x): if (x): 1 else: 2, 3)", vec![Some(1), None])]
+    #[case::do_end_in_body("f(fn(x): do 1 | 2 end, 3)", vec![Some(1), None])]
+    #[case::foreach_in_body("f(fn(x): foreach (i, x): i end, 3)", vec![Some(1), None])]
+    #[case::match_in_body("f(fn(x): match (x): | 1: 2 | _: 3 end, 4)", vec![Some(1), None])]
+    #[case::nested_call_lambda_then_comma("f(fn(x): g(x, fn(y): y + 1), 2)", vec![Some(1), None])]
+    #[case::multiline_body("f(fn(x):\n  let y = x + 1\n  | y * 2\n, 3)", vec![Some(2), None])]
+    #[case::lambda_in_param_default("f(fn(x = g(fn(y): y)): x, 1)", vec![Some(1), None])]
+    #[case::semicolon_form("f(fn(x): x + 1;)", vec![Some(1)])]
+    #[case::semicolon_form_then_arg("f(fn(x): x; , 1)", vec![Some(1), None])]
+    fn test_lambda_in_call_args_may_omit_terminator(#[case] code: &str, #[case] expected: Vec<Option<usize>>) {
+        assert_eq!(lambda_arg_body_lens(code), (expected, false));
+    }
+
+    #[rstest]
+    #[case::empty_body("f(fn(x): )")]
+    #[case::empty_body_then_comma("f(fn(x):, 1)")]
+    #[case::dangling_operator("f(fn(x): x +)")]
+    #[case::unclosed_call("f(fn(x): x + 1")]
+    #[case::stray_close_paren("f(fn(x): x + 1))")]
+    #[case::lambda_body_tail("f(fn(x): fn(y): x + y)")]
+    fn test_lambda_in_call_args_reports_malformed_input(#[case] code: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        assert!(errors.has_errors(), "{code:?} should report an error");
+    }
+
+    #[rstest]
+    #[case::let_value("let g = fn(x): x + 1)")]
+    #[case::array_element("[fn(x): x, 1]")]
+    fn test_lambda_terminator_is_still_required_outside_call_args(#[case] code: &str) {
+        let (_, errors) = crate::parse_recovery(code);
+        assert!(errors.has_errors(), "{code:?} should report an error");
     }
 
     #[rstest]

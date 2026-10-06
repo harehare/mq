@@ -8,8 +8,8 @@ Prerequisites: `-A`, since the total is a sum across every node.
 
 ```bash
 $ mq -A 'nodes
-| map(fn(n): to_text(n) | split(" ") | len;)
-| fold(0, fn(acc, x): acc + x;)' post.md
+| map(fn(n): to_text(n) | split(" ") | len)
+| fold(0, fn(acc, x): acc + x)' post.md
 ```
 
 ## Input

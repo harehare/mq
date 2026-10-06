@@ -2073,3 +2073,39 @@ end
 def test_fold_while(arr, expected):
   assert_eq(fold_while(arr, 0, fn(acc, x): [acc + x < 5, acc + x];), expected)
 end
+
+def test_lambda_arg_without_terminator():
+  assert_eq(map([1, 2, 3], fn(x): x + 1), [2, 3, 4])
+  | assert_eq(filter([1, 2, 3, 4], fn(x): x % 2 == 0), [2, 4])
+  | assert_eq(fold([1, 2, 3], 0, fn(acc, x): acc + x), 6)
+  | assert_eq(map([1, 2], ->(x): x * 10), [10, 20])
+end
+
+def test_lambda_arg_without_terminator_ends_at_comma():
+  let apply = fn(f, n): f(n);
+  | let add = fn(f, g, n): f(n) + g(n);
+  | assert_eq(apply(fn(x): x + 1, 1), 2)
+  | assert_eq(add(fn(x): x + 1, fn(x): x * 2, 3), 10)
+end
+
+def test_lambda_arg_without_terminator_keeps_pipes_in_body():
+  assert_eq(map(["a b", "c d e"], fn(s): split(s, " ") | len()), [2, 3])
+  | assert_eq(map([1, 2], fn(x): let y = x * 2 | y + 1), [3, 5])
+end
+
+def test_lambda_arg_without_terminator_with_nested_syntax():
+  assert_eq(map([[1, 2], [3, 4]], fn(x): map(x, fn(y): y + 1)), [[2, 3], [4, 5]])
+  | assert_eq(map([1, 2], fn(x): [x, x * 2]), [[1, 2], [2, 4]])
+  | assert_eq(map([1, 2], fn(x): {"v": x, "w": 0}), [{"v": 1, "w": 0}, {"v": 2, "w": 0}])
+  | assert_eq(map([1, 2], fn(x): if (x > 1): "big" else: "small"), ["small", "big"])
+  | assert_eq(map([1, 2], fn(x): (x + 1) * 2), [4, 6])
+  | assert_eq(map([1, 2], fn(x): do let y = x + 1 | y * 2 end), [4, 6])
+  | assert_eq(map(["a,b"], fn(s): split(s, ",")), [["a", "b"]])
+end
+
+def test_lambda_arg_with_terminator_still_works():
+  assert_eq(map([1, 2, 3], fn(x): x + 1;), [2, 3, 4])
+  | assert_eq(map([1, 2], fn(x): do x + 1 end;), [2, 3])
+  | let f = fn(x): x + 1;
+  | assert_eq(f(1), 2)
+end

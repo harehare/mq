@@ -124,6 +124,16 @@ fn(parameters): program;
 fn(parameters): program end
 ```
 
+When the function is a call argument, the terminator can be omitted. The body then ends at the `,` or `)` that closes the argument:
+
+```
+f(fn(parameters): program)
+
+f(fn(parameters): program, other_arg)
+```
+
+The body includes any `|` pipeline steps. Parentheses, brackets, `if`/`else`, `do ... end`, `foreach` and `match` inside the body are consumed as usual, so only a `,` or `)` outside of them ends the body. Anywhere else (a `let` value, an array element, a dict value, a parenthesized group) the `;` or `end` is required.
+
 The `->` syntax is a shorthand alias for `fn`:
 
 ```
@@ -136,16 +146,25 @@ The `->` syntax is a shorthand alias for `fn`:
 
 ```mq
 # Basic anonymous function
+nodes | map(fn(x): add(x, "1"))
+
+# Pipelines stay inside the body
+nodes | map(fn(x): to_text(x) | upcase())
+
+# With several arguments
+[1, 2, 3] | fold(0, fn(acc, x): acc + x)
+
+# Explicit terminator is still accepted
 nodes | map(fn(x): add(x, "1");)
 
 # Using end terminator
 nodes | map(fn(x): add(x, "1") end)
 
 # Using arrow syntax
-nodes | map(->(x): add(x, "1");)
+nodes | map(->(x): add(x, "1"))
 
 # As a callback
-nodes | .[] | sort_by(fn(x): to_text(x);)
+nodes | .[] | sort_by(fn(x): to_text(x))
 
 # Assigned to a variable
 let multiply = fn(x, factor=2): x * factor;
@@ -173,7 +192,7 @@ multiply(10, 3)
 # Multiplies by 3
 
 # Using in callbacks
-[1, 2] | map(fn(x, prefix="Item: "): prefix + to_text(x);)
+[1, 2] | map(fn(x, prefix="Item: "): prefix + to_text(x))
 ```
 
 ### Variadic Parameters

@@ -2449,6 +2449,21 @@ process();"#,
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)",
         "map(\n  fn(x):\n    process(x);\n  ,\n  fn(y):\n    process(y);\n)\n"
     )]
+    #[case::fn_arg_without_terminator("map(xs, fn(x): x + 1)", "map(xs, fn(x): x + 1)")]
+    #[case::fn_arg_without_terminator_before_comma("map(fn(x): x + 1, 1, \"test\")", "map(fn(x): x + 1, 1, \"test\")")]
+    #[case::fn_arg_without_terminator_with_pipe(
+        "filter(xs, fn(x): x | select(.h), 1)",
+        "filter(xs, fn(x): x | select(.h), 1)"
+    )]
+    #[case::nested_fn_arg_without_terminator("outer(map(xs, fn(x): inner(x)))", "outer(map(xs, fn(x): inner(x)))")]
+    #[case::fn_arg_without_terminator_multi_line(
+        "map(\n  fn(arg):\n    process(arg)\n)",
+        "map(\n  fn(arg):\n    process(arg)\n)\n"
+    )]
+    #[case::fn_arg_without_terminator_after_pipe(
+        "let t = 1\n| fold(xs, 0, fn(acc, x):\n  let y = x + 1\n  | acc + y\n  )",
+        "let t = 1\n| fold(xs, 0, fn(acc, x):\n    let y = x + 1\n    | acc + y\n  )\n"
+    )]
     #[case::group_simple("(1)", "(1)")]
     #[case::group_with_expr("(1 + 2)", "(1 + 2)")]
     #[case::group_with_nested_group("((1 + 2) * 3)", "((1 + 2) * 3)")]
