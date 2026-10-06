@@ -311,6 +311,14 @@ fn report(findings: &Findings) -> String {
         findings.panics.len()
     )
     .unwrap();
+    let mut by_function: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+    for (_, detail) in &findings.false_negatives {
+        let function = detail.split('"').nth(1).unwrap_or("?").to_string();
+        *by_function.entry(function).or_default() += 1;
+    }
+    let mut counts: Vec<_> = by_function.into_iter().collect();
+    counts.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    writeln!(out, "false negatives by function: {counts:?}").unwrap();
     for (title, items) in [
         ("PANIC", &findings.panics),
         ("FALSE POSITIVE", &findings.false_positives),

@@ -109,6 +109,11 @@ bench-check:
 test-conformance:
     cargo test --release -p mq-check --test runtime_conformance_test -- --ignored
 
+# Fuzz the checker against the runtime: FUZZ_COUNT programs (default 5000), FUZZ_NOISE percent of
+# sub-expressions with a wrong type (0 = all programs well typed), FUZZ_SEED.
+fuzz-check:
+    cargo test --release -p mq-check --test differential_fuzz_test -- --ignored --nocapture
+
 # Print the median time of each mq-check phase per input.
 bench-check-phases:
     cargo run --release -p mq-check --example phase_profile

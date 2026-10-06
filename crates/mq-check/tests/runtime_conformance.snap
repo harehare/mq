@@ -1,2 +1,2 @@
-builtin:2338 char: inferred ['a], observed string
-TOTAL: sources=31 bindings_observed=1422 mismatching=1 seen_as_none_only=45
+builtin:2340 char: inferred ['a], observed string
+TOTAL: sources=31 bindings_observed=1422 mismatching=1 seen_as_none_only=42

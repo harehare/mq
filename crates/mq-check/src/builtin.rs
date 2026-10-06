@@ -923,13 +923,10 @@ fn register_dict(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
 
-    // get: (a, b) -> c (generic fallback for dynamically typed access)
-    let (a, b, c) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
-    register_binary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c));
-
-    // get: (a, b, c) -> d (chained access, e.g., get(dict, key1)[key2])
-    let (a, b, c, d) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
-    register_ternary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c), Type::Var(d));
+    // get: (string, number) -> string (a character), (none, a) -> none
+    register_binary(ctx, "get", Type::String, Type::Number, Type::String);
+    let key = ctx.fresh_var();
+    register_binary(ctx, "get", Type::None, Type::Var(key), Type::None);
 
     // pick: ({k: v}, [k]) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
