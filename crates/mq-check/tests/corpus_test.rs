@@ -11,9 +11,6 @@ use mq_check::{TypeChecker, types::Type};
 use mq_hir::{Hir, HirError};
 use url::Url;
 
-/// Names injected by `mq-test` at runtime, so they never resolve statically.
-const INJECTED_NAMES: &[&str] = &["TEST_FILE", "assert_snapshot"];
-
 const SOURCE_DIRS: &[&str] = &[
     "scripts",
     "crates/mq-lang",
@@ -64,8 +61,7 @@ fn contains_dynamic(ty: &Type) -> bool {
 struct FileReport {
     syntax: usize,
     type_errors: Vec<String>,
-    unresolved_injected: usize,
-    unresolved_other: Vec<String>,
+    unresolved: Vec<String>,
     dynamic_symbols: usize,
 }
 
@@ -74,6 +70,9 @@ fn check_file(path: &Path) -> FileReport {
     let mut hir = Hir::default();
     // builtin.mq defines the builtins, so it is checked on its own.
     hir.builtin.disabled = path.file_name().is_some_and(|n| n == "builtin.mq");
+    for name in mq_check::TEST_RUNNER_GLOBALS {
+        hir.declare_global(name);
+    }
     let (source_id, _) = hir.add_code(Url::from_file_path(path).ok(), &code);
 
     let mut report = FileReport::default();
@@ -81,11 +80,7 @@ fn check_file(path: &Path) -> FileReport {
         match &error {
             HirError::UnresolvedSymbol { symbol, .. } if symbol.source.source_id == Some(source_id) => {
                 let name = symbol.value.as_deref().unwrap_or_default();
-                if INJECTED_NAMES.contains(&name) {
-                    report.unresolved_injected += 1;
-                } else {
-                    report.unresolved_other.push(name.to_string());
-                }
+                report.unresolved.push(name.to_string());
             }
             HirError::ModuleNotFound { symbol, .. } | HirError::YieldOutsideFunction { symbol }
                 if symbol.source.source_id == Some(source_id) =>
@@ -115,20 +110,19 @@ fn check_file(path: &Path) -> FileReport {
 
 fn render(root: &Path) -> String {
     let mut out = String::new();
-    let (mut type_total, mut other_total, mut injected_total, mut dynamic_total) = (0, 0, 0, 0);
+    let (mut type_total, mut unresolved_total, mut dynamic_total) = (0, 0, 0);
     for path in corpus_files(root) {
         let report = check_file(&path);
         let rel = path.strip_prefix(root).unwrap().display();
-        let mut unresolved = report.unresolved_other.clone();
+        let mut unresolved = report.unresolved.clone();
         unresolved.sort();
         unresolved.dedup();
         writeln!(
             out,
-            "{rel}: syntax={} type={} unresolved_injected={} unresolved_other={} dynamic={}",
+            "{rel}: syntax={} type={} unresolved={} dynamic={}",
             report.syntax,
             report.type_errors.len(),
-            report.unresolved_injected,
-            report.unresolved_other.len(),
+            report.unresolved.len(),
             report.dynamic_symbols,
         )
         .unwrap();
@@ -139,13 +133,12 @@ fn render(root: &Path) -> String {
             writeln!(out, "  unresolved: {}", unresolved.join(", ")).unwrap();
         }
         type_total += report.type_errors.len();
-        other_total += report.unresolved_other.len();
-        injected_total += report.unresolved_injected;
+        unresolved_total += report.unresolved.len();
         dynamic_total += report.dynamic_symbols;
     }
     writeln!(
         out,
-        "TOTAL: type={type_total} unresolved_injected={injected_total} unresolved_other={other_total} dynamic={dynamic_total}"
+        "TOTAL: type={type_total} unresolved={unresolved_total} dynamic={dynamic_total}"
     )
     .unwrap();
     out

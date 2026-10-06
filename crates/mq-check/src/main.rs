@@ -181,6 +181,16 @@ fn run_machine_format(cli: &Cli) -> io::Result<()> {
     }
 }
 
+/// Creates the HIR to check against, knowing the names the test runner injects.
+fn new_hir(no_builtins: bool) -> Hir {
+    let mut hir = Hir::default();
+    hir.builtin.disabled = no_builtins;
+    for name in mq_check::TEST_RUNNER_GLOBALS {
+        hir.declare_global(name);
+    }
+    hir
+}
+
 /// Runs syntax and type checks on a single source, returning every diagnostic found.
 /// Type checking is skipped when syntax errors are present, matching the text report's behavior.
 fn collect_check_diagnostics(
@@ -189,12 +199,7 @@ fn collect_check_diagnostics(
     no_builtins: bool,
     type_checker_options: &TypeCheckerOptions,
 ) -> Vec<format::CheckDiagnostic> {
-    let mut hir = Hir::default();
-
-    if no_builtins {
-        hir.builtin.disabled = true;
-    }
-
+    let mut hir = new_hir(no_builtins);
     let (source_id, _) = hir.add_code(source_url, code);
 
     let mut diagnostics = format::syntax_diagnostics(&hir, source_id);
@@ -211,12 +216,7 @@ fn collect_check_diagnostics(
 
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
 fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
-    let mut hir = Hir::default();
-
-    if opts.no_builtins {
-        hir.builtin.disabled = true;
-    }
-
+    let mut hir = new_hir(opts.no_builtins);
     let (source_id, _) = hir.add_code(source_url, code);
 
     if let Some(lbl) = opts.label {

@@ -39,6 +39,10 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 use types::TypeScheme;
 
+/// Names `mq-test` defines at runtime, which no source declares. Pass them to
+/// [`Hir::declare_global`] when checking test files.
+pub const TEST_RUNNER_GLOBALS: &[&str] = &["TEST_FILE", "assert_snapshot"];
+
 /// Result type for type checking operations
 pub type Result<T> = std::result::Result<T, TypeError>;
 

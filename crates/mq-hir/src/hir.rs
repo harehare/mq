@@ -101,6 +101,25 @@ impl Hir {
         self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes)
     }
 
+    /// Declares a value the host defines at runtime (like `Engine::define_string_value` or
+    /// `register_fn`), so references to `name` resolve. Does nothing when builtins are disabled.
+    pub fn declare_global(&mut self, name: &str) {
+        self.add_builtin();
+        if self.builtin.disabled {
+            return;
+        }
+        self.add_symbol(Symbol {
+            value: Some(name.into()),
+            kind: SymbolKind::Variable,
+            source: SourceInfo::new(Some(self.builtin.source_id), None),
+            scope: self.builtin.scope_id,
+            doc: Vec::new(),
+            parent: None,
+            insertion_order: 0,
+        });
+        self.resolve();
+    }
+
     pub fn add_builtin(&mut self) {
         if self.builtin.loaded || self.builtin.disabled {
             return;
@@ -323,6 +342,29 @@ mod tests {
     use super::*;
     use itertools::Itertools;
     use rstest::rstest;
+
+    #[test]
+    fn test_declare_global_resolves_host_defined_names() {
+        let mut hir = Hir::default();
+        hir.declare_global("TEST_FILE");
+        hir.add_code(None, "TEST_FILE | to_string()");
+        assert!(hir.errors().is_empty());
+
+        let mut hir = Hir::default();
+        hir.add_code(None, "TEST_FILE");
+        assert_eq!(hir.errors().len(), 1);
+        hir.declare_global("TEST_FILE");
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_declare_global_is_ignored_when_builtins_are_disabled() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.declare_global("TEST_FILE");
+        hir.add_code(None, "TEST_FILE");
+        assert_eq!(hir.errors().len(), 1);
+    }
 
     #[rstest]
     #[case::def("# test

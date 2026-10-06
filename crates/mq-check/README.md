@@ -79,6 +79,16 @@ x + 1
 // Error: no matching overload for +(number | string, number)
 ```
 
+Records returned by `try` and `catch` with the same keys are merged field by field, and a union of arrays is checked as an array of the union of its elements.
+
+```mq
+// try/catch records → {data: number | none, error: none | {message: string}}
+let r = try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"message": e["message"]}};
+
+// A parameter that defaults to None accepts other types: (a | none) -> ...
+def f(x, index = None): if (is_none(index)): [1] else: index;
+```
+
 ### Example:
 
 ```mq
@@ -120,6 +130,10 @@ Enforces that all elements in an array literal share the same type.
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
 ```
+
+### Test files
+
+`mq-check` treats `TEST_FILE` and `assert_snapshot`, which `mq-test` defines at runtime, as defined names. Library users can declare them with `Hir::declare_global` (see `mq_check::TEST_RUNNER_GLOBALS`).
 
 ### CI Integration
 
