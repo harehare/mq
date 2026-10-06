@@ -643,11 +643,16 @@ pub(super) fn records_have_conflicting_fields(a: &Type, b: &Type, ctx: &Inferenc
                 .iter()
                 .any(|(name, ty_a)| fields_b.get(name).is_some_and(|ty_b| conflict(ty_a, ty_b, ctx))),
             (Type::Array(elem_a), Type::Array(elem_b)) => conflict(elem_a, elem_b, ctx),
+            (Type::Array(elem), Type::Tuple(items)) | (Type::Tuple(items), Type::Array(elem)) => {
+                items.iter().any(|item| conflict(item, elem, ctx))
+            }
+            (Type::Tuple(items_a), Type::Tuple(items_b)) => {
+                items_a.len() != items_b.len() || items_a.iter().zip(items_b).any(|(x, y)| conflict(x, y, ctx))
+            }
             (Type::Var(_), _) | (_, Type::Var(_)) | (Type::Dynamic, _) | (_, Type::Dynamic) => false,
             // Unions and other compound types are left to unification.
             (Type::Union(_), _) | (_, Type::Union(_)) => false,
-            (Type::Tuple(_) | Type::Dict(..) | Type::Function(..), _)
-            | (_, Type::Tuple(_) | Type::Dict(..) | Type::Function(..)) => false,
+            (Type::Dict(..) | Type::Function(..), _) | (_, Type::Dict(..) | Type::Function(..)) => false,
             _ => std::mem::discriminant(&a) != std::mem::discriminant(&b),
         }
     }

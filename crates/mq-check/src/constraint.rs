@@ -1314,11 +1314,20 @@ pub(super) fn generate_symbol_constraints(
                 let concrete_tys: Vec<&Type> = resolved_tys.iter().filter(|ty| !ty.is_var()).collect();
 
                 // Check if concrete types are all the same (homogeneous)
+                // Records conflict through any pair, not only neighbours (`{id: none}`, `{name}`,
+                // `{id: number}`), so compare every pair of a short run of them.
+                let all_pairs =
+                    concrete_tys.len() <= 64 && concrete_tys.iter().all(|ty| matches!(ty, Type::Record(..)));
                 let is_heterogeneous = concrete_tys.len() >= 2
-                    && concrete_tys.windows(2).any(|w| {
+                    && (concrete_tys.windows(2).any(|w| {
                         std::mem::discriminant(w[0]) != std::mem::discriminant(w[1])
-                            || records_have_conflicting_fields(w[0], w[1], ctx)
-                    });
+                            || (!all_pairs && records_have_conflicting_fields(w[0], w[1], ctx))
+                    }) || (all_pairs
+                        && concrete_tys.iter().enumerate().any(|(i, a)| {
+                            concrete_tys[i + 1..]
+                                .iter()
+                                .any(|b| records_have_conflicting_fields(a, b, ctx))
+                        })));
 
                 // Use Tuple only when there are multiple elements with mixed resolved/unresolved
                 // types, or when the elements are heterogeneous. A single-element array [x] where

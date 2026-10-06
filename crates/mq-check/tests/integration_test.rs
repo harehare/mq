@@ -2266,3 +2266,13 @@ fn test_array_of_differently_typed_elements_is_an_array_of_their_union(#[case] c
     let errors = check_types_with_builtins(code);
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[rstest]
+#[case::conflict_between_non_neighbours(
+    r#"let l = [{"id": None, "name": "a"}, {"name": "b"}, {"id": 1, "name": "c"}] | len(l)"#
+)]
+#[case::array_field_and_tuple_field(r#"let l = [{"path": ["a", "b"]}, {"path": ["a", "c", 0]}] | len(l)"#)]
+fn test_array_literal_of_records_that_differ_only_in_some_pairs(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
