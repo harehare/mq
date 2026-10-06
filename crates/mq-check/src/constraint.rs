@@ -1340,6 +1340,13 @@ pub(super) fn generate_symbol_constraints(
                     let tuple_ty = Type::tuple(elem_tys);
                     ctx.set_symbol_type(symbol_id, tuple_ty);
                 } else {
+                    // Elements that are themselves mixed arrays (tuples) differ in shape, such as
+                    // `[["k", s], [s, 1]]`; unifying them would force one shape on all of them.
+                    if resolved_tys.iter().any(|ty| matches!(ty, Type::Tuple(_))) {
+                        ctx.set_symbol_type(symbol_id, Type::array(Type::join(resolved_tys)));
+                        return;
+                    }
+
                     // Homogeneous or unresolved — unify all element types
                     let elem_ty = elem_tys[0].clone();
                     let range = get_symbol_range(hir, symbol_id);

@@ -114,10 +114,20 @@ pub fn unify(
             }
         }
 
-        // Tuple ↔ Array: unify each tuple element with the array element type
+        // Tuple ↔ Array: each tuple element must fit the array element type. An array element
+        // type that is still unknown becomes the join of the tuple elements, since a tuple of
+        // different types is an array of a union.
         (Type::Tuple(elems), Type::Array(elem)) | (Type::Array(elem), Type::Tuple(elems)) => {
-            for e in elems {
-                unify(ctx, e, elem, range, origin);
+            let resolved: Vec<Type> = elems.iter().map(|e| ctx.resolve_type(e)).collect();
+            if let Type::Var(var) = ctx.resolve_type(elem)
+                && resolved.iter().all(|e| !e.has_pending_var())
+                && !occurs_check(var, &Type::Tuple(resolved.clone()))
+            {
+                ctx.bind_type_var(var, Type::join(resolved));
+            } else {
+                for e in elems {
+                    unify(ctx, e, elem, range, origin);
+                }
             }
         }
 

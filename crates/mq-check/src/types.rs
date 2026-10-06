@@ -173,8 +173,24 @@ impl Type {
         self.merge_records(other, keep_pending)
     }
 
+    /// The type of a value that may be any of `types`: their union, where records with the same
+    /// keys are merged field by field (`{id: number}` and `{id: none}` give `{id: number | none}`).
+    pub fn join(types: impl IntoIterator<Item = Type>) -> Type {
+        let mut joined: Vec<Type> = Vec::new();
+        for ty in types {
+            let merged = joined
+                .iter()
+                .position(|existing| existing.merge_records(&ty, true).is_some());
+            match merged {
+                Some(i) => joined[i] = joined[i].merge_records(&ty, true).unwrap_or_else(|| ty.clone()),
+                None => joined.push(ty),
+            }
+        }
+        Type::union(joined)
+    }
+
     /// Whether the type contains a type variable other than the row tail of a record.
-    fn has_pending_var(&self) -> bool {
+    pub(crate) fn has_pending_var(&self) -> bool {
         match self {
             Type::Var(_) => true,
             Type::Array(elem) => elem.has_pending_var(),

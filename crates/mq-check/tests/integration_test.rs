@@ -2255,3 +2255,14 @@ fn test_omitted_default_arguments_are_not_an_arity_error(#[case] code: &str) {
 fn test_arity_is_still_checked_with_defaults(#[case] code: &str) {
     assert!(!check_types(code).is_empty());
 }
+
+#[rstest]
+#[case::records_with_differing_field_types(r#"let l = [{"id": 1}, {"id": None}, {"id": 3}] | len(l)"#)]
+#[case::records_passed_to_a_generic_function(r#"let l = [{"id": 1}, {"id": None}] | first(l)"#)]
+#[case::pairs_of_different_shapes_with_an_unknown_element(
+    r#"def f(s): dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]]);"#
+)]
+fn test_array_of_differently_typed_elements_is_an_array_of_their_union(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}

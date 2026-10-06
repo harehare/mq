@@ -1,8 +1,7 @@
 crates/mq-lang/benches/mq_benches.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/builtin.mq: syntax=0 type=0 unresolved=535 dynamic=16
   unresolved: _json_parse, _regex_replace_matches, _sort_by_impl, abs, and, ceil, compact, del, dict, downcase, ends_with, entries, error, explode, flatten, floor, get, gsub, halt, has, http, implode, index, is_nan, is_regex_match, join, keys, len, log10, max, min, next, not, open_file, open_http, or, pow, print, range, read_bytes, read_file, read_line, regex_escape, regex_match, repeat, replace, reverse, round, scan, set, set_children, shift_left, shift_right, slice, sort, split, sqrt, starts_with, stderr, sub, to_array, to_date, to_markdown, to_md_name, to_number, to_string, to_text, trim, truncate, type, upcase
-crates/mq-lang/builtin_tests.mq: syntax=0 type=13 unresolved=0 dynamic=0
-  typechecker::type_mismatch
+crates/mq-lang/builtin_tests.mq: syntax=0 type=12 unresolved=0 dynamic=0
   typechecker::type_mismatch
   typechecker::type_mismatch
   typechecker::type_mismatch
@@ -42,10 +41,7 @@ crates/mq-lang/modules/toon_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/xml.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/xml_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 crates/mq-lang/modules/yaml.mq: syntax=0 type=0 unresolved=0 dynamic=0
-crates/mq-lang/modules/yaml_test.mq: syntax=0 type=3 unresolved=0 dynamic=0
-  typechecker::type_mismatch
-  typechecker::type_mismatch
-  typechecker::type_mismatch
+crates/mq-lang/modules/yaml_test.mq: syntax=0 type=0 unresolved=0 dynamic=0
 scripts/bump_version.mq: syntax=0 type=0 unresolved=0 dynamic=0
 scripts/sitemap.mq: syntax=0 type=0 unresolved=0 dynamic=0
-TOTAL: type=16 unresolved=535 dynamic=16
+TOTAL: type=12 unresolved=535 dynamic=16
