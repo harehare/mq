@@ -220,6 +220,10 @@ Exits with a non-zero status if any error-severity diagnostic was found, regardl
 just test-all
 ```
 
+### Runtime conformance
+
+`just test-conformance` steps through the `.mq` test suite and checks that the value of every `let` binding fits the type the checker inferred for it (`var` bindings, whose type changes as they are assigned, and bindings seen as `none`, which may just not have run yet, are left out). A mismatch is a sign of an unsound inference. The result is pinned in `crates/mq-check/tests/runtime_conformance.snap`; regenerate it with `UPDATE_CORPUS=1`.
+
 ### Building
 
 ```bash

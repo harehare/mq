@@ -105,6 +105,10 @@ bench-mq:
 bench-check:
     cargo bench -p mq-check --bench benchmark
 
+# Step through the .mq test suite and check that runtime values fit the inferred types of `let` bindings.
+test-conformance:
+    cargo test --release -p mq-check --test runtime_conformance_test -- --ignored
+
 # Print the median time of each mq-check phase per input.
 bench-check-phases:
     cargo run --release -p mq-check --example phase_profile

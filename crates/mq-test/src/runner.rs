@@ -111,6 +111,17 @@ pub struct TestRunner {
     list: bool,
     format: OutputFormat,
     module_directories: Vec<PathBuf>,
+    step_handler: Option<std::sync::Arc<dyn mq_lang::DebuggerHandler>>,
+}
+
+/// Lets one handler be installed on the engine of every test file.
+#[derive(Debug)]
+struct SharedStepHandler(std::sync::Arc<dyn mq_lang::DebuggerHandler>);
+
+impl mq_lang::DebuggerHandler for SharedStepHandler {
+    fn on_step(&self, context: &mq_lang::DebugContext) -> mq_lang::DebuggerAction {
+        self.0.on_step(context)
+    }
 }
 
 impl TestRunner {
@@ -130,7 +141,17 @@ impl TestRunner {
             list: false,
             format: OutputFormat::default(),
             module_directories: Vec::new(),
+            step_handler: None,
         }
+    }
+
+    /// Calls `handler` before every statement the tests execute, including those in the modules
+    /// they use. Ignored when coverage is on, which needs the same hook.
+    // Used by library consumers (the type checker's conformance test), not by the binary.
+    #[allow(dead_code)]
+    pub fn with_step_handler(mut self, handler: std::sync::Arc<dyn mq_lang::DebuggerHandler>) -> Self {
+        self.step_handler = Some(handler);
+        self
     }
 
     /// Enables line-coverage tracking of `include`d/imported modules.
@@ -305,8 +326,13 @@ impl TestRunner {
                 );
             }
 
-            if self.coverage {
-                engine.set_debugger_handler(Box::new(CoverageHandler(coverage_data.clone())));
+            if self.coverage || self.step_handler.is_some() {
+                match &self.step_handler {
+                    Some(handler) if !self.coverage => {
+                        engine.set_debugger_handler(Box::new(SharedStepHandler(std::sync::Arc::clone(handler))));
+                    }
+                    _ => engine.set_debugger_handler(Box::new(CoverageHandler(coverage_data.clone()))),
+                }
                 let debugger = engine.debugger();
                 debugger.write().unwrap().activate();
                 debugger

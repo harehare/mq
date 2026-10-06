@@ -39,6 +39,8 @@ thiserror = {workspace = true}
 url = {workspace = true, optional = true}
 
 [dev-dependencies]
+mq-lang = {workspace = true, features = ["cst", "file-io", "debugger"]}
+mq-test = {workspace = true}
 rstest = {workspace = true}
 divan = {workspace = true}
 url = {workspace = true}
