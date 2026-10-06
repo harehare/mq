@@ -126,10 +126,10 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     // Pass 2: Set up piped inputs for root-level symbols.
     //
     // Root-level symbols form an implicit pipe chain. The first symbol in the chain
-    // receives Dynamic as its piped input — the implicit stdin document whose type
-    // is intentionally unknown at compile time.
+    // receives the input document, which is `dynamic` unless the caller declared its type.
     if !cats.root_symbols.is_empty() {
-        ctx.set_piped_input(cats.root_symbols[0], Type::Dynamic);
+        let input_type = ctx.input_type().clone();
+        ctx.set_piped_input(cats.root_symbols[0], input_type);
     }
     for i in 1..cats.root_symbols.len() {
         let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);

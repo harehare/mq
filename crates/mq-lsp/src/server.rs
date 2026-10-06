@@ -495,7 +495,7 @@ impl Backend {
 
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read().unwrap();
-            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
+            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
             let type_errors = checker.check(&hir_guard);
 
             // Build a set of text ranges from the current source's symbols
@@ -2505,6 +2505,23 @@ mod tests {
         assert!(config.type_checker_options.strict_array);
         assert!(config.enable_lint);
         assert!(!config.lint_config.is_rule_enabled(mq_lint::RuleId::NamingConvention));
+    }
+
+    #[tokio::test]
+    async fn test_lsp_config_keeps_the_declared_input_type() {
+        let input_type = mq_check::type_expr::parse_type("h1 | h2").unwrap();
+        let config = LspConfig::new(
+            vec![],
+            true,
+            mq_check::TypeCheckerOptions {
+                input_type: Some(input_type.clone()),
+                ..Default::default()
+            },
+            false,
+            mq_lint::LintConfig::default(),
+        );
+        assert_eq!(config.type_checker_options.input_type, Some(input_type));
+        assert_eq!(LspConfig::default().type_checker_options.input_type, None);
     }
 
     #[tokio::test]

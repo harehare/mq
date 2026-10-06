@@ -32,6 +32,7 @@ pub mod infer;
 pub mod kind_set;
 pub mod narrowing;
 pub(crate) mod node_attr;
+pub mod type_expr;
 pub mod types;
 pub mod unify;
 
@@ -260,13 +261,16 @@ pub(crate) fn walk_ancestors(
 }
 
 /// Options for configuring the type checker behavior
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TypeCheckerOptions {
     /// When true, arrays must contain elements of a single type.
     /// Heterogeneous arrays like `[1, "hello"]` will produce a type error.
     pub strict_array: bool,
     /// When true, exhaustiveness checking for pattern match expressions is disabled.
     pub no_exhaustive_patterns: bool,
+    /// The type of the input document `.` (see [`type_expr::parse_type`]). When `None` the input
+    /// is `dynamic`.
+    pub input_type: Option<types::Type>,
 }
 
 /// Wall-clock time of each phase of [`TypeChecker::check_profiled`], in execution order.
@@ -357,6 +361,9 @@ impl TypeChecker {
     fn run(&mut self, hir: &Hir, laps: &mut Laps) -> Vec<TypeError> {
         // Create inference context with options
         let mut ctx = infer::InferenceContext::with_options(self.options.strict_array);
+        if let Some(input_type) = &self.options.input_type {
+            ctx.set_input_type(input_type.clone());
+        }
 
         builtin::register_all(&mut ctx);
         laps.lap("register_builtins");

@@ -717,6 +717,7 @@ function buildLspExecutable(
 ): lc.Executable {
   const enableTypeCheck = config.get<boolean>("typeCheck.enableTypeCheck");
   const strictArray = config.get<boolean>("typeCheck.strictArray");
+  const inputType = (config.get<string>("typeCheck.inputType") ?? "").trim();
   const enableLint = config.get<boolean>("lint.enableLint");
   const disabledLintRules = config.get<string[]>("lint.disabledRules") ?? [];
   const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -741,6 +742,7 @@ function buildLspExecutable(
         enableTypeCheck ? "--enable-type-checking" : "",
         enableTypeCheck && strictArray ? "--strict-array" : "",
       ].filter((v) => v !== ""),
+      ...(enableTypeCheck && inputType !== "" ? ["--input-type", inputType] : []),
       ...lintArgs,
     ],
     options: {},

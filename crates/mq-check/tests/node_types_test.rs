@@ -162,3 +162,30 @@ fn test_attribute_of_a_constructed_node_is_checked() {
         "{errors:?}"
     );
 }
+
+fn errors_with_input(code: &str, input_type: &str) -> Vec<mq_check::TypeError> {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    TypeChecker::with_options(mq_check::TypeCheckerOptions {
+        input_type: Some(mq_check::type_expr::parse_type(input_type).unwrap()),
+        ..Default::default()
+    })
+    .check(&hir)
+}
+
+#[rstest]
+#[case::heading_has_depth(".depth", "h1 | h2", true)]
+#[case::code_has_no_depth(".depth", "code", false)]
+#[case::code_has_lang(".lang", "code", true)]
+#[case::unknown_markdown_is_accepted(".depth", "markdown", true)]
+#[case::kind_selector_on_matching_input(".h1.depth", "h", true)]
+#[case::kind_selector_then_missing_attribute(".h1.lang", "h", false)]
+fn test_declared_input_type_checks_selectors(#[case] query: &str, #[case] input: &str, #[case] ok: bool) {
+    let errors = errors_with_input(query, input);
+    assert_eq!(errors.is_empty(), ok, "{errors:?}");
+}
+
+#[test]
+fn test_without_a_declared_input_type_the_input_is_unknown() {
+    assert!(errors(".depth").is_empty());
+}

@@ -141,6 +141,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
 ### `--strict-array`
@@ -155,6 +156,15 @@ echo '[1, "hello"]' | mq-check --strict-array
 ### Test files
 
 `mq-check` treats `TEST_FILE` and `assert_snapshot`, which `mq-test` defines at runtime, as defined names. Library users can declare them with `Hir::declare_global` (see `mq_check::TEST_RUNNER_GLOBALS`).
+
+### `--input-type`
+
+Declares the type of the input document, so that selectors, predicates and attributes are checked against it. The type is a union (`|`) of node kinds (`h`, `h1`..`h6`, `code`, `list`, ...), optionally with kinds removed (`markdown - code`); `number`, `string`, `bool`, `none`, `symbol`, `bytes`, `dynamic` and arrays (`[h1]`) are also accepted.
+
+```bash
+echo '.depth' | mq-check --input-type 'h1 | h2'   # ok
+echo '.depth' | mq-check --input-type code        # Error: undefined attribute `depth` on code
+```
 
 ### CI Integration
 

@@ -216,6 +216,8 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
+    /// The type of the input document `.`, piped into the first step of the program.
+    input_type: Type,
     /// The previous pipe stage whose result is each symbol's piped input.
     piped_sources: FxHashMap<SymbolId, SymbolId>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
@@ -259,6 +261,7 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
+            input_type: Type::Dynamic,
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
@@ -306,6 +309,16 @@ impl InferenceContext {
     }
 
     /// Sets the piped input type for a symbol
+    /// Sets the type of the input document `.`.
+    pub fn set_input_type(&mut self, ty: Type) {
+        self.input_type = ty;
+    }
+
+    /// The type of the input document `.`.
+    pub fn input_type(&self) -> &Type {
+        &self.input_type
+    }
+
     /// Records that `symbol` is piped the result of the pipe stage `source`.
     pub fn set_piped_source(&mut self, symbol: SymbolId, source: SymbolId) {
         self.piped_sources.insert(symbol, source);
