@@ -125,11 +125,8 @@ pub(crate) fn analyze_type_predicate_call(
             Type::dict(Type::Var(k), Type::Var(v))
         }
         // All Markdown structural predicates narrow to Markdown
-        "is_markdown" | "is_h" | "is_h1" | "is_h2" | "is_h3" | "is_h4" | "is_h5" | "is_h6" | "is_p" | "is_code"
-        | "is_code_inline" | "is_code_block" | "is_em" | "is_strong" | "is_link" | "is_image" | "is_list"
-        | "is_list_item" | "is_table" | "is_table_row" | "is_table_cell" | "is_blockquote" | "is_hr" | "is_html"
-        | "is_text" | "is_softbreak" | "is_hardbreak" | "is_task_list_item" | "is_footnote" | "is_footnote_ref"
-        | "is_strikethrough" | "is_math" | "is_math_inline" | "is_toml" | "is_yaml" => Type::Markdown,
+        "is_markdown" | "is_h" | "is_h1" | "is_h2" | "is_h3" | "is_h4" | "is_h5" | "is_h6" | "is_code" | "is_em"
+        | "is_list" | "is_table_cell" | "is_html" | "is_text" | "is_toml" | "is_yaml" => Type::Markdown,
         "is_bytes" => Type::Bytes,
         _ => return None,
     };

@@ -1179,31 +1179,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_h4",
         "is_h5",
         "is_h6",
-        "is_p",
         "is_code",
-        "is_code_inline",
-        "is_code_block",
         "is_em",
-        "is_strong",
-        "is_link",
-        "is_image",
         "is_list",
-        "is_list_item",
-        "is_table",
-        "is_table_row",
         "is_table_cell",
-        "is_blockquote",
-        "is_hr",
         "is_html",
         "is_text",
-        "is_softbreak",
-        "is_hardbreak",
-        "is_task_list_item",
-        "is_footnote",
-        "is_footnote_ref",
-        "is_strikethrough",
-        "is_math",
-        "is_math_inline",
         "is_toml",
         "is_yaml",
         "is_callout",
@@ -1224,31 +1205,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_h4",
         "is_h5",
         "is_h6",
-        "is_p",
         "is_code",
-        "is_code_inline",
-        "is_code_block",
         "is_em",
-        "is_strong",
-        "is_link",
-        "is_image",
         "is_list",
-        "is_list_item",
-        "is_table",
-        "is_table_row",
         "is_table_cell",
-        "is_blockquote",
-        "is_hr",
         "is_html",
         "is_text",
-        "is_softbreak",
-        "is_hardbreak",
-        "is_task_list_item",
-        "is_footnote",
-        "is_footnote_ref",
-        "is_strikethrough",
-        "is_math",
-        "is_math_inline",
         "is_toml",
         "is_yaml",
         "is_callout",
@@ -1288,8 +1250,6 @@ fn register_markdown(ctx: &mut InferenceContext) {
             "to_em",
             "to_blockquote",
             "to_delete",
-            "increase_header_level",
-            "decrease_header_level",
             "to_math",
             "to_math_inline",
             "to_md_table_row",
@@ -1427,9 +1387,6 @@ fn register_debug(ctx: &mut InferenceContext) {
     register_binary(ctx, "send", Type::Dynamic, Type::Dynamic, Type::Dynamic);
     register_unary(ctx, "close", Type::Dynamic, Type::Dynamic);
     register_unary(ctx, "status", Type::Dynamic, Type::Symbol);
-
-    let a = ctx.fresh_var();
-    register_unary(ctx, "assert", Type::Var(a), Type::Var(a));
 }
 
 /// File I/O functions
@@ -1652,6 +1609,28 @@ mod tests {
     fn test_refine_signature_ignores_unresolved_and_other_builtins() {
         assert_eq!(super::refine_signature("flatten", &[Type::Number]), None);
         assert_eq!(super::refine_signature("reverse", &[Type::array(Type::Number)]), None);
+    }
+
+    #[test]
+    fn test_registered_builtins_are_known_to_hir() {
+        let mut ctx = crate::infer::InferenceContext::new();
+        super::register_all(&mut ctx);
+        let hir = create_hir("");
+        let known: std::collections::HashSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| hir.is_builtin_symbol(symbol))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+        let mut missing: Vec<&str> = ctx
+            .builtin_names()
+            .filter(|name| name.chars().all(|c| c.is_alphanumeric() || c == '_'))
+            .filter(|name| !known.contains(name))
+            .collect();
+        missing.sort_unstable();
+        assert!(
+            missing.is_empty(),
+            "type signatures without a builtin definition: {missing:?}"
+        );
     }
 
     // Mathematical Functions

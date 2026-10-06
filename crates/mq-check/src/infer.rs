@@ -282,6 +282,12 @@ impl InferenceContext {
         self.builtins.get(name).map(|v| v.as_slice())
     }
 
+    /// Names of all registered builtins and operators.
+    #[cfg(test)]
+    pub(crate) fn builtin_names(&self) -> impl Iterator<Item = &str> {
+        self.builtins.keys().map(|name| name.as_str())
+    }
+
     /// Adds a type error to the error collection
     pub fn add_error(&mut self, error: TypeError) {
         self.errors.push(error);
