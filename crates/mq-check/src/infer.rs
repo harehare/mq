@@ -248,6 +248,8 @@ pub struct InferenceContext {
     function_yields: FxHashMap<SymbolId, Vec<SymbolId>>,
     deferred_generator_yields: Vec<DeferredGeneratorYield>,
     deferred_attr_calls: Vec<DeferredAttrCall>,
+    /// The user-defined predicates being analysed, to stop recursive ones.
+    predicate_stack: Vec<SymbolId>,
     /// The previous pipe stage whose result is each symbol's piped input.
     piped_sources: FxHashMap<SymbolId, SymbolId>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
@@ -295,6 +297,7 @@ impl InferenceContext {
             function_yields: FxHashMap::default(),
             deferred_generator_yields: Vec::new(),
             deferred_attr_calls: Vec::new(),
+            predicate_stack: Vec::new(),
             piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
@@ -342,6 +345,20 @@ impl InferenceContext {
     }
 
     /// Sets the piped input type for a symbol
+    /// Marks `function` as being analysed as a predicate; false when it already is (recursion).
+    pub fn begin_predicate(&mut self, function: SymbolId) -> bool {
+        if self.predicate_stack.contains(&function) {
+            return false;
+        }
+        self.predicate_stack.push(function);
+        true
+    }
+
+    /// Ends the analysis started by `begin_predicate`.
+    pub fn end_predicate(&mut self) {
+        self.predicate_stack.pop();
+    }
+
     /// Defers typing an `attr(node, "name")` call until the kinds of `node` are known.
     pub fn add_deferred_attr_call(&mut self, call: DeferredAttrCall) {
         self.deferred_attr_calls.push(call);

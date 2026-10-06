@@ -225,7 +225,7 @@ pub(crate) fn analyze_type_predicate_call(
         "is_bytes" => Type::Bytes,
         "is_coroutine" => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
         name if predicate_kinds(name).is_some() => Type::Node(predicate_kinds(name)?),
-        _ => return None,
+        _ => user_predicate_type(hir, call_id, children_index, ctx)?,
     };
 
     // The argument must be a single variable reference
@@ -243,6 +243,52 @@ pub(crate) fn analyze_type_predicate_call(
 
     let def_id = hir.resolve_reference_symbol(arg_id)?;
     Some((def_id, narrowed_type))
+}
+
+/// The type a call to a user-defined predicate tests for, when the function takes one parameter
+/// and its body is a single condition on it: `def is_title(n): to_md_name(n) == "h1" || ..` holds
+/// exactly when `n` is of the type the condition narrows `n` to. A condition joined with `&&`
+/// is not exact in its else-branch, so it does not count.
+fn user_predicate_type(
+    hir: &Hir,
+    call_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> Option<Type> {
+    let def_id = hir.resolve_reference_symbol(call_id)?;
+    let def = hir.symbol(def_id)?;
+    if hir.is_builtin_symbol(def) || !matches!(def.kind, SymbolKind::Function(_)) {
+        return None;
+    }
+
+    let children = get_non_keyword_children(hir, def_id, children_index);
+    let is_parameter = |id: &SymbolId| hir.symbol(*id).is_some_and(|s| s.kind == SymbolKind::Parameter);
+    let [param] = children.iter().copied().filter(is_parameter).collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    let [body] = children
+        .iter()
+        .copied()
+        .filter(|id| !is_parameter(id))
+        .collect::<Vec<_>>()[..]
+    else {
+        return None;
+    };
+    let body_symbol = hir.symbol(body)?;
+    if body_symbol.kind == SymbolKind::BinaryOp && matches!(body_symbol.value.as_deref(), Some("&&") | Some("and")) {
+        return None;
+    }
+
+    if !ctx.begin_predicate(def_id) {
+        return None;
+    }
+    let narrowings = analyze_condition(hir, body, children_index, ctx);
+    ctx.end_predicate();
+
+    match narrowings.then_narrowings.as_slice() {
+        [entry] if entry.def_id == param && !entry.is_complement => Some(entry.narrowed_type.clone()),
+        _ => None,
+    }
 }
 
 /// Maps the runtime type-name string (returned by the `type()` builtin) to its `Type`.

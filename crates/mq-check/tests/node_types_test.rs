@@ -238,3 +238,41 @@ fn test_attr_with_a_name_no_kind_has_is_an_error(#[case] code: &str, #[case] att
 fn test_attr_with_a_dynamic_name_is_left_open() {
     assert!(errors(r##"let n = first(to_markdown("# a")) | let name = "depth" | attr(n, name) + 1"##).is_empty());
 }
+
+#[rstest]
+#[case::single_kind(r#"def is_title(n): to_md_name(n) == "h1";"#, "is_title", "h1", "markdown - h1")]
+#[case::union_of_kinds(
+    r#"def is_title(n): to_md_name(n) == "h1" || to_md_name(n) == "h2";"#,
+    "is_title",
+    "h1 | h2",
+    "markdown - h1 - h2"
+)]
+#[case::through_a_builtin_predicate("def is_code_block(n): is_code(n);", "is_code_block", "code", "markdown - code")]
+#[case::through_another_user_predicate(
+    "def is_h1_only(n): is_h1(n);\ndef is_first_heading(n): is_h1_only(n);",
+    "is_first_heading",
+    "h1",
+    "markdown - h1"
+)]
+fn test_user_defined_predicates_narrow_like_builtin_ones(
+    #[case] definition: &str,
+    #[case] predicate: &str,
+    #[case] then_type: &str,
+    #[case] else_type: &str,
+) {
+    let code = format!("{definition}\ndef f():\n  {ANY_NODE}\n  | if ({predicate}(h)):\n    h\n  else:\n    h\nend");
+    let types = ref_types(&code, "h");
+    assert_eq!(types[1], then_type, "{types:?}");
+    assert_eq!(types[2], else_type, "{types:?}");
+}
+
+#[rstest]
+#[case::conjunction("def is_h1_text(n): is_h1(n) && is_text(n);", "is_h1_text(h)")]
+#[case::two_parameters("def is_h1_of(n, m): is_h1(n);", "is_h1_of(h, h)")]
+#[case::recursive("def loops(n): loops(n);", "loops(h)")]
+#[case::more_than_a_condition("def is_h1_loud(n): let x = 1 | is_h1(n);", "is_h1_loud(h)")]
+fn test_user_functions_that_are_not_exact_predicates_do_not_narrow(#[case] definition: &str, #[case] call: &str) {
+    let code = format!("{definition}\ndef f():\n  {ANY_NODE}\n  | if ({call}):\n    h\n  else:\n    h\nend");
+    let types = ref_types(&code, "h");
+    assert_eq!(types[types.len() - 2], "markdown", "{types:?}");
+}
