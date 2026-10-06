@@ -349,13 +349,24 @@ fn register_string(ctx: &mut InferenceContext) {
         "split_records",
         Type::String,
         Type::String,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
+        Type::array(closed_record(&[
+            ("text", Type::String),
+            ("index", Type::Number),
+            ("start_byte", Type::Number),
+            ("end_byte", Type::Number),
+            ("terminator", Type::union(vec![Type::String, Type::None])),
+        ])),
     );
     register_unary(
         ctx,
         "extract_urls",
-        Type::Dynamic,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
+        Type::String,
+        Type::array(closed_record(&[
+            ("url", Type::String),
+            ("start_byte", Type::Number),
+            ("end_byte", Type::Number),
+            ("kind", Type::String),
+        ])),
     );
 
     // word_wrap: (string, number) -> string
@@ -1537,6 +1548,14 @@ fn register_variable(ctx: &mut InferenceContext) {
 }
 
 /// Debug/control functions
+/// A record type with exactly the given fields.
+fn closed_record(fields: &[(&str, Type)]) -> Type {
+    Type::record(
+        fields.iter().map(|(name, ty)| (name.to_string(), ty.clone())).collect(),
+        Type::RowEmpty,
+    )
+}
+
 fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "is_debug_mode", Type::Bool);
     register_nullary(ctx, "breakpoint", Type::None);
