@@ -823,289 +823,7 @@ pub(super) fn generate_symbol_constraints(
         }
 
         // Function calls
-        SymbolKind::Call => {
-            // Get the function name from the Call symbol itself
-            if let Some(call_symbol) = hir.symbol(symbol_id) {
-                if let Some(func_name) = &call_symbol.value {
-                    // All children are explicit arguments (filter out Keyword symbols
-                    // which are syntax elements like `fn` in lambda expressions)
-                    let children = get_non_keyword_children(hir, symbol_id, children_index);
-                    let explicit_arg_tys: Vec<Type> = children
-                        .iter()
-                        .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
-                        .collect();
-
-                    let range = get_symbol_range(hir, symbol_id);
-
-                    if matches!(func_name.as_str(), "attr" | "get") {
-                        record_attr_call(hir, symbol_id, &children, &explicit_arg_tys, func_name == "get", ctx);
-                    }
-
-                    // Try user-defined function first (via HIR reference resolution)
-                    if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
-                        let def_symbol = hir.symbol(def_id);
-                        let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
-
-                        if is_user_defined {
-                            // When `def_id` is a Variable holding a lambda (e.g. `let f = fn(x): x - 1;`),
-                            // the Variable's type is still an unresolved type variable at this point in
-                            // constraint generation (before unification). Instead, look up the lambda
-                            // Function child directly and use its already-established Function type.
-                            // This ensures a proper `DeferredUserCall` is created with the lambda's
-                            // SymbolId as `def_id`, enabling call-site argument type checking for lambdas.
-                            let (effective_def_id, original_func_ty) =
-                                if def_symbol.map(|s| s.is_variable()).unwrap_or(false) {
-                                    if let Some(lambda_id) = find_lambda_function_child(hir, def_id, children_index) {
-                                        let lambda_ty = ctx.get_or_create_symbol_type(lambda_id);
-                                        (lambda_id, lambda_ty)
-                                    } else {
-                                        (def_id, ctx.get_or_create_symbol_type(def_id))
-                                    }
-                                } else {
-                                    (def_id, ctx.get_or_create_symbol_type(def_id))
-                                };
-                            // Instantiate fresh type variables so each call site is independent
-                            let func_ty = ctx.instantiate_fresh(&original_func_ty);
-                            let def_id = effective_def_id;
-
-                            if let Type::Function(param_tys, ret_ty) = &func_ty {
-                                // The HIR lists the key of `f(x)["key"]` as a further argument of `f`.
-                                let trailing_bracket_count =
-                                    hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
-                                let real_explicit =
-                                    &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
-
-                                // Explicit arguments fill the parameters from the first one, and
-                                // defaults cover the rest. Only when they do not even cover the
-                                // required parameters is the piped input the first argument.
-                                let (required, variadic) = user_function_arity(hir.symbol(def_id));
-                                let piped_ty = ctx.get_piped_input(symbol_id).cloned();
-                                let prepend_piped = real_explicit.len() < required && piped_ty.is_some();
-                                let arg_tys = match piped_ty.filter(|_| prepend_piped) {
-                                    Some(piped_ty) => {
-                                        std::iter::once(piped_ty).chain(real_explicit.iter().cloned()).collect()
-                                    }
-                                    None => real_explicit.to_vec(),
-                                };
-
-                                let arity_ok =
-                                    arg_tys.len() >= required && (variadic || arg_tys.len() <= param_tys.len());
-                                if !arity_ok {
-                                    if !might_receive_piped_input(hir, symbol_id) {
-                                        ctx.add_error(TypeError::WrongArity {
-                                            expected: param_tys.len(),
-                                            found: arg_tys.len(),
-                                            span: range.as_ref().map(range_to_span),
-                                            location: range,
-                                            context: Some(format!(
-                                                "`{}` expects {} argument(s), but {} were provided. Check the call site or the function's parameter list.",
-                                                func_name,
-                                                param_tys.len(),
-                                                arg_tys.len()
-                                            )),
-                                        });
-                                    }
-                                } else {
-                                    for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
-                                        ctx.add_constraint(Constraint::Equal(
-                                            arg_ty.clone(),
-                                            param_ty.clone(),
-                                            range,
-                                            ConstraintOrigin::General,
-                                        ));
-                                    }
-                                }
-
-                                let result_ty = chain_bracket_accesses(
-                                    hir,
-                                    ctx,
-                                    symbol_id,
-                                    &children,
-                                    trailing_bracket_count,
-                                    ret_ty.as_ref().clone(),
-                                    range,
-                                );
-                                ctx.set_symbol_type(symbol_id, result_ty);
-
-                                let real_children = &children[..children.len() - trailing_bracket_count];
-                                let arg_symbol_ids = if prepend_piped {
-                                    // piped input was prepended — include a placeholder
-                                    let mut ids = vec![symbol_id]; // placeholder for piped arg
-                                    ids.extend_from_slice(real_children);
-                                    ids
-                                } else {
-                                    real_children.to_vec()
-                                };
-                                ctx.add_deferred_user_call(DeferredUserCall {
-                                    call_symbol_id: symbol_id,
-                                    def_id,
-                                    fresh_param_tys: param_tys.clone(),
-                                    fresh_ret_ty: ret_ty.as_ref().clone(),
-                                    arg_tys,
-                                    arg_symbol_ids,
-                                    range,
-                                });
-                            } else if def_symbol.is_some_and(|s| s.is_function()) {
-                                // A function declared in an included module: module sources are not
-                                // type-checked, so the declaration has no function type. The call is
-                                // a real call, not a bracket access on a variable, so leave its
-                                // result unconstrained.
-                                let ty_var = ctx.fresh_var();
-                                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                            } else {
-                                // Check for potential Record field access via bracket notation
-                                // (e.g., v[:key]). Only trigger when the argument is a
-                                // Symbol/Selector (`:key` pattern), not a regular variable ref.
-                                let field_name = children.first().and_then(|&arg_id| {
-                                    let arg_symbol = hir.symbol(arg_id)?;
-                                    if matches!(
-                                        arg_symbol.kind,
-                                        SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
-                                    ) {
-                                        arg_symbol.value.as_ref().map(|v| v.to_string())
-                                    } else {
-                                        None
-                                    }
-                                });
-
-                                if let Some(name) = field_name {
-                                    // Defer field access resolution to post-unification
-                                    ctx.add_deferred_record_access(infer::DeferredRecordAccess {
-                                        call_symbol_id: symbol_id,
-                                        def_id,
-                                        field_name: name,
-                                        range: get_symbol_range(hir, symbol_id),
-                                    });
-                                    let ty_var = ctx.fresh_var();
-                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                } else {
-                                    // The definition exists but isn't a function type yet.
-                                    // If the definition is a function parameter (higher-order call),
-                                    // record the inner call so that `check_user_call_body_operators`
-                                    // can propagate the concrete element type to the lambda's body.
-                                    if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
-                                        let ret_ty = Type::Var(ctx.fresh_var());
-                                        let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
-                                        ctx.add_constraint(Constraint::Equal(
-                                            func_ty,
-                                            expected_func_ty,
-                                            range,
-                                            ConstraintOrigin::General,
-                                        ));
-                                        ctx.set_symbol_type(symbol_id, ret_ty);
-                                        if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
-                                            ctx.add_deferred_parameter_call(DeferredParameterCall {
-                                                outer_def_id,
-                                                param_sym_id: def_id,
-                                                arg_tys: explicit_arg_tys.clone(),
-                                            });
-                                        }
-                                    } else {
-                                        // Non-function variable with bracket access.
-                                        // Two args → range slice v[start:end] lowered as v(start, end).
-                                        // One arg  → element access v[i] lowered as v(i).
-                                        //
-                                        // Chained accesses are lowered the same way: `v[0][:key]` is
-                                        // `v(0, :key)`. A String/Symbol literal after the first argument
-                                        // can never be a slice bound, so it marks such a chain.
-                                        let is_chained_access = children.iter().skip(1).any(|&child_id| {
-                                            hir.symbol(child_id).is_some_and(|s| {
-                                                matches!(s.kind, SymbolKind::String | SymbolKind::Symbol)
-                                            })
-                                        });
-                                        if is_chained_access {
-                                            // The container's element type is not tracked through the
-                                            // chain, so leave the result unconstrained.
-                                            let ty_var = ctx.fresh_var();
-                                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                                        } else if children.len() == 2 {
-                                            // Range slice: delegate to the "slice" builtin.
-                                            // Use original_func_ty (not func_ty) so the container's
-                                            // type variable stays unified with its definition site.
-                                            let mut slice_arg_tys = vec![original_func_ty.clone()];
-                                            slice_arg_tys.extend(explicit_arg_tys.iter().cloned());
-                                            let defer = might_receive_piped_input(hir, symbol_id);
-                                            resolve_builtin_call(ctx, symbol_id, "slice", &slice_arg_tys, range, defer);
-                                        } else {
-                                            // Element access: defer as a tuple access so that
-                                            // Array/Tuple/Dict container types are handled correctly
-                                            // after unification.
-                                            let literal_index = children.first().and_then(|&arg_id| {
-                                                let arg_sym = hir.symbol(arg_id)?;
-                                                if matches!(arg_sym.kind, SymbolKind::Number) {
-                                                    arg_sym.value.as_ref()?.parse::<usize>().ok()
-                                                } else {
-                                                    None
-                                                }
-                                            });
-
-                                            // Only constrain the index to Number when it is a literal
-                                            // numeric index (e.g. v[0]). For variable indices
-                                            // (e.g. a String key used for Dict access), skip this
-                                            // constraint — the correct element type is resolved via
-                                            // resolve_deferred_tuple_accesses once the container's
-                                            // type is known.
-                                            if literal_index.is_some()
-                                                && let Some(index_ty) = explicit_arg_tys.first()
-                                            {
-                                                ctx.add_constraint(Constraint::Equal(
-                                                    index_ty.clone(),
-                                                    Type::Number,
-                                                    range,
-                                                    ConstraintOrigin::General,
-                                                ));
-                                            }
-
-                                            let ty_var = ctx.fresh_var();
-                                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-
-                                            ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
-                                                call_symbol_id: symbol_id,
-                                                def_id,
-                                                index: literal_index,
-                                                range: get_symbol_range(hir, symbol_id),
-                                            });
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            // Resolved to a builtin - handle via overload resolution. CST lowers
-                            // `next(x)["value"]` as `Call(next, [x, "value"])`, so trailing
-                            // String/Symbol children beyond the builtin's arity are bracket
-                            // accesses on its return value, not extra arguments (mirrors the
-                            // user-defined call handling above).
-                            resolve_builtin_call_with_brackets(
-                                hir,
-                                ctx,
-                                symbol_id,
-                                func_name,
-                                &explicit_arg_tys,
-                                &children,
-                                range,
-                            );
-                        }
-                    } else {
-                        // No HIR resolution - try builtin overload resolution
-                        resolve_builtin_call_with_brackets(
-                            hir,
-                            ctx,
-                            symbol_id,
-                            func_name,
-                            &explicit_arg_tys,
-                            &children,
-                            range,
-                        );
-                    }
-                } else {
-                    let ty_var = ctx.fresh_var();
-                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-                }
-            } else {
-                let ty_var = ctx.fresh_var();
-                ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
-            }
-        }
+        SymbolKind::Call => generate_call_constraints(hir, symbol_id, ctx, children_index),
 
         // Collections
         SymbolKind::Array => {
@@ -2092,6 +1810,281 @@ fn record_attr_call(
         is_get,
         range: get_symbol_range(hir, symbol_id),
     });
+}
+
+/// Constrain a call: a user function (with arity, defaults and piped input), or a builtin.
+fn generate_call_constraints(
+    hir: &Hir,
+    symbol_id: SymbolId,
+    ctx: &mut InferenceContext,
+    children_index: &ChildrenIndex,
+) {
+    // Get the function name from the Call symbol itself
+    if let Some(call_symbol) = hir.symbol(symbol_id) {
+        if let Some(func_name) = &call_symbol.value {
+            // All children are explicit arguments (filter out Keyword symbols
+            // which are syntax elements like `fn` in lambda expressions)
+            let children = get_non_keyword_children(hir, symbol_id, children_index);
+            let explicit_arg_tys: Vec<Type> = children
+                .iter()
+                .map(|&arg_id| ctx.get_or_create_symbol_type(arg_id))
+                .collect();
+
+            let range = get_symbol_range(hir, symbol_id);
+
+            if matches!(func_name.as_str(), "attr" | "get") {
+                record_attr_call(hir, symbol_id, &children, &explicit_arg_tys, func_name == "get", ctx);
+            }
+
+            // Try user-defined function first (via HIR reference resolution)
+            if let Some(def_id) = hir.resolve_reference_symbol(symbol_id) {
+                let def_symbol = hir.symbol(def_id);
+                let is_user_defined = def_symbol.map(|s| !hir.is_builtin_symbol(s)).unwrap_or(false);
+
+                if is_user_defined {
+                    // When `def_id` is a Variable holding a lambda (e.g. `let f = fn(x): x - 1;`),
+                    // the Variable's type is still an unresolved type variable at this point in
+                    // constraint generation (before unification). Instead, look up the lambda
+                    // Function child directly and use its already-established Function type.
+                    // This ensures a proper `DeferredUserCall` is created with the lambda's
+                    // SymbolId as `def_id`, enabling call-site argument type checking for lambdas.
+                    let (effective_def_id, original_func_ty) = if def_symbol.map(|s| s.is_variable()).unwrap_or(false) {
+                        if let Some(lambda_id) = find_lambda_function_child(hir, def_id, children_index) {
+                            let lambda_ty = ctx.get_or_create_symbol_type(lambda_id);
+                            (lambda_id, lambda_ty)
+                        } else {
+                            (def_id, ctx.get_or_create_symbol_type(def_id))
+                        }
+                    } else {
+                        (def_id, ctx.get_or_create_symbol_type(def_id))
+                    };
+                    // Instantiate fresh type variables so each call site is independent
+                    let func_ty = ctx.instantiate_fresh(&original_func_ty);
+                    let def_id = effective_def_id;
+
+                    if let Type::Function(param_tys, ret_ty) = &func_ty {
+                        // The HIR lists the key of `f(x)["key"]` as a further argument of `f`.
+                        let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
+                        let real_explicit = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
+
+                        // Explicit arguments fill the parameters from the first one, and
+                        // defaults cover the rest. Only when they do not even cover the
+                        // required parameters is the piped input the first argument.
+                        let (required, variadic) = user_function_arity(hir.symbol(def_id));
+                        let piped_ty = ctx.get_piped_input(symbol_id).cloned();
+                        let prepend_piped = real_explicit.len() < required && piped_ty.is_some();
+                        let arg_tys = match piped_ty.filter(|_| prepend_piped) {
+                            Some(piped_ty) => std::iter::once(piped_ty).chain(real_explicit.iter().cloned()).collect(),
+                            None => real_explicit.to_vec(),
+                        };
+
+                        let arity_ok = arg_tys.len() >= required && (variadic || arg_tys.len() <= param_tys.len());
+                        if !arity_ok {
+                            if !might_receive_piped_input(hir, symbol_id) {
+                                ctx.add_error(TypeError::WrongArity {
+                                    expected: param_tys.len(),
+                                    found: arg_tys.len(),
+                                    span: range.as_ref().map(range_to_span),
+                                    location: range,
+                                    context: Some(format!(
+                                        "`{}` expects {} argument(s), but {} were provided. Check the call site or the function's parameter list.",
+                                        func_name,
+                                        param_tys.len(),
+                                        arg_tys.len()
+                                    )),
+                                });
+                            }
+                        } else {
+                            for (arg_ty, param_ty) in arg_tys.iter().zip(param_tys.iter()) {
+                                ctx.add_constraint(Constraint::Equal(
+                                    arg_ty.clone(),
+                                    param_ty.clone(),
+                                    range,
+                                    ConstraintOrigin::General,
+                                ));
+                            }
+                        }
+
+                        let result_ty = chain_bracket_accesses(
+                            hir,
+                            ctx,
+                            symbol_id,
+                            &children,
+                            trailing_bracket_count,
+                            ret_ty.as_ref().clone(),
+                            range,
+                        );
+                        ctx.set_symbol_type(symbol_id, result_ty);
+
+                        let real_children = &children[..children.len() - trailing_bracket_count];
+                        let arg_symbol_ids = if prepend_piped {
+                            // piped input was prepended — include a placeholder
+                            let mut ids = vec![symbol_id]; // placeholder for piped arg
+                            ids.extend_from_slice(real_children);
+                            ids
+                        } else {
+                            real_children.to_vec()
+                        };
+                        ctx.add_deferred_user_call(DeferredUserCall {
+                            call_symbol_id: symbol_id,
+                            def_id,
+                            fresh_param_tys: param_tys.clone(),
+                            fresh_ret_ty: ret_ty.as_ref().clone(),
+                            arg_tys,
+                            arg_symbol_ids,
+                            range,
+                        });
+                    } else if def_symbol.is_some_and(|s| s.is_function()) {
+                        // A function declared in an included module: module sources are not
+                        // type-checked, so the declaration has no function type. The call is
+                        // a real call, not a bracket access on a variable, so leave its
+                        // result unconstrained.
+                        let ty_var = ctx.fresh_var();
+                        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                    } else {
+                        // Check for potential Record field access via bracket notation
+                        // (e.g., v[:key]). Only trigger when the argument is a
+                        // Symbol/Selector (`:key` pattern), not a regular variable ref.
+                        let field_name = children.first().and_then(|&arg_id| {
+                            let arg_symbol = hir.symbol(arg_id)?;
+                            if matches!(
+                                arg_symbol.kind,
+                                SymbolKind::Symbol | SymbolKind::Selector(_) | SymbolKind::String
+                            ) {
+                                arg_symbol.value.as_ref().map(|v| v.to_string())
+                            } else {
+                                None
+                            }
+                        });
+
+                        if let Some(name) = field_name {
+                            // Defer field access resolution to post-unification
+                            ctx.add_deferred_record_access(infer::DeferredRecordAccess {
+                                call_symbol_id: symbol_id,
+                                def_id,
+                                field_name: name,
+                                range: get_symbol_range(hir, symbol_id),
+                            });
+                            let ty_var = ctx.fresh_var();
+                            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                        } else {
+                            // The definition exists but isn't a function type yet.
+                            // If the definition is a function parameter (higher-order call),
+                            // record the inner call so that `check_user_call_body_operators`
+                            // can propagate the concrete element type to the lambda's body.
+                            if def_symbol.map(|s| s.is_parameter()).unwrap_or(false) {
+                                let ret_ty = Type::Var(ctx.fresh_var());
+                                let expected_func_ty = Type::function(explicit_arg_tys.clone(), ret_ty.clone());
+                                ctx.add_constraint(Constraint::Equal(
+                                    func_ty,
+                                    expected_func_ty,
+                                    range,
+                                    ConstraintOrigin::General,
+                                ));
+                                ctx.set_symbol_type(symbol_id, ret_ty);
+                                if let Some(outer_def_id) = find_enclosing_function(hir, symbol_id) {
+                                    ctx.add_deferred_parameter_call(DeferredParameterCall {
+                                        outer_def_id,
+                                        param_sym_id: def_id,
+                                        arg_tys: explicit_arg_tys.clone(),
+                                    });
+                                }
+                            } else {
+                                // Non-function variable with bracket access.
+                                // Two args → range slice v[start:end] lowered as v(start, end).
+                                // One arg  → element access v[i] lowered as v(i).
+                                //
+                                // Chained accesses are lowered the same way: `v[0][:key]` is
+                                // `v(0, :key)`. A String/Symbol literal after the first argument
+                                // can never be a slice bound, so it marks such a chain.
+                                let is_chained_access = children.iter().skip(1).any(|&child_id| {
+                                    hir.symbol(child_id)
+                                        .is_some_and(|s| matches!(s.kind, SymbolKind::String | SymbolKind::Symbol))
+                                });
+                                if is_chained_access {
+                                    // The container's element type is not tracked through the
+                                    // chain, so leave the result unconstrained.
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+                                } else if children.len() == 2 {
+                                    // Range slice: delegate to the "slice" builtin.
+                                    // Use original_func_ty (not func_ty) so the container's
+                                    // type variable stays unified with its definition site.
+                                    let mut slice_arg_tys = vec![original_func_ty.clone()];
+                                    slice_arg_tys.extend(explicit_arg_tys.iter().cloned());
+                                    let defer = might_receive_piped_input(hir, symbol_id);
+                                    resolve_builtin_call(ctx, symbol_id, "slice", &slice_arg_tys, range, defer);
+                                } else {
+                                    // Element access: defer as a tuple access so that
+                                    // Array/Tuple/Dict container types are handled correctly
+                                    // after unification.
+                                    let literal_index = children.first().and_then(|&arg_id| {
+                                        let arg_sym = hir.symbol(arg_id)?;
+                                        if matches!(arg_sym.kind, SymbolKind::Number) {
+                                            arg_sym.value.as_ref()?.parse::<usize>().ok()
+                                        } else {
+                                            None
+                                        }
+                                    });
+
+                                    // Only constrain the index to Number when it is a literal
+                                    // numeric index (e.g. v[0]). For variable indices
+                                    // (e.g. a String key used for Dict access), skip this
+                                    // constraint — the correct element type is resolved via
+                                    // resolve_deferred_tuple_accesses once the container's
+                                    // type is known.
+                                    if literal_index.is_some()
+                                        && let Some(index_ty) = explicit_arg_tys.first()
+                                    {
+                                        ctx.add_constraint(Constraint::Equal(
+                                            index_ty.clone(),
+                                            Type::Number,
+                                            range,
+                                            ConstraintOrigin::General,
+                                        ));
+                                    }
+
+                                    let ty_var = ctx.fresh_var();
+                                    ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+
+                                    ctx.add_deferred_tuple_access(infer::DeferredTupleAccess {
+                                        call_symbol_id: symbol_id,
+                                        def_id,
+                                        index: literal_index,
+                                        range: get_symbol_range(hir, symbol_id),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Resolved to a builtin - handle via overload resolution. CST lowers
+                    // `next(x)["value"]` as `Call(next, [x, "value"])`, so trailing
+                    // String/Symbol children beyond the builtin's arity are bracket
+                    // accesses on its return value, not extra arguments (mirrors the
+                    // user-defined call handling above).
+                    resolve_builtin_call_with_brackets(
+                        hir,
+                        ctx,
+                        symbol_id,
+                        func_name,
+                        &explicit_arg_tys,
+                        &children,
+                        range,
+                    );
+                }
+            } else {
+                // No HIR resolution - try builtin overload resolution
+                resolve_builtin_call_with_brackets(hir, ctx, symbol_id, func_name, &explicit_arg_tys, &children, range);
+            }
+        } else {
+            let ty_var = ctx.fresh_var();
+            ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+        }
+    } else {
+        let ty_var = ctx.fresh_var();
+        ctx.set_symbol_type(symbol_id, Type::Var(ty_var));
+    }
 }
 
 /// Whether a branch value must not be unified with the other branches: a reference to a
