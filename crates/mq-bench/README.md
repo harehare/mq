@@ -49,6 +49,12 @@ mq-bench --format markdown
 mq-bench --baseline results.json
 ```
 
+## Progress
+
+When stderr is a terminal, a progress bar shows the overall bench count and the warmup/timed
+iterations of the running bench. It is drawn on stderr and hidden when redirected, so
+`--format json` and `--output` are unaffected.
+
 ## Writing benches
 
 ```
