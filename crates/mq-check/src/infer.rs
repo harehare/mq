@@ -104,6 +104,8 @@ pub struct DeferredRecordAccess {
     pub def_id: SymbolId,
     /// The field name being accessed
     pub field_name: String,
+    /// What the enclosing conditions say about the field
+    pub guard: crate::field_guard::FieldGuard,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }

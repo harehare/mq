@@ -2343,3 +2343,59 @@ fn test_an_unknown_branch_is_not_pinned_to_the_other_branch(#[case] code: &str) 
     let errors = check_types_with_builtins(code);
     assert!(errors.is_empty(), "{errors:?}");
 }
+
+#[rstest]
+#[case::unguarded_nullable_field(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | v["a"] + 1"#,
+    false,
+    "a field that may be none is not usable as a number"
+)]
+#[case::not_none_comparison(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] != None): v["a"] + 1 else: 0"#,
+    true,
+    "!= None rules out none in the branch"
+)]
+#[case::none_comparison_else(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] == None): 0 else: v["a"] + 1"#,
+    true,
+    "== None rules out none in the else branch"
+)]
+#[case::negated_is_none(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (!is_none(v["a"])): v["a"] + 1 else: 0"#,
+    true,
+    "!is_none rules out none in the branch"
+)]
+#[case::and_condition(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (true && v["a"] != None): v["a"] + 1 else: 0"#,
+    true,
+    "both sides of && hold in the branch"
+)]
+#[case::else_branch_is_not_guarded(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] != None): 0 else: v["a"] + 1"#,
+    false,
+    "the else branch of != None may still read none"
+)]
+#[case::union_of_records_unguarded(
+    r#"let v = if (true): {"a": 1} else: {"b": "s"}; | v["a"] + 1"#,
+    false,
+    "a record without the key reads as none"
+)]
+#[case::union_of_records_key_guard(
+    r#"let v = if (true): {"a": 1} else: {"b": "s"}; | if (contains(keys(v), "a")): v["a"] + 1 else: 0"#,
+    true,
+    "the key test selects the record that has it"
+)]
+#[case::key_guard_on_closed_record(
+    r#"let v = {"a": 1}; | if (contains(keys(v), "zz")): v["zz"] else: 0"#,
+    true,
+    "a key tested for is not reported as undefined"
+)]
+#[case::undefined_field_still_reported(
+    r#"let v = {"a": 1}; | v["zz"]"#,
+    false,
+    "an unguarded read of a missing key is reported"
+)]
+fn test_field_guards(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{description}: errors={result:?}");
+}

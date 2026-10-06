@@ -11,6 +11,7 @@
 use mq_hir::{Hir, SymbolId};
 use rustc_hash::FxHashMap;
 
+use crate::field_guard::FieldGuard;
 use crate::{
     TypeError,
     constraint::{Constraint, ConstraintOrigin},
@@ -51,6 +52,51 @@ fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
     }
 }
 
+/// The type of `field` read from a union of records, where each member contributes its field type.
+///
+/// A closed record without the field reads as `none`, as does `none` itself. `None` when a
+/// member is not known well enough (an open record without the field, or a type that is not a
+/// record), in which case the access stays unresolved.
+fn union_field_type(
+    ctx: &InferenceContext,
+    members: &[types::Type],
+    field: &str,
+    guard: FieldGuard,
+) -> Option<types::Type> {
+    let mut parts = Vec::with_capacity(members.len());
+    for member in members {
+        let member = ctx.resolve_type(member);
+        match &member {
+            // Where the key is known to exist, a member without it cannot be the value.
+            types::Type::None if !guard.present => parts.push(types::Type::None),
+            types::Type::Record(..) => match find_record_field(ctx, &member, field) {
+                Some(ty) => parts.push(ty),
+                None if record_row_is_closed(ctx, &member) => {
+                    if !guard.present {
+                        parts.push(types::Type::None);
+                    }
+                }
+                None => return None,
+            },
+            types::Type::None => {}
+            _ => return None,
+        }
+    }
+    Some(without_none_if(guard.non_none, types::Type::join(parts)))
+}
+
+/// `ty` without `none` when `non_none`, as read where a condition ruled out `none`.
+fn without_none_if(non_none: bool, ty: types::Type) -> types::Type {
+    if non_none {
+        match ty.subtract(&types::Type::None) {
+            types::Type::Never => ty,
+            narrowed => narrowed,
+        }
+    } else {
+        ty
+    }
+}
+
 /// Resolves deferred record field accesses after the first round of unification.
 ///
 /// For each deferred bracket access `v[:key]`, resolves the variable's type
@@ -71,10 +117,11 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 
         if let types::Type::Record(..) = &var_ty {
             if let Some(field_ty) = find_record_field(ctx, &var_ty, &access.field_name) {
+                let field_ty = without_none_if(access.guard.non_none, field_ty);
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
                 ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
-            } else if record_row_is_closed(ctx, &var_ty) {
+            } else if record_row_is_closed(ctx, &var_ty) && !access.guard.present {
                 ctx.add_error(TypeError::UndefinedField {
                     field: access.field_name.clone(),
                     record_ty: var_ty.display_renumbered(),
@@ -82,6 +129,12 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
                     location: access.range,
                 });
             }
+        } else if let types::Type::Union(members) = &var_ty
+            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard)
+        {
+            let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+            ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            resolved_any = true;
         }
     }
     resolved_any
@@ -118,6 +171,12 @@ pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) 
             }
         } else if let types::Type::Dict(..) = &return_ty {
             // Dict access: result is a fresh type variable (dynamic value type)
+            resolved_any = true;
+        } else if let types::Type::Union(members) = &return_ty
+            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default())
+        {
+            let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+            ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
             resolved_any = true;
         }
     }

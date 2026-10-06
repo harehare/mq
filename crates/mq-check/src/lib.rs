@@ -28,6 +28,7 @@ pub mod builtin;
 pub mod constraint;
 pub(crate) mod deferred;
 pub(crate) mod exhaustiveness;
+pub mod field_guard;
 pub mod infer;
 pub mod kind_set;
 pub mod narrowing;

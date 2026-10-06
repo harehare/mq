@@ -29,7 +29,7 @@ use crate::narrowing::{analyze_condition, selector_kinds};
 use crate::node_attr::{SelectorOutput, node_selector_output};
 use crate::types::Type;
 use crate::unify::range_to_span;
-use crate::{TypeError, infer};
+use crate::{TypeError, field_guard::field_guard, infer};
 use mq_hir::{Hir, SymbolId, SymbolKind};
 
 use smol_str::SmolStr;
@@ -1962,6 +1962,7 @@ fn generate_call_constraints(
                             ctx.add_deferred_record_access(infer::DeferredRecordAccess {
                                 call_symbol_id: symbol_id,
                                 def_id,
+                                guard: field_guard(hir, symbol_id, def_id, &name, children_index),
                                 field_name: name,
                                 range: get_symbol_range(hir, symbol_id),
                             });
