@@ -456,6 +456,75 @@ fn merge_array_union_operand(
     true
 }
 
+/// Resolves an operation whose single operand is a union of containers (arrays, dicts, records)
+/// by resolving it for each member and taking the union of the results.
+///
+/// `get(x, k)` with `x: [a] | {k: v}` is `a | v`. Each member's own signature is tied to that
+/// member, so element and value types flow into the result. The other operands are checked
+/// only where every member agrees on a concrete parameter type. Returns `false` when more than
+/// one operand is a union or a member is not a container, leaving the operation to be reported.
+fn distribute_over_container_members(
+    ctx: &mut InferenceContext,
+    d: &DeferredOverload,
+    resolved_operands: &[types::Type],
+) -> bool {
+    use types::Type;
+
+    let mut union_positions = resolved_operands.iter().enumerate().filter(|(_, ty)| ty.is_union());
+    let (Some((position, Type::Union(members))), None) = (union_positions.next(), union_positions.next()) else {
+        return false;
+    };
+    let is_container = |member: &Type| {
+        matches!(
+            member,
+            Type::Array(_) | Type::Tuple(_) | Type::Dict(..) | Type::Record(..)
+        )
+    };
+    if !members.iter().all(is_container) {
+        return false;
+    }
+
+    let mut rets = Vec::with_capacity(members.len());
+    let mut shared_params: Vec<Option<Type>> = vec![None; resolved_operands.len()];
+    let mut disagreeing = vec![false; resolved_operands.len()];
+    for member in members {
+        let mut args = resolved_operands.to_vec();
+        args[position] = member.clone();
+        let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(&d.op_name, &args) else {
+            return false;
+        };
+        if param_tys.len() != d.operand_tys.len() {
+            return false;
+        }
+        ctx.add_constraint(Constraint::Equal(
+            member.clone(),
+            param_tys[position].clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+        for (i, param_ty) in param_tys.iter().enumerate().filter(|(i, _)| *i != position) {
+            match &shared_params[i] {
+                None if param_ty.is_concrete() => shared_params[i] = Some(param_ty.clone()),
+                Some(shared) if shared == param_ty => {}
+                _ => disagreeing[i] = true,
+            }
+        }
+        rets.push(*ret_ty);
+    }
+    for (i, shared) in shared_params.into_iter().enumerate() {
+        if let Some(param_ty) = shared.filter(|_| !disagreeing[i]) {
+            ctx.add_constraint(Constraint::Equal(
+                d.operand_tys[i].clone(),
+                param_ty,
+                d.range,
+                ConstraintOrigin::General,
+            ));
+        }
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, Type::union(rets));
+    true
+}
+
 /// Resolves deferred try/catch branch-type merges, after other deferred passes
 /// (record/tuple access, overloads, ...) have settled the branch types.
 pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
@@ -627,7 +696,9 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         continue;
                     }
                     UnionCheckResult::InconsistentReturn => {
-                        if merge_array_union_operand(ctx, d, &resolved_operands) {
+                        if merge_array_union_operand(ctx, d, &resolved_operands)
+                            || distribute_over_container_members(ctx, d, &resolved_operands)
+                        {
                             unify::solve_constraints(ctx);
                             continue;
                         }

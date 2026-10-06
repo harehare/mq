@@ -89,6 +89,20 @@ let r = try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"mess
 def f(x, index = None): if (is_none(index)): [1] else: index;
 ```
 
+### Markdown Node Types
+
+A Markdown node has type `markdown`, or a narrower set of node kinds such as `h1 | h2`, `code` or `markdown - code`. `is_*` predicates, `:h1`-style patterns and selector conditions (`if (.h1): ...`) narrow a value to the kinds they test in the then-branch and remove them in the else-branch.
+
+```mq
+def f(node):
+  if (is_h1(node) || is_h2(node)):
+    node        // node: h1 | h2
+  elif (is_code(node)):
+    node        // node: code
+  else:
+    node;;
+```
+
 ### Example:
 
 ```mq
