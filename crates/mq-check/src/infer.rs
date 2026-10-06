@@ -93,9 +93,13 @@ pub struct DeferredSelectorAccess {
     pub piped_ty: Type,
     /// The field name being accessed
     pub field_name: String,
-    /// The attribute kind, if this is a `Selector::Attr` selector on a Markdown node.
-    /// Used after unification when the piped type resolves to `Type::markdown()`.
-    pub attr_kind: Option<mq_lang::AttrKind>,
+    /// The selector, used after unification when the piped type resolves to a Markdown node.
+    pub selector: mq_lang::Selector,
+    /// The type this selector yields on its own, not including the selectors chained after it.
+    pub result_ty: Type,
+    /// The pipe stage that feeds this selector, whose current type is used when `piped_ty` is
+    /// still unresolved (a deferred overload result replaces the stage's type without binding).
+    pub piped_source: Option<SymbolId>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -212,6 +216,8 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
+    /// The previous pipe stage whose result is each symbol's piped input.
+    piped_sources: FxHashMap<SymbolId, SymbolId>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
     /// keyed by `SymbolId` so that insert/replace is O(1).
     deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
@@ -253,6 +259,7 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
+            piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
@@ -299,6 +306,16 @@ impl InferenceContext {
     }
 
     /// Sets the piped input type for a symbol
+    /// Records that `symbol` is piped the result of the pipe stage `source`.
+    pub fn set_piped_source(&mut self, symbol: SymbolId, source: SymbolId) {
+        self.piped_sources.insert(symbol, source);
+    }
+
+    /// The pipe stage whose result is piped into `symbol`, if recorded.
+    pub fn get_piped_source(&self, symbol: SymbolId) -> Option<SymbolId> {
+        self.piped_sources.get(&symbol).copied()
+    }
+
     pub fn set_piped_input(&mut self, symbol: SymbolId, ty: Type) {
         self.piped_inputs.insert(symbol, ty);
     }

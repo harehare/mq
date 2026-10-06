@@ -398,6 +398,9 @@ fn error_title(error: &TypeError) -> String {
         TypeError::UndefinedField { field, record_ty, .. } => {
             format!("undefined field `{field}` in {record_ty}")
         }
+        TypeError::UndefinedAttribute { attr, node_ty, .. } => {
+            format!("undefined attribute `{attr}` on {node_ty}")
+        }
         TypeError::HeterogeneousArray { types, .. } => format!("heterogeneous array: [{types}]"),
         TypeError::TypeVarNotFound(name) => format!("type variable not found: {name}"),
         TypeError::Internal(msg) => format!("internal error: {msg}"),

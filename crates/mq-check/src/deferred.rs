@@ -13,8 +13,9 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     TypeError,
-    constraint::{Constraint, ConstraintOrigin, attr_kind_to_type},
+    constraint::{Constraint, ConstraintOrigin},
     infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
+    node_attr::{SelectorOutput, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
 };
@@ -123,41 +124,50 @@ pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) 
     resolved_any
 }
 
-/// Resolves deferred selector field accesses after unification.
+/// Resolves deferred selector field accesses after unification. Returns whether any was resolved;
+/// accesses whose piped input is still a type variable are kept for a later call.
 ///
 /// For each deferred selector access, resolves the piped input type (now concrete
 /// after unification) and either returns the attribute type (for Markdown piped input)
 /// or checks that the field exists in the record.
-pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
+pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) -> bool {
     let accesses = ctx.take_deferred_selector_accesses();
-    if accesses.is_empty() {
-        return;
-    }
+    let mut resolved_any = false;
 
-    for access in &accesses {
-        let resolved = ctx.resolve_type(&access.piped_ty);
+    for access in accesses {
+        let mut resolved = ctx.resolve_type(&access.piped_ty);
+        if resolved.is_var()
+            && let Some(source_ty) = access
+                .piped_source
+                .and_then(|source| ctx.get_symbol_type(source).cloned())
+        {
+            resolved = ctx.resolve_type(&source_ty);
+        }
+        if resolved.is_var() {
+            // The input is not known yet; try again after more types are resolved.
+            ctx.add_deferred_selector_access(access);
+            continue;
+        }
+        resolved_any = true;
 
-        if let types::Type::Node(_) = resolved {
+        if let types::Type::Node(kinds) = resolved {
             // Piped input resolved to a Markdown node (e.g. `let md = .h | md.depth`).
-            // Attr selectors return their concrete type; non-Attr selectors return Markdown.
-            if let Some(ref attr_kind) = access.attr_kind {
-                let attr_ty = attr_kind_to_type(attr_kind);
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                ctx.add_constraint(Constraint::Equal(sel_ty, attr_ty, None, ConstraintOrigin::General));
-            } else {
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                ctx.add_constraint(Constraint::Equal(
-                    sel_ty,
-                    types::Type::markdown(),
-                    None,
-                    ConstraintOrigin::General,
-                ));
+            match node_selector_output(&access.selector, kinds) {
+                SelectorOutput::Type(ty) => {
+                    let result_ty = access.result_ty.clone();
+                    ctx.add_constraint(Constraint::Equal(result_ty, ty, None, ConstraintOrigin::General));
+                }
+                SelectorOutput::MissingAttr(attr) => ctx.add_error(TypeError::UndefinedAttribute {
+                    attr,
+                    node_ty: resolved.display_renumbered(),
+                    span: access.range.as_ref().map(unify::range_to_span),
+                    location: access.range,
+                }),
             }
         } else if let types::Type::Record(fields, rest) = &resolved {
             if let Some(field_ty) = fields.get(&access.field_name) {
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
                 ctx.add_constraint(Constraint::Equal(
-                    sel_ty,
+                    access.result_ty.clone(),
                     field_ty.clone(),
                     None,
                     ConstraintOrigin::General,
@@ -172,6 +182,7 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
             }
         }
     }
+    resolved_any
 }
 
 /// Resolves deferred tuple index accesses after the first round of unification.

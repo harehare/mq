@@ -103,6 +103,13 @@ def f(node):
     node;;
 ```
 
+Attributes are typed by the kinds a value can have (`.depth` of a heading is `number`, `.lang` of a code block is `string | none`). An attribute that none of the kinds has is an error, and one that only some kinds have adds `none`. A value of unknown kind (`markdown`) gets the plain attribute type.
+
+```mq
+.code | .depth   // Error: attribute `depth` does not exist on code
+.code | .lang    // string | none
+```
+
 ### Example:
 
 ```mq

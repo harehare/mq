@@ -34,6 +34,7 @@ pub(super) fn generate_block_constraints(
     for i in 1..children.len() {
         let prev_ty = ctx.get_or_create_symbol_type(children[i - 1]);
         ctx.set_piped_input(children[i], prev_ty);
+        ctx.set_piped_source(children[i], children[i - 1]);
 
         // Re-process Call/Ref children that received piped input,
         // since they were already processed in Pass 3 before piped inputs were set
@@ -120,6 +121,7 @@ pub(super) fn generate_function_body_pipe_constraints(
     for i in 1..body_children.len() {
         let prev_ty = ctx.get_or_create_symbol_type(body_children[i - 1]);
         ctx.set_piped_input(body_children[i], prev_ty);
+        ctx.set_piped_source(body_children[i], body_children[i - 1]);
 
         // Re-process Call/Ref children that received piped input
         if let Some(child_symbol) = hir.symbol(body_children[i]) {

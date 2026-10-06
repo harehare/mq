@@ -22,7 +22,8 @@ use crate::infer::{
     CrossArmNarrowing, DeferredCallReturnAccess, DeferredOverload, DeferredParameterCall, DeferredUserCall,
     InferenceContext, NarrowingEntry, TypeNarrowing,
 };
-use crate::narrowing::analyze_condition;
+use crate::narrowing::{analyze_condition, selector_kinds};
+use crate::node_attr::{SelectorOutput, node_selector_output};
 use crate::types::Type;
 use crate::unify::range_to_span;
 use crate::{TypeError, infer};
@@ -133,6 +134,7 @@ pub fn generate_constraints(hir: &Hir, ctx: &mut InferenceContext) -> ChildrenIn
     for i in 1..cats.root_symbols.len() {
         let prev_ty = ctx.get_or_create_symbol_type(cats.root_symbols[i - 1]);
         ctx.set_piped_input(cats.root_symbols[i], prev_ty.clone());
+        ctx.set_piped_source(cats.root_symbols[i], cats.root_symbols[i - 1]);
 
         // For root-level Variables (e.g. `let x = first()`), forward the piped type to
         // the initializer Call/Ref so Pass 3 sees it before resolving the overload.
@@ -2030,16 +2032,22 @@ pub(super) fn generate_symbol_constraints(
                     .and_then(|s| s.value.as_ref())
                     .map(|v| v.trim_start_matches('.').trim_start_matches("[:").trim_end_matches(']'));
 
-                if let Type::Node(_) = resolved {
-                    // Piped input is a Markdown node (from a parent selector in a chain).
-                    // Attr selectors return their specific type; Recursive returns [markdown];
-                    // all other non-Attr selectors still return Markdown.
-                    if let mq_lang::Selector::Attr(attr_kind) = selector {
-                        attr_kind_to_type(attr_kind)
-                    } else if matches!(selector, mq_lang::Selector::Recursive) {
-                        Type::array(Type::markdown())
-                    } else {
-                        Type::markdown()
+                if let Type::Node(kinds) = resolved {
+                    // Piped input is a Markdown node (from a parent selector in a chain). An
+                    // attribute selector yields the attribute of those kinds, a kind selector
+                    // the matching kinds, and `..` the descendants.
+                    match node_selector_output(selector, kinds) {
+                        SelectorOutput::Type(ty) => ty,
+                        SelectorOutput::MissingAttr(attr) => {
+                            let range = get_symbol_range(hir, symbol_id);
+                            ctx.add_error(TypeError::UndefinedAttribute {
+                                attr,
+                                node_ty: resolved.display_renumbered(),
+                                span: range.as_ref().map(range_to_span),
+                                location: range,
+                            });
+                            Type::Var(ctx.fresh_var())
+                        }
                     }
                 } else if let Type::Record(ref fields, ref rest) = resolved {
                     if let Some(name) = field_name {
@@ -2065,23 +2073,20 @@ pub(super) fn generate_symbol_constraints(
                     }
                 } else {
                     // Piped type not yet resolved — defer to post-unification.
-                    // Include the attr_kind so that if the piped type resolves to Markdown,
-                    // the correct attribute type can be returned (e.g., `md.depth` → number).
+                    // Keep the selector so that if the piped type resolves to a Markdown node,
+                    // the right type can be returned (e.g., `md.depth` → number).
+                    let ty_var = ctx.fresh_var();
                     if let Some(name) = field_name {
-                        let attr_kind = if let mq_lang::Selector::Attr(ak) = selector {
-                            Some(ak.clone())
-                        } else {
-                            None
-                        };
                         ctx.add_deferred_selector_access(infer::DeferredSelectorAccess {
                             symbol_id,
                             piped_ty: piped_ty.clone(),
                             field_name: name.to_string(),
-                            attr_kind,
+                            selector: selector.clone(),
+                            result_ty: Type::Var(ty_var),
+                            piped_source: ctx.get_piped_source(symbol_id),
                             range: get_symbol_range(hir, symbol_id),
                         });
                     }
-                    let ty_var = ctx.fresh_var();
                     Type::Var(ty_var)
                 }
             } else {
@@ -2094,7 +2099,7 @@ pub(super) fn generate_symbol_constraints(
                 } else if matches!(selector, mq_lang::Selector::Recursive) {
                     Type::array(Type::markdown())
                 } else {
-                    Type::markdown()
+                    selector_kinds(selector).map_or_else(Type::markdown, Type::Node)
                 }
             };
 

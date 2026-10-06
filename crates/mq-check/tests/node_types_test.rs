@@ -84,3 +84,59 @@ fn test_structural_selector_condition_narrows_to_the_selected_kinds() {
     let types = ref_types("def f(x):\n  if (.h1):\n    x\n  else:\n    x\nend", "x");
     assert_eq!(types[0], "h1", "{types:?}");
 }
+
+fn errors(code: &str) -> Vec<mq_check::TypeError> {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    TypeChecker::new().check(&hir)
+}
+
+/// The type of the selector symbol with the given name, e.g. `.depth`.
+fn selector_type(code: &str, selector: &str) -> String {
+    let mut hir = Hir::default();
+    hir.add_code(None, code);
+    let mut checker = TypeChecker::new();
+    let errors = checker.check(&hir);
+    assert!(errors.is_empty(), "unexpected errors: {errors:?}");
+    let (id, _) = hir
+        .symbols()
+        .find(|(_, symbol)| matches!(symbol.kind, SymbolKind::Selector(_)) && symbol.value.as_deref() == Some(selector))
+        .unwrap_or_else(|| panic!("no selector {selector}"));
+    checker.type_of(id).unwrap().ty.display_renumbered()
+}
+
+#[rstest]
+#[case::heading_depth("to_markdown(\"# a\") | first() | .h1.depth", ".depth", "number")]
+#[case::required_attr_of_one_kind("to_markdown(\"x\") | first() | .code.fence", ".fence", "bool")]
+#[case::optional_attr_may_be_none("to_markdown(\"x\") | first() | .code.lang", ".lang", "(string | none)")]
+#[case::list_checked_is_optional("to_markdown(\"- a\") | first() | .list.checked", ".checked", "(bool | none)")]
+#[case::unknown_kind_keeps_the_plain_type("to_markdown(\"x\") | first() | .lang", ".lang", "string")]
+fn test_attribute_type_depends_on_the_node_kind(#[case] code: &str, #[case] selector: &str, #[case] expected: &str) {
+    assert_eq!(selector_type(code, selector), expected);
+}
+
+#[rstest]
+#[case::depth_of_code("to_markdown(\"x\") | first() | .code.depth", "depth")]
+#[case::lang_of_heading("to_markdown(\"x\") | first() | .h1.lang", "lang")]
+fn test_attribute_no_kind_has_is_an_error(#[case] code: &str, #[case] attr: &str) {
+    let errors = errors(code);
+    assert!(
+        matches!(errors.as_slice(), [mq_check::TypeError::UndefinedAttribute { attr: a, .. }] if a == attr),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn test_attribute_of_a_narrowed_variable_is_accepted() {
+    // References that carry a selector (`x.depth`) are not narrowed, so only the declared type
+    // is checked here.
+    let narrowed = "def f(x):\n  if (is_h1(x)):\n    x.depth\n  else:\n    0\nend";
+    assert!(errors(narrowed).is_empty());
+}
+
+#[rstest]
+#[case::number_attribute(r##"let n = first(to_markdown("# a")) | attr(n, "depth") + 1"##)]
+#[case::string_attribute(r##"to_markdown("# a") | first() | attr("value") | upcase()"##)]
+fn test_attr_call_result_is_decided_by_its_use(#[case] code: &str) {
+    assert!(errors(code).is_empty());
+}

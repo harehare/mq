@@ -1293,7 +1293,10 @@ fn register_markdown(ctx: &mut InferenceContext) {
     // (markdown, string) -> markdown/string
     let a = ctx.fresh_var();
     register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::markdown());
-    register_binary(ctx, "attr", Type::markdown(), Type::String, Type::String);
+    // The result depends on the attribute name (`attr(h, "depth")` is a number), which is not part
+    // of the type, so it stays open and is fixed by how it is used.
+    let attr_ret = ctx.fresh_var();
+    register_binary(ctx, "attr", Type::markdown(), Type::String, Type::Var(attr_ret));
     let a = ctx.fresh_var();
     register_binary(
         ctx,

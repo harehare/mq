@@ -31,6 +31,7 @@ pub(crate) mod exhaustiveness;
 pub mod infer;
 pub mod kind_set;
 pub mod narrowing;
+pub(crate) mod node_attr;
 pub mod types;
 pub mod unify;
 
@@ -151,6 +152,16 @@ pub enum TypeError {
         span: Option<miette::SourceSpan>,
         location: Option<mq_lang::Range>,
     },
+    #[error("Attribute `{attr}` does not exist on {node_ty}")]
+    #[diagnostic(code(typechecker::undefined_attribute))]
+    #[allow(dead_code)]
+    UndefinedAttribute {
+        attr: String,
+        node_ty: String,
+        #[label("no such attribute")]
+        span: Option<miette::SourceSpan>,
+        location: Option<mq_lang::Range>,
+    },
     #[error("Heterogeneous array: elements have mixed types [{types}]")]
     #[diagnostic(code(typechecker::heterogeneous_array))]
     #[allow(dead_code)]
@@ -215,6 +226,7 @@ impl TypeError {
             | TypeError::UndefinedSymbol { location, .. }
             | TypeError::WrongArity { location, .. }
             | TypeError::UndefinedField { location, .. }
+            | TypeError::UndefinedAttribute { location, .. }
             | TypeError::HeterogeneousArray { location, .. }
             | TypeError::NullablePropagation { location, .. }
             | TypeError::UnreachableCode { location, .. }
@@ -416,6 +428,11 @@ impl TypeChecker {
         // Process deferred overload resolutions (operators with type variable operands).
         deferred::resolve_deferred_overloads(&mut ctx);
         laps.lap("resolve_deferred_overloads");
+
+        // Selectors applied to a value that an overload call just resolved (`first() | .h1.depth`).
+        while deferred::resolve_selector_field_accesses(&mut ctx) {
+            unify::solve_constraints(&mut ctx);
+        }
 
         // Re-run deferred tuple accesses after overload resolution, because some variable
         // types (e.g., the return type of `first(xs)`) may only be resolved after

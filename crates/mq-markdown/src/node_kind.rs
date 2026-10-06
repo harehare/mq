@@ -140,6 +140,108 @@ impl NodeKind {
     }
 }
 
+/// The type of a node attribute as returned by [`Node::attr`](crate::Node::attr).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttrType {
+    String,
+    Integer,
+    Boolean,
+    /// An array of nodes.
+    Nodes,
+}
+
+/// An attribute a node kind has, with its type. `optional` attributes are `none` when absent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttrSpec {
+    pub name: &'static str,
+    pub ty: AttrType,
+    pub optional: bool,
+}
+
+const fn attr(name: &'static str, ty: AttrType) -> AttrSpec {
+    AttrSpec {
+        name,
+        ty,
+        optional: false,
+    }
+}
+
+const fn optional(name: &'static str, ty: AttrType) -> AttrSpec {
+    AttrSpec {
+        name,
+        ty,
+        optional: true,
+    }
+}
+
+const VALUE: AttrSpec = attr("value", AttrType::String);
+const VALUES: AttrSpec = attr("values", AttrType::Nodes);
+const CHILDREN: AttrSpec = attr("children", AttrType::Nodes);
+const IDENT: AttrSpec = attr("ident", AttrType::String);
+const URL: AttrSpec = attr("url", AttrType::String);
+const LABEL: AttrSpec = optional("label", AttrType::String);
+const TITLE: AttrSpec = optional("title", AttrType::String);
+const ALT: AttrSpec = attr("alt", AttrType::String);
+const NAME: AttrSpec = optional("name", AttrType::String);
+const ALIGN: AttrSpec = attr("align", AttrType::String);
+const CHECKED: AttrSpec = optional("checked", AttrType::Boolean);
+const COLUMN: AttrSpec = attr("column", AttrType::Integer);
+const DEPTH: AttrSpec = attr("depth", AttrType::Integer);
+const FENCE: AttrSpec = attr("fence", AttrType::Boolean);
+const INDEX: AttrSpec = attr("index", AttrType::Integer);
+const KIND: AttrSpec = attr("kind", AttrType::String);
+const LANG: AttrSpec = optional("lang", AttrType::String);
+const LEVEL: AttrSpec = attr("level", AttrType::Integer);
+const META: AttrSpec = optional("meta", AttrType::String);
+const ORDERED: AttrSpec = attr("ordered", AttrType::Boolean);
+const ROW: AttrSpec = attr("row", AttrType::Integer);
+const LINE: AttrSpec = optional("line", AttrType::Integer);
+const END_LINE: AttrSpec = optional("end_line", AttrType::Integer);
+
+impl NodeKind {
+    /// The attributes of this kind, including `line` and `end_line` (absent for nodes
+    /// without a position). Mirrors [`Node::attr`](crate::Node::attr).
+    pub const fn attrs(self) -> &'static [AttrSpec] {
+        match self {
+            Self::Footnote => &[LINE, END_LINE, IDENT, VALUE, VALUES, CHILDREN],
+            Self::Html
+            | Self::Text
+            | Self::CodeInline
+            | Self::MathInline
+            | Self::Math
+            | Self::Yaml
+            | Self::Toml
+            | Self::MdxFlowExpression
+            | Self::MdxTextExpression
+            | Self::MdxJsEsm => &[LINE, END_LINE, VALUE],
+            Self::Code => &[LINE, END_LINE, VALUE, LANG, META, FENCE],
+            Self::Image => &[LINE, END_LINE, ALT, URL, TITLE],
+            Self::ImageRef => &[LINE, END_LINE, ALT, IDENT, LABEL],
+            Self::Link => &[LINE, END_LINE, URL, TITLE, VALUE, VALUES, CHILDREN],
+            Self::WikiLink | Self::Embed => &[LINE, END_LINE, URL, VALUE],
+            Self::Callout => &[LINE, END_LINE, KIND, TITLE, VALUE, VALUES, CHILDREN],
+            Self::LinkRef | Self::FootnoteRef => &[LINE, END_LINE, IDENT, LABEL],
+            Self::Definition => &[LINE, END_LINE, IDENT, URL, TITLE, LABEL],
+            Self::H1 | Self::H2 | Self::H3 | Self::H4 | Self::H5 | Self::H6 => {
+                &[LINE, END_LINE, DEPTH, LEVEL, VALUE, VALUES, CHILDREN]
+            }
+            Self::List => &[LINE, END_LINE, INDEX, LEVEL, ORDERED, CHECKED, VALUE, VALUES, CHILDREN],
+            Self::TableCell => &[LINE, END_LINE, COLUMN, ROW, VALUE, VALUES, CHILDREN],
+            Self::TableAlign => &[LINE, END_LINE, ALIGN],
+            Self::MdxJsxFlowElement | Self::MdxJsxTextElement => &[LINE, END_LINE, NAME, VALUES, CHILDREN],
+            Self::Strong | Self::Blockquote | Self::Delete | Self::Emphasis | Self::TableRow | Self::Fragment => {
+                &[LINE, END_LINE, VALUE, VALUES, CHILDREN]
+            }
+            Self::Break | Self::HorizontalRule | Self::Empty => &[LINE, END_LINE],
+        }
+    }
+
+    /// The attribute `name` of this kind, if it has one.
+    pub fn attr_spec(self, name: &str) -> Option<AttrSpec> {
+        self.attrs().iter().copied().find(|spec| spec.name == name)
+    }
+}
+
 impl Node {
     /// The kind of this node. A heading depth outside `1..=6`, which parsing never produces,
     /// is clamped.
@@ -200,6 +302,65 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    /// A document with a node of most kinds, and every node reachable through `children`.
+    fn sample_nodes() -> Vec<crate::Node> {
+        let markdown = "---\ntitle: a\n---\n\n# Heading *em* **strong** ~~del~~ `code` $x$ [link](http://a \"t\") ![img](http://b) [ref][r] ![iref][r] [^1]\n\n[^1]: note\n\n[r]: http://c\n\n> quote\n\n- a\n- [x] done\n- [ ] todo\n\n1. one\n\n```rust\nfn f() {}\n```\n\n```\nplain\n```\n\n| a | b |\n|:--|--:|\n| 1 | 2 |\n\n---\n\n<div>x</div>\n\nline  \nbreak\n\n$$\nm\n$$\n";
+        let mut nodes: Vec<crate::Node> = markdown.parse::<crate::Markdown>().unwrap().nodes;
+        let mut all = Vec::new();
+        while let Some(node) = nodes.pop() {
+            if let Some(crate::node::attr_value::AttrValue::Array(children)) = node.attr("children") {
+                nodes.extend(children);
+            }
+            all.push(node);
+        }
+        all
+    }
+
+    /// Every attribute name any kind has.
+    fn attr_names() -> std::collections::BTreeSet<&'static str> {
+        NodeKind::ALL
+            .iter()
+            .flat_map(|kind| kind.attrs())
+            .map(|spec| spec.name)
+            .collect()
+    }
+
+    #[test]
+    fn test_attr_table_agrees_with_node_attr() {
+        use crate::node::attr_value::AttrValue;
+
+        let nodes = sample_nodes();
+        let kinds: std::collections::BTreeSet<_> = nodes.iter().map(|node| node.kind()).collect();
+        assert!(kinds.len() > 20, "sample covers too few kinds: {kinds:?}");
+
+        for node in &nodes {
+            let kind = node.kind();
+            for name in attr_names() {
+                let value = node.attr(name);
+                match kind.attr_spec(name) {
+                    None => assert!(
+                        value.is_none(),
+                        "{kind:?} returns `{name}` but the table does not list it"
+                    ),
+                    Some(spec) => {
+                        let Some(value) = value else {
+                            assert!(spec.optional, "{kind:?} lacks `{name}`, which is not optional");
+                            continue;
+                        };
+                        let ty = match value {
+                            AttrValue::String(_) => AttrType::String,
+                            AttrValue::Integer(_) => AttrType::Integer,
+                            AttrValue::Boolean(_) => AttrType::Boolean,
+                            AttrValue::Array(_) => AttrType::Nodes,
+                            other => panic!("unexpected {other:?} for `{name}`"),
+                        };
+                        assert_eq!(ty, spec.ty, "{kind:?}.{name}");
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_all_lists_every_kind_once() {

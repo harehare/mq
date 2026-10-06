@@ -90,7 +90,7 @@ pub use node::{
     RenderOptions, Strong, TableAlign, TableAlignKind, TableCell, TableRow, Text, Title, TitleSurroundStyle, Toml, Url,
     UrlSurroundStyle, Yaml, attr_value::AttrValue,
 };
-pub use node_kind::NodeKind;
+pub use node_kind::{AttrSpec, AttrType, NodeKind};
 
 #[cfg(feature = "wikilink")]
 pub use node::WikiLink;
