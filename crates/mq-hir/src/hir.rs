@@ -26,7 +26,14 @@ pub struct Hir {
     pub(crate) fallback_references: FxHashSet<SymbolId>,
     pub(crate) source_symbols: FxHashMap<SourceId, Vec<SymbolId>>,
     pub(crate) symbol_insertion_counter: u32,
+    /// Declarations a reference can resolve to, by name.
     pub(crate) name_index: FxHashMap<SmolStr, Vec<SymbolId>>,
+    /// Same ids as `name_index`, grouped by the scope that declares them.
+    /// Child scopes of each scope that leave their `let` bindings visible after the construct.
+    pub(crate) leaking_scopes: FxHashMap<ScopeId, Vec<ScopeId>>,
+    /// For each call `f(x)[k]`, how many of its trailing arguments are bracket-access keys.
+    pub(crate) bracket_key_counts: FxHashMap<SymbolId, usize>,
+    pub(crate) scope_name_index: FxHashMap<ScopeId, FxHashMap<SmolStr, Vec<SymbolId>>>,
 }
 
 impl Default for Hir {
@@ -66,6 +73,9 @@ impl Hir {
             source_symbols: FxHashMap::default(),
             symbol_insertion_counter: 0,
             name_index: FxHashMap::default(),
+            leaking_scopes: FxHashMap::default(),
+            bracket_key_counts: FxHashMap::default(),
+            scope_name_index: FxHashMap::default(),
         }
     }
 
@@ -95,6 +105,25 @@ impl Hir {
         let (nodes, _) = mq_lang::parse_recovery(code);
 
         self.add_nodes(url.unwrap_or(Url::parse("file:///").unwrap()), &nodes)
+    }
+
+    /// Declares a value the host defines at runtime (like `Engine::define_string_value` or
+    /// `register_fn`), so references to `name` resolve. Does nothing when builtins are disabled.
+    pub fn declare_global(&mut self, name: &str) {
+        self.add_builtin();
+        if self.builtin.disabled {
+            return;
+        }
+        self.add_symbol(Symbol {
+            value: Some(name.into()),
+            kind: SymbolKind::Variable,
+            source: SourceInfo::new(Some(self.builtin.source_id), None),
+            scope: self.builtin.scope_id,
+            doc: Vec::new(),
+            parent: None,
+            insertion_order: 0,
+        });
+        self.resolve();
     }
 
     pub fn add_builtin(&mut self) {
@@ -230,8 +259,14 @@ impl Hir {
         if let Some(scope) = module_scope_id.and_then(|id| self.scopes.get_mut(id)) {
             scope.children.clear();
         }
+        let scopes = &self.scopes;
+        self.leaking_scopes.retain(|parent, children| {
+            children.retain(|child| scopes.contains_key(*child));
+            scopes.contains_key(*parent) && !children.is_empty()
+        });
 
         let symbols = &self.symbols;
+        self.bracket_key_counts.retain(|call, _| symbols.contains_key(*call));
         self.references
             .retain(|ref_id, def_id| symbols.contains_key(*ref_id) && symbols.contains_key(*def_id));
         let references = &self.references;
@@ -241,11 +276,43 @@ impl Hir {
             ids.retain(|id| symbols.contains_key(*id));
             !ids.is_empty()
         });
+        self.scope_name_index.retain(|_, names| {
+            names.retain(|_, ids| {
+                ids.retain(|id| symbols.contains_key(*id));
+                !ids.is_empty()
+            });
+            !names.is_empty()
+        });
+    }
+
+    /// Whether a `let` in this scope stays visible to the pipe steps after its construct:
+    /// the bodies of `if`/`elif`/`else`/`unless` and loops, but not `match` arms or functions.
+    fn scope_leaks_bindings(&self, kind: &ScopeKind) -> bool {
+        let (ScopeKind::Block(owner) | ScopeKind::Loop(owner)) = kind else {
+            return false;
+        };
+        self.symbols.get(*owner).is_some_and(|owner| {
+            matches!(
+                owner.kind,
+                SymbolKind::If
+                    | SymbolKind::Elif
+                    | SymbolKind::Else
+                    | SymbolKind::Unless
+                    | SymbolKind::While
+                    | SymbolKind::Until
+                    | SymbolKind::Loop
+                    | SymbolKind::Foreach
+            )
+        })
     }
 
     fn add_scope(&mut self, scope: Scope) -> ScopeId {
         let parent_scope_id = scope.parent_id;
+        let leaks = self.scope_leaks_bindings(&scope.kind);
         let scope_id = self.scopes.insert(scope);
+        if let Some(parent_scope_id) = parent_scope_id.filter(|_| leaks) {
+            self.leaking_scopes.entry(parent_scope_id).or_default().push(scope_id);
+        }
 
         if let Some(parent_scope_id) = parent_scope_id
             && let Some(parent) = self.scopes.get_mut(parent_scope_id)
@@ -267,8 +334,15 @@ impl Hir {
         let symbol_id = self.symbols.insert(symbol);
         self.symbols[symbol_id].insertion_order = self.symbol_insertion_counter;
         self.symbol_insertion_counter += 1;
-        if let Some(ref name) = self.symbols[symbol_id].value {
+        let symbol = &self.symbols[symbol_id];
+        if let Some(name) = symbol.value.as_ref().filter(|_| Self::is_resolvable_target(symbol)) {
             self.name_index.entry(name.clone()).or_default().push(symbol_id);
+            self.scope_name_index
+                .entry(symbol.scope)
+                .or_default()
+                .entry(name.clone())
+                .or_default()
+                .push(symbol_id);
         }
         symbol_id
     }
@@ -305,6 +379,56 @@ mod tests {
     use super::*;
     use itertools::Itertools;
     use rstest::rstest;
+
+    #[rstest]
+    #[case::none("first(xs)", 0)]
+    #[case::extra_argument("first(xs, 1)", 0)]
+    #[case::string_key(r#"first(xs)["k"]"#, 1)]
+    #[case::symbol_key("first(xs)[:k]", 1)]
+    #[case::index("first(xs)[0]", 1)]
+    #[case::chained(r#"f(xs)["a"]["b"]"#, 2)]
+    fn test_bracket_key_count_tells_keys_from_arguments(#[case] code: &str, #[case] expected: usize) {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.add_code(None, code);
+        let (call, _) = hir
+            .symbols()
+            .find(|(_, symbol)| symbol.kind == SymbolKind::Call)
+            .unwrap();
+        assert_eq!(hir.bracket_key_count(call), expected);
+    }
+
+    #[rstest]
+    #[case::index_on_a_dict_literal_in_a_dict_value(r#"{"a": {"a": 1}["a"]}"#)]
+    #[case::unclosed_dict(r#"{"a": 1, "b": "#)]
+    #[case::stray_token_in_a_dict(r#"{"a": 1 ] "b": 2}"#)]
+    fn test_syntax_errors_inside_a_dict_do_not_panic(#[case] code: &str) {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+    }
+
+    #[test]
+    fn test_declare_global_resolves_host_defined_names() {
+        let mut hir = Hir::default();
+        hir.declare_global("TEST_FILE");
+        hir.add_code(None, "TEST_FILE | to_string()");
+        assert!(hir.errors().is_empty());
+
+        let mut hir = Hir::default();
+        hir.add_code(None, "TEST_FILE");
+        assert_eq!(hir.errors().len(), 1);
+        hir.declare_global("TEST_FILE");
+        assert!(hir.errors().is_empty());
+    }
+
+    #[test]
+    fn test_declare_global_is_ignored_when_builtins_are_disabled() {
+        let mut hir = Hir::default();
+        hir.builtin.disabled = true;
+        hir.declare_global("TEST_FILE");
+        hir.add_code(None, "TEST_FILE");
+        assert_eq!(hir.errors().len(), 1);
+    }
 
     #[rstest]
     #[case::def("# test
@@ -398,7 +522,7 @@ def foo(): 1", vec![" test".to_owned(), " test".to_owned(), "".to_owned()], vec!
     #[case::symbol_ident(":foo", "foo", SymbolKind::Symbol)]
     #[case::symbol_string(":\"hello\"", "hello", SymbolKind::Symbol)]
     #[case::pattern_match("match (v): | [1,2,3]: 1 end", "match", SymbolKind::Match)]
-    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false })]
+    #[case::pattern_match_arm("match (v): | 1: \"one\" end", "1", SymbolKind::Pattern { is_dict: false, is_or: false })]
     #[case::import("import \"foo\"", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::import_as("import \"foo\" as bar", "foo", SymbolKind::Import(SourceId::default()))]
     #[case::import_as_alias_ident("import \"foo\" as bar", "bar", SymbolKind::Ident)]

@@ -2641,10 +2641,14 @@ name = "mq-check"
 version = "0.9.2"
 dependencies = [
  "clap",
+ "codspeed-divan-compat",
  "colored 3.1.1",
  "miette",
  "mq-hir",
  "mq-lang",
+ "mq-markdown",
+ "mq-test",
+ "proptest",
  "rstest",
  "rustc-hash",
  "serde_json",

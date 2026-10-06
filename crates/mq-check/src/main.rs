@@ -7,7 +7,7 @@ use std::process::ExitCode;
 use clap::Parser;
 use colored::Colorize;
 use format::OutputFormat;
-use mq_check::{TypeChecker, TypeCheckerOptions, TypeError};
+use mq_check::{TypeChecker, TypeCheckerOptions, TypeError, types::Type};
 use mq_hir::Hir;
 use url::Url;
 
@@ -34,11 +34,31 @@ struct Cli {
     #[arg(long)]
     no_exhaustive_patterns: bool,
 
+    /// Type of the input document `.`, e.g. `h1 | h2`, `code` or `markdown - code`
+    /// (default: unknown)
+    #[arg(long, value_name = "TYPE", value_parser = parse_input_type)]
+    input_type: Option<Type>,
+
     /// Diagnostic output format: `text` (human-readable), `json` (a single JSON array of
     /// diagnostics), `markdown` (a Markdown table, for PR descriptions or comments), or
     /// `sarif` (SARIF 2.1.0 JSON, for GitHub code scanning and other SARIF consumers)
     #[arg(long, value_enum, default_value_t)]
     format: OutputFormat,
+}
+
+impl Cli {
+    fn type_checker_options(&self) -> TypeCheckerOptions {
+        TypeCheckerOptions {
+            strict_array: self.strict_array,
+            no_exhaustive_patterns: self.no_exhaustive_patterns,
+            input_type: self.input_type.clone(),
+        }
+    }
+}
+
+/// Parses `--input-type`, showing the valid names when the type is unknown.
+fn parse_input_type(src: &str) -> Result<Type, String> {
+    mq_check::type_expr::parse_type(src).map_err(|error| error.with_help())
 }
 
 /// Options for a single file check
@@ -68,10 +88,7 @@ fn run() -> io::Result<()> {
 
     let mut w = BufWriter::new(io::stderr());
     let multi = cli.files.len() > 1;
-    let tc_options = TypeCheckerOptions {
-        strict_array: cli.strict_array,
-        no_exhaustive_patterns: cli.no_exhaustive_patterns,
-    };
+    let tc_options = cli.type_checker_options();
 
     if cli.files.is_empty() {
         // Read from stdin
@@ -117,7 +134,7 @@ fn run() -> io::Result<()> {
             show_types: cli.show_types,
             label: label.as_deref(),
             no_builtins: cli.no_builtins,
-            type_checker_options: tc_options,
+            type_checker_options: tc_options.clone(),
         };
         let had_errors = check_file(&mut w, &code, source_url, &opts)?;
         if had_errors {
@@ -139,10 +156,7 @@ fn run() -> io::Result<()> {
 /// Runs syntax and type checks across all inputs and writes a single machine-readable
 /// report (JSON or SARIF) to stdout, instead of the colored text report.
 fn run_machine_format(cli: &Cli) -> io::Result<()> {
-    let tc_options = TypeCheckerOptions {
-        strict_array: cli.strict_array,
-        no_exhaustive_patterns: cli.no_exhaustive_patterns,
-    };
+    let tc_options = cli.type_checker_options();
 
     let mut results: Vec<(String, Vec<format::CheckDiagnostic>)> = Vec::new();
 
@@ -181,6 +195,16 @@ fn run_machine_format(cli: &Cli) -> io::Result<()> {
     }
 }
 
+/// Creates the HIR to check against, knowing the names the test runner injects.
+fn new_hir(no_builtins: bool) -> Hir {
+    let mut hir = Hir::default();
+    hir.builtin.disabled = no_builtins;
+    for name in mq_check::TEST_RUNNER_GLOBALS {
+        hir.declare_global(name);
+    }
+    hir
+}
+
 /// Runs syntax and type checks on a single source, returning every diagnostic found.
 /// Type checking is skipped when syntax errors are present, matching the text report's behavior.
 fn collect_check_diagnostics(
@@ -189,19 +213,14 @@ fn collect_check_diagnostics(
     no_builtins: bool,
     type_checker_options: &TypeCheckerOptions,
 ) -> Vec<format::CheckDiagnostic> {
-    let mut hir = Hir::default();
-
-    if no_builtins {
-        hir.builtin.disabled = true;
-    }
-
+    let mut hir = new_hir(no_builtins);
     let (source_id, _) = hir.add_code(source_url, code);
 
     let mut diagnostics = format::syntax_diagnostics(&hir, source_id);
     let has_syntax_errors = diagnostics.iter().any(|d| d.severity == format::Severity::Error);
 
     if !has_syntax_errors {
-        let mut checker = TypeChecker::with_options(*type_checker_options);
+        let mut checker = TypeChecker::with_options(type_checker_options.clone());
         let errors = checker.check(&hir);
         diagnostics.extend(format::type_diagnostics(&errors));
     }
@@ -211,12 +230,7 @@ fn collect_check_diagnostics(
 
 /// Runs syntax and type checks on a single source, returns `true` if any errors were found.
 fn check_file(w: &mut impl Write, code: &str, source_url: Option<Url>, opts: &CheckOptions<'_>) -> io::Result<bool> {
-    let mut hir = Hir::default();
-
-    if opts.no_builtins {
-        hir.builtin.disabled = true;
-    }
-
+    let mut hir = new_hir(opts.no_builtins);
     let (source_id, _) = hir.add_code(source_url, code);
 
     if let Some(lbl) = opts.label {
@@ -309,7 +323,7 @@ fn check_type(
     show_types: bool,
     options: &TypeCheckerOptions,
 ) -> io::Result<bool> {
-    let mut checker = TypeChecker::with_options(*options);
+    let mut checker = TypeChecker::with_options(options.clone());
     let mut errors = checker.check(hir);
 
     errors.sort_by_key(|a| a.location());
@@ -397,6 +411,9 @@ fn error_title(error: &TypeError) -> String {
         }
         TypeError::UndefinedField { field, record_ty, .. } => {
             format!("undefined field `{field}` in {record_ty}")
+        }
+        TypeError::UndefinedAttribute { attr, node_ty, .. } => {
+            format!("undefined attribute `{attr}` on {node_ty}")
         }
         TypeError::HeterogeneousArray { types, .. } => format!("heterogeneous array: [{types}]"),
         TypeError::TypeVarNotFound(name) => format!("type variable not found: {name}"),
@@ -518,6 +535,40 @@ mod tests {
     use super::*;
     use clap::Parser;
     use rstest::rstest;
+
+    #[test]
+    fn test_cli_input_type() {
+        let cli = Cli::try_parse_from(["mq-check", "--input-type", "h1 | h2"]).unwrap();
+        assert_eq!(
+            cli.type_checker_options().input_type.unwrap().display_renumbered(),
+            "h1 | h2"
+        );
+        assert!(Cli::try_parse_from(["mq-check"]).unwrap().input_type.is_none());
+    }
+
+    #[test]
+    fn test_cli_input_type_rejects_unknown_names_and_lists_the_valid_ones() {
+        let Err(error) = Cli::try_parse_from(["mq-check", "--input-type", "headin"]) else {
+            panic!("an unknown type must be rejected");
+        };
+        let error = error.to_string();
+        assert!(
+            error.contains("unknown type `headin`") && error.contains("h1"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn test_input_type_is_applied_to_the_checked_source() {
+        let options = TypeCheckerOptions {
+            input_type: Some(mq_check::type_expr::parse_type("code").unwrap()),
+            ..Default::default()
+        };
+        let diagnostics = collect_check_diagnostics(".depth", None, false, &options);
+        assert!(diagnostics.iter().any(|d| d.code == "typechecker::undefined_attribute"));
+        let diagnostics = collect_check_diagnostics(".depth", None, false, &TypeCheckerOptions::default());
+        assert!(diagnostics.is_empty());
+    }
 
     #[rstest]
     #[case(vec!["mq-check", "test.mq"], vec!["test.mq"], false, false)]

@@ -2,12 +2,12 @@
 
 use mq_hir::{Hir, SymbolId, SymbolKind};
 use rustc_hash::{FxHashMap, FxHashSet};
-use smol_str::SmolStr;
 
-use crate::infer::{DeferredOverload, InferenceContext};
+use crate::infer::InferenceContext;
 use crate::types::Type;
 use crate::walk_ancestors;
 
+use super::call::{BuiltinCall, CallKind, resolve_builtin};
 use super::{Constraint, ConstraintOrigin};
 
 /// Walks the HIR parent chain from `symbol_id` and returns the nearest ancestor
@@ -177,7 +177,7 @@ pub(crate) fn attr_kind_to_type(attr_kind: &mq_lang::AttrKind) -> Type {
         | AttrKind::Line
         | AttrKind::EndLine => Type::Number,
         AttrKind::Ordered | AttrKind::Checked => Type::Bool,
-        AttrKind::Values | AttrKind::Children => Type::array(Type::Markdown),
+        AttrKind::Values | AttrKind::Children => Type::array(Type::markdown()),
     }
 }
 
@@ -250,129 +250,27 @@ pub(super) fn build_piped_call_args(
     }
 }
 
-/// Resolves a builtin function call using overload resolution and returns the
-/// type assigned to `symbol_id`.
+/// Resolves a call `f(args)` of a builtin and assigns the result type to `symbol_id`.
 ///
-/// If `defer_error` is true (e.g., the call might receive piped input later),
-/// no error is generated on mismatch — only a fresh type variable is assigned.
+/// If `may_get_piped_input` is true (e.g., the call is an argument that is applied to each
+/// element), a mismatch is reported only when no piped input could make the call match.
 pub(super) fn resolve_builtin_call(
     ctx: &mut InferenceContext,
     symbol_id: SymbolId,
     func_name: &str,
     arg_tys: &[Type],
     range: Option<mq_lang::Range>,
-    defer_error: bool,
+    may_get_piped_input: bool,
 ) -> Type {
-    let resolved_arg_tys: Vec<Type> = arg_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
-    let is_builtin = ctx.get_builtin_overloads(func_name).is_some();
-    let has_unresolved_args = resolved_arg_tys.iter().any(|ty| ty.is_var());
-
-    // If any argument is still a type variable and there are multiple overloads,
-    // defer resolution to avoid committing to the wrong overload
-    if has_unresolved_args && is_builtin {
-        let overload_count = ctx.get_builtin_overloads(func_name).map(|o| o.len()).unwrap_or(0);
-        if overload_count > 1 {
-            let ty_var = ctx.fresh_var();
-            let result_ty = Type::Var(ty_var);
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            ctx.add_deferred_overload(DeferredOverload {
-                symbol_id,
-                op_name: SmolStr::new(func_name),
-                operand_tys: arg_tys.to_vec(),
-                range,
-            });
-            return result_ty;
-        }
-    }
-
-    if let Some(resolved_ty) = ctx.resolve_overload(func_name, &resolved_arg_tys) {
-        if let Type::Function(param_tys, ret_ty) = resolved_ty {
-            for (arg_index, (arg_ty, param_ty)) in arg_tys.iter().zip(param_tys.iter()).enumerate() {
-                ctx.add_constraint(Constraint::Equal(
-                    arg_ty.clone(),
-                    param_ty.clone(),
-                    range,
-                    ConstraintOrigin::Argument {
-                        fn_name: SmolStr::new(func_name),
-                        arg_index,
-                    },
-                ));
-            }
-            let result_ty = ret_ty.as_ref().clone();
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            result_ty
-        } else {
-            let ty_var = ctx.fresh_var();
-            let result_ty = Type::Var(ty_var);
-            ctx.set_symbol_type(symbol_id, result_ty.clone());
-            result_ty
-        }
-    } else if is_builtin && !defer_error {
-        ctx.report_no_matching_overload(func_name, &resolved_arg_tys, range);
-        let ty_var = ctx.fresh_var();
-        let result_ty = Type::Var(ty_var);
-        ctx.set_symbol_type(symbol_id, result_ty.clone());
-        result_ty
-    } else {
-        let ret_ty = Type::Var(ctx.fresh_var());
-        ctx.set_symbol_type(symbol_id, ret_ty.clone());
-        ret_ty
-    }
-}
-
-const BRACKET_FUSABLE_BUILTINS: &[&str] = &["next", "send"];
-
-pub(super) fn trailing_bracket_key_count(
-    hir: &Hir,
-    ctx: &InferenceContext,
-    func_name: &str,
-    explicit_arg_tys: &[Type],
-    children: &[SymbolId],
-) -> usize {
-    if !BRACKET_FUSABLE_BUILTINS.contains(&func_name) {
-        return 0;
-    }
-
-    let overloads = match ctx.get_builtin_overloads(func_name) {
-        Some(overloads) => overloads,
-        None => return 0,
-    };
-
-    let is_fully_generic = |params: &[Type]| params.iter().all(|p| matches!(p, Type::Dynamic | Type::Var(_)));
-
-    let arities: Vec<usize> = overloads
-        .iter()
-        .filter_map(|ty| match ty {
-            Type::Function(params, _) => Some(params.len()),
-            _ => None,
-        })
-        .collect();
-
-    if arities.contains(&explicit_arg_tys.len()) {
-        return 0;
-    }
-
-    overloads
-        .iter()
-        .filter_map(|ty| match ty {
-            Type::Function(params, _) if params.len() < explicit_arg_tys.len() && is_fully_generic(params) => {
-                Some(params.len())
-            }
-            _ => None,
-        })
-        .filter(|&arity| {
-            children[arity..].iter().all(|&child_id| {
-                hir.symbol(child_id)
-                    .is_some_and(|s| matches!(s.kind, SymbolKind::String | SymbolKind::Symbol))
-            })
-        })
-        .max()
-        .map(|arity| explicit_arg_tys.len() - arity)
-        .unwrap_or(0)
+    let mut call = BuiltinCall::new(symbol_id, func_name, arg_tys, range, CallKind::Function);
+    call.may_get_piped_input = may_get_piped_input;
+    let result = resolve_builtin(ctx, &call).into_type();
+    ctx.set_symbol_type(symbol_id, result.clone());
+    result
 }
 
 /// Resolves a builtin call, splitting off and chaining any trailing bracket-access
-/// keys via `trailing_bracket_key_count`/`DeferredCallReturnAccess`.
+/// keys (`first(xs)[:ident]`) via `DeferredCallReturnAccess`.
 pub(super) fn resolve_builtin_call_with_brackets(
     hir: &Hir,
     ctx: &mut InferenceContext,
@@ -382,7 +280,7 @@ pub(super) fn resolve_builtin_call_with_brackets(
     children: &[SymbolId],
     range: Option<mq_lang::Range>,
 ) {
-    let trailing_bracket_count = trailing_bracket_key_count(hir, ctx, func_name, explicit_arg_tys, children);
+    let trailing_bracket_count = hir.bracket_key_count(symbol_id).min(explicit_arg_tys.len());
 
     if trailing_bracket_count == 0 {
         let arg_tys = build_piped_call_args(ctx, symbol_id, explicit_arg_tys, func_name);
@@ -394,24 +292,38 @@ pub(super) fn resolve_builtin_call_with_brackets(
     let real_arg_tys = &explicit_arg_tys[..explicit_arg_tys.len() - trailing_bracket_count];
     let arg_tys = build_piped_call_args(ctx, symbol_id, real_arg_tys, func_name);
     let defer = might_receive_piped_input(hir, symbol_id);
-    let mut current_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+    let result_ty = resolve_builtin_call(ctx, symbol_id, func_name, &arg_tys, range, defer);
+    let current_ty = chain_bracket_accesses(hir, ctx, children, trailing_bracket_count, result_ty, range);
+    ctx.set_symbol_type(symbol_id, current_ty);
+}
 
-    for i in 0..trailing_bracket_count {
-        let key_child_id = children[explicit_arg_tys.len() - trailing_bracket_count + i];
+/// The type of `f(x)[k1][k2]...`: each trailing bracket key of the call, which are the last
+/// `key_count` of its `children`, accesses a field of the previous result. The accesses are
+/// resolved once the type of the call result is known.
+pub(super) fn chain_bracket_accesses(
+    hir: &Hir,
+    ctx: &mut InferenceContext,
+    children: &[SymbolId],
+    key_count: usize,
+    result_ty: Type,
+    range: Option<mq_lang::Range>,
+) -> Type {
+    let mut current_ty = result_ty;
+    for &key_id in &children[children.len() - key_count..] {
         let field_name = hir
-            .symbol(key_child_id)
+            .symbol(key_id)
             .and_then(|s| s.value.as_ref().map(|v| v.to_string()))
             .unwrap_or_default();
-        let result_ty = Type::Var(ctx.fresh_var());
+        let next_ty = Type::Var(ctx.fresh_var());
         ctx.add_deferred_call_return_access(crate::infer::DeferredCallReturnAccess {
-            call_symbol_id: symbol_id,
             return_type: current_ty,
+            result_ty: next_ty.clone(),
             field_name,
             range,
         });
-        current_ty = result_ty;
+        current_ty = next_ty;
     }
-    ctx.set_symbol_type(symbol_id, current_ty);
+    current_ty
 }
 
 /// Returns the type if the pattern matches an entire type class (safe to subtract cross-arm).
@@ -694,11 +606,16 @@ pub(super) fn records_have_conflicting_fields(a: &Type, b: &Type, ctx: &Inferenc
                 .iter()
                 .any(|(name, ty_a)| fields_b.get(name).is_some_and(|ty_b| conflict(ty_a, ty_b, ctx))),
             (Type::Array(elem_a), Type::Array(elem_b)) => conflict(elem_a, elem_b, ctx),
+            (Type::Array(elem), Type::Tuple(items)) | (Type::Tuple(items), Type::Array(elem)) => {
+                items.iter().any(|item| conflict(item, elem, ctx))
+            }
+            (Type::Tuple(items_a), Type::Tuple(items_b)) => {
+                items_a.len() != items_b.len() || items_a.iter().zip(items_b).any(|(x, y)| conflict(x, y, ctx))
+            }
             (Type::Var(_), _) | (_, Type::Var(_)) | (Type::Dynamic, _) | (_, Type::Dynamic) => false,
             // Unions and other compound types are left to unification.
             (Type::Union(_), _) | (_, Type::Union(_)) => false,
-            (Type::Tuple(_) | Type::Dict(..) | Type::Function(..), _)
-            | (_, Type::Tuple(_) | Type::Dict(..) | Type::Function(..)) => false,
+            (Type::Dict(..) | Type::Function(..), _) | (_, Type::Dict(..) | Type::Function(..)) => false,
             _ => std::mem::discriminant(&a) != std::mem::discriminant(&b),
         }
     }

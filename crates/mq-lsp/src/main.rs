@@ -49,6 +49,11 @@ struct TypeCheckArgs {
     #[arg(long, default_value_t = false)]
     strict_array: bool,
 
+    /// Type of the input document `.`, e.g. `h1 | h2`, `code` or `markdown - code`
+    /// (requires `--enable-type-checking`)
+    #[arg(long, value_name = "TYPE", value_parser = parse_input_type)]
+    input_type: Option<mq_check::types::Type>,
+
     /// Enable tuple typing for heterogeneous arrays (e.g., [1, "hello"] → (number, string))
     #[arg(long, default_value_t = false)]
     tuple: bool,
@@ -65,11 +70,17 @@ struct LintArgs {
     disable_lint_rule: Vec<mq_lint::RuleId>,
 }
 
+/// Parses `--input-type`, showing the valid names when the type is unknown.
+fn parse_input_type(src: &str) -> Result<mq_check::types::Type, String> {
+    mq_check::type_expr::parse_type(src).map_err(|error| error.with_help())
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
     let type_check_config = mq_check::TypeCheckerOptions {
         strict_array: cli.type_check.strict_array,
+        input_type: cli.type_check.input_type.clone(),
         ..Default::default()
     };
 

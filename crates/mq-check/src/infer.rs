@@ -40,6 +40,34 @@ pub struct DeferredParameterCall {
     pub arg_tys: Vec<Type>,
 }
 
+/// The type a generator yields, which is the join of the types of its `yield`s once they are
+/// known.
+#[derive(Debug, Clone)]
+pub struct DeferredGeneratorYield {
+    /// The type variable standing for the yielded type in the function's return type
+    pub yielded: TypeVarId,
+    /// The `yield` symbols of the function
+    pub yields: Vec<SymbolId>,
+}
+
+/// A call `attr(node, "name")` or `get(record, "name")` whose result type depends on the literal
+/// name and on the type of the first argument, which is known only after unification.
+#[derive(Debug, Clone)]
+pub struct DeferredAttrCall {
+    /// The call symbol
+    pub symbol_id: SymbolId,
+    /// The type of the node argument (explicit or piped)
+    pub node_ty: Type,
+    /// The pipe stage that feeds the node when it is piped, for a type not resolved yet
+    pub node_source: Option<SymbolId>,
+    /// The attribute or field name, taken from the string literal argument
+    pub attr_name: String,
+    /// Whether the call is `get` on a record rather than `attr` on a node
+    pub is_get: bool,
+    /// Source range for error reporting
+    pub range: Option<mq_lang::Range>,
+}
+
 /// A deferred user-defined function call for post-unification type checking.
 ///
 /// After unification, the original function's return type will be resolved from
@@ -76,6 +104,8 @@ pub struct DeferredRecordAccess {
     pub def_id: SymbolId,
     /// The field name being accessed
     pub field_name: String,
+    /// What the enclosing conditions say about the field
+    pub guard: crate::field_guard::FieldGuard,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -93,9 +123,13 @@ pub struct DeferredSelectorAccess {
     pub piped_ty: Type,
     /// The field name being accessed
     pub field_name: String,
-    /// The attribute kind, if this is a `Selector::Attr` selector on a Markdown node.
-    /// Used after unification when the piped type resolves to `Type::Markdown`.
-    pub attr_kind: Option<mq_lang::AttrKind>,
+    /// The selector, used after unification when the piped type resolves to a Markdown node.
+    pub selector: mq_lang::Selector,
+    /// The type this selector yields on its own, not including the selectors chained after it.
+    pub result_ty: Type,
+    /// The pipe stage that feeds this selector, whose current type is used when `piped_ty` is
+    /// still unresolved (a deferred overload result replaces the stage's type without binding).
+    pub piped_source: Option<SymbolId>,
     /// Source range for error reporting
     pub range: Option<mq_lang::Range>,
 }
@@ -106,15 +140,16 @@ pub struct DeferredSelectorAccess {
 /// the call appears to have one extra argument beyond the function's parameter
 /// count. When the trailing argument is a string/symbol/number key, it represents
 /// a bracket access on `f`'s return value rather than an extra function argument.
-/// This entry records the fresh return-type variable (resolved after unification)
-/// and the key so that `resolve_deferred_call_return_accesses` can look up the
-/// field type and bind the call expression's type to it.
+/// With several keys, each key is one entry whose `return_type` is the previous entry's
+/// `result_ty`. This entry records the type being indexed (resolved after unification) and the key
+/// so that `resolve_deferred_call_return_accesses` can look up the field type and bind `result_ty`
+/// to it.
 #[derive(Debug, Clone)]
 pub struct DeferredCallReturnAccess {
-    /// The call symbol ID (the `f(x)["key"]` expression in the HIR)
-    pub call_symbol_id: SymbolId,
-    /// Fresh return-type variable from the function's type instantiation
+    /// The type being indexed: the call's return type, or the result of the previous key
     pub return_type: Type,
+    /// The type of the field read by this key
+    pub result_ty: Type,
     /// The field name to access (the bracket key)
     pub field_name: String,
     /// Source range for error reporting
@@ -212,6 +247,16 @@ pub struct InferenceContext {
     errors: Vec<TypeError>,
     /// Piped input types for symbols in a pipe chain
     piped_inputs: FxHashMap<SymbolId, Type>,
+    /// The type of the input document `.`, piped into the first step of the program.
+    input_type: Type,
+    /// The `yield` symbols of each function, which make it return a generator.
+    function_yields: FxHashMap<SymbolId, Vec<SymbolId>>,
+    deferred_generator_yields: Vec<DeferredGeneratorYield>,
+    deferred_attr_calls: Vec<DeferredAttrCall>,
+    /// The user-defined predicates being analysed, to stop recursive ones.
+    predicate_stack: Vec<SymbolId>,
+    /// The previous pipe stage whose result is each symbol's piped input.
+    piped_sources: FxHashMap<SymbolId, SymbolId>,
     /// Deferred overload resolutions for operators with unresolved type variable operands,
     /// keyed by `SymbolId` so that insert/replace is O(1).
     deferred_overloads: FxHashMap<SymbolId, DeferredOverload>,
@@ -253,6 +298,12 @@ impl InferenceContext {
             builtins: FxHashMap::default(),
             errors: Vec::new(),
             piped_inputs: FxHashMap::default(),
+            input_type: Type::Dynamic,
+            function_yields: FxHashMap::default(),
+            deferred_generator_yields: Vec::new(),
+            deferred_attr_calls: Vec::new(),
+            predicate_stack: Vec::new(),
+            piped_sources: FxHashMap::default(),
             deferred_overloads: FxHashMap::default(),
             deferred_user_calls: Vec::new(),
             deferred_parameter_calls: Vec::new(),
@@ -282,6 +333,12 @@ impl InferenceContext {
         self.builtins.get(name).map(|v| v.as_slice())
     }
 
+    /// Names of all registered builtins and operators.
+    #[cfg(test)]
+    pub(crate) fn builtin_names(&self) -> impl Iterator<Item = &str> {
+        self.builtins.keys().map(|name| name.as_str())
+    }
+
     /// Adds a type error to the error collection
     pub fn add_error(&mut self, error: TypeError) {
         self.errors.push(error);
@@ -293,6 +350,70 @@ impl InferenceContext {
     }
 
     /// Sets the piped input type for a symbol
+    /// Marks `function` as being analysed as a predicate; false when it already is (recursion).
+    pub fn begin_predicate(&mut self, function: SymbolId) -> bool {
+        if self.predicate_stack.contains(&function) {
+            return false;
+        }
+        self.predicate_stack.push(function);
+        true
+    }
+
+    /// Ends the analysis started by `begin_predicate`.
+    pub fn end_predicate(&mut self) {
+        self.predicate_stack.pop();
+    }
+
+    /// Defers typing an `attr(node, "name")` call until the kinds of `node` are known.
+    pub fn add_deferred_attr_call(&mut self, call: DeferredAttrCall) {
+        self.deferred_attr_calls.push(call);
+    }
+
+    /// Takes the pending `attr` calls (consumes them).
+    pub fn take_deferred_attr_calls(&mut self) -> Vec<DeferredAttrCall> {
+        std::mem::take(&mut self.deferred_attr_calls)
+    }
+
+    /// Defers fixing the yielded type of a generator until its `yield`s are typed.
+    pub fn add_deferred_generator_yield(&mut self, entry: DeferredGeneratorYield) {
+        self.deferred_generator_yields.push(entry);
+    }
+
+    /// Takes the pending generator yield types (consumes them).
+    pub fn take_deferred_generator_yields(&mut self) -> Vec<DeferredGeneratorYield> {
+        std::mem::take(&mut self.deferred_generator_yields)
+    }
+
+    /// Records the `yield` symbols of every function.
+    pub fn set_function_yields(&mut self, yields: FxHashMap<SymbolId, Vec<SymbolId>>) {
+        self.function_yields = yields;
+    }
+
+    /// The `yield` symbols directly in `function` (not in a nested function), if any.
+    pub fn function_yields(&self, function: SymbolId) -> &[SymbolId] {
+        self.function_yields.get(&function).map_or(&[], Vec::as_slice)
+    }
+
+    /// Sets the type of the input document `.`.
+    pub fn set_input_type(&mut self, ty: Type) {
+        self.input_type = ty;
+    }
+
+    /// The type of the input document `.`.
+    pub fn input_type(&self) -> &Type {
+        &self.input_type
+    }
+
+    /// Records that `symbol` is piped the result of the pipe stage `source`.
+    pub fn set_piped_source(&mut self, symbol: SymbolId, source: SymbolId) {
+        self.piped_sources.insert(symbol, source);
+    }
+
+    /// The pipe stage whose result is piped into `symbol`, if recorded.
+    pub fn get_piped_source(&self, symbol: SymbolId) -> Option<SymbolId> {
+        self.piped_sources.get(&symbol).copied()
+    }
+
     pub fn set_piped_input(&mut self, symbol: SymbolId, ty: Type) {
         self.piped_inputs.insert(symbol, ty);
     }
@@ -335,9 +456,9 @@ impl InferenceContext {
         self.deferred_parameter_calls.push(call);
     }
 
-    /// Returns a reference to all deferred parameter calls
-    pub fn deferred_parameter_calls(&self) -> &[DeferredParameterCall] {
-        &self.deferred_parameter_calls
+    /// Takes all deferred parameter calls (consumes them)
+    pub fn take_deferred_parameter_calls(&mut self) -> Vec<DeferredParameterCall> {
+        std::mem::take(&mut self.deferred_parameter_calls)
     }
 
     /// Adds a deferred record field access for post-unification resolution
@@ -518,7 +639,9 @@ impl InferenceContext {
             }
         }
 
-        best_match.map(|(ty, _score)| self.instantiate_fresh(&ty))
+        let (ty, _score) = best_match?;
+        let resolved_args: Vec<Type> = arg_types.iter().map(|ty| self.resolve_type(ty)).collect();
+        Some(crate::builtin::refine_signature(name, &resolved_args).unwrap_or_else(|| self.instantiate_fresh(&ty)))
     }
 
     /// Instantiates fresh type variables in a type to avoid contamination
@@ -606,49 +729,48 @@ impl InferenceContext {
 
     /// Resolves a type by following type variable bindings.
     ///
-    /// Uses a visited set to detect and break cycles in the substitution map.
+    /// Tracks the variables on the current resolution path to detect and break cycles.
     /// Cycles can form with mutually recursive functions (e.g. `Var(a) →
     /// Union(Var(b), String)` and `Var(b) → Union(Var(a), String)`), which
     /// would otherwise cause infinite recursion.
     pub fn resolve_type(&self, ty: &Type) -> Type {
-        let mut visited = rustc_hash::FxHashSet::default();
-        self.resolve_type_inner(ty, &mut visited)
+        self.resolve_type_inner(ty, &mut Vec::new())
     }
 
-    fn resolve_type_inner(&self, ty: &Type, visited: &mut rustc_hash::FxHashSet<TypeVarId>) -> Type {
+    fn resolve_type_inner(&self, ty: &Type, path: &mut Vec<TypeVarId>) -> Type {
         match ty {
             Type::Var(var) => {
-                if !visited.insert(*var) {
+                let Some(bound) = self.substitutions.get(var) else {
+                    return ty.clone();
+                };
+                if path.contains(var) {
                     // Cycle detected — return the var unresolved to break infinite recursion
                     return ty.clone();
                 }
-                if let Some(bound) = self.substitutions.get(var) {
-                    let result = self.resolve_type_inner(bound, visited);
-                    visited.remove(var); // Allow the same var in sibling branches
-                    result
-                } else {
-                    visited.remove(var);
-                    ty.clone()
-                }
+                path.push(*var);
+                let result = self.resolve_type_inner(bound, path);
+                path.pop(); // Allow the same var in sibling branches
+                result
             }
-            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, visited))),
+            Type::Array(elem) => Type::Array(Box::new(self.resolve_type_inner(elem, path))),
+            Type::Generator(yielded) => Type::Generator(Box::new(self.resolve_type_inner(yielded, path))),
             Type::Dict(key, value) => Type::Dict(
-                Box::new(self.resolve_type_inner(key, visited)),
-                Box::new(self.resolve_type_inner(value, visited)),
+                Box::new(self.resolve_type_inner(key, path)),
+                Box::new(self.resolve_type_inner(value, path)),
             ),
             Type::Function(params, ret) => {
-                let new_params = params.iter().map(|p| self.resolve_type_inner(p, visited)).collect();
-                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, visited)))
+                let new_params = params.iter().map(|p| self.resolve_type_inner(p, path)).collect();
+                Type::Function(new_params, Box::new(self.resolve_type_inner(ret, path)))
             }
             Type::Record(fields, rest) => {
                 let new_fields = fields
                     .iter()
-                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, visited)))
+                    .map(|(k, v)| (k.clone(), self.resolve_type_inner(v, path)))
                     .collect();
-                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, visited)))
+                Type::Record(new_fields, Box::new(self.resolve_type_inner(rest, path)))
             }
-            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, visited)).collect()),
-            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, visited)).collect()),
+            Type::Union(members) => Type::union(members.iter().map(|m| self.resolve_type_inner(m, path)).collect()),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.resolve_type_inner(e, path)).collect()),
             _ => ty.clone(),
         }
     }

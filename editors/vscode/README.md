@@ -48,6 +48,7 @@ The extension can be configured through Visual Studio Code settings:
 - `mq.showExamplesInNewFile`: To Show/Hide examples in new file
 - `mq.enableCodeLens`: Enable/disable the CodeLens for running mq queries
 - `mq.typeCheck.enableTypeCheck`: Enable type checking diagnostics (passes `--enable-type-checking` to `mq-lsp`)
+- `mq.typeCheck.inputType`: Type of the input document, e.g. `h1 | h2`, `code` or `markdown - code` (passes `--input-type` to `mq-lsp`, requires `mq.typeCheck.enableTypeCheck`)
 - `mq.typeCheck.strictArray`: Require arrays to contain elements of a single type (passes `--strict-array` to `mq-lsp`, requires `mq.typeCheck.enableTypeCheck`)
 - `mq.lint.enableLint`: Enable `mq-lint` diagnostics (correctness, style, complexity, selector, and module rules)
 - `mq.lint.disabledRules`: Lint rule IDs to disable (e.g. `"naming_convention"`, `"shadow_variable"`). Only effective when `mq.lint.enableLint` is `true`

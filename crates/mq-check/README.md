@@ -79,6 +79,58 @@ x + 1
 // Error: no matching overload for +(number | string, number)
 ```
 
+Records returned by `try` and `catch` with the same keys are merged field by field, and a union of arrays is checked as an array of the union of its elements.
+
+```mq
+// try/catch records → {data: number | none, error: none | {message: string}}
+let r = try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"message": e["message"]}};
+
+// A parameter that defaults to None accepts other types: (a | none) -> ...
+def f(x, index = None): if (is_none(index)): [1] else: index;
+```
+
+### Markdown Node Types
+
+A Markdown node has type `markdown`, or a narrower set of node kinds such as `h1 | h2`, `code` or `markdown - code`. `is_*` predicates, `:h1`-style patterns and selector conditions (`if (.h1): ...`) narrow a value to the kinds they test in the then-branch and remove them in the else-branch.
+
+```mq
+def f(node):
+  if (is_h1(node) || is_h2(node)):
+    node        // node: h1 | h2
+  elif (is_code(node)):
+    node        // node: code
+  else:
+    node;;
+```
+
+Attributes are typed by the kinds a value can have (`.depth` of a heading is `number`, `.lang` of a code block is `string | none`). An attribute that none of the kinds has is an error, and one that only some kinds have adds `none`. A value of unknown kind (`markdown`) gets the plain attribute type.
+
+```mq
+.code | .depth   // Error: attribute `depth` does not exist on code
+attr(n, "depth") // number for a heading, the same table when the name is a string literal
+if (to_md_name(n) == "h1"): n   // n: h1 inside the branch
+.code | .lang    // string | none
+```
+
+A function of one parameter whose body is a single condition on it, such as `def is_title(n): to_md_name(n) == "h1" || to_md_name(n) == "h2";`, narrows the same way as the built-in predicates when it is used as a condition. With `&&` only the then-branch narrows, and a body with more than one step does not narrow. `!`, `||` and calls of other such functions work as in a plain condition.
+
+### Generators
+
+Reading a record field narrows with the tests around it: in `if (v["a"] != None): ...` (or `!is_none(v["a"])`, or the else-branch of `== None`) the read is not `none`, and `if (contains(keys(v), "a")): ...` selects the members of a union of records that have the key. Without such a test, a record that lacks the key reads as `none`.
+
+`match` is checked for exhaustiveness against the type of the value. `:number`-style type patterns, `||` alternatives, `[]` with `[a, ..rest]`, `:array` and `:dict` cover what they match, and a match that cannot be decided (an unknown type, nested refutable patterns) is not reported.
+
+A function that contains `yield` returns a coroutine, typed `generator<T>` where `T` is the type of the yielded values. `first`, `map`, `filter`, `flat_map`, `fold`, `next`, `send`, `status` and `close` understand it (`next` gives `{value: T | none, done: bool}`), and `is_coroutine(x)` narrows to it.
+
+```mq
+def numbers(): yield: 1 | yield: 2;
+// Inferred type: () -> generator<number>
+
+first(numbers())            // number | none
+map(numbers(), fn(x): to_string(x);)   // generator<string>
+len(numbers())              // Error: a generator is not an array or a string
+```
+
 ### Example:
 
 ```mq
@@ -110,6 +162,7 @@ When used as a command-line tool (`mq-typecheck`), the following options are ava
 | `--show-types`   | Display inferred types for all user-defined symbols                |
 | `--no-builtins`  | Disable automatic builtin preloading                               |
 | `--strict-array` | Reject heterogeneous arrays (e.g., `[1, "hello"]` is a type error) |
+| `--input-type`   | Type of the input document `.`, e.g. `h1 \| h2`, `code`, `markdown - code` (default: unknown) |
 | `--format`       | Diagnostic output format: `text` (default), `json`, `markdown`, or `sarif` |
 
 ### `--strict-array`
@@ -119,6 +172,19 @@ Enforces that all elements in an array literal share the same type.
 ```bash
 echo '[1, "hello"]' | mq-check --strict-array
 # Error: heterogeneous array: [number, string]
+```
+
+### Test files
+
+`mq-check` treats `TEST_FILE` and `assert_snapshot`, which `mq-test` defines at runtime, as defined names. Library users can declare them with `Hir::declare_global` (see `mq_check::TEST_RUNNER_GLOBALS`).
+
+### `--input-type`
+
+Declares the type of the input document, so that selectors, predicates and attributes are checked against it. The type is a union (`|`) of node kinds (`h`, `h1`..`h6`, `code`, `list`, ...), optionally with kinds removed (`markdown - code`); `number`, `string`, `bool`, `none`, `symbol`, `bytes`, `dynamic` and arrays (`[h1]`) are also accepted.
+
+```bash
+echo '.depth' | mq-check --input-type 'h1 | h2'   # ok
+echo '.depth' | mq-check --input-type code        # Error: undefined attribute `depth` on code
 ```
 
 ### CI Integration
@@ -157,6 +223,14 @@ Exits with a non-zero status if any error-severity diagnostic was found, regardl
 ```bash
 just test-all
 ```
+
+### Runtime conformance
+
+`just test-conformance` steps through the `.mq` test suite and checks that the value of every `let` binding fits the type the checker inferred for it (`var` bindings, whose type changes as they are assigned, and bindings seen as `none`, which may just not have run yet, are left out). A mismatch is a sign of an unsound inference. The result is pinned in `crates/mq-check/tests/runtime_conformance.snap`; regenerate it with `UPDATE_CORPUS=1`.
+
+### Differential fuzzing
+
+`just fuzz-check` generates random small programs, type-checks and runs them, and compares the verdicts: a checker error on a program that runs is a false positive when every sub-expression was meant to be well typed (`FUZZ_NOISE=0`), and a program that fails at runtime with a type error but passes the checker is a false negative. `FUZZ_COUNT`, `FUZZ_NOISE` (percent of wrong-typed sub-expressions) and `FUZZ_SEED` choose the run. A few hundred programs also run in the normal tests, which fail if the checker panics.
 
 ### Building
 

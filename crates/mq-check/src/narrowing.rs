@@ -19,7 +19,7 @@
 //!
 //! - Type predicates: `is_string(x)`, `is_number(x)`, `is_bool(x)`, …
 //! - Literal equality: `x == "foo"` (then-branch: String), `x != none` (removes None)
-//! - Type name check: `type(x) == "string"` → String
+//! - Type name check: `type(x) == "string"` → String, `to_md_name(x) == "h1"` → h1
 //! - Negation: `!is_string(x)` → swaps then/else
 //! - AND: `is_string(x) && is_bool(y)` → both in then-branch
 //! - OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
@@ -27,9 +27,11 @@
 
 use crate::constraint::{ChildrenIndex, get_children, get_non_keyword_children};
 use crate::infer::{CrossArmNarrowing, InferenceContext, NarrowingEntry};
+use crate::kind_set::KindSet;
 use crate::types::Type;
 use crate::walk_ancestors;
 use mq_hir::{Hir, SymbolId, SymbolKind};
+use mq_markdown::NodeKind;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Narrowings extracted from a condition expression.
@@ -54,6 +56,102 @@ impl ConditionNarrowings {
             else_narrowings: Vec::new(),
         }
     }
+}
+
+/// The node kinds for which each Markdown `is_*` predicate holds. This is the only place that
+/// relates a predicate to kinds; a test checks it against the definitions in `builtin.mq`.
+const NODE_PREDICATES: &[(&str, KindSet)] = &[
+    ("is_markdown", KindSet::ALL),
+    ("is_h", KindSet::HEADING),
+    ("is_h1", KindSet::of(NodeKind::H1)),
+    ("is_h2", KindSet::of(NodeKind::H2)),
+    ("is_h3", KindSet::of(NodeKind::H3)),
+    ("is_h4", KindSet::of(NodeKind::H4)),
+    ("is_h5", KindSet::of(NodeKind::H5)),
+    ("is_h6", KindSet::of(NodeKind::H6)),
+    ("is_code", KindSet::of(NodeKind::Code)),
+    ("is_em", KindSet::of(NodeKind::Emphasis)),
+    ("is_list", KindSet::of(NodeKind::List)),
+    ("is_table_align", KindSet::of(NodeKind::TableAlign)),
+    ("is_table_cell", KindSet::of(NodeKind::TableCell)),
+    ("is_html", KindSet::of(NodeKind::Html)),
+    ("is_text", KindSet::of(NodeKind::Text)),
+    ("is_toml", KindSet::of(NodeKind::Toml)),
+    ("is_yaml", KindSet::of(NodeKind::Yaml)),
+    ("is_callout", KindSet::of(NodeKind::Callout)),
+    ("is_mdx_flow_expression", KindSet::of(NodeKind::MdxFlowExpression)),
+    ("is_mdx_jsx_flow_element", KindSet::of(NodeKind::MdxJsxFlowElement)),
+    ("is_mdx_jsx_text_element", KindSet::of(NodeKind::MdxJsxTextElement)),
+    ("is_mdx_text_expression", KindSet::of(NodeKind::MdxTextExpression)),
+    ("is_mdx_js_esm", KindSet::of(NodeKind::MdxJsEsm)),
+    (
+        "is_mdx",
+        KindSet::of(NodeKind::MdxFlowExpression)
+            .union(KindSet::of(NodeKind::MdxJsxFlowElement))
+            .union(KindSet::of(NodeKind::MdxJsxTextElement))
+            .union(KindSet::of(NodeKind::MdxTextExpression))
+            .union(KindSet::of(NodeKind::MdxJsEsm)),
+    ),
+];
+
+/// The node kinds for which the `is_*` predicate `name` holds, if it is a Markdown predicate.
+pub(crate) fn predicate_kinds(name: &str) -> Option<KindSet> {
+    NODE_PREDICATES
+        .iter()
+        .find_map(|(predicate, kinds)| (*predicate == name).then_some(*kinds))
+}
+
+/// The node kinds a selector (`.h1`, `.code`, `:list`) matches. `None` for attribute,
+/// property and recursive selectors, which do not test the kind of a node.
+pub(crate) fn selector_kinds(selector: &mq_lang::Selector) -> Option<KindSet> {
+    use mq_lang::Selector;
+
+    let one = KindSet::of;
+    Some(match selector {
+        Selector::Blockquote => one(NodeKind::Blockquote),
+        Selector::Footnote => one(NodeKind::Footnote),
+        Selector::List(..) | Selector::Task | Selector::Todo | Selector::Done => one(NodeKind::List),
+        Selector::Toml => one(NodeKind::Toml),
+        Selector::Yaml => one(NodeKind::Yaml),
+        Selector::Break => one(NodeKind::Break),
+        Selector::InlineCode => one(NodeKind::CodeInline),
+        Selector::InlineMath => one(NodeKind::MathInline),
+        Selector::Delete => one(NodeKind::Delete),
+        Selector::Emphasis => one(NodeKind::Emphasis),
+        Selector::FootnoteRef => one(NodeKind::FootnoteRef),
+        Selector::Html => one(NodeKind::Html),
+        Selector::Image => one(NodeKind::Image),
+        Selector::ImageRef => one(NodeKind::ImageRef),
+        Selector::MdxJsxTextElement => one(NodeKind::MdxJsxTextElement),
+        Selector::Link => one(NodeKind::Link).union(one(NodeKind::WikiLink)),
+        Selector::LinkRef => one(NodeKind::LinkRef),
+        Selector::WikiLink => one(NodeKind::WikiLink),
+        Selector::Callout => one(NodeKind::Callout),
+        Selector::Embed => one(NodeKind::Embed),
+        Selector::Strong => one(NodeKind::Strong),
+        Selector::Code => one(NodeKind::Code),
+        Selector::Math => one(NodeKind::Math),
+        Selector::Heading(None) => KindSet::HEADING,
+        Selector::Heading(Some(depth)) => one(match depth {
+            0 | 1 => NodeKind::H1,
+            2 => NodeKind::H2,
+            3 => NodeKind::H3,
+            4 => NodeKind::H4,
+            5 => NodeKind::H5,
+            _ => NodeKind::H6,
+        }),
+        Selector::Table(None, None) => one(NodeKind::TableCell).union(one(NodeKind::TableAlign)),
+        Selector::Table(..) => one(NodeKind::TableCell),
+        Selector::TableAlign => one(NodeKind::TableAlign),
+        Selector::Text => one(NodeKind::Text),
+        Selector::HorizontalRule => one(NodeKind::HorizontalRule),
+        Selector::Definition => one(NodeKind::Definition),
+        Selector::MdxFlowExpression => one(NodeKind::MdxFlowExpression),
+        Selector::MdxTextExpression => one(NodeKind::MdxTextExpression),
+        Selector::MdxJsEsm => one(NodeKind::MdxJsEsm),
+        Selector::MdxJsxFlowElement => one(NodeKind::MdxJsxFlowElement),
+        Selector::Recursive | Selector::Attr(_) | Selector::Property(_) => return None,
+    })
 }
 
 /// Finds the symbol ID of the first parameter of the innermost enclosing function.
@@ -96,7 +194,7 @@ fn find_enclosing_function_first_param(
 /// - `is_symbol(x)` → `Symbol`
 /// - `is_array(x)` → `Array('a)`
 /// - `is_dict(x)` → `Dict('k, 'v)`
-/// - `is_markdown(x)`, `is_h(x)`, `is_p(x)`, … → `Markdown`
+/// - `is_markdown(x)`, `is_h(x)`, `is_code(x)`, … → the node kinds of the predicate (`NODE_PREDICATES`)
 pub(crate) fn analyze_type_predicate_call(
     hir: &Hir,
     call_id: SymbolId,
@@ -124,13 +222,9 @@ pub(crate) fn analyze_type_predicate_call(
             let v = ctx.fresh_var();
             Type::dict(Type::Var(k), Type::Var(v))
         }
-        // All Markdown structural predicates narrow to Markdown
-        "is_markdown" | "is_h" | "is_h1" | "is_h2" | "is_h3" | "is_h4" | "is_h5" | "is_h6" | "is_p" | "is_code"
-        | "is_code_inline" | "is_code_block" | "is_em" | "is_strong" | "is_link" | "is_image" | "is_list"
-        | "is_list_item" | "is_table" | "is_table_row" | "is_table_cell" | "is_blockquote" | "is_hr" | "is_html"
-        | "is_text" | "is_softbreak" | "is_hardbreak" | "is_task_list_item" | "is_footnote" | "is_footnote_ref"
-        | "is_strikethrough" | "is_math" | "is_math_inline" | "is_toml" | "is_yaml" => Type::Markdown,
         "is_bytes" => Type::Bytes,
+        "is_coroutine" => Type::Generator(Box::new(Type::Var(ctx.fresh_var()))),
+        name if predicate_kinds(name).is_some() => Type::Node(predicate_kinds(name)?),
         _ => return None,
     };
 
@@ -151,6 +245,66 @@ pub(crate) fn analyze_type_predicate_call(
     Some((def_id, narrowed_type))
 }
 
+/// What a call to a user-defined predicate tells about its argument, when the function takes one
+/// parameter and its body is a single condition: `def is_title(n): to_md_name(n) == "h1" || ..`
+/// narrows the argument of a call as the condition narrows `n`.
+fn user_predicate_narrowings(
+    hir: &Hir,
+    call_id: SymbolId,
+    children_index: &ChildrenIndex,
+    ctx: &mut InferenceContext,
+) -> Option<ConditionNarrowings> {
+    let def_id = hir.resolve_reference_symbol(call_id)?;
+    let def = hir.symbol(def_id)?;
+    if hir.is_builtin_symbol(def) || !matches!(def.kind, SymbolKind::Function(_)) {
+        return None;
+    }
+
+    let children = get_non_keyword_children(hir, def_id, children_index);
+    let is_parameter = |id: &SymbolId| hir.symbol(*id).is_some_and(|s| s.kind == SymbolKind::Parameter);
+    let [param] = children.iter().copied().filter(is_parameter).collect::<Vec<_>>()[..] else {
+        return None;
+    };
+    let [body] = children
+        .iter()
+        .copied()
+        .filter(|id| !is_parameter(id))
+        .collect::<Vec<_>>()[..]
+    else {
+        return None;
+    };
+
+    let args = get_non_keyword_children(hir, call_id, children_index);
+    let [arg] = args[..] else {
+        return None;
+    };
+    if hir.symbol(arg)?.kind != SymbolKind::Ref {
+        return None;
+    }
+    let arg_def = hir.resolve_reference_symbol(arg)?;
+
+    if !ctx.begin_predicate(def_id) {
+        return None;
+    }
+    let narrowings = analyze_condition(hir, body, children_index, ctx);
+    ctx.end_predicate();
+
+    let on_argument = |entries: Vec<NarrowingEntry>| -> Vec<NarrowingEntry> {
+        entries
+            .into_iter()
+            .filter(|entry| entry.def_id == param)
+            .map(|entry| NarrowingEntry {
+                def_id: arg_def,
+                ..entry
+            })
+            .collect()
+    };
+    Some(ConditionNarrowings {
+        then_narrowings: on_argument(narrowings.then_narrowings),
+        else_narrowings: on_argument(narrowings.else_narrowings),
+    })
+}
+
 /// Maps the runtime type-name string (returned by the `type()` builtin) to its `Type`.
 ///
 /// Used for narrowing `type(x) == "string"` conditions.
@@ -159,10 +313,11 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
         "string" => Some(Type::String),
         "number" => Some(Type::Number),
         "bool" => Some(Type::Bool),
-        "none" => Some(Type::None),
+        "None" => Some(Type::None),
         "symbol" => Some(Type::Symbol),
-        "markdown" => Some(Type::Markdown),
+        "markdown" => Some(Type::markdown()),
         "bytes" => Some(Type::Bytes),
+        "coroutine" => Some(Type::Generator(Box::new(Type::Var(ctx.fresh_var())))),
         "array" => {
             let elem = ctx.fresh_var();
             Some(Type::array(Type::Var(elem)))
@@ -172,10 +327,10 @@ pub(crate) fn type_name_to_type(name: &str, ctx: &mut InferenceContext) -> Optio
             let v = ctx.fresh_var();
             Some(Type::dict(Type::Var(k), Type::Var(v)))
         }
-        // Node-kind pattern (`:h1`, `:code`, `:list`) narrows to Markdown.
+        // Node-kind pattern (`:h1`, `:code`, `:list`) narrows to the kinds it matches.
         _ => mq_lang::Selector::from_selector_str(&format!(".{name}"))
-            .filter(|selector| !selector.is_attribute_selector())
-            .map(|_| Type::Markdown),
+            .and_then(|selector| selector_kinds(&selector))
+            .map(Type::Node),
     }
 }
 
@@ -232,6 +387,42 @@ pub(crate) fn analyze_type_call_equality(
     Some((def_id, narrowed_type))
 }
 
+/// Tries to extract `(def_id, narrowed_type)` from `to_md_name(x) == "h1"`, where the name is
+/// one of the node kind names.
+pub(crate) fn analyze_md_name_equality(
+    hir: &Hir,
+    call_id: SymbolId,
+    lit_id: SymbolId,
+    children_index: &ChildrenIndex,
+) -> Option<(SymbolId, Type)> {
+    let call_sym = hir.symbol(call_id)?;
+    if !matches!(call_sym.kind, SymbolKind::Call) || call_sym.value.as_deref() != Some("to_md_name") {
+        return None;
+    }
+    let call_args = get_non_keyword_children(hir, call_id, children_index);
+    let [arg_id] = call_args.as_slice() else {
+        return None;
+    };
+    if !matches!(hir.symbol(*arg_id)?.kind, SymbolKind::Ref) {
+        return None;
+    }
+
+    let lit_sym = hir.symbol(lit_id)?;
+    if !matches!(lit_sym.kind, SymbolKind::String) {
+        return None;
+    }
+    let name = lit_sym.value.as_deref()?;
+    let kinds = KindSet::from_kinds(
+        NodeKind::ALL
+            .into_iter()
+            .filter(|kind| !name.is_empty() && kind.name() == name),
+    );
+    if kinds.is_empty() {
+        return None;
+    }
+    Some((hir.resolve_reference_symbol(*arg_id)?, Type::Node(kinds)))
+}
+
 /// Tries to extract `(def_id, narrowed_type)` from `x == literal` or `literal == x`.
 pub(crate) fn analyze_literal_equality(hir: &Hir, lhs: SymbolId, rhs: SymbolId) -> Option<(SymbolId, Type)> {
     // Try (Ref, Literal) then (Literal, Ref)
@@ -255,7 +446,7 @@ pub(crate) fn analyze_literal_equality(hir: &Hir, lhs: SymbolId, rhs: SymbolId) 
 /// - Equality with literals: `x == "foo"` → narrows x to String; `x != none` → removes None
 /// - `type(x) == "typename"`: `type(x) == "string"` → narrows x to String
 /// - Negation: `!is_string(x)` → swaps then/else narrowings
-/// - Logical AND: `is_string(x) && is_number(y)` → both in then-branch, complement in else
+/// - Logical AND: `is_string(x) && is_number(y)` → both in then-branch, none in else
 /// - Logical OR (same variable): `is_string(x) || is_number(x)` → then: String|Number
 /// - Structural selector: `if (.h): ...` → first function parameter narrowed to Markdown
 pub(crate) fn analyze_condition(
@@ -291,7 +482,7 @@ pub(crate) fn analyze_condition(
                     }],
                 }
             } else {
-                ConditionNarrowings::empty()
+                user_predicate_narrowings(hir, cond_id, children_index, ctx).unwrap_or_else(ConditionNarrowings::empty)
             }
         }
         SymbolKind::UnaryOp if symbol.value.as_deref() == Some("!") => {
@@ -313,9 +504,12 @@ pub(crate) fn analyze_condition(
 
             // Try (in order):
             //   1. type(x) == "typename"  (either argument order)
-            //   2. x == literal           (either argument order)
+            //   2. to_md_name(x) == "h1"  (either argument order)
+            //   3. x == literal           (either argument order)
             let narrowing = analyze_type_call_equality(hir, children[0], children[1], children_index, ctx)
                 .or_else(|| analyze_type_call_equality(hir, children[1], children[0], children_index, ctx))
+                .or_else(|| analyze_md_name_equality(hir, children[0], children[1], children_index))
+                .or_else(|| analyze_md_name_equality(hir, children[1], children[0], children_index))
                 .or_else(|| analyze_literal_equality(hir, children[0], children[1]))
                 .or_else(|| analyze_literal_equality(hir, children[1], children[0]));
 
@@ -356,14 +550,13 @@ pub(crate) fn analyze_condition(
             let is_and = matches!(symbol.value.as_deref(), Some("&&") | Some("and"));
 
             if is_and {
-                // AND: both narrowings apply in then-branch; complement of each in else-branch
+                // AND: both narrowings apply in the then-branch. The else-branch is not narrowed:
+                // either side may be the one that failed, so neither complement holds for sure.
                 let mut then_narrowings = left.then_narrowings;
                 then_narrowings.extend(right.then_narrowings);
-                let mut else_narrowings = left.else_narrowings;
-                else_narrowings.extend(right.else_narrowings);
                 ConditionNarrowings {
                     then_narrowings,
-                    else_narrowings,
+                    else_narrowings: Vec::new(),
                 }
             } else {
                 // OR: in the then-branch, if both sides narrow the SAME variable to concrete
@@ -401,16 +594,17 @@ pub(crate) fn analyze_condition(
             }
         }
         SymbolKind::Selector(selector) if !selector.is_attribute_selector() => {
+            let kinds = selector_kinds(selector).unwrap_or(KindSet::ALL);
             if let Some(def_id) = find_enclosing_function_first_param(hir, cond_id, children_index) {
                 ConditionNarrowings {
                     then_narrowings: vec![NarrowingEntry {
                         def_id,
-                        narrowed_type: Type::Markdown,
+                        narrowed_type: Type::Node(kinds),
                         is_complement: false,
                     }],
                     else_narrowings: vec![NarrowingEntry {
                         def_id,
-                        narrowed_type: Type::Markdown,
+                        narrowed_type: Type::Node(kinds),
                         is_complement: true,
                     }],
                 }
@@ -488,6 +682,10 @@ pub(crate) fn resolve_type_narrowings(hir: &Hir, ctx: &mut InferenceContext) -> 
     // containment checks later instead of re-walking the chain per (ref, branch) pair.
     let mut branch_descendants: FxHashMap<SymbolId, FxHashSet<SymbolId>> = FxHashMap::default();
     for (sym_id, _) in hir.symbols() {
+        // A branch that is itself a reference (`if (is_h(x)): x`) belongs to its own branch.
+        if tracked_branches.contains(&sym_id) {
+            branch_descendants.entry(sym_id).or_default().insert(sym_id);
+        }
         for (ancestor_id, _) in walk_ancestors(hir, sym_id) {
             if tracked_branches.contains(&ancestor_id) {
                 branch_descendants.entry(ancestor_id).or_default().insert(sym_id);
@@ -569,9 +767,33 @@ fn compute_narrowed_type(ctx: &InferenceContext, entry: &NarrowingEntry) -> Opti
     let var_ty = ctx.get_symbol_type(entry.def_id)?;
     let var_ty = ctx.resolve_type(var_ty);
 
+    // Node kinds: a branch keeps the kinds that the predicate allows (then) or rules out (else).
+    if let (Type::Node(have), Type::Node(tested)) = (&var_ty, &entry.narrowed_type) {
+        return if entry.is_complement {
+            let rest = have.difference(*tested);
+            (!rest.is_empty()).then_some(Type::Node(rest))
+        } else {
+            let both = have.intersect(*tested);
+            Some(Type::Node(if both.is_empty() { *tested } else { both }))
+        };
+    }
+
+    // A generator keeps what it yields: `is_coroutine(x)` does not forget `x: generator<number>`.
+    if let (Type::Generator(_), Type::Generator(_)) = (&var_ty, &entry.narrowed_type) {
+        return (!entry.is_complement).then_some(var_ty);
+    }
+
     if var_ty.is_union() {
         if entry.is_complement {
             Some(var_ty.subtract(&entry.narrowed_type))
+        } else if let (Type::Union(members), Type::Node(tested)) = (&var_ty, &entry.narrowed_type) {
+            // Keep only the tested kinds that the node member of the union can have.
+            let have = members.iter().find_map(|member| match member {
+                Type::Node(set) => Some(*set),
+                _ => None,
+            });
+            let both = have.map_or(*tested, |have| have.intersect(*tested));
+            Some(Type::Node(if both.is_empty() { *tested } else { both }))
         } else {
             Some(entry.narrowed_type.clone())
         }
@@ -786,9 +1008,99 @@ fn apply_narrowing_to_branch(
         if !descendants.contains(&ref_id) {
             continue;
         }
+        // Narrowings of one reference compose (`is_h(x) && is_h1(x)`, nested ifs, `||` in the
+        // else branch), so a node type keeps only the kinds the reference still has.
+        let narrowed = match (
+            narrowed_type,
+            ctx.get_symbol_type(ref_id).map(|ty| ctx.resolve_type(ty)),
+        ) {
+            (Type::Node(new), Some(Type::Node(current))) if current.intersects(*new) => {
+                Type::Node(current.intersect(*new))
+            }
+            _ => narrowed_type.clone(),
+        };
         // Use set_symbol_type (not _no_bind) to also update the substitution
         // chain for this Ref's type variable. This ensures deferred overload
         // resolution sees the narrowed type instead of the original union.
-        ctx.set_symbol_type(ref_id, narrowed_type.clone());
+        ctx.set_symbol_type(ref_id, narrowed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `def is_x(arg): to_md_name(arg) == "name"` lines of builtin.mq, as `(is_x, name)`.
+    fn name_predicates() -> Vec<(String, String)> {
+        mq_lang::BUILTIN_MODULE_FILE
+            .lines()
+            .filter_map(|line| {
+                let rest = line.strip_prefix("def is_")?;
+                let (predicate, rest) = rest.split_once('(')?;
+                let name = rest
+                    .split_once("to_md_name(")?
+                    .1
+                    .split_once("== \"")?
+                    .1
+                    .split_once('"')?
+                    .0;
+                Some((format!("is_{predicate}"), name.to_string()))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_every_name_predicate_of_builtin_mq_is_in_the_table_with_its_kinds() {
+        let predicates = name_predicates();
+        assert!(predicates.len() > 10, "found {predicates:?}");
+        for (predicate, name) in predicates {
+            let expected = KindSet::from_kinds(NodeKind::ALL.into_iter().filter(|kind| kind.name() == name));
+            assert!(!expected.is_empty(), "`{predicate}` tests for unknown kind `{name}`");
+            assert_eq!(predicate_kinds(&predicate), Some(expected), "{predicate}");
+        }
+    }
+
+    #[test]
+    fn test_every_table_entry_is_defined_in_builtin_mq() {
+        for (predicate, _) in NODE_PREDICATES {
+            assert!(
+                mq_lang::BUILTIN_MODULE_FILE.contains(&format!("def {predicate}(")),
+                "`{predicate}` is not defined in builtin.mq"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod type_name_tests {
+    use super::*;
+
+    #[test]
+    fn test_every_runtime_type_name_narrows() {
+        let mut engine = mq_lang::DefaultEngine::default();
+        engine.load_builtin_module();
+        let mut ctx = InferenceContext::new();
+        for value in [
+            "1",
+            "\"a\"",
+            "true",
+            "None",
+            "[1]",
+            "{\"a\": 1}",
+            ":a",
+            "to_coroutine([1])",
+            "to_bytes(\"a\")",
+            "to_text(\"a\") | to_md_text()",
+        ] {
+            let name = engine
+                .eval(&format!("{value} | type()"), mq_lang::null_input().into_iter())
+                .unwrap_or_else(|e| panic!("{value}: {e}"))
+                .values()[0]
+                .to_string();
+            assert!(
+                type_name_to_type(&name, &mut ctx).is_some(),
+                "type() of `{value}` is {name:?}, which the checker does not narrow on"
+            );
+        }
     }
 }

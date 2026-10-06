@@ -969,12 +969,26 @@ impl Hir {
                 insertion_order: 0,
             });
 
-            node.non_token_children().for_each(|child| {
+            // Arguments after a `[` are the keys of `f(x)[key]`, not arguments of `f`.
+            let mut after_bracket = false;
+            let mut bracket_keys = 0;
+            node.children().for_each(|child| {
+                if child.is_token() {
+                    after_bracket |= child
+                        .token
+                        .as_ref()
+                        .is_some_and(|token| matches!(token.kind, mq_lang::TokenKind::LBracket));
+                    return;
+                }
+                bracket_keys += usize::from(after_bracket);
                 // Process all arguments recursively to handle complex expressions
                 // This ensures that identifiers inside bracket access (e.g., vars in vars["x"])
                 // are properly registered as Ref symbols that can be resolved
                 self.add_expr(child, source_id, scope_id, Some(symbol_id));
             });
+            if bracket_keys > 0 {
+                self.bracket_key_counts.insert(symbol_id, bracket_keys);
+            }
         }
     }
 
@@ -1279,9 +1293,8 @@ impl Hir {
                     });
 
                     self.add_expr(value_node, source_id, scope_id, Some(key_symbol_id));
-                } else {
-                    unreachable!("Dict entry does not have expected structure of key ':' value");
                 }
+                // Anything else is a node the parser recovered from a syntax error inside the dict.
             }
         }
     }
@@ -1409,7 +1422,10 @@ impl Hir {
         {
             let symbol_id = self.add_symbol(Symbol {
                 value: None,
-                kind: SymbolKind::Pattern { is_dict: false },
+                kind: SymbolKind::Pattern {
+                    is_dict: false,
+                    is_or: true,
+                },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,
                 doc: node.comments(),
@@ -1445,6 +1461,7 @@ impl Hir {
                 value: dict_key.or_else(|| node.name()),
                 kind: SymbolKind::Pattern {
                     is_dict: is_dict_pattern,
+                    is_or: false,
                 },
                 source: SourceInfo::new(Some(source_id), Some(node.range())),
                 scope: scope_id,

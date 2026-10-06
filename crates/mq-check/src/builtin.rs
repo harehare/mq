@@ -5,7 +5,9 @@
 //! find the appropriate category function and add a registration call.
 
 use crate::infer::InferenceContext;
+use crate::kind_set::KindSet;
 use crate::types::Type;
+use mq_markdown::NodeKind;
 
 /// Registers all builtin function and operator type signatures.
 pub fn register_all(ctx: &mut InferenceContext) {
@@ -98,8 +100,8 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     }
 
     // Addition: markdown + markdown -> markdown
-    register_binary(ctx, "+", Type::Markdown, Type::Markdown, Type::Markdown);
-    register_binary(ctx, "add", Type::Markdown, Type::Markdown, Type::Markdown);
+    register_binary(ctx, "+", Type::markdown(), Type::markdown(), Type::markdown());
+    register_binary(ctx, "add", Type::markdown(), Type::markdown(), Type::markdown());
 
     // Addition: [a] + a -> [a] (array element append)
     for name in ["+", "add"] {
@@ -114,8 +116,8 @@ fn register_arithmetic(ctx: &mut InferenceContext) {
     }
 
     // Addition: markdown + string -> markdown
-    register_binary(ctx, "+", Type::Markdown, Type::String, Type::Markdown);
-    register_binary(ctx, "add", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "+", Type::markdown(), Type::String, Type::markdown());
+    register_binary(ctx, "add", Type::markdown(), Type::String, Type::markdown());
 
     // Subtraction: (number, number) -> number
     register_binary(ctx, "-", Type::Number, Type::Number, Type::Number);
@@ -333,30 +335,48 @@ fn register_string(ctx: &mut InferenceContext) {
     register_ternary(ctx, "replace", Type::Var(a), Type::String, Type::String, Type::Var(a));
     register_ternary(ctx, "gsub", Type::String, Type::String, Type::String, Type::String);
     // gsub also accepts a markdown node at runtime.
-    register_ternary(ctx, "gsub", Type::Markdown, Type::String, Type::String, Type::Markdown);
+    register_ternary(
+        ctx,
+        "gsub",
+        Type::markdown(),
+        Type::String,
+        Type::String,
+        Type::markdown(),
+    );
     register_binary(ctx, "split", Type::String, Type::String, Type::array(Type::String));
-    register_binary(
-        ctx,
-        "split_records",
-        Type::String,
-        Type::String,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
-    );
-    register_unary(
-        ctx,
-        "extract_urls",
-        Type::Dynamic,
-        Type::array(Type::dict(Type::String, Type::Dynamic)),
-    );
+    // split_records and extract_urls also accept a markdown node (its text) and none (no records).
+    let split_record = Type::array(closed_record(&[
+        ("text", Type::String),
+        ("index", Type::Number),
+        ("start_byte", Type::Number),
+        ("end_byte", Type::Number),
+        ("terminator", Type::union(vec![Type::String, Type::None])),
+    ]));
+    for input in [Type::String, Type::markdown(), Type::None] {
+        register_binary(ctx, "split_records", input, Type::String, split_record.clone());
+    }
+    let url_record = Type::array(closed_record(&[
+        ("url", Type::String),
+        ("start_byte", Type::Number),
+        ("end_byte", Type::Number),
+        ("kind", Type::String),
+    ]));
+    for input in [Type::String, Type::markdown(), Type::None] {
+        register_unary(ctx, "extract_urls", input, url_record.clone());
+    }
 
     // word_wrap: (string, number) -> string
     register_binary(ctx, "word_wrap", Type::String, Type::Number, Type::String);
     // truncate: (string, number, string) -> string
     register_ternary(ctx, "truncate", Type::String, Type::Number, Type::String, Type::String);
-    register_binary(ctx, "join", Type::array(Type::String), Type::String, Type::String);
+    // join: ([a], string) -> string. The elements are converted to strings.
+    let a = ctx.fresh_var();
+    register_binary(ctx, "join", Type::array(Type::Var(a)), Type::String, Type::String);
 
     // contains: (string, string) -> bool
     register_binary(ctx, "contains", Type::String, Type::String, Type::Bool);
+    // A markdown node is searched through its text.
+    register_binary(ctx, "contains", Type::markdown(), Type::String, Type::Bool);
 
     // Character/codepoint conversion
     register_unary(ctx, "explode", Type::String, Type::array(Type::Number));
@@ -403,7 +423,7 @@ fn register_string(ctx: &mut InferenceContext) {
     register_binary(ctx, "markdown_escape", Type::String, Type::String, Type::String);
 
     // markdown_escape: (markdown, context) -> markdown
-    register_binary(ctx, "markdown_escape", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(ctx, "markdown_escape", Type::markdown(), Type::String, Type::markdown());
 
     // Capture: (string, pattern) -> {k: v}
     let k = ctx.fresh_var();
@@ -517,6 +537,58 @@ fn register_string(ctx: &mut InferenceContext) {
     );
 }
 
+/// A generator yielding the type variable `yielded`.
+fn generator_of(yielded: crate::types::TypeVarId) -> Type {
+    Type::Generator(Box::new(Type::Var(yielded)))
+}
+
+/// The `{value, done}` record `next` and `send` return; `value` is `none` once it is done.
+fn step_result(yielded: crate::types::TypeVarId) -> Type {
+    Type::record(
+        [
+            ("value".to_string(), Type::union(vec![Type::Var(yielded), Type::None])),
+            ("done".to_string(), Type::Bool),
+        ]
+        .into_iter()
+        .collect(),
+        Type::RowEmpty,
+    )
+}
+
+/// A node of exactly one kind.
+fn node_of(kind: NodeKind) -> Type {
+    Type::Node(KindSet::of(kind))
+}
+
+/// Returns the signature of `name` specialised to the already resolved `args`, for builtins whose
+/// result type depends on the structure of an argument rather than on a type variable.
+pub(crate) fn refine_signature(name: &str, args: &[Type]) -> Option<Type> {
+    match (name, args) {
+        ("flatten", [arg @ (Type::Array(_) | Type::Tuple(_))]) => {
+            Some(Type::function(vec![arg.clone()], Type::array(flatten_leaf(arg))))
+        }
+        // Setters change a node's contents but keep its kind.
+        (
+            "set_check" | "set_list_ordered" | "set_code_block_lang" | "set_ref" | "set_attr" | "set_children",
+            [node @ Type::Node(_), rest @ ..],
+        ) => Some(Type::function(
+            std::iter::once(node.clone()).chain(rest.iter().cloned()).collect(),
+            node.clone(),
+        )),
+        _ => None,
+    }
+}
+
+/// The element type left after `flatten` removes every level of array nesting.
+fn flatten_leaf(ty: &Type) -> Type {
+    match ty {
+        Type::Array(elem) => flatten_leaf(elem),
+        Type::Tuple(elems) => Type::union(elems.iter().map(flatten_leaf).collect()),
+        Type::Union(members) => Type::union(members.iter().map(flatten_leaf).collect()),
+        other => other.clone(),
+    }
+}
+
 /// Array functions: flatten, reverse, sort, uniq, compact, len, slice, insert, range, repeat
 fn register_array(ctx: &mut InferenceContext) {
     // Polymorphic array -> array functions
@@ -559,32 +631,28 @@ fn register_array(ctx: &mut InferenceContext) {
     register_binary(
         ctx,
         "token_compress",
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
         Type::Number,
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
     );
     // token_compress: ([markdown], number, model: string) -> [markdown]
     register_ternary(
         ctx,
         "token_compress",
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
         Type::Number,
         Type::String,
-        Type::array(Type::Markdown),
+        Type::array(Type::markdown()),
     );
 
-    // flatten: [[a]] -> [a]
-    let a = ctx.fresh_var();
-    register_unary(
-        ctx,
-        "flatten",
-        Type::array(Type::array(Type::Var(a))),
-        Type::array(Type::Var(a)),
-    );
-
-    // flatten: [a] -> [a] (identity for already-flat arrays)
+    // flatten: [a] -> [a]. The result element type is computed from the argument by
+    // `refine_signature`, since flattening is recursive and the elements may be mixed.
     let a = ctx.fresh_var();
     register_unary(ctx, "flatten", Type::array(Type::Var(a)), Type::array(Type::Var(a)));
+
+    // flatten: generator<a> -> generator<a>. A generator is returned unchanged.
+    let a = ctx.fresh_var();
+    register_unary(ctx, "flatten", generator_of(a), generator_of(a));
 
     // flatten: {k: v} -> {k: v} (identity/passthrough for dicts)
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
@@ -621,20 +689,29 @@ fn register_array(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
-    // insert: ([a], number, a) -> [a]
-    let a = ctx.fresh_var();
+    // insert: ([a], number, b) -> [a | b]. Arrays may hold mixed elements.
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_ternary(
         ctx,
         "insert",
         Type::array(Type::Var(a)),
         Type::Number,
-        Type::Var(a),
-        Type::array(Type::Var(a)),
+        Type::Var(b),
+        Type::array(Type::union(vec![Type::Var(a), Type::Var(b)])),
     );
 
     // array: a -> [a]
     let a = ctx.fresh_var();
     register_unary(ctx, "array", Type::Var(a), Type::array(Type::Var(a)));
+    // array takes any number of values: array(1, 2, 3) is [1, 2, 3]. Mixed values give a union.
+    for count in 2..=5 {
+        let vars: Vec<crate::types::TypeVarId> = (0..count).map(|_| ctx.fresh_var()).collect();
+        let element = Type::union(vars.iter().map(|v| Type::Var(*v)).collect());
+        ctx.register_builtin(
+            "array",
+            Type::function(vars.iter().map(|v| Type::Var(*v)).collect(), Type::array(element)),
+        );
+    }
 
     // range: (number) -> [number], (number, number) -> [number], (number, number, number) -> [number]
     register_unary(ctx, "range", Type::Number, Type::array(Type::Number));
@@ -739,6 +816,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::array(Type::array(Type::Var(k))),
     );
 
+    // get: (record, string) -> a. The field type is taken from the literal key once the record
+    // type is known (see `DeferredAttrCall`); until then, and for a computed key, it is open.
+    let (row, result) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "get",
+        Type::record(std::collections::BTreeMap::new(), Type::Var(row)),
+        Type::String,
+        Type::Var(result),
+    );
+
     // get: ({k: v}, k) -> v
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(
@@ -780,6 +868,17 @@ fn register_dict(ctx: &mut InferenceContext) {
         Type::Var(k),
         Type::dict(Type::Var(k), Type::Var(v)),
     );
+
+    // del: ([a], number) -> [a], (string, number) -> string. Removes the element at an index.
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "del",
+        Type::array(Type::Var(a)),
+        Type::Number,
+        Type::array(Type::Var(a)),
+    );
+    register_binary(ctx, "del", Type::String, Type::Number, Type::String);
 
     // update: ({k: v}, {k: v}) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
@@ -831,13 +930,11 @@ fn register_dict(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_binary(ctx, "get", Type::array(Type::Var(a)), Type::Number, Type::Var(a));
 
-    // get: (a, b) -> c (generic fallback for dynamically typed access)
-    let (a, b, c) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
-    register_binary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c));
-
-    // get: (a, b, c) -> d (chained access, e.g., get(dict, key1)[key2])
-    let (a, b, c, d) = (ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var(), ctx.fresh_var());
-    register_ternary(ctx, "get", Type::Var(a), Type::Var(b), Type::Var(c), Type::Var(d));
+    // get: (string, number) -> string (a character), (markdown, number) -> markdown, (none, a) -> none
+    register_binary(ctx, "get", Type::String, Type::Number, Type::String);
+    register_binary(ctx, "get", Type::markdown(), Type::Number, Type::markdown());
+    let key = ctx.fresh_var();
+    register_binary(ctx, "get", Type::None, Type::Var(key), Type::None);
 
     // pick: ({k: v}, [k]) -> {k: v}
     let (k, v) = (ctx.fresh_var(), ctx.fresh_var());
@@ -941,6 +1038,63 @@ fn register_collection(ctx: &mut InferenceContext) {
     let a = ctx.fresh_var();
     register_unary(ctx, "first", Type::array(Type::Var(a)), Type::Var(a));
 
+    // last: (generator<a>) -> a | none. Consumes the generator.
+    let a = ctx.fresh_var();
+    register_unary(
+        ctx,
+        "last",
+        generator_of(a),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
+
+    // compact: (generator<a>) -> generator<a>. Lazy.
+    let a = ctx.fresh_var();
+    register_unary(ctx, "compact", generator_of(a), generator_of(a));
+
+    // first: (generator<a>) -> a | none. Consumes one value.
+    let a = ctx.fresh_var();
+    register_unary(
+        ctx,
+        "first",
+        generator_of(a),
+        Type::union(vec![Type::Var(a), Type::None]),
+    );
+
+    // map/filter/flat_map/fold over a generator are lazy and give a generator (fold consumes it).
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "map",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::Var(b)),
+        generator_of(b),
+    );
+    let a = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "filter",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::Bool),
+        generator_of(a),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "flat_map",
+        generator_of(a),
+        Type::function(vec![Type::Var(a)], Type::array(Type::Var(b))),
+        generator_of(b),
+    );
+    let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
+    register_ternary(
+        ctx,
+        "fold",
+        generator_of(a),
+        Type::Var(b),
+        Type::function(vec![Type::Var(b), Type::Var(a)], Type::Var(b)),
+        Type::Var(b),
+    );
+
     // first: (string) -> string (first character)
     register_unary(ctx, "first", Type::String, Type::String);
 
@@ -971,15 +1125,22 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::dict(Type::Var(k), Type::Var(b)),
     );
 
-    // Generic fallback: map(a, (a) -> b) -> [b]
-    // Handles dynamically typed code where the collection type is runtime-guarded
+    // map: (string, (string) -> b) -> [b] over the characters, (none, (a) -> b) -> none
+    let b = ctx.fresh_var();
+    register_binary(
+        ctx,
+        "map",
+        Type::String,
+        Type::function(vec![Type::String], Type::Var(b)),
+        Type::array(Type::Var(b)),
+    );
     let (a, b) = (ctx.fresh_var(), ctx.fresh_var());
     register_binary(
         ctx,
         "map",
-        Type::Var(a),
+        Type::None,
         Type::function(vec![Type::Var(a)], Type::Var(b)),
-        Type::array(Type::Var(b)),
+        Type::None,
     );
 
     // filter: ([a], (a) -> bool) -> [a]
@@ -992,14 +1153,13 @@ fn register_collection(ctx: &mut InferenceContext) {
         Type::array(Type::Var(a)),
     );
 
-    // Generic fallback: filter(a, (a) -> bool) -> [a]
-    let a = ctx.fresh_var();
+    // filter: (string, (string) -> bool) -> [string] over the characters
     register_binary(
         ctx,
         "filter",
-        Type::Var(a),
-        Type::function(vec![Type::Var(a)], Type::Bool),
-        Type::array(Type::Var(a)),
+        Type::String,
+        Type::function(vec![Type::String], Type::Bool),
+        Type::array(Type::String),
     );
     // None propagation: filter(none, (none) -> a) -> none
     // The lambda return type is irrelevant for None propagation since it's never called
@@ -1166,41 +1326,22 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_h4",
         "is_h5",
         "is_h6",
-        "is_p",
         "is_code",
-        "is_code_inline",
-        "is_code_block",
         "is_em",
-        "is_strong",
-        "is_link",
-        "is_image",
         "is_list",
-        "is_list_item",
-        "is_table",
-        "is_table_row",
         "is_table_cell",
-        "is_blockquote",
-        "is_hr",
         "is_html",
         "is_text",
-        "is_softbreak",
-        "is_hardbreak",
-        "is_task_list_item",
-        "is_footnote",
-        "is_footnote_ref",
-        "is_strikethrough",
-        "is_math",
-        "is_math_inline",
         "is_toml",
         "is_yaml",
         "is_callout",
         "is_table_align",
     ] {
-        register_unary(ctx, name, Type::Markdown, Type::Bool);
+        register_unary(ctx, name, Type::markdown(), Type::Bool);
     }
 
     // is_h_level: (markdown, number) -> bool
-    register_binary(ctx, "is_h_level", Type::Markdown, Type::Number, Type::Bool);
+    register_binary(ctx, "is_h_level", Type::markdown(), Type::Number, Type::Bool);
 
     // Markdown type check functions also accept any type (dynamic usage)
     for name in [
@@ -1211,31 +1352,12 @@ fn register_markdown(ctx: &mut InferenceContext) {
         "is_h4",
         "is_h5",
         "is_h6",
-        "is_p",
         "is_code",
-        "is_code_inline",
-        "is_code_block",
         "is_em",
-        "is_strong",
-        "is_link",
-        "is_image",
         "is_list",
-        "is_list_item",
-        "is_table",
-        "is_table_row",
         "is_table_cell",
-        "is_blockquote",
-        "is_hr",
         "is_html",
         "is_text",
-        "is_softbreak",
-        "is_hardbreak",
-        "is_task_list_item",
-        "is_footnote",
-        "is_footnote_ref",
-        "is_strikethrough",
-        "is_math",
-        "is_math_inline",
         "is_toml",
         "is_yaml",
         "is_callout",
@@ -1251,69 +1373,75 @@ fn register_markdown(ctx: &mut InferenceContext) {
 
     // a -> markdown
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_markdown", Type::Var(a), Type::array(Type::Markdown));
+    register_unary(ctx, "to_markdown", Type::Var(a), Type::array(Type::markdown()));
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_mdx", Type::Var(a), Type::array(Type::Markdown));
+    register_unary(ctx, "to_mdx", Type::Var(a), Type::array(Type::markdown()));
 
     // string (HTML) -> array(markdown)
-    register_unary(ctx, "from_html", Type::String, Type::array(Type::Markdown));
+    register_unary(ctx, "from_html", Type::String, Type::array(Type::markdown()));
 
     // markdown -> string functions
     register_many(
         ctx,
         &["to_markdown_string", "to_text", "to_html"],
-        vec![Type::Markdown],
+        vec![Type::markdown()],
         Type::String,
     );
 
-    // Markdown manipulation: markdown -> markdown
-    register_many(
-        ctx,
-        &[
-            "to_code_inline",
-            "to_strong",
-            "to_em",
-            "to_blockquote",
-            "to_delete",
-            "increase_header_level",
-            "decrease_header_level",
-            "to_math",
-            "to_math_inline",
-            "to_md_table_row",
-        ],
-        vec![Type::Markdown],
-        Type::Markdown,
-    );
+    // Markdown constructors: any value (a string or a node) -> a node of one fixed kind
+    for (name, kind) in [
+        ("to_code_inline", NodeKind::CodeInline),
+        ("to_strong", NodeKind::Strong),
+        ("to_em", NodeKind::Emphasis),
+        ("to_blockquote", NodeKind::Blockquote),
+        ("to_delete", NodeKind::Delete),
+        ("to_math", NodeKind::Math),
+        ("to_math_inline", NodeKind::MathInline),
+        ("to_md_table_row", NodeKind::TableRow),
+    ] {
+        let value = ctx.fresh_var();
+        register_unary(ctx, name, Type::Var(value), node_of(kind));
+    }
 
-    // to_callout: (markdown, string, string) -> markdown
+    // to_callout: (a, string, string) -> callout. The body is a string or a node.
+    let callout_body = ctx.fresh_var();
     register_ternary(
         ctx,
         "to_callout",
-        Type::Markdown,
+        Type::Var(callout_body),
         Type::String,
         Type::String,
-        Type::Markdown,
+        node_of(NodeKind::Callout),
     );
 
     // to_md_fragment: markdown -> markdown, [a] -> markdown
-    register_unary(ctx, "to_md_fragment", Type::Markdown, Type::Markdown);
+    register_unary(ctx, "to_md_fragment", Type::markdown(), Type::markdown());
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_md_fragment", Type::array(Type::Var(a)), Type::Markdown);
+    register_unary(ctx, "to_md_fragment", Type::array(Type::Var(a)), Type::markdown());
 
     // to_md_table_align: [a] -> markdown
     let a = ctx.fresh_var();
-    register_unary(ctx, "to_md_table_align", Type::array(Type::Var(a)), Type::Markdown);
+    register_unary(
+        ctx,
+        "to_md_table_align",
+        Type::array(Type::Var(a)),
+        node_of(NodeKind::TableAlign),
+    );
 
     // (markdown, number) -> markdown
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::Markdown);
+    // A depth outside 1..=6 gives a heading that no `is_h<n>` matches, so the depth is not narrowed.
+    register_binary(ctx, "to_h", Type::Var(a), Type::Number, Type::Node(KindSet::HEADING));
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, Type::Markdown);
+    register_binary(ctx, "to_md_list", Type::Var(a), Type::Number, node_of(NodeKind::List));
 
     // (markdown, string) -> markdown/string
     let a = ctx.fresh_var();
-    register_binary(ctx, "to_code", Type::Var(a), Type::String, Type::Markdown);
-    register_binary(ctx, "attr", Type::Markdown, Type::String, Type::String);
+    register_binary(ctx, "to_code", Type::Var(a), Type::String, node_of(NodeKind::Code));
+    // The result depends on the attribute name (`attr(h, "depth")` is a number), which is not part
+    // of the type, so it stays open and is fixed by how it is used.
+    let attr_ret = ctx.fresh_var();
+    register_binary(ctx, "attr", Type::markdown(), Type::String, Type::Var(attr_ret));
     let a = ctx.fresh_var();
     register_binary(
         ctx,
@@ -1327,10 +1455,10 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_ternary(
         ctx,
         "set_attr",
-        Type::Markdown,
+        Type::markdown(),
         Type::String,
         Type::String,
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // (markdown, array) -> markdown
@@ -1338,36 +1466,46 @@ fn register_markdown(ctx: &mut InferenceContext) {
     register_binary(
         ctx,
         "set_children",
-        Type::Markdown,
+        Type::markdown(),
         Type::array(Type::Var(a)),
-        Type::Markdown,
+        Type::markdown(),
     );
 
     // (string, string, string) -> markdown
-    register_ternary(ctx, "to_link", Type::String, Type::String, Type::String, Type::Markdown);
+    register_ternary(
+        ctx,
+        "to_link",
+        Type::String,
+        Type::String,
+        Type::String,
+        node_of(NodeKind::Link),
+    );
     register_ternary(
         ctx,
         "to_image",
         Type::String,
         Type::String,
         Type::String,
-        Type::Markdown,
+        node_of(NodeKind::Image),
     );
 
     // Markdown attribute functions
-    register_unary(ctx, "get_title", Type::Markdown, Type::String);
-    register_unary(ctx, "get_url", Type::Markdown, Type::String);
+    register_unary(ctx, "get_title", Type::markdown(), Type::String);
+    register_unary(ctx, "get_url", Type::markdown(), Type::String);
+    // Anything else than a node has no position, which gives `none` at runtime.
+    let value = ctx.fresh_var();
     register_unary(
         ctx,
         "get_location",
-        Type::Markdown,
+        Type::Var(value),
         Type::dict(Type::String, Type::Number),
     );
 
     // Other markdown functions
-    register_nullary(ctx, "to_hr", Type::Markdown);
-    register_unary(ctx, "to_md_name", Type::Markdown, Type::String);
-    register_unary(ctx, "to_md_text", Type::Markdown, Type::String);
+    register_nullary(ctx, "to_hr", node_of(NodeKind::HorizontalRule));
+    register_unary(ctx, "to_md_name", Type::markdown(), Type::String);
+    let value = ctx.fresh_var();
+    register_unary(ctx, "to_md_text", Type::Var(value), Type::String);
 
     // to_md_table_cell: (a, number, number) -> markdown
     let a = ctx.fresh_var();
@@ -1377,16 +1515,24 @@ fn register_markdown(ctx: &mut InferenceContext) {
         Type::Var(a),
         Type::Number,
         Type::Number,
-        Type::Markdown,
+        node_of(NodeKind::TableCell),
     );
 
     // (markdown, bool) -> markdown
-    register_binary(ctx, "set_check", Type::Markdown, Type::Bool, Type::Markdown);
-    register_binary(ctx, "set_list_ordered", Type::Markdown, Type::Bool, Type::Markdown);
+    register_binary(ctx, "set_check", Type::markdown(), Type::Bool, Type::markdown());
+    // `none` leaves the node unchecked (a plain list item).
+    register_binary(ctx, "set_check", Type::markdown(), Type::None, Type::markdown());
+    register_binary(ctx, "set_list_ordered", Type::markdown(), Type::Bool, Type::markdown());
 
     // (markdown, string) -> markdown
-    register_binary(ctx, "set_code_block_lang", Type::Markdown, Type::String, Type::Markdown);
-    register_binary(ctx, "set_ref", Type::Markdown, Type::String, Type::Markdown);
+    register_binary(
+        ctx,
+        "set_code_block_lang",
+        Type::markdown(),
+        Type::String,
+        Type::markdown(),
+    );
+    register_binary(ctx, "set_ref", Type::markdown(), Type::String, Type::markdown());
 
     // None propagation for markdown -> string functions
     register_none_propagation_unary(ctx, &["to_text", "to_html", "to_markdown_string"]);
@@ -1399,6 +1545,14 @@ fn register_variable(ctx: &mut InferenceContext) {
 }
 
 /// Debug/control functions
+/// A record type with exactly the given fields.
+fn closed_record(fields: &[(&str, Type)]) -> Type {
+    Type::record(
+        fields.iter().map(|(name, ty)| (name.to_string(), ty.clone())).collect(),
+        Type::RowEmpty,
+    )
+}
+
 fn register_debug(ctx: &mut InferenceContext) {
     register_nullary(ctx, "is_debug_mode", Type::Bool);
     register_nullary(ctx, "breakpoint", Type::None);
@@ -1407,14 +1561,22 @@ fn register_debug(ctx: &mut InferenceContext) {
     // argument. Coroutines and their `{ value, done }` records are runtime-only VM types for
     // now, so the checker models both sides as dynamic while still resolving the builtin name.
     register_nullary(ctx, "next", Type::Dynamic);
-    register_unary(ctx, "next", Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "send", Type::Dynamic, Type::Dynamic);
-    register_binary(ctx, "send", Type::Dynamic, Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "close", Type::Dynamic, Type::Dynamic);
-    register_unary(ctx, "status", Type::Dynamic, Type::Symbol);
-
-    let a = ctx.fresh_var();
-    register_unary(ctx, "assert", Type::Var(a), Type::Var(a));
+    for name in ["next", "send"] {
+        let yielded = ctx.fresh_var();
+        register_unary(ctx, name, generator_of(yielded), step_result(yielded));
+    }
+    let (yielded, sent) = (ctx.fresh_var(), ctx.fresh_var());
+    register_binary(
+        ctx,
+        "send",
+        generator_of(yielded),
+        Type::Var(sent),
+        step_result(yielded),
+    );
+    let yielded = ctx.fresh_var();
+    register_unary(ctx, "close", generator_of(yielded), generator_of(yielded));
+    let yielded = ctx.fresh_var();
+    register_unary(ctx, "status", generator_of(yielded), Type::Symbol);
 }
 
 /// File I/O functions
@@ -1525,6 +1687,7 @@ fn register_bytes(ctx: &mut InferenceContext) {
 
     // reverse: (bytes) -> bytes
     register_unary(ctx, "reverse", Type::Bytes, Type::Bytes);
+    register_unary(ctx, "reverse", Type::String, Type::String);
 
     // len: (bytes) -> number
     register_unary(ctx, "len", Type::Bytes, Type::Number);
@@ -1598,7 +1761,7 @@ mod tests {
     use mq_hir::Hir;
     use rstest::rstest;
 
-    use crate::{TypeChecker, TypeError};
+    use crate::{TypeChecker, TypeError, types::Type};
 
     /// Helper function to create HIR from code
     fn create_hir(code: &str) -> Hir {
@@ -1615,6 +1778,50 @@ mod tests {
         let hir = create_hir(code);
         let mut checker = TypeChecker::new();
         checker.check(&hir)
+    }
+
+    #[rstest]
+    #[case::flat(Type::array(Type::Number), Type::Number)]
+    #[case::nested(Type::array(Type::array(Type::array(Type::String))), Type::String)]
+    #[case::mixed_tuple(
+        Type::tuple(vec![Type::array(Type::String), Type::String]),
+        Type::String
+    )]
+    #[case::union_members(
+        Type::array(Type::union(vec![Type::Number, Type::array(Type::String)])),
+        Type::union(vec![Type::Number, Type::String])
+    )]
+    fn test_flatten_result_type(#[case] arg: Type, #[case] leaf: Type) {
+        let signature = super::refine_signature("flatten", std::slice::from_ref(&arg));
+        assert_eq!(signature, Some(Type::function(vec![arg], Type::array(leaf))));
+    }
+
+    #[test]
+    fn test_refine_signature_ignores_unresolved_and_other_builtins() {
+        assert_eq!(super::refine_signature("flatten", &[Type::Number]), None);
+        assert_eq!(super::refine_signature("reverse", &[Type::array(Type::Number)]), None);
+    }
+
+    #[test]
+    fn test_registered_builtins_are_known_to_hir() {
+        let mut ctx = crate::infer::InferenceContext::new();
+        super::register_all(&mut ctx);
+        let hir = create_hir("");
+        let known: std::collections::HashSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| hir.is_builtin_symbol(symbol))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+        let mut missing: Vec<&str> = ctx
+            .builtin_names()
+            .filter(|name| name.chars().all(|c| c.is_alphanumeric() || c == '_'))
+            .filter(|name| !known.contains(name))
+            .collect();
+        missing.sort_unstable();
+        assert!(
+            missing.is_empty(),
+            "type signatures without a builtin definition: {missing:?}"
+        );
     }
 
     // Mathematical Functions
@@ -2598,7 +2805,7 @@ mod tests {
     // Markdown Manipulation Functions
 
     #[rstest]
-    #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"href\")", true)]
+    #[case::attr("to_markdown(\"[link](url)\") | first() | attr(\"url\")", true)]
     #[case::set_attr("to_markdown(\"[link](url)\") | first() | set_attr(\"href\", \"new\")", true)]
     #[case::set_children("to_markdown(\"# heading\") | first() | set_children([\"new\"])", true)]
     #[case::get_title("to_markdown(\"[link](url)\") | first() | get_title", true)]

@@ -59,8 +59,10 @@ pub fn unify(
         | (Type::Bool, Type::Bool)
         | (Type::Symbol, Type::Symbol)
         | (Type::None, Type::None)
-        | (Type::Markdown, Type::Markdown)
         | (Type::Bytes, Type::Bytes) => {}
+
+        // Node types unify when they share a kind
+        (Type::Node(a), Type::Node(b)) if a.intersects(*b) => {}
 
         // Type variables
         (Type::Var(v1), Type::Var(v2)) if v1 == v2 => {}
@@ -101,6 +103,9 @@ pub fn unify(
         // Arrays
         (Type::Array(elem1), Type::Array(elem2)) => unify(ctx, elem1, elem2, range, origin),
 
+        // Generators
+        (Type::Generator(y1), Type::Generator(y2)) => unify(ctx, y1, y2, range, origin),
+
         // Tuples: same-length tuples unify element-wise
         (Type::Tuple(elems1), Type::Tuple(elems2)) => {
             if elems1.len() != elems2.len() {
@@ -112,10 +117,20 @@ pub fn unify(
             }
         }
 
-        // Tuple ↔ Array: unify each tuple element with the array element type
+        // Tuple ↔ Array: each tuple element must fit the array element type. An array element
+        // type that is still unknown becomes the join of the tuple elements, since a tuple of
+        // different types is an array of a union.
         (Type::Tuple(elems), Type::Array(elem)) | (Type::Array(elem), Type::Tuple(elems)) => {
-            for e in elems {
-                unify(ctx, e, elem, range, origin);
+            let resolved: Vec<Type> = elems.iter().map(|e| ctx.resolve_type(e)).collect();
+            if let Type::Var(var) = ctx.resolve_type(elem)
+                && resolved.iter().all(|e| !e.has_pending_var())
+                && !occurs_check(var, &Type::Tuple(resolved.clone()))
+            {
+                ctx.bind_type_var(var, Type::join(resolved));
+            } else {
+                for e in elems {
+                    unify(ctx, e, elem, range, origin);
+                }
             }
         }
 
@@ -151,9 +166,19 @@ pub fn unify(
         (Type::Record(fields, rest), Type::Dict(k, v)) | (Type::Dict(k, v), Type::Record(fields, rest)) => {
             // All record keys are strings → unify k with String
             unify(ctx, k, &Type::String, range, origin);
-            // All record field values must unify with the dict value type
-            for field_ty in fields.values() {
-                unify(ctx, field_ty, v, range, origin);
+            // Every field value must fit the dict value type. A value type that is still unknown
+            // becomes the join of the field types: a record with fields of different types is a
+            // dict of their union.
+            let resolved: Vec<Type> = fields.values().map(|f| ctx.resolve_type(f)).collect();
+            if let Type::Var(var) = ctx.resolve_type(v)
+                && resolved.iter().all(|f| !f.has_pending_var())
+                && !resolved.is_empty()
+            {
+                ctx.bind_type_var(var, Type::join(resolved));
+            } else {
+                for field_ty in fields.values() {
+                    unify(ctx, field_ty, v, range, origin);
+                }
             }
             // The rest of the row must also be compatible with the dict
             unify(ctx, rest, &Type::Dict(k.clone(), v.clone()), range, origin);
@@ -297,7 +322,7 @@ fn unify_records(
 fn occurs_check(var: TypeVarId, ty: &Type) -> bool {
     match ty {
         Type::Var(v) => var == *v,
-        Type::Array(elem) => occurs_check(var, elem),
+        Type::Array(elem) | Type::Generator(elem) => occurs_check(var, elem),
         Type::Tuple(elems) => elems.iter().any(|e| occurs_check(var, e)),
         Type::Dict(key, value) => occurs_check(var, key) || occurs_check(var, value),
         Type::Function(params, ret) => params.iter().any(|p| occurs_check(var, p)) || occurs_check(var, ret),
@@ -332,7 +357,7 @@ fn occurs_check_transitive(
                 false
             }
         }
-        Type::Array(elem) => occurs_check_transitive(ctx, var, elem, visited),
+        Type::Array(elem) | Type::Generator(elem) => occurs_check_transitive(ctx, var, elem, visited),
         Type::Tuple(elems) => elems.iter().any(|e| occurs_check_transitive(ctx, var, e, visited)),
         Type::Dict(key, value) => {
             occurs_check_transitive(ctx, var, key, visited) || occurs_check_transitive(ctx, var, value, visited)
@@ -374,6 +399,7 @@ fn apply_substitution_inner(ctx: &InferenceContext, ty: &Type, visited: &mut Has
             result
         }
         Type::Array(elem) => Type::Array(Box::new(apply_substitution_inner(ctx, elem, visited))),
+        Type::Generator(yielded) => Type::Generator(Box::new(apply_substitution_inner(ctx, yielded, visited))),
         Type::Tuple(elems) => Type::Tuple(
             elems
                 .iter()
@@ -440,7 +466,7 @@ fn collect_free_vars(ty: &Type, vars: &mut HashSet<TypeVarId>) {
         Type::Var(var) => {
             vars.insert(*var);
         }
-        Type::Array(elem) => collect_free_vars(elem, vars),
+        Type::Array(elem) | Type::Generator(elem) => collect_free_vars(elem, vars),
         Type::Tuple(elems) => {
             for e in elems {
                 collect_free_vars(e, vars);
@@ -479,6 +505,33 @@ mod tests {
 
         unify(&mut ctx, &Type::String, &Type::Number, None, &ConstraintOrigin::General);
         assert!(!ctx.take_errors().is_empty());
+    }
+
+    #[test]
+    fn test_unify_node_types_requires_a_shared_kind() {
+        use crate::kind_set::KindSet;
+        use mq_markdown::NodeKind::{Code, H1, H2};
+
+        let node = |kinds: &[mq_markdown::NodeKind]| Type::Node(KindSet::from_kinds(kinds.iter().copied()));
+        let mut ctx = InferenceContext::new();
+        unify(
+            &mut ctx,
+            &node(&[H1, H2]),
+            &Type::markdown(),
+            None,
+            &ConstraintOrigin::General,
+        );
+        unify(
+            &mut ctx,
+            &node(&[H1, H2]),
+            &node(&[H2, Code]),
+            None,
+            &ConstraintOrigin::General,
+        );
+        assert!(ctx.take_errors().is_empty());
+
+        unify(&mut ctx, &node(&[H1]), &node(&[Code]), None, &ConstraintOrigin::General);
+        assert_eq!(ctx.take_errors().len(), 1);
     }
 
     #[test]

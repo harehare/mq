@@ -254,6 +254,53 @@ fn test_gsub_accepts_markdown_narrowed_by_match() {
     false,
     "multiple string literals without wildcard"
 )]
+#[case::union_type_patterns(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number: 1 | :string: 2 end"#,
+    true,
+    "type patterns cover each member of a union"
+)]
+#[case::union_type_pattern_missing(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number: 1 end"#,
+    false,
+    "the string member is not covered"
+)]
+#[case::union_or_type_patterns(
+    r#"let v = if (true): 1 else: "a"; | match (v): | :number || :string: 1 end"#,
+    true,
+    "an alternative of type patterns covers both members"
+)]
+#[case::union_with_none_literal(
+    r#"let v = if (true): 1 else: None; | match (v): | :number: 1 | None: 2 end"#,
+    true,
+    "a type pattern and the None literal"
+)]
+#[case::or_with_wildcard(
+    r#"match (1): | 1 || _: 1 end"#,
+    true,
+    "an alternative containing a wildcard covers everything"
+)]
+#[case::array_rest_covers_all(
+    r#"let v = [1, 2]; | match (v): | []: 0 | [a, ..r]: a end"#,
+    true,
+    "[] and [a, ..r] cover every length"
+)]
+#[case::array_rest_misses_empty(
+    r#"let v = [1, 2]; | match (v): | [a, ..r]: a end"#,
+    false,
+    "the empty array is not covered"
+)]
+#[case::array_exact_only(
+    r#"let v = [1, 2]; | match (v): | [a, b]: a end"#,
+    false,
+    "only length two is covered"
+)]
+#[case::array_type_pattern(r#"let v = [1, 2]; | match (v): | :array: 0 end"#, true, ":array covers every array")]
+#[case::record_dict_pattern(
+    r#"let v = {"a": 1}; | match (v): | {a}: a end"#,
+    true,
+    "a dict pattern over the keys of a record"
+)]
+#[case::unknown_input_is_not_checked(r#"match (.): | :h1: 1 end"#, true, "unknown input is not checked")]
 fn test_match_exhaustiveness(#[case] code: &str, #[case] is_exhaustive: bool, #[case] description: &str) {
     let result = check_types(code);
     let has_exhaustiveness_error = result.iter().any(|e| matches!(e, TypeError::NonExhaustiveMatch { .. }));
@@ -394,9 +441,11 @@ fn test_heterogeneous_array_allowed() {
 
 #[test]
 fn test_function_arity_mismatch() {
-    // Calling function with wrong number of arguments
-    let result = check_types("def f(x, y): x + y;\n| f(1)");
-    assert!(!result.is_empty(), "Expected arity mismatch error");
+    // Calling function with wrong number of arguments. The piped input counts as the first
+    // argument, so `f(1)` is fine for two parameters but not for three.
+    assert!(!check_types("def f(x, y): x + y;\n| f(1, 2, 3)").is_empty());
+    assert!(!check_types("def f(x, y, z): x + y + z;\n| f(1)").is_empty());
+    assert!(check_types("def f(x, y): x + y;\n| f(1)").is_empty());
 }
 
 #[test]
@@ -1166,7 +1215,7 @@ fn test_type_unification() {
 )]
 #[case::different_types(
     r#"foreach(item, [1, 2, 3]): if (true): item else: "str";"#,
-    false,
+    true,
     "different types in foreach creates union"
 )]
 fn test_foreach_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
@@ -1175,9 +1224,9 @@ fn test_foreach_type_combinations(#[case] code: &str, #[case] should_succeed: bo
 }
 
 #[rstest]
-#[case::union_with_add(
-    r#"let x = foreach(item, [1, 2, 3]): if (true): item else: "str";; | x + 1"#,
-    "foreach union (array<number|string>) should fail with +"
+#[case::union_with_subtract(
+    r#"let x = foreach(item, [1, 2, 3]): if (true): item else: "str";; | x - 1"#,
+    "foreach union (array<number|string>) should fail with -"
 )]
 fn test_foreach_union_arithmetic_errors(#[case] code: &str, #[case] description: &str) {
     let result = check_types(code);
@@ -1209,7 +1258,7 @@ fn test_foreach_union_arithmetic_errors(#[case] code: &str, #[case] description:
 )]
 #[case::foreach_break_value(
     r#"foreach(x, [1, 2, 3]): if (true): break: "early" else: x;"#,
-    false,
+    true,
     "foreach with break value produces union"
 )]
 fn test_loop_type_combinations(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
@@ -1666,6 +1715,47 @@ fn test_var_reassignment_type_error_after() {
     true,
     "negated narrowing: !is_number narrows to string in then, number in else"
 )]
+#[case::type_name_none_narrowing(
+    r#"let x = if (true): 42 else: None; |
+    if (type(x) == "None"):
+        0
+    else:
+        x + 1
+    ;"#,
+    true,
+    "type(x) == \"None\" is the runtime name of none and narrows the else branch to number"
+)]
+#[case::user_predicate_and(
+    r#"def is_pos(x): is_number(x) && x > 0;
+let v = if (true): 1 else: "a"; | if (is_pos(v)): v + 1 else: 0"#,
+    true,
+    "a predicate joined with && narrows the then-branch"
+)]
+#[case::user_predicate_and_else_not_narrowed(
+    r#"def is_pos(x): is_number(x) && x > 0;
+let v = if (true): 1 else: "a"; | if (is_pos(v)): 0 else: upcase(v)"#,
+    false,
+    "the else-branch of an && predicate stays a union"
+)]
+#[case::user_predicate_negated(
+    r#"def not_str(x): !is_string(x);
+let v = if (true): 1 else: "a"; | if (not_str(v)): v + 1 else: upcase(v)"#,
+    true,
+    "a negated predicate swaps its branches"
+)]
+#[case::user_predicate_or(
+    r#"def is_numstr(x): is_number(x) || is_string(x);
+let v = if (true): 1 else: [1]; | if (is_numstr(v)): 0 else: len(v)"#,
+    true,
+    "an alternative of tests on one variable"
+)]
+#[case::user_predicate_nested(
+    r#"def is_num(x): is_number(x);
+def is_numish(x): is_num(x);
+let v = if (true): 1 else: "a"; | if (is_numish(v)): v + 1 else: upcase(v)"#,
+    true,
+    "a predicate defined by another predicate"
+)]
 #[case::union_and_compound_narrowing(
     r#"let x = if (true): 42 else: "string"; |
     let y = if (true): 10 else: "other"; |
@@ -2091,10 +2181,10 @@ fn test_recursive_selector(#[case] code: &str, #[case] should_succeed: bool, #[c
 #[rstest]
 #[case(r#"def myfirst(arr): if (is_coroutine(arr)): next(arr)["value"] else: arr[0];"#)]
 #[case(r#"def myfirst(arr): next(arr)["value"];"#)]
-#[case(r#"next(1)["value"]"#)]
-#[case(r#"let x = next(1) | x["value"]"#)]
+#[case(r#"next(to_coroutine([1]))["value"]"#)]
+#[case(r#"let x = next(to_coroutine([1])) | x["value"]"#)]
 #[case(r#"def myfirst(arr): get(next(arr), "value");"#)]
-#[case(r#"next(1)"#)]
+#[case(r#"next(to_coroutine([1]))"#)]
 fn test_builtin_call_bracket_access_does_not_leak_key_into_overload(#[case] code: &str) {
     let errors = check_types(code);
     assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
@@ -2175,4 +2265,168 @@ fn test_if_branch_record_with_none_field_does_not_pin_other_branch(#[case] code:
 fn test_array_of_records_with_differing_field_types_is_allowed(#[case] code: &str) {
     let errors = check_types(code);
     assert!(errors.is_empty(), "Code: {}\nErrors: {:?}", code, errors);
+}
+
+#[rstest]
+#[case::none_vs_record_field(r#"try: {"data": 1, "error": None} catch(e): {"data": None, "error": {"message": "x"}}"#)]
+#[case::nested_records(r#"try: {"a": {"b": 1}} catch(e): {"a": {"b": "x"}}"#)]
+fn test_try_catch_merges_record_fields_into_unions(#[case] code: &str) {
+    assert!(check_types(code).is_empty());
+}
+
+#[test]
+fn test_try_catch_record_field_union_keeps_each_member() {
+    let code = r#"let r = try: {"a": 1} catch(e): {"a": "x"} | r["a"] + true"#;
+    assert!(!check_types(code).is_empty());
+}
+
+#[rstest]
+#[case::mixed_elements(r#"let b = [["x"], "y"] | b | flatten()"#)]
+#[case::nested_arrays(r#"[[1], [2, [3]]] | flatten()"#)]
+#[case::flat_array(r#"[1, 2] | flatten()"#)]
+fn test_flatten_accepts_mixed_and_nested_arrays(#[case] code: &str) {
+    let hir = {
+        let mut hir = Hir::default();
+        hir.add_code(None, code);
+        hir
+    };
+    assert!(TypeChecker::new().check(&hir).is_empty());
+}
+
+#[rstest]
+#[case::map_over_union_of_arrays(
+    r#"def shrink(v): if (is_bool(v)): [false] elif (is_string(v)): [""] else: [];
+| def go(x): map(shrink(x), fn(c): [c];);"#
+)]
+#[case::map_over_array_union_in_branch(r#"let xs = if (true): [1, 2] else: ["a"] | map(xs, fn(c): c;)"#)]
+fn test_map_distributes_over_union_of_arrays(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}
+
+#[rstest]
+#[case::none_default_param_narrowed_in_else(
+    r#"def f(a, idx = None): let i = if (is_none(idx)): [1] else: idx | len(i) + a; | f(1) | f(2, [3])"#
+)]
+#[case::none_default_param_passed_on(r#"def item(v, checked = None): to_markdown(v) | first() | set_check(checked);"#)]
+#[case::set_check_none(r#"to_markdown("- a") | first() | set_check(None)"#)]
+fn test_none_default_parameter_accepts_other_types(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}
+
+#[rstest]
+#[case::symbol_key(r#"def f(xs): first(xs)[:ident];"#)]
+#[case::string_key(r#"def f(xs): last(xs)["ident"];"#)]
+#[case::index(r#"def f(xs): first(xs)[0];"#)]
+fn test_bracket_access_on_a_builtin_call_result(#[case] code: &str) {
+    assert!(check_types_with_builtins(code).is_empty());
+}
+
+#[test]
+fn test_literal_extra_argument_of_a_builtin_is_still_an_arity_error() {
+    assert!(!check_types_with_builtins("def f(xs): first(xs, 1);").is_empty());
+}
+
+#[rstest]
+#[case::default_omitted("def f(a, b = 1): a + b;\n| f(1)")]
+#[case::default_none_omitted("def f(a, b = None): a + 1;\n| f(1)")]
+#[case::all_defaults_omitted("def f(a = 1, b = 2): a + b;\n| f()")]
+#[case::lambda_default("let g = fn(x, y = 1): x + y;\n| g(1)")]
+#[case::after_definition_the_input_flows_through("def f(a, b): a + b;\n| f(1)")]
+fn test_omitted_default_arguments_are_not_an_arity_error(#[case] code: &str) {
+    let errors = check_types(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::too_many("def f(a, b = 1): a + b;\n| f(1, 2, 3)")]
+#[case::too_few_even_with_input("def f(a, b, c = 1): a + b;\n| f()")]
+fn test_arity_is_still_checked_with_defaults(#[case] code: &str) {
+    assert!(!check_types(code).is_empty());
+}
+
+#[rstest]
+#[case::records_with_differing_field_types(r#"let l = [{"id": 1}, {"id": None}, {"id": 3}] | len(l)"#)]
+#[case::records_passed_to_a_generic_function(r#"let l = [{"id": 1}, {"id": None}] | first(l)"#)]
+#[case::pairs_of_different_shapes_with_an_unknown_element(
+    r#"def f(s): dict([["k", s], [s, 1], ["arr", [s]], ["nested", {"x": s}]]);"#
+)]
+fn test_array_of_differently_typed_elements_is_an_array_of_their_union(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::conflict_between_non_neighbours(
+    r#"let l = [{"id": None, "name": "a"}, {"name": "b"}, {"id": 1, "name": "c"}] | len(l)"#
+)]
+#[case::array_field_and_tuple_field(r#"let l = [{"path": ["a", "b"]}, {"path": ["a", "c", 0]}] | len(l)"#)]
+fn test_array_literal_of_records_that_differ_only_in_some_pairs(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::none_or_unknown_piped_into_a_function(
+    "def g(v): (if (is_none(v)): None else: v) | len() end\n| let r = g([1]) | r + 1"
+)]
+#[case::try_with_an_unknown_body(r#"let r = try: merge_with({"a": 1}, {"a": 2}, "replace") catch: "error" | r["a"]"#)]
+fn test_an_unknown_branch_is_not_pinned_to_the_other_branch(#[case] code: &str) {
+    let errors = check_types_with_builtins(code);
+    assert!(errors.is_empty(), "{errors:?}");
+}
+
+#[rstest]
+#[case::unguarded_nullable_field(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | v["a"] + 1"#,
+    false,
+    "a field that may be none is not usable as a number"
+)]
+#[case::not_none_comparison(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] != None): v["a"] + 1 else: 0"#,
+    true,
+    "!= None rules out none in the branch"
+)]
+#[case::none_comparison_else(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] == None): 0 else: v["a"] + 1"#,
+    true,
+    "== None rules out none in the else branch"
+)]
+#[case::negated_is_none(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (!is_none(v["a"])): v["a"] + 1 else: 0"#,
+    true,
+    "!is_none rules out none in the branch"
+)]
+#[case::and_condition(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (true && v["a"] != None): v["a"] + 1 else: 0"#,
+    true,
+    "both sides of && hold in the branch"
+)]
+#[case::else_branch_is_not_guarded(
+    r#"let v = try: {"a": 1} catch(e): {"a": None}; | if (v["a"] != None): 0 else: v["a"] + 1"#,
+    false,
+    "the else branch of != None may still read none"
+)]
+#[case::union_of_records_unguarded(
+    r#"let v = if (true): {"a": 1} else: {"b": "s"}; | v["a"] + 1"#,
+    false,
+    "a record without the key reads as none"
+)]
+#[case::union_of_records_key_guard(
+    r#"let v = if (true): {"a": 1} else: {"b": "s"}; | if (contains(keys(v), "a")): v["a"] + 1 else: 0"#,
+    true,
+    "the key test selects the record that has it"
+)]
+#[case::key_guard_on_closed_record(
+    r#"let v = {"a": 1}; | if (contains(keys(v), "zz")): v["zz"] else: 0"#,
+    true,
+    "a key tested for is not reported as undefined"
+)]
+#[case::undefined_field_still_reported(
+    r#"let v = {"a": 1}; | v["zz"]"#,
+    false,
+    "an unguarded read of a missing key is reported"
+)]
+fn test_field_guards(#[case] code: &str, #[case] should_succeed: bool, #[case] description: &str) {
+    let result = check_types(code);
+    assert_eq!(result.is_empty(), should_succeed, "{description}: errors={result:?}");
 }

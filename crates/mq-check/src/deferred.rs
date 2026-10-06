@@ -9,11 +9,14 @@
 //! none of them touch `TypeChecker`'s own state directly.
 
 use mq_hir::{Hir, SymbolId};
+use rustc_hash::FxHashMap;
 
+use crate::field_guard::FieldGuard;
 use crate::{
     TypeError,
-    constraint::{Constraint, ConstraintOrigin, attr_kind_to_type},
-    infer::{DeferredOverload, InferenceContext},
+    constraint::{Constraint, ConstraintOrigin},
+    infer::{DeferredOverload, DeferredParameterCall, InferenceContext},
+    node_attr::{SelectorOutput, node_attr_type, node_selector_output},
     types::{self, Substitution},
     unify, walk_ancestors,
 };
@@ -49,6 +52,51 @@ fn record_row_is_closed(ctx: &InferenceContext, ty: &types::Type) -> bool {
     }
 }
 
+/// The type of `field` read from a union of records, where each member contributes its field type.
+///
+/// A closed record without the field reads as `none`, as does `none` itself. `None` when a
+/// member is not known well enough (an open record without the field, or a type that is not a
+/// record), in which case the access stays unresolved.
+fn union_field_type(
+    ctx: &InferenceContext,
+    members: &[types::Type],
+    field: &str,
+    guard: FieldGuard,
+) -> Option<types::Type> {
+    let mut parts = Vec::with_capacity(members.len());
+    for member in members {
+        let member = ctx.resolve_type(member);
+        match &member {
+            // Where the key is known to exist, a member without it cannot be the value.
+            types::Type::None if !guard.present => parts.push(types::Type::None),
+            types::Type::Record(..) => match find_record_field(ctx, &member, field) {
+                Some(ty) => parts.push(ty),
+                None if record_row_is_closed(ctx, &member) => {
+                    if !guard.present {
+                        parts.push(types::Type::None);
+                    }
+                }
+                None => return None,
+            },
+            types::Type::None => {}
+            _ => return None,
+        }
+    }
+    Some(without_none_if(guard.non_none, types::Type::join(parts)))
+}
+
+/// `ty` without `none` when `non_none`, as read where a condition ruled out `none`.
+fn without_none_if(non_none: bool, ty: types::Type) -> types::Type {
+    if non_none {
+        match ty.subtract(&types::Type::None) {
+            types::Type::Never => ty,
+            narrowed => narrowed,
+        }
+    } else {
+        ty
+    }
+}
+
 /// Resolves deferred record field accesses after the first round of unification.
 ///
 /// For each deferred bracket access `v[:key]`, resolves the variable's type
@@ -69,10 +117,11 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 
         if let types::Type::Record(..) = &var_ty {
             if let Some(field_ty) = find_record_field(ctx, &var_ty, &access.field_name) {
+                let field_ty = without_none_if(access.guard.non_none, field_ty);
                 let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
                 ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
                 resolved_any = true;
-            } else if record_row_is_closed(ctx, &var_ty) {
+            } else if record_row_is_closed(ctx, &var_ty) && !access.guard.present {
                 ctx.add_error(TypeError::UndefinedField {
                     field: access.field_name.clone(),
                     record_ty: var_ty.display_renumbered(),
@@ -80,6 +129,12 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
                     location: access.range,
                 });
             }
+        } else if let types::Type::Union(members) = &var_ty
+            && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, access.guard)
+        {
+            let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
+            ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            resolved_any = true;
         }
     }
     resolved_any
@@ -90,73 +145,107 @@ pub(crate) fn resolve_record_field_accesses(ctx: &mut InferenceContext) -> bool 
 /// When the CST lowers `f(x)["key"]` as `Call(f, [x, "key"])` and the type
 /// checker detects trailing bracket keys, it defers the field lookup until
 /// after unification. This function resolves the function's return type (now
-/// concrete) and looks up the field, binding the call expression's type to it.
+/// concrete) and looks up the field, binding the access's result to it. The key of a
+/// chain `f(x)["a"]["b"]` reads the result of the previous one, so accesses whose input is
+/// not known yet are retried after the others are solved.
 pub(crate) fn resolve_deferred_call_return_accesses(ctx: &mut InferenceContext) -> bool {
-    let accesses = ctx.take_deferred_call_return_accesses();
-    if accesses.is_empty() {
-        return false;
-    }
-
+    let mut pending = ctx.take_deferred_call_return_accesses();
     let mut resolved_any = false;
-    for access in &accesses {
-        let return_ty = ctx.resolve_type(&access.return_type);
 
-        if let types::Type::Record(..) = &return_ty {
-            if let Some(field_ty) = find_record_field(ctx, &return_ty, &access.field_name) {
-                let call_ty = ctx.get_or_create_symbol_type(access.call_symbol_id);
-                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
-                resolved_any = true;
-            } else if record_row_is_closed(ctx, &return_ty) {
-                ctx.add_error(TypeError::UndefinedField {
-                    field: access.field_name.clone(),
-                    record_ty: return_ty.display_renumbered(),
-                    span: access.range.as_ref().map(unify::range_to_span),
-                    location: access.range,
-                });
+    while !pending.is_empty() {
+        let mut waiting = Vec::new();
+        let mut resolved_round = false;
+        for access in pending {
+            let return_ty = ctx.resolve_type(&access.return_type);
+
+            if let types::Type::Record(..) = &return_ty {
+                if let Some(field_ty) = find_record_field(ctx, &return_ty, &access.field_name) {
+                    ctx.add_constraint(Constraint::Equal(
+                        access.result_ty.clone(),
+                        field_ty,
+                        None,
+                        ConstraintOrigin::General,
+                    ));
+                    resolved_round = true;
+                } else if record_row_is_closed(ctx, &return_ty) {
+                    ctx.add_error(TypeError::UndefinedField {
+                        field: access.field_name.clone(),
+                        record_ty: return_ty.display_renumbered(),
+                        span: access.range.as_ref().map(unify::range_to_span),
+                        location: access.range,
+                    });
+                }
+            } else if let types::Type::Dict(..) = &return_ty {
+                // Dict access: result is a fresh type variable (dynamic value type)
+                resolved_round = true;
+            } else if let types::Type::Union(members) = &return_ty
+                && let Some(field_ty) = union_field_type(ctx, members, &access.field_name, FieldGuard::default())
+            {
+                ctx.add_constraint(Constraint::Equal(
+                    access.result_ty.clone(),
+                    field_ty,
+                    None,
+                    ConstraintOrigin::General,
+                ));
+                resolved_round = true;
+            } else if return_ty.is_var() {
+                waiting.push(access);
             }
-        } else if let types::Type::Dict(..) = &return_ty {
-            // Dict access: result is a fresh type variable (dynamic value type)
-            resolved_any = true;
         }
+        if !resolved_round {
+            break;
+        }
+        resolved_any = true;
+        unify::solve_constraints(ctx);
+        pending = waiting;
     }
     resolved_any
 }
 
-/// Resolves deferred selector field accesses after unification.
+/// Resolves deferred selector field accesses after unification. Returns whether any was resolved;
+/// accesses whose piped input is still a type variable are kept for a later call.
 ///
 /// For each deferred selector access, resolves the piped input type (now concrete
 /// after unification) and either returns the attribute type (for Markdown piped input)
 /// or checks that the field exists in the record.
-pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
+pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) -> bool {
     let accesses = ctx.take_deferred_selector_accesses();
-    if accesses.is_empty() {
-        return;
-    }
+    let mut resolved_any = false;
 
-    for access in &accesses {
-        let resolved = ctx.resolve_type(&access.piped_ty);
+    for access in accesses {
+        let mut resolved = ctx.resolve_type(&access.piped_ty);
+        if resolved.is_var()
+            && let Some(source_ty) = access
+                .piped_source
+                .and_then(|source| ctx.get_symbol_type(source).cloned())
+        {
+            resolved = ctx.resolve_type(&source_ty);
+        }
+        if resolved.is_var() {
+            // The input is not known yet; try again after more types are resolved.
+            ctx.add_deferred_selector_access(access);
+            continue;
+        }
+        resolved_any = true;
 
-        if let types::Type::Markdown = resolved {
+        if let types::Type::Node(kinds) = resolved {
             // Piped input resolved to a Markdown node (e.g. `let md = .h | md.depth`).
-            // Attr selectors return their concrete type; non-Attr selectors return Markdown.
-            if let Some(ref attr_kind) = access.attr_kind {
-                let attr_ty = attr_kind_to_type(attr_kind);
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                ctx.add_constraint(Constraint::Equal(sel_ty, attr_ty, None, ConstraintOrigin::General));
-            } else {
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
-                ctx.add_constraint(Constraint::Equal(
-                    sel_ty,
-                    types::Type::Markdown,
-                    None,
-                    ConstraintOrigin::General,
-                ));
+            match node_selector_output(&access.selector, kinds) {
+                SelectorOutput::Type(ty) => {
+                    let result_ty = access.result_ty.clone();
+                    ctx.add_constraint(Constraint::Equal(result_ty, ty, None, ConstraintOrigin::General));
+                }
+                SelectorOutput::MissingAttr(attr) => ctx.add_error(TypeError::UndefinedAttribute {
+                    attr,
+                    node_ty: resolved.display_renumbered(),
+                    span: access.range.as_ref().map(unify::range_to_span),
+                    location: access.range,
+                }),
             }
         } else if let types::Type::Record(fields, rest) = &resolved {
             if let Some(field_ty) = fields.get(&access.field_name) {
-                let sel_ty = ctx.get_or_create_symbol_type(access.symbol_id);
                 ctx.add_constraint(Constraint::Equal(
-                    sel_ty,
+                    access.result_ty.clone(),
                     field_ty.clone(),
                     None,
                     ConstraintOrigin::General,
@@ -171,6 +260,7 @@ pub(crate) fn resolve_selector_field_accesses(ctx: &mut InferenceContext) {
             }
         }
     }
+    resolved_any
 }
 
 /// Resolves deferred tuple index accesses after the first round of unification.
@@ -400,6 +490,132 @@ fn check_union_members(
     }
 }
 
+/// Resolves an operation whose single operand is a union of arrays with different return types
+/// by treating that operand as one array of the union of the members' element types.
+///
+/// `map([bool] | [string], f)` is resolved as `map([bool | string], f)`, so `f` is checked
+/// against the elements of every member and the result is `[r]` for the result `r` of `f`.
+/// Returns `false` when more than one operand is a union or a member is not an array, leaving
+/// the operation to be reported.
+fn merge_array_union_operand(
+    ctx: &mut InferenceContext,
+    d: &DeferredOverload,
+    resolved_operands: &[types::Type],
+) -> bool {
+    use types::Type;
+
+    let mut union_positions = resolved_operands.iter().enumerate().filter(|(_, ty)| ty.is_union());
+    let (Some((position, Type::Union(members))), None) = (union_positions.next(), union_positions.next()) else {
+        return false;
+    };
+    let elems: Option<Vec<Type>> = members
+        .iter()
+        .map(|member| match member {
+            Type::Array(elem) => Some(elem.as_ref().clone()),
+            _ => None,
+        })
+        .collect();
+    let Some(elems) = elems else {
+        return false;
+    };
+
+    let merged = Type::array(Type::union(elems));
+    let mut args = resolved_operands.to_vec();
+    args[position] = merged.clone();
+    let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(&d.op_name, &args) else {
+        return false;
+    };
+    if param_tys.len() != d.operand_tys.len() {
+        return false;
+    }
+    for (i, param_ty) in param_tys.iter().enumerate() {
+        let operand_ty = if i == position {
+            merged.clone()
+        } else {
+            d.operand_tys[i].clone()
+        };
+        ctx.add_constraint(Constraint::Equal(
+            operand_ty,
+            param_ty.clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
+    true
+}
+
+/// Resolves an operation whose single operand is a union of containers (arrays, dicts, records,
+/// generators, `none`)
+/// by resolving it for each member and taking the union of the results.
+///
+/// `get(x, k)` with `x: [a] | {k: v}` is `a | v`. Each member's own signature is tied to that
+/// member, so element and value types flow into the result. The other operands are checked
+/// only where every member agrees on a concrete parameter type. Returns `false` when more than
+/// one operand is a union or a member is not a container, leaving the operation to be reported.
+fn distribute_over_container_members(
+    ctx: &mut InferenceContext,
+    d: &DeferredOverload,
+    resolved_operands: &[types::Type],
+) -> bool {
+    use types::Type;
+
+    let mut union_positions = resolved_operands.iter().enumerate().filter(|(_, ty)| ty.is_union());
+    let (Some((position, Type::Union(members))), None) = (union_positions.next(), union_positions.next()) else {
+        return false;
+    };
+    // Containers, plus `none` and generators, which functions over collections pass through.
+    let is_container = |member: &Type| {
+        matches!(
+            member,
+            Type::Array(_) | Type::Tuple(_) | Type::Dict(..) | Type::Record(..) | Type::None | Type::Generator(_)
+        )
+    };
+    if !members.iter().all(is_container) {
+        return false;
+    }
+
+    let mut rets = Vec::with_capacity(members.len());
+    let mut shared_params: Vec<Option<Type>> = vec![None; resolved_operands.len()];
+    let mut disagreeing = vec![false; resolved_operands.len()];
+    for member in members {
+        let mut args = resolved_operands.to_vec();
+        args[position] = member.clone();
+        let Some(Type::Function(param_tys, ret_ty)) = ctx.resolve_overload(&d.op_name, &args) else {
+            return false;
+        };
+        if param_tys.len() != d.operand_tys.len() {
+            return false;
+        }
+        ctx.add_constraint(Constraint::Equal(
+            member.clone(),
+            param_tys[position].clone(),
+            d.range,
+            ConstraintOrigin::General,
+        ));
+        for (i, param_ty) in param_tys.iter().enumerate().filter(|(i, _)| *i != position) {
+            match &shared_params[i] {
+                None if param_ty.is_concrete() => shared_params[i] = Some(param_ty.clone()),
+                Some(shared) if shared == param_ty => {}
+                _ => disagreeing[i] = true,
+            }
+        }
+        rets.push(*ret_ty);
+    }
+    for (i, shared) in shared_params.into_iter().enumerate() {
+        if let Some(param_ty) = shared.filter(|_| !disagreeing[i]) {
+            ctx.add_constraint(Constraint::Equal(
+                d.operand_tys[i].clone(),
+                param_ty,
+                d.range,
+                ConstraintOrigin::General,
+            ));
+        }
+    }
+    ctx.set_symbol_type_no_bind(d.symbol_id, Type::union(rets));
+    true
+}
+
 /// Resolves deferred try/catch branch-type merges, after other deferred passes
 /// (record/tuple access, overloads, ...) have settled the branch types.
 pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
@@ -414,11 +630,16 @@ pub(crate) fn resolve_deferred_try_catches(ctx: &mut InferenceContext) -> bool {
         };
         let resolved_try = ctx.resolve_type(&entry.try_ty);
         let resolved_catch = ctx.resolve_type(&entry.catch_ty);
-        let both_concrete = !resolved_try.is_var() && !resolved_catch.is_var();
-        let same_discriminant =
-            both_concrete && std::mem::discriminant(&resolved_try) == std::mem::discriminant(&resolved_catch);
+        let both_resolved = !resolved_try.is_var() && !resolved_catch.is_var();
 
-        let merged_ty = if both_concrete && !same_discriminant {
+        let merged_ty = if let Some(merged) = both_resolved
+            .then(|| resolved_try.merge_branches(&resolved_catch, true))
+            .flatten()
+        {
+            merged
+        } else if !both_resolved {
+            // A branch whose type is still unknown must not be pinned to the other branch's type:
+            // `try: f() catch: "error"` is whatever `f()` returns, or a string.
             types::Type::union(vec![resolved_try, resolved_catch])
         } else {
             ctx.add_constraint(Constraint::Equal(
@@ -472,7 +693,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
             let d = &deferred[idx];
             let resolved_operands: Vec<types::Type> = d.operand_tys.iter().map(|ty| ctx.resolve_type(ty)).collect();
 
-            let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
+            let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
             let has_union = resolved_operands.iter().any(|ty| ty.is_union());
 
             if has_union {
@@ -570,6 +791,12 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         continue;
                     }
                     UnionCheckResult::InconsistentReturn => {
+                        if merge_array_union_operand(ctx, d, &resolved_operands)
+                            || distribute_over_container_members(ctx, d, &resolved_operands)
+                        {
+                            unify::solve_constraints(ctx);
+                            continue;
+                        }
                         let args_str = resolved_operands
                             .iter()
                             .map(|t| t.display_renumbered())
@@ -641,7 +868,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
 
                 // Don't resolve when any operand still contains a free type variable
                 // and there are multiple overloads — store back for user call body checking
-                let any_var_best = resolved_operands.iter().any(|ty| !ty.is_concrete());
+                let any_var_best = resolved_operands.iter().any(|ty| ty.has_pending_var());
                 if any_var_best {
                     let overload_count = ctx.get_builtin_overloads(&d.op_name).map(|o| o.len()).unwrap_or(0);
                     if overload_count > 1 {
@@ -665,7 +892,7 @@ pub(crate) fn resolve_deferred_overloads(ctx: &mut InferenceContext) {
                         ctx.set_symbol_type_no_bind(d.symbol_id, *ret_ty);
                     }
                 } else {
-                    let all_concrete = resolved_operands.iter().all(|ty| ty.is_concrete());
+                    let all_concrete = resolved_operands.iter().all(|ty| !ty.has_pending_var());
                     if all_concrete {
                         ctx.report_no_matching_overload(&d.op_name, &resolved_operands, d.range);
                     } else {
@@ -749,6 +976,79 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
     }
 }
 
+/// Types the `attr(node, "name")` calls whose node argument is a known node type, from the
+/// attribute table, and `get(record, "name")` calls from the field of the record. Returns whether any was resolved; the others are kept for a later call.
+pub(crate) fn resolve_attr_calls(ctx: &mut InferenceContext) -> bool {
+    let calls = ctx.take_deferred_attr_calls();
+    let mut resolved_any = false;
+
+    for call in calls {
+        let mut node_ty = ctx.resolve_type(&call.node_ty);
+        if node_ty.is_var()
+            && let Some(source_ty) = call.node_source.and_then(|source| ctx.get_symbol_type(source).cloned())
+        {
+            node_ty = ctx.resolve_type(&source_ty);
+        }
+        if node_ty.is_var() {
+            ctx.add_deferred_attr_call(call);
+            continue;
+        }
+        if call.is_get {
+            // A field of a record has its own type; other containers are left to the signature.
+            if let Some(field_ty) = find_record_field(ctx, &node_ty, &call.attr_name) {
+                resolved_any = true;
+                let call_ty = ctx.get_or_create_symbol_type(call.symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, field_ty, None, ConstraintOrigin::General));
+            }
+            continue;
+        }
+        let types::Type::Node(kinds) = node_ty else {
+            continue;
+        };
+        resolved_any = true;
+        match node_attr_type(kinds, &call.attr_name) {
+            Some(attr_ty) => {
+                let call_ty = ctx.get_or_create_symbol_type(call.symbol_id);
+                ctx.add_constraint(Constraint::Equal(call_ty, attr_ty, None, ConstraintOrigin::General));
+            }
+            None => ctx.add_error(TypeError::UndefinedAttribute {
+                attr: call.attr_name.clone(),
+                node_ty: types::Type::Node(kinds).display_renumbered(),
+                span: call.range.as_ref().map(unify::range_to_span),
+                location: call.range,
+            }),
+        }
+    }
+    resolved_any
+}
+
+/// Fixes the yielded type of each generator to the join of the types of its `yield`s, for the
+/// generators whose `yield` types are all known by now. The others are retried on the next call.
+pub(crate) fn resolve_generator_yields(ctx: &mut InferenceContext) {
+    let entries = ctx.take_deferred_generator_yields();
+    for entry in entries {
+        let yielded: Vec<types::Type> = entry
+            .yields
+            .iter()
+            .map(|&y| {
+                let ty = ctx.get_or_create_symbol_type(y);
+                ctx.resolve_type(&ty)
+            })
+            .collect();
+        if yielded.iter().any(|ty| ty.has_pending_var()) {
+            ctx.add_deferred_generator_yield(entry);
+            continue;
+        }
+        ctx.add_constraint(Constraint::Equal(
+            types::Type::Var(entry.yielded),
+            types::Type::join(yielded),
+            None,
+            ConstraintOrigin::General,
+        ));
+    }
+    unify::solve_constraints(ctx);
+}
+
 /// Checks operators inside user-defined function bodies against call-site argument types.
 ///
 /// For each deferred user call, builds a local substitution mapping the original
@@ -771,6 +1071,8 @@ pub(crate) fn propagate_user_call_returns(ctx: &mut InferenceContext) {
 pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceContext) {
     let deferred_calls = ctx.take_deferred_user_calls();
     let unresolved_overloads = ctx.take_deferred_overloads();
+    let deferred_param_calls = ctx.take_deferred_parameter_calls();
+    let index = BodyIndex::new(hir, &unresolved_overloads, &deferred_param_calls);
 
     for call in &deferred_calls {
         // Get the original function type
@@ -804,12 +1106,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         // Uses iterative resolution: when an inner operator resolves (e.g. x + 1 → Number),
         // its result type is added to the substitution so outer operators that depend on it
         // (e.g. (x + 1) + true) can also be checked.
-        let body_overloads: Vec<_> = unresolved_overloads
+        let body_overloads: Vec<_> = index
+            .body_overloads(call.def_id)
             .iter()
-            .filter(|d| {
-                is_symbol_inside_function(hir, d.symbol_id, call.def_id)
-                    && !is_inside_control_flow(hir, d.symbol_id, call.def_id)
-            })
+            .map(|&i| &unresolved_overloads[i])
             .collect();
 
         check_deferred_overloads_iteratively(&body_overloads, &mut subst, ctx, call.range);
@@ -823,13 +1123,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
         // variable `x`). Resolving those arg types with the main substitution
         // yields the concrete element type (e.g. `Number`), which becomes the
         // lambda's parameter substitution for checking its body operators.
-        let deferred_param_calls = ctx.deferred_parameter_calls().to_vec();
-        // Collect outer function's parameter symbol IDs to match against inner calls
-        let outer_param_syms: Vec<SymbolId> = get_function_params(hir, call.def_id);
-        for param_call in &deferred_param_calls {
-            if param_call.outer_def_id != call.def_id {
-                continue;
-            }
+        // The outer function's parameter symbol IDs, to match against inner calls
+        let outer_param_syms = index.params(call.def_id);
+        for &param_call_index in index.param_calls(call.def_id) {
+            let param_call = &deferred_param_calls[param_call_index];
 
             // Map the called parameter to its index in the outer function's param list
             let param_index = match outer_param_syms.iter().position(|&s| s == param_call.param_sym_id) {
@@ -872,9 +1169,10 @@ pub(crate) fn check_user_call_body_operators(hir: &Hir, ctx: &mut InferenceConte
 
             // Check deferred overloads inside the lambda body.
             // Uses iterative resolution for chained operators (e.g. x + 1 + true).
-            let lambda_overloads: Vec<_> = unresolved_overloads
+            let lambda_overloads: Vec<_> = index
+                .inside_overloads(lambda_sym_id)
                 .iter()
-                .filter(|d| is_symbol_inside_function(hir, d.symbol_id, lambda_sym_id))
+                .map(|&i| &unresolved_overloads[i])
                 .collect();
 
             check_deferred_overloads_iteratively(&lambda_overloads, &mut lambda_subst, ctx, call.range);
@@ -993,58 +1291,87 @@ fn extract_structural_subst(
     }
 }
 
-/// Returns the HIR symbol IDs of all parameter symbols for a function definition.
-fn get_function_params(hir: &Hir, func_def_id: SymbolId) -> Vec<SymbolId> {
-    hir.symbols()
-        .filter_map(|(id, sym)| {
-            if sym.parent == Some(func_def_id) && sym.is_parameter() {
-                Some(id)
-            } else {
-                None
+/// Per-function lookup tables for [`check_user_call_body_operators`], built in one pass so
+/// the check does not rescan the HIR or walk ancestors once per call site.
+struct BodyIndex {
+    /// Function or lambda symbol -> overloads anywhere inside it.
+    inside: FxHashMap<SymbolId, Vec<usize>>,
+    /// Function symbol -> overloads inside it that are not nested in control flow.
+    body: FxHashMap<SymbolId, Vec<usize>>,
+    /// Function symbol -> its parameter symbols.
+    params: FxHashMap<SymbolId, Vec<SymbolId>>,
+    /// Function symbol -> parameter calls made inside it.
+    param_calls: FxHashMap<SymbolId, Vec<usize>>,
+}
+
+impl BodyIndex {
+    fn new(hir: &Hir, overloads: &[DeferredOverload], param_calls: &[DeferredParameterCall]) -> Self {
+        use mq_hir::SymbolKind;
+
+        let mut inside: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        let mut body: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        for (i, overload) in overloads.iter().enumerate() {
+            // Control flow guards may narrow types beyond what static analysis sees, so an
+            // overload nested in one is not part of the checked body of the enclosing function.
+            let mut in_control_flow = false;
+            for (id, symbol) in walk_ancestors(hir, overload.symbol_id) {
+                inside.entry(id).or_default().push(i);
+                if !in_control_flow {
+                    body.entry(id).or_default().push(i);
+                }
+                in_control_flow |= matches!(
+                    symbol.kind,
+                    SymbolKind::If
+                        | SymbolKind::Unless
+                        | SymbolKind::Elif
+                        | SymbolKind::Else
+                        | SymbolKind::While
+                        | SymbolKind::Until
+                        | SymbolKind::Loop
+                        | SymbolKind::Match
+                        | SymbolKind::MatchArm { .. }
+                        | SymbolKind::Try
+                        | SymbolKind::Catch
+                        | SymbolKind::Foreach
+                );
             }
-        })
-        .collect()
-}
+        }
 
-/// Checks if a symbol is inside a function body by walking the HIR parent chain.
-/// Includes a depth limit to prevent stack overflow on deeply nested or cyclic structures.
-fn is_symbol_inside_function(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
-    for (id, _) in walk_ancestors(hir, symbol_id) {
-        if id == func_id {
-            return true;
+        let mut params: FxHashMap<SymbolId, Vec<SymbolId>> = FxHashMap::default();
+        for (id, symbol) in hir.symbols() {
+            if let Some(parent) = symbol.parent
+                && symbol.is_parameter()
+            {
+                params.entry(parent).or_default().push(id);
+            }
+        }
+
+        let mut by_outer: FxHashMap<SymbolId, Vec<usize>> = FxHashMap::default();
+        for (i, call) in param_calls.iter().enumerate() {
+            by_outer.entry(call.outer_def_id).or_default().push(i);
+        }
+
+        Self {
+            inside,
+            body,
+            params,
+            param_calls: by_outer,
         }
     }
-    false
-}
 
-/// Checks if a symbol is inside a control flow construct (If, Elif, Else, While, Loop,
-/// Match, MatchArm, Try, Catch, Foreach) between itself and the function definition.
-///
-/// This is used to skip operator checking inside type-guarded branches, where runtime
-/// type checks narrow the type beyond what static analysis can determine.
-fn is_inside_control_flow(hir: &Hir, symbol_id: SymbolId, func_id: SymbolId) -> bool {
-    use mq_hir::SymbolKind;
-    for (id, symbol) in walk_ancestors(hir, symbol_id) {
-        if id == func_id {
-            return false;
-        }
-        if matches!(
-            symbol.kind,
-            SymbolKind::If
-                | SymbolKind::Unless
-                | SymbolKind::Elif
-                | SymbolKind::Else
-                | SymbolKind::While
-                | SymbolKind::Until
-                | SymbolKind::Loop
-                | SymbolKind::Match
-                | SymbolKind::MatchArm { .. }
-                | SymbolKind::Try
-                | SymbolKind::Catch
-                | SymbolKind::Foreach
-        ) {
-            return true;
-        }
+    fn inside_overloads(&self, func: SymbolId) -> &[usize] {
+        self.inside.get(&func).map_or(&[], Vec::as_slice)
     }
-    false
+
+    fn body_overloads(&self, func: SymbolId) -> &[usize] {
+        self.body.get(&func).map_or(&[], Vec::as_slice)
+    }
+
+    fn params(&self, func: SymbolId) -> &[SymbolId] {
+        self.params.get(&func).map_or(&[], Vec::as_slice)
+    }
+
+    fn param_calls(&self, func: SymbolId) -> &[usize] {
+        self.param_calls.get(&func).map_or(&[], Vec::as_slice)
+    }
 }

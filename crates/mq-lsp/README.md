@@ -64,6 +64,7 @@ mq-lsp
 | `-M, --module-path <DIR>`        | Search modules from the directory (repeatable)              |
 | `-T, --enable-type-checking`     | Enable type checking for mq queries                         |
 | `--strict-array`                 | Reject heterogeneous arrays (requires `--enable-type-checking`) |
+| `--input-type <TYPE>`            | Type of the input document, e.g. `h1 \| h2` or `code` (requires `--enable-type-checking`) |
 | `-L, --enable-lint`              | Enable `mq-lint` diagnostics                                 |
 | `--disable-lint-rule <RULE_ID>`  | Disable a specific lint rule by ID (repeatable, requires `--enable-lint`) |
 

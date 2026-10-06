@@ -481,6 +481,7 @@ fn type_error_kind(e: &mq_check::TypeError) -> String {
         mq_check::TypeError::UndefinedSymbol { .. } => "undefined_symbol",
         mq_check::TypeError::WrongArity { .. } => "wrong_arity",
         mq_check::TypeError::UndefinedField { .. } => "undefined_field",
+        mq_check::TypeError::UndefinedAttribute { .. } => "undefined_attribute",
         mq_check::TypeError::HeterogeneousArray { .. } => "heterogeneous_array",
         mq_check::TypeError::TypeVarNotFound(_) => "type_var_not_found",
         mq_check::TypeError::Internal(_) => "internal_error",

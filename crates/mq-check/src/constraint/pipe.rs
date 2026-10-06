@@ -32,8 +32,11 @@ pub(super) fn generate_block_constraints(
     // Set piped input and re-process each child before moving to the next,
     // so that resolved types propagate correctly through the chain.
     for i in 1..children.len() {
-        let prev_ty = ctx.get_or_create_symbol_type(children[i - 1]);
+        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, children[i - 1]);
         ctx.set_piped_input(children[i], prev_ty);
+        if let Some(source) = prev_source {
+            ctx.set_piped_source(children[i], source);
+        }
 
         // Re-process Call/Ref children that received piped input,
         // since they were already processed in Pass 3 before piped inputs were set
@@ -101,7 +104,10 @@ pub(super) fn generate_function_body_pipe_constraints(
     // This is the key HM inference step: without it, user-defined function return types remain
     // as free type variables and `propagate_user_call_returns` cannot resolve them, making
     // cross-function type errors (e.g. `c() + 1` where c returns Bool) invisible.
-    if let Some(&last_body_id) = body_children.last() {
+    if let Some(&last_body_id) = body_children
+        .last()
+        .filter(|_| ctx.function_yields(symbol_id).is_empty())
+    {
         let body_ty = ctx.get_or_create_symbol_type(last_body_id);
         let func_ty = ctx.get_or_create_symbol_type(symbol_id);
         if let Type::Function(_, ret_ty) = func_ty {
@@ -118,8 +124,11 @@ pub(super) fn generate_function_body_pipe_constraints(
     // Set piped input and re-process each child before moving to the next,
     // so that resolved types propagate correctly through the chain.
     for i in 1..body_children.len() {
-        let prev_ty = ctx.get_or_create_symbol_type(body_children[i - 1]);
+        let (prev_ty, prev_source) = pipe_stage_output(hir, ctx, body_children[i - 1]);
         ctx.set_piped_input(body_children[i], prev_ty);
+        if let Some(source) = prev_source {
+            ctx.set_piped_source(body_children[i], source);
+        }
 
         // Re-process Call/Ref children that received piped input
         if let Some(child_symbol) = hir.symbol(body_children[i]) {
@@ -206,6 +215,18 @@ fn propagate_piped_input_to_variable_initializer(
 /// For Elif: children are [condition, body] — constrains condition to Bool, returns body type.
 /// For Else: children are [body] — returns body type.
 /// For other kinds: returns the symbol's type directly.
+/// What a pipe stage passes on to the next one, as its type and the symbol that holds it.
+/// A function definition passes on its own input unchanged instead of its function type.
+pub(super) fn pipe_stage_output(hir: &Hir, ctx: &mut InferenceContext, stage: SymbolId) -> (Type, Option<SymbolId>) {
+    let is_definition = hir
+        .symbol(stage)
+        .is_some_and(|symbol| matches!(symbol.kind, SymbolKind::Function(_)));
+    if is_definition && let Some(input) = ctx.get_piped_input(stage).cloned() {
+        return (input, ctx.get_piped_source(stage));
+    }
+    (ctx.get_or_create_symbol_type(stage), Some(stage))
+}
+
 pub(super) fn resolve_branch_body_type(
     hir: &Hir,
     branch_id: SymbolId,

@@ -495,7 +495,7 @@ impl Backend {
 
         if errors.is_empty() && self.config.enable_type_checking {
             let hir_guard = self.hir.read().unwrap();
-            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options);
+            let mut checker = mq_check::TypeChecker::with_options(self.config.type_checker_options.clone());
             let type_errors = checker.check(&hir_guard);
 
             // Build a set of text ranges from the current source's symbols
@@ -2508,6 +2508,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_lsp_config_keeps_the_declared_input_type() {
+        let input_type = mq_check::type_expr::parse_type("h1 | h2").unwrap();
+        let config = LspConfig::new(
+            vec![],
+            true,
+            mq_check::TypeCheckerOptions {
+                input_type: Some(input_type.clone()),
+                ..Default::default()
+            },
+            false,
+            mq_lint::LintConfig::default(),
+        );
+        assert_eq!(config.type_checker_options.input_type, Some(input_type));
+        assert_eq!(LspConfig::default().type_checker_options.input_type, None);
+    }
+
+    #[tokio::test]
     async fn test_lsp_config_default() {
         let config = LspConfig::default();
         assert!(!config.enable_type_checking);
@@ -2634,7 +2651,7 @@ mod tests {
         let uri = Url::parse("file:///test.mq").unwrap();
 
         // Code with type error: function arity mismatch
-        let code = "def add(x, y): x + y;\n| add(1)";
+        let code = "def add(x, y): x + y;\n| add(1, 2, 3)";
 
         // Exercise the full diagnostics pipeline: on_change should parse, type check,
         // and populate error_map with type errors when there are no parse errors.

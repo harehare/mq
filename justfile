@@ -101,6 +101,23 @@ test-mq:
 bench-mq:
     cargo run --release -p mq-bench -- crates/mq-lang/benches/mq_benches.mq
 
+# Time mq-check per input and pipeline stage (divan).
+bench-check:
+    cargo bench -p mq-check --bench benchmark
+
+# Step through the .mq test suite and check that runtime values fit the inferred types of `let` bindings.
+test-conformance:
+    cargo test --release -p mq-check --test runtime_conformance_test -- --ignored
+
+# Fuzz the checker against the runtime: FUZZ_COUNT programs (default 5000), FUZZ_NOISE percent of
+# sub-expressions with a wrong type (0 = all programs well typed), FUZZ_SEED.
+fuzz-check:
+    cargo test --release -p mq-check --test differential_fuzz_test -- --ignored --nocapture
+
+# Print the median time of each mq-check phase per input.
+bench-check-phases:
+    cargo run --release -p mq-check --example phase_profile
+
 # Check -U round-trip fidelity against the GFM spec examples (fetches spec.txt over the network)
 test-gfm-spec:
     cargo test -p mq-markdown --test gfm_roundtrip_fidelity -- --ignored --nocapture

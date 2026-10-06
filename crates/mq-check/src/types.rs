@@ -5,6 +5,8 @@ use slotmap::SlotMap;
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::kind_set::KindSet;
+
 slotmap::new_key_type! {
     /// Unique identifier for type variables
     pub struct TypeVarId;
@@ -27,8 +29,8 @@ pub enum Type {
     Symbol,
     /// None/null type
     None,
-    /// Markdown document type
-    Markdown,
+    /// A Markdown node of one of the given kinds. `markdown` is the set of every kind.
+    Node(KindSet),
     /// Raw binary data type (e.g. CBOR byte strings)
     Bytes,
     /// Array type with element type
@@ -45,6 +47,9 @@ pub enum Type {
     /// Union type: represents a value that could be one of multiple types
     /// Used for try/catch expressions with different branch types
     Union(Vec<Type>),
+    /// A coroutine made by calling a function that contains `yield`, with the type of the
+    /// values it yields.
+    Generator(Box<Type>),
     /// Record type with known fields and optional row extension (row polymorphism).
     ///
     /// The first element is a map of field names to their types.
@@ -74,6 +79,11 @@ pub enum Type {
 }
 
 impl Type {
+    /// Any Markdown node, written `markdown`.
+    pub const fn markdown() -> Self {
+        Type::Node(KindSet::ALL)
+    }
+
     /// Creates a new function type
     pub fn function(params: Vec<Type>, ret: Type) -> Self {
         Type::Function(params, Box::new(ret))
@@ -111,6 +121,19 @@ impl Type {
             }
         }
 
+        // Node types of one union fold into a single node type of the combined kinds
+        let mut nodes: Option<KindSet> = None;
+        normalized.retain(|ty| match ty {
+            Type::Node(set) => {
+                nodes = Some(nodes.map_or(*set, |acc| acc.union(*set)));
+                false
+            }
+            _ => true,
+        });
+        if let Some(set) = nodes {
+            normalized.push(Type::Node(set));
+        }
+
         // Deduplicate and sort
         if normalized.len() <= 4 {
             // For small unions, avoid HashSet allocation with an O(n²) scan
@@ -138,6 +161,84 @@ impl Type {
         }
     }
 
+    /// Combines the types of two alternative branches (try/catch) when neither is pending.
+    ///
+    /// Different kinds of type become a union. Records with the same keys are merged field
+    /// by field, so `{error: none}` and `{error: {message: string}}` give
+    /// `{error: none | {message: string}}`. A field that still contains a type variable makes
+    /// the merge fail, or stays as a union with that variable when `keep_pending` (it is
+    /// normalised once the variable is resolved). Returns `None` for other pairs, which are
+    /// unified.
+    pub fn merge_branches(&self, other: &Type, keep_pending: bool) -> Option<Type> {
+        if std::mem::discriminant(self) != std::mem::discriminant(other) {
+            return Some(Type::union(vec![self.clone(), other.clone()]));
+        }
+        self.merge_records(other, keep_pending)
+    }
+
+    /// The type of a value that may be any of `types`: their union, where records with the same
+    /// keys are merged field by field (`{id: number}` and `{id: none}` give `{id: number | none}`).
+    pub fn join(types: impl IntoIterator<Item = Type>) -> Type {
+        let mut joined: Vec<Type> = Vec::new();
+        let members = types.into_iter().flat_map(|ty| match ty {
+            Type::Union(members) => members,
+            other => vec![other],
+        });
+        for ty in members {
+            let merged = joined
+                .iter()
+                .position(|existing| existing.merge_records(&ty, true).is_some());
+            match merged {
+                Some(i) => joined[i] = joined[i].merge_records(&ty, true).unwrap_or_else(|| ty.clone()),
+                None => joined.push(ty),
+            }
+        }
+        Type::union(joined)
+    }
+
+    /// Whether the type contains a type variable other than the row tail of a record.
+    pub(crate) fn has_pending_var(&self) -> bool {
+        match self {
+            Type::Var(_) => true,
+            Type::Array(elem) | Type::Generator(elem) => elem.has_pending_var(),
+            Type::Dict(key, value) => key.has_pending_var() || value.has_pending_var(),
+            Type::Tuple(items) | Type::Union(items) => items.iter().any(Type::has_pending_var),
+            Type::Function(params, ret) => params.iter().any(Type::has_pending_var) || ret.has_pending_var(),
+            Type::Record(fields, _) => fields.values().any(Type::has_pending_var),
+            _ => false,
+        }
+    }
+
+    /// Merges two records with the same keys and the same kind of row tail (both closed, or
+    /// both open).
+    fn merge_records(&self, other: &Type, keep_pending: bool) -> Option<Type> {
+        let (Type::Record(fields_a, rest_a), Type::Record(fields_b, rest_b)) = (self, other) else {
+            return None;
+        };
+        let same_tail = matches!(
+            (&**rest_a, &**rest_b),
+            (Type::RowEmpty, Type::RowEmpty) | (Type::Var(_), Type::Var(_))
+        );
+        if !same_tail || !fields_a.keys().eq(fields_b.keys()) {
+            return None;
+        }
+        let mut fields = BTreeMap::new();
+        for (key, a) in fields_a {
+            let b = &fields_b[key];
+            let merged = if a == b {
+                a.clone()
+            } else if let Some(merged) = a.merge_records(b, keep_pending) {
+                merged
+            } else if keep_pending || (!a.has_pending_var() && !b.has_pending_var()) {
+                Type::union(vec![a.clone(), b.clone()])
+            } else {
+                return None;
+            };
+            fields.insert(key.clone(), merged);
+        }
+        Some(Type::Record(fields, rest_a.clone()))
+    }
+
     /// Removes a type from a union by discriminant, returning the remaining type.
     ///
     /// If this is not a union, returns self unchanged.
@@ -151,8 +252,14 @@ impl Type {
             Type::Union(members) => {
                 let remaining: Vec<Type> = members
                     .iter()
-                    .filter(|t| std::mem::discriminant(*t) != std::mem::discriminant(exclude))
-                    .cloned()
+                    .filter_map(|t| match (t, exclude) {
+                        (Type::Node(set), Type::Node(excluded)) => {
+                            let rest = set.difference(*excluded);
+                            (!rest.is_empty()).then_some(Type::Node(rest))
+                        }
+                        _ if std::mem::discriminant(t) == std::mem::discriminant(exclude) => None,
+                        _ => Some(t.clone()),
+                    })
                     .collect();
                 if remaining.is_empty() {
                     Type::Never
@@ -194,7 +301,7 @@ impl Type {
             Type::Bool => 4,
             Type::Symbol => 5,
             Type::None => 6,
-            Type::Markdown => 7,
+            Type::Node(_) => 7,
             Type::Bytes => 8,
             Type::Array(_) => 9,
             Type::Tuple(_) => 10,
@@ -206,6 +313,7 @@ impl Type {
             Type::Var(_) => 16,
             Type::Never => 17,
             Type::Dynamic => 18,
+            Type::Generator(_) => 19,
         }
     }
 
@@ -217,6 +325,13 @@ impl Type {
     /// Checks if this type contains no free type variables (is fully concrete)
     pub fn is_concrete(&self) -> bool {
         self.free_vars().is_empty()
+    }
+
+    /// Whether the type is not settled enough as an operand to pick an overload for it: a type
+    /// variable, or a union (`none | [a]`), whose members may each need a different overload.
+    /// Committing to one would pin the variable and give the result of a single member.
+    pub fn is_pending_operand(&self) -> bool {
+        matches!(self, Type::Var(_) | Type::Union(_))
     }
 
     /// Checks if this is a union type
@@ -240,6 +355,7 @@ impl Type {
         match self {
             Type::Var(id) => subst.lookup(*id).map_or_else(|| self.clone(), |t| t.apply_subst(subst)),
             Type::Array(elem) => Type::Array(Box::new(elem.apply_subst(subst))),
+            Type::Generator(yielded) => Type::Generator(Box::new(yielded.apply_subst(subst))),
             Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| e.apply_subst(subst)).collect()),
             Type::Dict(key, value) => Type::Dict(Box::new(key.apply_subst(subst)), Box::new(value.apply_subst(subst))),
             Type::Function(params, ret) => {
@@ -263,7 +379,7 @@ impl Type {
     pub fn free_vars(&self) -> Vec<TypeVarId> {
         match self {
             Type::Var(id) => vec![*id],
-            Type::Array(elem) => elem.free_vars(),
+            Type::Array(elem) | Type::Generator(elem) => elem.free_vars(),
             Type::Tuple(elems) => elems.iter().flat_map(|e| e.free_vars()).collect(),
             Type::Dict(key, value) => {
                 let mut vars = key.free_vars();
@@ -313,11 +429,14 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => true,
+
+            // Node types match when they share a kind
+            (Type::Node(a), Type::Node(b)) => a.intersects(*b),
 
             // Arrays match if their element types can match
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_match(elem2),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.can_match(y2),
 
             // Tuples match if they have the same length and all elements can match
             (Type::Tuple(elems1), Type::Tuple(elems2)) => {
@@ -399,11 +518,14 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => true,
+
+            // Node types match when they share a kind
+            (Type::Node(a), Type::Node(b)) => a.intersects(*b),
 
             // Arrays: recurse strictly
             (Type::Array(elem1), Type::Array(elem2)) => elem1.can_branch_unify_with(elem2),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.can_branch_unify_with(y2),
 
             // Tuples: same length and all elements strictly match
             (Type::Tuple(elems1), Type::Tuple(elems2)) => {
@@ -457,8 +579,19 @@ impl Type {
             | (Type::Bool, Type::Bool)
             | (Type::Symbol, Type::Symbol)
             | (Type::None, Type::None)
-            | (Type::Markdown, Type::Markdown)
             | (Type::Bytes, Type::Bytes) => Some(100),
+
+            // `self` is the parameter and `other` the argument: a subset fits fully, an overlap
+            // only partly
+            (Type::Node(param), Type::Node(arg)) => {
+                if arg.is_subset_of(*param) {
+                    Some(100)
+                } else if arg.intersects(*param) {
+                    Some(60)
+                } else {
+                    None
+                }
+            }
 
             // Dynamic matches anything with low score (prefer concrete over dynamic)
             (Type::Dynamic, _) | (_, Type::Dynamic) => Some(10),
@@ -483,6 +616,7 @@ impl Type {
 
             // Arrays: structural match scores higher than bare type variable
             (Type::Array(elem1), Type::Array(elem2)) => elem1.match_score(elem2).map(|s| s + 20),
+            (Type::Generator(y1), Type::Generator(y2)) => y1.match_score(y2).map(|s| s + 20),
 
             // Tuples: structural match on all elements
             (Type::Tuple(elems1), Type::Tuple(elems2)) if elems1.len() == elems2.len() => {
@@ -491,7 +625,7 @@ impl Type {
                     .zip(elems2.iter())
                     .map(|(e1, e2)| e1.match_score(e2).unwrap_or(0))
                     .sum();
-                Some(total / elems1.len() as u32 + 20)
+                Some(total / elems1.len().max(1) as u32 + 20)
             }
 
             // Tuple ↔ Array compatibility (lower score than direct Tuple match)
@@ -552,9 +686,10 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
-            Type::Markdown => "markdown".to_string(),
+            Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.display_resolved()),
+            Type::Generator(yielded) => format!("generator<{}>", yielded.display_resolved()),
             Type::Tuple(elems) => {
                 let elems_str = elems
                     .iter()
@@ -628,9 +763,10 @@ impl Type {
             Type::Bool => "bool".to_string(),
             Type::Symbol => "symbol".to_string(),
             Type::None => "none".to_string(),
-            Type::Markdown => "markdown".to_string(),
+            Type::Node(set) => set.display(),
             Type::Bytes => "bytes".to_string(),
             Type::Array(elem) => format!("[{}]", elem.fmt_renumbered(var_map, counter)),
+            Type::Generator(yielded) => format!("generator<{}>", yielded.fmt_renumbered(var_map, counter)),
             Type::Tuple(elems) => {
                 let elems_str = elems
                     .iter()
@@ -1012,6 +1148,42 @@ mod tests {
     #[case(vec![Type::Number, Type::String, Type::Number], Type::union(vec![Type::Number, Type::String]))]
     fn test_type_union(#[case] types: Vec<Type>, #[case] expected: Type) {
         assert_eq!(Type::union(types), expected);
+    }
+
+    fn node(kinds: impl IntoIterator<Item = mq_markdown::NodeKind>) -> Type {
+        Type::Node(KindSet::from_kinds(kinds))
+    }
+
+    #[test]
+    fn test_union_folds_node_types_into_one() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        assert_eq!(
+            Type::union(vec![node([H1]), Type::Number, node([H2])]),
+            Type::union(vec![Type::Number, node([H1, H2])])
+        );
+        assert_eq!(Type::union(vec![node([Code]), Type::markdown()]), Type::markdown());
+    }
+
+    #[test]
+    fn test_subtract_removes_only_the_excluded_kinds_from_a_node_member() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        let ty = Type::union(vec![Type::None, node([H1, H2, Code])]);
+        assert_eq!(
+            ty.subtract(&node([H1])),
+            Type::union(vec![Type::None, node([H2, Code])])
+        );
+        assert_eq!(ty.subtract(&node([H1, H2, Code])), Type::None);
+    }
+
+    #[test]
+    fn test_node_types_match_when_they_share_a_kind() {
+        use mq_markdown::NodeKind::{Code, H1, H2};
+        assert!(node([H1, H2]).can_match(&node([H2, Code])));
+        assert!(!node([H1]).can_match(&node([Code])));
+        assert!(Type::markdown().can_match(&node([Code])));
+        assert_eq!(node([H1, H2]).match_score(&node([H1])), Some(100));
+        assert_eq!(node([H1]).match_score(&node([H1, H2])), Some(60));
+        assert_eq!(node([H1]).match_score(&node([Code])), None);
     }
 
     #[rstest]

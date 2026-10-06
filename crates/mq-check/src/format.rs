@@ -142,6 +142,7 @@ fn type_error_code(error: &TypeError) -> &'static str {
         TypeError::UndefinedSymbol { .. } => "typechecker::undefined_symbol",
         TypeError::WrongArity { .. } => "typechecker::wrong_arity",
         TypeError::UndefinedField { .. } => "typechecker::undefined_field",
+        TypeError::UndefinedAttribute { .. } => "typechecker::undefined_attribute",
         TypeError::HeterogeneousArray { .. } => "typechecker::heterogeneous_array",
         TypeError::TypeVarNotFound(_) => "typechecker::type_var_not_found",
         TypeError::Internal(_) => "typechecker::internal_error",

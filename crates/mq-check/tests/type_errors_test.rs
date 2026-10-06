@@ -71,7 +71,7 @@ fn test_dict_heterogeneous_values_allowed() {
 
 #[test]
 fn test_function_arity_mismatch() {
-    let result = check_types("def add(x, y): x + y;\n| add(1)");
+    let result = check_types("def add(x, y): x + y;\n| add(1, 2, 3)");
     println!("Function arity mismatch: {:?}", result);
     assert!(!result.is_empty(), "Expected arity mismatch error");
 }
@@ -80,8 +80,7 @@ fn test_function_arity_mismatch() {
 fn test_function_arity_mismatch_hint_names_function_and_counts() {
     // `add(1)` here is not the sole expression after a pipe (which would make the
     // call site ambiguous re: piped-input arity), so this reliably hits the
-    // `TypeError::WrongArity` path in constraint.rs rather than a piped-input-driven
-    // `UnificationError` like `test_function_arity_mismatch` above does.
+    // `TypeError::WrongArity` path in constraint.rs.
     let result = check_types("def add(x, y): x + y; | [add(1)]");
 
     let has_hint = result.iter().any(|err| {
@@ -98,11 +97,11 @@ fn test_function_arity_mismatch_hint_names_function_and_counts() {
 
 #[test]
 fn test_function_type_arity_mismatch_hint_shows_param_counts() {
-    // Unifying two function *types* with different arities (e.g. two branches of an
-    // `if` returning lambdas with different signatures) hits the WrongArity path in
+    // Unifying two function *types* with different arities (e.g. comparing lambdas with
+    // different signatures) hits the WrongArity path in
     // unify.rs, which has no call-site function name available, unlike the
     // constraint.rs path exercised above.
-    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | if (true): f else: g;");
+    let result = check_types("let f = fn(x): x; | let g = fn(x, y): x; | f == g");
 
     let has_hint = result.iter().any(|err| {
         matches!(
@@ -587,17 +586,17 @@ fn test_tuple_three_elements() {
 
 #[rstest]
 #[case::array_number_none_valid(
-    "let v = try: [1, 2, 3] catch: none; | v[0] + 1",
+    "let v = try: [1, 2, 3] catch: None; | v[0] + 1",
     true,
     "v[0] + 1 on Union(Array(Number), None) should succeed"
 )]
 #[case::array_number_none_type_error(
-    "let v = try: [1, 2, 3] catch: none; | v[0] + true",
+    "let v = try: [1, 2, 3] catch: None; | v[0] + true",
     false,
     "v[0] + true on Union(Array(Number), None) should produce a type error"
 )]
 #[case::array_string_none_valid(
-    r#"let v = try: ["a", "b"] catch: none; | upcase(v[0])"#,
+    r#"let v = try: ["a", "b"] catch: None; | upcase(v[0])"#,
     true,
     "upcase(v[0]) on Union(Array(String), None) should succeed"
 )]
@@ -613,12 +612,12 @@ fn test_union_array_index_access(#[case] code: &str, #[case] should_succeed: boo
 
 #[rstest]
 #[case::tuple_number_string_none_index0_valid(
-    r#"let v = try: [1, "hello"] catch: none; | v[0] + 1"#,
+    r#"let v = try: [1, "hello"] catch: None; | v[0] + 1"#,
     true,
     "v[0] + 1 on Union(Tuple(Number, String), None) should succeed"
 )]
 #[case::tuple_number_string_none_index1_type_error(
-    r#"let v = try: [1, "hello"] catch: none; | v[1] - 1"#,
+    r#"let v = try: [1, "hello"] catch: None; | v[1] - 1"#,
     false,
     "v[1] - 1 on Union(Tuple(Number, String), None) should produce a type error"
 )]

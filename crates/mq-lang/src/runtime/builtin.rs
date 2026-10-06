@@ -8387,6 +8387,20 @@ world"# }],
         },
     );
     map.insert(
+        SmolStr::new("utf8bytelen"),
+        BuiltinFunctionDoc {
+            description: "Returns the number of bytes of the given string when encoded as UTF-8.",
+            params: &["string"],
+            param_types: &["string"],
+            returns: "number",
+            examples: &[BuiltinExample {
+                code: r#"utf8bytelen("héllo")"#,
+                expected: r#"6"#,
+            }],
+            capability: None,
+        },
+    );
+    map.insert(
         SmolStr::new("graphemes"),
         BuiltinFunctionDoc {
             description: "Splits the string into extended grapheme clusters (user-perceived characters), keeping combining marks and multi-codepoint emoji together.",

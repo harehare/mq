@@ -158,6 +158,12 @@
           "default": false,
           "description": "Enable or disable strict array mode. When enabled, arrays must contain elements of a single type."
         },
+        "mq.typeCheck.inputType": {
+          "title": "Input type",
+          "type": "string",
+          "default": "",
+          "description": "Type of the input document, e.g. \"h1 | h2\", \"code\" or \"markdown - code\". Empty means unknown. Requires mq.typeCheck.enableTypeCheck."
+        },
         "mq.lint.enableLint": {
           "title": "Enable lint",
           "type": "boolean",

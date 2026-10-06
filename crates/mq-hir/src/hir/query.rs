@@ -71,6 +71,12 @@ impl Hir {
     }
 
     #[inline(always)]
+    /// How many trailing arguments of the call `call` are bracket-access keys: the `"k"` of
+    /// `f(x)["k"]`, which the HIR lists as a further argument of `f`.
+    pub fn bracket_key_count(&self, call: SymbolId) -> usize {
+        self.bracket_key_counts.get(&call).copied().unwrap_or(0)
+    }
+
     pub fn symbol(&self, symbol_id: SymbolId) -> Option<&Symbol> {
         self.symbols.get(symbol_id)
     }
