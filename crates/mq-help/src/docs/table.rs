@@ -4,6 +4,7 @@ use super::{BuiltinDoc, BuiltinExample, DocKind, DocTable};
 pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     BuiltinDoc {
         name: "..",
+        aliases: &[],
         description: "Recursively selects every descendant node (depth-first), not the node itself. Combine with a following selector for a descendant chain, e.g. `.blockquote .code` (sugar for `.blockquote | .. | .code`).",
         params: &[],
         param_types: &[],
@@ -17,6 +18,7 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     },
     BuiltinDoc {
         name: ".<>",
+        aliases: &[],
         description: "Selects an HTML node.",
         params: &[],
         param_types: &[],
@@ -27,6 +29,7 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     },
     BuiltinDoc {
         name: ".[]",
+        aliases: &[],
         description: "Selects a list item node, optionally filtered by item index (e.g. `.[](0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
         params: &["index", "..."],
         param_types: &["number"],
@@ -40,6 +43,7 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     },
     BuiltinDoc {
         name: ".[][]",
+        aliases: &[],
         description: "Selects a table cell node with the specified row and column.",
         params: &["row", "column"],
         param_types: &["number", "number"],
@@ -52,7 +56,36 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".align",
+        aliases: &[],
+        description: "Returns the column alignments of a table as a comma separated string (e.g. `:---,---:`).",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_md_table_align(["left", "right"]) | .align"#,
+            expected: r#":---,---:"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".alt",
+        aliases: &[],
+        description: "Returns the alt text of an image or image reference.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_image("https://example.com/a.png", "Alt", "") | .alt"#,
+            expected: r#"Alt"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".blockquote",
+        aliases: &[".>"],
         description: "Selects a blockquote node.",
         params: &[],
         param_types: &[],
@@ -66,6 +99,7 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     },
     BuiltinDoc {
         name: ".break",
+        aliases: &[".br"],
         description: "Selects a break node.",
         params: &[],
         param_types: &[],
@@ -79,6 +113,7 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
     },
     BuiltinDoc {
         name: ".callout",
+        aliases: &[],
         description: "Selects an Obsidian-style callout node, optionally filtered by kind (e.g. `.callout(\"note\")`).",
         params: &["kind", "..."],
         param_types: &["string"],
@@ -92,7 +127,36 @@ pub static BUILTIN_DOC: DocTable = DocTable::new(&[
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".checked",
+        aliases: &[],
+        description: "Returns whether a task list item is checked, or none for an item that is not a task.",
+        params: &[],
+        param_types: &[],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("- [x] done") | first() | .checked"#,
+            expected: r#"true"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".children",
+        aliases: &[".cn"],
+        description: "Returns the child nodes of a container node as an array. Same as `.values`.",
+        params: &[],
+        param_types: &[],
+        returns: "array",
+        examples: &[BuiltinExample {
+            code: r#"to_md_list("Item", 0) | .children"#,
+            expected: r#"[Item]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".code",
+        aliases: &[".code_block"],
         description: "Selects a code block node with the specified language.",
         params: &["lang", "..."],
         param_types: &["string"],
@@ -108,6 +172,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".code_inline",
+        aliases: &[".inline_code"],
         description: "Selects an inline code node.",
         params: &[],
         param_types: &[],
@@ -120,7 +185,22 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".column",
+        aliases: &[],
+        description: "Returns the zero-based column of a table cell.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("| a | b |\n|---|---|\n| 1 | 2 |") | .table | last() | .column"#,
+            expected: r#"1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".definition",
+        aliases: &[],
         description: "Selects a definition node, optionally filtered by identifier.",
         params: &["ident", "..."],
         param_types: &["string"],
@@ -134,6 +214,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".delete",
+        aliases: &[],
         description: "Selects a delete (strikethrough) node.",
         params: &[],
         param_types: &[],
@@ -146,7 +227,22 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".depth",
+        aliases: &[],
+        description: "Returns the depth (1-6) of a heading.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 3) | .depth"#,
+            expected: r#"3"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".done",
+        aliases: &[],
         description: "Selects a done item in the task list node.",
         params: &[],
         param_types: &[],
@@ -160,6 +256,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".embed",
+        aliases: &[],
         description: "Selects an Obsidian-style embed node, optionally filtered by target.",
         params: &["target", "..."],
         param_types: &["string"],
@@ -173,6 +270,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".emphasis",
+        aliases: &[".**"],
         description: "Selects an emphasis (italic) node.",
         params: &[],
         param_types: &[],
@@ -185,7 +283,36 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".end_line",
+        aliases: &[],
+        description: "Returns the one-based line on which a parsed node ends.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("a\nb") | first() | .end_line"#,
+            expected: r#"2"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".fence",
+        aliases: &[],
+        description: "Returns true if a code block is fenced, false if it is indented.",
+        params: &[],
+        param_types: &[],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"to_code("x = 1", "python") | .fence"#,
+            expected: r#"true"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".footnote",
+        aliases: &[".^"],
         description: "Selects a footnote node, optionally filtered by identifier.",
         params: &["ident", "..."],
         param_types: &["string"],
@@ -199,6 +326,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".footnote_ref",
+        aliases: &[".[^]"],
         description: "Selects a footnote reference node, optionally filtered by identifier.",
         params: &["ident", "..."],
         param_types: &["string"],
@@ -212,6 +340,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h",
+        aliases: &[],
         description: "Selects a heading node with the specified depth.",
         params: &["depth", "..."],
         param_types: &["number"],
@@ -225,6 +354,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h1",
+        aliases: &[],
         description: "Selects a heading node with the 1 depth.",
         params: &[],
         param_types: &[],
@@ -238,6 +368,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h2",
+        aliases: &[],
         description: "Selects a heading node with the 2 depth.",
         params: &[],
         param_types: &[],
@@ -251,6 +382,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h3",
+        aliases: &[],
         description: "Selects a heading node with the 3 depth.",
         params: &[],
         param_types: &[],
@@ -264,6 +396,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h4",
+        aliases: &[],
         description: "Selects a heading node with the 4 depth.",
         params: &[],
         param_types: &[],
@@ -277,6 +410,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h5",
+        aliases: &[],
         description: "Selects a heading node with the 5 depth.",
         params: &[],
         param_types: &[],
@@ -290,6 +424,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".h6",
+        aliases: &[],
         description: "Selects a heading node with the 6 depth.",
         params: &[],
         param_types: &[],
@@ -303,6 +438,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".heading",
+        aliases: &[],
         description: "Selects a heading node with the specified depth.",
         params: &["depth", "..."],
         param_types: &["number"],
@@ -316,6 +452,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".horizontal_rule",
+        aliases: &[".hr", ".---", ".***", ".___"],
         description: "Selects a horizontal rule node.",
         params: &[],
         param_types: &[],
@@ -329,6 +466,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".html",
+        aliases: &[],
         description: "Selects an HTML node.",
         params: &[],
         param_types: &[],
@@ -341,7 +479,22 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".ident",
+        aliases: &[],
+        description: "Returns the normalized identifier of a definition, footnote, footnote reference, link reference or image reference.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("[Ref]: https://example.com") | first() | .ident"#,
+            expected: r#"ref"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".image",
+        aliases: &[],
         description: "Selects an image node, optionally filtered by URL (e.g. `.image(\"a.png\")`).",
         params: &["url", "..."],
         param_types: &["string"],
@@ -355,6 +508,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".image_ref",
+        aliases: &[],
         description: "Selects an image reference node, optionally filtered by identifier.",
         params: &["ident", "..."],
         param_types: &["string"],
@@ -367,7 +521,22 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".index",
+        aliases: &[],
+        description: "Returns the zero-based index of a list item within its list.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("1. a\n2. b") | .list | last() | .index"#,
+            expected: r#"1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".inline_math",
+        aliases: &[],
         description: "Selects an inline math node.",
         params: &[],
         param_types: &[],
@@ -380,7 +549,78 @@ x = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".kind",
+        aliases: &[],
+        description: "Returns the kind of a callout, e.g. `NOTE`.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("> [!NOTE]\n> body")[0] | .kind"#,
+            expected: r#"NOTE"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".label",
+        aliases: &[],
+        description: "Returns the label of a definition, link reference, image reference or footnote reference as written, or none.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("[Ref]: https://example.com") | first() | .label"#,
+            expected: r#"Ref"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".lang",
+        aliases: &[],
+        description: "Returns the language of a code block, or none when it has none.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_code("x = 1", "python") | .lang"#,
+            expected: r#"python"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".level",
+        aliases: &[],
+        description: "Returns the depth of a heading, or the nesting level of a list item.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 3) | .level"#,
+            expected: r#"3"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".line",
+        aliases: &[],
+        description: "Returns the one-based line on which a parsed node starts.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("a\nb") | first() | .line"#,
+            expected: r#"1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".link",
+        aliases: &[],
         description: "Selects a link node, optionally filtered by URL (e.g. `.link(\"https://example.com\")`).",
         params: &["url", "..."],
         param_types: &["string"],
@@ -394,6 +634,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".link_ref",
+        aliases: &[],
         description: "Selects a link reference node, optionally filtered by identifier.",
         params: &["ident", "..."],
         param_types: &["string"],
@@ -407,6 +648,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".list",
+        aliases: &[".li"],
         description: "Selects a list item node, optionally filtered by item index (e.g. `.list(0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
         params: &["index", "..."],
         param_types: &["number"],
@@ -420,6 +662,7 @@ x = 1
     },
     BuiltinDoc {
         name: ".math",
+        aliases: &[".$$"],
         description: "Selects a math node.",
         params: &[],
         param_types: &[],
@@ -435,6 +678,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".math_inline",
+        aliases: &[],
         description: "Selects a math inline node.",
         params: &[],
         param_types: &[],
@@ -448,6 +692,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".mdx_flow_expression",
+        aliases: &[],
         description: "Selects an MDX flow expression node.",
         params: &[],
         param_types: &[],
@@ -461,6 +706,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".mdx_js_esm",
+        aliases: &[],
         description: "Selects an MDX JS ESM node.",
         params: &[],
         param_types: &[],
@@ -471,6 +717,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".mdx_jsx_flow_element",
+        aliases: &[".<"],
         description: "Selects an MDX JSX flow element node, optionally filtered by tag name.",
         params: &["name", "..."],
         param_types: &["string"],
@@ -484,6 +731,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".mdx_jsx_text_element",
+        aliases: &[],
         description: "Selects an MDX JSX text element node, optionally filtered by tag name.",
         params: &["name", "..."],
         param_types: &["string"],
@@ -497,6 +745,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".mdx_text_expression",
+        aliases: &[".{}"],
         description: "Selects an MDX text expression node.",
         params: &[],
         param_types: &[],
@@ -509,7 +758,64 @@ $$"#,
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".meta",
+        aliases: &[],
+        description: "Returns the meta string that follows the language of a fenced code block, or none.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("```rust title\nx\n```") | first() | .meta"#,
+            expected: r#"title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".name",
+        aliases: &[],
+        description: "Returns the tag name of an MDX JSX element.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_mdx("<Foo>x</Foo>") | first() | .name"#,
+            expected: r#"Foo"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".ordered",
+        aliases: &[],
+        description: "Returns true if a list item belongs to an ordered list.",
+        params: &[],
+        param_types: &[],
+        returns: "bool",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("1. a\n2. b") | .list | first() | .ordered"#,
+            expected: r#"true"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".row",
+        aliases: &[],
+        description: "Returns the zero-based row of a table cell.",
+        params: &[],
+        param_types: &[],
+        returns: "number",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("| a | b |\n|---|---|\n| 1 | 2 |") | .table | last() | .row"#,
+            expected: r#"1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".strong",
+        aliases: &[],
         description: "Selects a strong (bold) node.",
         params: &[],
         param_types: &[],
@@ -523,6 +829,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".table",
+        aliases: &[],
         description: "Selects a table cell node with the specified row and column.",
         params: &["row", "column"],
         param_types: &["number", "number"],
@@ -536,6 +843,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".table_align",
+        aliases: &[],
         description: "Selects a table align node.",
         params: &[],
         param_types: &[],
@@ -549,6 +857,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".task",
+        aliases: &[],
         description: "Selects a task list node.",
         params: &[],
         param_types: &[],
@@ -562,6 +871,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".text",
+        aliases: &[".p", ".paragraph"],
         description: "Selects a text node.",
         params: &[],
         param_types: &[],
@@ -574,7 +884,22 @@ $$"#,
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".title",
+        aliases: &[],
+        description: "Returns the title of a link, image, definition or callout, or none when it has none.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_link("https://example.com", "Example", "T") | .title"#,
+            expected: r#"T"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".todo",
+        aliases: &[],
         description: "Selects a todo item in the task list node.",
         params: &[],
         param_types: &[],
@@ -588,6 +913,7 @@ $$"#,
     },
     BuiltinDoc {
         name: ".toml",
+        aliases: &[],
         description: "Selects a TOML node.",
         params: &[],
         param_types: &[],
@@ -602,7 +928,50 @@ key = 1
         kind: DocKind::Selector,
     },
     BuiltinDoc {
+        name: ".url",
+        aliases: &[],
+        description: "Returns the URL of a link, image, definition, wikilink or embed.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_link("https://example.com", "Example", "") | .url"#,
+            expected: r#"https://example.com"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".value",
+        aliases: &[],
+        description: "Returns the text content of a node, such as a text, code, link, heading, list item or table cell.",
+        params: &[],
+        param_types: &[],
+        returns: "string",
+        examples: &[BuiltinExample {
+            code: r#"to_code("x = 1", "python") | .value"#,
+            expected: r#"x = 1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".values",
+        aliases: &[],
+        description: "Returns the child nodes of a container node (heading, link, list item, table cell, callout, footnote or MDX element) as an array.",
+        params: &[],
+        param_types: &[],
+        returns: "array",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 2) | .values"#,
+            expected: r#"[Title]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
         name: ".wikilink",
+        aliases: &[],
         description: "Selects an Obsidian-style wikilink node, optionally filtered by target.",
         params: &["target", "..."],
         param_types: &["string"],
@@ -616,6 +985,7 @@ key = 1
     },
     BuiltinDoc {
         name: ".yaml",
+        aliases: &[],
         description: "Selects a YAML node.",
         params: &[],
         param_types: &[],
@@ -631,6 +1001,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_cbor_parse",
+        aliases: &[],
         description: "Parses a base64-encoded CBOR string or raw bytes into a data structure.",
         params: &["input"],
         param_types: &[],
@@ -641,6 +1012,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_cbor_stringify",
+        aliases: &[],
         description: "Serializes a value to CBOR bytes.",
         params: &["value"],
         param_types: &[],
@@ -651,6 +1023,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_csv_parse",
+        aliases: &[],
         description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
         params: &["csv_string", "delimiter", "has_header"],
         param_types: &[],
@@ -661,6 +1034,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_diff",
+        aliases: &[],
         description: "Internal function to compute the difference between two values, returning an array of changes.",
         params: &["value1", "value2"],
         param_types: &[],
@@ -671,6 +1045,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_get_markdown_position",
+        aliases: &[],
         description: "Internal function to get the position information of a markdown node, returning row and column data if available.",
         params: &["markdown_node"],
         param_types: &[],
@@ -681,6 +1056,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_gron_parse",
+        aliases: &[],
         description: "Parses gron-style `path = value;` assignment statements into a data structure.",
         params: &["gron_string"],
         param_types: &[],
@@ -691,6 +1067,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_html_parse",
+        aliases: &[],
         description: "Parses an HTML string and returns the corresponding data structure.",
         params: &["html_string"],
         param_types: &[],
@@ -701,6 +1078,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_jaro_distance",
+        aliases: &[],
         description: "Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is an exact match).",
         params: &["s1", "s2"],
         param_types: &[],
@@ -711,6 +1089,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_jaro_winkler_distance",
+        aliases: &[],
         description: "Calculates the Jaro-Winkler distance between two strings, boosting scores for matching prefixes.",
         params: &["s1", "s2"],
         param_types: &[],
@@ -721,6 +1100,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_json_parse",
+        aliases: &[],
         description: "Parses a JSON string into a data structure.",
         params: &["json_string"],
         param_types: &[],
@@ -731,6 +1111,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_levenshtein_distance",
+        aliases: &[],
         description: "Calculates the Levenshtein edit distance between two strings.",
         params: &["s1", "s2"],
         param_types: &[],
@@ -741,6 +1122,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_md_heading_level",
+        aliases: &[],
         description: "Internal function returning a heading's depth (1-6), or 0 for any other node.",
         params: &["markdown"],
         param_types: &["markdown"],
@@ -751,6 +1133,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_regex_replace_matches",
+        aliases: &[],
         description: "Internal implementation of regex_replace that splits `text` on every match of `pattern`, returning a dict with `segments` (the text between matches) and `matches` (per-match `match`/`captures`/`start`/`end` info).",
         params: &["text", "pattern"],
         param_types: &[],
@@ -761,6 +1144,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_sort_by_impl",
+        aliases: &[],
         description: "Internal implementation of sort_by functionality that sorts arrays of arrays using the first element as the key.",
         params: &[],
         param_types: &[],
@@ -771,6 +1155,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_toml_parse",
+        aliases: &[],
         description: "Parses a TOML string into a data structure.",
         params: &["toml_string"],
         param_types: &[],
@@ -781,6 +1166,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_toon_parse",
+        aliases: &[],
         description: "Parses a TOON string into a data structure.",
         params: &["toon_string"],
         param_types: &[],
@@ -791,6 +1177,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_toon_stringify",
+        aliases: &[],
         description: "Converts a data structure into a TOON string.",
         params: &["data"],
         param_types: &[],
@@ -801,6 +1188,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_xml_parse",
+        aliases: &[],
         description: "Parses an XML string and returns the corresponding data structure.",
         params: &["xml_string"],
         param_types: &[],
@@ -811,6 +1199,7 @@ key: 1
     },
     BuiltinDoc {
         name: "_yaml_parse",
+        aliases: &[],
         description: "Parses a YAML string into a data structure.",
         params: &["yaml_string"],
         param_types: &[],
@@ -821,6 +1210,7 @@ key: 1
     },
     BuiltinDoc {
         name: "abs",
+        aliases: &[],
         description: "Returns the absolute value of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -834,6 +1224,7 @@ key: 1
     },
     BuiltinDoc {
         name: "acos",
+        aliases: &[],
         description: "Returns the arc cosine of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -847,6 +1238,7 @@ key: 1
     },
     BuiltinDoc {
         name: "add",
+        aliases: &[],
         description: "Adds two values.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -860,6 +1252,7 @@ key: 1
     },
     BuiltinDoc {
         name: "all_symbols",
+        aliases: &[],
         description: "Returns an array of all interned symbols.",
         params: &[],
         param_types: &[],
@@ -870,6 +1263,7 @@ key: 1
     },
     BuiltinDoc {
         name: "and",
+        aliases: &[],
         description: "Performs a logical AND operation on two boolean values.",
         params: &["value1", "value2"],
         param_types: &["bool", "bool"],
@@ -883,6 +1277,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ascii_downcase",
+        aliases: &[],
         description: "Converts ASCII uppercase letters (A-Z) in the given string to lowercase, leaving all other characters unchanged.",
         params: &["input"],
         param_types: &["string"],
@@ -896,6 +1291,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ascii_upcase",
+        aliases: &[],
         description: "Converts ASCII lowercase letters (a-z) in the given string to uppercase, leaving all other characters unchanged.",
         params: &["input"],
         param_types: &["string"],
@@ -909,6 +1305,7 @@ key: 1
     },
     BuiltinDoc {
         name: "asin",
+        aliases: &[],
         description: "Returns the arc sine of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -922,6 +1319,7 @@ key: 1
     },
     BuiltinDoc {
         name: "atan",
+        aliases: &[],
         description: "Returns the arc tangent of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -935,6 +1333,7 @@ key: 1
     },
     BuiltinDoc {
         name: "atan2",
+        aliases: &[],
         description: "Returns the arc tangent of y/x (in radians), using the signs of both to determine the quadrant.",
         params: &["y", "x"],
         param_types: &["number", "number"],
@@ -948,6 +1347,7 @@ key: 1
     },
     BuiltinDoc {
         name: "attr",
+        aliases: &[],
         description: "Retrieves the value of the specified attribute from a markdown node.",
         params: &["markdown", "attribute"],
         param_types: &["markdown", "string"],
@@ -958,6 +1358,7 @@ key: 1
     },
     BuiltinDoc {
         name: "band",
+        aliases: &[],
         description: "Computes the bitwise AND of two byte arrays of equal length.",
         params: &["bytes1", "bytes2"],
         param_types: &["bytes", "bytes"],
@@ -968,6 +1369,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64",
+        aliases: &[],
         description: "Encodes the given string to base64.",
         params: &["input"],
         param_types: &["string"],
@@ -981,6 +1383,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64d",
+        aliases: &[],
         description: "Decodes the given base64 string.",
         params: &["input"],
         param_types: &["string"],
@@ -994,6 +1397,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64d_bytes",
+        aliases: &[],
         description: "Decodes the given base64 string to raw bytes. Unlike `base64d`, this does not assume the decoded data is UTF-8 text, so arbitrary binary data round-trips losslessly.",
         params: &["input"],
         param_types: &["string"],
@@ -1004,6 +1408,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64url",
+        aliases: &[],
         description: "Encodes the given string to URL-safe base64.",
         params: &["input"],
         param_types: &["string"],
@@ -1017,6 +1422,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64urld",
+        aliases: &[],
         description: "Decodes the given URL-safe base64 string.",
         params: &["input"],
         param_types: &["string"],
@@ -1030,6 +1436,7 @@ key: 1
     },
     BuiltinDoc {
         name: "base64urld_bytes",
+        aliases: &[],
         description: "Decodes the given URL-safe base64 string to raw bytes. Unlike `base64urld`, this does not assume the decoded data is UTF-8 text, so arbitrary binary data round-trips losslessly.",
         params: &["input"],
         param_types: &["string"],
@@ -1040,6 +1447,7 @@ key: 1
     },
     BuiltinDoc {
         name: "basename",
+        aliases: &[],
         description: "Returns the final component of a path string (e.g. \"file.txt\" from \"/a/b/file.txt\").",
         params: &["path"],
         param_types: &["string"],
@@ -1053,6 +1461,7 @@ key: 1
     },
     BuiltinDoc {
         name: "bnot",
+        aliases: &[],
         description: "Computes the bitwise NOT (complement) of a byte array.",
         params: &["bytes"],
         param_types: &["bytes"],
@@ -1063,6 +1472,7 @@ key: 1
     },
     BuiltinDoc {
         name: "bor",
+        aliases: &[],
         description: "Computes the bitwise OR of two byte arrays of equal length.",
         params: &["bytes1", "bytes2"],
         param_types: &["bytes", "bytes"],
@@ -1073,6 +1483,7 @@ key: 1
     },
     BuiltinDoc {
         name: "breakpoint",
+        aliases: &[],
         description: "Sets a breakpoint for debugging; execution will pause at this point if a debugger is attached.",
         params: &[],
         param_types: &[],
@@ -1083,6 +1494,7 @@ key: 1
     },
     BuiltinDoc {
         name: "capture",
+        aliases: &[],
         description: "Captures named groups from the given string based on the specified regular expression pattern and returns them as a dictionary keyed by group names.",
         params: &["string", "pattern"],
         param_types: &["string", "string"],
@@ -1096,6 +1508,7 @@ key: 1
     },
     BuiltinDoc {
         name: "casefold",
+        aliases: &[],
         description: "Applies full Unicode case folding, for locale-independent case-insensitive comparison (e.g. German \"ß\" folds to \"ss\").",
         params: &["input"],
         param_types: &["string"],
@@ -1109,6 +1522,7 @@ key: 1
     },
     BuiltinDoc {
         name: "cbrt",
+        aliases: &[],
         description: "Returns the cube root of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -1122,6 +1536,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ceil",
+        aliases: &[],
         description: "Rounds the given number up to the nearest integer.",
         params: &["number"],
         param_types: &["number"],
@@ -1135,6 +1550,7 @@ key: 1
     },
     BuiltinDoc {
         name: "close",
+        aliases: &[],
         description: "Forces a generator coroutine to completion, releasing its suspended frames early instead of waiting for it to be dropped.",
         params: &["stream"],
         param_types: &["dynamic"],
@@ -1148,6 +1564,7 @@ key: 1
     },
     BuiltinDoc {
         name: "coalesce",
+        aliases: &[],
         description: "Returns the first non-None value from the two provided arguments.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -1161,6 +1578,7 @@ key: 1
     },
     BuiltinDoc {
         name: "collection",
+        aliases: &[],
         description: "Recursively reads every Markdown file in the given directory (including subdirectories and symlinked files/directories) and returns an array of `{path, title, frontmatter, content}` dicts, sorted by path, so they can be filtered, sorted, or aggregated as a single dataset. `content` holds the file's Markdown nodes with frontmatter stripped. Symlink cycles are detected and only visited once. `respect_gitignore` is optional (default `false`); when `true`, dotfiles/dot-directories and any path matched by a `.gitignore` in `dir` or a subdirectory are skipped, with closer `.gitignore` files taking precedence, same as `git`. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["dir", "respect_gitignore?"],
         param_types: &["string", "boolean"],
@@ -1171,6 +1589,7 @@ key: 1
     },
     BuiltinDoc {
         name: "compact",
+        aliases: &[],
         description: "Removes None values from the given array.",
         params: &["array"],
         param_types: &["array"],
@@ -1184,6 +1603,7 @@ key: 1
     },
     BuiltinDoc {
         name: "convert",
+        aliases: &[],
         description: "Converts the input value to the specified format. Supported formats: base64, html, text, uri, heading (#, ##, etc.), blockquote (>), list item (-), or link (URL).",
         params: &["input", "format"],
         param_types: &["dynamic", "string"],
@@ -1194,6 +1614,7 @@ key: 1
     },
     BuiltinDoc {
         name: "cos",
+        aliases: &[],
         description: "Returns the cosine of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -1207,6 +1628,7 @@ key: 1
     },
     BuiltinDoc {
         name: "cosh",
+        aliases: &[],
         description: "Returns the hyperbolic cosine of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -1220,6 +1642,7 @@ key: 1
     },
     BuiltinDoc {
         name: "css",
+        aliases: &[],
         description: "Returns the outer HTML of every element in the html string matching the CSS selector, as an array of strings. Queries the raw HTML directly instead of going through the -I html Markdown conversion, so tags, classes, ids, and data-* attributes that conversion discards are still available.",
         params: &["html", "selector"],
         param_types: &["string", "string"],
@@ -1233,6 +1656,7 @@ key: 1
     },
     BuiltinDoc {
         name: "css_attr",
+        aliases: &[],
         description: "Returns the value of the named attribute for every element in the html string matching the CSS selector, as an array; elements without that attribute produce None.",
         params: &["html", "selector", "name"],
         param_types: &["string", "string", "string"],
@@ -1246,6 +1670,7 @@ key: 1
     },
     BuiltinDoc {
         name: "css_text",
+        aliases: &[],
         description: "Returns the text content of every element in the html string matching the CSS selector, as an array of strings.",
         params: &["html", "selector"],
         param_types: &["string", "string"],
@@ -1259,6 +1684,7 @@ key: 1
     },
     BuiltinDoc {
         name: "date_add",
+        aliases: &[],
         description: "Adds n units to a broken-down time array and returns a new array. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\", \"months\", \"years\". Month/year arithmetic is calendar-aware.",
         params: &["array", "n", "unit"],
         param_types: &["array", "number", "string"],
@@ -1269,6 +1695,7 @@ key: 1
     },
     BuiltinDoc {
         name: "date_diff",
+        aliases: &[],
         description: "Returns the difference (array2 - array1) in the given unit. Units: \"seconds\", \"minutes\", \"hours\", \"days\", \"weeks\".",
         params: &["array1", "array2", "unit"],
         param_types: &["array", "array", "string"],
@@ -1282,6 +1709,7 @@ key: 1
     },
     BuiltinDoc {
         name: "date_relative",
+        aliases: &[],
         description: "Parses a natural-language relative date expression (e.g. \"3 days ago\", \"yesterday\", \"tomorrow\", \"next monday\", \"in 2 weeks\") relative to a base Unix timestamp and returns the resulting Unix timestamp (seconds, UTC).",
         params: &["base_timestamp", "date_str"],
         param_types: &["number", "string"],
@@ -1292,6 +1720,7 @@ key: 1
     },
     BuiltinDoc {
         name: "decode",
+        aliases: &[],
         description: "Decodes bytes as text using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the bytes contain a sequence invalid for that encoding, rather than silently substituting replacement characters.",
         params: &["bytes", "label"],
         param_types: &["bytes", "string"],
@@ -1305,6 +1734,7 @@ key: 1
     },
     BuiltinDoc {
         name: "del",
+        aliases: &[],
         description: "Deletes the element at the specified index in the array or string.",
         params: &["array_or_string", "index"],
         param_types: &["dynamic", "number"],
@@ -1318,6 +1748,7 @@ key: 1
     },
     BuiltinDoc {
         name: "dict",
+        aliases: &[],
         description: "Creates a new, empty dict.",
         params: &[],
         param_types: &[],
@@ -1331,6 +1762,7 @@ key: 1
     },
     BuiltinDoc {
         name: "dirname",
+        aliases: &[],
         description: "Returns the parent directory of a path string (e.g. \"/a/b\" from \"/a/b/file.txt\"). Returns \".\" if the path has no parent.",
         params: &["path"],
         param_types: &["string"],
@@ -1344,6 +1776,7 @@ key: 1
     },
     BuiltinDoc {
         name: "div",
+        aliases: &[],
         description: "Divides the first value by the second value.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -1357,6 +1790,7 @@ key: 1
     },
     BuiltinDoc {
         name: "downcase",
+        aliases: &[],
         description: "Converts the given string to lowercase.",
         params: &["input"],
         param_types: &["string"],
@@ -1370,6 +1804,7 @@ key: 1
     },
     BuiltinDoc {
         name: "embed_images",
+        aliases: &[],
         description: "Inlines an `.image` node's local file into its `url` as a base64 `data:` URI, resolving the path relative to the given base directory (default \".\") and inferring the MIME type from the file extension. URLs that are already `data:` URIs or contain a `://` scheme (e.g. `https://`), and non-image nodes, are left unchanged. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["base_dir"],
         param_types: &["string"],
@@ -1380,6 +1815,7 @@ key: 1
     },
     BuiltinDoc {
         name: "encode",
+        aliases: &[],
         description: "Encodes text as bytes using a WHATWG encoding label (e.g. \"shift_jis\", \"utf-16le\", \"euc-jp\"; case-insensitive, and common aliases such as \"latin1\" or \"ascii\" are accepted). Supported encodings: UTF-8, UTF-16BE, UTF-16LE, IBM866, ISO-2022-JP, ISO-8859-2 through ISO-8859-8 (and ISO-8859-8-I), ISO-8859-10, ISO-8859-13 through ISO-8859-16, KOI8-R, KOI8-U, Shift_JIS, EUC-JP, EUC-KR, Big5, GBK, gb18030, macintosh, x-mac-cyrillic, x-user-defined, windows-874, windows-1250 through windows-1258 (see https://encoding.spec.whatwg.org/#names-and-labels for the full label list, including aliases). Returns an error if the label is unrecognized or the text contains a character unmappable in that encoding, rather than silently substituting a replacement byte.",
         params: &["text", "label"],
         param_types: &["string", "string"],
@@ -1390,6 +1826,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ends_with",
+        aliases: &[],
         description: "Checks if the given string or byte array ends with the specified suffix.",
         params: &["value", "suffix"],
         param_types: &["dynamic", "dynamic"],
@@ -1403,6 +1840,7 @@ key: 1
     },
     BuiltinDoc {
         name: "entries",
+        aliases: &[],
         description: "Returns an array of key-value pairs from the dict as arrays.",
         params: &["dict"],
         param_types: &["dict"],
@@ -1413,6 +1851,7 @@ key: 1
     },
     BuiltinDoc {
         name: "env",
+        aliases: &[],
         description: "Returns all `--allow-env`-permitted env vars as a dict; `env(name)` returns one value, or `None` if unset.",
         params: &[],
         param_types: &[],
@@ -1423,6 +1862,7 @@ key: 1
     },
     BuiltinDoc {
         name: "error",
+        aliases: &[],
         description: "Raises a user-defined error with the specified message.",
         params: &["message"],
         param_types: &["string"],
@@ -1433,6 +1873,7 @@ key: 1
     },
     BuiltinDoc {
         name: "exp",
+        aliases: &[],
         description: "Returns the exponential (e^x) of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -1446,6 +1887,7 @@ key: 1
     },
     BuiltinDoc {
         name: "explode",
+        aliases: &[],
         description: "Splits the given string into an array of characters.",
         params: &["string"],
         param_types: &["string"],
@@ -1459,6 +1901,7 @@ key: 1
     },
     BuiltinDoc {
         name: "extname",
+        aliases: &[],
         description: "Returns the extension of a file path including the leading dot (e.g. \".txt\" from \"file.txt\"). Returns an empty string if there is no extension.",
         params: &["path"],
         param_types: &["string"],
@@ -1472,6 +1915,7 @@ key: 1
     },
     BuiltinDoc {
         name: "extract_images",
+        aliases: &[],
         description: "Decodes an `.image` node's base64 `data:` URI and writes the bytes to a file under the given directory, named by the content's MD5 hash with an extension inferred from the MIME type, then replaces `url` with that file's path. Nodes whose `url` is not a base64 `data:` URI, including non-image nodes, are left unchanged. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
         params: &["dir"],
         param_types: &["string"],
@@ -1482,6 +1926,7 @@ key: 1
     },
     BuiltinDoc {
         name: "extract_urls",
+        aliases: &[],
         description: "Extracts http(s):// and mailto: URLs from plain text (not Markdown links or HTML) as {url, start_byte, end_byte, kind} records, trimming trailing prose punctuation off each match. Does not detect bare domains without a scheme.",
         params: &["text"],
         param_types: &["dynamic"],
@@ -1495,6 +1940,7 @@ key: 1
     },
     BuiltinDoc {
         name: "file_exists",
+        aliases: &[],
         description: "Checks if a file exists at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -1505,6 +1951,7 @@ key: 1
     },
     BuiltinDoc {
         name: "file_info",
+        aliases: &[],
         description: "Returns `{path, kind, size, modified}` for the entry at the given path: `kind` is `\"file\"`, `\"dir\"`, `\"symlink\"`, or `\"other\"`; `size` is in bytes; `modified` is a unix timestamp in seconds, or `None` if unavailable. A symlink is reported as `\"symlink\"` and never followed. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -1515,6 +1962,7 @@ key: 1
     },
     BuiltinDoc {
         name: "file_size",
+        aliases: &[],
         description: "Returns the size, in bytes, of the file at the given path. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -1525,6 +1973,7 @@ key: 1
     },
     BuiltinDoc {
         name: "flatten",
+        aliases: &[],
         description: "Flattens a nested array into a single level array.",
         params: &["array"],
         param_types: &["array"],
@@ -1538,6 +1987,7 @@ key: 1
     },
     BuiltinDoc {
         name: "floor",
+        aliases: &[],
         description: "Rounds the given number down to the nearest integer.",
         params: &["number"],
         param_types: &["number"],
@@ -1551,6 +2001,7 @@ key: 1
     },
     BuiltinDoc {
         name: "from_date",
+        aliases: &[],
         description: "Converts a date string to a timestamp.",
         params: &["date_str"],
         param_types: &["string"],
@@ -1564,6 +2015,7 @@ key: 1
     },
     BuiltinDoc {
         name: "from_hex",
+        aliases: &[],
         description: "Parses a hex string into raw bytes.",
         params: &["hex_string"],
         param_types: &["string"],
@@ -1574,6 +2026,7 @@ key: 1
     },
     BuiltinDoc {
         name: "from_html",
+        aliases: &[],
         description: "Converts the given HTML string to Markdown.",
         params: &["html"],
         param_types: &["string"],
@@ -1584,6 +2037,7 @@ key: 1
     },
     BuiltinDoc {
         name: "get",
+        aliases: &[],
         description: "Retrieves a value from a dict by its key. Returns None if the key is not found.",
         params: &["obj", "key"],
         param_types: &["dict", "dynamic"],
@@ -1594,6 +2048,7 @@ key: 1
     },
     BuiltinDoc {
         name: "get_location",
+        aliases: &[],
         description: "Returns the source position of a markdown node as a dict with start_line, start_column, end_line, and end_column, or None if the node has no position info.",
         params: &["node"],
         param_types: &["markdown"],
@@ -1604,6 +2059,7 @@ key: 1
     },
     BuiltinDoc {
         name: "get_title",
+        aliases: &[],
         description: "Returns the title of a markdown node.",
         params: &["node"],
         param_types: &["markdown"],
@@ -1614,6 +2070,7 @@ key: 1
     },
     BuiltinDoc {
         name: "get_url",
+        aliases: &[],
         description: "Returns the url of a markdown node.",
         params: &["node"],
         param_types: &["markdown"],
@@ -1627,6 +2084,7 @@ key: 1
     },
     BuiltinDoc {
         name: "glob_match",
+        aliases: &[],
         description: "Checks whether the given path matches the glob pattern (e.g. \"*.md\", \"docs/**/*.rs\"), commonly used to filter file lists.",
         params: &["pattern", "path"],
         param_types: &["string", "string"],
@@ -1640,6 +2098,7 @@ key: 1
     },
     BuiltinDoc {
         name: "gmtime",
+        aliases: &[],
         description: "Converts Unix timestamp (seconds since epoch) to broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
         params: &["timestamp"],
         param_types: &["number"],
@@ -1653,6 +2112,7 @@ key: 1
     },
     BuiltinDoc {
         name: "grapheme_len",
+        aliases: &[],
         description: "Returns the number of extended grapheme clusters (user-perceived characters) in the string.",
         params: &["input"],
         param_types: &["string"],
@@ -1666,6 +2126,7 @@ key: 1
     },
     BuiltinDoc {
         name: "graphemes",
+        aliases: &[],
         description: "Splits the string into extended grapheme clusters (user-perceived characters), keeping combining marks and multi-codepoint emoji together.",
         params: &["input"],
         param_types: &["string"],
@@ -1679,6 +2140,7 @@ key: 1
     },
     BuiltinDoc {
         name: "gsub",
+        aliases: &[],
         description: "Replaces all occurrences matching a regular expression pattern with the replacement string.",
         params: &["from", "pattern", "to"],
         param_types: &["string", "string", "string"],
@@ -1692,6 +2154,7 @@ key: 1
     },
     BuiltinDoc {
         name: "halt",
+        aliases: &[],
         description: "Terminates the program with the given exit code.",
         params: &["exit_code"],
         param_types: &["number"],
@@ -1702,6 +2165,7 @@ key: 1
     },
     BuiltinDoc {
         name: "has",
+        aliases: &[],
         description: "Checks if a dict has the given key, or an array has an element at the given index.",
         params: &["value", "key"],
         param_types: &["dynamic", "dynamic"],
@@ -1715,6 +2179,7 @@ key: 1
     },
     BuiltinDoc {
         name: "hexdump",
+        aliases: &[],
         description: "Renders bytes as a hexdump (offset, hex bytes, ASCII gutter), like `xxd`/`hexdump -C`.",
         params: &["bytes"],
         param_types: &["bytes"],
@@ -1728,6 +2193,7 @@ key: 1
     },
     BuiltinDoc {
         name: "html_escape",
+        aliases: &[],
         description: "Escapes `&`, `<`, `>`, `\"`, and `'` in the given string as HTML entities.",
         params: &["string"],
         param_types: &["string"],
@@ -1741,6 +2207,7 @@ key: 1
     },
     BuiltinDoc {
         name: "html_unescape",
+        aliases: &[],
         description: "Decodes named and numeric HTML entities in the given string into their corresponding characters.",
         params: &["string"],
         param_types: &["string"],
@@ -1754,6 +2221,7 @@ key: 1
     },
     BuiltinDoc {
         name: "http",
+        aliases: &[],
         description: "Performs an HTTPS request with the given method (a string or symbol, e.g. \"post\" or :post; get, post, put, delete, patch, head, ... are all supported) and returns the response body as a string. An optional body argument (string) sends a request body regardless of method, and an optional headers argument (a dict of string to string, e.g. {\"Content-Type\": \"application/json\"}) is applied to the request. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
         params: &["method", "url", "body", "headers"],
         param_types: &["string", "string", "string", "dict"],
@@ -1764,6 +2232,7 @@ key: 1
     },
     BuiltinDoc {
         name: "http_all",
+        aliases: &[],
         description: "Performs a batch of HTTPS requests and returns the response bodies as an array of strings in request order. Each request is a dict with a `url` string and optional `method` (string or symbol, default GET), `body` (string) and `headers` (dict of string to string). Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
         params: &["requests"],
         param_types: &["array"],
@@ -1774,6 +2243,7 @@ key: 1
     },
     BuiltinDoc {
         name: "hypot",
+        aliases: &[],
         description: "Returns the length of the hypotenuse, sqrt(x^2 + y^2).",
         params: &["x", "y"],
         param_types: &["number", "number"],
@@ -1787,6 +2257,7 @@ key: 1
     },
     BuiltinDoc {
         name: "implode",
+        aliases: &[],
         description: "Joins an array of characters into a string.",
         params: &["array"],
         param_types: &["array"],
@@ -1800,6 +2271,7 @@ key: 1
     },
     BuiltinDoc {
         name: "index",
+        aliases: &[],
         description: "Finds the first occurrence of a substring or byte subsequence. Returns -1 if not found.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
@@ -1813,6 +2285,7 @@ key: 1
     },
     BuiltinDoc {
         name: "indices",
+        aliases: &[],
         description: "Finds all occurrences of a substring, byte subsequence, or array element. Returns an array of positions, or an empty array if not found.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
@@ -1826,6 +2299,7 @@ key: 1
     },
     BuiltinDoc {
         name: "infinite",
+        aliases: &[],
         description: "Returns an infinite number value.",
         params: &[],
         param_types: &[],
@@ -1836,6 +2310,7 @@ key: 1
     },
     BuiltinDoc {
         name: "input",
+        aliases: &[],
         description: "Reads a line from standard input and returns it as a string.",
         params: &[],
         param_types: &[],
@@ -1846,6 +2321,7 @@ key: 1
     },
     BuiltinDoc {
         name: "insert",
+        aliases: &[],
         description: "Inserts a value into an array or string at the specified index, or into a dict with the specified key.",
         params: &["target", "index_or_key", "value"],
         param_types: &["dynamic", "dynamic", "dynamic"],
@@ -1859,6 +2335,7 @@ key: 1
     },
     BuiltinDoc {
         name: "intern",
+        aliases: &[],
         description: "Interns the given string, returning a canonical reference for efficient comparison.",
         params: &["string"],
         param_types: &["string"],
@@ -1872,6 +2349,7 @@ key: 1
     },
     BuiltinDoc {
         name: "is_debug_mode",
+        aliases: &[],
         description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
         params: &[],
         param_types: &[],
@@ -1882,6 +2360,7 @@ key: 1
     },
     BuiltinDoc {
         name: "is_nan",
+        aliases: &[],
         description: "Returns true if the given number is NaN.",
         params: &["value"],
         param_types: &["number"],
@@ -1895,6 +2374,7 @@ key: 1
     },
     BuiltinDoc {
         name: "is_not_regex_match",
+        aliases: &[],
         description: "Checks if the given pattern does not match the string.",
         params: &["string", "pattern"],
         param_types: &["string", "string"],
@@ -1908,6 +2388,7 @@ key: 1
     },
     BuiltinDoc {
         name: "is_regex_match",
+        aliases: &[],
         description: "Checks if the given pattern matches the string.",
         params: &["string", "pattern"],
         param_types: &["string", "string"],
@@ -1921,6 +2402,7 @@ key: 1
     },
     BuiltinDoc {
         name: "join",
+        aliases: &[],
         description: "Joins the elements of an array into a string with the given separator. An array of byte arrays with a byte array separator is joined into a byte array instead.",
         params: &["array", "separator"],
         param_types: &["array", "dynamic"],
@@ -1934,6 +2416,7 @@ key: 1
     },
     BuiltinDoc {
         name: "keys",
+        aliases: &[],
         description: "Returns an array of keys from the dict.",
         params: &["dict"],
         param_types: &["dict"],
@@ -1944,6 +2427,7 @@ key: 1
     },
     BuiltinDoc {
         name: "len",
+        aliases: &[],
         description: "Returns the length of the given string or array.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -1957,6 +2441,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ln",
+        aliases: &[],
         description: "Returns the natural logarithm (base e) of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -1970,6 +2455,7 @@ key: 1
     },
     BuiltinDoc {
         name: "localtime",
+        aliases: &[],
         description: "Converts Unix timestamp (seconds since epoch) to broken-down local time array [year, mon (0-11), mday, hour, min, sec, wday (0=Sun), yday (0-365)].",
         params: &["timestamp"],
         param_types: &["number"],
@@ -1980,6 +2466,7 @@ key: 1
     },
     BuiltinDoc {
         name: "log",
+        aliases: &[],
         description: "Returns the natural logarithm (base e) of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -1993,6 +2480,7 @@ key: 1
     },
     BuiltinDoc {
         name: "log10",
+        aliases: &[],
         description: "Returns the base-10 logarithm of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2006,6 +2494,7 @@ key: 1
     },
     BuiltinDoc {
         name: "log2",
+        aliases: &[],
         description: "Returns the base-2 logarithm of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2019,6 +2508,7 @@ key: 1
     },
     BuiltinDoc {
         name: "ltrim",
+        aliases: &[],
         description: "Trims whitespace from the left end of the given string or byte array.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -2032,6 +2522,7 @@ key: 1
     },
     BuiltinDoc {
         name: "markdown_escape",
+        aliases: &[],
         description: "Escapes the given string so it renders as literal text at the given output position (\"text\", \"heading\", \"link_label\", \"table_cell\", or \"code\"), without introducing unintended Markdown structure. Not for HTML sanitization or URL-encoding; use `html_escape`, `sanitize_html`, or `url_encode` for those.",
         params: &["string", "context"],
         param_types: &["string", "string"],
@@ -2051,6 +2542,7 @@ key: 1
     },
     BuiltinDoc {
         name: "max",
+        aliases: &[],
         description: "Returns the maximum of two values.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -2064,6 +2556,7 @@ key: 1
     },
     BuiltinDoc {
         name: "md5",
+        aliases: &[],
         description: "Computes the MD5 hash of a string or bytes and returns a lowercase hex string.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -2074,6 +2567,7 @@ key: 1
     },
     BuiltinDoc {
         name: "min",
+        aliases: &[],
         description: "Returns the minimum of two values.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -2087,6 +2581,7 @@ key: 1
     },
     BuiltinDoc {
         name: "mktime",
+        aliases: &[],
         description: "Converts broken-down UTC time array [year, mon (0-11), mday, hour, min, sec, wday, yday] to Unix timestamp (seconds since epoch).",
         params: &["time_array"],
         param_types: &["array"],
@@ -2100,6 +2595,7 @@ key: 1
     },
     BuiltinDoc {
         name: "mock_fetch",
+        aliases: &[],
         description: "Seeds the response body a subsequent http() call for the given url returns, instead of making a real request. Only meaningful against a mock Io (e.g. mq-test's engine); other Io implementations return a runtime error.",
         params: &["url", "body"],
         param_types: &["string", "string"],
@@ -2110,6 +2606,7 @@ key: 1
     },
     BuiltinDoc {
         name: "mod",
+        aliases: &[],
         description: "Calculates the remainder of the division of the first value by the second value.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -2123,6 +2620,7 @@ key: 1
     },
     BuiltinDoc {
         name: "mul",
+        aliases: &[],
         description: "Multiplies two values.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -2136,6 +2634,7 @@ key: 1
     },
     BuiltinDoc {
         name: "nan",
+        aliases: &[],
         description: "Returns a Not-a-Number (NaN) value.",
         params: &[],
         param_types: &[],
@@ -2146,6 +2645,7 @@ key: 1
     },
     BuiltinDoc {
         name: "negate",
+        aliases: &[],
         description: "Returns the negation of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2159,6 +2659,7 @@ key: 1
     },
     BuiltinDoc {
         name: "next",
+        aliases: &[],
         description: "Resumes a generator coroutine and returns its next value and completion status.",
         params: &["stream"],
         param_types: &["dynamic"],
@@ -2172,6 +2673,7 @@ key: 1
     },
     BuiltinDoc {
         name: "not",
+        aliases: &[],
         description: "Performs a logical NOT operation on a boolean value.",
         params: &["value"],
         param_types: &["bool"],
@@ -2185,6 +2687,7 @@ key: 1
     },
     BuiltinDoc {
         name: "now",
+        aliases: &[],
         description: "Returns the current timestamp.",
         params: &[],
         param_types: &[],
@@ -2195,6 +2698,7 @@ key: 1
     },
     BuiltinDoc {
         name: "open_file",
+        aliases: &[],
         description: "Opens the file at the given path for incremental reading and returns a file handle. Read from it with `read_line` or `read_bytes`. The file is closed by `close(handle)`, or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -2205,6 +2709,7 @@ key: 1
     },
     BuiltinDoc {
         name: "open_http",
+        aliases: &[],
         description: "Opens an HTTPS request with the given method (a string or symbol, same as http()) and returns the response body as a streaming reader handle instead of buffering it, so it can be read incrementally with read_line/read_bytes rather than waiting for the whole response. body/headers behave the same as http(). The connection is closed by close(handle), or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
         params: &["method", "url", "body", "headers"],
         param_types: &["string", "string", "string", "dict"],
@@ -2215,6 +2720,7 @@ key: 1
     },
     BuiltinDoc {
         name: "or",
+        aliases: &[],
         description: "Performs a logical OR operation on two boolean values.",
         params: &["value1", "value2"],
         param_types: &["bool", "bool"],
@@ -2228,6 +2734,7 @@ key: 1
     },
     BuiltinDoc {
         name: "pack",
+        aliases: &[],
         description: "Packs a number into bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
         params: &["format", "value"],
         param_types: &["string", "number"],
@@ -2238,6 +2745,7 @@ key: 1
     },
     BuiltinDoc {
         name: "partial",
+        aliases: &[],
         description: "Creates a new function by partially applying the given arguments to the specified function.",
         params: &["function", "arg1", "arg2", "..."],
         param_types: &["function", "dynamic"],
@@ -2248,6 +2756,7 @@ key: 1
     },
     BuiltinDoc {
         name: "path_join",
+        aliases: &[],
         description: "Joins a base path with a component path and returns the resulting path string (e.g. path_join(\"/a/b\", \"c.txt\") → \"/a/b/c.txt\").",
         params: &["base", "component"],
         param_types: &["string", "string"],
@@ -2261,6 +2770,7 @@ key: 1
     },
     BuiltinDoc {
         name: "pow",
+        aliases: &[],
         description: "Raises the base to the power of the exponent.",
         params: &["base", "exponent"],
         param_types: &["number", "number"],
@@ -2274,6 +2784,7 @@ key: 1
     },
     BuiltinDoc {
         name: "print",
+        aliases: &[],
         description: "Prints a message to standard output and returns the current value.",
         params: &["message"],
         param_types: &["string"],
@@ -2284,6 +2795,7 @@ key: 1
     },
     BuiltinDoc {
         name: "rand",
+        aliases: &[],
         description: "Generates a pseudo-random number in the range [0, 1). Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
         params: &["seed?"],
         param_types: &["number"],
@@ -2294,6 +2806,7 @@ key: 1
     },
     BuiltinDoc {
         name: "rand_int",
+        aliases: &[],
         description: "Generates a pseudo-random integer uniformly distributed in [min, max] (inclusive). Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
         params: &["min", "max", "seed?"],
         param_types: &["number", "number", "number"],
@@ -2304,6 +2817,7 @@ key: 1
     },
     BuiltinDoc {
         name: "random_string",
+        aliases: &[],
         description: "Generates a random string of `len` characters, each independently chosen (with replacement) from `charset`. Not cryptographically secure. `seed` is optional; when given, the result is a deterministic function of it instead of OS entropy.",
         params: &["len", "charset", "seed?"],
         param_types: &["number", "string", "number"],
@@ -2314,6 +2828,7 @@ key: 1
     },
     BuiltinDoc {
         name: "range",
+        aliases: &[],
         description: "Creates an array from start to end with an optional step.",
         params: &["start", "end", "step"],
         param_types: &["number", "number", "number"],
@@ -2327,6 +2842,7 @@ key: 1
     },
     BuiltinDoc {
         name: "read_bytes",
+        aliases: &[],
         description: "Reads up to `size` bytes from a reader handle (fewer only at end of file), or returns `None` at end of file. `size` must be a positive integer. Errors if the handle is closed.",
         params: &["handle", "size"],
         param_types: &["dynamic", "number"],
@@ -2337,6 +2853,7 @@ key: 1
     },
     BuiltinDoc {
         name: "read_file",
+        aliases: &[],
         description: "Reads the contents of a file at the given path and returns it as a string. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -2347,6 +2864,7 @@ key: 1
     },
     BuiltinDoc {
         name: "read_file_bytes",
+        aliases: &[],
         description: "Reads the contents of a file at the given path and returns it as raw bytes. Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["path"],
         param_types: &["string"],
@@ -2357,6 +2875,7 @@ key: 1
     },
     BuiltinDoc {
         name: "read_line",
+        aliases: &[],
         description: "Reads the next line from a reader handle without its `\\n`/`\\r\\n` terminator, or returns `None` at end of file. Errors if the handle is closed or the line is not valid UTF-8.",
         params: &["handle"],
         param_types: &["dynamic"],
@@ -2367,6 +2886,7 @@ key: 1
     },
     BuiltinDoc {
         name: "regex_escape",
+        aliases: &[],
         description: "Escapes regular expression metacharacters in the given string so it can be used literally in a regex pattern (e.g. with `regex_match`, `is_regex_match`, `capture`, `scan`, `gsub`, or `split`). This is for building patterns from dynamic input, not for escaping replacement strings.",
         params: &["string"],
         param_types: &["string"],
@@ -2380,6 +2900,7 @@ key: 1
     },
     BuiltinDoc {
         name: "regex_match",
+        aliases: &[],
         description: "Finds all matches of the given pattern in the string.",
         params: &["string", "pattern"],
         param_types: &["string", "string"],
@@ -2393,6 +2914,7 @@ key: 1
     },
     BuiltinDoc {
         name: "repeat",
+        aliases: &[],
         description: "Repeats the given string a specified number of times.",
         params: &["string", "count"],
         param_types: &["string", "number"],
@@ -2406,6 +2928,7 @@ key: 1
     },
     BuiltinDoc {
         name: "replace",
+        aliases: &[],
         description: "Replaces all occurrences of a substring or byte subsequence with another one.",
         params: &["from", "pattern", "to"],
         param_types: &["dynamic", "dynamic", "dynamic"],
@@ -2419,6 +2942,7 @@ key: 1
     },
     BuiltinDoc {
         name: "reverse",
+        aliases: &[],
         description: "Reverses the given string or array.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2432,6 +2956,7 @@ key: 1
     },
     BuiltinDoc {
         name: "rindex",
+        aliases: &[],
         description: "Finds the last occurrence of a substring or byte subsequence. Returns -1 if not found.",
         params: &["value", "needle"],
         param_types: &["dynamic", "dynamic"],
@@ -2445,6 +2970,7 @@ key: 1
     },
     BuiltinDoc {
         name: "round",
+        aliases: &[],
         description: "Rounds the given number to the nearest integer.",
         params: &["number"],
         param_types: &["number"],
@@ -2458,6 +2984,7 @@ key: 1
     },
     BuiltinDoc {
         name: "rtrim",
+        aliases: &[],
         description: "Trims whitespace from the right end of the given string or byte array.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -2471,6 +2998,7 @@ key: 1
     },
     BuiltinDoc {
         name: "sample",
+        aliases: &[],
         description: "Returns n elements sampled from the array without replacement, in random order. Errors if n exceeds the array length. `seed` is optional; when given, the sample is a deterministic function of it instead of OS entropy.",
         params: &["array", "n", "seed?"],
         param_types: &["array", "number", "number"],
@@ -2481,6 +3009,7 @@ key: 1
     },
     BuiltinDoc {
         name: "sanitize_html",
+        aliases: &[],
         description: "Sanitizes the given HTML string using an allowlist of safe tags and attributes, removing scripts and other XSS vectors.",
         params: &["html"],
         param_types: &["string"],
@@ -2491,6 +3020,7 @@ key: 1
     },
     BuiltinDoc {
         name: "scan",
+        aliases: &[],
         description: "Finds all matches of a regular expression pattern in the string. For each match, returns the captured groups as an array if the pattern has capture groups, otherwise returns the whole match as a string.",
         params: &["string", "pattern"],
         param_types: &["string", "string"],
@@ -2504,6 +3034,7 @@ key: 1
     },
     BuiltinDoc {
         name: "send",
+        aliases: &[],
         description: "Resumes a generator coroutine like `next`, but resumes its suspended `yield` expression to `value` instead of `None`.",
         params: &["stream", "value"],
         param_types: &["dynamic", "dynamic"],
@@ -2517,6 +3048,7 @@ key: 1
     },
     BuiltinDoc {
         name: "set",
+        aliases: &[],
         description: "Sets a key-value pair in a dict. If the key exists, its value is updated. Returns the modified map.",
         params: &["obj", "key", "value"],
         param_types: &["dict", "dynamic", "dynamic"],
@@ -2527,6 +3059,7 @@ key: 1
     },
     BuiltinDoc {
         name: "set_attr",
+        aliases: &[],
         description: "Sets the value of the specified attribute on a markdown node.",
         params: &["markdown", "attribute", "value"],
         param_types: &["markdown", "string", "dynamic"],
@@ -2537,6 +3070,7 @@ key: 1
     },
     BuiltinDoc {
         name: "set_check",
+        aliases: &[],
         description: "Creates a markdown list node with the given checked state.",
         params: &["list", "checked"],
         param_types: &["markdown", "bool"],
@@ -2550,6 +3084,7 @@ key: 1
     },
     BuiltinDoc {
         name: "set_children",
+        aliases: &[],
         description: "Sets the children nodes of a markdown node. Nodes without children (e.g. text, code) are left unchanged.",
         params: &["markdown", "children"],
         param_types: &["markdown", "array"],
@@ -2560,6 +3095,7 @@ key: 1
     },
     BuiltinDoc {
         name: "set_code_block_lang",
+        aliases: &[],
         description: "Sets the language of a markdown code block node.",
         params: &["code_block", "language"],
         param_types: &["markdown", "string"],
@@ -2575,6 +3111,7 @@ x
     },
     BuiltinDoc {
         name: "set_list_ordered",
+        aliases: &[],
         description: "Sets the ordered property of a markdown list node.",
         params: &["list", "ordered"],
         param_types: &["markdown", "bool"],
@@ -2588,6 +3125,7 @@ x
     },
     BuiltinDoc {
         name: "set_ref",
+        aliases: &[],
         description: "Sets the reference identifier for markdown nodes that support references (e.g., Definition, LinkRef, ImageRef, Footnote, FootnoteRef).",
         params: &["node", "reference_id"],
         param_types: &["markdown", "string"],
@@ -2598,6 +3136,7 @@ x
     },
     BuiltinDoc {
         name: "sha256",
+        aliases: &[],
         description: "Computes the SHA-256 hash of a string or bytes and returns a lowercase hex string.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -2608,6 +3147,7 @@ x
     },
     BuiltinDoc {
         name: "sha512",
+        aliases: &[],
         description: "Computes the SHA-512 hash of a string or bytes and returns a lowercase hex string.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -2618,6 +3158,7 @@ x
     },
     BuiltinDoc {
         name: "shift_left",
+        aliases: &[],
         description: "Performs a left shift operation on the given value: for numbers, this is a bitwise left shift by the specified number of positions; for strings, this removes characters from the start; for Markdown headings, this increases the heading level accordingly.",
         params: &["value", "shift_amount"],
         param_types: &["dynamic", "number"],
@@ -2631,6 +3172,7 @@ x
     },
     BuiltinDoc {
         name: "shift_right",
+        aliases: &[],
         description: "Performs a bitwise right shift on numbers, slices characters from the end of strings, and adjusts Markdown heading levels when applied to headings, using the given shift amount.",
         params: &["value", "shift_amount"],
         param_types: &["dynamic", "number"],
@@ -2644,6 +3186,7 @@ x
     },
     BuiltinDoc {
         name: "shuffle",
+        aliases: &[],
         description: "Returns a new array containing the same elements as the input, in a uniformly random order. `seed` is optional; when given, the permutation is a deterministic function of it instead of OS entropy.",
         params: &["array", "seed?"],
         param_types: &["array", "number"],
@@ -2654,6 +3197,7 @@ x
     },
     BuiltinDoc {
         name: "sin",
+        aliases: &[],
         description: "Returns the sine of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -2667,6 +3211,7 @@ x
     },
     BuiltinDoc {
         name: "sinh",
+        aliases: &[],
         description: "Returns the hyperbolic sine of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2680,6 +3225,7 @@ x
     },
     BuiltinDoc {
         name: "slice",
+        aliases: &[],
         description: "Extracts a substring from the given string.",
         params: &["string", "start", "end"],
         param_types: &["string", "number", "number"],
@@ -2693,6 +3239,7 @@ x
     },
     BuiltinDoc {
         name: "sort",
+        aliases: &[],
         description: "Sorts the elements of the given array.",
         params: &["array"],
         param_types: &["array"],
@@ -2706,6 +3253,7 @@ x
     },
     BuiltinDoc {
         name: "split",
+        aliases: &[],
         description: "Splits the given string (as a regular expression) or byte array (literal separator) by the specified separator.",
         params: &["value", "separator"],
         param_types: &["dynamic", "dynamic"],
@@ -2719,6 +3267,7 @@ x
     },
     BuiltinDoc {
         name: "split_records",
+        aliases: &[],
         description: "Splits a string by a regular expression separator into `{text, index, start_byte, end_byte, terminator}` records, keeping each piece's byte range and the separator that followed it (`terminator` is None for the last piece). Errors if the separator matches an empty string.",
         params: &["value", "separator"],
         param_types: &["dynamic", "string"],
@@ -2732,6 +3281,7 @@ x
     },
     BuiltinDoc {
         name: "sqrt",
+        aliases: &[],
         description: "Returns the square root of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2745,6 +3295,7 @@ x
     },
     BuiltinDoc {
         name: "starts_with",
+        aliases: &[],
         description: "Checks if the given string or byte array starts with the specified prefix.",
         params: &["value", "prefix"],
         param_types: &["dynamic", "dynamic"],
@@ -2758,6 +3309,7 @@ x
     },
     BuiltinDoc {
         name: "status",
+        aliases: &[],
         description: "Returns a generator coroutine's lifecycle state as a symbol: `:created`, `:suspended`, `:running`, `:completed`, or `:failed`.",
         params: &["stream"],
         param_types: &["dynamic"],
@@ -2771,6 +3323,7 @@ x
     },
     BuiltinDoc {
         name: "stderr",
+        aliases: &[],
         description: "Prints a message to standard error and returns the current value.",
         params: &["message"],
         param_types: &["string"],
@@ -2781,6 +3334,7 @@ x
     },
     BuiltinDoc {
         name: "stem",
+        aliases: &[],
         description: "Returns the file name without the extension (e.g. \"file\" from \"/a/b/file.txt\").",
         params: &["path"],
         param_types: &["string"],
@@ -2794,6 +3348,7 @@ x
     },
     BuiltinDoc {
         name: "strftime",
+        aliases: &[],
         description: "Formats a Unix timestamp (seconds) as a date string using the given strftime format (e.g. \"%Y-%m-%d\").",
         params: &["timestamp", "format"],
         param_types: &["number", "string"],
@@ -2807,6 +3362,7 @@ x
     },
     BuiltinDoc {
         name: "strip_tags",
+        aliases: &[],
         description: "Removes HTML tags from the given string, keeping the surrounding text content.",
         params: &["string"],
         param_types: &["string"],
@@ -2820,6 +3376,7 @@ x
     },
     BuiltinDoc {
         name: "strptime",
+        aliases: &[],
         description: "Parses a date string using the given strptime format (e.g. \"%Y-%m-%d\") and returns a Unix timestamp (seconds, UTC).",
         params: &["date_str", "format"],
         param_types: &["string", "string"],
@@ -2833,6 +3390,7 @@ x
     },
     BuiltinDoc {
         name: "sub",
+        aliases: &[],
         description: "Subtracts the second value from the first value.",
         params: &["value1", "value2"],
         param_types: &["dynamic", "dynamic"],
@@ -2846,6 +3404,7 @@ x
     },
     BuiltinDoc {
         name: "system",
+        aliases: &[],
         description: "Runs command as a child process, optionally passing an array of string args, and returns its captured stdout as a string. The command is never run through a shell, so shell metacharacters in args are never interpreted. A non-zero exit status is a runtime error that includes the process's stderr. Requires the --allow-run CLI flag; otherwise returns a runtime error.",
         params: &["command", "args"],
         param_types: &["string", "array"],
@@ -2856,6 +3415,7 @@ x
     },
     BuiltinDoc {
         name: "tan",
+        aliases: &[],
         description: "Returns the tangent of the given number (in radians).",
         params: &["number"],
         param_types: &["number"],
@@ -2869,6 +3429,7 @@ x
     },
     BuiltinDoc {
         name: "tanh",
+        aliases: &[],
         description: "Returns the hyperbolic tangent of the given number.",
         params: &["number"],
         param_types: &["number"],
@@ -2882,6 +3443,7 @@ x
     },
     BuiltinDoc {
         name: "to_array",
+        aliases: &[],
         description: "Converts the given value to an array.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2895,6 +3457,7 @@ x
     },
     BuiltinDoc {
         name: "to_blockquote",
+        aliases: &[],
         description: "Creates a markdown blockquote node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2908,6 +3471,7 @@ x
     },
     BuiltinDoc {
         name: "to_boolean",
+        aliases: &[],
         description: "Converts the given value to a boolean. Booleans are returned unchanged, the strings \"true\" and \"false\" are converted to their boolean equivalent, and all other input results in an error.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2921,6 +3485,7 @@ x
     },
     BuiltinDoc {
         name: "to_break",
+        aliases: &[],
         description: "Creates a markdown hard line break node.",
         params: &[],
         param_types: &[],
@@ -2934,6 +3499,7 @@ x
     },
     BuiltinDoc {
         name: "to_bytes",
+        aliases: &[],
         description: "Converts a string (UTF-8), array of numbers, or bytes to raw bytes.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2944,6 +3510,7 @@ x
     },
     BuiltinDoc {
         name: "to_callout",
+        aliases: &[],
         description: "Creates a markdown callout node with the given value, kind, and title.",
         params: &["value", "kind", "title"],
         param_types: &["dynamic", "string", "string"],
@@ -2958,6 +3525,7 @@ x
     },
     BuiltinDoc {
         name: "to_code",
+        aliases: &[],
         description: "Creates a markdown code block with the given value and language.",
         params: &["value", "language"],
         param_types: &["dynamic", "string"],
@@ -2973,6 +3541,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_code_inline",
+        aliases: &[],
         description: "Creates an inline markdown code node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -2986,6 +3555,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_date",
+        aliases: &[],
         description: "Converts a timestamp to a date string with the given format.",
         params: &["timestamp", "format"],
         param_types: &["number", "string"],
@@ -2999,6 +3569,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_definition",
+        aliases: &[],
         description: "Creates a markdown link reference definition node with the given url, identifier, and title.",
         params: &["url", "ident", "title"],
         param_types: &["string", "string", "string"],
@@ -3012,6 +3583,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_delete",
+        aliases: &[],
         description: "Creates a markdown delete (strikethrough) node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3025,6 +3597,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_em",
+        aliases: &[],
         description: "Creates a markdown emphasis (italic) node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3038,6 +3611,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_footnote",
+        aliases: &[],
         description: "Creates a markdown footnote definition node with the given value and identifier.",
         params: &["value", "ident"],
         param_types: &["dynamic", "string"],
@@ -3051,6 +3625,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_footnote_ref",
+        aliases: &[],
         description: "Creates a markdown footnote reference node with the given identifier.",
         params: &["ident"],
         param_types: &["string"],
@@ -3064,6 +3639,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_h",
+        aliases: &[],
         description: "Creates a markdown heading node with the given value and depth.",
         params: &["value", "depth"],
         param_types: &["dynamic", "number"],
@@ -3077,6 +3653,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_hex",
+        aliases: &[],
         description: "Encodes raw bytes as a lowercase hex string.",
         params: &["bytes"],
         param_types: &["bytes"],
@@ -3090,6 +3667,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_hr",
+        aliases: &[],
         description: "Creates a markdown horizontal rule node.",
         params: &[],
         param_types: &[],
@@ -3103,6 +3681,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_html",
+        aliases: &[],
         description: "Converts the given markdown string to HTML.",
         params: &["markdown"],
         param_types: &["string"],
@@ -3113,6 +3692,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_image",
+        aliases: &[],
         description: "Creates a markdown image node with the given URL, alt text, and title.",
         params: &["url", "alt", "title"],
         param_types: &["string", "string", "string"],
@@ -3126,6 +3706,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_link",
+        aliases: &[],
         description: "Creates a markdown link node  with the given  url and title.",
         params: &["url", "value", "title"],
         param_types: &["string", "dynamic", "string"],
@@ -3139,6 +3720,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_markdown",
+        aliases: &[],
         description: "Parses a markdown string and returns an array of markdown nodes.",
         params: &["markdown_string"],
         param_types: &["string"],
@@ -3152,6 +3734,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_markdown_string",
+        aliases: &[],
         description: "Converts the given value(s) to a markdown string representation.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3162,6 +3745,7 @@ x = 1
     },
     BuiltinDoc {
         name: "to_math",
+        aliases: &[],
         description: "Creates a markdown math block with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3177,6 +3761,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_math_inline",
+        aliases: &[],
         description: "Creates an inline markdown math node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3190,6 +3775,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_fragment",
+        aliases: &[],
         description: "Creates a markdown fragment node that groups an array of markdown nodes into a single value.",
         params: &["values"],
         param_types: &["array"],
@@ -3200,6 +3786,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_html",
+        aliases: &[],
         description: "Creates a raw markdown HTML node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3213,6 +3800,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_list",
+        aliases: &[],
         description: "Creates a markdown list node with the given value and indent level.",
         params: &["value", "indent"],
         param_types: &["dynamic", "number"],
@@ -3226,6 +3814,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_name",
+        aliases: &[],
         description: "Returns the name of the given markdown node.",
         params: &["markdown"],
         param_types: &["markdown"],
@@ -3239,6 +3828,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_table_align",
+        aliases: &[],
         description: "Creates a markdown table alignment row node from an array of alignments (\"left\", \"right\", \"center\", \"none\").",
         params: &["aligns"],
         param_types: &["array"],
@@ -3252,6 +3842,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_table_cell",
+        aliases: &[],
         description: "Creates a markdown table cell node with the given value at the specified row and column.",
         params: &["value", "row", "column"],
         param_types: &["dynamic", "number", "number"],
@@ -3265,6 +3856,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_table_row",
+        aliases: &[],
         description: "Creates a markdown table row node with the given values.",
         params: &["cells"],
         param_types: &["array"],
@@ -3275,6 +3867,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_md_text",
+        aliases: &[],
         description: "Creates a markdown text node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3288,6 +3881,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_mdx",
+        aliases: &[],
         description: "Parses an MDX string and returns an array of MDX nodes.",
         params: &["mdx_string"],
         param_types: &["string"],
@@ -3298,6 +3892,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_number",
+        aliases: &[],
         description: "Converts the given value to a number.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3311,6 +3906,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_string",
+        aliases: &[],
         description: "Converts the given value to a string.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3324,6 +3920,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_strong",
+        aliases: &[],
         description: "Creates a markdown strong (bold) node with the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3337,6 +3934,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "to_text",
+        aliases: &[],
         description: "Converts the given markdown node to plain text.",
         params: &["markdown"],
         param_types: &["markdown"],
@@ -3350,6 +3948,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "token_compress",
+        aliases: &[],
         description: "Reduces an array of Markdown nodes to fit within `budget` LLM tokens, preserving structure as much as possible: paragraphs are cut to their first sentence, then lists/tables/code blocks are collapsed to a summary, and only as a last resort is the remaining text hard-truncated. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
         params: &["nodes", "budget", "model?"],
         param_types: &["array", "number", "string"],
@@ -3360,6 +3959,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "token_count",
+        aliases: &[],
         description: "Estimates how many LLM tokens the given text would consume, for context-window budgeting. Uses a lightweight chars-per-token heuristic by default; built with the `tiktoken` Cargo feature, counts exactly via tiktoken-rs instead when `model` (e.g. \"gpt-5\") is given. `model` is optional; without it, the heuristic estimate is always used.",
         params: &["text", "model?"],
         param_types: &["string", "string"],
@@ -3373,6 +3973,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "trim",
+        aliases: &[],
         description: "Trims whitespace from both ends of the given string or byte array.",
         params: &["input"],
         param_types: &["dynamic"],
@@ -3386,6 +3987,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "trunc",
+        aliases: &[],
         description: "Truncates the given number to an integer by removing the fractional part.",
         params: &["number"],
         param_types: &["number"],
@@ -3399,6 +4001,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "truncate",
+        aliases: &[],
         description: "Truncates the given string to the specified display width, appending the ellipsis string when truncated (CJK and other wide characters count as two columns).",
         params: &["string", "width", "ellipsis"],
         param_types: &["string", "number", "string"],
@@ -3412,6 +4015,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "type",
+        aliases: &[],
         description: "Returns the type of the given value.",
         params: &["value"],
         param_types: &["dynamic"],
@@ -3425,6 +4029,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "unicode_normalize",
+        aliases: &[],
         description: "Normalizes the string to a Unicode normalization form: \"nfc\", \"nfd\", \"nfkc\", or \"nfkd\".",
         params: &["input", "form"],
         param_types: &["string", "string"],
@@ -3438,6 +4043,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "unpack",
+        aliases: &[],
         description: "Unpacks a number from bytes using the given format. Supported formats: u8, i8, u16be/le, i16be/le, u32be/le, i32be/le, u64be/le, i64be/le, f32be/le, f64be/le.",
         params: &["format", "bytes"],
         param_types: &["string", "bytes"],
@@ -3448,6 +4054,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "upcase",
+        aliases: &[],
         description: "Converts the given string to uppercase.",
         params: &["input"],
         param_types: &["string"],
@@ -3461,6 +4068,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "update",
+        aliases: &[],
         description: "Update the value with specified value.",
         params: &["target_value", "source_value"],
         param_types: &["dynamic", "dynamic"],
@@ -3471,6 +4079,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "url_decode",
+        aliases: &[],
         description: "URL-decodes the given string.",
         params: &["input"],
         param_types: &["string"],
@@ -3484,6 +4093,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "url_encode",
+        aliases: &[],
         description: "URL-encodes the given string.",
         params: &["input"],
         param_types: &["string"],
@@ -3497,6 +4107,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "utf8",
+        aliases: &[],
         description: "Decodes bytes as a UTF-8 string, returning an error if the bytes are not valid UTF-8.",
         params: &["bytes"],
         param_types: &["bytes"],
@@ -3510,6 +4121,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "utf8bytelen",
+        aliases: &[],
         description: "Returns the number of bytes of the given string when encoded as UTF-8.",
         params: &["string"],
         param_types: &["string"],
@@ -3523,6 +4135,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "uuid",
+        aliases: &[],
         description: "Generates a random (version 4, RFC 4122) UUID string.",
         params: &[],
         param_types: &[],
@@ -3533,6 +4146,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "uuid_v4",
+        aliases: &[],
         description: "Generates a random (version 4, RFC 4122) UUID string. Alias of `uuid`.",
         params: &[],
         param_types: &[],
@@ -3543,6 +4157,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "uuid_v7",
+        aliases: &[],
         description: "Generates a time-ordered (version 7, RFC 9562) UUID string: a millisecond Unix timestamp followed by random bits, so values sort by creation time. The timestamp is plaintext, so prefer uuid/uuid_v4 for unguessable IDs.",
         params: &[],
         param_types: &[],
@@ -3553,6 +4168,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "values",
+        aliases: &[],
         description: "Returns an array of values from the dict.",
         params: &["dict"],
         param_types: &["dict"],
@@ -3563,6 +4179,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "walk_files",
+        aliases: &[],
         description: "Recursively enumerates filesystem entries under `root` whose root-relative path (using `/` as the separator regardless of platform) matches the glob `pattern` (default `\"**\"`, i.e. every file), returning a stable-sorted array of those relative path strings. Unlike `collection`, this reads neither file contents nor Markdown. An optional third argument is a dict of options: `respect_gitignore` (default `false`, same semantics as `collection`) and `follow_symlinks` (default `false`; a symlinked file is always included if it matches, only directory traversal is affected). Requires the --allow-read CLI flag; otherwise returns a runtime error.",
         params: &["root", "pattern?", "options?"],
         param_types: &["string", "string", "dict"],
@@ -3573,6 +4190,7 @@ $$"#,
     },
     BuiltinDoc {
         name: "word_wrap",
+        aliases: &[],
         description: "Wraps the given string into lines no wider than the specified display width, breaking on word boundaries (CJK and other wide characters count as two columns).",
         params: &["string", "width"],
         param_types: &["string", "number"],
@@ -3587,6 +4205,7 @@ world"#,
     },
     BuiltinDoc {
         name: "write_file",
+        aliases: &[],
         description: "Writes content (string or bytes) to the file at the given path, creating or truncating it. Requires the --allow-write CLI flag; otherwise returns a runtime error.",
         params: &["path", "content"],
         param_types: &["string", "dynamic"],
@@ -3597,6 +4216,7 @@ world"#,
     },
     BuiltinDoc {
         name: "xor",
+        aliases: &[],
         description: "Computes the bitwise XOR of two byte arrays of equal length.",
         params: &["bytes1", "bytes2"],
         param_types: &["bytes", "bytes"],

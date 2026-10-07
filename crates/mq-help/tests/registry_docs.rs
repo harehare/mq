@@ -67,12 +67,12 @@ fn documented_internal_functions_are_registered_or_feature_gated() {
 }
 
 #[test]
-fn documented_selectors_are_accepted() {
-    let unknown: Vec<_> = BUILTIN_DOC
-        .selectors()
-        .map(|doc| doc.name)
-        .filter(|name| !SELECTOR_NAMES.contains(name))
-        .collect();
+fn selector_docs_cover_exactly_the_accepted_names() {
+    let documented: BTreeSet<&str> = BUILTIN_DOC.selectors().flat_map(|doc| doc.names()).collect();
+    let accepted: BTreeSet<&str> = SELECTOR_NAMES.iter().copied().collect();
+    let undocumented: Vec<_> = accepted.difference(&documented).collect();
+    let unknown: Vec<_> = documented.difference(&accepted).collect();
+    assert!(undocumented.is_empty(), "accepted but undocumented: {undocumented:?}");
     assert!(unknown.is_empty(), "documented but not accepted: {unknown:?}");
 }
 
@@ -90,4 +90,14 @@ fn catalog_lists_feature_gated_functions_only_when_enabled() {
             doc.name
         );
     }
+}
+
+#[test]
+fn lookup_finds_a_selector_by_alias_and_by_attribute_name() {
+    let by_alias = mq_help::lookup(".p");
+    assert_eq!(by_alias.len(), 1);
+    assert_eq!(by_alias[0].name, ".text");
+    assert!(by_alias[0].aliases.contains(&".p".to_string()));
+
+    assert_eq!(mq_help::lookup(".url").len(), 1);
 }

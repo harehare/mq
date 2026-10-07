@@ -29,6 +29,8 @@ pub enum DocKind {
 #[derive(Clone, Debug)]
 pub struct BuiltinDoc {
     pub name: &'static str,
+    /// Other names that select the same thing (e.g. `.p` for `.text`). Only selectors have them.
+    pub aliases: &'static [&'static str],
     pub kind: DocKind,
     pub description: &'static str,
     pub params: &'static [&'static str],
@@ -42,6 +44,11 @@ pub struct BuiltinDoc {
 }
 
 impl BuiltinDoc {
+    /// Returns the name followed by its aliases.
+    pub fn names(&self) -> impl Iterator<Item = &'static str> + use<> {
+        std::iter::once(self.name).chain(self.aliases.iter().copied())
+    }
+
     /// Returns true if this item exists in the current build. Docs for items behind a Cargo
     /// feature (`capability`) are always listed, so `is_registered` decides whether the
     /// feature is on, e.g. `mq_lang::is_builtin_function`.
@@ -74,9 +81,11 @@ impl DocTable {
         self.get(name).filter(|doc| doc.kind == DocKind::Function)
     }
 
-    /// Returns the doc named `name` if it is a selector.
+    /// Returns the selector doc named `name` or having it as an alias.
     pub fn selector(&self, name: &str) -> Option<&'static BuiltinDoc> {
-        self.get(name).filter(|doc| doc.kind == DocKind::Selector)
+        self.get(name)
+            .filter(|doc| doc.kind == DocKind::Selector)
+            .or_else(|| self.selectors().find(|doc| doc.aliases.contains(&name)))
     }
 
     /// Iterates every doc in name order.
@@ -133,5 +142,23 @@ mod tests {
         for doc in BUILTIN_DOC.iter() {
             assert_eq!(doc.kind == DocKind::Selector, doc.name.starts_with('.'), "{}", doc.name);
         }
+    }
+
+    #[test]
+    fn test_only_selectors_have_aliases_and_names_are_unique() {
+        let mut seen = std::collections::BTreeSet::new();
+        for doc in BUILTIN_DOC.iter() {
+            assert!(doc.kind == DocKind::Selector || doc.aliases.is_empty(), "{}", doc.name);
+            for name in doc.names() {
+                assert!(seen.insert(name), "{name} is documented more than once");
+            }
+        }
+    }
+
+    #[test]
+    fn test_selector_resolves_aliases() {
+        assert_eq!(BUILTIN_DOC.selector(".p").map(|doc| doc.name), Some(".text"));
+        assert_eq!(BUILTIN_DOC.selector(".text").map(|doc| doc.name), Some(".text"));
+        assert!(BUILTIN_DOC.selector("len").is_none());
     }
 }

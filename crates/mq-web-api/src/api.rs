@@ -217,6 +217,9 @@ pub struct FunctionsApiResponse {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct SelectorDoc {
     pub name: String,
+    /// Other names that select the same thing (e.g. `.p` for `.text`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
     pub description: String,
     pub params: Vec<String>,
     pub param_types: Vec<String>,
@@ -385,6 +388,7 @@ fn function_doc_from_help_entry(entry: &mq_help::HelpEntry) -> FunctionDoc {
 fn selector_doc(doc: &mq_help::BuiltinDoc) -> SelectorDoc {
     SelectorDoc {
         name: doc.name.to_string(),
+        aliases: doc.aliases.iter().map(|alias| alias.to_string()).collect(),
         description: doc.description.to_string(),
         params: doc.params.iter().map(|p| p.to_string()).collect(),
         param_types: doc.param_types.iter().map(|p| p.to_string()).collect(),
@@ -748,6 +752,17 @@ mod tests {
         let bare = dotted.trim_start_matches('.');
         assert!(get_selector(bare).is_some());
         assert!(get_selector(&dotted).is_some());
+    }
+
+    #[test]
+    fn test_get_selector_resolves_an_alias_to_its_primary_entry() {
+        let doc = get_selector(".p").expect("alias should resolve");
+        assert_eq!(doc.name, ".text");
+        assert!(doc.aliases.contains(&".p".to_string()));
+        assert!(
+            list_selectors().selectors.iter().all(|s| s.name != ".p"),
+            "an alias is listed under its primary entry, not on its own"
+        );
     }
 
     #[test]

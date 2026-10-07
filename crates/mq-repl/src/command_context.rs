@@ -331,10 +331,10 @@ impl CommandContext {
             }
         } else if word.starts_with('.') {
             for doc in mq_help::BUILTIN_DOC.selectors() {
-                if doc.name.starts_with(word) {
+                for name in doc.names().filter(|name| name.starts_with(word)) {
                     matches.push(CompletionItem {
-                        name: doc.name.to_string(),
-                        display: format!("{:<20}{}", doc.name, doc.description),
+                        name: name.to_string(),
+                        display: format!("{:<20}{}", name, doc.description),
                     });
                 }
             }

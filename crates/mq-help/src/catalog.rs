@@ -36,6 +36,9 @@ pub struct HelpEntry {
     pub examples: Vec<HelpExample>,
     pub capability: Option<String>,
     pub related_module: Option<String>,
+    /// Other names that resolve to this entry (e.g. `.p` for `.text`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
 }
 
 /// Looks up every entry matching `name` — usually one, but a name may be defined in more
@@ -58,7 +61,9 @@ pub fn lookup(name: &str) -> Vec<HelpEntry> {
 
     all_entries()
         .into_iter()
-        .filter(|e| e.name == name || (e.kind == "selector" && e.name == selector_name))
+        .filter(|e| {
+            e.name == name || (e.kind == "selector" && (e.name == selector_name || e.aliases.contains(&selector_name)))
+        })
         .collect()
 }
 
@@ -89,6 +94,7 @@ fn native_entry(kind: &'static str, doc: &BuiltinDoc) -> HelpEntry {
             .collect(),
         capability: doc.capability.map(str::to_string),
         related_module: None,
+        aliases: doc.aliases.iter().map(|alias| alias.to_string()).collect(),
     }
 }
 
@@ -127,6 +133,7 @@ pub fn top_level_entries() -> Vec<HelpEntry> {
         }],
         capability: None,
         related_module: None,
+        aliases: Vec::new(),
     });
 
     results
@@ -223,6 +230,7 @@ fn from_mq_fn_doc(fdoc: reference::MqFnDoc, related_module: Option<String>) -> H
             .collect(),
         capability: None,
         related_module,
+        aliases: Vec::new(),
     }
 }
 
@@ -258,6 +266,10 @@ pub fn render_human(entry: &HelpEntry) -> String {
 
     if !entry.description.is_empty() {
         out.push_str(&format!("\n  {}\n", entry.description));
+    }
+
+    if !entry.aliases.is_empty() {
+        out.push_str(&format!("\n  {} {}\n", "Aliases:".bold(), entry.aliases.join(", ")));
     }
 
     if let Some(module) = &entry.related_module {
@@ -372,6 +384,15 @@ fn entry_markdown(entry: &HelpEntry, level: usize) -> String {
 
     if !entry.description.is_empty() {
         let _ = writeln!(out, "\n{}", entry.description);
+    }
+
+    if !entry.aliases.is_empty() {
+        let aliases = entry
+            .aliases
+            .iter()
+            .map(|alias| format!("`{alias}`"))
+            .collect::<Vec<_>>();
+        let _ = writeln!(out, "\n**Aliases:** {}", aliases.join(", "));
     }
 
     if let Some(module) = &entry.related_module {

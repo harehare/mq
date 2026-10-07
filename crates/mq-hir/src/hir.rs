@@ -148,27 +148,29 @@ impl Hir {
             .iter()
             .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
         {
-            let kind = match doc.kind {
-                mq_help::DocKind::Function | mq_help::DocKind::Internal => {
-                    SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
-                }
-                mq_help::DocKind::Selector => {
-                    let token = mq_lang::Token::new(mq_lang::TokenKind::Selector(doc.name.into()));
-                    match mq_lang::Selector::try_from(&token) {
-                        Ok(selector) => SymbolKind::Selector(selector),
-                        Err(_) => continue,
+            for name in doc.names() {
+                let kind = match doc.kind {
+                    mq_help::DocKind::Function | mq_help::DocKind::Internal => {
+                        SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
                     }
-                }
-            };
-            self.add_symbol(Symbol {
-                value: Some(doc.name.into()),
-                kind,
-                source: SourceInfo::new(Some(source_id), None),
-                scope: scope_id,
-                doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
-                parent: None,
-                insertion_order: 0,
-            });
+                    mq_help::DocKind::Selector => {
+                        let token = mq_lang::Token::new(mq_lang::TokenKind::Selector(name.into()));
+                        match mq_lang::Selector::try_from(&token) {
+                            Ok(selector) => SymbolKind::Selector(selector),
+                            Err(_) => continue,
+                        }
+                    }
+                };
+                self.add_symbol(Symbol {
+                    value: Some(name.into()),
+                    kind,
+                    source: SourceInfo::new(Some(source_id), None),
+                    scope: scope_id,
+                    doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
+                    parent: None,
+                    insertion_order: 0,
+                });
+            }
         }
     }
 
@@ -391,6 +393,21 @@ mod tests {
                 "{} is defined iff its feature is on",
                 doc.name
             );
+        }
+    }
+
+    #[test]
+    fn test_selector_aliases_and_attributes_are_defined() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        let defined: std::collections::BTreeSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Selector(_)))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+
+        for name in mq_lang::SELECTOR_NAMES {
+            assert!(defined.contains(name), "{name} is not defined as a selector");
         }
     }
 
