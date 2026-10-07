@@ -1,9 +1,10 @@
 use std::fmt::Write as _;
 
 use colored::Colorize;
-use mq_lang::{BUILTIN_FUNCTION_DOC, BUILTIN_MODULE_FILE, BUILTIN_SELECTOR_DOC, STANDARD_MODULES};
+use mq_lang::{BUILTIN_MODULE_FILE, STANDARD_MODULES};
 use serde::Serialize;
 
+use crate::docs::{BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinDoc};
 use crate::reference;
 
 /// A single documented parameter, as shown by `mq help`.
@@ -71,6 +72,26 @@ pub fn all_entries() -> Vec<HelpEntry> {
     results
 }
 
+fn native_entry(kind: &'static str, doc: &BuiltinDoc) -> HelpEntry {
+    HelpEntry {
+        name: doc.name.to_string(),
+        kind,
+        params: zip_params(doc.params, doc.param_types),
+        returns: doc.returns.to_string(),
+        description: doc.description.to_string(),
+        examples: doc
+            .examples
+            .iter()
+            .map(|e| HelpExample {
+                code: e.code.to_string(),
+                expected: e.expected.to_string(),
+            })
+            .collect(),
+        capability: doc.capability.map(str::to_string),
+        related_module: None,
+    }
+}
+
 /// Native builtin functions, selectors, `builtin.mq` functions, and language keywords with
 /// their own help topic (currently just `nodes`) — everything in [`all_entries`] except
 /// standard-module functions. Cheap: unlike `all_entries`/`all_modules`, it never parses a
@@ -78,51 +99,8 @@ pub fn all_entries() -> Vec<HelpEntry> {
 pub fn top_level_entries() -> Vec<HelpEntry> {
     let mut results = Vec::new();
 
-    let mut fn_names: Vec<_> = BUILTIN_FUNCTION_DOC.keys().collect();
-    fn_names.sort();
-    for name in fn_names {
-        let doc = &BUILTIN_FUNCTION_DOC[name];
-        results.push(HelpEntry {
-            name: name.to_string(),
-            kind: "function",
-            params: zip_params(doc.params, doc.param_types),
-            returns: doc.returns.to_string(),
-            description: doc.description.to_string(),
-            examples: doc
-                .examples
-                .iter()
-                .map(|e| HelpExample {
-                    code: e.code.to_string(),
-                    expected: e.expected.to_string(),
-                })
-                .collect(),
-            capability: doc.capability.map(str::to_string),
-            related_module: None,
-        });
-    }
-
-    let mut selector_names: Vec<_> = BUILTIN_SELECTOR_DOC.keys().collect();
-    selector_names.sort();
-    for name in selector_names {
-        let doc = &BUILTIN_SELECTOR_DOC[name];
-        results.push(HelpEntry {
-            name: name.to_string(),
-            kind: "selector",
-            params: zip_params(doc.params, doc.param_types),
-            returns: doc.returns.to_string(),
-            description: doc.description.to_string(),
-            examples: doc
-                .examples
-                .iter()
-                .map(|e| HelpExample {
-                    code: e.code.to_string(),
-                    expected: e.expected.to_string(),
-                })
-                .collect(),
-            capability: doc.capability.map(str::to_string),
-            related_module: None,
-        });
-    }
+    results.extend(BUILTIN_FUNCTION_DOC.iter().map(|doc| native_entry("function", doc)));
+    results.extend(BUILTIN_SELECTOR_DOC.iter().map(|doc| native_entry("selector", doc)));
 
     for fdoc in reference::extract_functions_from_cst(BUILTIN_MODULE_FILE, true) {
         results.push(from_mq_fn_doc(fdoc, None));

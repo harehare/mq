@@ -2,6 +2,11 @@
 
 Documentation catalog for the mq language: builds the single, unified catalog of every native builtin, selector, `builtin.mq` function, and standard-module function — the shared source for the `mq help` CLI command and `mq-web-api`'s documentation endpoints.
 
+## Features
+
+- `catalog` (default): the catalog, lookup and rendering API below.
+- Without it, only the static doc tables (`BUILTIN_FUNCTION_DOC`, `BUILTIN_SELECTOR_DOC`, `INTERNAL_FUNCTION_DOC`) are built, with no dependency on `mq-lang`.
+
 ## Usage
 
 ```rust

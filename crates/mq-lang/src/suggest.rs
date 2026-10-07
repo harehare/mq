@@ -74,10 +74,9 @@ pub fn suggest_selector(name: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Selector;
     use crate::runtime::builtin::get_builtin_functions_by_str;
-    use crate::{BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, Selector};
     use rstest::rstest;
-    use std::collections::BTreeSet;
 
     #[rstest]
     #[case::transposition("slpit", &["split", "join", "map"], Some("split"))]
@@ -148,26 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn test_suggestion_candidates_match_function_docs() {
-        let candidates: BTreeSet<&str> = BUILTIN_FUNCTION_NAMES
-            .iter()
-            .copied()
-            .chain(COMPILER_BUILTINS)
-            .collect();
-        let documented: BTreeSet<&str> = BUILTIN_FUNCTION_DOC.keys().map(|s| s.as_str()).collect();
-
-        let undocumented: Vec<_> = candidates.difference(&documented).collect();
-        assert!(undocumented.is_empty(), "listed but undocumented: {undocumented:?}");
-
-        // Internal helpers (`_` prefix) are documented but deliberately not suggested.
-        let unlisted: Vec<_> = documented
-            .difference(&candidates)
-            .filter(|name| !name.starts_with('_'))
-            .collect();
-        assert!(unlisted.is_empty(), "documented but not listed: {unlisted:?}");
-    }
-
-    #[test]
     fn test_selector_names_all_resolve() {
         for name in SELECTOR_NAMES {
             assert!(
@@ -175,15 +154,5 @@ mod tests {
                 "{name} is listed but not accepted"
             );
         }
-    }
-
-    #[test]
-    fn test_documented_selectors_are_listed() {
-        // The docs cover primary names only; aliases and attribute selectors are listed but undocumented.
-        let undeclared: Vec<_> = BUILTIN_SELECTOR_DOC
-            .keys()
-            .filter(|name| !SELECTOR_NAMES.contains(&name.as_str()))
-            .collect();
-        assert!(undeclared.is_empty(), "documented but not listed: {undeclared:?}");
     }
 }

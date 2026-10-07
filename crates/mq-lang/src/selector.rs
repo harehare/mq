@@ -277,7 +277,7 @@ impl Display for AttrKind {
 macro_rules! selector_table {
     ($($($name:literal)|+ => $selector:expr,)+) => {
         /// Every name accepted by `Selector::from_selector_str`.
-        pub(crate) const SELECTOR_NAMES: &[&str] = &[$($($name),+),+];
+        pub const SELECTOR_NAMES: &[&str] = &[$($($name),+),+];
 
         impl Selector {
             /// Converts a dot-prefixed selector string (e.g. `".text"`, `".h"`) to a `Selector`.

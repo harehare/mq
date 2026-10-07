@@ -23,6 +23,7 @@ md5 = {workspace = true}
 mq-formatter = {workspace = true}
 mq-hir = {workspace = true}
 mq-check = {workspace = true}
+mq-help = {workspace = true}
 mq-lang = {workspace = true, features = ["ast-json", "http-import", "wasm"]}
 mq-markdown = {workspace = true}
 opfs = {workspace = true, optional = true}

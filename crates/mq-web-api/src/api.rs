@@ -382,9 +382,9 @@ fn function_doc_from_help_entry(entry: &mq_help::HelpEntry) -> FunctionDoc {
     }
 }
 
-fn selector_doc(name: &str, doc: &mq_lang::BuiltinSelectorDoc) -> SelectorDoc {
+fn selector_doc(doc: &mq_help::BuiltinDoc) -> SelectorDoc {
     SelectorDoc {
-        name: name.to_string(),
+        name: doc.name.to_string(),
         description: doc.description.to_string(),
         params: doc.params.iter().map(|p| p.to_string()).collect(),
         param_types: doc.param_types.iter().map(|p| p.to_string()).collect(),
@@ -415,10 +415,7 @@ pub fn list_functions() -> FunctionsApiResponse {
 
 /// Lists all builtin mq selectors with their documentation.
 pub fn list_selectors() -> SelectorsApiResponse {
-    let mut selectors: Vec<SelectorDoc> = mq_lang::BUILTIN_SELECTOR_DOC
-        .iter()
-        .map(|(name, doc)| selector_doc(name, doc))
-        .collect();
+    let mut selectors: Vec<SelectorDoc> = mq_help::BUILTIN_SELECTOR_DOC.iter().map(selector_doc).collect();
     selectors.sort_by(|a, b| a.name.cmp(&b.name));
     SelectorsApiResponse { selectors }
 }
@@ -440,9 +437,7 @@ pub fn get_selector(name: &str) -> Option<SelectorDoc> {
     } else {
         format!(".{name}")
     };
-    mq_lang::BUILTIN_SELECTOR_DOC
-        .get(name.as_str())
-        .map(|doc| selector_doc(&name, doc))
+    mq_help::BUILTIN_SELECTOR_DOC.get(name.as_str()).map(selector_doc)
 }
 
 /// Lints the given query and returns any diagnostics found.
@@ -669,7 +664,7 @@ mod tests {
         assert_eq!(response.functions.len(), expected_len);
 
         for doc in &response.functions {
-            let Some(source) = mq_lang::BUILTIN_FUNCTION_DOC.get(doc.name.as_str()) else {
+            let Some(source) = mq_help::BUILTIN_FUNCTION_DOC.get(doc.name.as_str()) else {
                 continue;
             };
             assert_eq!(doc.description, source.description);
@@ -692,7 +687,7 @@ mod tests {
         let response = list_functions();
         for name in ["eq", "ne", "gt", "gte", "lt", "lte"] {
             assert!(
-                !mq_lang::BUILTIN_FUNCTION_DOC.contains_key(name),
+                !mq_help::BUILTIN_FUNCTION_DOC.contains(name),
                 "{name} unexpectedly native now"
             );
             assert!(
@@ -706,10 +701,10 @@ mod tests {
     #[test]
     fn test_list_selectors_matches_mq_lang_doc_map() {
         let response = list_selectors();
-        assert_eq!(response.selectors.len(), mq_lang::BUILTIN_SELECTOR_DOC.len());
+        assert_eq!(response.selectors.len(), mq_help::BUILTIN_SELECTOR_DOC.len());
 
         for doc in &response.selectors {
-            let source = mq_lang::BUILTIN_SELECTOR_DOC
+            let source = mq_help::BUILTIN_SELECTOR_DOC
                 .get(doc.name.as_str())
                 .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_SELECTOR_DOC", doc.name));
             assert_eq!(doc.description, source.description);
@@ -723,10 +718,11 @@ mod tests {
 
     #[test]
     fn test_get_function_matches_list_entry() {
-        let name = mq_lang::BUILTIN_FUNCTION_DOC
-            .keys()
+        let name = mq_help::BUILTIN_FUNCTION_DOC
+            .iter()
             .next()
             .expect("at least one function")
+            .name
             .to_string();
         let single = get_function(&name).expect("function should be found");
         let from_list = list_functions()
@@ -739,10 +735,15 @@ mod tests {
 
     #[test]
     fn test_get_selector_accepts_name_without_leading_dot() {
-        let dotted = mq_lang::BUILTIN_SELECTOR_DOC
-            .keys()
-            .next()
-            .expect("at least one selector")
+        let dotted = mq_help::BUILTIN_SELECTOR_DOC
+            .iter()
+            .find(|doc| {
+                doc.name
+                    .trim_start_matches('.')
+                    .starts_with(|c: char| c.is_ascii_alphabetic())
+            })
+            .expect("at least one word-like selector")
+            .name
             .to_string();
         let bare = dotted.trim_start_matches('.');
         assert!(get_selector(bare).is_some());

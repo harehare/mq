@@ -196,7 +196,7 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
         #(#hash_consts)*
 
         /// Names of the public native builtins enabled by the current features.
-        pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[#(#public_names)*];
+        pub const BUILTIN_FUNCTION_NAMES: &[&str] = &[#(#public_names)*];
 
         pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFunction> {
             match fnv1a_hash_64(name_str) {

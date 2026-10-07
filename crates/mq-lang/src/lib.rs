@@ -96,13 +96,10 @@ pub use module::{
 #[cfg(feature = "mqc")]
 pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
-pub use runtime::builtin::{
-    BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, BuiltinExample, BuiltinFunctionDoc, BuiltinSelectorDoc,
-    INTERNAL_FUNCTION_DOC,
-};
+pub use runtime::builtin::BUILTIN_FUNCTION_NAMES;
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use runtime::runtime_value::{DictMap, FromValueError, RuntimeValue, RuntimeValues, from_value};
-pub use selector::{AttrKind, Selector};
+pub use selector::{AttrKind, SELECTOR_NAMES, Selector};
 #[cfg(feature = "debug-trace")]
 pub use tarn::{BytecodeChunk, BytecodeDump, BytecodeInstruction, BytecodeLocation, BytecodePhase};
 
