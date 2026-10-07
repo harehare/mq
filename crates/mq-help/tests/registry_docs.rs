@@ -75,3 +75,19 @@ fn documented_selectors_are_accepted() {
         .collect();
     assert!(unknown.is_empty(), "documented but not accepted: {unknown:?}");
 }
+
+#[test]
+fn catalog_lists_feature_gated_functions_only_when_enabled() {
+    let listed: BTreeSet<String> = mq_help::top_level_entries()
+        .into_iter()
+        .map(|entry| entry.name)
+        .collect();
+    for doc in BUILTIN_DOC.functions().filter(|doc| doc.capability.is_some()) {
+        assert_eq!(
+            listed.contains(doc.name),
+            mq_lang::is_builtin_function(doc.name),
+            "{} is listed iff its feature is on",
+            doc.name
+        );
+    }
+}

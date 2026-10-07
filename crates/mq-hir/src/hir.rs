@@ -142,7 +142,12 @@ impl Hir {
         let source_id = self.builtin.source_id;
         let scope_id = self.builtin.scope_id;
 
-        for doc in self.builtin.docs.iter() {
+        for doc in self
+            .builtin
+            .docs
+            .iter()
+            .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
+        {
             let kind = match doc.kind {
                 mq_help::DocKind::Function | mq_help::DocKind::Internal => {
                     SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
@@ -367,6 +372,26 @@ mod tests {
     fn test_syntax_errors_inside_a_dict_do_not_panic(#[case] code: &str) {
         let mut hir = Hir::default();
         hir.add_code(None, code);
+    }
+
+    #[test]
+    fn test_feature_gated_builtins_are_defined_only_when_enabled() {
+        let mut hir = Hir::default();
+        hir.add_builtin();
+        let defined: std::collections::BTreeSet<&str> = hir
+            .symbols()
+            .filter(|(_, symbol)| matches!(symbol.kind, SymbolKind::Function(_)))
+            .filter_map(|(_, symbol)| symbol.value.as_deref())
+            .collect();
+
+        for doc in mq_help::BUILTIN_DOC.iter().filter(|doc| doc.capability.is_some()) {
+            assert_eq!(
+                defined.contains(doc.name),
+                mq_lang::is_builtin_function(doc.name),
+                "{} is defined iff its feature is on",
+                doc.name
+            );
+        }
     }
 
     #[test]

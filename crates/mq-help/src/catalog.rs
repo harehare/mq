@@ -99,7 +99,12 @@ fn native_entry(kind: &'static str, doc: &BuiltinDoc) -> HelpEntry {
 pub fn top_level_entries() -> Vec<HelpEntry> {
     let mut results = Vec::new();
 
-    results.extend(BUILTIN_DOC.functions().map(|doc| native_entry("function", doc)));
+    results.extend(
+        BUILTIN_DOC
+            .functions()
+            .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
+            .map(|doc| native_entry("function", doc)),
+    );
     results.extend(BUILTIN_DOC.selectors().map(|doc| native_entry("selector", doc)));
 
     for fdoc in reference::extract_functions_from_cst(BUILTIN_MODULE_FILE, true) {

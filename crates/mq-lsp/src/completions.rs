@@ -362,6 +362,7 @@ def old_func(x): x + 1;"#;
             };
             let missing = mq_help::BUILTIN_DOC
                 .functions()
+                .filter(|doc| doc.is_available(mq_lang::is_builtin_function))
                 .map(|doc| doc.name)
                 .filter(|name| {
                     !items

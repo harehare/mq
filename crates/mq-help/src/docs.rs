@@ -41,6 +41,15 @@ pub struct BuiltinDoc {
     pub capability: Option<&'static str>,
 }
 
+impl BuiltinDoc {
+    /// Returns true if this item exists in the current build. Docs for items behind a Cargo
+    /// feature (`capability`) are always listed, so `is_registered` decides whether the
+    /// feature is on, e.g. `mq_lang::is_builtin_function`.
+    pub fn is_available(&self, is_registered: impl Fn(&str) -> bool) -> bool {
+        self.capability.is_none() || is_registered(self.name)
+    }
+}
+
 /// Docs sorted by name, so lookups are a binary search. Selector names start with `.`, so
 /// they never collide with function names.
 #[derive(Clone, Copy, Debug, Default)]
