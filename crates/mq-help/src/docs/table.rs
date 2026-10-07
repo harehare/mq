@@ -1,7 +1,824 @@
-use super::{BuiltinDoc, BuiltinExample, DocTable};
+use super::{BuiltinDoc, BuiltinExample, DocKind, DocTable};
 
-/// Documentation for every native builtin function.
-pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
+/// Documentation for every native builtin function, selector and internal helper, sorted by name.
+pub static BUILTIN_DOC: DocTable = DocTable::new(&[
+    BuiltinDoc {
+        name: "..",
+        description: "Recursively selects every descendant node (depth-first), not the node itself. Combine with a following selector for a descendant chain, e.g. `.blockquote .code` (sugar for `.blockquote | .. | .code`).",
+        params: &[],
+        param_types: &[],
+        returns: "array",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("> ## Nested")[0] | .."#,
+            expected: "[Nested, ## Nested]",
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".<>",
+        description: "Selects an HTML node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".[]",
+        description: "Selects a list item node, optionally filtered by item index (e.g. `.[](0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
+        params: &["index", "..."],
+        param_types: &["number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_list("Item", 0) | .[]"#,
+            expected: r#"- Item"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".[][]",
+        description: "Selects a table cell node with the specified row and column.",
+        params: &["row", "column"],
+        param_types: &["number", "number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_table_cell("A1", 0, 0) | .[][]"#,
+            expected: r#"A1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".blockquote",
+        description: "Selects a blockquote node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_blockquote("Quote") | .blockquote"#,
+            expected: r#"> Quote"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".break",
+        description: "Selects a break node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("Line1  \nLine2")[1] | .break"#,
+            expected: "\\\n",
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".callout",
+        description: "Selects an Obsidian-style callout node, optionally filtered by kind (e.g. `.callout(\"note\")`).",
+        params: &["kind", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("> [!NOTE]\n> body")[0] | .callout"#,
+            expected: r#"> [!NOTE]
+> body"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".code",
+        description: "Selects a code block node with the specified language.",
+        params: &["lang", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_code("x = 1", "python") | .code"#,
+            expected: r#"```python
+x = 1
+```"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".code_inline",
+        description: "Selects an inline code node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_code_inline("x") | .code_inline"#,
+            expected: r#"`x`"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".definition",
+        description: "Selects a definition node, optionally filtered by identifier.",
+        params: &["ident", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("[ref]: https://example.com")[0] | .definition"#,
+            expected: r#"[ref]: https://example.com"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".delete",
+        description: "Selects a delete (strikethrough) node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_delete("Old") | .delete"#,
+            expected: r#"~~Old~~"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".done",
+        description: "Selects a done item in the task list node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("- [ ] Todo\n- [x] Done")[1] | .done"#,
+            expected: r#"- [x] Done"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".embed",
+        description: "Selects an Obsidian-style embed node, optionally filtered by target.",
+        params: &["target", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("![[image.png]]")[0] | .embed"#,
+            expected: r#"![[image.png]]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".emphasis",
+        description: "Selects an emphasis (italic) node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_em("Italic") | .emphasis"#,
+            expected: r#"*Italic*"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".footnote",
+        description: "Selects a footnote node, optionally filtered by identifier.",
+        params: &["ident", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[2] | .footnote"#,
+            expected: r#"[^1]: Note"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".footnote_ref",
+        description: "Selects a footnote reference node, optionally filtered by identifier.",
+        params: &["ident", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("Text[^1]\n\n[^1]: Note")[1] | .footnote_ref"#,
+            expected: r#"[^1]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h",
+        description: "Selects a heading node with the specified depth.",
+        params: &["depth", "..."],
+        param_types: &["number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 3) | .h"#,
+            expected: r#"### Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h1",
+        description: "Selects a heading node with the 1 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 1) | .h1"#,
+            expected: r#"# Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h2",
+        description: "Selects a heading node with the 2 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 2) | .h2"#,
+            expected: r#"## Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h3",
+        description: "Selects a heading node with the 3 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 3) | .h3"#,
+            expected: r#"### Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h4",
+        description: "Selects a heading node with the 4 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 4) | .h4"#,
+            expected: r#"#### Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h5",
+        description: "Selects a heading node with the 5 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 5) | .h5"#,
+            expected: r#"##### Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".h6",
+        description: "Selects a heading node with the 6 depth.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 6) | .h6"#,
+            expected: r#"###### Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".heading",
+        description: "Selects a heading node with the specified depth.",
+        params: &["depth", "..."],
+        param_types: &["number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_h("Title", 2) | .heading"#,
+            expected: r#"## Title"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".horizontal_rule",
+        description: "Selects a horizontal rule node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_hr() | .horizontal_rule"#,
+            expected: r#"***"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".html",
+        description: "Selects an HTML node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("<div>hi</div>")[0] | .html"#,
+            expected: r#"<div>hi</div>"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".image",
+        description: "Selects an image node, optionally filtered by URL (e.g. `.image(\"a.png\")`).",
+        params: &["url", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_image("https://example.com/a.png", "Alt", "") | .image"#,
+            expected: r#"![Alt](https://example.com/a.png "")"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".image_ref",
+        description: "Selects an image reference node, optionally filtered by identifier.",
+        params: &["ident", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("![alt][ref]\n\n[ref]: https://example.com/a.png")[0] | .image_ref"#,
+            expected: r#"![alt][ref]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".inline_math",
+        description: "Selects an inline math node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_math_inline("x^2") | .inline_math"#,
+            expected: r#"$x^2$"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".link",
+        description: "Selects a link node, optionally filtered by URL (e.g. `.link(\"https://example.com\")`).",
+        params: &["url", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_link("https://example.com", "Example", "") | .link"#,
+            expected: r#"[Example](https://example.com)"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".link_ref",
+        description: "Selects a link reference node, optionally filtered by identifier.",
+        params: &["ident", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("[text][ref]\n\n[ref]: https://example.com")[0] | .link_ref"#,
+            expected: r#"[text][ref]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".list",
+        description: "Selects a list item node, optionally filtered by item index (e.g. `.list(0)`). To filter by checked state, use `.task`/`.todo`/`.done` instead.",
+        params: &["index", "..."],
+        param_types: &["number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_list("Item", 0) | .list"#,
+            expected: r#"- Item"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".math",
+        description: "Selects a math node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_math("x^2") | .math"#,
+            expected: r#"$$
+x^2
+$$"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".math_inline",
+        description: "Selects a math inline node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_math_inline("x^2") | .math_inline"#,
+            expected: r#"$x^2$"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".mdx_flow_expression",
+        description: "Selects an MDX flow expression node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_mdx("{1 + 1}")[0] | .mdx_flow_expression"#,
+            expected: r#"{1 + 1}"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".mdx_js_esm",
+        description: "Selects an MDX JS ESM node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".mdx_jsx_flow_element",
+        description: "Selects an MDX JSX flow element node, optionally filtered by tag name.",
+        params: &["name", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_mdx("<Foo />")[0] | .mdx_jsx_flow_element"#,
+            expected: r#"<Foo />"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".mdx_jsx_text_element",
+        description: "Selects an MDX JSX text element node, optionally filtered by tag name.",
+        params: &["name", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_mdx("Hello <b>world</b>.")[1] | .mdx_jsx_text_element"#,
+            expected: r#"<b>world</b>"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".mdx_text_expression",
+        description: "Selects an MDX text expression node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_mdx("Value is {1 + 1}.")[1] | .mdx_text_expression"#,
+            expected: r#"{1 + 1}"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".strong",
+        description: "Selects a strong (bold) node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_strong("Bold") | .strong"#,
+            expected: r#"**Bold**"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".table",
+        description: "Selects a table cell node with the specified row and column.",
+        params: &["row", "column"],
+        param_types: &["number", "number"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_table_cell("A1", 0, 0) | .table"#,
+            expected: r#"A1"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".table_align",
+        description: "Selects a table align node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_table_align(["left", "right"]) | .table_align"#,
+            expected: r#"|:---|---:|"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".task",
+        description: "Selects a task list node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("- [ ] Todo\n- [x] Done")[0] | .task"#,
+            expected: r#"- [ ] Todo"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".text",
+        description: "Selects a text node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_md_text("Hello") | .text"#,
+            expected: r#"Hello"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".todo",
+        description: "Selects a todo item in the task list node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("- [ ] Todo\n- [x] Done")[0] | .todo"#,
+            expected: r#"- [ ] Todo"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".toml",
+        description: "Selects a TOML node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("+++\nkey = 1\n+++\n\nBody")[0] | .toml"#,
+            expected: r#"+++
+key = 1
++++"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".wikilink",
+        description: "Selects an Obsidian-style wikilink node, optionally filtered by target.",
+        params: &["target", "..."],
+        param_types: &["string"],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("[[target]]")[0] | .wikilink"#,
+            expected: r#"[[target]]"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: ".yaml",
+        description: "Selects a YAML node.",
+        params: &[],
+        param_types: &[],
+        returns: "markdown",
+        examples: &[BuiltinExample {
+            code: r#"to_markdown("---\nkey: 1\n---\n\nBody")[0] | .yaml"#,
+            expected: r#"---
+key: 1
+---"#,
+        }],
+        capability: None,
+        kind: DocKind::Selector,
+    },
+    BuiltinDoc {
+        name: "_cbor_parse",
+        description: "Parses a base64-encoded CBOR string or raw bytes into a data structure.",
+        params: &["input"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_cbor_stringify",
+        description: "Serializes a value to CBOR bytes.",
+        params: &["value"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_csv_parse",
+        description: "Parses a CSV string into an array of arrays, using the specified delimiter and header options.",
+        params: &["csv_string", "delimiter", "has_header"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_diff",
+        description: "Internal function to compute the difference between two values, returning an array of changes.",
+        params: &["value1", "value2"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_get_markdown_position",
+        description: "Internal function to get the position information of a markdown node, returning row and column data if available.",
+        params: &["markdown_node"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_gron_parse",
+        description: "Parses gron-style `path = value;` assignment statements into a data structure.",
+        params: &["gron_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_html_parse",
+        description: "Parses an HTML string and returns the corresponding data structure.",
+        params: &["html_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: Some("css-selector"),
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_jaro_distance",
+        description: "Calculates the Jaro distance between two strings (0.0 to 1.0, where 1.0 is an exact match).",
+        params: &["s1", "s2"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_jaro_winkler_distance",
+        description: "Calculates the Jaro-Winkler distance between two strings, boosting scores for matching prefixes.",
+        params: &["s1", "s2"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_json_parse",
+        description: "Parses a JSON string into a data structure.",
+        params: &["json_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_levenshtein_distance",
+        description: "Calculates the Levenshtein edit distance between two strings.",
+        params: &["s1", "s2"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_md_heading_level",
+        description: "Internal function returning a heading's depth (1-6), or 0 for any other node.",
+        params: &["markdown"],
+        param_types: &["markdown"],
+        returns: "number",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_regex_replace_matches",
+        description: "Internal implementation of regex_replace that splits `text` on every match of `pattern`, returning a dict with `segments` (the text between matches) and `matches` (per-match `match`/`captures`/`start`/`end` info).",
+        params: &["text", "pattern"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_sort_by_impl",
+        description: "Internal implementation of sort_by functionality that sorts arrays of arrays using the first element as the key.",
+        params: &[],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_toml_parse",
+        description: "Parses a TOML string into a data structure.",
+        params: &["toml_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_toon_parse",
+        description: "Parses a TOON string into a data structure.",
+        params: &["toon_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_toon_stringify",
+        description: "Converts a data structure into a TOON string.",
+        params: &["data"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_xml_parse",
+        description: "Parses an XML string and returns the corresponding data structure.",
+        params: &["xml_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
+    BuiltinDoc {
+        name: "_yaml_parse",
+        description: "Parses a YAML string into a data structure.",
+        params: &["yaml_string"],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
+    },
     BuiltinDoc {
         name: "abs",
         description: "Returns the absolute value of the given number.",
@@ -13,6 +830,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"10"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "acos",
@@ -25,6 +843,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "add",
@@ -37,6 +856,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "all_symbols",
@@ -46,6 +866,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "and",
@@ -58,6 +879,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"false"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ascii_downcase",
@@ -70,6 +892,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"abc"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ascii_upcase",
@@ -82,6 +905,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"ABC"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "asin",
@@ -94,6 +918,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "atan",
@@ -106,6 +931,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "atan2",
@@ -118,6 +944,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "attr",
@@ -127,6 +954,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "band",
@@ -136,6 +964,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64",
@@ -148,6 +977,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"aGk="#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64d",
@@ -160,6 +990,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64d_bytes",
@@ -169,6 +1000,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64url",
@@ -181,6 +1013,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"aGk"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64urld",
@@ -193,6 +1026,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "base64urld_bytes",
@@ -202,6 +1036,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "basename",
@@ -214,6 +1049,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"file.txt"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "bnot",
@@ -223,6 +1059,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "bor",
@@ -232,6 +1069,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "breakpoint",
@@ -241,6 +1079,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "capture",
@@ -253,6 +1092,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"{"major": "1"}"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "casefold",
@@ -265,6 +1105,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"strasse"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "cbrt",
@@ -277,6 +1118,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ceil",
@@ -289,6 +1131,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"4"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "close",
@@ -301,6 +1144,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"{"value": , "done": true}"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "coalesce",
@@ -313,6 +1157,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"5"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "collection",
@@ -322,6 +1167,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "compact",
@@ -334,6 +1180,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[1, 2]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "convert",
@@ -343,6 +1190,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "cos",
@@ -355,6 +1203,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "cosh",
@@ -367,6 +1216,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "css",
@@ -379,6 +1229,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["<p>hi</p>"]"#,
         }],
         capability: Some("css-selector"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "css_attr",
@@ -391,6 +1242,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["https://example.com"]"#,
         }],
         capability: Some("css-selector"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "css_text",
@@ -403,6 +1255,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["hi"]"#,
         }],
         capability: Some("css-selector"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "date_add",
@@ -412,6 +1265,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "date_diff",
@@ -424,6 +1278,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "date_relative",
@@ -433,6 +1288,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "decode",
@@ -445,6 +1301,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "del",
@@ -457,6 +1314,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[1, 3]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "dict",
@@ -469,6 +1327,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"{}"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "dirname",
@@ -481,6 +1340,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"/a/b"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "div",
@@ -493,6 +1353,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "downcase",
@@ -505,6 +1366,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"abc"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "embed_images",
@@ -514,6 +1376,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "markdown",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "encode",
@@ -523,6 +1386,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ends_with",
@@ -535,6 +1399,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "entries",
@@ -544,6 +1409,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "env",
@@ -553,6 +1419,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dict",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "error",
@@ -562,6 +1429,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "exp",
@@ -574,6 +1442,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "explode",
@@ -586,6 +1455,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[97, 98]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "extname",
@@ -598,6 +1468,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#".txt"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "extract_images",
@@ -607,6 +1478,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "markdown",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "extract_urls",
@@ -619,6 +1491,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[{"url": "https://example.com", "start_byte": 4, "end_byte": 23, "kind": "http"}]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "file_exists",
@@ -628,6 +1501,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bool",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "file_info",
@@ -637,6 +1511,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dict",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "file_size",
@@ -646,6 +1521,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "flatten",
@@ -658,6 +1534,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[1, 2, 3]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "floor",
@@ -670,6 +1547,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "from_date",
@@ -682,6 +1560,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "from_hex",
@@ -691,6 +1570,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "from_html",
@@ -700,6 +1580,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "get",
@@ -709,6 +1590,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "get_location",
@@ -718,6 +1600,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dict",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "get_title",
@@ -727,6 +1610,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "get_url",
@@ -739,6 +1623,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"https://example.com"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "glob_match",
@@ -751,6 +1636,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "gmtime",
@@ -763,6 +1649,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[1970, 0, 1, 0, 0, 0, 4, 0]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "grapheme_len",
@@ -775,6 +1662,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "graphemes",
@@ -787,6 +1675,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["👨‍👩‍👧"]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "gsub",
@@ -799,6 +1688,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"a#b#"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "halt",
@@ -808,6 +1698,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "has",
@@ -820,6 +1711,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: "true",
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "hexdump",
@@ -832,6 +1724,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"00000000  68 69                                             |hi|"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "html_escape",
@@ -844,6 +1737,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"&lt;a&gt;"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "html_unescape",
@@ -856,6 +1750,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"<a>"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "http",
@@ -865,6 +1760,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: Some("http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "http_all",
@@ -874,6 +1770,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: Some("http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "hypot",
@@ -886,6 +1783,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"5"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "implode",
@@ -898,6 +1796,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"ab"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "index",
@@ -910,6 +1809,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"2"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "indices",
@@ -922,6 +1822,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[0, 12]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "infinite",
@@ -931,6 +1832,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "input",
@@ -940,6 +1842,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "insert",
@@ -952,6 +1855,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[1, "x", 2, 3]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "intern",
@@ -964,6 +1868,17 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
+    },
+    BuiltinDoc {
+        name: "is_debug_mode",
+        description: "Checks if the runtime is currently in debug mode, returning true if a debugger is attached.",
+        params: &[],
+        param_types: &[],
+        returns: "dynamic",
+        examples: &[],
+        capability: None,
+        kind: DocKind::Internal,
     },
     BuiltinDoc {
         name: "is_nan",
@@ -976,6 +1891,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "is_not_regex_match",
@@ -988,6 +1904,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "is_regex_match",
@@ -1000,6 +1917,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "join",
@@ -1012,6 +1930,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1,2,3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "keys",
@@ -1021,6 +1940,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "len",
@@ -1033,6 +1953,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"5"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ln",
@@ -1045,6 +1966,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "localtime",
@@ -1054,6 +1976,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "log",
@@ -1066,6 +1989,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "log10",
@@ -1078,6 +2002,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"2"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "log2",
@@ -1090,6 +2015,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "ltrim",
@@ -1102,6 +2028,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"hi  "#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "markdown_escape",
@@ -1120,6 +2047,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             },
         ],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "max",
@@ -1132,6 +2060,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"2"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "md5",
@@ -1141,6 +2070,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "min",
@@ -1153,6 +2083,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "mktime",
@@ -1165,6 +2096,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "mock_fetch",
@@ -1174,6 +2106,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: Some("http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "mod",
@@ -1186,6 +2119,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "mul",
@@ -1198,6 +2132,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"6"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "nan",
@@ -1207,6 +2142,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "negate",
@@ -1219,6 +2155,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"-5"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "next",
@@ -1231,6 +2168,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"{"value": 1, "done": false}"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "not",
@@ -1243,6 +2181,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"false"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "now",
@@ -1252,6 +2191,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "open_file",
@@ -1261,6 +2201,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "file",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "open_http",
@@ -1270,6 +2211,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "http",
         examples: &[],
         capability: Some("http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "or",
@@ -1282,6 +2224,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "pack",
@@ -1291,6 +2234,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "partial",
@@ -1300,6 +2244,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "function",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "path_join",
@@ -1312,6 +2257,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"/a/b/c.txt"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "pow",
@@ -1324,6 +2270,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"1024"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "print",
@@ -1333,6 +2280,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "rand",
@@ -1342,6 +2290,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "rand_int",
@@ -1351,6 +2300,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "random_string",
@@ -1360,6 +2310,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "range",
@@ -1372,6 +2323,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"[0, 1, 2, 3, 4, 5]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "read_bytes",
@@ -1381,6 +2333,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: Some("file-io or http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "read_file",
@@ -1390,6 +2343,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "read_file_bytes",
@@ -1399,6 +2353,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "bytes",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "read_line",
@@ -1408,6 +2363,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: Some("file-io or http"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "regex_escape",
@@ -1420,6 +2376,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"a\.b\*c\?"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "regex_match",
@@ -1432,6 +2389,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["123"]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "repeat",
@@ -1444,6 +2402,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"ababab"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "replace",
@@ -1456,6 +2415,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"a-b-c"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "reverse",
@@ -1468,6 +2428,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"cba"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "rindex",
@@ -1480,6 +2441,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "round",
@@ -1492,6 +2454,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"4"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "rtrim",
@@ -1504,6 +2467,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"  hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sample",
@@ -1513,6 +2477,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sanitize_html",
@@ -1522,6 +2487,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "scan",
@@ -1534,6 +2500,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"["1", "2"]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "send",
@@ -1546,6 +2513,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"{"value": 2, "done": false}"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set",
@@ -1555,6 +2523,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "dict",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_attr",
@@ -1564,6 +2533,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "markdown",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_check",
@@ -1576,6 +2546,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
             expected: r#"- [x] Item"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_children",
@@ -1585,6 +2556,7 @@ pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
         returns: "markdown",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_code_block_lang",
@@ -1599,6 +2571,7 @@ x
 ```"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_list_ordered",
@@ -1611,6 +2584,7 @@ x
             expected: r#"1. Item"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "set_ref",
@@ -1620,6 +2594,7 @@ x
         returns: "markdown",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sha256",
@@ -1629,6 +2604,7 @@ x
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sha512",
@@ -1638,6 +2614,7 @@ x
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "shift_left",
@@ -1650,6 +2627,7 @@ x
             expected: r#"4"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "shift_right",
@@ -1662,6 +2640,7 @@ x
             expected: r#"2"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "shuffle",
@@ -1671,6 +2650,7 @@ x
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sin",
@@ -1683,6 +2663,7 @@ x
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sinh",
@@ -1695,6 +2676,7 @@ x
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "slice",
@@ -1707,6 +2689,7 @@ x
             expected: r#"el"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sort",
@@ -1719,6 +2702,7 @@ x
             expected: r#"[1, 2, 3]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "split",
@@ -1731,6 +2715,7 @@ x
             expected: r#"["a", "b", "c"]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "split_records",
@@ -1743,6 +2728,7 @@ x
             expected: r#"[{"text": "a", "index": 0, "start_byte": 0, "end_byte": 1, "terminator": ","}, {"text": "b", "index": 1, "start_byte": 2, "end_byte": 3, "terminator": ","}, {"text": "c", "index": 2, "start_byte": 4, "end_byte": 5, "terminator": }]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sqrt",
@@ -1755,6 +2741,7 @@ x
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "starts_with",
@@ -1767,6 +2754,7 @@ x
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "status",
@@ -1779,6 +2767,7 @@ x
             expected: r#":created"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "stderr",
@@ -1788,6 +2777,7 @@ x
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "stem",
@@ -1800,6 +2790,7 @@ x
             expected: r#"file"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "strftime",
@@ -1812,6 +2803,7 @@ x
             expected: r#"1970-01-01"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "strip_tags",
@@ -1824,6 +2816,7 @@ x
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "strptime",
@@ -1836,6 +2829,7 @@ x
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "sub",
@@ -1848,6 +2842,7 @@ x
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "system",
@@ -1857,6 +2852,7 @@ x
         returns: "string",
         examples: &[],
         capability: Some("process-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "tan",
@@ -1869,6 +2865,7 @@ x
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "tanh",
@@ -1881,6 +2878,7 @@ x
             expected: r#"0"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_array",
@@ -1893,6 +2891,7 @@ x
             expected: r#"[1]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_blockquote",
@@ -1905,6 +2904,7 @@ x
             expected: r#"> Quote"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_boolean",
@@ -1917,6 +2917,7 @@ x
             expected: r#"true"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_break",
@@ -1929,6 +2930,7 @@ x
             expected: "\\\n",
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_bytes",
@@ -1938,6 +2940,7 @@ x
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_callout",
@@ -1951,6 +2954,7 @@ x
 > Note text"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_code",
@@ -1965,6 +2969,7 @@ x = 1
 ```"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_code_inline",
@@ -1977,6 +2982,7 @@ x = 1
             expected: r#"`x`"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_date",
@@ -1989,6 +2995,7 @@ x = 1
             expected: r#"1970-01-01"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_definition",
@@ -2001,6 +3008,7 @@ x = 1
             expected: r#"[ex]: https://example.com"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_delete",
@@ -2013,6 +3021,7 @@ x = 1
             expected: r#"~~Old~~"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_em",
@@ -2025,6 +3034,7 @@ x = 1
             expected: r#"*Italic*"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_footnote",
@@ -2037,6 +3047,7 @@ x = 1
             expected: r#"[^1]: Footnote text"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_footnote_ref",
@@ -2049,6 +3060,7 @@ x = 1
             expected: r#"[^1]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_h",
@@ -2061,6 +3073,7 @@ x = 1
             expected: r#"# Title"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_hex",
@@ -2073,6 +3086,7 @@ x = 1
             expected: r#"6869"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_hr",
@@ -2085,6 +3099,7 @@ x = 1
             expected: r#"***"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_html",
@@ -2094,6 +3109,7 @@ x = 1
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_image",
@@ -2106,6 +3122,7 @@ x = 1
             expected: r#"![Alt](https://example.com/a.png "")"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_link",
@@ -2118,6 +3135,7 @@ x = 1
             expected: r#"[Example](https://example.com)"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_markdown",
@@ -2130,6 +3148,7 @@ x = 1
             expected: r#"[# Hi]"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_markdown_string",
@@ -2139,6 +3158,7 @@ x = 1
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_math",
@@ -2153,6 +3173,7 @@ x^2
 $$"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_math_inline",
@@ -2165,6 +3186,7 @@ $$"#,
             expected: r#"$x^2$"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_fragment",
@@ -2174,6 +3196,7 @@ $$"#,
         returns: "markdown",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_html",
@@ -2186,6 +3209,7 @@ $$"#,
             expected: r#"<br>"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_list",
@@ -2198,6 +3222,7 @@ $$"#,
             expected: r#"- Item"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_name",
@@ -2210,6 +3235,7 @@ $$"#,
             expected: r#"h1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_table_align",
@@ -2222,6 +3248,7 @@ $$"#,
             expected: r#"|:---|---:|"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_table_cell",
@@ -2234,6 +3261,7 @@ $$"#,
             expected: r#"A1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_table_row",
@@ -2243,6 +3271,7 @@ $$"#,
         returns: "markdown",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_md_text",
@@ -2255,6 +3284,7 @@ $$"#,
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_mdx",
@@ -2264,6 +3294,7 @@ $$"#,
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_number",
@@ -2276,6 +3307,7 @@ $$"#,
             expected: r#"42"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_string",
@@ -2288,6 +3320,7 @@ $$"#,
             expected: r#"1"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_strong",
@@ -2300,6 +3333,7 @@ $$"#,
             expected: r#"**Bold**"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "to_text",
@@ -2312,6 +3346,7 @@ $$"#,
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "token_compress",
@@ -2321,6 +3356,7 @@ $$"#,
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "token_count",
@@ -2333,6 +3369,7 @@ $$"#,
             expected: r#"4"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "trim",
@@ -2345,6 +3382,7 @@ $$"#,
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "trunc",
@@ -2357,6 +3395,7 @@ $$"#,
             expected: r#"3"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "truncate",
@@ -2369,6 +3408,7 @@ $$"#,
             expected: r#"he..."#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "type",
@@ -2381,6 +3421,7 @@ $$"#,
             expected: r#"number"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "unicode_normalize",
@@ -2393,6 +3434,7 @@ $$"#,
             expected: "\u{00e9}",
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "unpack",
@@ -2402,6 +3444,7 @@ $$"#,
         returns: "number",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "upcase",
@@ -2414,6 +3457,7 @@ $$"#,
             expected: r#"ABC"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "update",
@@ -2423,6 +3467,7 @@ $$"#,
         returns: "dynamic",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "url_decode",
@@ -2435,6 +3480,7 @@ $$"#,
             expected: r#"a b"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "url_encode",
@@ -2447,6 +3493,7 @@ $$"#,
             expected: r#"a%20b"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "utf8",
@@ -2459,6 +3506,7 @@ $$"#,
             expected: r#"hi"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "utf8bytelen",
@@ -2471,6 +3519,7 @@ $$"#,
             expected: r#"6"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "uuid",
@@ -2480,6 +3529,7 @@ $$"#,
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "uuid_v4",
@@ -2489,6 +3539,7 @@ $$"#,
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "uuid_v7",
@@ -2498,6 +3549,7 @@ $$"#,
         returns: "string",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "values",
@@ -2507,6 +3559,7 @@ $$"#,
         returns: "array",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "walk_files",
@@ -2516,6 +3569,7 @@ $$"#,
         returns: "array",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "word_wrap",
@@ -2529,6 +3583,7 @@ $$"#,
 world"#,
         }],
         capability: None,
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "write_file",
@@ -2538,6 +3593,7 @@ world"#,
         returns: "dynamic",
         examples: &[],
         capability: Some("file-io"),
+        kind: DocKind::Function,
     },
     BuiltinDoc {
         name: "xor",
@@ -2547,5 +3603,6 @@ world"#,
         returns: "bytes",
         examples: &[],
         capability: None,
+        kind: DocKind::Function,
     },
 ]);

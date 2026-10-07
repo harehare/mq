@@ -415,7 +415,7 @@ pub fn list_functions() -> FunctionsApiResponse {
 
 /// Lists all builtin mq selectors with their documentation.
 pub fn list_selectors() -> SelectorsApiResponse {
-    let mut selectors: Vec<SelectorDoc> = mq_help::BUILTIN_SELECTOR_DOC.iter().map(selector_doc).collect();
+    let mut selectors: Vec<SelectorDoc> = mq_help::BUILTIN_DOC.selectors().map(selector_doc).collect();
     selectors.sort_by(|a, b| a.name.cmp(&b.name));
     SelectorsApiResponse { selectors }
 }
@@ -437,7 +437,7 @@ pub fn get_selector(name: &str) -> Option<SelectorDoc> {
     } else {
         format!(".{name}")
     };
-    mq_help::BUILTIN_SELECTOR_DOC.get(name.as_str()).map(selector_doc)
+    mq_help::BUILTIN_DOC.selector(name.as_str()).map(selector_doc)
 }
 
 /// Lints the given query and returns any diagnostics found.
@@ -664,7 +664,7 @@ mod tests {
         assert_eq!(response.functions.len(), expected_len);
 
         for doc in &response.functions {
-            let Some(source) = mq_help::BUILTIN_FUNCTION_DOC.get(doc.name.as_str()) else {
+            let Some(source) = mq_help::BUILTIN_DOC.function(doc.name.as_str()) else {
                 continue;
             };
             assert_eq!(doc.description, source.description);
@@ -680,14 +680,14 @@ mod tests {
         }
     }
 
-    // eq/ne/gt/gte/lt/lte live in builtin.mq, not BUILTIN_FUNCTION_DOC; must come from
+    // eq/ne/gt/gte/lt/lte live in builtin.mq, not a native function doc; must come from
     // the soft-prelude side of the catalog.
     #[test]
     fn test_list_and_get_function_include_soft_prelude_comparison_functions() {
         let response = list_functions();
         for name in ["eq", "ne", "gt", "gte", "lt", "lte"] {
             assert!(
-                !mq_help::BUILTIN_FUNCTION_DOC.contains(name),
+                mq_help::BUILTIN_DOC.function(name).is_none(),
                 "{name} unexpectedly native now"
             );
             assert!(
@@ -701,12 +701,12 @@ mod tests {
     #[test]
     fn test_list_selectors_matches_mq_lang_doc_map() {
         let response = list_selectors();
-        assert_eq!(response.selectors.len(), mq_help::BUILTIN_SELECTOR_DOC.len());
+        assert_eq!(response.selectors.len(), mq_help::BUILTIN_DOC.selectors().count());
 
         for doc in &response.selectors {
-            let source = mq_help::BUILTIN_SELECTOR_DOC
-                .get(doc.name.as_str())
-                .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_SELECTOR_DOC", doc.name));
+            let source = mq_help::BUILTIN_DOC
+                .selector(doc.name.as_str())
+                .unwrap_or_else(|| panic!("{} present in API response but not in BUILTIN_DOC", doc.name));
             assert_eq!(doc.description, source.description);
             assert_eq!(doc.params, source.params);
             assert_eq!(doc.param_types, source.param_types);
@@ -718,8 +718,8 @@ mod tests {
 
     #[test]
     fn test_get_function_matches_list_entry() {
-        let name = mq_help::BUILTIN_FUNCTION_DOC
-            .iter()
+        let name = mq_help::BUILTIN_DOC
+            .functions()
             .next()
             .expect("at least one function")
             .name
@@ -735,8 +735,8 @@ mod tests {
 
     #[test]
     fn test_get_selector_accepts_name_without_leading_dot() {
-        let dotted = mq_help::BUILTIN_SELECTOR_DOC
-            .iter()
+        let dotted = mq_help::BUILTIN_DOC
+            .selectors()
             .find(|doc| {
                 doc.name
                     .trim_start_matches('.')

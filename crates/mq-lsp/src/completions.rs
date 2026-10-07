@@ -360,8 +360,8 @@ def old_func(x): x + 1;"#;
             else {
                 panic!("expected completion items for {code:?}");
             };
-            let missing = mq_help::BUILTIN_FUNCTION_DOC
-                .iter()
+            let missing = mq_help::BUILTIN_DOC
+                .functions()
                 .map(|doc| doc.name)
                 .filter(|name| {
                     !items

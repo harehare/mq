@@ -1009,9 +1009,8 @@ pub async fn hover(code: &str, line: u32, column: u32) -> JsValue {
     let name = symbol.value.as_deref().unwrap_or_default();
     let examples: Vec<mq_help::BuiltinExample> = if symbol.source.source_id == Some(hir.builtin.source_id) {
         hir.builtin
-            .functions
+            .docs
             .get(name)
-            .or_else(|| hir.builtin.internal_functions.get(name))
             .map(|doc| doc.examples.to_vec())
             .unwrap_or_default()
     } else {

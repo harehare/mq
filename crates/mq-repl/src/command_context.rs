@@ -330,7 +330,7 @@ impl CommandContext {
                 }
             }
         } else if word.starts_with('.') {
-            for doc in mq_help::BUILTIN_SELECTOR_DOC.iter() {
+            for doc in mq_help::BUILTIN_DOC.selectors() {
                 if doc.name.starts_with(word) {
                     matches.push(CompletionItem {
                         name: doc.name.to_string(),
@@ -388,7 +388,7 @@ impl CommandContext {
     }
 
     fn builtin_display(name: &str) -> String {
-        if let Some(doc) = mq_help::BUILTIN_FUNCTION_DOC.get(name) {
+        if let Some(doc) = mq_help::BUILTIN_DOC.function(name) {
             if doc.params.is_empty() {
                 format!("{}()", name)
             } else {

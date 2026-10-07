@@ -5,9 +5,7 @@ use crate::{scope::ScopeId, source::SourceId};
 #[derive(Debug, Default, Clone)]
 pub struct Builtin {
     pub disabled: bool,
-    pub functions: DocTable,
-    pub internal_functions: DocTable,
-    pub selectors: DocTable,
+    pub docs: DocTable,
     pub source_id: SourceId,
     pub scope_id: ScopeId,
     pub loaded: bool,
@@ -16,9 +14,7 @@ pub struct Builtin {
 impl Builtin {
     pub fn new(source_id: SourceId, scope_id: ScopeId) -> Self {
         Self {
-            functions: mq_help::BUILTIN_FUNCTION_DOC,
-            internal_functions: mq_help::INTERNAL_FUNCTION_DOC,
-            selectors: mq_help::BUILTIN_SELECTOR_DOC,
+            docs: mq_help::BUILTIN_DOC,
             source_id,
             scope_id,
             disabled: false,

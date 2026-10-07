@@ -5,7 +5,7 @@ Documentation catalog for the mq language: builds the single, unified catalog of
 ## Features
 
 - `catalog` (default): the catalog, lookup and rendering API below.
-- Without it, only the static doc tables (`BUILTIN_FUNCTION_DOC`, `BUILTIN_SELECTOR_DOC`, `INTERNAL_FUNCTION_DOC`) are built, with no dependency on `mq-lang`.
+- Without it, only the static doc table (`BUILTIN_DOC`, covering functions, selectors and internal helpers) is built, with no dependency on `mq-lang`.
 
 ## Usage
 

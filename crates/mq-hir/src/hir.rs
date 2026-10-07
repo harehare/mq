@@ -142,37 +142,28 @@ impl Hir {
         let source_id = self.builtin.source_id;
         let scope_id = self.builtin.scope_id;
 
-        for doc in self
-            .builtin
-            .functions
-            .iter()
-            .chain(self.builtin.internal_functions.iter())
-        {
+        for doc in self.builtin.docs.iter() {
+            let kind = match doc.kind {
+                mq_help::DocKind::Function | mq_help::DocKind::Internal => {
+                    SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>())
+                }
+                mq_help::DocKind::Selector => {
+                    let token = mq_lang::Token::new(mq_lang::TokenKind::Selector(doc.name.into()));
+                    match mq_lang::Selector::try_from(&token) {
+                        Ok(selector) => SymbolKind::Selector(selector),
+                        Err(_) => continue,
+                    }
+                }
+            };
             self.add_symbol(Symbol {
                 value: Some(doc.name.into()),
-                kind: SymbolKind::Function(doc.params.iter().map(|p| (*p).into()).collect::<Vec<_>>()),
+                kind,
                 source: SourceInfo::new(Some(source_id), None),
                 scope: scope_id,
                 doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
                 parent: None,
                 insertion_order: 0,
             });
-        }
-
-        for doc in self.builtin.selectors.iter() {
-            if let Ok(selector) =
-                mq_lang::Selector::try_from(&mq_lang::Token::new(mq_lang::TokenKind::Selector(doc.name.into())))
-            {
-                self.add_symbol(Symbol {
-                    value: Some(doc.name.into()),
-                    kind: SymbolKind::Selector(selector),
-                    source: SourceInfo::new(Some(source_id), None),
-                    scope: scope_id,
-                    doc: vec![(mq_lang::Range::default(), doc.description.to_string())],
-                    parent: None,
-                    insertion_order: 0,
-                });
-            }
         }
     }
 

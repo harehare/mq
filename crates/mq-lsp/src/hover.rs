@@ -129,9 +129,8 @@ pub(crate) fn response(
                         let hir = hir.read().unwrap();
                         if symbol.source.source_id == Some(hir.builtin.source_id) {
                             hir.builtin
-                                .functions
+                                .docs
                                 .get(name)
-                                .or_else(|| hir.builtin.internal_functions.get(name))
                                 .map(|doc| doc.examples.to_vec())
                                 .unwrap_or_default()
                         } else {
