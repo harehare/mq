@@ -104,14 +104,19 @@ pub fn mq_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 struct BuiltinEntry {
     attrs: Vec<Attribute>,
     ident: Ident,
+    internal: bool,
 }
 
 impl Parse for BuiltinEntry {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        Ok(BuiltinEntry {
-            attrs: input.call(Attribute::parse_outer)?,
-            ident: input.parse()?,
-        })
+        let (internal_attrs, attrs): (Vec<_>, Vec<_>) = input
+            .call(Attribute::parse_outer)?
+            .into_iter()
+            .partition(|attr| attr.path().is_ident("internal"));
+        let ident: Ident = input.parse()?;
+        let internal = !internal_attrs.is_empty() || ident.to_string().starts_with('_');
+
+        Ok(BuiltinEntry { attrs, ident, internal })
     }
 }
 
@@ -136,6 +141,10 @@ impl Parse for BuiltinDispatchInput {
 ///
 /// Supports `#[cfg(...)]` attributes on individual entries.
 ///
+/// Also generates `BUILTIN_FUNCTION_NAMES`, the names of the public builtins under the same
+/// `#[cfg(...)]` gates. Entries whose static name starts with `_`, or that are marked
+/// `#[internal]`, are left out of it.
+///
 /// # Example
 /// ```ignore
 /// builtin_dispatch! {
@@ -144,6 +153,8 @@ impl Parse for BuiltinDispatchInput {
 ///     SORT_DESC,
 ///     #[cfg(feature = "file-io")]
 ///     READ_FILE,
+///     #[internal]
+///     IS_DEBUG_MODE,
 /// }
 /// ```
 /// Generates `const HASH_ABS`, `const HASH_ADD`, `const HASH_SORT_DESC`, and
@@ -154,6 +165,7 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
 
     let mut hash_consts: Vec<TokenStream2> = Vec::with_capacity(entries.len());
     let mut match_arms: Vec<TokenStream2> = Vec::with_capacity(entries.len());
+    let mut public_names: Vec<TokenStream2> = Vec::with_capacity(entries.len());
 
     for entry in &entries {
         let ident = &entry.ident;
@@ -171,10 +183,20 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
             #(#attrs)*
             #hash_ident => Some(&#ident),
         });
+
+        if !entry.internal {
+            public_names.push(quote! {
+                #(#attrs)*
+                #name_str,
+            });
+        }
     }
 
     quote! {
         #(#hash_consts)*
+
+        /// Names of the public native builtins enabled by the current features.
+        pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[#(#public_names)*];
 
         pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFunction> {
             match fnv1a_hash_64(name_str) {
