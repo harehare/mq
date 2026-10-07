@@ -1,6 +1,10 @@
 //! "Did you mean" suggestions for unresolved builtin/selector names. Namespace-aware:
 //! builtins are only compared against builtins, selectors only against selectors.
 
+use crate::ast::constants::builtins::{BREAKPOINT, NEXT, SEND};
+use crate::runtime::builtin::BUILTIN_FUNCTION_NAMES;
+use crate::selector::SELECTOR_NAMES;
+
 // Short queries only tolerate a single edit so a 1-2 char typo doesn't fuzzy-match
 // an unrelated long name.
 fn max_edit_distance(len: usize) -> usize {
@@ -31,6 +35,9 @@ where
         .map(|(_, candidate)| candidate)
 }
 
+// Callable names the compiler handles itself, so they are absent from the native registry.
+const COMPILER_BUILTINS: [&str; 3] = [BREAKPOINT, NEXT, SEND];
+
 // Excludes purely symbolic aliases (`.**`, `.<>`, `..`) - not meaningful
 // edit-distance suggestion targets.
 fn is_word_like_selector(selector: &str) -> bool {
@@ -46,9 +53,10 @@ fn is_word_like_selector(selector: &str) -> bool {
 pub fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<Item = &'a str>) -> Option<String> {
     closest_match(
         name,
-        crate::BUILTIN_FUNCTION_DOC
-            .keys()
-            .map(|s| s.as_str())
+        BUILTIN_FUNCTION_NAMES
+            .iter()
+            .copied()
+            .chain(COMPILER_BUILTINS)
             .chain(extra_candidates),
     )
     .map(str::to_string)
@@ -59,17 +67,17 @@ pub fn suggest_name<'a>(name: &str, extra_candidates: impl IntoIterator<Item = &
 pub fn suggest_selector(name: &str) -> Option<&'static str> {
     closest_match(
         name,
-        crate::BUILTIN_SELECTOR_DOC
-            .keys()
-            .map(|s| s.as_str())
-            .filter(|s| is_word_like_selector(s)),
+        SELECTOR_NAMES.iter().copied().filter(|s| is_word_like_selector(s)),
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::runtime::builtin::get_builtin_functions_by_str;
+    use crate::{BUILTIN_FUNCTION_DOC, BUILTIN_SELECTOR_DOC, Selector};
     use rstest::rstest;
+    use std::collections::BTreeSet;
 
     #[rstest]
     #[case::transposition("slpit", &["split", "join", "map"], Some("split"))]
@@ -127,5 +135,55 @@ mod tests {
     #[test]
     fn test_suggest_selector_no_suggestion_for_unrelated_name() {
         assert_eq!(suggest_selector(".completely_unrelated_xyz"), None);
+    }
+
+    #[test]
+    fn test_builtin_function_names_resolve_by_str() {
+        for name in BUILTIN_FUNCTION_NAMES {
+            assert!(
+                get_builtin_functions_by_str(name).is_some(),
+                "{name} is listed but not resolvable"
+            );
+        }
+    }
+
+    #[test]
+    fn test_suggestion_candidates_match_function_docs() {
+        let candidates: BTreeSet<&str> = BUILTIN_FUNCTION_NAMES
+            .iter()
+            .copied()
+            .chain(COMPILER_BUILTINS)
+            .collect();
+        let documented: BTreeSet<&str> = BUILTIN_FUNCTION_DOC.keys().map(|s| s.as_str()).collect();
+
+        let undocumented: Vec<_> = candidates.difference(&documented).collect();
+        assert!(undocumented.is_empty(), "listed but undocumented: {undocumented:?}");
+
+        // Internal helpers (`_` prefix) are documented but deliberately not suggested.
+        let unlisted: Vec<_> = documented
+            .difference(&candidates)
+            .filter(|name| !name.starts_with('_'))
+            .collect();
+        assert!(unlisted.is_empty(), "documented but not listed: {unlisted:?}");
+    }
+
+    #[test]
+    fn test_selector_names_all_resolve() {
+        for name in SELECTOR_NAMES {
+            assert!(
+                Selector::from_selector_str(name).is_some(),
+                "{name} is listed but not accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn test_documented_selectors_are_listed() {
+        // The docs cover primary names only; aliases and attribute selectors are listed but undocumented.
+        let undeclared: Vec<_> = BUILTIN_SELECTOR_DOC
+            .keys()
+            .filter(|name| !SELECTOR_NAMES.contains(&name.as_str()))
+            .collect();
+        assert!(undeclared.is_empty(), "documented but not listed: {undeclared:?}");
     }
 }

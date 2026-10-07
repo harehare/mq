@@ -5937,6 +5937,7 @@ mq_macros::builtin_dispatch! {
     _CBOR_PARSE,
     _CBOR_STRINGIFY,
     _XML_PARSE,
+    #[internal]
     IS_DEBUG_MODE,
     ENV,
     SHIFT_LEFT,
@@ -9548,6 +9549,18 @@ x
     );
     #[cfg(feature = "http")]
     map.insert(
+        SmolStr::new("http_all"),
+        BuiltinFunctionDoc {
+            description: "Performs a batch of HTTPS requests and returns the response bodies as an array of strings in request order. Each request is a dict with a `url` string and optional `method` (string or symbol, default GET), `body` (string) and `headers` (dict of string to string). Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
+            params: &["requests"],
+            param_types: &["array"],
+            returns: "array",
+            examples: &[],
+            capability: Some("http"),
+        },
+    );
+    #[cfg(feature = "http")]
+    map.insert(
         SmolStr::new("open_http"),
         BuiltinFunctionDoc {
             description: "Opens an HTTPS request with the given method (a string or symbol, same as http()) and returns the response body as a streaming reader handle instead of buffering it, so it can be read incrementally with read_line/read_bytes rather than waiting for the whole response. body/headers behave the same as http(). The connection is closed by close(handle), or automatically when the handle (or a coroutine holding it) is closed, finishes, or is dropped. Requires the --allow-net CLI flag; otherwise returns a runtime error. Only https:// URLs are allowed.",
@@ -9738,6 +9751,20 @@ x
             param_types: &[],
             returns: "number",
             examples: &[],
+            capability: None,
+        },
+    );
+    map.insert(
+        SmolStr::new("is_nan"),
+        BuiltinFunctionDoc {
+            description: "Returns true if the given number is NaN.",
+            params: &["value"],
+            param_types: &["number"],
+            returns: "boolean",
+            examples: &[BuiltinExample {
+                code: r#"is_nan(nan())"#,
+                expected: r#"true"#,
+            }],
             capability: None,
         },
     );

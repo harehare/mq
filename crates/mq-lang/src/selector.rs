@@ -272,81 +272,94 @@ impl Display for AttrKind {
     }
 }
 
-impl Selector {
-    /// Converts a dot-prefixed selector string (e.g. `".text"`, `".h"`) to a `Selector`.
-    ///
-    /// Returns `None` for unknown or non-simple selectors (bracket forms, quoted keys).
-    pub fn from_selector_str(s: &str) -> Option<Self> {
-        match s {
-            ".h" | ".heading" => Some(Selector::Heading(None)),
-            ".h1" => Some(Selector::Heading(Some(1))),
-            ".h2" => Some(Selector::Heading(Some(2))),
-            ".h3" => Some(Selector::Heading(Some(3))),
-            ".h4" => Some(Selector::Heading(Some(4))),
-            ".h5" => Some(Selector::Heading(Some(5))),
-            ".h6" => Some(Selector::Heading(Some(6))),
-            ".>" | ".blockquote" => Some(Selector::Blockquote),
-            ".^" | ".footnote" => Some(Selector::Footnote),
-            ".<" | ".mdx_jsx_flow_element" => Some(Selector::MdxJsxFlowElement),
-            ".**" | ".emphasis" => Some(Selector::Emphasis),
-            ".$$" | ".math" => Some(Selector::Math),
-            ".horizontal_rule" | ".hr" | ".---" | ".***" | ".___" => Some(Selector::HorizontalRule),
-            ".{}" | ".mdx_text_expression" => Some(Selector::MdxTextExpression),
-            ".[^]" | ".footnote_ref" => Some(Selector::FootnoteRef),
-            ".definition" => Some(Selector::Definition),
-            ".break" | ".br" => Some(Selector::Break),
-            ".delete" => Some(Selector::Delete),
-            ".<>" | ".html" => Some(Selector::Html),
-            ".image" => Some(Selector::Image),
-            ".image_ref" => Some(Selector::ImageRef),
-            ".code_inline" | ".inline_code" => Some(Selector::InlineCode),
-            ".math_inline" | ".inline_math" => Some(Selector::InlineMath),
-            ".link" => Some(Selector::Link),
-            ".link_ref" => Some(Selector::LinkRef),
-            ".wikilink" => Some(Selector::WikiLink),
-            ".callout" => Some(Selector::Callout),
-            ".embed" => Some(Selector::Embed),
-            ".[]" | ".list" | ".li" => Some(Selector::List(None, None)),
-            ".task" => Some(Selector::Task),
-            ".todo" => Some(Selector::Todo),
-            ".done" => Some(Selector::Done),
-            ".toml" => Some(Selector::Toml),
-            ".strong" => Some(Selector::Strong),
-            ".yaml" => Some(Selector::Yaml),
-            ".code" | ".code_block" => Some(Selector::Code),
-            ".mdx_js_esm" => Some(Selector::MdxJsEsm),
-            ".mdx_jsx_text_element" => Some(Selector::MdxJsxTextElement),
-            ".mdx_flow_expression" => Some(Selector::MdxFlowExpression),
-            ".text" | ".p" | ".paragraph" => Some(Selector::Text),
-            ".[][]" | ".table" => Some(Selector::Table(None, None)),
-            ".table_align" => Some(Selector::TableAlign),
-            ".." => Some(Selector::Recursive),
-            ".value" => Some(Selector::Attr(AttrKind::Value)),
-            ".values" => Some(Selector::Attr(AttrKind::Values)),
-            ".children" | ".cn" => Some(Selector::Attr(AttrKind::Children)),
-            ".lang" => Some(Selector::Attr(AttrKind::Lang)),
-            ".meta" => Some(Selector::Attr(AttrKind::Meta)),
-            ".fence" => Some(Selector::Attr(AttrKind::Fence)),
-            ".url" => Some(Selector::Attr(AttrKind::Url)),
-            ".alt" => Some(Selector::Attr(AttrKind::Alt)),
-            ".title" => Some(Selector::Attr(AttrKind::Title)),
-            ".ident" => Some(Selector::Attr(AttrKind::Ident)),
-            ".label" => Some(Selector::Attr(AttrKind::Label)),
-            ".depth" => Some(Selector::Attr(AttrKind::Depth)),
-            ".level" => Some(Selector::Attr(AttrKind::Level)),
-            ".index" => Some(Selector::Attr(AttrKind::Index)),
-            ".ordered" => Some(Selector::Attr(AttrKind::Ordered)),
-            ".checked" => Some(Selector::Attr(AttrKind::Checked)),
-            ".column" => Some(Selector::Attr(AttrKind::Column)),
-            ".row" => Some(Selector::Attr(AttrKind::Row)),
-            ".align" => Some(Selector::Attr(AttrKind::Align)),
-            ".name" => Some(Selector::Attr(AttrKind::Name)),
-            ".kind" => Some(Selector::Attr(AttrKind::Kind)),
-            ".line" => Some(Selector::Attr(AttrKind::Line)),
-            ".end_line" => Some(Selector::Attr(AttrKind::EndLine)),
-            _ => None,
+/// Declares the simple selector names once, generating both `Selector::from_selector_str`
+/// and `SELECTOR_NAMES`.
+macro_rules! selector_table {
+    ($($($name:literal)|+ => $selector:expr,)+) => {
+        /// Every name accepted by `Selector::from_selector_str`.
+        pub(crate) const SELECTOR_NAMES: &[&str] = &[$($($name),+),+];
+
+        impl Selector {
+            /// Converts a dot-prefixed selector string (e.g. `".text"`, `".h"`) to a `Selector`.
+            ///
+            /// Returns `None` for unknown or non-simple selectors (bracket forms, quoted keys).
+            pub fn from_selector_str(s: &str) -> Option<Self> {
+                match s {
+                    $($($name)|+ => Some($selector),)+
+                    _ => None,
+                }
+            }
         }
-    }
+    };
+}
+
+selector_table! {
+    ".h" | ".heading" => Selector::Heading(None),
+    ".h1" => Selector::Heading(Some(1)),
+    ".h2" => Selector::Heading(Some(2)),
+    ".h3" => Selector::Heading(Some(3)),
+    ".h4" => Selector::Heading(Some(4)),
+    ".h5" => Selector::Heading(Some(5)),
+    ".h6" => Selector::Heading(Some(6)),
+    ".>" | ".blockquote" => Selector::Blockquote,
+    ".^" | ".footnote" => Selector::Footnote,
+    ".<" | ".mdx_jsx_flow_element" => Selector::MdxJsxFlowElement,
+    ".**" | ".emphasis" => Selector::Emphasis,
+    ".$$" | ".math" => Selector::Math,
+    ".horizontal_rule" | ".hr" | ".---" | ".***" | ".___" => Selector::HorizontalRule,
+    ".{}" | ".mdx_text_expression" => Selector::MdxTextExpression,
+    ".[^]" | ".footnote_ref" => Selector::FootnoteRef,
+    ".definition" => Selector::Definition,
+    ".break" | ".br" => Selector::Break,
+    ".delete" => Selector::Delete,
+    ".<>" | ".html" => Selector::Html,
+    ".image" => Selector::Image,
+    ".image_ref" => Selector::ImageRef,
+    ".code_inline" | ".inline_code" => Selector::InlineCode,
+    ".math_inline" | ".inline_math" => Selector::InlineMath,
+    ".link" => Selector::Link,
+    ".link_ref" => Selector::LinkRef,
+    ".wikilink" => Selector::WikiLink,
+    ".callout" => Selector::Callout,
+    ".embed" => Selector::Embed,
+    ".[]" | ".list" | ".li" => Selector::List(None, None),
+    ".task" => Selector::Task,
+    ".todo" => Selector::Todo,
+    ".done" => Selector::Done,
+    ".toml" => Selector::Toml,
+    ".strong" => Selector::Strong,
+    ".yaml" => Selector::Yaml,
+    ".code" | ".code_block" => Selector::Code,
+    ".mdx_js_esm" => Selector::MdxJsEsm,
+    ".mdx_jsx_text_element" => Selector::MdxJsxTextElement,
+    ".mdx_flow_expression" => Selector::MdxFlowExpression,
+    ".text" | ".p" | ".paragraph" => Selector::Text,
+    ".[][]" | ".table" => Selector::Table(None, None),
+    ".table_align" => Selector::TableAlign,
+    ".." => Selector::Recursive,
+    ".value" => Selector::Attr(AttrKind::Value),
+    ".values" => Selector::Attr(AttrKind::Values),
+    ".children" | ".cn" => Selector::Attr(AttrKind::Children),
+    ".lang" => Selector::Attr(AttrKind::Lang),
+    ".meta" => Selector::Attr(AttrKind::Meta),
+    ".fence" => Selector::Attr(AttrKind::Fence),
+    ".url" => Selector::Attr(AttrKind::Url),
+    ".alt" => Selector::Attr(AttrKind::Alt),
+    ".title" => Selector::Attr(AttrKind::Title),
+    ".ident" => Selector::Attr(AttrKind::Ident),
+    ".label" => Selector::Attr(AttrKind::Label),
+    ".depth" => Selector::Attr(AttrKind::Depth),
+    ".level" => Selector::Attr(AttrKind::Level),
+    ".index" => Selector::Attr(AttrKind::Index),
+    ".ordered" => Selector::Attr(AttrKind::Ordered),
+    ".checked" => Selector::Attr(AttrKind::Checked),
+    ".column" => Selector::Attr(AttrKind::Column),
+    ".row" => Selector::Attr(AttrKind::Row),
+    ".align" => Selector::Attr(AttrKind::Align),
+    ".name" => Selector::Attr(AttrKind::Name),
+    ".kind" => Selector::Attr(AttrKind::Kind),
+    ".line" => Selector::Attr(AttrKind::Line),
+    ".end_line" => Selector::Attr(AttrKind::EndLine),
 }
 
 impl TryFrom<&Token> for Selector {
