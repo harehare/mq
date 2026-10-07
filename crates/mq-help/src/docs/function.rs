@@ -3,15 +3,6 @@ use super::{BuiltinDoc, BuiltinExample, DocTable};
 /// Documentation for every native builtin function.
 pub static BUILTIN_FUNCTION_DOC: DocTable = DocTable::new(&[
     BuiltinDoc {
-        name: "_md_heading_level",
-        description: "Internal function returning a heading's depth (1-6), or 0 for any other node.",
-        params: &["markdown"],
-        param_types: &["markdown"],
-        returns: "number",
-        examples: &[],
-        capability: None,
-    },
-    BuiltinDoc {
         name: "abs",
         description: "Returns the absolute value of the given number.",
         params: &["number"],

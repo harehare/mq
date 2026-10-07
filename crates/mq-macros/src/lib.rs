@@ -143,7 +143,8 @@ impl Parse for BuiltinDispatchInput {
 ///
 /// Also generates `BUILTIN_FUNCTION_NAMES`, the names of the public builtins under the same
 /// `#[cfg(...)]` gates. Entries whose static name starts with `_`, or that are marked
-/// `#[internal]`, are left out of it.
+/// `#[internal]`, are internal: they are left out of it and listed in `INTERNAL_FUNCTION_NAMES`
+/// instead.
 ///
 /// # Example
 /// ```ignore
@@ -166,6 +167,7 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
     let mut hash_consts: Vec<TokenStream2> = Vec::with_capacity(entries.len());
     let mut match_arms: Vec<TokenStream2> = Vec::with_capacity(entries.len());
     let mut public_names: Vec<TokenStream2> = Vec::with_capacity(entries.len());
+    let mut internal_names: Vec<TokenStream2> = Vec::new();
 
     for entry in &entries {
         let ident = &entry.ident;
@@ -184,12 +186,15 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
             #hash_ident => Some(&#ident),
         });
 
-        if !entry.internal {
-            public_names.push(quote! {
-                #(#attrs)*
-                #name_str,
-            });
-        }
+        let names = if entry.internal {
+            &mut internal_names
+        } else {
+            &mut public_names
+        };
+        names.push(quote! {
+            #(#attrs)*
+            #name_str,
+        });
     }
 
     quote! {
@@ -197,6 +202,9 @@ pub fn builtin_dispatch(input: TokenStream) -> TokenStream {
 
         /// Names of the public native builtins enabled by the current features.
         pub const BUILTIN_FUNCTION_NAMES: &[&str] = &[#(#public_names)*];
+
+        /// Names of the internal native builtins enabled by the current features.
+        pub const INTERNAL_FUNCTION_NAMES: &[&str] = &[#(#internal_names)*];
 
         pub fn get_builtin_functions_by_str(name_str: &str) -> Option<&'static BuiltinFunction> {
             match fnv1a_hash_64(name_str) {

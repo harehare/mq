@@ -96,7 +96,7 @@ pub use module::{
 #[cfg(feature = "mqc")]
 pub use mqc::{Mqc, MqcDependency, MqcError};
 pub use range::{Position, Range};
-pub use runtime::builtin::BUILTIN_FUNCTION_NAMES;
+pub use runtime::builtin::{BUILTIN_FUNCTION_NAMES, INTERNAL_FUNCTION_NAMES};
 pub use runtime::host::{HostFnResult, HostFunction, HostFunctionError, HostFunctions, IntoHostFunction, ValueAdapter};
 pub use runtime::runtime_value::{DictMap, FromValueError, RuntimeValue, RuntimeValues, from_value};
 pub use selector::{AttrKind, SELECTOR_NAMES, Selector};

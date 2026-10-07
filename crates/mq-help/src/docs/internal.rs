@@ -102,6 +102,15 @@ pub static INTERNAL_FUNCTION_DOC: DocTable = DocTable::new(&[
         capability: None,
     },
     BuiltinDoc {
+        name: "_md_heading_level",
+        description: "Internal function returning a heading's depth (1-6), or 0 for any other node.",
+        params: &["markdown"],
+        param_types: &["markdown"],
+        returns: "number",
+        examples: &[],
+        capability: None,
+    },
+    BuiltinDoc {
         name: "_regex_replace_matches",
         description: "Internal implementation of regex_replace that splits `text` on every match of `pattern`, returning a dict with `segments` (the text between matches) and `matches` (per-match `match`/`captures`/`start`/`end` info).",
         params: &["text", "pattern"],
